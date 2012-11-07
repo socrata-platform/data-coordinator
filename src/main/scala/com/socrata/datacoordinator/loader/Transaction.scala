@@ -12,20 +12,28 @@ trait Transaction[CV] {
   def commit()
 }
 
+/** A report is a collection of maps that inform the caller what
+  * the result of each operation performed on the transaction so far was.
+  *
+  * @note Performing more operations after generating a report may mutate
+  *       the maps returned in the original report.  The intent of it is to
+  *       be called immediately before `commit()`.
+  */
 trait Report[CV] {
-  def inserted: Int
-  def updated: Int
-  def deleted: Int
-  def errors: Int
+  /** Map from job number to the identifier of the row that was created. */
+  def inserted: sc.Map[Int, CV]
 
-  def details: sc.Map[Int, JobResult[CV]]
+  /** Map from job number to the identifier of the row that was updated. */
+  def updated: sc.Map[Int, CV]
+
+  /** Map from job number to the identifier of the row that was deleted. */
+  def deleted: sc.Map[Int, CV]
+
+  /** Map from job number to a value explaining the cause of the problem.. */
+  def errors: sc.Map[Int, Failure[CV]]
 }
 
-sealed abstract class JobResult[+CV]
-case class RowCreated[CV](id: CV) extends JobResult[CV]
-case class RowUpdated[CV](id: CV) extends JobResult[CV]
-case class RowDeleted[CV](id: CV) extends JobResult[CV]
-sealed abstract class Failure[+CV] extends JobResult[CV]
+sealed abstract class Failure[+CV]
 case object NullPrimaryKey extends Failure[Nothing]
 case class SystemColumnsSet(names: Set[String]) extends Failure[Nothing]
 case class NoSuchRowToDelete[CV](id: CV) extends Failure[CV]

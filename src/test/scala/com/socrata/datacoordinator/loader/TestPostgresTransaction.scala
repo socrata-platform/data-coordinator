@@ -77,11 +77,10 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
       val txn = new PostgresTransaction(conn, TestTypeContext, dataSqlizer, idProvider(15))
       txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("a")))
       val report = txn.report
-      report.inserted must be (1)
-      report.updated must be (0)
-      report.deleted must be (0)
-      report.errors must be (0)
-      report.details must equal (Map(1 -> RowCreated(LongValue(15))))
+      report.inserted must equal (Map(0 -> LongValue(15)))
+      report.updated must be ('empty)
+      report.deleted must be ('empty)
+      report.errors must be ('empty)
       txn.commit()
 
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(Map("ID" -> 15L, "NUM" -> 1L, "STR" -> "a")))
@@ -102,11 +101,10 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
       txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("a")))
       txn.upsert(Map(":id" -> LongValue(15), "num" -> LongValue(2), "str" -> StringValue("b")))
       val report = txn.report
-      report.inserted must be (1)
-      report.updated must be (1)
-      report.deleted must be (0)
-      report.errors must be (0)
-      report.details must equal (Map(1 -> RowCreated(LongValue(15)), 2 -> RowUpdated(LongValue(15))))
+      report.inserted must equal (Map(0 -> LongValue(15)))
+      report.updated must equal (Map(1 -> LongValue(15)))
+      report.deleted must be ('empty)
+      report.errors must be ('empty)
       txn.commit()
 
       ids.allocate() must be (16)
@@ -130,11 +128,10 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
       val txn = new PostgresTransaction(conn, TestTypeContext, dataSqlizer, idProvider(22))
       txn.upsert(Map(":id" -> NullValue, "num" -> LongValue(1), "str" -> StringValue("a")))
       val report = txn.report
-      report.inserted must be (0)
-      report.updated must be (0)
-      report.deleted must be (0)
-      report.errors must be (1)
-      report.details must equal (Map(1 -> NullPrimaryKey))
+      report.inserted must be ('empty)
+      report.updated must be ('empty)
+      report.deleted must be ('empty)
+      report.errors must equal (Map(0 -> NullPrimaryKey))
       txn.commit()
 
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq.empty)
@@ -153,11 +150,10 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
       val txn = new PostgresTransaction(conn, TestTypeContext, dataSqlizer, idProvider(6))
       txn.upsert(Map(":id" -> LongValue(77), "num" -> LongValue(1), "str" -> StringValue("a")))
       val report = txn.report
-      report.inserted must be (0)
-      report.updated must be (0)
-      report.deleted must be (0)
-      report.errors must be (1)
-      report.details must equal (Map(1 -> NoSuchRowToUpdate(LongValue(77))))
+      report.inserted must be ('empty)
+      report.updated must be ('empty)
+      report.deleted must be ('empty)
+      report.errors must equal (Map(0 -> NoSuchRowToUpdate(LongValue(77))))
       txn.commit()
 
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq.empty)
@@ -179,11 +175,10 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
       val txn = new PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids)
       txn.upsert(Map(":id" -> LongValue(1), "num" -> LongValue(44)))
       val report = txn.report
-      report.inserted must be (0)
-      report.updated must be (1)
-      report.deleted must be (0)
-      report.errors must be (0)
-      report.details must equal (Map(1 -> RowUpdated(LongValue(1))))
+      report.inserted must be ('empty)
+      report.updated must equal (Map(0 -> LongValue(1)))
+      report.deleted must be ('empty)
+      report.errors must be ('empty)
       txn.commit()
 
       ids.allocate() must be (13)
@@ -207,11 +202,10 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
         txn.tryInsertFirst = insertFirst
         txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("a")))
         val report = txn.report
-        report.inserted must be (1)
-        report.updated must be (0)
-        report.deleted must be (0)
-        report.errors must be (0)
-        report.details must equal (Map(1 -> RowCreated(StringValue("a"))))
+        report.inserted must equal (Map(0 -> StringValue("a")))
+        report.updated must be ('empty)
+        report.deleted must be ('empty)
+        report.errors must be ('empty)
         txn.commit()
 
         ids.allocate() must equal (16)
@@ -236,11 +230,10 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
         txn.tryInsertFirst = insertFirst
         txn.upsert(Map("num" -> LongValue(1), "str" -> NullValue))
         val report = txn.report
-        report.inserted must be (0)
-        report.updated must be (0)
-        report.deleted must be (0)
-        report.errors must be (1)
-        report.details must equal (Map(1 -> NullPrimaryKey))
+        report.inserted must be ('empty)
+        report.updated must be ('empty)
+        report.deleted must be ('empty)
+        report.errors must equal (Map(0 -> NullPrimaryKey))
         txn.commit()
 
         ids.allocate() must equal (22)
@@ -265,11 +258,10 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
         txn.tryInsertFirst = insertFirst
         txn.upsert(Map("num" -> LongValue(1)))
         val report = txn.report
-        report.inserted must be (0)
-        report.updated must be (0)
-        report.deleted must be (0)
-        report.errors must be (1)
-        report.details must equal (Map(1 -> NoPrimaryKey))
+        report.inserted must be ('empty)
+        report.updated must be ('empty)
+        report.deleted must be ('empty)
+        report.errors must be (Map(0 -> NoPrimaryKey))
         txn.commit()
 
         ids.allocate() must equal (22)
@@ -296,11 +288,10 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
         txn.tryInsertFirst = insertFirst
         txn.upsert(Map("str" -> StringValue("q"), "num" -> LongValue(44)))
         val report = txn.report
-        report.inserted must be (0)
-        report.updated must be (1)
-        report.deleted must be (0)
-        report.errors must be (0)
-        report.details must equal (Map(1 -> RowUpdated(StringValue("q"))))
+        report.inserted must be ('empty)
+        report.updated must equal (Map(0 -> StringValue("q")))
+        report.deleted must be ('empty)
+        report.errors must be ('empty)
         txn.commit()
 
         ids.allocate() must be (13)
@@ -328,11 +319,10 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
         txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("q")))
         txn.upsert(Map("num" -> LongValue(2), "str" -> StringValue("q")))
         val report = txn.report
-        report.inserted must be (1)
-        report.updated must be (1)
-        report.deleted must be (0)
-        report.errors must be (0)
-        report.details must equal (Map(1 -> RowCreated(StringValue("q")), 2 -> RowUpdated(StringValue("q"))))
+        report.inserted must equal (Map(0 -> StringValue("q")))
+        report.updated must equal (Map(1 -> StringValue("q")))
+        report.deleted must be ('empty)
+        report.errors must be ('empty)
         txn.commit()
 
         ids.allocate() must be (16)
@@ -360,11 +350,10 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
         txn.tryInsertFirst = insertFirst
         txn.upsert(Map(":id" -> LongValue(15), "num" -> LongValue(1), "str" -> StringValue("q")))
         val report = txn.report
-        report.inserted must be (0)
-        report.updated must be (0)
-        report.deleted must be (0)
-        report.errors must be (1)
-        report.details must equal (Map(1 -> SystemColumnsSet(Set(":id"))))
+        report.inserted must be ('empty)
+        report.updated must be ('empty)
+        report.deleted must be ('empty)
+        report.errors must equal (Map(0 -> SystemColumnsSet(Set(":id"))))
         txn.commit()
 
         ids.allocate() must be (15)
@@ -390,11 +379,10 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
         txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("q")))
         txn.delete(StringValue("q"))
         val report = txn.report
-        report.inserted must be (1)
-        report.updated must be (0)
-        report.deleted must be (1)
-        report.errors must be (0)
-        report.details must equal (Map(1 -> RowCreated(StringValue("q")), 2 -> RowDeleted(StringValue("q"))))
+        report.inserted must equal (Map(0 -> StringValue("q")))
+        report.updated must be ('empty)
+        report.deleted must equal (Map(1 -> StringValue("q")))
+        report.errors must be ('empty)
         txn.commit()
 
         ids.allocate() must be (16)

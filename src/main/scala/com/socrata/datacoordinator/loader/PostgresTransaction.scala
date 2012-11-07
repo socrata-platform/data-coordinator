@@ -24,18 +24,19 @@ class PostgresTransaction[CT, CV](connection: Connection, typeContext: TypeConte
   private var batchPtr = 0
 
   private var totalRows = 0
-  private val jobResults = new java.util.TreeMap[Int, JobResult[CV]]
-  private var inserted = 0
-  private var updated = 0
-  private var deleted = 0
+  private var inserted = new java.util.HashMap[Int, CV]
+  private var updated = new java.util.HashMap[Int, CV]
+  private var deleted = new java.util.HashMap[Int, CV]
+  private var errors = new java.util.HashMap[Int, Failure[CV]]
 
   using(connection.createStatement()) { stmt =>
     stmt.execute(sqlizer.lockTableAgainstWrites())
   }
 
   def nextJobNum() = {
+    val r = totalRows
     totalRows += 1
-    totalRows
+    r
   }
 
   def upsert(row: Row[CV]) {
@@ -49,7 +50,7 @@ class PostgresTransaction[CT, CV](connection: Connection, typeContext: TypeConte
   def delete(id: CV) {
     val job = nextJobNum()
     if(typeContext.isNull(id)) {
-      jobResults.put(job, NullPrimaryKey)
+      errors.put(job, NullPrimaryKey)
     } else {
       if(idSet(id)) {
         // deleting a row we've seen; flush to the DB in case the previous job retries
@@ -66,7 +67,7 @@ class PostgresTransaction[CT, CV](connection: Connection, typeContext: TypeConte
         checkNoMetadata(row, idAllowed = false) match {
           case None =>
             if(typeContext.isNull(userId)) {
-              jobResults.put(job, NullPrimaryKey)
+              errors.put(job, NullPrimaryKey)
             } else {
               idSet.add(userId)
               if(tryInsertFirst) {
@@ -77,10 +78,10 @@ class PostgresTransaction[CT, CV](connection: Connection, typeContext: TypeConte
               }
             }
           case Some(error) =>
-            jobResults.put(job, error)
+            errors.put(job, error)
         }
       case None =>
-        jobResults.put(job, NoPrimaryKey)
+        errors.put(job, NoPrimaryKey)
     }
   }
 
@@ -91,7 +92,7 @@ class PostgresTransaction[CT, CV](connection: Connection, typeContext: TypeConte
         datasetContext.systemIdAsValue(row) match {
           case Some(systemId) =>
             if(typeContext.isNull(systemId)) {
-              jobResults.put(job, NullPrimaryKey)
+              errors.put(job, NullPrimaryKey)
             } else {
               idSet.add(systemId)
               addJob(Update(job, row))
@@ -102,7 +103,7 @@ class PostgresTransaction[CT, CV](connection: Connection, typeContext: TypeConte
             addJob(Insert(job, systemId, row))
         }
       case Some(error) =>
-        jobResults.put(job, error)
+        errors.put(job, error)
     }
   }
 
@@ -225,12 +226,12 @@ class PostgresTransaction[CT, CV](connection: Connection, typeContext: TypeConte
                 addRetry(Insert(job, sid, row))
               }
             case Delete(job, id) =>
-              jobResults.put(job, NoSuchRowToDelete(id))
+              errors.put(job, NoSuchRowToDelete(id))
           } else {
             case Update(job, row) =>
-              jobResults.put(job, NoSuchRowToUpdate(datasetContext.systemIdAsValue(row).getOrElse(sys.error("Had a system ID before?"))))
+              errors.put(job, NoSuchRowToUpdate(datasetContext.systemIdAsValue(row).getOrElse(sys.error("Had a system ID before?"))))
             case Delete(job, id) =>
-              jobResults.put(job, NoSuchRowToDelete(id))
+              errors.put(job, NoSuchRowToDelete(id))
             case Insert(_, _, _) =>
               sys.error("Insert failed when using system identifier!")
           }
@@ -238,33 +239,27 @@ class PostgresTransaction[CT, CV](connection: Connection, typeContext: TypeConte
         val processSucceeded: Operation[CV] => String =
           if(datasetContext.hasUserPrimaryKey) {
             case Insert(job, sid, row) =>
-              inserted += 1
               val id = datasetContext.userPrimaryKey(row).getOrElse(sys.error("Had a user PK before?"))
-              jobResults.put(job, RowCreated(id))
+              inserted.put(job, id)
               sqlizer.logRowChanged(sid, "insert")
             case Update(job, row) =>
-              updated += 1
               val id = datasetContext.userPrimaryKey(row).getOrElse(sys.error("Had a user PK before?"))
-              jobResults.put(job, RowUpdated(id))
+              updated.put(job, id)
               sqlizer.logRowChanged(updatedIds(id), "update")
             case Delete(job, id) =>
-              deleted += 1
-              jobResults.put(job, RowDeleted(id))
+              deleted.put(job, id)
               sqlizer.logRowChanged(updatedIds(id), "delete")
           } else {
             case Insert(job, sid, row) =>
-              inserted += 1
               val pk = typeContext.makeValueFromSystemId(sid)
-              jobResults.put(job, RowCreated(pk))
+              inserted.put(job, pk)
               sqlizer.logRowChanged(sid, "insert")
             case Update(job, row) =>
-              updated += 1
               val sid = datasetContext.systemId(row).getOrElse(sys.error("Had a system PK before?"))
-              jobResults.put(job, RowUpdated(typeContext.makeValueFromSystemId(sid)))
+              updated.put(job, typeContext.makeValueFromSystemId(sid))
               sqlizer.logRowChanged(sid, "update")
             case Delete(job, id) =>
-              deleted += 1
-              jobResults.put(job, RowDeleted(id))
+              deleted.put(job, id)
               sqlizer.logRowChanged(typeContext.makeSystemIdFromValue(id), "delete")
           }
 
@@ -348,9 +343,7 @@ class PostgresTransaction[CT, CV](connection: Connection, typeContext: TypeConte
 
   def report: Report[CV] = {
     flush()
-
-    val errors = totalRows - inserted - updated - deleted
-    new JobReport(inserted, updated, deleted, errors, jobResults.asScala)
+    new JobReport(inserted.asScala, updated.asScala, deleted.asScala, errors.asScala)
   }
 
   def commit() {
@@ -369,5 +362,5 @@ object PostgresTransaction {
   case class Update[CV](jobNum: Int, row: Row[CV]) extends Operation[CV]
   case class Delete[CV](jobNum: Int, id: CV) extends Operation[CV]
 
-  case class JobReport[CV](inserted: Int, updated: Int, deleted: Int, errors: Int, details: sc.Map[Int, JobResult[CV]]) extends Report[CV]
+  case class JobReport[CV](inserted: sc.Map[Int, CV], updated: sc.Map[Int, CV], deleted: sc.Map[Int, CV], errors: sc.Map[Int, Failure[CV]]) extends Report[CV]
 }
