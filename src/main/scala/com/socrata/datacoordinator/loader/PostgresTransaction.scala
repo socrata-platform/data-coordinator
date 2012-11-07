@@ -8,11 +8,12 @@ import java.sql.Connection
 import com.rojoma.simplearm.util._
 import com.socrata.id.numeric.{Unallocatable, IdProvider}
 
-class PostgresTransaction[CT, CV](connection: Connection, typeContext: TypeContext[CV], datasetContext: DatasetContext[CT, CV], sqlizer: DataSqlizer[CV], idProvider: IdProvider with Unallocatable) extends Transaction[CV] {
+class PostgresTransaction[CT, CV](connection: Connection, typeContext: TypeContext[CV], sqlizer: DataSqlizer[CT, CV], idProvider: IdProvider with Unallocatable) extends Transaction[CV] {
   import PostgresTransaction._
 
   require(!connection.getAutoCommit, "Connection must be in non-auto-commit mode")
 
+  val datasetContext = sqlizer.datasetContext
   private val idObserver = typeContext.makeIdObserver()
 
   var tryInsertFirst = true
@@ -145,7 +146,7 @@ class PostgresTransaction[CT, CV](connection: Connection, typeContext: TypeConte
         do {
           val sql = batch(src) match {
             case Insert(_, sid, row) =>
-              sqlizer.insert(sid, row)
+              sqlizer.insert(row + (datasetContext.systemIdColumnName -> typeContext.makeSystemIdValue(sid)))
             case Update(_, row) =>
               sqlizer.update(row)
             case Delete(_, id) =>
@@ -277,7 +278,13 @@ class PostgresTransaction[CT, CV](connection: Connection, typeContext: TypeConte
 
   def lookup(id: CV) = {
     flush()
-    sqlizer.lookup(id)
+    for {
+      stmt <- managed(connection.createStatement())
+      rs <- managed(stmt.executeQuery(sqlizer.selectRow(id)))
+    } yield {
+      if(rs.next()) Some(sqlizer.extractRow(rs))
+      else None
+    }
   }
 
   def report: Report[CV] = {

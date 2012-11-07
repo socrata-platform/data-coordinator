@@ -1,13 +1,17 @@
 package com.socrata.datacoordinator.loader
 
+import java.sql.ResultSet
+
 trait Sqlizer {
   def logTransactionComplete() // whole-database log has : (dataset id, last updated at, new txn log serial id)
   def lockTableAgainstWrites(): String
 }
 
 /** Generates SQL for execution. */
-trait DataSqlizer[CV] extends Sqlizer {
-  def insert(id: Long, row: Row[CV]): String
+trait DataSqlizer[CT, CV] extends Sqlizer {
+  def datasetContext: DatasetContext[CT, CV]
+
+  def insert(row: Row[CV]): String
   def update(row: Row[CV]): String
   def delete(id: CV): String
 
@@ -16,7 +20,14 @@ trait DataSqlizer[CV] extends Sqlizer {
   def logUpdate(id: CV): String
   def logDelete(id: CV): String
 
-  def lookup(id: CV): Option[Row[CV]]
+  def selectRow(id: CV): String
+
+  def extract(resultSet: ResultSet, logicalColumn: String): CV
+
+  def extractRow(resultSet: ResultSet): Row[CV] =
+    datasetContext.fullSchema.keys.foldLeft(Map.empty[String, CV]) { (results, col) =>
+      results + (col -> extract(resultSet, col))
+    }
 }
 
 trait SchemaSqlizer[CT, CV] extends Sqlizer {

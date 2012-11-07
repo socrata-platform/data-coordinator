@@ -1,58 +1,64 @@
 package com.socrata.datacoordinator.loader
 
-class TestDataSqlizer(user: String, datasetContext: DatasetContext[TestColumnType, TestColumnValue]) extends TestSqlizer with DataSqlizer[TestColumnValue] {
+import java.sql.ResultSet
+
+class TestDataSqlizer(user: String, val datasetContext: DatasetContext[TestColumnType, TestColumnValue]) extends TestSqlizer with DataSqlizer[TestColumnType, TestColumnValue] {
   val dataTableName = datasetContext.baseName + "_data"
   val logTableName = datasetContext.baseName + "_log"
 
-  def mapToPhysical(column: String): String = "u_" + column
+  def mapToPhysical(column: String): String =
+    if(datasetContext.systemSchema.contains(column)) {
+      column.substring(1)
+    } else if(datasetContext.userSchema.contains(column)) {
+      "u_" + column
+    } else {
+      sys.error("unknown column " + column)
+    }
 
-  val keys = datasetContext.schema.keys.toSeq
+  val keys = datasetContext.fullSchema.keys.toSeq
   val columns = keys.map(mapToPhysical)
+  val pkCol = mapToPhysical(datasetContext.primaryKeyColumn)
 
   val userSqlized = StringValue(user).sqlize
 
-  def insertPrefix(id: Long)= "INSERT INTO " + dataTableName + " (id, " + columns.mkString(",") + ") SELECT " + id + ","
-  def insertSuffix(id: Long) = " WHERE NOT EXISTS (SELECT 1 FROM " + dataTableName + " WHERE id = " + id + ")"
-  def insertSuffix(userIdCol: String, id: TestColumnValue) = " WHERE NOT EXISTS (SELECT 1 FROM " + dataTableName + " WHERE " + mapToPhysical(userIdCol) + " = " + id.sqlize + ")"
+  val insertPrefix = "INSERT INTO " + dataTableName + " (" + columns.mkString(",") + ") SELECT "
+  val insertMidfix = " WHERE NOT EXISTS (SELECT 1 FROM " + dataTableName + " WHERE " + pkCol + " = "
+  val insertSuffix = ")"
 
-  def insert(id: Long, row: Row[TestColumnValue]) = {
-    val pfx = insertPrefix(id) + keys.map(row.getOrElse(_, NullValue)).map(_.sqlize).mkString(",")
-    datasetContext.userPrimaryKeyColumn match {
-      case Some(col) =>
-        pfx + insertSuffix(col, row(col))
-      case None =>
-        pfx + insertSuffix(id)
-    }
+  def insert(row: Row[TestColumnValue]) = {
+    val pfx = keys.map(row.getOrElse(_, NullValue)).map(_.sqlize).mkString(insertPrefix, ",", insertMidfix)
+    pfx + row(datasetContext.primaryKeyColumn).sqlize + insertSuffix
   }
 
   def update(row: Row[TestColumnValue]) =
-    datasetContext.userPrimaryKeyColumn match {
-      case Some(pkCol) =>
-        "UPDATE " + dataTableName + " SET " + (row - pkCol).map { case (col, v) => mapToPhysical(col) + " = " + v.sqlize }.mkString(",") + " WHERE " + mapToPhysical(pkCol) + " = " + row(pkCol).sqlize
-      case None =>
-        "UPDATE " + dataTableName + " SET " + (row - datasetContext.systemIdColumnName).map { case (col, v) => mapToPhysical(col) + " = " + v.sqlize }.mkString(",") + " WHERE id = " + row(":id").sqlize
-    }
+    "UPDATE " + dataTableName + " SET " + (row - pkCol).map { case (col, v) => mapToPhysical(col) + " = " + v.sqlize }.mkString(",") + " WHERE " + pkCol + " = " + row(datasetContext.primaryKeyColumn).sqlize
 
   def delete(id: TestColumnValue) =
-    datasetContext.userPrimaryKeyColumn match {
-      case Some(pkCol) =>
-        "DELETE FROM " + dataTableName + " WHERE " + pkCol + " = " + id.sqlize
-      case None =>
-        "DELETE FROM " + dataTableName + " WHERE id = " + id.sqlize
-    }
+    "DELETE FROM " + dataTableName + " WHERE " + pkCol + " = " + id.sqlize
 
   // txn log has (serial, row id, action, who did the update)
-  def logInsert(rowId: TestColumnValue) = {
+  def logInsert(rowId: TestColumnValue) =
     "INSERT INTO " + logTableName + " (row, action, who) VALUES (" + rowId.sqlize + ",'insert'," + userSqlized + ")"
-  }
 
-  def logUpdate(rowId: TestColumnValue) = {
+  def logUpdate(rowId: TestColumnValue) =
     "INSERT INTO " + logTableName + " (row, action, who) VALUES (" + rowId.sqlize + ",'update'," + userSqlized + ")"
-  }
 
-  def logDelete(rowId: TestColumnValue) = {
+  def logDelete(rowId: TestColumnValue) =
     "INSERT INTO " + logTableName + " (row, action, who) VALUES (" + rowId.sqlize + ",'delete'," + userSqlized + ")"
-  }
 
-  def lookup(id: TestColumnValue) = null
+  def selectRow(id: TestColumnValue): String =
+    "SELECT id," + columns.mkString(",") + " FROM " + dataTableName + " WHERE " + pkCol + " = " + id.sqlize
+
+  def extract(resultSet: ResultSet, logicalColumn: String) = {
+    datasetContext.fullSchema(logicalColumn) match {
+      case LongColumn =>
+        val l = resultSet.getLong(mapToPhysical(logicalColumn))
+        if(resultSet.wasNull) NullValue
+        else LongValue(l)
+      case StringColumn =>
+        val s = resultSet.getString(mapToPhysical(logicalColumn))
+        if(s == null) NullValue
+        else StringValue(s)
+    }
+  }
 }

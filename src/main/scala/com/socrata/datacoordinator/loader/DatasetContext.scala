@@ -6,15 +6,20 @@ trait DatasetContext[CT, CV] {
 
   def baseName: String
 
-  def schema: Map[String, CT]
+  def userSchema: Map[String, CT]
 
-  def hasUserPrimaryKey: Boolean
   def userPrimaryKeyColumn: Option[String]
+  def hasUserPrimaryKey: Boolean = userPrimaryKeyColumn.isDefined
   def userPrimaryKey(row: Row[CV]): Option[CV]
 
   def systemId(row: Row[CV]): Option[Long]
   def systemIdAsValue(row: Row[CV]): Option[CV]
 
   def systemColumns(row: Row[CV]): Set[String]
+  def systemSchema: Map[String, CT]
   def systemIdColumnName: String
+
+  def fullSchema: Map[String, CT]
+
+  def primaryKeyColumn: String = userPrimaryKeyColumn.getOrElse(systemIdColumnName)
 }

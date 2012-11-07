@@ -1,14 +1,15 @@
 package com.socrata.datacoordinator.loader
 
-// "schema" does not include system columns, but rows do...
-class TestDatasetContext(val baseName: String, val schema: Map[String, TestColumnType], val userPrimaryKeyColumn: Option[String]) extends DatasetContext[TestColumnType, TestColumnValue] {
+class TestDatasetContext(val baseName: String, val userSchema: Map[String, TestColumnType], val userPrimaryKeyColumn: Option[String]) extends DatasetContext[TestColumnType, TestColumnValue] {
   userPrimaryKeyColumn.foreach { pkCol =>
-    require(schema.contains(pkCol), "PK col defined but does not exist in the schema")
+    require(userSchema.contains(pkCol), "PK col defined but does not exist in the schema")
+  }
+
+  userSchema.keys.foreach { col =>
+    require(!col.startsWith(":"), "User schema column starts with :")
   }
 
   def hasCopy = sys.error("hasCopy called")
-
-  def hasUserPrimaryKey = userPrimaryKeyColumn.isDefined
 
   def userPrimaryKey(row: Row[TestColumnValue]) = for {
     userPKColumn <- userPrimaryKeyColumn
@@ -21,6 +22,13 @@ class TestDatasetContext(val baseName: String, val schema: Map[String, TestColum
   def systemIdAsValue(row: Row[TestColumnValue]) = row.get(systemIdColumnName)
 
   def systemColumns(row: Row[TestColumnValue]) = row.keySet.filter(_.startsWith(":"))
+  val systemSchema = TestDatasetContext.systemSchema
+
+  val fullSchema = userSchema ++ systemSchema
 
   def systemIdColumnName = ":id"
+}
+
+object TestDatasetContext {
+  val systemSchema = Map(":id" -> LongColumn)
 }

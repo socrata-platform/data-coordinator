@@ -39,7 +39,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
     }
 
   def makeTables(conn: Connection, ctx: DatasetContext[TestColumnType, TestColumnValue]) {
-    execute(conn, "CREATE TABLE " + ctx.baseName + "_data (id bigint not null primary key," + ctx.schema.map { case (c,t) =>
+    execute(conn, "CREATE TABLE " + ctx.baseName + "_data (id bigint not null primary key," + ctx.userSchema.map { case (c,t) =>
       val sqltype = t match {
         case LongColumn => "BIGINT"
         case StringColumn => "VARCHAR(100)"
@@ -57,7 +57,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
     for(row <- rows) {
       val LongValue(id) = row.getOrElse(ctx.systemIdColumnName, sys.error("No :id"))
       val remainingColumns = row - ctx.systemIdColumnName
-      assert(remainingColumns.keySet.subsetOf(ctx.schema.keySet), "row contains extraneous keys")
+      assert(remainingColumns.keySet.subsetOf(ctx.userSchema.keySet), "row contains extraneous keys")
       val sql = "insert into " + ctx.baseName + "_data (id," + remainingColumns.keys.map("u_" + _).mkString(",") + ") values (" + id + "," + remainingColumns.values.map(_.sqlize).mkString(",") + ")"
       execute(conn, sql)
     }
@@ -74,7 +74,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
       makeTables(conn, dsContext)
       conn.commit()
 
-      val txn = new PostgresTransaction(conn, TestTypeContext, dsContext, dataSqlizer, idProvider(15))
+      val txn = new PostgresTransaction(conn, TestTypeContext, dataSqlizer, idProvider(15))
       txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("a")))
       val report = txn.report
       report.inserted must be (1)
@@ -98,7 +98,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
       makeTables(conn, dsContext)
       conn.commit()
 
-      val txn = new PostgresTransaction(conn, TestTypeContext, dsContext, dataSqlizer, ids)
+      val txn = new PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids)
       txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("a")))
       txn.upsert(Map(":id" -> LongValue(15), "num" -> LongValue(2), "str" -> StringValue("b")))
       val report = txn.report
@@ -127,7 +127,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
       makeTables(conn, dsContext)
       conn.commit()
 
-      val txn = new PostgresTransaction(conn, TestTypeContext, dsContext, dataSqlizer, idProvider(22))
+      val txn = new PostgresTransaction(conn, TestTypeContext, dataSqlizer, idProvider(22))
       txn.upsert(Map(":id" -> NullValue, "num" -> LongValue(1), "str" -> StringValue("a")))
       val report = txn.report
       report.inserted must be (0)
@@ -150,7 +150,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
       makeTables(conn, dsContext)
       conn.commit()
 
-      val txn = new PostgresTransaction(conn, TestTypeContext, dsContext, dataSqlizer, idProvider(6))
+      val txn = new PostgresTransaction(conn, TestTypeContext, dataSqlizer, idProvider(6))
       txn.upsert(Map(":id" -> LongValue(77), "num" -> LongValue(1), "str" -> StringValue("a")))
       val report = txn.report
       report.inserted must be (0)
@@ -176,7 +176,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
       )
       conn.commit()
 
-      val txn = new PostgresTransaction(conn, TestTypeContext, dsContext, dataSqlizer, ids)
+      val txn = new PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids)
       txn.upsert(Map(":id" -> LongValue(1), "num" -> LongValue(44)))
       val report = txn.report
       report.inserted must be (0)
@@ -203,7 +203,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
         makeTables(conn, dsContext)
         conn.commit()
 
-        val txn = new PostgresTransaction(conn, TestTypeContext, dsContext, dataSqlizer, ids)
+        val txn = new PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids)
         txn.tryInsertFirst = insertFirst
         txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("a")))
         val report = txn.report
@@ -232,7 +232,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
         makeTables(conn, dsContext)
         conn.commit()
 
-        val txn = new PostgresTransaction(conn, TestTypeContext, dsContext, dataSqlizer, ids)
+        val txn = new PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids)
         txn.tryInsertFirst = insertFirst
         txn.upsert(Map("num" -> LongValue(1), "str" -> NullValue))
         val report = txn.report
@@ -261,7 +261,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
         makeTables(conn, dsContext)
         conn.commit()
 
-        val txn = new PostgresTransaction(conn, TestTypeContext, dsContext, dataSqlizer, ids)
+        val txn = new PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids)
         txn.tryInsertFirst = insertFirst
         txn.upsert(Map("num" -> LongValue(1)))
         val report = txn.report
@@ -292,7 +292,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
         )
         conn.commit()
 
-        val txn = new PostgresTransaction(conn, TestTypeContext, dsContext, dataSqlizer, ids)
+        val txn = new PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids)
         txn.tryInsertFirst = insertFirst
         txn.upsert(Map("str" -> StringValue("q"), "num" -> LongValue(44)))
         val report = txn.report
@@ -323,7 +323,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
         makeTables(conn, dsContext)
         conn.commit()
 
-        val txn = new PostgresTransaction(conn, TestTypeContext, dsContext, dataSqlizer, ids)
+        val txn = new PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids)
         txn.tryInsertFirst = insertFirst
         txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("q")))
         txn.upsert(Map("num" -> LongValue(2), "str" -> StringValue("q")))
@@ -356,7 +356,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
         makeTables(conn, dsContext)
         conn.commit()
 
-        val txn = new PostgresTransaction(conn, TestTypeContext, dsContext, dataSqlizer, ids)
+        val txn = new PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids)
         txn.tryInsertFirst = insertFirst
         txn.upsert(Map(":id" -> LongValue(15), "num" -> LongValue(1), "str" -> StringValue("q")))
         val report = txn.report
