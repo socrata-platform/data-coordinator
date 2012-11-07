@@ -14,7 +14,7 @@ class PostgresTransaction[CT, CV](connection: Connection, typeContext: TypeConte
   require(!connection.getAutoCommit, "Connection must be in non-auto-commit mode")
 
   val datasetContext = sqlizer.datasetContext
-  private val idObserver = typeContext.makeIdObserver()
+  private val idSet = typeContext.makeIdSet()
 
   var tryInsertFirst = true
 
@@ -51,7 +51,7 @@ class PostgresTransaction[CT, CV](connection: Connection, typeContext: TypeConte
     if(typeContext.isNull(id)) {
       jobResults.put(job, NullPrimaryKey)
     } else {
-      if(idObserver.observed(id)) {
+      if(idSet(id)) {
         // deleting a row we've seen; flush to the DB in case the previous job retries
         partialFlush()
       }
@@ -68,7 +68,7 @@ class PostgresTransaction[CT, CV](connection: Connection, typeContext: TypeConte
             if(typeContext.isNull(userId)) {
               jobResults.put(job, NullPrimaryKey)
             } else {
-              idObserver.observe(userId)
+              idSet.add(userId)
               if(tryInsertFirst) {
                 val systemId = idProvider.allocate()
                 addJob(Insert(job, systemId, row))
@@ -93,12 +93,12 @@ class PostgresTransaction[CT, CV](connection: Connection, typeContext: TypeConte
             if(typeContext.isNull(systemId)) {
               jobResults.put(job, NullPrimaryKey)
             } else {
-              idObserver.observe(systemId)
+              idSet.add(systemId)
               addJob(Update(job, row))
             }
           case None =>
             val systemId = idProvider.allocate()
-            idObserver.observe(typeContext.makeSystemIdValue(systemId))
+            idSet.add(typeContext.makeValueFromSystemId(systemId))
             addJob(Insert(job, systemId, row))
         }
       case Some(error) =>
@@ -140,13 +140,54 @@ class PostgresTransaction[CT, CV](connection: Connection, typeContext: TypeConte
 
     def doFlush(){
       using(connection.createStatement()) { stmt =>
-        idObserver.clear()
+        idSet.clear()
 
         var src = 0
+
+        // ok, first (this is really really annoying...) if this dataset has a user PK, we need
+        // to look up the set of SIDs that can be affected by updates and inserts in this changeset.
+        val updatedIds = if(datasetContext.hasUserPrimaryKey) {
+          val idMap = typeContext.makeIdMap[Long]()
+
+          do {
+            batch(src) match {
+              case Insert(_, sid, row) =>
+                // have to make a note of it because otherwise we might update the same row in this batch, and we'll
+                // need the sid then but this batch we're preparing won't do it.
+                idMap.put(datasetContext.userPrimaryKey(row).getOrElse(sys.error("Had a user primary key before?")), sid)
+              case Update(_, row) =>
+                val id = datasetContext.userPrimaryKey(row).getOrElse(sys.error("Had a user primary key before?"))
+                if(!idMap.contains(id)) idSet.add(id)
+              case Delete(_, id) =>
+                // You might naïvely think "hey, if we delete a row that's been inserted in our same batch,
+                // we flush before enqueuing the delete", so we don't need to check idMap here.  But no!
+                // Consider the task sequence "upsert X; delete X" when we are in try-to-update-first mode
+                // and X does not already exist.  We will try to update, fail, and re-enqueue an insert _in
+                // the next batch_.  So then we add the delete and eventually we end up executin an insert
+                // and a delete for the same row in a single batch.
+                if(!idMap.contains(id)) idSet.add(id)
+            }
+            src += 1
+          } while(src < batchPtr)
+
+          for(sql <- sqlizer.findSystemIds(idSet.iterator)) {
+            using(stmt.executeQuery(sql)) { rs =>
+              for(IdPair(sid, uid) <- sqlizer.extractIdPairs(rs)) {
+                idMap.put(uid, sid)
+              }
+            }
+          }
+          idSet.clear()
+          idMap
+        } else {
+          null // shouldn't use it!
+        }
+
+        src = 0
         do {
           val sql = batch(src) match {
             case Insert(_, sid, row) =>
-              sqlizer.insert(row + (datasetContext.systemIdColumnName -> typeContext.makeSystemIdValue(sid)))
+              sqlizer.insert(row + (datasetContext.systemIdColumnName -> typeContext.makeValueFromSystemId(sid)))
             case Update(_, row) =>
               sqlizer.update(row)
             case Delete(_, id) =>
@@ -176,10 +217,10 @@ class PostgresTransaction[CT, CV](connection: Connection, typeContext: TypeConte
             case up@Update(job, row) =>
               if(up.secondTry) sys.error("Update failed on second go?")
               val rowID = datasetContext.userPrimaryKey(row).getOrElse(sys.error("Had a user ID before?"))
-              if(idObserver.observed(rowID)) {
+              if(idSet(rowID)) {
                 addRetry(up)
               } else {
-                idObserver.observe(rowID)
+                idSet.add(rowID)
                 val sid = idProvider.allocate()
                 addRetry(Insert(job, sid, row))
               }
@@ -194,6 +235,39 @@ class PostgresTransaction[CT, CV](connection: Connection, typeContext: TypeConte
               sys.error("Insert failed when using system identifier!")
           }
 
+        val processSucceeded: Operation[CV] => String =
+          if(datasetContext.hasUserPrimaryKey) {
+            case Insert(job, sid, row) =>
+              inserted += 1
+              val id = datasetContext.userPrimaryKey(row).getOrElse(sys.error("Had a user PK before?"))
+              jobResults.put(job, RowCreated(id))
+              sqlizer.logRowChanged(sid, "insert")
+            case Update(job, row) =>
+              updated += 1
+              val id = datasetContext.userPrimaryKey(row).getOrElse(sys.error("Had a user PK before?"))
+              jobResults.put(job, RowUpdated(id))
+              sqlizer.logRowChanged(updatedIds(id), "update")
+            case Delete(job, id) =>
+              deleted += 1
+              jobResults.put(job, RowDeleted(id))
+              sqlizer.logRowChanged(updatedIds(id), "delete")
+          } else {
+            case Insert(job, sid, row) =>
+              inserted += 1
+              val pk = typeContext.makeValueFromSystemId(sid)
+              jobResults.put(job, RowCreated(pk))
+              sqlizer.logRowChanged(sid, "insert")
+            case Update(job, row) =>
+              updated += 1
+              val sid = datasetContext.systemId(row).getOrElse(sys.error("Had a system PK before?"))
+              jobResults.put(job, RowUpdated(typeContext.makeValueFromSystemId(sid)))
+              sqlizer.logRowChanged(sid, "update")
+            case Delete(job, id) =>
+              deleted += 1
+              jobResults.put(job, RowDeleted(id))
+              sqlizer.logRowChanged(typeContext.makeSystemIdFromValue(id), "delete")
+          }
+
         batchPtr = 0
         src = 0
         var logsToRun = 0
@@ -203,22 +277,7 @@ class PostgresTransaction[CT, CV](connection: Connection, typeContext: TypeConte
 
           val rowsUpdated = result(src)
           if(rowsUpdated == 1) {
-            val logStmt = op match {
-              case Insert(job, sid, row) =>
-                inserted += 1
-                val pk = datasetContext.userPrimaryKey(row).getOrElse(typeContext.makeSystemIdValue(sid))
-                jobResults.put(job, RowCreated(pk))
-                sqlizer.logInsert(pk)
-              case Update(job, row) =>
-                updated += 1
-                val pk = datasetContext.userPrimaryKey(row).orElse(datasetContext.systemIdAsValue(row)).getOrElse(sys.error("Had a system ID before?"))
-                jobResults.put(job, RowUpdated(pk))
-                sqlizer.logUpdate(pk)
-              case Delete(job, id) =>
-                deleted += 1
-                jobResults.put(job, RowDeleted(id))
-                sqlizer.logDelete(id)
-            }
+            val logStmt = processSucceeded(op)
             stmt.addBatch(logStmt)
             logsToRun += 1
           } else {
@@ -235,7 +294,7 @@ class PostgresTransaction[CT, CV](connection: Connection, typeContext: TypeConte
         // Also we can re-clear the observer because everything that is added should NOT
         // cause a flush if a delete call comes along even if it's for the same row
         // (because the pending inserts/updates should all always succeed).
-        idObserver.clear()
+        idSet.clear()
 
         if(logsToRun != 0) {
           val result = stmt.executeBatch()

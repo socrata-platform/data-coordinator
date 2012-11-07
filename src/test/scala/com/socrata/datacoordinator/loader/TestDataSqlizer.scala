@@ -37,14 +37,8 @@ class TestDataSqlizer(user: String, val datasetContext: DatasetContext[TestColum
     "DELETE FROM " + dataTableName + " WHERE " + pkCol + " = " + id.sqlize
 
   // txn log has (serial, row id, action, who did the update)
-  def logInsert(rowId: TestColumnValue) =
-    "INSERT INTO " + logTableName + " (row, action, who) VALUES (" + rowId.sqlize + ",'insert'," + userSqlized + ")"
-
-  def logUpdate(rowId: TestColumnValue) =
-    "INSERT INTO " + logTableName + " (row, action, who) VALUES (" + rowId.sqlize + ",'update'," + userSqlized + ")"
-
-  def logDelete(rowId: TestColumnValue) =
-    "INSERT INTO " + logTableName + " (row, action, who) VALUES (" + rowId.sqlize + ",'delete'," + userSqlized + ")"
+  def logRowChanged(sid: Long, action: String) =
+    "INSERT INTO " + logTableName + " (row, action, who) VALUES (" + sid + "," + StringValue(action).sqlize + "," + userSqlized + ")"
 
   def selectRow(id: TestColumnValue): String =
     "SELECT id," + columns.mkString(",") + " FROM " + dataTableName + " WHERE " + pkCol + " = " + id.sqlize
@@ -60,5 +54,41 @@ class TestDataSqlizer(user: String, val datasetContext: DatasetContext[TestColum
         if(s == null) NullValue
         else StringValue(s)
     }
+  }
+
+  // TODO: it is possible that grouping this differently will be more performant in Postgres
+  // (e.g., having too many items in an IN clause might cause a full-table scan) -- we need
+  // to test this and if necessary find a good heuristic.
+  def findSystemIds(ids: Iterator[TestColumnValue]): Iterator[String] = {
+    require(datasetContext.hasUserPrimaryKey, "findSystemIds called without a user primary key")
+    if(ids.isEmpty) {
+      Iterator.empty
+    } else {
+      val sql = ids.map(_.sqlize).mkString("SELECT id AS sid, " + pkCol + " AS uid FROM " + dataTableName + " WHERE " + pkCol + " IN (", ",", ")")
+      Iterator.single(sql)
+    }
+  }
+
+  def extractIdPairs(rs: ResultSet) = {
+    val typ = datasetContext.userSchema(datasetContext.userPrimaryKeyColumn.getOrElse(sys.error("extractIdPairs called without a user primary key")))
+    def loop(): Stream[IdPair[TestColumnValue]] = {
+      if(rs.next()) {
+        val sid = rs.getLong("sid")
+        val uid = typ match {
+          case LongColumn =>
+            val l = rs.getLong("uid")
+            if(rs.wasNull) NullValue
+            else LongValue(l)
+          case StringColumn =>
+            val s = rs.getString("uid")
+            if(s == null) NullValue
+            else StringValue(s)
+        }
+        IdPair(sid, uid) #:: loop()
+      } else {
+        Stream.empty
+      }
+    }
+    loop().iterator
   }
 }

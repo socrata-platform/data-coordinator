@@ -16,9 +16,7 @@ trait DataSqlizer[CT, CV] extends Sqlizer {
   def delete(id: CV): String
 
   // txn log has (serial, row id, who did the update)
-  def logInsert(id: CV): String
-  def logUpdate(id: CV): String
-  def logDelete(id: CV): String
+  def logRowChanged(id: Long, action: String): String
 
   def selectRow(id: CV): String
 
@@ -28,7 +26,15 @@ trait DataSqlizer[CT, CV] extends Sqlizer {
     datasetContext.fullSchema.keys.foldLeft(Map.empty[String, CV]) { (results, col) =>
       results + (col -> extract(resultSet, col))
     }
+
+  // This may batch the "ids" into multiple queries.  The queries
+  // returned will contain two columns: "sid" and "uid".  THIS MUST
+  // ONLY BE CALLED IF THIS DATASET HAS A USER PK COLUMN!
+  def findSystemIds(ids: Iterator[CV]): Iterator[String]
+  def extractIdPairs(rs: ResultSet): Iterator[IdPair[CV]]
 }
+
+case class IdPair[+CV](systemId: Long, userId: CV)
 
 trait SchemaSqlizer[CT, CV] extends Sqlizer {
   // all these include log-generation statements in their output

@@ -49,7 +49,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
     ctx.userPrimaryKeyColumn.foreach { pkCol =>
       execute(conn, "CREATE INDEX " + ctx.baseName + "_data_userid ON " + ctx.baseName + "_data(u_" + pkCol + ")")
     }
-    execute(conn, "CREATE TABLE " + ctx.baseName + "_log (id serial not null primary key, row varchar(100) not null, action varchar(10) not null, who varchar(100) null)")
+    execute(conn, "CREATE TABLE " + ctx.baseName + "_log (id serial not null primary key, row bigint not null, action varchar(10) not null, who varchar(100) null)")
   }
 
   def preload(conn: Connection, ctx: DatasetContext[TestColumnType, TestColumnValue])(rows: Map[String, TestColumnValue]*) {
@@ -85,7 +85,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
       txn.commit()
 
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(Map("ID" -> 15L, "NUM" -> 1L, "STR" -> "a")))
-      query(conn, "SELECT id as ID, row as ROW, action as ACTION, who as WHO from test_log") must equal (Seq(Map("ID" -> 1, "ROW" -> "15", "ACTION" -> "insert", "WHO" -> "hello")))
+      query(conn, "SELECT id as ID, row as ROW, action as ACTION, who as WHO from test_log") must equal (Seq(Map("ID" -> 1, "ROW" -> 15L, "ACTION" -> "insert", "WHO" -> "hello")))
     }
   }
 
@@ -113,8 +113,8 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
 
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(Map("ID" -> 15L, "NUM" -> 2L, "STR" -> "b")))
       query(conn, "SELECT id as ID, row as ROW, action as ACTION, who as WHO from test_log") must equal (Seq(
-        Map("ID" -> 1, "ROW" -> "15", "ACTION" -> "insert", "WHO" -> "hello"),
-        Map("ID" -> 2, "ROW" -> "15", "ACTION" -> "update", "WHO" -> "hello")
+        Map("ID" -> 1, "ROW" -> 15L, "ACTION" -> "insert", "WHO" -> "hello"),
+        Map("ID" -> 2, "ROW" -> 15L, "ACTION" -> "update", "WHO" -> "hello")
       ))
     }
   }
@@ -189,7 +189,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
       ids.allocate() must be (13)
 
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(Map("ID" -> 1L, "NUM" -> 44L, "STR" -> "q")))
-      query(conn, "SELECT id as ID, row as ROW, action as ACTION, who as WHO from test_log") must equal (Seq(Map("ID" -> 1, "ROW" -> "1", "ACTION" -> "update", "WHO" -> "hello")))
+      query(conn, "SELECT id as ID, row as ROW, action as ACTION, who as WHO from test_log") must equal (Seq(Map("ID" -> 1, "ROW" -> 1L, "ACTION" -> "update", "WHO" -> "hello")))
     }
   }
 
@@ -217,7 +217,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
         ids.allocate() must equal (16)
 
         query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(Map("ID" -> 15L, "NUM" -> 1L, "STR" -> "a")))
-        query(conn, "SELECT id as ID, row as ROW, action as ACTION, who as WHO from test_log") must equal (Seq(Map("ID" -> 1, "ROW" -> "a", "ACTION" -> "insert", "WHO" -> "hello")))
+        query(conn, "SELECT id as ID, row as ROW, action as ACTION, who as WHO from test_log") must equal (Seq(Map("ID" -> 1, "ROW" -> 15L, "ACTION" -> "insert", "WHO" -> "hello")))
       }
     }
   }
@@ -307,7 +307,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
 
         query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(Map("ID" -> 1L, "NUM" -> 44L, "STR" -> "q")))
         query(conn, "SELECT id as ID, row as ROW, action as ACTION, who as WHO from test_log") must equal (Seq(
-          Map("ID" -> 1, "ROW" -> "q", "ACTION" -> "update", "WHO" -> "hello")
+          Map("ID" -> 1, "ROW" -> 1L, "ACTION" -> "update", "WHO" -> "hello")
         ))
       }
     }
@@ -339,8 +339,8 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
 
         query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(Map("ID" -> 15L, "NUM" -> 2L, "STR" -> "q")))
         query(conn, "SELECT id as ID, row as ROW, action as ACTION, who as WHO from test_log") must equal (Seq(
-          Map("ID" -> 1, "ROW" -> "q", "ACTION" -> "insert", "WHO" -> "hello"),
-          Map("ID" -> 2, "ROW" -> "q", "ACTION" -> "update", "WHO" -> "hello")
+          Map("ID" -> 1, "ROW" -> 15L, "ACTION" -> "insert", "WHO" -> "hello"),
+          Map("ID" -> 2, "ROW" -> 15L, "ACTION" -> "update", "WHO" -> "hello")
         ))
       }
     }
@@ -371,6 +371,39 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
 
         query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq.empty)
         query(conn, "SELECT id as ID, row as ROW, action as ACTION, who as WHO from test_log") must equal (Seq.empty)
+      }
+    }
+  }
+
+  test("deleting a row just inserted with a user PK succeeds") {
+    for(insertFirst <- List(true, false)) {
+      val ids = idProvider(15)
+      val dsContext = new TestDatasetContext(standardTableName, standardSchema, Some("str"))
+      val dataSqlizer = new TestDataSqlizer("hello", dsContext)
+
+      withDB() { conn =>
+        makeTables(conn, dsContext)
+        conn.commit()
+
+        val txn = new PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids)
+        txn.tryInsertFirst = insertFirst
+        txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("q")))
+        txn.delete(StringValue("q"))
+        val report = txn.report
+        report.inserted must be (1)
+        report.updated must be (0)
+        report.deleted must be (1)
+        report.errors must be (0)
+        report.details must equal (Map(1 -> RowCreated(StringValue("q")), 2 -> RowDeleted(StringValue("q"))))
+        txn.commit()
+
+        ids.allocate() must be (16)
+
+        query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq.empty)
+        query(conn, "SELECT id as ID, row as ROW, action as ACTION, who as WHO from test_log") must equal (Seq(
+          Map("ID" -> 1, "ROW" -> 15L, "ACTION" -> "insert", "WHO" -> "hello"),
+          Map("ID" -> 2, "ROW" -> 15L, "ACTION" -> "delete", "WHO" -> "hello")
+        ))
       }
     }
   }
