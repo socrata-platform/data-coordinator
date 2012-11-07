@@ -395,4 +395,35 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
       }
     }
   }
+
+  test("deleting a row just inserted with a system PK succeeds") {
+    // This isn't a useful thing to be able to do, since in the real system
+    // IDs won't be user-predictable, but it's a valuable sanity check anyway.
+    val ids = idProvider(15)
+    val dsContext = new TestDatasetContext(standardTableName, standardSchema, None)
+    val dataSqlizer = new TestDataSqlizer("hello", dsContext)
+
+    withDB() { conn =>
+      makeTables(conn, dsContext)
+      conn.commit()
+
+      val txn = new PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids)
+      txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("q")))
+      txn.delete(LongValue(15))
+      val report = txn.report
+      report.inserted must equal (Map(0 -> LongValue(15)))
+      report.updated must be ('empty)
+      report.deleted must equal (Map(1 -> LongValue(15)))
+      report.errors must be ('empty)
+      txn.commit()
+
+      ids.allocate() must be (16)
+
+      query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq.empty)
+      query(conn, "SELECT id as ID, row as ROW, action as ACTION, who as WHO from test_log") must equal (Seq(
+        Map("ID" -> 1, "ROW" -> 15L, "ACTION" -> "insert", "WHO" -> "hello"),
+        Map("ID" -> 2, "ROW" -> 15L, "ACTION" -> "delete", "WHO" -> "hello")
+      ))
+    }
+  }
 }
