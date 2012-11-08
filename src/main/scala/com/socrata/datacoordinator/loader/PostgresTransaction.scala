@@ -24,10 +24,10 @@ class PostgresTransaction[CT, CV](connection: Connection, typeContext: TypeConte
   private var batchPtr = 0
 
   private var totalRows = 0
-  private var inserted = new java.util.HashMap[Int, CV]
-  private var updated = new java.util.HashMap[Int, CV]
-  private var deleted = new java.util.HashMap[Int, CV]
-  private var errors = new java.util.HashMap[Int, Failure[CV]]
+  private val inserted = new java.util.HashMap[Int, CV]
+  private val updated = new java.util.HashMap[Int, CV]
+  private val deleted = new java.util.HashMap[Int, CV]
+  private val errors = new java.util.HashMap[Int, Failure[CV]]
 
   using(connection.createStatement()) { stmt =>
     stmt.execute(sqlizer.lockTableAgainstWrites())
