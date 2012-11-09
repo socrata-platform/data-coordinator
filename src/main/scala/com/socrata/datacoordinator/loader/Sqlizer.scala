@@ -1,6 +1,6 @@
 package com.socrata.datacoordinator.loader
 
-import java.sql.ResultSet
+import java.sql.{PreparedStatement, ResultSet}
 
 trait Sqlizer {
   def logTransactionComplete() // whole-database log has : (dataset id, last updated at, new txn log serial id)
@@ -11,12 +11,22 @@ trait Sqlizer {
 trait DataSqlizer[CT, CV] extends Sqlizer {
   def datasetContext: DatasetContext[CT, CV]
 
-  def insert(row: Row[CV]): String
-  def update(row: Row[CV]): String
-  def delete(id: CV): String
+  def prepareSystemIdDeleteStatement: String
+  def prepareSystemIdInsertStatement: String
+
+  def prepareSystemIdDelete(stmt: PreparedStatement, sid: Long)
+  def prepareSystemIdInsert(stmt: PreparedStatement, sid: Long, row: Row[CV])
+  def sqlizeSystemIdUpdate(sid: Long, row: Row[CV]): String
+
+  def prepareUserIdDeleteStatement: String
+  def prepareUserIdInsertStatement: String
+
+  def prepareUserIdDelete(stmt: PreparedStatement, id: CV)
+  def prepareUserIdInsert(stmt: PreparedStatement, sid: Long, row: Row[CV])
+  def sqlizeUserIdUpdate(row: Row[CV]): String
 
   // txn log has (serial, row id, who did the update)
-  def logRowChanged(id: Long, action: String): String
+  def prepareLogRowChanged: String
 
   def selectRow(id: CV): String
 

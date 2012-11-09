@@ -27,6 +27,8 @@ class TestDatasetContext(val baseName: String, val userSchema: Map[String, TestC
   val fullSchema = userSchema ++ systemSchema
 
   def systemIdColumnName = ":id"
+
+  def mergeRows(a: Row[TestColumnValue], b: Row[TestColumnValue]) = a ++ b
 }
 
 object TestDatasetContext {

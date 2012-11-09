@@ -49,7 +49,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
     ctx.userPrimaryKeyColumn.foreach { pkCol =>
       execute(conn, "CREATE INDEX " + ctx.baseName + "_data_userid ON " + ctx.baseName + "_data(u_" + pkCol + ")")
     }
-    execute(conn, "CREATE TABLE " + ctx.baseName + "_log (id serial not null primary key, row bigint not null, action varchar(10) not null, who varchar(100) null)")
+    execute(conn, "CREATE TABLE " + ctx.baseName + "_log (id serial not null primary key, row bigint not null, who varchar(100) null)")
   }
 
   def preload(conn: Connection, ctx: DatasetContext[TestColumnType, TestColumnValue])(rows: Map[String, TestColumnValue]*) {
@@ -74,17 +74,18 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
       makeTables(conn, dsContext)
       conn.commit()
 
-      val txn = new PostgresTransaction(conn, TestTypeContext, dataSqlizer, idProvider(15))
+      val txn = PostgresTransaction(conn, TestTypeContext, dataSqlizer, idProvider(15))
       txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("a")))
       val report = txn.report
       report.inserted must equal (Map(0 -> LongValue(15)))
       report.updated must be ('empty)
       report.deleted must be ('empty)
       report.errors must be ('empty)
+      report.elided must be ('empty)
       txn.commit()
 
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(Map("ID" -> 15L, "NUM" -> 1L, "STR" -> "a")))
-      query(conn, "SELECT id as ID, row as ROW, action as ACTION, who as WHO from test_log") must equal (Seq(Map("ID" -> 1, "ROW" -> 15L, "ACTION" -> "insert", "WHO" -> "hello")))
+      query(conn, "SELECT id as ID, row as ROW, who as WHO from test_log") must equal (Seq(Map("ID" -> 1, "ROW" -> 15L, "WHO" -> "hello")))
     }
   }
 
@@ -97,22 +98,22 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
       makeTables(conn, dsContext)
       conn.commit()
 
-      val txn = new PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids)
+      val txn = PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids)
       txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("a")))
       txn.upsert(Map(":id" -> LongValue(15), "num" -> LongValue(2), "str" -> StringValue("b")))
       val report = txn.report
       report.inserted must equal (Map(0 -> LongValue(15)))
-      report.updated must equal (Map(1 -> LongValue(15)))
+      report.updated must be ('empty)
       report.deleted must be ('empty)
       report.errors must be ('empty)
+      report.elided must equal (Map(1 -> (LongValue(15), 0)))
       txn.commit()
 
       ids.allocate() must be (16)
 
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(Map("ID" -> 15L, "NUM" -> 2L, "STR" -> "b")))
-      query(conn, "SELECT id as ID, row as ROW, action as ACTION, who as WHO from test_log") must equal (Seq(
-        Map("ID" -> 1, "ROW" -> 15L, "ACTION" -> "insert", "WHO" -> "hello"),
-        Map("ID" -> 2, "ROW" -> 15L, "ACTION" -> "update", "WHO" -> "hello")
+      query(conn, "SELECT id as ID, row as ROW, who as WHO from test_log") must equal (Seq(
+        Map("ID" -> 1, "ROW" -> 15L, "WHO" -> "hello")
       ))
     }
   }
@@ -125,17 +126,18 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
       makeTables(conn, dsContext)
       conn.commit()
 
-      val txn = new PostgresTransaction(conn, TestTypeContext, dataSqlizer, idProvider(22))
+      val txn = PostgresTransaction(conn, TestTypeContext, dataSqlizer, idProvider(22))
       txn.upsert(Map(":id" -> NullValue, "num" -> LongValue(1), "str" -> StringValue("a")))
       val report = txn.report
       report.inserted must be ('empty)
       report.updated must be ('empty)
       report.deleted must be ('empty)
       report.errors must equal (Map(0 -> NullPrimaryKey))
+      report.elided must be ('empty)
       txn.commit()
 
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq.empty)
-      query(conn, "SELECT id as ID, row as ROW, action as ACTION, who as WHO from test_log") must equal (Seq.empty)
+      query(conn, "SELECT id as ID, row as ROW, who as WHO from test_log") must equal (Seq.empty)
     }
   }
 
@@ -147,17 +149,18 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
       makeTables(conn, dsContext)
       conn.commit()
 
-      val txn = new PostgresTransaction(conn, TestTypeContext, dataSqlizer, idProvider(6))
+      val txn = PostgresTransaction(conn, TestTypeContext, dataSqlizer, idProvider(6))
       txn.upsert(Map(":id" -> LongValue(77), "num" -> LongValue(1), "str" -> StringValue("a")))
       val report = txn.report
       report.inserted must be ('empty)
       report.updated must be ('empty)
       report.deleted must be ('empty)
       report.errors must equal (Map(0 -> NoSuchRowToUpdate(LongValue(77))))
+      report.elided must be ('empty)
       txn.commit()
 
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq.empty)
-      query(conn, "SELECT id as ID, row as ROW, action as ACTION, who as WHO from test_log") must equal (Seq.empty)
+      query(conn, "SELECT id as ID, row as ROW, who as WHO from test_log") must equal (Seq.empty)
     }
   }
 
@@ -168,25 +171,28 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
 
     withDB() { conn =>
       preload(conn, dsContext)(
-        Map(":id" -> LongValue(1), "str" -> StringValue("q"), "num" -> LongValue(2))
+        Map(":id" -> LongValue(7), "str" -> StringValue("q"), "num" -> LongValue(2))
       )
       conn.commit()
 
-      val txn = new PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids)
-      txn.upsert(Map(":id" -> LongValue(1), "num" -> LongValue(44)))
+      val txn = PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids)
+      txn.upsert(Map(":id" -> LongValue(7), "num" -> LongValue(44)))
       val report = txn.report
       report.inserted must be ('empty)
-      report.updated must equal (Map(0 -> LongValue(1)))
+      report.updated must equal (Map(0 -> LongValue(7)))
       report.deleted must be ('empty)
       report.errors must be ('empty)
+      report.elided must be ('empty)
       txn.commit()
 
       ids.allocate() must be (13)
 
-      query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(Map("ID" -> 1L, "NUM" -> 44L, "STR" -> "q")))
-      query(conn, "SELECT id as ID, row as ROW, action as ACTION, who as WHO from test_log") must equal (Seq(Map("ID" -> 1, "ROW" -> 1L, "ACTION" -> "update", "WHO" -> "hello")))
+      query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(Map("ID" -> 7L, "NUM" -> 44L, "STR" -> "q")))
+      query(conn, "SELECT id as ID, row as ROW, who as WHO from test_log") must equal (Seq(Map("ID" -> 1, "ROW" -> 7L, "WHO" -> "hello")))
     }
   }
+
+  def userCast[A,B](t: PostgresTransaction[A,B]) = t.asInstanceOf[UserPKPostgresTransaction[A,B]]
 
   test("adding a new row with user PK succeeds") {
     for(insertFirst <- List(true, false)) {
@@ -198,7 +204,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
         makeTables(conn, dsContext)
         conn.commit()
 
-        val txn = new PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids)
+        val txn = userCast(PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids))
         txn.tryInsertFirst = insertFirst
         txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("a")))
         val report = txn.report
@@ -206,12 +212,13 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
         report.updated must be ('empty)
         report.deleted must be ('empty)
         report.errors must be ('empty)
+        report.elided must be ('empty)
         txn.commit()
 
         ids.allocate() must equal (16)
 
         query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(Map("ID" -> 15L, "NUM" -> 1L, "STR" -> "a")))
-        query(conn, "SELECT id as ID, row as ROW, action as ACTION, who as WHO from test_log") must equal (Seq(Map("ID" -> 1, "ROW" -> 15L, "ACTION" -> "insert", "WHO" -> "hello")))
+        query(conn, "SELECT id as ID, row as ROW, who as WHO from test_log") must equal (Seq(Map("ID" -> 1, "ROW" -> 15L, "WHO" -> "hello")))
       }
     }
   }
@@ -226,7 +233,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
         makeTables(conn, dsContext)
         conn.commit()
 
-        val txn = new PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids)
+        val txn = userCast(PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids))
         txn.tryInsertFirst = insertFirst
         txn.upsert(Map("num" -> LongValue(1), "str" -> NullValue))
         val report = txn.report
@@ -234,12 +241,13 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
         report.updated must be ('empty)
         report.deleted must be ('empty)
         report.errors must equal (Map(0 -> NullPrimaryKey))
+        report.elided must be ('empty)
         txn.commit()
 
         ids.allocate() must equal (22)
 
         query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq.empty)
-        query(conn, "SELECT id as ID, row as ROW, action as ACTION, who as WHO from test_log") must equal (Seq.empty)
+        query(conn, "SELECT id as ID, row as ROW, who as WHO from test_log") must equal (Seq.empty)
       }
     }
   }
@@ -254,7 +262,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
         makeTables(conn, dsContext)
         conn.commit()
 
-        val txn = new PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids)
+        val txn = userCast(PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids))
         txn.tryInsertFirst = insertFirst
         txn.upsert(Map("num" -> LongValue(1)))
         val report = txn.report
@@ -262,12 +270,13 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
         report.updated must be ('empty)
         report.deleted must be ('empty)
         report.errors must be (Map(0 -> NoPrimaryKey))
+        report.elided must be ('empty)
         txn.commit()
 
         ids.allocate() must equal (22)
 
         query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq.empty)
-        query(conn, "SELECT id as ID, row as ROW, action as ACTION, who as WHO from test_log") must equal (Seq.empty)
+        query(conn, "SELECT id as ID, row as ROW, who as WHO from test_log") must equal (Seq.empty)
       }
     }
   }
@@ -280,11 +289,11 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
 
       withDB() { conn =>
         preload(conn, dsContext)(
-          Map(":id" -> LongValue(1), "str" -> StringValue("q"), "num" -> LongValue(2))
+          Map(":id" -> LongValue(7), "str" -> StringValue("q"), "num" -> LongValue(2))
         )
         conn.commit()
 
-        val txn = new PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids)
+        val txn = userCast(PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids))
         txn.tryInsertFirst = insertFirst
         txn.upsert(Map("str" -> StringValue("q"), "num" -> LongValue(44)))
         val report = txn.report
@@ -292,13 +301,14 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
         report.updated must equal (Map(0 -> StringValue("q")))
         report.deleted must be ('empty)
         report.errors must be ('empty)
+        report.elided must be ('empty)
         txn.commit()
 
         ids.allocate() must be (13)
 
-        query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(Map("ID" -> 1L, "NUM" -> 44L, "STR" -> "q")))
-        query(conn, "SELECT id as ID, row as ROW, action as ACTION, who as WHO from test_log") must equal (Seq(
-          Map("ID" -> 1, "ROW" -> 1L, "ACTION" -> "update", "WHO" -> "hello")
+        query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(Map("ID" -> 7L, "NUM" -> 44L, "STR" -> "q")))
+        query(conn, "SELECT id as ID, row as ROW, who as WHO from test_log") must equal (Seq(
+          Map("ID" -> 1, "ROW" -> 7L, "WHO" -> "hello")
         ))
       }
     }
@@ -314,23 +324,23 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
         makeTables(conn, dsContext)
         conn.commit()
 
-        val txn = new PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids)
+        val txn = userCast(PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids))
         txn.tryInsertFirst = insertFirst
         txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("q")))
         txn.upsert(Map("num" -> LongValue(2), "str" -> StringValue("q")))
         val report = txn.report
         report.inserted must equal (Map(0 -> StringValue("q")))
-        report.updated must equal (Map(1 -> StringValue("q")))
+        report.updated must be ('empty)
         report.deleted must be ('empty)
         report.errors must be ('empty)
+        report.elided must equal (Map(1 -> (StringValue("q"), 0)))
         txn.commit()
 
         ids.allocate() must be (16)
 
         query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(Map("ID" -> 15L, "NUM" -> 2L, "STR" -> "q")))
-        query(conn, "SELECT id as ID, row as ROW, action as ACTION, who as WHO from test_log") must equal (Seq(
-          Map("ID" -> 1, "ROW" -> 15L, "ACTION" -> "insert", "WHO" -> "hello"),
-          Map("ID" -> 2, "ROW" -> 15L, "ACTION" -> "update", "WHO" -> "hello")
+        query(conn, "SELECT id as ID, row as ROW, who as WHO from test_log") must equal (Seq(
+          Map("ID" -> 1, "ROW" -> 15L, "WHO" -> "hello")
         ))
       }
     }
@@ -346,7 +356,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
         makeTables(conn, dsContext)
         conn.commit()
 
-        val txn = new PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids)
+        val txn = userCast(PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids))
         txn.tryInsertFirst = insertFirst
         txn.upsert(Map(":id" -> LongValue(15), "num" -> LongValue(1), "str" -> StringValue("q")))
         val report = txn.report
@@ -354,12 +364,13 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
         report.updated must be ('empty)
         report.deleted must be ('empty)
         report.errors must equal (Map(0 -> SystemColumnsSet(Set(":id"))))
+        report.elided must be ('empty)
         txn.commit()
 
         ids.allocate() must be (15)
 
         query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq.empty)
-        query(conn, "SELECT id as ID, row as ROW, action as ACTION, who as WHO from test_log") must equal (Seq.empty)
+        query(conn, "SELECT id as ID, row as ROW, who as WHO from test_log") must equal (Seq.empty)
       }
     }
   }
@@ -374,24 +385,22 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
         makeTables(conn, dsContext)
         conn.commit()
 
-        val txn = new PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids)
+        val txn = userCast(PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids))
         txn.tryInsertFirst = insertFirst
         txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("q")))
         txn.delete(StringValue("q"))
         val report = txn.report
-        report.inserted must equal (Map(0 -> StringValue("q")))
+        report.inserted must be ('empty)
         report.updated must be ('empty)
         report.deleted must equal (Map(1 -> StringValue("q")))
+        report.elided must equal (Map(0 -> (StringValue("q"), 1)))
         report.errors must be ('empty)
         txn.commit()
 
-        ids.allocate() must be (16)
+        ids.allocate() must be (15) // and it never even allocated a sid for it
 
         query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq.empty)
-        query(conn, "SELECT id as ID, row as ROW, action as ACTION, who as WHO from test_log") must equal (Seq(
-          Map("ID" -> 1, "ROW" -> 15L, "ACTION" -> "insert", "WHO" -> "hello"),
-          Map("ID" -> 2, "ROW" -> 15L, "ACTION" -> "delete", "WHO" -> "hello")
-        ))
+        query(conn, "SELECT id as ID, row as ROW, who as WHO from test_log") must equal (Seq.empty)
       }
     }
   }
@@ -407,23 +416,21 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
       makeTables(conn, dsContext)
       conn.commit()
 
-      val txn = new PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids)
+      val txn = PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids)
       txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("q")))
       txn.delete(LongValue(15))
       val report = txn.report
-      report.inserted must equal (Map(0 -> LongValue(15)))
+      report.inserted must be ('empty)
       report.updated must be ('empty)
       report.deleted must equal (Map(1 -> LongValue(15)))
       report.errors must be ('empty)
+      report.elided must equal (Map(0 -> (LongValue(15), 1)))
       txn.commit()
 
-      ids.allocate() must be (16)
+      ids.allocate() must be (15)
 
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq.empty)
-      query(conn, "SELECT id as ID, row as ROW, action as ACTION, who as WHO from test_log") must equal (Seq(
-        Map("ID" -> 1, "ROW" -> 15L, "ACTION" -> "insert", "WHO" -> "hello"),
-        Map("ID" -> 2, "ROW" -> 15L, "ACTION" -> "delete", "WHO" -> "hello")
-      ))
+      query(conn, "SELECT id as ID, row as ROW, who as WHO from test_log") must equal (Seq.empty)
     }
   }
 }

@@ -22,4 +22,6 @@ trait DatasetContext[CT, CV] {
   def fullSchema: Map[String, CT]
 
   def primaryKeyColumn: String = userPrimaryKeyColumn.getOrElse(systemIdColumnName)
+
+  def mergeRows(base: Row[CV], overlay: Row[CV]): Row[CV]
 }

@@ -29,6 +29,9 @@ trait Report[CV] {
   /** Map from job number to the identifier of the row that was deleted. */
   def deleted: sc.Map[Int, CV]
 
+  /** Map from job number to the identifier of the row that was merged with another job, and the job it was merged with. */
+  def elided: sc.Map[Int, (CV, Int)]
+
   /** Map from job number to a value explaining the cause of the problem.. */
   def errors: sc.Map[Int, Failure[CV]]
 }

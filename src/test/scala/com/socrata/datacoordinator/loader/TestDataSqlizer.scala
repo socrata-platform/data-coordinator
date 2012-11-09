@@ -1,6 +1,6 @@
 package com.socrata.datacoordinator.loader
 
-import java.sql.ResultSet
+import java.sql.{PreparedStatement, ResultSet}
 
 class TestDataSqlizer(user: String, val datasetContext: DatasetContext[TestColumnType, TestColumnValue]) extends TestSqlizer with DataSqlizer[TestColumnType, TestColumnValue] {
   val dataTableName = datasetContext.baseName + "_data"
@@ -25,20 +25,88 @@ class TestDataSqlizer(user: String, val datasetContext: DatasetContext[TestColum
   val insertMidfix = " WHERE NOT EXISTS (SELECT 1 FROM " + dataTableName + " WHERE " + pkCol + " = "
   val insertSuffix = ")"
 
-  def insert(row: Row[TestColumnValue]) = {
-    val pfx = keys.map(row.getOrElse(_, NullValue)).map(_.sqlize).mkString(insertPrefix, ",", insertMidfix)
-    pfx + row(datasetContext.primaryKeyColumn).sqlize + insertSuffix
+  val prepareUserIdInsertStatement =
+    "INSERT INTO " + dataTableName + " (" + columns.mkString(",") + ") SELECT " + columns.map(_ => "?").mkString(",") + " WHERE NOT EXISTS (SELECT 1 FROM " + dataTableName + " WHERE " + pkCol + " = ?)"
+
+  def prepareSystemIdInsertStatement = prepareUserIdInsertStatement
+
+  val prepareUserIdDeleteStatement =
+    "DELETE FROM " + dataTableName + " WHERE " + pkCol + " = ?"
+
+  def prepareSystemIdDeleteStatement = prepareUserIdDeleteStatement
+
+  def prepareSystemIdDelete(stmt: PreparedStatement, id: Long) {
+    stmt.setLong(1, id)
+    stmt.addBatch()
   }
 
-  def update(row: Row[TestColumnValue]) =
+  def prepareUserIdDelete(stmt: PreparedStatement, id: TestColumnValue) {
+    datasetContext.userPrimaryKeyColumn match {
+      case Some(c) =>
+        add(stmt, 1, c, id)
+      case None =>
+        add(stmt, 1, datasetContext.systemIdColumnName, id)
+    }
+
+    stmt.addBatch()
+  }
+
+  def add(stmt: PreparedStatement, i: Int, k: String, v: TestColumnValue) {
+    datasetContext.fullSchema(k) match {
+      case StringColumn =>
+        v match {
+          case StringValue(s) => stmt.setString(i, s)
+          case NullValue => stmt.setNull(i, java.sql.Types.VARCHAR)
+          case LongValue(_) => sys.error("Tried to store a long in a text column?")
+        }
+      case LongColumn =>
+        v match {
+          case LongValue(l) => stmt.setLong(i, l)
+          case NullValue => stmt.setNull(i, java.sql.Types.NUMERIC)
+          case StringValue(s) => sys.error("Tried to store a text in a long column?")
+        }
+    }
+  }
+
+  def prepareSystemIdInsert(stmt: PreparedStatement, sid: Long, row: Row[TestColumnValue]) {
+    val trueRow = row + (datasetContext.systemIdColumnName -> LongValue(sid))
+    var i = 1
+
+    for(k <- keys) {
+      add(stmt, i, k, trueRow.getOrElse(k, NullValue))
+      i += 1
+    }
+    stmt.setLong(i, sid)
+
+    stmt.addBatch()
+  }
+
+  def prepareUserIdInsert(stmt: PreparedStatement, sid: Long, row: Row[TestColumnValue]) {
+    val trueRow = row + (datasetContext.systemIdColumnName -> LongValue(sid))
+    var i = 1
+
+    for(k <- keys) {
+      add(stmt, i, k, trueRow.getOrElse(k, NullValue))
+      i += 1
+    }
+    datasetContext.userPrimaryKeyColumn match {
+      case Some(c) =>
+        add(stmt, i, c, trueRow.getOrElse(c, NullValue))
+      case None =>
+        stmt.setLong(i, sid)
+    }
+
+    stmt.addBatch()
+  }
+
+  def sqlizeSystemIdUpdate(sid: Long, row: Row[TestColumnValue]) =
+    sqlizeUserIdUpdate(row)
+
+  def sqlizeUserIdUpdate(row: Row[TestColumnValue]) =
     "UPDATE " + dataTableName + " SET " + (row - pkCol).map { case (col, v) => mapToPhysical(col) + " = " + v.sqlize }.mkString(",") + " WHERE " + pkCol + " = " + row(datasetContext.primaryKeyColumn).sqlize
 
-  def delete(id: TestColumnValue) =
-    "DELETE FROM " + dataTableName + " WHERE " + pkCol + " = " + id.sqlize
-
-  // txn log has (serial, row id, action, who did the update)
-  def logRowChanged(sid: Long, action: String) =
-    "INSERT INTO " + logTableName + " (row, action, who) VALUES (" + sid + "," + StringValue(action).sqlize + "," + userSqlized + ")"
+  def prepareLogRowChanged =
+    "INSERT INTO " + logTableName + " (row, who) VALUES (?," + userSqlized + ")"
 
   def selectRow(id: TestColumnValue): String =
     "SELECT id," + columns.mkString(",") + " FROM " + dataTableName + " WHERE " + pkCol + " = " + id.sqlize

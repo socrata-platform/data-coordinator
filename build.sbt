@@ -11,5 +11,6 @@ libraryDependencies ++= Seq(
   "com.socrata" %% "socrata-id" % "2.0.0",
   "com.rojoma" %% "rojoma-json" % "2.0.0",
   "com.rojoma" %% "simple-arm" % "1.1.10",
+  "net.sf.trove4j" % "trove4j" % "3.0.3",
   "com.h2database" % "h2" % "1.3.166" % "test"
 )
