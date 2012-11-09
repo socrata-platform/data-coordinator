@@ -12,6 +12,12 @@ import com.rojoma.simplearm.util._
 import com.socrata.id.numeric.{PushbackIdProvider, FixedSizeIdProvider, InMemoryBlockIdProvider}
 
 class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyChecks {
+  // In Java 6 (sun and open) driver registration is not thread-safe!
+  // So since SBT will run these tests in parallel, sometimes one of the
+  // first tests to run will randomly fail.  By forcing the driver to
+  // be loaded up front we can avoid this.
+  Class.forName("org.h2.Driver")
+
   def idProvider(initial: Int) = new PushbackIdProvider(new FixedSizeIdProvider(new InMemoryBlockIdProvider(releasable = false) { override def start = initial }, 1024))
 
   def withDB[T]()(f: Connection => T): T = {
