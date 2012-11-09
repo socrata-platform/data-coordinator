@@ -337,9 +337,9 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
 
   var tryInsertFirst = true
 
-  val knownToExist = typeContext.makeIdSet()
-  val knownNotToExist = typeContext.makeIdSet()
-  val jobs = typeContext.makeIdMap[OperationLog[CV]]()
+  val knownToExist = datasetContext.makeIdSet()
+  val knownNotToExist = datasetContext.makeIdSet()
+  val jobs = datasetContext.makeIdMap[OperationLog[CV]]()
   var batchThreshold = initialBatchSize
 
   def jobEntry(id: CV) = {
@@ -476,7 +476,7 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
 
     jobs.clear()
 
-    val sidsForUpdateAndDelete = typeContext.makeIdMap[Long]()
+    val sidsForUpdateAndDelete = datasetContext.makeIdMap[Long]()
     val updatedSids = new TLongHashSet
     findSids(sidsForUpdateAndDelete, deletes, inserts, updates)
     processDeletes(updatedSids, sidsForUpdateAndDelete, deletes)

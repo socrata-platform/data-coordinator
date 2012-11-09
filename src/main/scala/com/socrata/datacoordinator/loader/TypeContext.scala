@@ -5,6 +5,4 @@ trait TypeContext[CV] {
   def isNull(value: CV): Boolean
   def makeValueFromSystemId(id: Long): CV
   def makeSystemIdFromValue(id: CV): Long
-  def makeIdSet(): RowIdSet[CV]
-  def makeIdMap[T](): RowIdMap[CV, T]
 }
