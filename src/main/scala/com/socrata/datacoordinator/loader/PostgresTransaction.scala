@@ -121,8 +121,6 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
                 maybeFlush()
                 jobs.put(systemId, Update(systemId, row, job))
               } else oldJobNullable match {
-                case _: Delete[_] =>
-                  sys.error("Last job for sid was delete, but it is not marked known to not exist?")
                 case Insert(insSid, oldRow, oldJob) =>
                   assert(insSid == systemId)
                   jobs.put(systemId, Insert(systemId, datasetContext.mergeRows(oldRow, row), oldJob))
@@ -131,6 +129,8 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
                   assert(updSid == systemId)
                   jobs.put(systemId, Update(systemId, datasetContext.mergeRows(oldRow, row), oldJob))
                   elided.put(job, (systemIdValue, oldJob))
+                case _: Delete[_] =>
+                  sys.error("Last job for sid was delete, but it is not marked known to not exist?")
               }
               // just because we did an update, it does not mean this row is known to exist
             }
@@ -175,9 +175,6 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
         maybeFlush()
         jobs.put(systemId, Delete(systemId, job))
       } else oldJobNullable match {
-        case Delete(_, _) =>
-          sys.error("Got two deletes for the same ID without an intervening update; this should have flagged knownNotToExist.")
-          // errors.put(job, NoSuchRowToDelete(typeContext.makeValueFromSystemId(systemId)))
         case Update(_, _, oldJob) =>
           // delete-of-update uh?  Well, if this row is known to exist, we can elide the
           // update.  Otherwise we have to flush.
@@ -199,6 +196,9 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
           // and we can skip actually doing this delete too, because we know it'll succeed
           deleted.put(job, id)
           jobs.remove(systemId) // and then we need do nothing with this job
+        case Delete(_, _) =>
+          sys.error("Got two deletes for the same ID without an intervening update; this should have flagged knownNotToExist.")
+          // errors.put(job, NoSuchRowToDelete(typeContext.makeValueFromSystemId(systemId)))
       }
       forceNonExisting(systemId)
     }
@@ -385,7 +385,10 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
           case None =>
             val record = jobEntry(userId)
             if(record.upsertedRow == null) {
-              if(record.hasDeleteJob || knownNotToExist(userId)) {
+              if(record.hasDeleteJob) {
+                assert(knownNotToExist(userId), "Delete job, no upsert job, but not known not to exist?")
+              }
+              if(knownNotToExist(userId)) {
                 record.upsertCase = UpsertInsert
               } else if(knownToExist(userId)) {
                 record.upsertCase = UpsertUpdate
