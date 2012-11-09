@@ -194,7 +194,7 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
           }
         case Insert(allocatedSid, _, oldJob) =>
           // deleting a row we just inserted?  Ok.  Let's nuke 'em!
-          idProvider.unallocate(allocatedSid)
+          // Note: not de-allocating sid because we conceptually used it
           elided.put(oldJob, (id, job))
           // and we can skip actually doing this delete too, because we know it'll succeed
           deleted.put(job, id)

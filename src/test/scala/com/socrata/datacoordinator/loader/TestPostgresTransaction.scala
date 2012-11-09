@@ -1,14 +1,17 @@
 package com.socrata.datacoordinator.loader
 
+import scala.collection.immutable.VectorBuilder
+
+import java.sql.{Connection, DriverManager}
+
 import org.scalatest.FunSuite
 import org.scalatest.matchers.MustMatchers
+import org.scalatest.prop.PropertyChecks
 import com.rojoma.simplearm.util._
 
 import com.socrata.id.numeric.{PushbackIdProvider, FixedSizeIdProvider, InMemoryBlockIdProvider}
-import java.sql.{Connection, DriverManager}
-import collection.immutable.VectorBuilder
 
-class TestPostgresTransaction extends FunSuite with MustMatchers {
+class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyChecks {
   def idProvider(initial: Int) = new PushbackIdProvider(new FixedSizeIdProvider(new InMemoryBlockIdProvider(releasable = false) { override def start = initial }, 1024))
 
   def withDB[T]()(f: Connection => T): T = {
@@ -427,10 +430,194 @@ class TestPostgresTransaction extends FunSuite with MustMatchers {
       report.elided must equal (Map(0 -> (LongValue(15), 1)))
       txn.commit()
 
-      ids.allocate() must be (15)
+      ids.allocate() must be (16)
 
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq.empty)
       query(conn, "SELECT id as ID, row as ROW, who as WHO from test_log") must equal (Seq.empty)
+    }
+  }
+
+  test("must contain the same data as a table manipulated by a StupidPostgresTransaction when using user IDs") {
+    for(insertFirst <- List(true, false)) {
+      import org.scalacheck.{Gen, Arbitrary}
+
+      sealed abstract class Op
+      case class Upsert(id: Long, num: Option[Long], data: Option[String]) extends Op
+      case class Delete(id: Long) extends Op
+
+      val genId = Gen.choose(0L, 100L)
+
+      val genUpsert = for {
+        id <- genId
+        num <- Gen.frequency(2 -> Arbitrary.arbitrary[Long].map(Some(_)), 1 -> Gen.value(None))
+        data <- Gen.frequency(2 -> Arbitrary.arbitrary[String].map(Some(_)), 1 -> Gen.value(None))
+      } yield Upsert(id, num, data)
+
+      val genDelete = genId.map(Delete(_))
+
+      val genOp = Gen.frequency(2 -> genUpsert, 1 -> genDelete)
+
+      implicit val arbOp = Arbitrary[Op](genOp)
+
+      val ids = idProvider(1)
+
+      val schema = Map(
+        "id" -> LongColumn,
+        "num" -> LongColumn,
+        "str" -> StringColumn
+      )
+
+      val dsContext = new TestDatasetContext(standardTableName, schema, Some("id"))
+      val dataSqlizer = new TestDataSqlizer("hello", dsContext)
+
+      def applyOps(txn: Transaction[TestColumnValue], ops: List[Op]) {
+        for(op <- ops) op match {
+          case Delete(id) => txn.delete(LongValue(id))
+          case Upsert(id, num, data) => txn.upsert(Map(
+            "id" -> LongValue(id),
+            "num" -> num.map(LongValue(_)).getOrElse(NullValue),
+            "str" -> data.map(StringValue(_)).getOrElse(NullValue)
+          ))
+        }
+      }
+
+      forAll { (ops1: List[Op], ops2: List[Op]) =>
+        withDB() { stupidConn =>
+          withDB() { smartConn =>
+            makeTables(stupidConn, dsContext)
+            makeTables(smartConn, dsContext)
+
+            def runCompareTest(ops: List[Op]) {
+              val smartReport = locally {
+                val txn = userCast(PostgresTransaction(smartConn, TestTypeContext, dataSqlizer, ids))
+                txn.tryInsertFirst = insertFirst
+                applyOps(txn, ops)
+                val report = txn.report
+                txn.commit()
+                report
+              }
+              val stupidReport = locally {
+                val txn = new StupidPostgresTransaction(stupidConn, TestTypeContext, dataSqlizer, ids)
+                applyOps(txn, ops)
+                val report = txn.report
+                txn.commit()
+                report
+              }
+
+              val q = "SELECT u_id AS ID, u_num AS NUM, u_str AS STR FROM test_data ORDER BY u_id"
+              for {
+                smartStmt <- managed(smartConn.createStatement())
+                stupidStmt <- managed(stupidConn.createStatement())
+                smartRs <- managed(smartStmt.executeQuery(q))
+                stupidRs <- managed(stupidStmt.executeQuery(q))
+              } {
+                while(smartRs.next()) {
+                  stupidRs.next() must be (true)
+                  smartRs.getLong("ID") must equal (stupidRs.getLong("ID"))
+                  smartRs.wasNull() must equal (stupidRs.wasNull())
+                  smartRs.getLong("NUM") must equal (stupidRs.getLong("NUM"))
+                  smartRs.wasNull() must equal (stupidRs.wasNull())
+                  smartRs.getString("STR") must equal (stupidRs.getString("STR"))
+                }
+                stupidRs.next() must be (false)
+              }
+            }
+
+            runCompareTest(ops1)
+            runCompareTest(ops2)
+          }
+        }
+      }
+    }
+  }
+
+
+  test("must contain the same data as a table manipulated by a StupidPostgresTransaction when using system IDs") {
+    import org.scalacheck.{Gen, Arbitrary}
+
+    sealed abstract class Op
+    case class Upsert(id: Option[Long], num: Option[Long], data: Option[String]) extends Op
+    case class Delete(id: Long) extends Op
+
+    val genId = Gen.choose(0L, 100L)
+
+    val genUpsert = for {
+      id <- Gen.frequency(1 -> genId.map(Some(_)), 2 -> Gen.value(None))
+      num <- Gen.frequency(2 -> Arbitrary.arbitrary[Long].map(Some(_)), 1 -> Gen.value(None))
+      data <- Gen.frequency(2 -> Arbitrary.arbitrary[String].map(Some(_)), 1 -> Gen.value(None))
+    } yield Upsert(id, num, data)
+
+    val genDelete = genId.map(Delete(_))
+
+    val genOp = Gen.frequency(2 -> genUpsert, 1 -> genDelete)
+
+    implicit val arbOp = Arbitrary[Op](genOp)
+
+    val dsContext = new TestDatasetContext(standardTableName, standardSchema, None)
+    val dataSqlizer = new TestDataSqlizer("hello", dsContext)
+
+    def applyOps(txn: Transaction[TestColumnValue], ops: List[Op]) {
+      for(op <- ops) op match {
+        case Delete(id) => txn.delete(LongValue(id))
+        case Upsert(id, num, data) =>
+          val baseRow = Map(
+            "num" -> num.map(LongValue(_)).getOrElse(NullValue),
+            "str" -> data.map(StringValue(_)).getOrElse(NullValue)
+          )
+          val row = id match {
+            case Some(sid) => baseRow + (":id" -> LongValue(sid))
+            case None => baseRow
+          }
+          txn.upsert(row)
+      }
+    }
+
+    forAll { (ops1: List[Op], ops2: List[Op]) =>
+      withDB() { stupidConn =>
+        withDB() { smartConn =>
+          makeTables(stupidConn, dsContext)
+          makeTables(smartConn, dsContext)
+
+          val smartIds = idProvider(1)
+          val stupidIds = idProvider(1)
+
+          def runCompareTest(ops: List[Op]) {
+            val smartReport = locally {
+              val txn = PostgresTransaction(smartConn, TestTypeContext, dataSqlizer, smartIds)
+              applyOps(txn, ops)
+              val report = txn.report
+              txn.commit()
+              report
+            }
+            val stupidReport = locally {
+              val txn = new StupidPostgresTransaction(stupidConn, TestTypeContext, dataSqlizer, stupidIds)
+              applyOps(txn, ops)
+              val report = txn.report
+              txn.commit()
+              report
+            }
+
+            val q = "SELECT u_num AS NUM, u_str AS STR FROM test_data ORDER BY u_num, u_str"
+            for {
+              smartStmt <- managed(smartConn.createStatement())
+              stupidStmt <- managed(stupidConn.createStatement())
+              smartRs <- managed(smartStmt.executeQuery(q))
+              stupidRs <- managed(stupidStmt.executeQuery(q))
+            } {
+              while(smartRs.next()) {
+                stupidRs.next() must be (true)
+                smartRs.getLong("NUM") must equal (stupidRs.getLong("NUM"))
+                smartRs.wasNull() must equal (stupidRs.wasNull())
+                smartRs.getString("STR") must equal (stupidRs.getString("STR"))
+              }
+              stupidRs.next() must be (false)
+            }
+          }
+
+          runCompareTest(ops1)
+          runCompareTest(ops2)
+        }
+      }
     }
   }
 }
