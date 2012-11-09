@@ -4,11 +4,12 @@ import java.sql.{PreparedStatement, ResultSet}
 
 trait Sqlizer {
   def logTransactionComplete() // whole-database log has : (dataset id, last updated at, new txn log serial id)
-  def lockTableAgainstWrites(): String
+  def lockTableAgainstWrites(table: String): String
 }
 
 /** Generates SQL for execution. */
 trait DataSqlizer[CT, CV] extends Sqlizer {
+  def dataTableName: String
   def datasetContext: DatasetContext[CT, CV]
 
   def prepareSystemIdDeleteStatement: String

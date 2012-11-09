@@ -32,7 +32,7 @@ abstract class PostgresTransaction[CT, CV](val connection: Connection,
   val errors = new java.util.HashMap[Int, Failure[CV]]
 
   using(connection.createStatement()) { stmt =>
-    stmt.execute(sqlizer.lockTableAgainstWrites())
+    stmt.execute(sqlizer.lockTableAgainstWrites(sqlizer.dataTableName))
   }
 
   def nextJobNum() = {

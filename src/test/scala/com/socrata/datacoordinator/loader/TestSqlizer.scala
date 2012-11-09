@@ -8,7 +8,7 @@ class TestSqlizer extends Sqlizer {
     transactionsLogged += 1
   }
 
-  def lockTableAgainstWrites() = {
+  def lockTableAgainstWrites(table: String) = {
     tablesLocked += 1
     "SELECT 0"
   }
