@@ -250,6 +250,7 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
         while(it.hasNext) {
           val op = it.next()
           sqlizer.prepareSystemIdDelete(stmt, op.id)
+          stmt.addBatch()
         }
 
         val results = stmt.executeBatch()
@@ -306,6 +307,7 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
         while(it.hasNext) {
           val op = it.next()
           sqlizer.prepareSystemIdInsert(stmt, op.id, op.row)
+          stmt.addBatch()
         }
 
         val results = stmt.executeBatch()
@@ -511,6 +513,7 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
           val op = it.next()
           assert(op.hasDeleteJob, "No delete job?")
           sqlizer.prepareUserIdDelete(stmt, op.id)
+          stmt.addBatch()
         }
 
         val results = stmt.executeBatch()
@@ -547,6 +550,7 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
           val sid = idProvider.allocate()
           sids(i) = sid
           sqlizer.prepareUserIdInsert(stmt, sid, inserts.get(i).upsertedRow)
+          stmt.addBatch()
           i += 1
         } while(i != inserts.size)
 

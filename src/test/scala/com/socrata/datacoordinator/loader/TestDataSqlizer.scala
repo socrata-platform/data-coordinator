@@ -37,7 +37,6 @@ class TestDataSqlizer(user: String, val datasetContext: DatasetContext[TestColum
 
   def prepareSystemIdDelete(stmt: PreparedStatement, id: Long) {
     stmt.setLong(1, id)
-    stmt.addBatch()
   }
 
   def prepareUserIdDelete(stmt: PreparedStatement, id: TestColumnValue) {
@@ -47,8 +46,6 @@ class TestDataSqlizer(user: String, val datasetContext: DatasetContext[TestColum
       case None =>
         add(stmt, 1, datasetContext.systemIdColumnName, id)
     }
-
-    stmt.addBatch()
   }
 
   def add(stmt: PreparedStatement, i: Int, k: String, v: TestColumnValue) {
@@ -77,8 +74,6 @@ class TestDataSqlizer(user: String, val datasetContext: DatasetContext[TestColum
       i += 1
     }
     stmt.setLong(i, sid)
-
-    stmt.addBatch()
   }
 
   def prepareUserIdInsert(stmt: PreparedStatement, sid: Long, row: Row[TestColumnValue]) {
@@ -95,8 +90,6 @@ class TestDataSqlizer(user: String, val datasetContext: DatasetContext[TestColum
       case None =>
         stmt.setLong(i, sid)
     }
-
-    stmt.addBatch()
   }
 
   def sqlizeSystemIdUpdate(sid: Long, row: Row[TestColumnValue]) =

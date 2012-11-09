@@ -42,9 +42,9 @@ class StupidPostgresTransaction[CT, CV](val connection: Connection,
               val sid = idProvider.allocate()
               using(connection.prepareStatement(sqlizer.prepareUserIdInsertStatement)) { stmt =>
                 sqlizer.prepareUserIdInsert(stmt, sid, row)
-                val results = stmt.executeBatch().toSeq
-                if(results != Seq(1)) {
-                  sys.error("From insert: " + results)
+                val result = stmt.executeUpdate()
+                if(result != 1) {
+                  sys.error("From insert: " + result)
                 }
               }
               logChanged(sid)
@@ -71,9 +71,9 @@ class StupidPostgresTransaction[CT, CV](val connection: Connection,
             val sid = idProvider.allocate()
             using(connection.prepareStatement(sqlizer.prepareSystemIdInsertStatement)) { stmt =>
               sqlizer.prepareSystemIdInsert(stmt, sid, row)
-              val results = stmt.executeBatch().toSeq
-              if(results != Seq(1)) {
-                sys.error("From insert: " + results)
+              val result = stmt.executeUpdate()
+              if(result != 1) {
+                sys.error("From insert: " + result)
               }
             }
             logChanged(sid)
@@ -108,8 +108,8 @@ class StupidPostgresTransaction[CT, CV](val connection: Connection,
         using(connection.prepareStatement(sqlizer.prepareUserIdDeleteStatement)) { stmt =>
           val sid = findSid(id)
           sqlizer.prepareUserIdDelete(stmt, id)
-          val results = stmt.executeBatch().toSeq
-          if(results != Seq(1)) {
+          val result = stmt.executeUpdate()
+          if(result != 1) {
             assert(!sid.isDefined)
             errors.put(job, NoSuchRowToDelete(id))
           } else {
@@ -122,8 +122,8 @@ class StupidPostgresTransaction[CT, CV](val connection: Connection,
         val sid = typeContext.makeSystemIdFromValue(id)
         using(connection.prepareStatement(sqlizer.prepareSystemIdDeleteStatement)) { stmt =>
           sqlizer.prepareSystemIdDelete(stmt, sid)
-          val results = stmt.executeBatch().toSeq
-          if(results != Seq(1)) {
+          val result = stmt.executeUpdate()
+          if(result != 1) {
             errors.put(job, NoSuchRowToDelete(id))
           } else {
             deleted.put(job, id)
