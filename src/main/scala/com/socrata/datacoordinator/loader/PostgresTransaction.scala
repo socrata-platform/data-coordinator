@@ -41,16 +41,46 @@ abstract class PostgresTransaction[CT, CV](val connection: Connection,
     r
   }
 
+  object nextVersionNum {
+    val currentVersion = for {
+      stmt <- managed(connection.createStatement())
+      rs <- managed(stmt.executeQuery(sqlizer.findCurrentVersion))
+    } yield {
+      val hasNext = rs.next()
+      assert(hasNext, "next version query didn't return anything?")
+      rs.getLong(1)
+    }
+
+    var nextVersion = currentVersion + 1
+    def apply() = {
+      val r = nextVersion
+      nextVersion += 1
+      r
+    }
+  }
+
   def logRowsChanged(ids: TLongHashSet) {
     if(!ids.isEmpty) {
-      using(connection.prepareStatement(sqlizer.prepareLogRowChanged)) { stmt =>
+      using(connection.prepareStatement(sqlizer.prepareLogRowsChanged)) { stmt =>
+        var count = 0
         val it = ids.iterator
         while(it.hasNext) {
-          stmt.setLong(1, it.next())
+          val maxSize = sqlizer.logRowsSize
+          val sb = new java.lang.StringBuilder
+          sb.append("[")
+          sb.append(it.next())
+          while(it.hasNext && sb.length < maxSize) {
+            sb.append(",").append(it.next())
+          }
+          sb.append("]")
+
+          stmt.setLong(1, nextVersionNum())
+          stmt.setString(2, sb.toString)
           stmt.addBatch()
+          count += 1
         }
         val results = stmt.executeBatch()
-        assert(results.length == ids.size, "Insert log records added the wrong number of things")
+        assert(results.length == count, "Insert log records added the wrong number of things")
         assert(results.forall(_ == 1), "Insert log records didn't all succeed")
       }
     }

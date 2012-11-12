@@ -82,9 +82,28 @@ class StupidPostgresTransaction[CT, CV](val connection: Connection,
     }
   }
 
+  object nextVersionNum {
+    val currentVersion = for {
+      stmt <- managed(connection.createStatement())
+      rs <- managed(stmt.executeQuery(sqlizer.findCurrentVersion))
+    } yield {
+      val hasNext = rs.next()
+      assert(hasNext, "next version query didn't return anything?")
+      rs.getLong(1)
+    }
+
+    var nextVersion = currentVersion + 1
+    def apply() = {
+      val r = nextVersion
+      nextVersion += 1
+      r
+    }
+  }
+
   def logChanged(sid: Long) {
-    using(connection.prepareStatement(sqlizer.prepareLogRowChanged)) { stmt =>
-      stmt.setLong(1, sid)
+    using(connection.prepareStatement(sqlizer.prepareLogRowsChanged)) { stmt =>
+      stmt.setLong(1, nextVersionNum())
+      stmt.setString(2, "[" + sid.toString + "]")
       stmt.executeUpdate()
     }
   }

@@ -98,8 +98,13 @@ class TestDataSqlizer(user: String, val datasetContext: DatasetContext[TestColum
   def sqlizeUserIdUpdate(row: Row[TestColumnValue]) =
     "UPDATE " + dataTableName + " SET " + (row - pkCol).map { case (col, v) => mapToPhysical(col) + " = " + v.sqlize }.mkString(",") + " WHERE " + pkCol + " = " + row(datasetContext.primaryKeyColumn).sqlize
 
-  def prepareLogRowChanged =
-    "INSERT INTO " + logTableName + " (row, who) VALUES (?," + userSqlized + ")"
+  val findCurrentVersion =
+    "SELECT COALESCE(MAX(id), 0) FROM " + logTableName
+
+  val prepareLogRowsChanged =
+    "INSERT INTO " + logTableName + " (id, rows, who) VALUES (?,?," + userSqlized + ")"
+
+  val logRowsSize = 65000
 
   def selectRow(id: TestColumnValue): String =
     "SELECT id," + columns.mkString(",") + " FROM " + dataTableName + " WHERE " + pkCol + " = " + id.sqlize
