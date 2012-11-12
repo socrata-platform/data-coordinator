@@ -61,7 +61,7 @@ abstract class PostgresTransaction[CT, CV](val connection: Connection,
 
   def logRowsChanged(ids: TLongHashSet) {
     if(!ids.isEmpty) {
-      using(connection.prepareStatement(sqlizer.prepareLogRowsChanged)) { stmt =>
+      using(connection.prepareStatement(sqlizer.prepareLogRowsChangedStatement)) { stmt =>
         var count = 0
         val it = ids.iterator
         while(it.hasNext) {
@@ -74,8 +74,7 @@ abstract class PostgresTransaction[CT, CV](val connection: Connection,
           }
           sb.append("]")
 
-          stmt.setLong(1, nextVersionNum())
-          stmt.setString(2, sb.toString)
+          sqlizer.prepareLogRowsChanged(stmt, nextVersionNum(), sb.toString)
           stmt.addBatch()
           count += 1
         }

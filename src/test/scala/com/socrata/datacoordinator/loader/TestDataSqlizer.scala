@@ -101,8 +101,13 @@ class TestDataSqlizer(user: String, val datasetContext: DatasetContext[TestColum
   val findCurrentVersion =
     "SELECT COALESCE(MAX(id), 0) FROM " + logTableName
 
-  val prepareLogRowsChanged =
+  val prepareLogRowsChangedStatement =
     "INSERT INTO " + logTableName + " (id, rows, who) VALUES (?,?," + userSqlized + ")"
+
+  def prepareLogRowsChanged(stmt: PreparedStatement, version: Long, rowsJson: String) {
+    stmt.setLong(1, version)
+    stmt.setString(2, rowsJson)
+  }
 
   val logRowsSize = 65000
 

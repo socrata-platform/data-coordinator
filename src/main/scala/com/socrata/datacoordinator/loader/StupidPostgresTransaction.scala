@@ -101,9 +101,8 @@ class StupidPostgresTransaction[CT, CV](val connection: Connection,
   }
 
   def logChanged(sid: Long) {
-    using(connection.prepareStatement(sqlizer.prepareLogRowsChanged)) { stmt =>
-      stmt.setLong(1, nextVersionNum())
-      stmt.setString(2, "[" + sid.toString + "]")
+    using(connection.prepareStatement(sqlizer.prepareLogRowsChangedStatement)) { stmt =>
+      sqlizer.prepareLogRowsChanged(stmt, nextVersionNum(), "[" + sid.toString + "]")
       stmt.executeUpdate()
     }
   }

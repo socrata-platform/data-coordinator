@@ -28,8 +28,9 @@ trait DataSqlizer[CT, CV] extends Sqlizer {
 
   // txn log has (serial, row id, who did the update)
   def findCurrentVersion: String
-  def prepareLogRowsChanged: String
-  def logRowsSize: Int // soft maximum length for the "rows" value
+  def prepareLogRowsChangedStatement: String
+  def prepareLogRowsChanged(stmt: PreparedStatement, version: Long, rowJson: String)
+  def logRowsSize: Int // (soft) maximum length for the "rowJson" value
 
   def selectRow(id: CV): String
 
