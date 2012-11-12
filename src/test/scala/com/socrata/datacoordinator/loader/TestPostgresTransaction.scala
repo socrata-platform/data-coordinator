@@ -487,7 +487,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
         }
       }
 
-      forAll { (ops1: List[Op], ops2: List[Op]) =>
+      forAll { (opss: List[List[Op]]) =>
         withDB() { stupidConn =>
           withDB() { smartConn =>
             makeTables(stupidConn, dsContext)
@@ -511,26 +511,59 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
               }
 
               val q = "SELECT u_id AS ID, u_num AS NUM, u_str AS STR FROM test_data ORDER BY u_id"
+/* -- "must" is too expensive to call in an inner loop
               for {
                 smartStmt <- managed(smartConn.createStatement())
-                stupidStmt <- managed(stupidConn.createStatement())
                 smartRs <- managed(smartStmt.executeQuery(q))
+                stupidStmt <- managed(stupidConn.createStatement())
                 stupidRs <- managed(stupidStmt.executeQuery(q))
               } {
                 while(smartRs.next()) {
                   stupidRs.next() must be (true)
                   smartRs.getLong("ID") must equal (stupidRs.getLong("ID"))
-                  smartRs.wasNull() must equal (stupidRs.wasNull())
                   smartRs.getLong("NUM") must equal (stupidRs.getLong("NUM"))
                   smartRs.wasNull() must equal (stupidRs.wasNull())
                   smartRs.getString("STR") must equal (stupidRs.getString("STR"))
                 }
                 stupidRs.next() must be (false)
               }
+*/
+              val smartData = for {
+                smartStmt <- managed(smartConn.createStatement())
+                smartRs <- managed(smartStmt.executeQuery(q))
+              } yield {
+                val fromSmart = new VectorBuilder[(Long, Long, Boolean, String)]
+                while(smartRs.next()) {
+                  val id = smartRs.getLong("ID")
+                  val num = smartRs.getLong("NUM")
+                  val numWasNull = smartRs.wasNull()
+                  val str = smartRs.getString("STR")
+
+                  fromSmart += ((id, num, numWasNull, str))
+                }
+                fromSmart.result
+              }
+
+              val stupidData = for {
+                stupidStmt <- managed(stupidConn.createStatement())
+                stupidRs <- managed(stupidStmt.executeQuery(q))
+              } yield {
+                val fromStupid = new VectorBuilder[(Long, Long, Boolean, String)]
+                while(stupidRs.next()) {
+                  val id = stupidRs.getLong("ID")
+                  val num = stupidRs.getLong("NUM")
+                  val numWasNull = stupidRs.wasNull()
+                  val str = stupidRs.getString("STR")
+
+                  fromStupid += ((id, num, numWasNull, str))
+                }
+                fromStupid.result
+              }
+
+              smartData must equal (stupidData)
             }
 
-            runCompareTest(ops1)
-            runCompareTest(ops2)
+            opss.foreach(runCompareTest)
           }
         }
       }
@@ -578,7 +611,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
       }
     }
 
-    forAll { (ops1: List[Op], ops2: List[Op]) =>
+    forAll { (opss: List[List[Op]]) =>
       withDB() { stupidConn =>
         withDB() { smartConn =>
           makeTables(stupidConn, dsContext)
@@ -604,10 +637,12 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
             }
 
             val q = "SELECT u_num AS NUM, u_str AS STR FROM test_data ORDER BY u_num, u_str"
+/* -- "must" is too expensive to call in an inner loop
+            val q = "SELECT u_num AS NUM, u_str AS STR FROM test_data ORDER BY u_num, u_str"
             for {
               smartStmt <- managed(smartConn.createStatement())
-              stupidStmt <- managed(stupidConn.createStatement())
               smartRs <- managed(smartStmt.executeQuery(q))
+              stupidStmt <- managed(stupidConn.createStatement())
               stupidRs <- managed(stupidStmt.executeQuery(q))
             } {
               while(smartRs.next()) {
@@ -618,10 +653,40 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
               }
               stupidRs.next() must be (false)
             }
-          }
+*/
+            val smartData = for {
+              smartStmt <- managed(smartConn.createStatement())
+              smartRs <- managed(smartStmt.executeQuery(q))
+            } yield {
+              val fromSmart = new VectorBuilder[(Long, Boolean, String)]
+              while(smartRs.next()) {
+                val num = smartRs.getLong("NUM")
+                val numWasNull = smartRs.wasNull()
+                val str = smartRs.getString("STR")
 
-          runCompareTest(ops1)
-          runCompareTest(ops2)
+                fromSmart += ((num, numWasNull, str))
+              }
+              fromSmart.result
+            }
+
+            val stupidData = for {
+              stupidStmt <- managed(stupidConn.createStatement())
+              stupidRs <- managed(stupidStmt.executeQuery(q))
+            } yield {
+              val fromStupid = new VectorBuilder[(Long, Boolean, String)]
+              while(stupidRs.next()) {
+                val num = stupidRs.getLong("NUM")
+                val numWasNull = stupidRs.wasNull()
+                val str = stupidRs.getString("STR")
+
+                fromStupid += ((num, numWasNull, str))
+              }
+              fromStupid.result
+            }
+
+            smartData must equal (stupidData)
+          }
+          opss.foreach(runCompareTest)
         }
       }
     }
