@@ -29,6 +29,14 @@ class StupidPostgresTransaction[CT, CV](val connection: Connection,
     r
   }
 
+  val rowAuxData = sqlizer.newRowAuxDataAccumulator { auxData =>
+    using(connection.prepareStatement(sqlizer.prepareLogRowsChangedStatement)) { stmt =>
+      sqlizer.prepareLogRowsChanged(stmt, nextVersionNum(), auxData)
+      val result = stmt.executeUpdate()
+      assert(result == 1, "Inserting a log row... didn't insert a log row?")
+    }
+  }
+
   def upsert(row: Row[CV]) {
     val job = nextJobNum()
     datasetContext.userPrimaryKeyColumn match {
@@ -47,11 +55,11 @@ class StupidPostgresTransaction[CT, CV](val connection: Connection,
                   sys.error("From insert: " + result)
                 }
               }
-              logChanged(sid)
+              rowAuxData.update(sid, row)
               inserted.put(job, id)
             } else {
               val sid = findSid(id).get
-              logChanged(sid)
+              rowAuxData.insert(sid, row)
               updated.put(job, id)
             }
           case None =>
@@ -63,7 +71,7 @@ class StupidPostgresTransaction[CT, CV](val connection: Connection,
             using(connection.createStatement()) { stmt =>
               if(stmt.executeUpdate(sqlizer.sqlizeSystemIdUpdate(id, row)) == 1) {
                 updated.put(job, typeContext.makeValueFromSystemId(id))
-                logChanged(id)
+                rowAuxData.update(id, row - datasetContext.systemIdColumnName)
               } else
                 errors.put(job, NoSuchRowToUpdate(typeContext.makeValueFromSystemId(id)))
             }
@@ -76,7 +84,7 @@ class StupidPostgresTransaction[CT, CV](val connection: Connection,
                 sys.error("From insert: " + result)
               }
             }
-            logChanged(sid)
+            rowAuxData.insert(sid, row)
             inserted.put(job, typeContext.makeValueFromSystemId(sid))
         }
     }
@@ -97,13 +105,6 @@ class StupidPostgresTransaction[CT, CV](val connection: Connection,
       val r = nextVersion
       nextVersion += 1
       r
-    }
-  }
-
-  def logChanged(sid: Long) {
-    using(connection.prepareStatement(sqlizer.prepareLogRowsChangedStatement)) { stmt =>
-      sqlizer.prepareLogRowsChanged(stmt, nextVersionNum(), "[" + sid.toString + "]")
-      stmt.executeUpdate()
     }
   }
 
@@ -133,7 +134,7 @@ class StupidPostgresTransaction[CT, CV](val connection: Connection,
           } else {
             assert(sid.isDefined)
             deleted.put(job, id)
-            logChanged(sid.get)
+            rowAuxData.delete(sid.get)
           }
         }
       case None =>
@@ -145,7 +146,7 @@ class StupidPostgresTransaction[CT, CV](val connection: Connection,
             errors.put(job, NoSuchRowToDelete(id))
           } else {
             deleted.put(job, id)
-            logChanged(sid)
+            rowAuxData.delete(sid)
           }
         }
     }
@@ -164,6 +165,7 @@ class StupidPostgresTransaction[CT, CV](val connection: Connection,
     PostgresTransaction.JobReport(inserted.asScala, updated.asScala, deleted.asScala, elided.asScala, errors.asScala)
 
   def commit() {
+    rowAuxData.finish()
     sqlizer.logTransactionComplete()
     connection.commit()
   }

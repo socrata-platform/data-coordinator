@@ -106,7 +106,7 @@ class TestDataSqlizer(user: String, val datasetContext: DatasetContext[TestColum
   val findCurrentVersion =
     "SELECT COALESCE(MAX(id), 0) FROM " + logTableName
 
-  def newRowAuxDataAccumulator(auxUser: (String) => Unit) = new RowAuxDataAccumulator {
+  def newRowAuxDataAccumulator(auxUser: (LogAuxColumn) => Unit) = new RowAuxDataAccumulator {
     var sw: java.io.StringWriter = _
     var didOne: Boolean = _
 
@@ -180,10 +180,12 @@ class TestDataSqlizer(user: String, val datasetContext: DatasetContext[TestColum
     }
   }
 
+  type LogAuxColumn = String
+
   val prepareLogRowsChangedStatement =
     "INSERT INTO " + logTableName + " (id, rows, who) VALUES (?,?," + userSqlized + ")"
 
-  def prepareLogRowsChanged(stmt: PreparedStatement, version: Long, rowsJson: String) {
+  def prepareLogRowsChanged(stmt: PreparedStatement, version: Long, rowsJson: LogAuxColumn) {
     stmt.setLong(1, version)
     stmt.setString(2, rowsJson)
   }

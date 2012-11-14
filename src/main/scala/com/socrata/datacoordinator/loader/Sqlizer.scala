@@ -27,10 +27,11 @@ trait DataSqlizer[CT, CV] extends Sqlizer {
   def sqlizeUserIdUpdate(row: Row[CV]): String
 
   // txn log has (serial, row id, who did the update)
+  type LogAuxColumn // The type of the JVM-side representation of the log's "aux data" column
   def findCurrentVersion: String
-  def newRowAuxDataAccumulator(rowWriter: (String) => Unit): RowAuxDataAccumulator
+  def newRowAuxDataAccumulator(rowWriter: (LogAuxColumn) => Unit): RowAuxDataAccumulator
   def prepareLogRowsChangedStatement: String
-  def prepareLogRowsChanged(stmt: PreparedStatement, version: Long, rowsJson: String)
+  def prepareLogRowsChanged(stmt: PreparedStatement, version: Long, rowsJson: LogAuxColumn)
 
   trait RowAuxDataAccumulator {
     def insert(systemID: Long, row: Row[CV])
