@@ -132,9 +132,9 @@ class TestDataSqlizer(user: String, val datasetContext: DatasetContext[TestColum
     def flush() {
       sw.write(']')
       val str = sw.toString
+      reset()
       if(str != "[]") {
         auxUser(str)
-        reset()
       }
     }
 
