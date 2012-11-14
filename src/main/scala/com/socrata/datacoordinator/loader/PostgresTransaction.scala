@@ -41,7 +41,7 @@ abstract class PostgresTransaction[CT, CV](val connection: Connection,
     r
   }
 
-  object nextVersionNum {
+  object nextVersionNum extends (() => Long) {
     val currentVersion = for {
       stmt <- managed(connection.createStatement())
       rs <- managed(stmt.executeQuery(sqlizer.findCurrentVersion))
@@ -59,29 +59,11 @@ abstract class PostgresTransaction[CT, CV](val connection: Connection,
     }
   }
 
-  def logRowsChanged(ids: TLongHashSet) {
-    if(!ids.isEmpty) {
-      using(connection.prepareStatement(sqlizer.prepareLogRowsChangedStatement)) { stmt =>
-        var count = 0
-        val it = ids.iterator
-        while(it.hasNext) {
-          val maxSize = sqlizer.logRowsSize
-          val sb = new java.lang.StringBuilder
-          sb.append("[")
-          sb.append(it.next())
-          while(it.hasNext && sb.length < maxSize) {
-            sb.append(",").append(it.next())
-          }
-          sb.append("]")
-
-          sqlizer.prepareLogRowsChanged(stmt, nextVersionNum(), sb.toString)
-          stmt.addBatch()
-          count += 1
-        }
-        val results = stmt.executeBatch()
-        assert(results.length == count, "Insert log records added the wrong number of things")
-        assert(results.forall(_ == 1), "Insert log records didn't all succeed")
-      }
+  val rowAuxData = sqlizer.newRowAuxDataAccumulator { auxData =>
+    using(connection.prepareStatement(sqlizer.prepareLogRowsChangedStatement)) { stmt =>
+      sqlizer.prepareLogRowsChanged(stmt, nextVersionNum(), auxData)
+      val result = stmt.executeUpdate()
+      assert(result == 1, "Inserting a log row... didn't insert a log row?")
     }
   }
 
@@ -105,6 +87,7 @@ abstract class PostgresTransaction[CT, CV](val connection: Connection,
 
   def commit() {
     flush()
+    rowAuxData.finish()
     if(inserted != 0 || updated != 0 || deleted != 0) sqlizer.logTransactionComplete()
     connection.commit()
   }
@@ -264,15 +247,12 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
 
     jobs.clear()
 
-    val updatedSids = new TLongHashSet
-    processDeletes(updatedSids, deletes)
-    processUpdates(updatedSids, updates)
-    processInserts(updatedSids, inserts)
-
-    logRowsChanged(updatedSids)
+    processDeletes(deletes)
+    processUpdates(updates)
+    processInserts(inserts)
   }
 
-  def processDeletes(updatedSids: TLongHashSet, deletes: java.util.ArrayList[Delete[CV]]) {
+  def processDeletes(deletes: java.util.ArrayList[Delete[CV]]) {
     if(!deletes.isEmpty) {
       using(connection.prepareStatement(sqlizer.prepareSystemIdDeleteStatement)) { stmt =>
         val it = deletes.iterator()
@@ -290,7 +270,7 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
           val op = deletes.get(i)
           val idValue = typeContext.makeValueFromSystemId(op.id)
           if(results(i) == 1) {
-            updatedSids.add(op.id)
+            rowAuxData.delete(op.id)
             deleted.put(op.job, idValue)
           } else if(results(i) == 0) errors.put(op.job, NoSuchRowToDelete(idValue))
           else sys.error("Unexpected result code from delete: " + results(i))
@@ -300,7 +280,7 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
     }
   }
 
-  def processUpdates(updatedSids: TLongHashSet, updates: java.util.ArrayList[Update[CV]]) {
+  def processUpdates(updates: java.util.ArrayList[Update[CV]]) {
     if(!updates.isEmpty) {
       using(connection.createStatement()) { stmt =>
         val it = updates.iterator()
@@ -317,7 +297,7 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
           val op = updates.get(i)
           val idValue = typeContext.makeValueFromSystemId(op.id)
           if(results(i) == 1) {
-            updatedSids.add(op.id)
+            rowAuxData.update(op.id, op.row - datasetContext.systemIdColumnName)
             updated.put(op.job, idValue)
           } else if(results(i) == 0) {
             errors.put(op.job, NoSuchRowToUpdate(idValue))
@@ -329,7 +309,7 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
     }
   }
 
-  def processInserts(updatedSids: TLongHashSet, inserts: java.util.ArrayList[Insert[CV]]) {
+  def processInserts(inserts: java.util.ArrayList[Insert[CV]]) {
     if(!inserts.isEmpty) {
       using(connection.prepareStatement(sqlizer.prepareUserIdInsertStatement)) { stmt =>
         val it = inserts.iterator()
@@ -347,7 +327,7 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
           val op = inserts.get(i)
           val idValue = typeContext.makeValueFromSystemId(op.id)
           if(results(i) == 1) {
-            updatedSids.add(op.id)
+            rowAuxData.insert(op.id, op.row)
             inserted.put(op.job, idValue)
           } else sys.error("Unexpected result code from insert: " + results(i))
 
@@ -508,13 +488,10 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
     jobs.clear()
 
     val sidsForUpdateAndDelete = datasetContext.makeIdMap[Long]()
-    val updatedSids = new TLongHashSet
     findSids(sidsForUpdateAndDelete, deletes, inserts, updates)
-    processDeletes(updatedSids, sidsForUpdateAndDelete, deletes)
-    processInserts(updatedSids, inserts, updates)
-    processUpdates(updatedSids, sidsForUpdateAndDelete, updates)
-
-    logRowsChanged(updatedSids)
+    processDeletes(sidsForUpdateAndDelete, deletes)
+    processInserts(inserts, updates)
+    processUpdates(sidsForUpdateAndDelete, updates)
   }
 
   def flush() {
@@ -534,7 +511,7 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
     }
   }
 
-  def processDeletes(updatedSids: TLongHashSet, sidSource: RowIdMap[CV, Long], deletes: java.util.ArrayList[OperationLog[CV]]) {
+  def processDeletes(sidSource: RowIdMap[CV, Long], deletes: java.util.ArrayList[OperationLog[CV]]) {
     if(!deletes.isEmpty) {
       using(connection.prepareStatement(sqlizer.prepareUserIdDeleteStatement)) { stmt =>
         val it = deletes.iterator()
@@ -553,7 +530,7 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
           val op = deletes.get(i)
           if(results(i) == 1 || op.forceDeleteSuccess) {
             sidSource.get(op.id) match {
-              case Some(sid) => updatedSids.add(sid)
+              case Some(sid) => rowAuxData.delete(sid)
               case None if op.forceDeleteSuccess => // ok
               case None => sys.error("Successfully deleted row, but no sid found for it?")
             }
@@ -566,7 +543,7 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
     }
   }
 
-  def processInserts(updatedSids: TLongHashSet, inserts: java.util.ArrayList[OperationLog[CV]], updates: java.util.ArrayList[OperationLog[CV]]) {
+  def processInserts(inserts: java.util.ArrayList[OperationLog[CV]], updates: java.util.ArrayList[OperationLog[CV]]) {
     if(!inserts.isEmpty) {
       var failures = 0
       val sids = new Array[Long](inserts.size)
@@ -590,7 +567,7 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
         do {
           val op = inserts.get(i)
           if(results(i) == 1) {
-            updatedSids.add(sids(i))
+            rowAuxData.insert(sids(i), op.upsertedRow)
             inserted.put(op.upsertJob, op.id)
           } else if(results(i) == 0) {
             idProvider.unallocate(sids(i))
@@ -611,7 +588,7 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
     }
   }
 
-  def processUpdates(updatedSids: TLongHashSet, sidSource: RowIdMap[CV, Long], updates: java.util.ArrayList[OperationLog[CV]]) {
+  def processUpdates(sidSource: RowIdMap[CV, Long], updates: java.util.ArrayList[OperationLog[CV]]) {
     if(!updates.isEmpty) {
       using(connection.createStatement()) { stmt =>
         var failures = 0
@@ -631,7 +608,7 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
           val op = updates.get(i)
           if(results(i) == 1) {
             val sid = sidSource.get(op.id).getOrElse(sys.error("Successfully updated row, but no sid found for it?"))
-            updatedSids.add(sid)
+            rowAuxData.update(sid, op.upsertedRow)
             updated.put(op.upsertJob, op.id)
           } else if(results(i) == 0) {
             if(op.upsertCase == UpsertUnknown) {

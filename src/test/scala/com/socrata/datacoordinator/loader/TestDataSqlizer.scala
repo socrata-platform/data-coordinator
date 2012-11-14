@@ -2,6 +2,11 @@ package com.socrata.datacoordinator.loader
 
 import java.sql.{PreparedStatement, ResultSet}
 
+import com.rojoma.json.ast._
+import com.rojoma.json.util.JsonUtil
+import com.rojoma.json.codec.JsonCodec
+
+
 class TestDataSqlizer(user: String, val datasetContext: DatasetContext[TestColumnType, TestColumnValue]) extends TestSqlizer with DataSqlizer[TestColumnType, TestColumnValue] {
   val dataTableName = datasetContext.baseName + "_data"
   val logTableName = datasetContext.baseName + "_log"
@@ -101,6 +106,80 @@ class TestDataSqlizer(user: String, val datasetContext: DatasetContext[TestColum
   val findCurrentVersion =
     "SELECT COALESCE(MAX(id), 0) FROM " + logTableName
 
+  def newRowAuxDataAccumulator(auxUser: (String) => Unit) = new RowAuxDataAccumulator {
+    var sw: java.io.StringWriter = _
+    var didOne: Boolean = _
+
+    reset()
+
+    def reset() {
+      sw = new java.io.StringWriter
+      sw.write('[')
+      didOne = false
+    }
+
+    def maybeComma() {
+      if(didOne) sw.write(',')
+      else didOne = true
+    }
+
+    def maybeFlush() {
+      if(sw.getBuffer.length > logRowsSize) flush()
+    }
+
+    val logRowsSize = 65000
+
+    def flush() {
+      sw.write(']')
+      val str = sw.toString
+      if(str != "[]") {
+        auxUser(str)
+        reset()
+      }
+    }
+
+    implicit val jCodec = new JsonCodec[TestColumnValue] {
+      def encode(x: TestColumnValue) = x match {
+        case StringValue(s) => JString(s)
+        case LongValue(n) => JNumber(n)
+        case NullValue => JNull
+      }
+
+      def decode(x: JValue) = x match {
+        case JString(s) => Some(StringValue(s))
+        case JNumber(n) => Some(LongValue(n.toLong))
+        case JNull => Some(NullValue)
+        case _ => None
+      }
+    }
+
+    val codec = implicitly[JsonCodec[Map[String, Map[String, TestColumnValue]]]]
+
+    def insert(systemID: Long, row: Row[TestColumnValue]) {
+      maybeComma()
+      // sorting because this is test code and we want to be able to check it sanely
+      JsonUtil.writeJson(sw, Map("i" -> (scala.collection.immutable.SortedMap(datasetContext.systemIdColumnName -> LongValue(systemID)) ++ row)))
+      maybeFlush()
+    }
+
+    def update(systemID: Long, row: Row[TestColumnValue]) {
+      maybeComma()
+      // sorting because this is test code and we want to be able to check it sanely
+      JsonUtil.writeJson(sw, Map("u" -> (scala.collection.immutable.SortedMap(datasetContext.systemIdColumnName -> LongValue(systemID)) ++ row)))
+      maybeFlush()
+    }
+
+    def delete(systemID: Long) {
+      maybeComma()
+      sw.write(systemID.toString)
+      maybeFlush()
+    }
+
+    def finish() {
+      flush()
+    }
+  }
+
   val prepareLogRowsChangedStatement =
     "INSERT INTO " + logTableName + " (id, rows, who) VALUES (?,?," + userSqlized + ")"
 
@@ -108,8 +187,6 @@ class TestDataSqlizer(user: String, val datasetContext: DatasetContext[TestColum
     stmt.setLong(1, version)
     stmt.setString(2, rowsJson)
   }
-
-  val logRowsSize = 65000
 
   def selectRow(id: TestColumnValue): String =
     "SELECT id," + columns.mkString(",") + " FROM " + dataTableName + " WHERE " + pkCol + " = " + id.sqlize

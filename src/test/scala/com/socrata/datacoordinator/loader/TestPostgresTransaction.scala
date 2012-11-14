@@ -94,8 +94,12 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
       report.elided must be ('empty)
       txn.commit()
 
-      query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(Map("ID" -> 15L, "NUM" -> 1L, "STR" -> "a")))
-      query(conn, "SELECT id as ID, rows as ROWS, who as WHO from test_log") must equal (Seq(Map("ID" -> 1, "ROWS" -> "[15]", "WHO" -> "hello")))
+      query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(
+        Map("ID" -> 15L, "NUM" -> 1L, "STR" -> "a")
+      ))
+      query(conn, "SELECT id as ID, rows as ROWS, who as WHO from test_log") must equal (Seq(
+        Map("ID" -> 1, "ROWS" -> """[{"i":{":id":15,"num":1,"str":"a"}}]""", "WHO" -> "hello")
+      ))
     }
   }
 
@@ -123,7 +127,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
 
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(Map("ID" -> 15L, "NUM" -> 2L, "STR" -> "b")))
       query(conn, "SELECT id as ID, rows as ROWS, who as WHO from test_log") must equal (Seq(
-        Map("ID" -> 1, "ROWS" -> "[15]", "WHO" -> "hello")
+        Map("ID" -> 1, "ROWS" -> """[{"i":{":id":15,"num":2,"str":"b"}}]""", "WHO" -> "hello")
       ))
     }
   }
@@ -197,8 +201,12 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
 
       ids.allocate() must be (13)
 
-      query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(Map("ID" -> 7L, "NUM" -> 44L, "STR" -> "q")))
-      query(conn, "SELECT id as ID, rows as ROWS, who as WHO from test_log") must equal (Seq(Map("ID" -> 1, "ROWS" -> "[7]", "WHO" -> "hello")))
+      query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(
+        Map("ID" -> 7L, "NUM" -> 44L, "STR" -> "q")
+      ))
+      query(conn, "SELECT id as ID, rows as ROWS, who as WHO from test_log") must equal (Seq(
+        Map("ID" -> 1, "ROWS" -> """[{"u":{":id":7,"num":44}}]""", "WHO" -> "hello")
+      ))
     }
   }
 
@@ -227,8 +235,12 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
 
         ids.allocate() must equal (16)
 
-        query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(Map("ID" -> 15L, "NUM" -> 1L, "STR" -> "a")))
-        query(conn, "SELECT id as ID, rows as ROWS, who as WHO from test_log") must equal (Seq(Map("ID" -> 1, "ROWS" -> "[15]", "WHO" -> "hello")))
+        query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(
+          Map("ID" -> 15L, "NUM" -> 1L, "STR" -> "a")
+        ))
+        query(conn, "SELECT id as ID, rows as ROWS, who as WHO from test_log") must equal (Seq(
+          Map("ID" -> 1, "ROWS" -> """[{"i":{":id":15,"num":1,"str":"a"}}]""", "WHO" -> "hello")
+        ))
       }
     }
   }
@@ -316,9 +328,11 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
 
         ids.allocate() must be (13)
 
-        query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(Map("ID" -> 7L, "NUM" -> 44L, "STR" -> "q")))
+        query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(
+          Map("ID" -> 7L, "NUM" -> 44L, "STR" -> "q")
+        ))
         query(conn, "SELECT id as ID, rows as ROWS, who as WHO from test_log") must equal (Seq(
-          Map("ID" -> 1, "ROWS" -> "[7]", "WHO" -> "hello")
+          Map("ID" -> 1, "ROWS" -> """[{"u":{":id":7,"num":44,"str":"q"}}]""", "WHO" -> "hello")
         ))
       }
     }
@@ -348,9 +362,11 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
 
         ids.allocate() must be (16)
 
-        query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(Map("ID" -> 15L, "NUM" -> 2L, "STR" -> "q")))
+        query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(
+          Map("ID" -> 15L, "NUM" -> 2L, "STR" -> "q")
+        ))
         query(conn, "SELECT id as ID, rows as ROWS, who as WHO from test_log") must equal (Seq(
-          Map("ID" -> 1, "ROWS" -> "[15]", "WHO" -> "hello")
+          Map("ID" -> 1, "ROWS" -> """[{"i":{":id":15,"num":2,"str":"q"}}]""", "WHO" -> "hello")
         ))
       }
     }

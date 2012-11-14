@@ -28,9 +28,16 @@ trait DataSqlizer[CT, CV] extends Sqlizer {
 
   // txn log has (serial, row id, who did the update)
   def findCurrentVersion: String
+  def newRowAuxDataAccumulator(rowWriter: (String) => Unit): RowAuxDataAccumulator
   def prepareLogRowsChangedStatement: String
-  def prepareLogRowsChanged(stmt: PreparedStatement, version: Long, rowJson: String)
-  def logRowsSize: Int // (soft) maximum length for the "rowJson" value
+  def prepareLogRowsChanged(stmt: PreparedStatement, version: Long, rowsJson: String)
+
+  trait RowAuxDataAccumulator {
+    def insert(systemID: Long, row: Row[CV])
+    def update(sid: Long, row: Row[CV])
+    def delete(systemID: Long)
+    def finish()
+  }
 
   def selectRow(id: CV): String
 
