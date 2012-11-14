@@ -2,7 +2,9 @@ package com.socrata.datacoordinator.loader
 
 import scala.{collection => sc}
 
-trait Transaction[CV] {
+import java.io.Closeable
+
+trait Transaction[CV] extends Closeable {
   def upsert(row: Row[CV])
   def delete(id: CV)
   def lookup(id: CV): Option[Row[CV]]

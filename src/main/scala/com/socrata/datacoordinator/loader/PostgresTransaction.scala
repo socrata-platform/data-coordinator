@@ -4,7 +4,7 @@ import scala.{collection => sc}
 import sc.{mutable => scm}
 import sc.JavaConverters._
 
-import java.sql.Connection
+import java.sql.{Connection, PreparedStatement}
 
 import com.rojoma.simplearm.util._
 import com.socrata.id.numeric.{Unallocatable, IdProvider}
@@ -24,7 +24,6 @@ abstract class PostgresTransaction[CT, CV](val connection: Connection,
   val initialBatchSize = 200
   val maxBatchSize = 1600
 
-  var totalRows = 0
   val inserted = new java.util.HashMap[Int, CV]
   val elided = new java.util.HashMap[Int, (CV, Int)]
   val updated = new java.util.HashMap[Int, CV]
@@ -35,10 +34,14 @@ abstract class PostgresTransaction[CT, CV](val connection: Connection,
     stmt.execute(sqlizer.lockTableAgainstWrites(sqlizer.dataTableName))
   }
 
-  def nextJobNum() = {
-    val r = totalRows
-    totalRows += 1
-    r
+  object nextJobNum extends (() => Int) {
+    var totalRows = 0
+
+    def apply() = {
+      val r = totalRows
+      totalRows += 1
+      r
+    }
   }
 
   object nextVersionNum extends (() => Long) {
@@ -59,15 +62,36 @@ abstract class PostgresTransaction[CT, CV](val connection: Connection,
     }
   }
 
-  val rowAuxData = sqlizer.newRowAuxDataAccumulator { auxData =>
-    using(connection.prepareStatement(sqlizer.prepareLogRowsChangedStatement)) { stmt =>
+  object rowAuxDataState extends (sqlizer.LogAuxColumn => Unit) {
+    var stmt: PreparedStatement = null
+
+    var batched = 0
+
+    def apply(auxData: sqlizer.LogAuxColumn) {
+      if(stmt == null) stmt = connection.prepareStatement(sqlizer.prepareLogRowsChangedStatement)
       sqlizer.prepareLogRowsChanged(stmt, nextVersionNum(), auxData)
-      val result = stmt.executeUpdate()
-      assert(result == 1, "Inserting a log row... didn't insert a log row?")
+      stmt.addBatch()
+      batched += 1
+    }
+
+    def flush() {
+      if(batched != 0) {
+        val rs = stmt.executeBatch()
+        assert(rs.length == batched)
+        assert(rs.forall(_ == 1), "Inserting a log row... didn't insert a log row?")
+        batched = 0
+      }
+    }
+
+    def close() {
+      if(stmt != null) stmt.close()
     }
   }
+  val rowAuxData = sqlizer.newRowAuxDataAccumulator(rowAuxDataState)
 
-  def flush()
+  def flush() {
+    rowAuxDataState.flush()
+  }
 
   def lookup(id: CV) = {
     flush()
@@ -86,10 +110,15 @@ abstract class PostgresTransaction[CT, CV](val connection: Connection,
   }
 
   def commit() {
-    flush()
     rowAuxData.finish()
+    flush()
     if(inserted != 0 || updated != 0 || deleted != 0) sqlizer.logTransactionComplete()
     connection.commit()
+  }
+
+  def close() {
+    rowAuxDataState.close()
+    connection.rollback()
   }
 }
 
@@ -228,7 +257,9 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
     else Some(SystemColumnsSet(systemColumns))
   }
 
-  def flush() {
+  override def flush() {
+    super.flush()
+
     if(jobs.isEmpty) return
 
     val deletes = new java.util.ArrayList[Delete[CV]]
@@ -464,6 +495,8 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
   }
 
   def partialFlush() {
+    super.flush()
+
     if(jobs.isEmpty) return
 
     val deletes = new java.util.ArrayList[OperationLog[CV]]
@@ -494,7 +527,7 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
     processUpdates(sidsForUpdateAndDelete, updates)
   }
 
-  def flush() {
+  override def flush() {
     partialFlush()
     partialFlush()
     assert(jobs.isEmpty, "Two partial flushes did not do anything")

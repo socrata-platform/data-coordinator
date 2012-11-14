@@ -169,4 +169,8 @@ class StupidPostgresTransaction[CT, CV](val connection: Connection,
     sqlizer.logTransactionComplete()
     connection.commit()
   }
+
+  def close() {
+    connection.rollback()
+  }
 }
