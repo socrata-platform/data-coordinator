@@ -21,8 +21,8 @@ abstract class PostgresTransaction[CT, CV](val connection: Connection,
 
   val datasetContext = sqlizer.datasetContext
 
-  val initialBatchSize = 200
-  val maxBatchSize = 1600
+  val initialBatchSizeInRows = 200
+  val softMaxBatchSizeInBytes = 10 * 1024 * 1024
 
   val inserted = new java.util.HashMap[Int, CV]
   val elided = new java.util.HashMap[Int, (CV, Int)]
@@ -131,7 +131,12 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
 
   val knownToExist = new TLongHashSet()
   val knownNotToExist = new TLongHashSet()
-  var batchThreshold = initialBatchSize
+  var insertBatchThreshold = initialBatchSizeInRows
+  var pendingInserts = 0
+  var updateBatchThreshold = initialBatchSizeInRows
+  var pendingUpdates = 0
+  var deleteBatchThreshold = initialBatchSizeInRows
+  var pendingDeletes = 0
 
   val jobs = new TLongObjectHashMap[Operation[CV]]()
 
@@ -161,6 +166,7 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
               if(oldJobNullable == null) { // first job of this type
                 maybeFlush()
                 jobs.put(systemId, Update(systemId, row, job))
+                pendingUpdates += 1
               } else oldJobNullable match {
                 case Insert(insSid, oldRow, oldJob) =>
                   assert(insSid == systemId)
@@ -186,15 +192,20 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
             if(oldJobNullable == null) {
               maybeFlush()
               jobs.put(systemId, Insert(systemId, row, job))
+              pendingInserts += 1
             } else oldJobNullable match {
               case Delete(_, oldJob) =>
                 // hey look at that, we deleted a row that didn't exist yet
                 errors.put(oldJob, NoSuchRowToDelete(typeContext.makeValueFromSystemId(systemId)))
+                pendingDeletes -= 1
                 jobs.put(systemId, Insert(systemId, row, job))
+                pendingInserts += 1
               case Update(_, _, oldJob) =>
                 // and we updated a row that didn't exist yet, too!
                 errors.put(oldJob, NoSuchRowToUpdate(typeContext.makeValueFromSystemId(systemId)))
+                pendingUpdates -= 1
                 jobs.put(systemId, Insert(systemId, row, job))
+                pendingInserts += 1
               case Insert(_, _, _) =>
                 sys.error("Allocated the same row ID twice?")
             }
@@ -215,25 +226,30 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
       if(oldJobNullable == null) {
         maybeFlush()
         jobs.put(systemId, Delete(systemId, job))
+        pendingDeletes += 1
       } else oldJobNullable match {
         case Update(_, _, oldJob) =>
           // delete-of-update uh?  Well, if this row is known to exist, we can elide the
           // update.  Otherwise we have to flush.
           if(knownToExist.contains(systemId)) {
             elided.put(oldJob, (id, job))
+            pendingUpdates -= 1
             jobs.put(systemId, Delete(systemId, job))
+            pendingDeletes += 1
           } else {
             flush()
             if(knownNotToExist.contains(systemId)) {
               errors.put(job, NoSuchRowToDelete(id))
             } else {
               jobs.put(systemId, Delete(systemId, job))
+              pendingDeletes += 1
             }
           }
         case Insert(allocatedSid, _, oldJob) =>
           // deleting a row we just inserted?  Ok.  Let's nuke 'em!
           // Note: not de-allocating sid because we conceptually used it
           elided.put(oldJob, (id, job))
+          pendingInserts -= 1
           // and we can skip actually doing this delete too, because we know it'll succeed
           deleted.put(job, id)
           jobs.remove(systemId) // and then we need do nothing with this job
@@ -246,7 +262,7 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
   }
 
   def maybeFlush() {
-    if(jobs.size >= batchThreshold) {
+    if(pendingInserts >= insertBatchThreshold || pendingUpdates >= updateBatchThreshold || pendingDeletes >= deleteBatchThreshold) {
       flush()
     }
   }
@@ -262,9 +278,9 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
 
     if(jobs.isEmpty) return
 
-    val deletes = new java.util.ArrayList[Delete[CV]]
-    val inserts = new java.util.ArrayList[Insert[CV]]
-    val updates = new java.util.ArrayList[Update[CV]]
+    val deletes = new java.util.ArrayList[Delete[CV]](pendingDeletes)
+    val inserts = new java.util.ArrayList[Insert[CV]](pendingInserts)
+    val updates = new java.util.ArrayList[Update[CV]](pendingUpdates)
 
     val it = jobs.iterator()
     while(it.hasNext) {
@@ -284,12 +300,14 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
   }
 
   def processDeletes(deletes: java.util.ArrayList[Delete[CV]]) {
+    assert(deletes.size == pendingDeletes, "pending deletes got out of sync")
     if(!deletes.isEmpty) {
       using(connection.prepareStatement(sqlizer.prepareSystemIdDeleteStatement)) { stmt =>
+        var stmtSize = 0
         val it = deletes.iterator()
         while(it.hasNext) {
           val op = it.next()
-          sqlizer.prepareSystemIdDelete(stmt, op.id)
+          stmtSize += sqlizer.prepareSystemIdDelete(stmt, op.id)
           stmt.addBatch()
         }
 
@@ -307,17 +325,26 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
           else sys.error("Unexpected result code from delete: " + results(i))
           i += 1
         } while(i != results.length)
+
+        if(pendingDeletes >= deleteBatchThreshold && stmtSize < softMaxBatchSizeInBytes) {
+          deleteBatchThreshold += deleteBatchThreshold >> 1
+        }
+        pendingDeletes = 0
       }
     }
   }
 
   def processUpdates(updates: java.util.ArrayList[Update[CV]]) {
+    assert(updates.size == pendingUpdates, "pending updates got out of sync")
     if(!updates.isEmpty) {
       using(connection.createStatement()) { stmt =>
+        var stmtSize = 0
         val it = updates.iterator()
         while(it.hasNext) {
           val op = it.next()
-          stmt.addBatch(sqlizer.sqlizeSystemIdUpdate(op.id, op.row))
+          val sql = sqlizer.sqlizeSystemIdUpdate(op.id, op.row)
+          stmt.addBatch(sql)
+          stmtSize += sql.length
         }
 
         val results = stmt.executeBatch()
@@ -332,21 +359,28 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
             updated.put(op.job, idValue)
           } else if(results(i) == 0) {
             errors.put(op.job, NoSuchRowToUpdate(idValue))
-          } else sys.error("Unexpected result code from insert: " + results(i))
+          } else sys.error("Unexpected result code from update: " + results(i))
 
           i += 1
         } while(i != results.length)
+
+        if(pendingUpdates >= updateBatchThreshold && stmtSize < softMaxBatchSizeInBytes) {
+          updateBatchThreshold += updateBatchThreshold >> 1
+        }
+        pendingUpdates = 0
       }
     }
   }
 
   def processInserts(inserts: java.util.ArrayList[Insert[CV]]) {
+    assert(inserts.size == pendingInserts, "pending inserts got out of sync")
     if(!inserts.isEmpty) {
       using(connection.prepareStatement(sqlizer.prepareUserIdInsertStatement)) { stmt =>
+        var stmtSize = 0
         val it = inserts.iterator()
         while(it.hasNext) {
           val op = it.next()
-          sqlizer.prepareSystemIdInsert(stmt, op.id, op.row)
+          stmtSize += sqlizer.prepareSystemIdInsert(stmt, op.id, op.row)
           stmt.addBatch()
         }
 
@@ -364,6 +398,11 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
 
           i += 1
         } while(i != results.length)
+
+        if(pendingInserts >= insertBatchThreshold && stmtSize < softMaxBatchSizeInBytes) {
+          insertBatchThreshold += insertBatchThreshold >> 1
+        }
+        pendingInserts = 0
       }
     }
   }
@@ -382,7 +421,12 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
   val knownToExist = datasetContext.makeIdSet()
   val knownNotToExist = datasetContext.makeIdSet()
   val jobs = datasetContext.makeIdMap[OperationLog[CV]]()
-  var batchThreshold = initialBatchSize
+  var insertBatchThreshold = initialBatchSizeInRows
+  var pendingInserts = 0
+  var updateBatchThreshold = initialBatchSizeInRows
+  var pendingUpdates = 0
+  var deleteBatchThreshold = initialBatchSizeInRows
+  var pendingDeletes = 0
 
   def jobEntry(id: CV) = {
     jobs.get(id) match {
@@ -398,9 +442,9 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
   }
 
   def maybeFlush() {
-    if(jobs.size >= batchThreshold) {
+    if(pendingInserts >= insertBatchThreshold || pendingUpdates >= updateBatchThreshold || pendingDeletes >= deleteBatchThreshold) {
       partialFlush()
-      if(jobs.size >= batchThreshold) { // they were all updates that got changed to inserts
+      if(pendingInserts >= insertBatchThreshold) { // bunch of updates that got changed to inserts
         partialFlush()
         assert(jobs.size == 0, "Partial-flushing the job queue twice didn't clear it completely?")
       }
@@ -432,8 +476,13 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
               }
               if(knownNotToExist(userId)) {
                 record.upsertCase = UpsertInsert
+                pendingInserts += 1
               } else if(knownToExist(userId)) {
                 record.upsertCase = UpsertUpdate
+                pendingUpdates += 1
+              } else {
+                if(tryInsertFirst) pendingInserts += 1
+                else pendingUpdates += 1
               }
               record.upsertedRow = row
               record.upsertJob = job
@@ -461,6 +510,13 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
       if(record.hasUpsertJob) {
         // ok, we'll elide the existing upsert job
         elided.put(record.upsertJob, (id, job))
+        record.upsertCase match {
+          case UpsertInsert => pendingInserts -= 1
+          case UpsertUpdate => pendingUpdates -= 1
+          case UpsertUnknown =>
+            if(tryInsertFirst) pendingInserts -= 1
+            else pendingUpdates -= 1
+        }
         record.clearUpsert()
 
         if(record.hasDeleteJob) {
@@ -475,12 +531,14 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
           // "upsert" was really an insert)
           record.deleteJob = job
           record.forceDeleteSuccess = true
+          pendingDeletes += 1
         }
       } else {
         if(record.hasDeleteJob) {
           errors.put(job, NoSuchRowToDelete(id))
         } else {
           record.deleteJob = job
+          pendingDeletes += 1
         }
       }
 
@@ -499,9 +557,9 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
 
     if(jobs.isEmpty) return
 
-    val deletes = new java.util.ArrayList[OperationLog[CV]]
-    val inserts = new java.util.ArrayList[OperationLog[CV]]
-    val updates = new java.util.ArrayList[OperationLog[CV]]
+    val deletes = new java.util.ArrayList[OperationLog[CV]](pendingDeletes)
+    val inserts = new java.util.ArrayList[OperationLog[CV]](pendingInserts)
+    val updates = new java.util.ArrayList[OperationLog[CV]](pendingUpdates)
 
     jobs.foreach { (_, op) =>
       if(op.hasDeleteJob) { deletes.add(op) }
@@ -545,13 +603,15 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
   }
 
   def processDeletes(sidSource: RowIdMap[CV, Long], deletes: java.util.ArrayList[OperationLog[CV]]) {
+    assert(deletes.size == pendingDeletes, "pending deletes got out of sync")
     if(!deletes.isEmpty) {
       using(connection.prepareStatement(sqlizer.prepareUserIdDeleteStatement)) { stmt =>
+        var stmtSize = 0
         val it = deletes.iterator()
         while(it.hasNext) {
           val op = it.next()
           assert(op.hasDeleteJob, "No delete job?")
-          sqlizer.prepareUserIdDelete(stmt, op.id)
+          stmtSize += sqlizer.prepareUserIdDelete(stmt, op.id)
           stmt.addBatch()
         }
 
@@ -572,15 +632,22 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
           else sys.error("Unexpected result code from delete: " + results(i))
           i += 1
         } while(i != results.length)
+
+        if(pendingDeletes >= deleteBatchThreshold && stmtSize < softMaxBatchSizeInBytes) {
+          deleteBatchThreshold += deleteBatchThreshold >> 1
+        }
+        pendingDeletes = 0
       }
     }
   }
 
   def processInserts(inserts: java.util.ArrayList[OperationLog[CV]], updates: java.util.ArrayList[OperationLog[CV]]) {
+    assert(inserts.size == pendingInserts, "pending inserts got out of sync")
     if(!inserts.isEmpty) {
-      var failures = 0
-      val sids = new Array[Long](inserts.size)
       using(connection.prepareStatement(sqlizer.prepareUserIdInsertStatement)) { stmt =>
+        var failures = 0
+        val sids = new Array[Long](inserts.size)
+        var stmtSize = 0
         var i = 0
         do {
           val op = inserts.get(i)
@@ -588,7 +655,7 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
           assert(op.upsertCase != UpsertUpdate, "Found an unconditional update while doing inserts?")
           val sid = idProvider.allocate()
           sids(i) = sid
-          sqlizer.prepareUserIdInsert(stmt, sid, inserts.get(i).upsertedRow)
+          stmtSize += sqlizer.prepareUserIdInsert(stmt, sid, inserts.get(i).upsertedRow)
           stmt.addBatch()
           i += 1
         } while(i != inserts.size)
@@ -608,6 +675,7 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
               failures += 1
               op.upsertCase = UpsertUpdate
               updates.add(op)
+              pendingUpdates += 1
             } else {
               sys.error("Unconditional insert failed?")
             }
@@ -617,26 +685,36 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
         } while(i != results.length)
 
         if(failures > (inserts.size >> 1)) tryInsertFirst = !tryInsertFirst
+
+        if(pendingInserts >= insertBatchThreshold && stmtSize < softMaxBatchSizeInBytes) {
+          insertBatchThreshold += insertBatchThreshold >> 1
+        }
+        pendingInserts = 0
       }
     }
   }
 
   def processUpdates(sidSource: RowIdMap[CV, Long], updates: java.util.ArrayList[OperationLog[CV]]) {
+    assert(updates.size == pendingUpdates, "pending updates got out of sync")
     if(!updates.isEmpty) {
       using(connection.createStatement()) { stmt =>
         var failures = 0
-        val it = updates.iterator()
-        while(it.hasNext) {
-          val op = it.next()
+        var stmtSize = 0
+        var i = 0
+        do {
+          val op = updates.get(i)
           assert(op.hasUpsertJob, "No upsert job?")
           assert(op.upsertCase != UpsertInsert, "Found an unconditional insert while doing updates?")
-          stmt.addBatch(sqlizer.sqlizeUserIdUpdate(op.upsertedRow))
-        }
+          val sql = sqlizer.sqlizeUserIdUpdate(op.upsertedRow)
+          stmt.addBatch(sql)
+          stmtSize += sql.length
+          i += 1
+        } while(i != updates.size)
 
         val results = stmt.executeBatch()
         assert(results.length == updates.size, "Expected " + updates.size + " results for updates; got " + results.length)
 
-        var i = 0
+        i = 0
         do {
           val op = updates.get(i)
           if(results(i) == 1) {
@@ -649,6 +727,7 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
               op.upsertCase = UpsertInsert
               op.clearDelete()
               jobs.put(op.id, op)
+              pendingInserts += 1
             } else {
               sys.error("Unconditional insert failed?")
             }
@@ -658,6 +737,11 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
         } while(i != results.length)
 
         if(failures > (updates.size >> 1)) tryInsertFirst = !tryInsertFirst
+
+        if(pendingUpdates >= updateBatchThreshold && stmtSize < softMaxBatchSizeInBytes) {
+          updateBatchThreshold += updateBatchThreshold >> 1
+        }
+        pendingUpdates = 0
       }
     }
   }

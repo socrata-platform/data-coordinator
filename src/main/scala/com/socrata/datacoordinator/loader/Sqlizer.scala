@@ -15,15 +15,15 @@ trait DataSqlizer[CT, CV] extends Sqlizer {
   def prepareSystemIdDeleteStatement: String
   def prepareSystemIdInsertStatement: String
 
-  def prepareSystemIdDelete(stmt: PreparedStatement, sid: Long)
-  def prepareSystemIdInsert(stmt: PreparedStatement, sid: Long, row: Row[CV])
+  def prepareSystemIdDelete(stmt: PreparedStatement, sid: Long): Int
+  def prepareSystemIdInsert(stmt: PreparedStatement, sid: Long, row: Row[CV]): Int
   def sqlizeSystemIdUpdate(sid: Long, row: Row[CV]): String
 
   def prepareUserIdDeleteStatement: String
   def prepareUserIdInsertStatement: String
 
-  def prepareUserIdDelete(stmt: PreparedStatement, id: CV)
-  def prepareUserIdInsert(stmt: PreparedStatement, sid: Long, row: Row[CV])
+  def prepareUserIdDelete(stmt: PreparedStatement, id: CV): Int
+  def prepareUserIdInsert(stmt: PreparedStatement, sid: Long, row: Row[CV]): Int
   def sqlizeUserIdUpdate(row: Row[CV]): String
 
   // txn log has (serial, row id, who did the update)
@@ -31,7 +31,7 @@ trait DataSqlizer[CT, CV] extends Sqlizer {
   def findCurrentVersion: String
   def newRowAuxDataAccumulator(rowWriter: (LogAuxColumn) => Unit): RowAuxDataAccumulator
   def prepareLogRowsChangedStatement: String
-  def prepareLogRowsChanged(stmt: PreparedStatement, version: Long, rowsJson: LogAuxColumn)
+  def prepareLogRowsChanged(stmt: PreparedStatement, version: Long, rowsJson: LogAuxColumn): Int
 
   trait RowAuxDataAccumulator {
     def insert(systemID: Long, row: Row[CV])

@@ -11,6 +11,10 @@ class TestDataSqlizer(user: String, val datasetContext: DatasetContext[TestColum
   val dataTableName = datasetContext.baseName + "_data"
   val logTableName = datasetContext.baseName + "_log"
 
+  def sizeof(x: Long) = 8
+  def sizeof(s: String) = s.length << 1
+  def sizeofNull = 1
+
   def mapToPhysical(column: String): String =
     if(datasetContext.systemSchema.contains(column)) {
       column.substring(1)
@@ -40,61 +44,61 @@ class TestDataSqlizer(user: String, val datasetContext: DatasetContext[TestColum
 
   def prepareSystemIdDeleteStatement = prepareUserIdDeleteStatement
 
-  def prepareSystemIdDelete(stmt: PreparedStatement, id: Long) {
+  def prepareSystemIdDelete(stmt: PreparedStatement, id: Long) = {
     stmt.setLong(1, id)
+    sizeof(id)
   }
 
-  def prepareUserIdDelete(stmt: PreparedStatement, id: TestColumnValue) {
-    datasetContext.userPrimaryKeyColumn match {
-      case Some(c) =>
-        add(stmt, 1, c, id)
-      case None =>
-        add(stmt, 1, datasetContext.systemIdColumnName, id)
-    }
+  def prepareUserIdDelete(stmt: PreparedStatement, id: TestColumnValue)  = {
+    val c = datasetContext.userPrimaryKeyColumn.getOrElse(sys.error("no user id column defined"))
+    add(stmt, 1, c, id)
   }
 
-  def add(stmt: PreparedStatement, i: Int, k: String, v: TestColumnValue) {
+  def add(stmt: PreparedStatement, i: Int, k: String, v: TestColumnValue): Int = {
     datasetContext.fullSchema(k) match {
       case StringColumn =>
         v match {
-          case StringValue(s) => stmt.setString(i, s)
-          case NullValue => stmt.setNull(i, java.sql.Types.VARCHAR)
+          case StringValue(s) => stmt.setString(i, s); sizeof(s)
+          case NullValue => stmt.setNull(i, java.sql.Types.VARCHAR); sizeofNull
           case LongValue(_) => sys.error("Tried to store a long in a text column?")
         }
       case LongColumn =>
         v match {
-          case LongValue(l) => stmt.setLong(i, l)
-          case NullValue => stmt.setNull(i, java.sql.Types.NUMERIC)
+          case LongValue(l) => stmt.setLong(i, l); sizeof(l)
+          case NullValue => stmt.setNull(i, java.sql.Types.NUMERIC); sizeofNull
           case StringValue(s) => sys.error("Tried to store a text in a long column?")
         }
     }
   }
 
-  def prepareSystemIdInsert(stmt: PreparedStatement, sid: Long, row: Row[TestColumnValue]) {
+  def prepareSystemIdInsert(stmt: PreparedStatement, sid: Long, row: Row[TestColumnValue]): Int = {
+    var totalSize = 0
     val trueRow = row + (datasetContext.systemIdColumnName -> LongValue(sid))
     var i = 1
 
     for(k <- keys) {
-      add(stmt, i, k, trueRow.getOrElse(k, NullValue))
+      totalSize += add(stmt, i, k, trueRow.getOrElse(k, NullValue))
       i += 1
     }
+
     stmt.setLong(i, sid)
+    totalSize += sizeof(sid)
+    totalSize
   }
 
-  def prepareUserIdInsert(stmt: PreparedStatement, sid: Long, row: Row[TestColumnValue]) {
+  def prepareUserIdInsert(stmt: PreparedStatement, sid: Long, row: Row[TestColumnValue]): Int = {
+    var totalSize = 0
     val trueRow = row + (datasetContext.systemIdColumnName -> LongValue(sid))
     var i = 1
 
     for(k <- keys) {
-      add(stmt, i, k, trueRow.getOrElse(k, NullValue))
+      totalSize += add(stmt, i, k, trueRow.getOrElse(k, NullValue))
       i += 1
     }
-    datasetContext.userPrimaryKeyColumn match {
-      case Some(c) =>
-        add(stmt, i, c, trueRow.getOrElse(c, NullValue))
-      case None =>
-        stmt.setLong(i, sid)
-    }
+
+    val c = datasetContext.userPrimaryKeyColumn.getOrElse(sys.error("No user PK column defined"))
+    totalSize += add(stmt, i, c, trueRow.getOrElse(c, NullValue))
+    totalSize
   }
 
   def sqlizeSystemIdUpdate(sid: Long, row: Row[TestColumnValue]) =
@@ -185,9 +189,10 @@ class TestDataSqlizer(user: String, val datasetContext: DatasetContext[TestColum
   val prepareLogRowsChangedStatement =
     "INSERT INTO " + logTableName + " (id, rows, who) VALUES (?,?," + userSqlized + ")"
 
-  def prepareLogRowsChanged(stmt: PreparedStatement, version: Long, rowsJson: LogAuxColumn) {
+  def prepareLogRowsChanged(stmt: PreparedStatement, version: Long, rowsJson: LogAuxColumn): Int = {
     stmt.setLong(1, version)
     stmt.setString(2, rowsJson)
+    sizeof(version) + sizeof(rowsJson)
   }
 
   def selectRow(id: TestColumnValue): String =
