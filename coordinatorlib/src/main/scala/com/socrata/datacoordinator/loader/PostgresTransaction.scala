@@ -414,6 +414,8 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
 {
   import PostgresTransaction.UserIDOps._
 
+  val log = org.slf4j.LoggerFactory.getLogger(classOf[UserPKPostgresTransaction[_,_]])
+
   val primaryKey = datasetContext.userPrimaryKeyColumn.getOrElse(sys.error("Created a UserPKPostgresTranasction but didn't have a user PK"))
 
   var tryInsertFirst = true
@@ -443,6 +445,9 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
 
   def maybeFlush() {
     if(pendingInserts >= insertBatchThreshold || pendingUpdates >= updateBatchThreshold || pendingDeletes >= deleteBatchThreshold) {
+      if(log.isDebugEnabled) {
+        log.debug("Flushing due to exceeding batch size: {}", Array[Any](pendingInserts, pendingUpdates, pendingDeletes))
+      }
       partialFlush()
       if(pendingInserts >= insertBatchThreshold) { // bunch of updates that got changed to inserts
         partialFlush()
@@ -684,7 +689,12 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
           i += 1
         } while(i != results.length)
 
-        if(failures > (inserts.size >> 1)) tryInsertFirst = !tryInsertFirst
+        if(failures > (inserts.size >> 1)) {
+          tryInsertFirst = !tryInsertFirst
+          log.debug("Enough inserts failed to flip insert first to {}", tryInsertFirst)
+        } else if(failures != 0) {
+          log.debug("{} inserts failed and need to be retried as updates", failures)
+        }
 
         if(pendingInserts >= insertBatchThreshold && stmtSize < softMaxBatchSizeInBytes) {
           insertBatchThreshold += insertBatchThreshold >> 1
@@ -736,7 +746,12 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
           i += 1
         } while(i != results.length)
 
-        if(failures > (updates.size >> 1)) tryInsertFirst = !tryInsertFirst
+        if(failures > (updates.size >> 1)) {
+          tryInsertFirst = !tryInsertFirst
+          log.debug("Enough updates failed to flip insert first to {}", tryInsertFirst)
+        } else if(failures != 0) {
+          log.debug("{} updates failed and need to be retried as inserts", failures)
+        }
 
         if(pendingUpdates >= updateBatchThreshold && stmtSize < softMaxBatchSizeInBytes) {
           updateBatchThreshold += updateBatchThreshold >> 1

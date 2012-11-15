@@ -1,0 +1,228 @@
+package com.socrata.datacoordinator.loader
+package loaderperf
+
+import java.sql.{PreparedStatement, ResultSet}
+
+import com.rojoma.json.ast._
+import com.rojoma.json.util.JsonUtil
+import com.rojoma.json.codec.JsonCodec
+
+class PerfDataSqlizer(user: String, val datasetContext: DatasetContext[PerfType, PerfValue]) extends PerfSqlizer(datasetContext) with DataSqlizer[PerfType, PerfValue] {
+  val userSqlized = PVText(user).sqlize
+  val dataTableName = datasetContext.baseName + "_data"
+  val logTableName = datasetContext.baseName + "_log"
+
+  def sizeof(x: Long) = 8
+  def sizeof(s: String) = s.length << 1
+  def sizeof(bd: BigDecimal) = bd.precision
+  def sizeofNull = 1
+
+  val mapToPhysical = Map.empty[String, String] ++ datasetContext.systemSchema.keys.map { k => k -> k.substring(1) } ++ datasetContext.userSchema.keys.map { k =>
+    k -> ("u_" + k)
+  }
+
+  val logicalColumns = datasetContext.fullSchema.keys.toArray
+  val physicalColumns = logicalColumns.map(mapToPhysical)
+
+  val pkCol = mapToPhysical(datasetContext.primaryKeyColumn)
+
+  val prepareSystemIdDeleteStatement =
+    "DELETE FROM " + dataTableName + " WHERE id = ?"
+
+  def prepareSystemIdInsertStatement =
+    "INSERT INTO " + dataTableName + " (" + physicalColumns.mkString(",") + ") SELECT " + physicalColumns.map(_ => "?").mkString(",") + " WHERE NOT EXISTS (SELECT 1 FROM " + dataTableName + " WHERE id = ?)"
+
+  def prepareSystemIdDelete(stmt: PreparedStatement, sid: Long) = {
+    stmt.setLong(1, sid)
+    sizeof(sid)
+  }
+
+  def prepareSystemIdInsert(stmt: PreparedStatement, sid: Long, row: Row[PerfValue]) = {
+    var totalSize = 0
+    var i = 0
+    val fullRow = row + (datasetContext.systemIdColumnName -> PVId(sid))
+    while(i != logicalColumns.length) {
+      totalSize += setValue(stmt, i + 1, datasetContext.fullSchema(logicalColumns(i)), fullRow.getOrElse(logicalColumns(i), PVNull))
+      i += 1
+    }
+    stmt.setLong(i + 1, sid)
+    totalSize += sizeof(sid)
+
+    totalSize
+  }
+
+  def sqlizeSystemIdUpdate(sid: Long, row: Row[PerfValue]) =
+    "UPDATE " + dataTableName + " SET " + row.map { case (col, v) => mapToPhysical(col) + " = " + v.sqlize }.mkString(",") + " WHERE id = " + row(datasetContext.systemIdColumnName).sqlize
+
+  val prepareUserIdDeleteStatement =
+    "DELETE FROM " + dataTableName + " WHERE " + pkCol + " = ?"
+
+  def prepareUserIdInsertStatement =
+    "INSERT INTO " + dataTableName + " (" + physicalColumns.mkString(",") + ") SELECT " + physicalColumns.map(_ => "?").mkString(",") + " WHERE NOT EXISTS (SELECT 1 FROM " + dataTableName + " WHERE " + pkCol + " = ?)"
+
+  def prepareUserIdDelete(stmt: PreparedStatement, id: PerfValue) = {
+    setValue(stmt, 1, datasetContext.userSchema(datasetContext.userPrimaryKeyColumn.get), id)
+  }
+
+  def setValue(stmt: PreparedStatement, col: Int, typ: PerfType, v: PerfValue): Int = {
+    v match {
+      case PVId(x) => stmt.setLong(col, x); sizeof(x)
+      case PVNumber(x) => stmt.setBigDecimal(col, x.underlying); sizeof(x)
+      case PVText(x) => stmt.setString(col, x); sizeof(x)
+      case PVNull =>
+        typ match {
+          case PTId => stmt.setNull(col, java.sql.Types.INTEGER)
+          case PTNumber => stmt.setNull(col, java.sql.Types.NUMERIC)
+          case PTText => stmt.setNull(col, java.sql.Types.VARCHAR)
+        }
+        sizeofNull
+    }
+  }
+
+  def prepareUserIdInsert(stmt: PreparedStatement, sid: Long, row: Row[PerfValue]) = {
+    var totalSize = 0
+    var i = 0
+    val fullRow = row + (datasetContext.systemIdColumnName -> PVId(sid))
+    while(i != logicalColumns.length) {
+      totalSize += setValue(stmt, i + 1, datasetContext.fullSchema(logicalColumns(i)), fullRow.getOrElse(logicalColumns(i), PVNull))
+      i += 1
+    }
+    val c = datasetContext.userPrimaryKeyColumn.get
+    totalSize += setValue(stmt, i + 1, datasetContext.userSchema(c), fullRow(c))
+    totalSize
+  }
+
+  def sqlizeUserIdUpdate(row: Row[PerfValue]) =
+    "UPDATE " + dataTableName + " SET " + (row - pkCol).map { case (col, v) => mapToPhysical(col) + " = " + v.sqlize }.mkString(",") + " WHERE " + pkCol + " = " + row(datasetContext.primaryKeyColumn).sqlize
+
+  // txn log has (serial, row id, who did the update)
+  val findCurrentVersion =
+    "SELECT COALESCE(MAX(id), 0) FROM " + logTableName
+
+  type LogAuxColumn = String
+
+  val prepareLogRowsChangedStatement =
+    "INSERT INTO " + logTableName + " (id, rows, who) VALUES (?, ?," + userSqlized + ")"
+
+  def prepareLogRowsChanged(stmt: PreparedStatement, version: Long, rowsJson: LogAuxColumn) = {
+    stmt.setLong(1, version)
+    stmt.setString(2, rowsJson)
+    sizeof(version) + sizeof(rowsJson)
+  }
+
+  def newRowAuxDataAccumulator(auxUser: (LogAuxColumn) => Unit) = new RowAuxDataAccumulator {
+    var sb = new java.lang.StringBuilder("[")
+    var didOne = false
+
+    def maybeComma() {
+      if(didOne) sb.append(",")
+      else didOne = true
+    }
+
+    def maybeFlush() {
+      if(sb.length > 128000) flush()
+    }
+
+    def flush() {
+      val str = sb.append("]").toString
+      sb = new java.lang.StringBuilder("[")
+      didOne = false
+      if(str != "[]") {
+        auxUser(str)
+      }
+    }
+
+    implicit val jCodec = new JsonCodec[PerfValue] {
+      def encode(x: PerfValue) = x match {
+        case PVId(i) => JArray(Seq(JNumber(i)))
+        case PVText(s) => JString(s)
+        case PVNumber(n) => JNumber(n)
+        case PVNull => JNull
+      }
+
+      def decode(x: JValue) = x match {
+        case JArray(Seq(JNumber(i))) => Some(PVId(i.longValue))
+        case JString(s) => Some(PVText(s))
+        case JNumber(n) => Some(PVNumber(n.toLong))
+        case JNull => Some(PVNull)
+        case _ => None
+      }
+    }
+
+    val codec = implicitly[JsonCodec[Map[String, Map[String, PerfValue]]]]
+
+    def insert(sid: Long, row: Row[PerfValue]) {
+      maybeComma()
+      // sorting because this is test code and we want to be able to use it sanely
+      sb.append(JsonUtil.renderJson(Map("i" -> (row + (datasetContext.systemIdColumnName -> PVId(sid)))))(codec))
+      maybeFlush()
+    }
+
+    def update(sid: Long, row: Row[PerfValue]) {
+      maybeComma()
+      sb.append(JsonUtil.renderJson(Map("u" -> (row + (datasetContext.systemIdColumnName -> PVId(sid)))))(codec))
+      maybeFlush()
+    }
+
+    def delete(systemID: Long) {
+      maybeComma()
+      sb.append(systemID)
+      maybeFlush()
+    }
+
+    def finish() {
+      flush()
+    }
+  }
+
+  def selectRow(id: PerfValue) = null
+
+  def extract(resultSet: ResultSet, logicalColumn: String) = null
+
+  // This may batch the "ids" into multiple queries.  The queries
+  def findSystemIds(ids: Iterator[PerfValue]) = {
+    require(datasetContext.hasUserPrimaryKey, "findSystemIds called without a user primary key")
+    if(ids.isEmpty) {
+      Iterator.empty
+    } else {
+      val sql = ids.map(_.sqlize).mkString("SELECT id AS sid, " + pkCol + " AS uid FROM " + dataTableName + " WHERE " + pkCol + " IN (", ",", ")")
+      Iterator.single(sql)
+    }
+  }
+
+  def extractIdPairs(rs: ResultSet) = {
+    val typ = datasetContext.userSchema(datasetContext.userPrimaryKeyColumn.getOrElse(sys.error("extractIdPairs called without a user primary key")))
+
+    val extractor = typ match {
+      case PTNumber =>
+        { () =>
+          val l = rs.getBigDecimal("uid")
+          if(l == null) PVNull
+          else PVNumber(l)
+        }
+      case PTText =>
+        { () =>
+          val s = rs.getString("uid")
+          if(s == null) PVNull
+          else PVText(s)
+        }
+      case PTId =>
+        { () =>
+          val l = rs.getLong("uid")
+          if(rs.wasNull) PVNull
+          else PVId(l)
+        }
+    }
+
+    def loop(): Stream[IdPair[PerfValue]] = {
+      if(rs.next()) {
+        val sid = rs.getLong("sid")
+        val uid = extractor()
+        IdPair(sid, uid) #:: loop()
+      } else {
+        Stream.empty
+      }
+    }
+    loop().iterator
+  }
+}
