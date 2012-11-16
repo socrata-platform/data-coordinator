@@ -163,8 +163,8 @@ class PerfDataSqlizer(user: String, val datasetContext: DatasetContext[PerfType,
     reset()
 
     def reset() {
-      baos = new java.io.ByteArrayOutputStream()
-      out = new java.io.BufferedWriter(new java.io.OutputStreamWriter(new org.xerial.snappy.SnappyOutputStream(baos), "utf-8"))
+      baos = new java.io.ByteArrayOutputStream
+      out = new java.io.OutputStreamWriter(new org.xerial.snappy.SnappyOutputStream(baos), "utf-8")
       out.write("[")
       didOne = false
     }
