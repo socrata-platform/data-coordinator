@@ -18,8 +18,6 @@ class ExecutePlan
 object ExecutePlan {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[ExecutePlan])
 
-  val trialsPerDataPoint = 10
-
   val EndOfSection = JString("------")
 
   def time[T](label: String)(f: => T): T = {
@@ -32,11 +30,14 @@ object ExecutePlan {
   }
 
   def main(args: Array[String]) {
+    val planFile = args(0)
+    val trialsPerDataPoint = args(1).toInt
+
     try {
       val datapoints = for(trial <- 1 to trialsPerDataPoint) yield {
         val idProvider = new PushbackIdProvider(new FixedSizeIdProvider(new InMemoryBlockIdProvider(releasable = false), 1000))
         for {
-          planReader <- managed(new BufferedReader(new InputStreamReader(new GZIPInputStream(new FileInputStream(args(0))), "UTF-8")))
+          planReader <- managed(new BufferedReader(new InputStreamReader(new GZIPInputStream(new FileInputStream(planFile)), "UTF-8")))
           conn <- managed(DriverManager.getConnection("jdbc:postgresql:robertm", "robertm", "lof9afw3"))
         } yield {
           val plan = new JsonReader(new JsonEventIterator(new BlockJsonTokenIterator(planReader, blockSize = 10240)))
