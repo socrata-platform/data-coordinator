@@ -17,6 +17,52 @@ class PerfDataSqlizer(user: String, val datasetContext: DatasetContext[PerfType,
   def sizeof(bd: BigDecimal) = bd.precision
   def sizeofNull = 1
 
+  def softMaxBatchSize = 1000000
+
+  def sizerFrom(base: Int, t: PerfType): PerfValue => Int = t match {
+    case PTId => {
+      case PVId(v) => base+8
+      case PVNull => base+4
+      case other => sys.error("Unexpected value for type " + t + other.getClass.getSimpleName)
+    }
+    case PTNumber => {
+      case PVNumber(v) => base+v.precision
+      case PVNull => base+4
+      case other => sys.error("Unexpected value for type " + t + other.getClass.getSimpleName)
+    }
+    case PTText => {
+      case PVText(v) => base+v.length
+      case PVNull => base+4
+      case other => sys.error("Unexpected value for type " + t + other.getClass.getSimpleName)
+    }
+  }
+
+  def updateSizerForType(c: String, t: PerfType) = sizerFrom(c.length, t)
+  def insertSizerForType(c: String, t: PerfType) = sizerFrom(0, t)
+
+  val updateSizes = datasetContext.fullSchema.map { case (c, t) =>
+    c -> updateSizerForType(c, t)
+  }
+
+  val insertSizes = datasetContext.fullSchema.map { case (c, t) =>
+    c -> insertSizerForType(c, t)
+  }
+
+  def sizeofDelete = 8
+
+  val baseUpdateSize = 50
+  def sizeofUpdate(row: Row[PerfValue]) =
+    row.foldLeft(baseUpdateSize) { (total, cv) =>
+      val (c,v) = cv
+      total + updateSizes(c)(v)
+    }
+
+  def sizeofInsert(row: Row[PerfValue]) =
+    row.foldLeft(0) { (total, cv) =>
+      val (c,v) = cv
+      total + insertSizes(c)(v)
+    }
+
   val mapToPhysical = Map.empty[String, String] ++ datasetContext.systemSchema.keys.map { k => k -> k.substring(1) } ++ datasetContext.userSchema.keys.map { k =>
     k -> ("u_" + k)
   }
@@ -99,36 +145,46 @@ class PerfDataSqlizer(user: String, val datasetContext: DatasetContext[PerfType,
   val findCurrentVersion =
     "SELECT COALESCE(MAX(id), 0) FROM " + logTableName
 
-  type LogAuxColumn = String
+  type LogAuxColumn = Array[Byte]
 
   val prepareLogRowsChangedStatement =
     "INSERT INTO " + logTableName + " (id, rows, who) VALUES (?, ?," + userSqlized + ")"
 
   def prepareLogRowsChanged(stmt: PreparedStatement, version: Long, rowsJson: LogAuxColumn) = {
     stmt.setLong(1, version)
-    stmt.setString(2, rowsJson)
-    sizeof(version) + sizeof(rowsJson)
+    stmt.setBytes(2, rowsJson)
+    sizeof(version) + rowsJson.length
   }
 
   def newRowAuxDataAccumulator(auxUser: (LogAuxColumn) => Unit) = new RowAuxDataAccumulator {
-    var sb = new java.lang.StringBuilder("[")
-    var didOne = false
+    var baos: java.io.ByteArrayOutputStream = _
+    var out: java.io.Writer = _
+    var didOne: Boolean = _
+    reset()
+
+    def reset() {
+      baos = new java.io.ByteArrayOutputStream()
+      out = new java.io.BufferedWriter(new java.io.OutputStreamWriter(new org.xerial.snappy.SnappyOutputStream(baos), "utf-8"))
+      out.write("[")
+      didOne = false
+    }
 
     def maybeComma() {
-      if(didOne) sb.append(",")
+      if(didOne) out.write(",")
       else didOne = true
     }
 
     def maybeFlush() {
-      if(sb.length > 128000) flush()
+      if(baos.size > 128000) flush()
     }
 
     def flush() {
-      val str = sb.append("]").toString
-      sb = new java.lang.StringBuilder("[")
-      didOne = false
-      if(str != "[]") {
-        auxUser(str)
+      if(didOne) {
+        out.write("]")
+        out.close()
+        val bytes = baos.toByteArray
+        reset()
+        auxUser(bytes)
       }
     }
 
@@ -154,19 +210,19 @@ class PerfDataSqlizer(user: String, val datasetContext: DatasetContext[PerfType,
     def insert(sid: Long, row: Row[PerfValue]) {
       maybeComma()
       // sorting because this is test code and we want to be able to use it sanely
-      sb.append(JsonUtil.renderJson(Map("i" -> (row + (datasetContext.systemIdColumnName -> PVId(sid)))))(codec))
+      out.write(JsonUtil.renderJson(Map("i" -> (row + (datasetContext.systemIdColumnName -> PVId(sid)))))(codec))
       maybeFlush()
     }
 
     def update(sid: Long, row: Row[PerfValue]) {
       maybeComma()
-      sb.append(JsonUtil.renderJson(Map("u" -> (row + (datasetContext.systemIdColumnName -> PVId(sid)))))(codec))
+      out.write(JsonUtil.renderJson(Map("u" -> (row + (datasetContext.systemIdColumnName -> PVId(sid)))))(codec))
       maybeFlush()
     }
 
     def delete(systemID: Long) {
       maybeComma()
-      sb.append(systemID)
+      out.write(systemID.toString)
       maybeFlush()
     }
 
@@ -182,11 +238,8 @@ class PerfDataSqlizer(user: String, val datasetContext: DatasetContext[PerfType,
   // This may batch the "ids" into multiple queries.  The queries
   def findSystemIds(ids: Iterator[PerfValue]) = {
     require(datasetContext.hasUserPrimaryKey, "findSystemIds called without a user primary key")
-    if(ids.isEmpty) {
-      Iterator.empty
-    } else {
-      val sql = ids.map(_.sqlize).mkString("SELECT id AS sid, " + pkCol + " AS uid FROM " + dataTableName + " WHERE " + pkCol + " IN (", ",", ")")
-      Iterator.single(sql)
+    ids.grouped(100).map { block =>
+      block.map(_.sqlize).mkString("SELECT id AS sid, " + pkCol + " AS uid FROM " + dataTableName + " WHERE " + pkCol + " IN (", ",", ")")
     }
   }
 

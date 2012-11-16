@@ -15,6 +15,47 @@ class TestDataSqlizer(user: String, val datasetContext: DatasetContext[TestColum
   def sizeof(s: String) = s.length << 1
   def sizeofNull = 1
 
+  def softMaxBatchSize = 10000000
+
+  def sizerFrom(base: Int, t: TestColumnType): TestColumnValue => Int = t match {
+    case LongColumn => {
+      case LongValue(v) => base+8
+      case NullValue => base+4
+      case StringValue(_) => sys.error("Expected long, got string")
+    }
+    case StringColumn => {
+      case StringValue(v) => base+v.length
+      case NullValue => base+4
+      case LongValue(_) => sys.error("Expected string, got long")
+    }
+  }
+
+  def updateSizerForType(c: String, t: TestColumnType) = sizerFrom(c.length, t)
+  def insertSizerForType(c: String, t: TestColumnType) = sizerFrom(0, t)
+
+  val updateSizes = datasetContext.fullSchema.map { case (c, t) =>
+    c -> updateSizerForType(c, t)
+  }
+
+  val insertSizes = datasetContext.fullSchema.map { case (c, t) =>
+    c -> insertSizerForType(c, t)
+  }
+
+  def sizeofDelete = sizeof(0L)
+
+  val baseUpdateSize = 50
+  def sizeofUpdate(row: Row[TestColumnValue]) =
+    row.foldLeft(baseUpdateSize) { (total, cv) =>
+      val (c,v) = cv
+      total + updateSizes(c)(v)
+    }
+
+  def sizeofInsert(row: Row[TestColumnValue]) =
+    row.foldLeft(0) { (total, cv) =>
+      val (c,v) = cv
+      total + insertSizes(c)(v)
+    }
+
   def mapToPhysical(column: String): String =
     if(datasetContext.systemSchema.contains(column)) {
       column.substring(1)
@@ -44,61 +85,55 @@ class TestDataSqlizer(user: String, val datasetContext: DatasetContext[TestColum
 
   def prepareSystemIdDeleteStatement = prepareUserIdDeleteStatement
 
-  def prepareSystemIdDelete(stmt: PreparedStatement, id: Long) = {
+  def prepareSystemIdDelete(stmt: PreparedStatement, id: Long) {
     stmt.setLong(1, id)
-    sizeof(id)
   }
 
-  def prepareUserIdDelete(stmt: PreparedStatement, id: TestColumnValue)  = {
+  def prepareUserIdDelete(stmt: PreparedStatement, id: TestColumnValue) {
     val c = datasetContext.userPrimaryKeyColumn.getOrElse(sys.error("no user id column defined"))
     add(stmt, 1, c, id)
   }
 
-  def add(stmt: PreparedStatement, i: Int, k: String, v: TestColumnValue): Int = {
+  def add(stmt: PreparedStatement, i: Int, k: String, v: TestColumnValue) {
     datasetContext.fullSchema(k) match {
       case StringColumn =>
         v match {
-          case StringValue(s) => stmt.setString(i, s); sizeof(s)
-          case NullValue => stmt.setNull(i, java.sql.Types.VARCHAR); sizeofNull
+          case StringValue(s) => stmt.setString(i, s)
+          case NullValue => stmt.setNull(i, java.sql.Types.VARCHAR)
           case LongValue(_) => sys.error("Tried to store a long in a text column?")
         }
       case LongColumn =>
         v match {
-          case LongValue(l) => stmt.setLong(i, l); sizeof(l)
-          case NullValue => stmt.setNull(i, java.sql.Types.NUMERIC); sizeofNull
+          case LongValue(l) => stmt.setLong(i, l)
+          case NullValue => stmt.setNull(i, java.sql.Types.NUMERIC)
           case StringValue(s) => sys.error("Tried to store a text in a long column?")
         }
     }
   }
 
-  def prepareSystemIdInsert(stmt: PreparedStatement, sid: Long, row: Row[TestColumnValue]): Int = {
-    var totalSize = 0
+  def prepareSystemIdInsert(stmt: PreparedStatement, sid: Long, row: Row[TestColumnValue]) {
     val trueRow = row + (datasetContext.systemIdColumnName -> LongValue(sid))
     var i = 1
 
     for(k <- keys) {
-      totalSize += add(stmt, i, k, trueRow.getOrElse(k, NullValue))
+      add(stmt, i, k, trueRow.getOrElse(k, NullValue))
       i += 1
     }
 
     stmt.setLong(i, sid)
-    totalSize += sizeof(sid)
-    totalSize
   }
 
-  def prepareUserIdInsert(stmt: PreparedStatement, sid: Long, row: Row[TestColumnValue]): Int = {
-    var totalSize = 0
+  def prepareUserIdInsert(stmt: PreparedStatement, sid: Long, row: Row[TestColumnValue]) = {
     val trueRow = row + (datasetContext.systemIdColumnName -> LongValue(sid))
     var i = 1
 
     for(k <- keys) {
-      totalSize += add(stmt, i, k, trueRow.getOrElse(k, NullValue))
+      add(stmt, i, k, trueRow.getOrElse(k, NullValue))
       i += 1
     }
 
     val c = datasetContext.userPrimaryKeyColumn.getOrElse(sys.error("No user PK column defined"))
-    totalSize += add(stmt, i, c, trueRow.getOrElse(c, NullValue))
-    totalSize
+    add(stmt, i, c, trueRow.getOrElse(c, NullValue))
   }
 
   def sqlizeSystemIdUpdate(sid: Long, row: Row[TestColumnValue]) =

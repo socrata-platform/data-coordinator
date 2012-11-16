@@ -12,18 +12,23 @@ trait DataSqlizer[CT, CV] extends Sqlizer {
   def dataTableName: String
   def datasetContext: DatasetContext[CT, CV]
 
+  def softMaxBatchSize: Int
+  def sizeofDelete: Int
+  def sizeofInsert(row: Row[CV]): Int
+  def sizeofUpdate(row: Row[CV]): Int
+
   def prepareSystemIdDeleteStatement: String
   def prepareSystemIdInsertStatement: String
 
-  def prepareSystemIdDelete(stmt: PreparedStatement, sid: Long): Int
-  def prepareSystemIdInsert(stmt: PreparedStatement, sid: Long, row: Row[CV]): Int
+  def prepareSystemIdDelete(stmt: PreparedStatement, sid: Long)
+  def prepareSystemIdInsert(stmt: PreparedStatement, sid: Long, row: Row[CV])
   def sqlizeSystemIdUpdate(sid: Long, row: Row[CV]): String
 
   def prepareUserIdDeleteStatement: String
   def prepareUserIdInsertStatement: String
 
-  def prepareUserIdDelete(stmt: PreparedStatement, id: CV): Int
-  def prepareUserIdInsert(stmt: PreparedStatement, sid: Long, row: Row[CV]): Int
+  def prepareUserIdDelete(stmt: PreparedStatement, id: CV)
+  def prepareUserIdInsert(stmt: PreparedStatement, sid: Long, row: Row[CV])
   def sqlizeUserIdUpdate(row: Row[CV]): String
 
   // txn log has (serial, row id, who did the update)

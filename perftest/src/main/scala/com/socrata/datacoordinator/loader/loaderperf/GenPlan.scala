@@ -13,11 +13,10 @@ import com.rojoma.json.io.{JsonWriter, CompactJsonWriter}
 import com.rojoma.json.codec.JsonCodec
 
 object GenPlan {
-  val doDeletes = false
   val initialSize = 1000000
-  val insertNew = 200000
-  val updateOld = if(doDeletes) 7000 else 90000
-  val deleteOld = if(doDeletes) 5000 else 0
+  val insertNew = 90000
+  val updateOld = 200000
+  val deleteOld = 0
   val nullFrac = 0.2 // odds that a value will be null
   val updateFrac = 0.5 // odds that a cell will be chosen for updating
 
