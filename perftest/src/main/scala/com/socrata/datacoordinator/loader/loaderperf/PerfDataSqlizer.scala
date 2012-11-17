@@ -1,11 +1,13 @@
 package com.socrata.datacoordinator.loader
 package loaderperf
 
-import java.sql.{PreparedStatement, ResultSet}
+import java.sql.{Connection, PreparedStatement, ResultSet}
 
 import com.rojoma.json.ast._
 import com.rojoma.json.util.JsonUtil
 import com.rojoma.json.codec.JsonCodec
+import org.postgresql.core.BaseConnection
+import org.postgresql.copy.CopyManager
 
 class PerfDataSqlizer(user: String, val datasetContext: DatasetContext[PerfType, PerfValue]) extends PerfSqlizer(datasetContext) with DataSqlizer[PerfType, PerfValue] {
   val userSqlized = PVText(user).sqlize
@@ -36,7 +38,6 @@ class PerfDataSqlizer(user: String, val datasetContext: DatasetContext[PerfType,
       case other => sys.error("Unexpected value for type " + t + other.getClass.getSimpleName)
     }
   }
-
   def updateSizerForType(c: String, t: PerfType) = sizerFrom(c.length, t)
   def insertSizerForType(c: String, t: PerfType) = sizerFrom(0, t)
 
@@ -74,6 +75,69 @@ class PerfDataSqlizer(user: String, val datasetContext: DatasetContext[PerfType,
 
   val prepareSystemIdDeleteStatement =
     "DELETE FROM " + dataTableName + " WHERE id = ?"
+
+
+  val bulkInsertStatement =
+    "COPY " + dataTableName + " (" + physicalColumns.mkString(",") + ") from stdin with csv"
+
+  def insertBatch(conn: Connection)(f: Inserter => Unit): Long = {
+    val inserter = new InserterImpl
+    f(inserter)
+    val copyManager = new CopyManager(conn.asInstanceOf[BaseConnection])
+    copyManager.copyIn(bulkInsertStatement, inserter.reader)
+  }
+
+  class InserterImpl extends Inserter {
+    val sb = new java.lang.StringBuilder
+    def insert(sid: Long, row: Row[PerfValue]) {
+      val trueRow = row + (datasetContext.systemIdColumnName -> PVId(sid))
+      var didOne = false
+      for(k <- logicalColumns) {
+        if(didOne) sb.append(',')
+        else didOne = true
+        csvize(sb, k, trueRow.getOrElse(k, PVNull))
+      }
+      sb.append('\n')
+    }
+
+    def close() {}
+
+    def reader: java.io.Reader = new java.io.Reader {
+      var srcPtr = 0
+      def read(dst: Array[Char], off: Int, len: Int): Int = {
+        val remaining = sb.length - srcPtr
+        if(remaining == 0) return -1
+        val count = java.lang.Math.min(remaining, len)
+        val end = srcPtr + count
+        sb.getChars(srcPtr, end, dst, off)
+        srcPtr = end
+        count
+      }
+      def close() {}
+    }
+  }
+
+  def csvize(sb: java.lang.StringBuilder, k: String, v: PerfValue) = {
+    v match {
+      case PVText(s) =>
+        sb.append('"')
+        var i = 0
+        val limit = s.length
+        while(i != limit) {
+          val c = sb.charAt(i)
+          sb.append(c)
+          if(c == '"') sb.append('"')
+          i += 1
+        }
+        sb.append('"')
+      case PVNumber(n) =>
+        sb.append(n)
+      case PVId(n) =>
+        sb.append(n)
+      case PVNull =>
+        // nothing
+    }
+  }
 
   def prepareSystemIdInsertStatement =
     "INSERT INTO " + dataTableName + " (" + physicalColumns.mkString(",") + ") SELECT " + physicalColumns.map(_ => "?").mkString(",") + " WHERE NOT EXISTS (SELECT 1 FROM " + dataTableName + " WHERE id = ?)"

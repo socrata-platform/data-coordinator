@@ -171,6 +171,7 @@ object ExecutePlan {
           }
 
           val delta = end - start
+          log.info("Trial {}: {}ms", trial: Any, (delta/1000000):Any)
           delta
         }
       }

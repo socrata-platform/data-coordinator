@@ -9,4 +9,5 @@ trait RowIdMap[CV, T] {
   def isEmpty: Boolean
   def size: Int
   def foreach(f: (CV, T) => Unit)
+  def valuesIterator: Iterator[T]
 }

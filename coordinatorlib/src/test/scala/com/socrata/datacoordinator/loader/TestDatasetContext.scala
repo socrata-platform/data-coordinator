@@ -73,6 +73,8 @@ class TestDatasetContext(val baseName: String, val userSchema: Map[String, TestC
           f(ent.getKey, ent.getValue)
         }
       }
+
+      def valuesIterator = m.values().iterator.asScala
     }
   }
 }

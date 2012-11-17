@@ -48,13 +48,10 @@ class StupidPostgresTransaction[CT, CV](val connection: Connection,
             }
             if(updatedCount == 0) {
               val sid = idProvider.allocate()
-              using(connection.prepareStatement(sqlizer.prepareUserIdInsertStatement)) { stmt =>
-                sqlizer.prepareUserIdInsert(stmt, sid, row)
-                val result = stmt.executeUpdate()
-                if(result != 1) {
-                  sys.error("From insert: " + result)
-                }
+              val result = sqlizer.insertBatch(connection) { inserter =>
+                inserter.insert(sid, row)
               }
+              assert(result == 1, "From insert: " + result)
               rowAuxData.update(sid, row)
               inserted.put(job, id)
             } else {
@@ -77,13 +74,10 @@ class StupidPostgresTransaction[CT, CV](val connection: Connection,
             }
           case None =>
             val sid = idProvider.allocate()
-            using(connection.prepareStatement(sqlizer.prepareSystemIdInsertStatement)) { stmt =>
-              sqlizer.prepareSystemIdInsert(stmt, sid, row)
-              val result = stmt.executeUpdate()
-              if(result != 1) {
-                sys.error("From insert: " + result)
-              }
+            val result = sqlizer.insertBatch(connection) { inserter =>
+              inserter.insert(sid, row)
             }
+            assert(result == 1, "From insert: " + result)
             rowAuxData.insert(sid, row)
             inserted.put(job, typeContext.makeValueFromSystemId(sid))
         }

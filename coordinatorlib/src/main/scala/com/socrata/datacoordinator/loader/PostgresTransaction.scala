@@ -377,30 +377,26 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
 
   def processInserts(inserts: java.util.ArrayList[Insert[CV]]) {
     if(!inserts.isEmpty) {
-      using(connection.prepareStatement(sqlizer.prepareUserIdInsertStatement)) { stmt =>
-        val it = inserts.iterator()
-        while(it.hasNext) {
-          val op = it.next()
-          sqlizer.prepareSystemIdInsert(stmt, op.id, op.row)
-          stmt.addBatch()
-          insertSize -= op.size
-        }
-
-        val results = stmt.executeBatch()
-        assert(results.length == inserts.size, "Expected " + inserts.size + " results for inserts; got " + results.length)
-
+      val insertCount = sqlizer.insertBatch(connection) { inserter =>
         var i = 0
         do {
           val op = inserts.get(i)
-          val idValue = typeContext.makeValueFromSystemId(op.id)
-          if(results(i) == 1) {
-            rowAuxData.insert(op.id, op.row)
-            inserted.put(op.job, idValue)
-          } else sys.error("Unexpected result code from insert: " + results(i))
-
+          inserter.insert(op.id, op.row)
+          insertSize -= op.size
           i += 1
-        } while(i != results.length)
+        } while(i != inserts.size)
       }
+
+      assert(insertCount == inserts.size, "Expected " + inserts.size + " results for inserts; got " + insertCount)
+
+      var i = 0
+      do {
+        val op = inserts.get(i)
+        val idValue = typeContext.makeValueFromSystemId(op.id)
+        rowAuxData.insert(op.id, op.row)
+        inserted.put(op.job, idValue)
+        i += 1
+      } while(i != insertCount)
     }
     assert(insertSize == 0, "No inserts, but insert size is not 0?")
   }
@@ -416,8 +412,6 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
 
   val primaryKey = datasetContext.userPrimaryKeyColumn.getOrElse(sys.error("Created a UserPKPostgresTranasction but didn't have a user PK"))
 
-  var tryInsertFirst = true
-
   val knownToExist = datasetContext.makeIdSet()
   val knownNotToExist = datasetContext.makeIdSet()
   val jobs = datasetContext.makeIdMap[OperationLog[CV]]()
@@ -427,8 +421,7 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
 
   def trackSize(typ: UpsertType, delta: Int) = typ match {
     case UpsertUnknown =>
-      if(tryInsertFirst) insertSize += delta
-      else updateSize += delta
+      insertSize += delta
     case UpsertInsert =>
       insertSize += delta
     case UpsertUpdate =>
@@ -493,8 +486,7 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
                 record.upsertCase = UpsertUpdate
                 record.upsertSize = sqlizer.sizeofUpdate(row)
               } else {
-                if(tryInsertFirst) record.upsertSize = sqlizer.sizeofInsert(row)
-                else record.upsertSize = sqlizer.sizeofUpdate(row)
+                record.upsertSize = sqlizer.sizeofInsert(row)
               }
               trackSize(record.upsertCase, record.upsertSize)
             } else {
@@ -502,8 +494,7 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
               record.upsertedRow = datasetContext.mergeRows(record.upsertedRow, row)
               record.upsertSize = record.upsertCase match {
                 case UpsertUnknown =>
-                  if(tryInsertFirst) sqlizer.sizeofInsert(record.upsertedRow)
-                  else sqlizer.sizeofUpdate(record.upsertedRow)
+                  sqlizer.sizeofInsert(record.upsertedRow)
                 case UpsertInsert => sqlizer.sizeofInsert(record.upsertedRow)
                 case UpsertUpdate => sqlizer.sizeofUpdate(record.upsertedRow)
               }
@@ -573,8 +564,10 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
   def partialFlush() {
     if(jobs.isEmpty) return
 
+    val sidsForUpdateAndDelete = findSids(jobs.valuesIterator)
+
     val deletes = new java.util.ArrayList[OperationLog[CV]]
-    val inserts = new java.util.ArrayList[OperationLog[CV]]
+    val inserts = new java.util.ArrayList[OperationLog[CV]](jobs.size - sidsForUpdateAndDelete.size)
     val updates = new java.util.ArrayList[OperationLog[CV]]
 
     jobs.foreach { (_, op) =>
@@ -582,8 +575,12 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
       if(op.hasUpsertJob) {
         op.upsertCase match {
           case UpsertUnknown =>
-            if(tryInsertFirst) inserts.add(op)
-            else updates.add(op)
+            if(sidsForUpdateAndDelete.contains(op.id)) {
+              insertSize -= op.upsertSize
+              op.upsertSize = sqlizer.sizeofUpdate(op.upsertedRow)
+              updateSize += op.upsertSize
+              updates.add(op)
+            } else inserts.add(op)
           case UpsertInsert =>
             inserts.add(op)
           case UpsertUpdate =>
@@ -594,8 +591,6 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
 
     jobs.clear()
 
-    val sidsForUpdateAndDelete = datasetContext.makeIdMap[Long]()
-    findSids(sidsForUpdateAndDelete, deletes, inserts, updates)
     processDeletes(sidsForUpdateAndDelete, deletes)
     processInserts(inserts, updates)
     processUpdates(sidsForUpdateAndDelete, updates)
@@ -607,18 +602,20 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
     assert(jobs.isEmpty, "Two partial flushes did not do anything")
   }
 
-  def findSids(target: RowIdMap[CV, Long], ops: java.util.ArrayList[OperationLog[CV]]*) {
+  def findSids(ops: Iterator[OperationLog[CV]]): RowIdMap[CV, Long] = {
+    val target = datasetContext.makeIdMap[Long]()
     using(connection.createStatement()) { stmt =>
       var blockCount = 0
-      for(sql <- sqlizer.findSystemIds(ops.iterator.flatMap(_.iterator.asScala).filter { op => op.hasDeleteJob || (op.hasUpsertJob && op.upsertCase != UpsertInsert)}.map(_.id))) {
+      for(sql <- sqlizer.findSystemIds(ops.filter { op => op.hasDeleteJob || (op.hasUpsertJob && op.upsertCase != UpsertInsert)}.map(_.id))) {
         blockCount += 1
         for {
           rs <- managed(stmt.executeQuery(sql))
           idPair <- sqlizer.extractIdPairs(rs)
         } target.put(idPair.userId, idPair.systemId)
       }
-      log.debug("Looked up {} ID(s) in {} block(s)", ops.iterator.map(_.size).sum : Any, blockCount : Any)
+      log.debug("Looked up {} ID(s) in {} block(s)", target.size, blockCount)
     }
+    target
   }
 
   def processDeletes(sidSource: RowIdMap[CV, Long], deletes: java.util.ArrayList[OperationLog[CV]]) {
@@ -657,9 +654,8 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
 
   def processInserts(inserts: java.util.ArrayList[OperationLog[CV]], updates: java.util.ArrayList[OperationLog[CV]]) {
     if(!inserts.isEmpty) {
-      using(connection.prepareStatement(sqlizer.prepareUserIdInsertStatement)) { stmt =>
-        var failures = 0
-        val sids = new Array[Long](inserts.size)
+      val sids = new Array[Long](inserts.size)
+      val insertedCount = sqlizer.insertBatch(connection) { inserter =>
         var i = 0
         do {
           val op = inserts.get(i)
@@ -667,54 +663,33 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
           assert(op.upsertCase != UpsertUpdate, "Found an unconditional update while doing inserts?")
           val sid = idProvider.allocate()
           sids(i) = sid
-          sqlizer.prepareUserIdInsert(stmt, sid, op.upsertedRow)
-          stmt.addBatch()
+          inserter.insert(sid, op.upsertedRow)
           insertSize -= op.upsertSize
           i += 1
         } while(i != inserts.size)
-
-        val results = stmt.executeBatch()
-        assert(results.length == inserts.size, "Expected " + inserts.size + " results for inserts; got " + results.length)
-
-        i = 0
-        do {
-          val op = inserts.get(i)
-          if(results(i) == 1) {
-            rowAuxData.insert(sids(i), op.upsertedRow)
-            inserted.put(op.upsertJob, op.id)
-          } else if(results(i) == 0) {
-            idProvider.unallocate(sids(i))
-            if(op.upsertCase == UpsertUnknown) {
-              failures += 1
-              op.upsertCase = UpsertUpdate
-              updates.add(op)
-              updateSize += op.upsertSize
-            } else {
-              sys.error("Unconditional insert failed?")
-            }
-          } else sys.error("Unexpected result code from insert: " + results(i))
-
-          i += 1
-        } while(i != results.length)
-
-        if(failures > (inserts.size >> 1)) {
-          tryInsertFirst = !tryInsertFirst
-          log.debug("Enough inserts failed to flip insert first to {}", tryInsertFirst)
-        } else if(failures != 0) {
-          log.debug("{} inserts failed and need to be retried as updates", failures)
-        }
       }
+      assert(insertedCount == inserts.size, "Expected " + inserts.size + " results for inserts; got " + insertedCount)
+
+      var i = inserts.size
+      do {
+        i -= 1
+        val op = inserts.get(i)
+        rowAuxData.insert(sids(i), op.upsertedRow)
+        inserted.put(op.upsertJob, op.id)
+      } while(i != 0)
     }
-    assert(insertSize == 0, "No inserts, but insert size is not 0?")
+    assert(insertSize == 0, "No inserts, but insert size is not 0?  Instead it's " + insertSize)
   }
 
+  // Note: destroys "updates"
   def processUpdates(sidSource: RowIdMap[CV, Long], updates: java.util.ArrayList[OperationLog[CV]]) {
     if(!updates.isEmpty) {
       using(connection.createStatement()) { stmt =>
         var failures = 0
         var i = 0
-        var updatesToRun = new java.util.ArrayList[OperationLog[CV]](updates.size)
+        var updatesToRun = 0
         do {
+          assert(updatesToRun <= i)
           val op = updates.get(i)
           assert(op.hasUpsertJob, "No upsert job?")
           assert(op.upsertCase != UpsertInsert, "Found an unconditional insert while doing updates?")
@@ -723,7 +698,8 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
           if(sidSource.contains(op.id)) {
             val sql = sqlizer.sqlizeUserIdUpdate(op.upsertedRow)
             stmt.addBatch(sql)
-            updatesToRun.add(op)
+            updates.set(updatesToRun, op)
+            updatesToRun += 1
           } else {
             if(op.upsertCase == UpsertUnknown) {
               failures += 1
@@ -740,13 +716,13 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
           i += 1
         } while(i != updates.size)
 
-        if(!updatesToRun.isEmpty) {
+        if(updatesToRun != 0) {
           val results = stmt.executeBatch()
-          assert(results.length == updatesToRun.size, "Expected " + updatesToRun.size + " results for updates; got " + results.length)
+          assert(results.length == updatesToRun, "Expected " + updatesToRun + " results for updates; got " + results.length)
 
           i = 0
           do {
-            val op = updatesToRun.get(i)
+            val op = updates.get(i)
             if(results(i) == 1) {
               val sid = sidSource.get(op.id).getOrElse(sys.error("Successfully updated row, but no sid found for it?"))
               rowAuxData.update(sid, op.upsertedRow)
@@ -756,14 +732,7 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
             } else sys.error("Unexpected result code from update: " + results(i))
 
             i += 1
-          } while(i != results.length)
-        }
-
-        if(failures > (updates.size >> 1)) {
-          tryInsertFirst = !tryInsertFirst
-          log.debug("Enough updates failed to flip insert first to {}", tryInsertFirst)
-        } else if(failures != 0) {
-          log.debug("{} updates failed and need to be retried as inserts", failures)
+          } while(i != updatesToRun)
         }
       }
     }

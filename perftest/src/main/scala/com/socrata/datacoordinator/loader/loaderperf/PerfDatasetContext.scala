@@ -73,6 +73,8 @@ class PerfDatasetContext(val baseName: String, val userSchema: Map[String, PerfT
           f(ent.getKey, ent.getValue)
         }
       }
+
+      def valuesIterator = m.values.iterator.asScala
     }
   }
 }
