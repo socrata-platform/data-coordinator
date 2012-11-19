@@ -8,7 +8,7 @@ object CoordinatorLib {
   lazy val settings: Seq[Setting[_]] = BuildSettings.projectSettings() ++ Seq(
     libraryDependencies <++= (slf4jVersion) { slf4jVersion =>
       Seq(
-        "com.socrata" %% "socrata-id" % "2.0.0",
+        "com.socrata" %% "socrata-id" % "2.1.0",
         "com.rojoma" %% "rojoma-json" % "2.0.0",
         "com.rojoma" %% "simple-arm" % "1.1.10",
         "net.sf.trove4j" % "trove4j" % "3.0.3",

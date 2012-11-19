@@ -35,7 +35,7 @@ object ExecutePlan {
 
     try {
       val datapoints = for(trial <- 1 to trialsPerDataPoint) yield {
-        val idProvider = new PushbackIdProvider(new FixedSizeIdProvider(new InMemoryBlockIdProvider(releasable = false), 1000))
+        val idProvider = new IdProviderPoolImpl(new InMemoryBlockIdProvider(releasable = false), new FixedSizeIdProvider(_, 1000))
         for {
           planReader <- managed(new BufferedReader(new InputStreamReader(new GZIPInputStream(new FileInputStream(planFile)), "UTF-8")))
           conn <- managed(DriverManager.getConnection("jdbc:postgresql:robertm", "robertm", "lof9afw3"))
@@ -66,57 +66,59 @@ object ExecutePlan {
             import org.postgresql.copy.CopyManager
             import org.postgresql.core.BaseConnection
 
-            val copier = new CopyManager(conn.asInstanceOf[BaseConnection])
-            val reader = new java.io.Reader {
-              var line = ""
-              var offset = 0
-              def read(cbuf: Array[Char], off: Int, len: Int): Int = {
-                if(line == null) return -1
-                if(offset == line.length) refill()
-                if(line == null) return -1
-                def loop(soFar: Int, off: Int, len: Int): Int = {
-                  if(line == null || len == 0) return soFar
-                  var src = offset
-                  var dst = off
-                  val count = java.lang.Math.min(line.length - offset, len)
-                  var remaining = count
-                  while(remaining > 0) {
-                    cbuf(dst) = line.charAt(src)
-                    dst += 1
-                    src += 1
-                    remaining -= 1
-                  }
-                  offset = src
+            idProvider.withProvider { idProvider =>
+              val copier = new CopyManager(conn.asInstanceOf[BaseConnection])
+              val reader = new java.io.Reader {
+                var line = ""
+                var offset = 0
+                def read(cbuf: Array[Char], off: Int, len: Int): Int = {
+                  if(line == null) return -1
                   if(offset == line.length) refill()
-                  loop(soFar + count, off + count, len - count)
-                }
-                loop(0, off, len)
-              }
-              def close() {}
-              def refill() {
-                val raw = plan.read()
-                if(raw == EndOfSection) line = null
-                else {
-                  val ins = JsonCodec.fromJValue[Insert](raw).getOrElse(sys.error("Cannot read insert"))
-                  val sb = new java.lang.StringBuilder(idProvider.allocate().toString)
-                  for((k, t) <- schema) {
-                    sb.append(',')
-                    ins.fields(k) match {
-                      case JString(s) => sb.append('"').append(s.replaceAllLiterally("\"", "\"\"")).append('"')
-                      case JNumber(n) => sb.append(n)
-                      case JNull => /* nothing */
-                      case other => sys.error("Unexpected JSON datum " + other)
+                  if(line == null) return -1
+                  def loop(soFar: Int, off: Int, len: Int): Int = {
+                    if(line == null || len == 0) return soFar
+                    var src = offset
+                    var dst = off
+                    val count = java.lang.Math.min(line.length - offset, len)
+                    var remaining = count
+                    while(remaining > 0) {
+                      cbuf(dst) = line.charAt(src)
+                      dst += 1
+                      src += 1
+                      remaining -= 1
                     }
+                    offset = src
+                    if(offset == line.length) refill()
+                    loop(soFar + count, off + count, len - count)
                   }
-                  sb.append("\n")
-                  line = sb.toString
-                  offset = 0
+                  loop(0, off, len)
+                }
+                def close() {}
+                def refill() {
+                  val raw = plan.read()
+                  if(raw == EndOfSection) line = null
+                  else {
+                    val ins = JsonCodec.fromJValue[Insert](raw).getOrElse(sys.error("Cannot read insert"))
+                    val sb = new java.lang.StringBuilder(idProvider.allocate().toString)
+                    for((k, t) <- schema) {
+                      sb.append(',')
+                      ins.fields(k) match {
+                        case JString(s) => sb.append('"').append(s.replaceAllLiterally("\"", "\"\"")).append('"')
+                        case JNumber(n) => sb.append(n)
+                        case JNull => /* nothing */
+                        case other => sys.error("Unexpected JSON datum " + other)
+                      }
+                    }
+                    sb.append("\n")
+                    line = sb.toString
+                    offset = 0
+                  }
                 }
               }
-            }
-            copier.copyIn("COPY perf_data (id," + schema.keys.toSeq.map("u_"+).mkString(",") + ") from stdin with csv", reader)
-            time("Committing prepopulation") {
-              conn.commit()
+              copier.copyIn("COPY perf_data (id," + schema.keys.toSeq.map("u_"+).mkString(",") + ") from stdin with csv", reader)
+              time("Committing prepopulation") {
+                conn.commit()
+              }
             }
           }
           conn.setAutoCommit(true)

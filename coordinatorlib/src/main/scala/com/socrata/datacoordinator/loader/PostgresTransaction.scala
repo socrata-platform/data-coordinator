@@ -14,12 +14,10 @@ import gnu.trove.map.hash.TLongObjectHashMap
 abstract class PostgresTransaction[CT, CV](val connection: Connection,
                                            val typeContext: TypeContext[CV],
                                            val sqlizer: DataSqlizer[CT, CV],
-                                           val idProvider: IdProvider with Unallocatable)
+                                           val idProviderPool: IdProviderPool)
   extends Transaction[CV]
 {
   private val log = org.slf4j.LoggerFactory.getLogger(classOf[PostgresTransaction[_,_]])
-
-  require(!connection.getAutoCommit, "Connection must be in non-auto-commit mode")
 
   val datasetContext = sqlizer.datasetContext
 
@@ -31,8 +29,23 @@ abstract class PostgresTransaction[CT, CV](val connection: Connection,
   val deleted = new java.util.HashMap[Int, CV]
   val errors = new java.util.HashMap[Int, Failure[CV]]
 
+  // These three initializations must run in THIS order.  Any further
+  // initializations must take care to clean up after themselves if
+  // they may throw!  In particular they must either early-initialize or
+  // rollback the transaction and return the id provider to the pool.
+
+  require(!connection.getAutoCommit, "Connection must be in non-auto-commit mode")
+
+  val idProvider = idProviderPool.borrow()
+
   using(connection.createStatement()) { stmt =>
-    stmt.execute(sqlizer.lockTableAgainstWrites(sqlizer.dataTableName))
+    var success = false
+    try {
+      stmt.execute(sqlizer.lockTableAgainstWrites(sqlizer.dataTableName))
+      success = true
+    } finally {
+      if(!success) idProviderPool.release(idProvider)
+    }
   }
 
   object nextJobNum extends (() => Int) {
@@ -121,12 +134,19 @@ abstract class PostgresTransaction[CT, CV](val connection: Connection,
   }
 
   def close() {
-    rowAuxDataState.close()
-    connection.rollback()
+    try {
+      rowAuxDataState.close()
+    } finally {
+      try {
+        connection.rollback()
+      } finally {
+        idProviderPool.release(idProvider)
+      }
+    }
   }
 }
 
-class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s: DataSqlizer[CT, CV], _i: IdProvider with Unallocatable)
+class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s: DataSqlizer[CT, CV], _i: IdProviderPool)
   extends PostgresTransaction(_c, _tc, _s, _i)
 {
   private val log = org.slf4j.LoggerFactory.getLogger(classOf[SystemPKPostgresTransaction[_,_]])
@@ -403,14 +423,14 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
 
 }
 
-class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s: DataSqlizer[CT, CV], _i: IdProvider with Unallocatable)
-  extends PostgresTransaction(_c, _tc, _s, _i)
+class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s: DataSqlizer[CT, CV], _i: IdProviderPool)
+  extends {
+  val primaryKey = _s.datasetContext.userPrimaryKeyColumn.getOrElse(sys.error("Created a UserPKPostgresTranasction but didn't have a user PK"))
+} with PostgresTransaction(_c, _tc, _s, _i)
 {
   private val log = org.slf4j.LoggerFactory.getLogger(classOf[UserPKPostgresTransaction[_,_]])
 
   import PostgresTransaction.UserIDOps._
-
-  val primaryKey = datasetContext.userPrimaryKeyColumn.getOrElse(sys.error("Created a UserPKPostgresTranasction but didn't have a user PK"))
 
   val knownToExist = datasetContext.makeIdSet()
   val knownNotToExist = datasetContext.makeIdSet()
@@ -742,7 +762,7 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
 }
 
 object PostgresTransaction {
-  def apply[CT, CV](connection: Connection, typeContext: TypeContext[CV], sqlizer: DataSqlizer[CT, CV], idProvider: IdProvider with Unallocatable): PostgresTransaction[CT,CV] = {
+  def apply[CT, CV](connection: Connection, typeContext: TypeContext[CV], sqlizer: DataSqlizer[CT, CV], idProvider: IdProviderPool): PostgresTransaction[CT,CV] = {
     if(sqlizer.datasetContext.hasUserPrimaryKey)
       new UserPKPostgresTransaction(connection, typeContext, sqlizer, idProvider)
     else

@@ -18,7 +18,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
   // be loaded up front we can avoid this.
   Class.forName("org.postgresql.Driver")
 
-  def idProvider(initial: Int) = new PushbackIdProvider(new FixedSizeIdProvider(new InMemoryBlockIdProvider(releasable = false) { override def start = initial }, 1024))
+  def idProvider(initial: Int) = new IdProviderPoolImpl(new InMemoryBlockIdProvider(releasable = false) { override def start = initial }, new FixedSizeIdProvider(_, 1024))
 
   def withDB[T]()(f: Connection => T): T = {
     using(DriverManager.getConnection("jdbc:postgresql://localhost/robertm", "blist", "blist")) { conn =>
@@ -127,7 +127,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
         txn.commit()
       }
 
-      ids.allocate() must be (16)
+      ids.borrow().allocate() must be (16)
 
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(Map("ID" -> 15L, "NUM" -> 2L, "STR" -> "b")))
       query(conn, "SELECT id as ID, rows as ROWS, who as WHO from test_log") must equal (Seq(
@@ -206,7 +206,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
         txn.commit()
       }
 
-      ids.allocate() must be (13)
+      ids.borrow().allocate() must be (13)
 
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(
         Map("ID" -> 7L, "NUM" -> 44L, "STR" -> "q")
@@ -239,7 +239,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
         txn.commit()
       }
 
-      ids.allocate() must equal (16)
+      ids.borrow().allocate() must equal (16)
 
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(
         Map("ID" -> 15L, "NUM" -> 1L, "STR" -> "a")
@@ -270,7 +270,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
         txn.commit()
       }
 
-      ids.allocate() must equal (22)
+      ids.borrow().allocate() must equal (22)
 
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq.empty)
       query(conn, "SELECT id as ID, rows as ROWS, who as WHO from test_log") must equal (Seq.empty)
@@ -297,7 +297,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
         txn.commit()
       }
 
-      ids.allocate() must equal (22)
+      ids.borrow().allocate() must equal (22)
 
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq.empty)
       query(conn, "SELECT id as ID, rows as ROWS, who as WHO from test_log") must equal (Seq.empty)
@@ -326,7 +326,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
         txn.commit()
       }
 
-      ids.allocate() must be (13)
+      ids.borrow().allocate() must be (13)
 
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(
         Map("ID" -> 7L, "NUM" -> 44L, "STR" -> "q")
@@ -358,7 +358,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
         txn.commit()
       }
 
-      ids.allocate() must be (16)
+      ids.borrow().allocate() must be (16)
 
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(
         Map("ID" -> 15L, "NUM" -> 2L, "STR" -> "q")
@@ -389,7 +389,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
         txn.commit()
       }
 
-      ids.allocate() must be (15)
+      ids.borrow().allocate() must be (15)
 
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq.empty)
       query(conn, "SELECT id as ID, rows as ROWS, who as WHO from test_log") must equal (Seq.empty)
@@ -417,7 +417,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
         txn.commit()
       }
 
-      ids.allocate() must be (15) // and it never even allocated a sid for it
+      ids.borrow().allocate() must be (15) // and it never even allocated a sid for it
 
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq.empty)
       query(conn, "SELECT id as ID, rows as ROWS, who as WHO from test_log") must equal (Seq.empty)
@@ -447,7 +447,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
         txn.commit()
       }
 
-      ids.allocate() must be (16)
+      ids.borrow().allocate() must be (16)
 
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq.empty)
       query(conn, "SELECT id as ID, rows as ROWS, who as WHO from test_log") must equal (Seq.empty)

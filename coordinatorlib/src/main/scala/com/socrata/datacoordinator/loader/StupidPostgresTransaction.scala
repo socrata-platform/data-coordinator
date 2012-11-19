@@ -11,7 +11,7 @@ import com.socrata.id.numeric.{Unallocatable, IdProvider}
 class StupidPostgresTransaction[CT, CV](val connection: Connection,
                                         val typeContext: TypeContext[CV],
                                         val sqlizer: DataSqlizer[CT, CV],
-                                        val idProvider: IdProvider with Unallocatable)
+                                        val idProviderPool: IdProviderPool)
   extends Transaction[CV]
 {
   val datasetContext = sqlizer.datasetContext
@@ -36,6 +36,8 @@ class StupidPostgresTransaction[CT, CV](val connection: Connection,
       assert(result == 1, "Inserting a log row... didn't insert a log row?")
     }
   }
+
+  val idProvider = idProviderPool.borrow()
 
   def upsert(row: Row[CV]) {
     val job = nextJobNum()
@@ -165,6 +167,10 @@ class StupidPostgresTransaction[CT, CV](val connection: Connection,
   }
 
   def close() {
-    connection.rollback()
+    try {
+      connection.rollback()
+    } finally {
+      idProviderPool.release(idProvider)
+    }
   }
 }
