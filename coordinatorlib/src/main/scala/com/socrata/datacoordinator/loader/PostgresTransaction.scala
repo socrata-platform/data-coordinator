@@ -432,21 +432,9 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
 
   import PostgresTransaction.UserIDOps._
 
-  val knownToExist = datasetContext.makeIdSet()
-  val knownNotToExist = datasetContext.makeIdSet()
   val jobs = datasetContext.makeIdMap[OperationLog[CV]]()
   var insertSize = 0
-  var updateSize = 0
   var deleteSize = 0
-
-  def trackSize(typ: UpsertType, delta: Int) = typ match {
-    case UpsertUnknown =>
-      insertSize += delta
-    case UpsertInsert =>
-      insertSize += delta
-    case UpsertUpdate =>
-      updateSize += delta
-  }
 
   def jobEntry(id: CV) = {
     jobs.get(id) match {
@@ -462,26 +450,12 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
   }
 
   def maybeFlush() {
-    if(insertSize >= softMaxBatchSizeInBytes || updateSize >= softMaxBatchSizeInBytes || deleteSize >= softMaxBatchSizeInBytes) {
+    if(insertSize >= softMaxBatchSizeInBytes || deleteSize >= softMaxBatchSizeInBytes) {
       if(log.isDebugEnabled) {
-        log.debug("Flushing due to exceeding batch size: {} ({} jobs)", Array[Any](insertSize, updateSize, deleteSize), jobs.size : Any)
+        log.debug("Flushing due to exceeding batch size: {} ({} jobs)", Array[Any](insertSize, deleteSize), jobs.size : Any)
       }
-      partialFlush()
-      if(insertSize >= softMaxBatchSizeInBytes) { // bunch of updates that got changed to inserts
-        partialFlush()
-        assert(jobs.size == 0, "Partial-flushing the job queue twice didn't clear it completely?")
-      }
+      flush()
     }
-  }
-
-  def forceExisting(id: CV) {
-    knownNotToExist.remove(id)
-    knownToExist.add(id)
-  }
-
-  def forceNonExisting(id: CV) {
-    knownNotToExist.add(id)
-    knownToExist.remove(id)
   }
 
   def upsert(row: Row[CV]) {
@@ -493,40 +467,22 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
         else checkNoSystemColumns(row) match {
           case None =>
             val record = jobEntry(userId)
-            if(record.upsertedRow == null) {
-              if(record.hasDeleteJob) {
-                assert(knownNotToExist(userId), "Delete job, no upsert job, but not known not to exist?")
-              }
-              record.upsertedRow = row
-              record.upsertJob = job
-              if(knownNotToExist(userId)) {
-                record.upsertCase = UpsertInsert
-                record.upsertSize = sqlizer.sizeofInsert(row)
-              } else if(knownToExist(userId)) {
-                record.upsertCase = UpsertUpdate
-                record.upsertSize = sqlizer.sizeofUpdate(row)
-              } else {
-                record.upsertSize = sqlizer.sizeofInsert(row)
-              }
-              trackSize(record.upsertCase, record.upsertSize)
-            } else {
+            if(record.hasUpsertJob) {
               val oldSize = record.upsertSize
               record.upsertedRow = datasetContext.mergeRows(record.upsertedRow, row)
-              record.upsertSize = record.upsertCase match {
-                case UpsertUnknown =>
-                  sqlizer.sizeofInsert(record.upsertedRow)
-                case UpsertInsert => sqlizer.sizeofInsert(record.upsertedRow)
-                case UpsertUpdate => sqlizer.sizeofUpdate(record.upsertedRow)
-              }
-
-              // we're not changing the upsert case, so we can just add the
-              // difference between new and old to the tracker
-              trackSize(record.upsertCase, record.upsertSize - oldSize)
+              record.upsertSize = sqlizer.sizeofInsert(record.upsertedRow)
+              insertSize += record.upsertSize - oldSize
 
               elided.put(job, (userId, record.upsertJob))
-            }
+            } else {
+              record.upsertedRow = row
+              record.upsertJob = job
+              record.upsertSize = sqlizer.sizeofInsert(row)
+              insertSize += record.upsertSize
 
-            forceExisting(userId)
+              if(record.hasDeleteJob)
+                record.forceInsert = true
+            }
           case Some(error) =>
             errors.put(job, error)
         }
@@ -537,41 +493,37 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
 
   def delete(id: CV) {
     val job = nextJobNum()
-    if(knownNotToExist(id)) {
-      errors.put(job, NoSuchRowToDelete(id))
-    } else {
-      val record = jobEntry(id)
+    val record = jobEntry(id)
 
-      if(record.hasUpsertJob) {
-        // ok, we'll elide the existing upsert job
-        elided.put(record.upsertJob, (id, job))
-        trackSize(record.upsertCase, -record.upsertSize)
-        record.clearUpsert()
+    if(record.hasUpsertJob) {
+      // ok, we'll elide the existing upsert job
+      elided.put(record.upsertJob, (id, job))
 
-        if(record.hasDeleteJob) {
-          // there was a pending deletion before that upsert so we can
-          // just call _this_ deletion a success.
-          deleted.put(job, id)
-        } else {
-          // No previous deletion; that upsert may or may not have been
-          // an insert, but in either case by the time it got to us, there
-          // was something there.  So register the delete job to do and tell
-          // the task processor to ignore any failures (which means that the
-          // "upsert" was really an insert)
-          record.deleteJob = job
-          record.forceDeleteSuccess = true
-          deleteSize += sqlizer.sizeofDelete
-        }
+      if(record.hasDeleteJob) {
+        // there was a pending deletion before that upsert so we can
+        // just call _this_ deletion a success.
+        assert(record.forceInsert, "delete-upsert-delete but no force-insert?")
+        deleted.put(job, id)
       } else {
-        if(record.hasDeleteJob) {
-          errors.put(job, NoSuchRowToDelete(id))
-        } else {
-          record.deleteJob = job
-          deleteSize += sqlizer.sizeofDelete
-        }
+        // No previous deletion; that upsert may or may not have been
+        // an insert, but in either case by the time it got to us, there
+        // was something there.  So register the delete job to do and tell
+        // the task processor to ignore any failures (which means that the
+        // "upsert" was really an insert)
+        record.deleteJob = job
+        record.forceDeleteSuccess = true
+        deleteSize += sqlizer.sizeofDelete
       }
 
-      forceNonExisting(id)
+      insertSize -= record.upsertSize
+      record.clearUpsert()
+    } else {
+      if(record.hasDeleteJob) {
+        errors.put(job, NoSuchRowToDelete(id))
+      } else {
+        record.deleteJob = job
+        deleteSize += sqlizer.sizeofDelete
+      }
     }
   }
 
@@ -581,7 +533,7 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
     else Some(SystemColumnsSet(systemColumns))
   }
 
-  def partialFlush() {
+  def flush() {
     if(jobs.isEmpty) return
 
     val sidsForUpdateAndDelete = findSids(jobs.valuesIterator)
@@ -593,18 +545,11 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
     jobs.foreach { (_, op) =>
       if(op.hasDeleteJob) { deletes.add(op) }
       if(op.hasUpsertJob) {
-        op.upsertCase match {
-          case UpsertUnknown =>
-            if(sidsForUpdateAndDelete.contains(op.id)) {
-              insertSize -= op.upsertSize
-              op.upsertSize = sqlizer.sizeofUpdate(op.upsertedRow)
-              updateSize += op.upsertSize
-              updates.add(op)
-            } else inserts.add(op)
-          case UpsertInsert =>
-            inserts.add(op)
-          case UpsertUpdate =>
-            updates.add(op)
+        if(sidsForUpdateAndDelete.contains(op.id) && !op.forceInsert) {
+          insertSize -= op.upsertSize
+          updates.add(op)
+        } else {
+          inserts.add(op)
         }
       }
     }
@@ -612,21 +557,15 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
     jobs.clear()
 
     processDeletes(sidsForUpdateAndDelete, deletes)
-    processInserts(inserts, updates)
+    processInserts(inserts)
     processUpdates(sidsForUpdateAndDelete, updates)
-  }
-
-  override def flush() {
-    partialFlush()
-    partialFlush()
-    assert(jobs.isEmpty, "Two partial flushes did not do anything")
   }
 
   def findSids(ops: Iterator[OperationLog[CV]]): RowIdMap[CV, Long] = {
     val target = datasetContext.makeIdMap[Long]()
     using(connection.createStatement()) { stmt =>
       var blockCount = 0
-      for(sql <- sqlizer.findSystemIds(ops.filter { op => op.hasDeleteJob || (op.hasUpsertJob && op.upsertCase != UpsertInsert)}.map(_.id))) {
+      for(sql <- sqlizer.findSystemIds(ops.map(_.id))) {
         blockCount += 1
         for {
           rs <- managed(stmt.executeQuery(sql))
@@ -672,7 +611,7 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
     assert(deleteSize == 0, "No deletes, but delete size is not 0?")
   }
 
-  def processInserts(inserts: java.util.ArrayList[OperationLog[CV]], updates: java.util.ArrayList[OperationLog[CV]]) {
+  def processInserts(inserts: java.util.ArrayList[OperationLog[CV]]) {
     if(!inserts.isEmpty) {
       val sids = new Array[Long](inserts.size)
       val insertedCount = sqlizer.insertBatch(connection) { inserter =>
@@ -680,7 +619,6 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
         do {
           val op = inserts.get(i)
           assert(op.hasUpsertJob, "No upsert job?")
-          assert(op.upsertCase != UpsertUpdate, "Found an unconditional update while doing inserts?")
           val sid = idProvider.allocate()
           sids(i) = sid
           inserter.insert(sid, op.upsertedRow)
@@ -705,15 +643,12 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
   def processUpdates(sidSource: RowIdMap[CV, Long], updates: java.util.ArrayList[OperationLog[CV]]) {
     if(!updates.isEmpty) {
       using(connection.createStatement()) { stmt =>
-        var failures = 0
         var i = 0
         var updatesToRun = 0
         do {
           assert(updatesToRun <= i)
           val op = updates.get(i)
           assert(op.hasUpsertJob, "No upsert job?")
-          assert(op.upsertCase != UpsertInsert, "Found an unconditional insert while doing updates?")
-          updateSize -= op.upsertSize
 
           if(sidSource.contains(op.id)) {
             val sql = sqlizer.sqlizeUserIdUpdate(op.upsertedRow)
@@ -721,16 +656,7 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
             updates.set(updatesToRun, op)
             updatesToRun += 1
           } else {
-            if(op.upsertCase == UpsertUnknown) {
-              failures += 1
-              op.upsertCase = UpsertInsert
-              op.clearDelete()
-              jobs.put(op.id, op)
-              op.upsertSize = sqlizer.sizeofInsert(op.upsertedRow)
-              insertSize += op.upsertSize
-            } else {
-              sys.error("Unconditional update but no system id found?")
-            }
+            sys.error("Update requested but no system id found?")
           }
 
           i += 1
@@ -756,8 +682,6 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
         }
       }
     }
-
-    assert(updateSize == 0, "No updates, but update size is not 0?")
   }
 }
 
@@ -792,8 +716,8 @@ object PostgresTransaction {
 
       var upsertJob: Int = -1
       var upsertedRow: Row[CV] = null
-      var upsertCase: UpsertType = UpsertUnknown
       var upsertSize: Int = -1
+      var forceInsert: Boolean = false
 
       def clearDelete() {
         deleteJob = -1
@@ -803,18 +727,13 @@ object PostgresTransaction {
       def clearUpsert() {
         upsertJob = -1
         upsertedRow = null
-        upsertCase = UpsertUnknown
         upsertSize = -1
+        forceInsert = false
       }
 
       def hasDeleteJob = deleteJob != -1
       def hasUpsertJob = upsertJob != -1
     }
-
-    sealed abstract class UpsertType
-    case object UpsertUnknown extends UpsertType
-    case object UpsertInsert extends UpsertType
-    case object UpsertUpdate extends UpsertType
   }
 
   case class JobReport[CV](inserted: sc.Map[Int, CV], updated: sc.Map[Int, CV], deleted: sc.Map[Int, CV], elided: sc.Map[Int, (CV, Int)], errors: sc.Map[Int, Failure[CV]]) extends Report[CV]
