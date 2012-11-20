@@ -33,23 +33,6 @@ class PerfDatasetContext(val baseName: String, val userSchema: Map[String, PerfT
 
   def mergeRows(a: Row[PerfValue], b: Row[PerfValue]) = a ++ b
 
-  def makeIdSet() = {
-    require(hasUserPrimaryKey)
-    new RowIdSet[PerfValue] {
-      val s = new java.util.HashSet[PerfValue]
-
-      def add(x: PerfValue) { s.add(x) }
-
-      def apply(x: PerfValue) = s.contains(x)
-
-      def clear() { s.clear() }
-
-      def iterator = s.iterator.asScala
-
-      def remove(x: PerfValue) { s.remove(x) }
-    }
-  }
-
   def makeIdMap[V]() = {
     require(hasUserPrimaryKey)
     new RowIdMap[PerfValue, V] {

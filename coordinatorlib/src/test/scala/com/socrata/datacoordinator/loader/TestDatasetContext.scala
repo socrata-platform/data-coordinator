@@ -32,24 +32,6 @@ class TestDatasetContext(val baseName: String, val userSchema: Map[String, TestC
 
   def mergeRows(a: Row[TestColumnValue], b: Row[TestColumnValue]) = a ++ b
 
-
-  def makeIdSet() = {
-    require(hasUserPrimaryKey)
-    new RowIdSet[TestColumnValue] {
-      val s = new java.util.HashSet[TestColumnValue]
-
-      def add(x: TestColumnValue) { s.add(x) }
-
-      def apply(x: TestColumnValue) = s.contains(x)
-
-      def clear() { s.clear() }
-
-      def iterator = s.iterator.asScala
-
-      def remove(x: TestColumnValue) { s.remove(x) }
-    }
-  }
-
   def makeIdMap[V]() = {
     require(hasUserPrimaryKey)
     new RowIdMap[TestColumnValue, V] {

@@ -8,8 +8,6 @@ import java.sql.{Connection, PreparedStatement}
 import java.util.concurrent.Executor
 
 import com.rojoma.simplearm.util._
-import com.socrata.id.numeric.{Unallocatable, IdProvider}
-import gnu.trove.set.hash.TLongHashSet
 import gnu.trove.map.hash.TIntObjectHashMap
 import gnu.trove.map.hash.TLongObjectHashMap
 
