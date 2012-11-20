@@ -177,25 +177,18 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
 
   val primaryKey = datasetContext.systemIdColumnName
 
-  val knownToExist = new TLongHashSet()
-  val knownNotToExist = new TLongHashSet()
+  var pendingException: Throwable = null
+  var pendingInsertResults: TIntObjectHashMap[CV] = null
+  var pendingUpdateResults: TIntObjectHashMap[CV] = null
+  var pendingDeleteResults: TIntObjectHashMap[CV] = null
+  var pendingErrors: TIntObjectHashMap[Failure[CV]] = null
 
   var insertSize = 0
   var updateSize = 0
   var deleteSize = 0
 
   // map from sid to operation
-  val jobs = new TLongObjectHashMap[Operation[CV]]()
-
-  def forceExisting(id: Long) {
-    knownNotToExist.remove(id)
-    knownToExist.add(id)
-  }
-
-  def forceNonExisting(id: Long) {
-    knownNotToExist.add(id)
-    knownToExist.remove(id)
-  }
+  var jobs = new TLongObjectHashMap[Operation[CV]]()
 
   def upsert(row: Row[CV]) {
     val job = nextJobNum()
@@ -206,36 +199,31 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
         } else checkNoSystemColumnsExceptId(row) match {
           case None =>
             val systemId = typeContext.makeSystemIdFromValue(systemIdValue)
-            if(knownNotToExist.contains(systemId)) {
-              errors.put(job, NoSuchRowToUpdate(systemIdValue))
-            } else {
-              val oldJobNullable = jobs.get(systemId)
-              if(oldJobNullable == null) { // first job of this type
-                maybeFlush()
-                val op = Update(systemId, row, job, sqlizer.sizeofUpdate(row))
-                jobs.put(systemId, op)
-                updateSize += op.size
-              } else oldJobNullable match {
-                case Insert(insSid, oldRow, oldJob, oldSize) =>
-                  assert(insSid == systemId)
-                  insertSize -= oldSize
-                  val newRow = datasetContext.mergeRows(oldRow, row)
-                  val newOp = Insert(systemId, newRow, oldJob, sqlizer.sizeofInsert(newRow))
-                  jobs.put(systemId, newOp)
-                  insertSize += newOp.size
-                  elided.put(job, (systemIdValue, oldJob))
-                case Update(updSid, oldRow, oldJob, oldSize) =>
-                  assert(updSid == systemId)
-                  updateSize -= oldSize
-                  val newRow = datasetContext.mergeRows(oldRow, row)
-                  val newOp = Update(systemId, newRow, oldJob, sqlizer.sizeofUpdate(newRow))
-                  jobs.put(systemId, newOp)
-                  updateSize += newOp.size
-                  elided.put(job, (systemIdValue, oldJob))
-                case _: Delete =>
-                  sys.error("Last job for sid was delete, but it is not marked known to not exist?")
-              }
-              // just because we did an update, it does not mean this row is known to exist
+            val oldJobNullable = jobs.get(systemId)
+            if(oldJobNullable == null) { // first job of this type
+              maybeFlush()
+              val op = Update(systemId, row, job, sqlizer.sizeofUpdate(row))
+              jobs.put(systemId, op)
+              updateSize += op.size
+            } else oldJobNullable match {
+              case Insert(insSid, oldRow, oldJob, oldSize) =>
+                assert(insSid == systemId)
+                insertSize -= oldSize
+                val newRow = datasetContext.mergeRows(oldRow, row)
+                val newOp = Insert(systemId, newRow, oldJob, sqlizer.sizeofInsert(newRow))
+                jobs.put(systemId, newOp)
+                insertSize += newOp.size
+                elided.put(job, (systemIdValue, oldJob))
+              case Update(updSid, oldRow, oldJob, oldSize) =>
+                assert(updSid == systemId)
+                updateSize -= oldSize
+                val newRow = datasetContext.mergeRows(oldRow, row)
+                val newOp = Update(systemId, newRow, oldJob, sqlizer.sizeofUpdate(newRow))
+                jobs.put(systemId, newOp)
+                updateSize += newOp.size
+                elided.put(job, (systemIdValue, oldJob))
+              case _: Delete =>
+                errors.put(job, NoSuchRowToUpdate(systemIdValue))
             }
           case Some(error) =>
             errors.put(job, error)
@@ -266,7 +254,6 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
               case Insert(_, _, _, _) =>
                 sys.error("Allocated the same row ID twice?")
             }
-            forceExisting(systemId)
           case Some(error) =>
             errors.put(job, error)
         }
@@ -276,46 +263,30 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
   def delete(id: CV) {
     val job = nextJobNum()
     val systemId = typeContext.makeSystemIdFromValue(id)
-    if(knownNotToExist.contains(systemId)) {
-      errors.put(job, NoSuchRowToDelete(id))
-    } else {
-      val oldJobNullable = jobs.get(systemId)
-      val delete = Delete(systemId, job)
-      if(oldJobNullable == null) {
-        maybeFlush()
+    val oldJobNullable = jobs.get(systemId)
+    val delete = Delete(systemId, job)
+    if(oldJobNullable == null) {
+      maybeFlush()
+      jobs.put(systemId, delete)
+      deleteSize += sqlizer.sizeofDelete
+    } else oldJobNullable match {
+      case Update(_, _, oldJob, oldSize) =>
+        // delete-of-update -> we have to flush because we can't know if this row
+        // actually exists.  Hopefully this won't happen a lot!
+        flush()
         jobs.put(systemId, delete)
         deleteSize += sqlizer.sizeofDelete
-      } else oldJobNullable match {
-        case Update(_, _, oldJob, oldSize) =>
-          // delete-of-update uh?  Well, if this row is known to exist, we can elide the
-          // update.  Otherwise we have to flush.
-          if(knownToExist.contains(systemId)) {
-            elided.put(oldJob, (id, job))
-            updateSize -= oldSize
-            jobs.put(systemId, delete)
-            deleteSize += sqlizer.sizeofDelete
-          } else {
-            flush()
-            if(knownNotToExist.contains(systemId)) {
-              errors.put(job, NoSuchRowToDelete(id))
-            } else {
-              jobs.put(systemId, delete)
-              deleteSize += sqlizer.sizeofDelete
-            }
-          }
-        case Insert(allocatedSid, _, oldJob, oldSize) =>
-          // deleting a row we just inserted?  Ok.  Let's nuke 'em!
-          // Note: not de-allocating sid because we conceptually used it
-          elided.put(oldJob, (id, job))
-          insertSize -= oldSize
-          // and we can skip actually doing this delete too, because we know it'll succeed
-          deleted.put(job, id)
-          jobs.remove(systemId) // and then we need do nothing with this job
-        case Delete(_, _) =>
-          sys.error("Got two deletes for the same ID without an intervening update; this should have flagged knownNotToExist.")
-          // errors.put(job, NoSuchRowToDelete(typeContext.makeValueFromSystemId(systemId)))
-      }
-      forceNonExisting(systemId)
+      case Insert(allocatedSid, _, oldJob, oldSize) =>
+        // deleting a row we just inserted?  Ok.  Let's nuke 'em!
+        // Note: not de-allocating sid because we conceptually used it
+        elided.put(oldJob, (id, job))
+        insertSize -= oldSize
+        // and we can skip actually doing this delete too, because we know it'll succeed
+        deleted.put(job, id)
+        jobs.remove(systemId) // and then we need do nothing with this job
+      case Delete(_, _) =>
+        // two deletes in a row.... this one certainly fails
+        errors.put(job, NoSuchRowToDelete(id))
     }
   }
 
@@ -334,28 +305,61 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
   override def flush() {
     if(jobs.isEmpty) return
 
-    val deletes = new java.util.ArrayList[Delete]
-    val inserts = new java.util.ArrayList[Insert[CV]]
-    val updates = new java.util.ArrayList[Update[CV]]
+    val started = new java.util.concurrent.Semaphore(0)
 
-    val it = jobs.iterator()
-    while(it.hasNext) {
-      it.advance()
-      it.value() match {
-        case i@Insert(_,_,_, _) => inserts.add(i)
-        case u@Update(_,_,_, _) => updates.add(u)
-        case d@Delete(_,_) => deletes.add(d)
-      }
+    connectionMutex.synchronized {
+      checkAsyncJob()
+
+      val currentJobs = jobs
+      val currentInsertSize = insertSize
+      val currentUpdateSize = updateSize
+      val currentDeleteSize = deleteSize
+
+      executor.execute(new Runnable() {
+        def run() {
+          connectionMutex.synchronized {
+            try {
+              started.release()
+
+              val deletes = new java.util.ArrayList[Delete]
+              val inserts = new java.util.ArrayList[Insert[CV]]
+              val updates = new java.util.ArrayList[Update[CV]]
+
+              val it = currentJobs.iterator()
+              while(it.hasNext) {
+                it.advance()
+                it.value() match {
+                  case i@Insert(_,_,_, _) => inserts.add(i)
+                  case u@Update(_,_,_, _) => updates.add(u)
+                  case d@Delete(_,_) => deletes.add(d)
+                }
+              }
+
+              val errors = new TIntObjectHashMap[Failure[CV]]
+              pendingDeleteResults = processDeletes(currentDeleteSize, deletes, errors)
+              pendingUpdateResults = processUpdates(currentUpdateSize, updates, errors)
+              pendingInsertResults = processInserts(currentInsertSize, inserts)
+              if(!errors.isEmpty) pendingErrors = errors
+            } catch {
+                case e: Throwable =>
+                  pendingException = e
+            }
+          }
+        }
+      })
     }
 
-    jobs.clear()
+    started.acquire()
 
-    processDeletes(deletes)
-    processUpdates(updates)
-    processInserts(inserts)
+    jobs = new TLongObjectHashMap[Operation[CV]](jobs.capacity)
+    insertSize = 0
+    updateSize = 0
+    deleteSize = 0
   }
 
-  def processDeletes(deletes: java.util.ArrayList[Delete]) {
+  def processDeletes(deleteSizeX: Int, deletes: java.util.ArrayList[Delete], errors: TIntObjectHashMap[Failure[CV]]): TIntObjectHashMap[CV] = {
+    var deleteSize = deleteSizeX
+    var resultMap: TIntObjectHashMap[CV] = null
     if(!deletes.isEmpty) {
       using(connection.prepareStatement(sqlizer.prepareSystemIdDeleteStatement)) { stmt =>
         val it = deletes.iterator()
@@ -370,12 +374,13 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
         assert(results.length == deletes.size, "Expected " + deletes.size + " results for deletes; got " + results.length)
 
         var i = 0
+        resultMap = new TIntObjectHashMap[CV]
         do {
           val op = deletes.get(i)
           val idValue = typeContext.makeValueFromSystemId(op.id)
           if(results(i) == 1) {
             rowAuxData.delete(op.id)
-            deleted.put(op.job, idValue)
+            resultMap.put(op.job, idValue)
           } else if(results(i) == 0) errors.put(op.job, NoSuchRowToDelete(idValue))
           else sys.error("Unexpected result code from delete: " + results(i))
           i += 1
@@ -383,9 +388,12 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
       }
     }
     assert(deleteSize == 0, "No deletes, but delete size is not 0?")
+    resultMap
   }
 
-  def processUpdates(updates: java.util.ArrayList[Update[CV]]) {
+  def processUpdates(updateSizeX: Int, updates: java.util.ArrayList[Update[CV]], errors: TIntObjectHashMap[Failure[CV]]): TIntObjectHashMap[CV] = {
+    var updateSize = updateSizeX
+    var resultMap: TIntObjectHashMap[CV] = null
     if(!updates.isEmpty) {
       using(connection.createStatement()) { stmt =>
         val it = updates.iterator()
@@ -400,12 +408,13 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
         assert(results.length == updates.size, "Expected " + updates.size + " results for updates; got " + results.length)
 
         var i = 0
+        resultMap = new TIntObjectHashMap[CV]
         do {
           val op = updates.get(i)
           val idValue = typeContext.makeValueFromSystemId(op.id)
           if(results(i) == 1) {
             rowAuxData.update(op.id, op.row - datasetContext.systemIdColumnName)
-            updated.put(op.job, idValue)
+            resultMap.put(op.job, idValue)
           } else if(results(i) == 0) {
             errors.put(op.job, NoSuchRowToUpdate(idValue))
           } else sys.error("Unexpected result code from update: " + results(i))
@@ -415,9 +424,12 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
       }
     }
     assert(updateSize == 0, updates.size + " updates, but update size is not 0?")
+    resultMap
   }
 
-  def processInserts(inserts: java.util.ArrayList[Insert[CV]]) {
+  def processInserts(insertSizeX: Int, inserts: java.util.ArrayList[Insert[CV]]): TIntObjectHashMap[CV] = {
+    var insertSize = insertSizeX
+    var resultMap: TIntObjectHashMap[CV] = null
     if(!inserts.isEmpty) {
       val insertCount = sqlizer.insertBatch(connection) { inserter =>
         var i = 0
@@ -432,18 +444,39 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
       assert(insertCount == inserts.size, "Expected " + inserts.size + " results for inserts; got " + insertCount)
 
       var i = 0
+      resultMap = new TIntObjectHashMap[CV]
       do {
         val op = inserts.get(i)
         val idValue = typeContext.makeValueFromSystemId(op.id)
         rowAuxData.insert(op.id, op.row)
-        inserted.put(op.job, idValue)
+        resultMap.put(op.job, idValue)
         i += 1
       } while(i != insertCount)
     }
     assert(insertSize == 0, "No inserts, but insert size is not 0?")
+    resultMap
   }
 
-  def checkAsyncJob() {}
+  def checkAsyncJob() {
+    if(pendingException != null) {
+      val e = pendingException
+      pendingException = null
+      throw e
+    }
+
+    if(pendingInsertResults != null) { addTo(inserted, pendingInsertResults); pendingInsertResults = null }
+    if(pendingUpdateResults != null) { addTo(updated, pendingUpdateResults); pendingUpdateResults = null }
+    if(pendingDeleteResults != null) { addTo(deleted, pendingDeleteResults); pendingDeleteResults = null }
+    if(pendingErrors != null) { addTo(errors, pendingErrors); pendingErrors = null }
+  }
+
+  def addTo[T](target: java.util.HashMap[Int, T], source: TIntObjectHashMap[T]) {
+    val it = source.iterator
+    while(it.hasNext) {
+      it.advance()
+      target.put(it.key(), it.value())
+    }
+  }
 }
 
 class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s: DataSqlizer[CT, CV], _i: IdProviderPool, _e: Executor)
@@ -600,8 +633,6 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
                 }
               }
 
-              currentJobs.clear()
-
               pendingDeleteResults = processDeletes(sidsForUpdateAndDelete, currentDeleteSize, deletes)
               pendingInsertResults = processInserts(remainingInsertSize, inserts)
               pendingUpdateResults = processUpdates(sidsForUpdateAndDelete, updates)
@@ -615,6 +646,7 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
     }
 
     started.acquire() // don't exit until the new job has grabbed the mutex
+
     jobs = datasetContext.makeIdMap[OperationLog[CV]]()
     insertSize = 0
     deleteSize = 0
