@@ -5,6 +5,7 @@ import java.util.concurrent.locks.ReentrantLock
 import java.lang.Math.min
 
 class ReaderWriterPair(bufferSize: Int) { self =>
+  if(bufferSize < 2) throw new IllegalArgumentException("Buffer size must be at least 2")
   private val buf = new Array[Char](bufferSize)
   private val mutex = new ReentrantLock
   private val readAvailable = mutex.newCondition()
@@ -40,9 +41,9 @@ class ReaderWriterPair(bufferSize: Int) { self =>
           readAvailable.await()
         }
 
-        val awakenWriters = writePtr == readPtr - 1 || readPtr == 0 && writePtr == bufferSize - 1
+        val awakenWriters = if(readPtr == 0) writePtr == bufferSize - 1 else writePtr == readPtr - 1
 
-        val copied = if(readPtr > writePtr) {
+        val copied1 = if(readPtr > writePtr) {
           val toCopy = min(dstRemaining, bufferSize - readPtr)
           System.arraycopy(buf, readPtr, dst, dstPtr, toCopy)
           dstPtr += toCopy
@@ -55,7 +56,7 @@ class ReaderWriterPair(bufferSize: Int) { self =>
           0
         }
 
-        val toCopy = if(dstRemaining != 0) {
+        val copied2 = if(dstRemaining != 0) {
           val toCopy = min(dstRemaining, writePtr - readPtr)
           System.arraycopy(buf, readPtr, dst, dstPtr, toCopy)
           readPtr += toCopy
@@ -66,7 +67,7 @@ class ReaderWriterPair(bufferSize: Int) { self =>
 
         if(awakenWriters) writeAvailable.signalAll()
 
-        copied + toCopy
+        copied1 + copied2
       } finally {
         mutex.unlock()
       }
@@ -99,17 +100,17 @@ class ReaderWriterPair(bufferSize: Int) { self =>
 
       mutex.lock()
       try {
-        if(writerClosed) throw new IOException("reader closed")
+        if(writerClosed) throw new IOException("writer closed")
 
         def hwm = if(readPtr == 0) bufferSize - 1 else readPtr - 1
 
         while(srcRemaining > 0) {
-          if(readerClosed) {
-            return
+          while(writePtr == hwm && !readerClosed) {
+            writeAvailable.await()
           }
 
-          while(writePtr == hwm) {
-            writeAvailable.await()
+          if(readerClosed) {
+            return
           }
 
           val awakenReaders = readPtr == writePtr
