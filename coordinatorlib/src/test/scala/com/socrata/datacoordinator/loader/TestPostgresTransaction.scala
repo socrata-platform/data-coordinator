@@ -19,7 +19,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
     // So since SBT will run these tests in parallel, sometimes one of the
     // first tests to run will randomly fail.  By forcing the driver to
     // be loaded up front we can avoid this.
-    Class.forName("org.postgresql.Driver")
+    Class.forName("org.h2.Driver")
   }
 
   override def afterAll() {
@@ -29,7 +29,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
   def idProvider(initial: Int) = new IdProviderPoolImpl(new InMemoryBlockIdProvider(releasable = false) { override def start = initial }, new FixedSizeIdProvider(_, 1024))
 
   def withDB[T]()(f: Connection => T): T = {
-    using(DriverManager.getConnection("jdbc:postgresql://localhost/robertm", "blist", "blist")) { conn =>
+    using(DriverManager.getConnection("jdbc:h2:mem:")) { conn =>
       conn.setAutoCommit(false)
       f(conn)
     }

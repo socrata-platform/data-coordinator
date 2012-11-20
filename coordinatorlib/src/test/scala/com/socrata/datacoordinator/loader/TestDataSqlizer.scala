@@ -7,9 +7,6 @@ import com.rojoma.json.ast._
 import com.rojoma.json.util.JsonUtil
 import com.rojoma.json.codec.JsonCodec
 import com.rojoma.simplearm.util._
-import org.postgresql.core.BaseConnection
-import org.postgresql.copy.CopyManager
-
 
 class TestDataSqlizer(user: String, val datasetContext: DatasetContext[TestColumnType, TestColumnValue]) extends TestSqlizer with DataSqlizer[TestColumnType, TestColumnValue] {
   val dataTableName = datasetContext.baseName + "_data"
@@ -19,7 +16,7 @@ class TestDataSqlizer(user: String, val datasetContext: DatasetContext[TestColum
   def sizeof(s: String) = s.length << 1
   def sizeofNull = 1
 
-  def softMaxBatchSize = 10000000
+  def softMaxBatchSize = 20000000
 
   def sizerFrom(base: Int, t: TestColumnType): TestColumnValue => Int = t match {
     case LongColumn => {
@@ -83,40 +80,30 @@ class TestDataSqlizer(user: String, val datasetContext: DatasetContext[TestColum
     "COPY " + dataTableName + " (" + columns.mkString(",") + ") from stdin with csv"
 
   def insertBatch(conn: Connection)(f: Inserter => Unit): Long = {
-    using(new InserterImpl) { inserter =>
+    using(new InserterImpl(conn)) { inserter =>
       f(inserter)
-      val copyManager = new CopyManager(conn.asInstanceOf[BaseConnection])
-      copyManager.copyIn(bulkInsertStatement, inserter.reader)
+      inserter.stmt.executeBatch().foldLeft(0L)(_+_)
     }
   }
 
-  class InserterImpl extends Inserter with Closeable {
-    val sb = new java.lang.StringBuilder
+  class InserterImpl(conn: Connection) extends Inserter with Closeable {
+    val stmt = conn.prepareStatement("INSERT INTO " + dataTableName + "(" + columns.mkString(",") + ") SELECT " + columns.map(_ => "?").mkString(",") + " WHERE NOT EXISTS (SELECT 1 FROM " + dataTableName + " WHERE " + pkCol + " = ?)")
+
     def insert(sid: Long, row: Row[TestColumnValue]) {
       val trueRow = row + (datasetContext.systemIdColumnName -> LongValue(sid))
-      var didOne = false
-      for(k <- keys) {
-        if(didOne) sb.append(',')
-        else didOne = true
-        csvize(sb, k, trueRow.getOrElse(k, NullValue))
+      var i = 1
+      val it = keys.iterator
+      while(it.hasNext) {
+        val k = it.next()
+        add(stmt, i, k, trueRow.getOrElse(k, NullValue))
+        i += 1
       }
-      sb.append('\n')
+      add(stmt, i, datasetContext.primaryKeyColumn, trueRow(datasetContext.primaryKeyColumn))
+      stmt.addBatch()
     }
 
-    def close() {}
-
-    def reader: java.io.Reader = new java.io.Reader {
-      var srcPtr = 0
-      def read(dst: Array[Char], off: Int, len: Int): Int = {
-        val remaining = sb.length - srcPtr
-        if(remaining == 0) return -1
-        val count = java.lang.Math.min(remaining, len)
-        val end = srcPtr + count
-        sb.getChars(srcPtr, end, dst, off)
-        srcPtr = count
-        count
-      }
-      def close() {}
+    def close() {
+      stmt.close()
     }
   }
 
