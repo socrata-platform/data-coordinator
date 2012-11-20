@@ -5,16 +5,19 @@ import sc.{mutable => scm}
 import sc.JavaConverters._
 
 import java.sql.{Connection, PreparedStatement}
+import java.util.concurrent.Executor
 
 import com.rojoma.simplearm.util._
 import com.socrata.id.numeric.{Unallocatable, IdProvider}
 import gnu.trove.set.hash.TLongHashSet
+import gnu.trove.map.hash.TIntObjectHashMap
 import gnu.trove.map.hash.TLongObjectHashMap
 
 abstract class PostgresTransaction[CT, CV](val connection: Connection,
                                            val typeContext: TypeContext[CV],
                                            val sqlizer: DataSqlizer[CT, CV],
-                                           val idProviderPool: IdProviderPool)
+                                           val idProviderPool: IdProviderPool,
+                                           val executor: Executor)
   extends Transaction[CV]
 {
   private val log = org.slf4j.LoggerFactory.getLogger(classOf[PostgresTransaction[_,_]])
@@ -28,6 +31,9 @@ abstract class PostgresTransaction[CT, CV](val connection: Connection,
   val updated = new java.util.HashMap[Int, CV]
   val deleted = new java.util.HashMap[Int, CV]
   val errors = new java.util.HashMap[Int, Failure[CV]]
+
+  protected val connectionMutex = new Object
+  def checkAsyncJob()
 
   // These three initializations must run in THIS order.  Any further
   // initializations must take care to clean up after themselves if
@@ -122,32 +128,48 @@ abstract class PostgresTransaction[CT, CV](val connection: Connection,
 
   def report: Report[CV] = {
     flush()
-    new PostgresTransaction.JobReport(inserted.asScala, updated.asScala, deleted.asScala, elided.asScala, errors.asScala)
+    connectionMutex.synchronized {
+      checkAsyncJob()
+      new PostgresTransaction.JobReport(inserted.asScala, updated.asScala, deleted.asScala, elided.asScala, errors.asScala)
+    }
   }
 
   def commit() {
-    rowAuxData.finish()
-    rowAuxDataState.flush()
+    connectionMutex.synchronized {
+      checkAsyncJob()
+      rowAuxData.finish()
+      rowAuxDataState.flush()
+    }
+
     flush()
-    if(inserted != 0 || updated != 0 || deleted != 0) sqlizer.logTransactionComplete()
-    connection.commit()
+
+    connectionMutex.synchronized {
+      if(inserted != 0 || updated != 0 || deleted != 0) sqlizer.logTransactionComplete()
+      connection.commit()
+    }
   }
 
   def close() {
-    try {
-      rowAuxDataState.close()
-    } finally {
+    connectionMutex.synchronized {
       try {
-        connection.rollback()
+        checkAsyncJob()
       } finally {
-        idProviderPool.release(idProvider)
+        try {
+          rowAuxDataState.close()
+        } finally {
+          try {
+            connection.rollback()
+          } finally {
+            idProviderPool.release(idProvider)
+          }
+        }
       }
     }
   }
 }
 
-class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s: DataSqlizer[CT, CV], _i: IdProviderPool)
-  extends PostgresTransaction(_c, _tc, _s, _i)
+class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s: DataSqlizer[CT, CV], _i: IdProviderPool, _e: Executor)
+  extends PostgresTransaction(_c, _tc, _s, _i, _e)
 {
   private val log = org.slf4j.LoggerFactory.getLogger(classOf[SystemPKPostgresTransaction[_,_]])
 
@@ -421,18 +443,24 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
     assert(insertSize == 0, "No inserts, but insert size is not 0?")
   }
 
+  def checkAsyncJob() {}
 }
 
-class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s: DataSqlizer[CT, CV], _i: IdProviderPool)
+class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s: DataSqlizer[CT, CV], _i: IdProviderPool, _e: Executor)
   extends {
   val primaryKey = _s.datasetContext.userPrimaryKeyColumn.getOrElse(sys.error("Created a UserPKPostgresTranasction but didn't have a user PK"))
-} with PostgresTransaction(_c, _tc, _s, _i)
+} with PostgresTransaction(_c, _tc, _s, _i, _e)
 {
   private val log = org.slf4j.LoggerFactory.getLogger(classOf[UserPKPostgresTransaction[_,_]])
 
   import PostgresTransaction.UserIDOps._
 
-  val jobs = datasetContext.makeIdMap[OperationLog[CV]]()
+  var pendingException: Throwable = null
+  var pendingInsertResults: TIntObjectHashMap[CV] = null
+  var pendingUpdateResults: TIntObjectHashMap[CV] = null
+  var pendingDeleteResults: TIntObjectHashMap[CV] = null
+
+  var jobs = datasetContext.makeIdMap[OperationLog[CV]]()
   var insertSize = 0
   var deleteSize = 0
 
@@ -536,29 +564,80 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
   def flush() {
     if(jobs.isEmpty) return
 
-    val sidsForUpdateAndDelete = findSids(jobs.valuesIterator)
+    val started = new java.util.concurrent.Semaphore(0)
 
-    val deletes = new java.util.ArrayList[OperationLog[CV]]
-    val inserts = new java.util.ArrayList[OperationLog[CV]](jobs.size - sidsForUpdateAndDelete.size)
-    val updates = new java.util.ArrayList[OperationLog[CV]]
+    connectionMutex.synchronized {
 
-    jobs.foreach { (_, op) =>
-      if(op.hasDeleteJob) { deletes.add(op) }
-      if(op.hasUpsertJob) {
-        if(sidsForUpdateAndDelete.contains(op.id) && !op.forceInsert) {
-          insertSize -= op.upsertSize
-          updates.add(op)
-        } else {
-          inserts.add(op)
+      checkAsyncJob()
+
+      val currentJobs = jobs
+      val currentInsertSize = insertSize
+      val currentDeleteSize = deleteSize
+
+      executor.execute(new Runnable() {
+        def run() {
+          connectionMutex.synchronized {
+            try {
+              started.release()
+
+              val sidsForUpdateAndDelete = findSids(currentJobs.valuesIterator)
+
+              val deletes = new java.util.ArrayList[OperationLog[CV]]
+              val inserts = new java.util.ArrayList[OperationLog[CV]]
+              val updates = new java.util.ArrayList[OperationLog[CV]]
+
+              var remainingInsertSize = currentInsertSize
+
+              currentJobs.foreach { (_, op) =>
+                if(op.hasDeleteJob) { deletes.add(op) }
+                if(op.hasUpsertJob) {
+                  if(sidsForUpdateAndDelete.contains(op.id) && !op.forceInsert) {
+                    remainingInsertSize -= op.upsertSize
+                    updates.add(op)
+                  } else {
+                    inserts.add(op)
+                  }
+                }
+              }
+
+              currentJobs.clear()
+
+              pendingDeleteResults = processDeletes(sidsForUpdateAndDelete, currentDeleteSize, deletes)
+              pendingInsertResults = processInserts(remainingInsertSize, inserts)
+              pendingUpdateResults = processUpdates(sidsForUpdateAndDelete, updates)
+            } catch {
+              case e: Throwable =>
+                pendingException = e
+            }
+          }
         }
-      }
+      })
     }
 
-    jobs.clear()
+    started.acquire() // don't exit until the new job has grabbed the mutex
+    jobs = datasetContext.makeIdMap[OperationLog[CV]]()
+    insertSize = 0
+    deleteSize = 0
+  }
 
-    processDeletes(sidsForUpdateAndDelete, deletes)
-    processInserts(inserts)
-    processUpdates(sidsForUpdateAndDelete, updates)
+  def checkAsyncJob() {
+    if(pendingException != null) {
+      val e = pendingException
+      pendingException = null
+      throw e
+    }
+
+    if(pendingInsertResults != null) { addTo(inserted, pendingInsertResults); pendingInsertResults = null }
+    if(pendingUpdateResults != null) { addTo(updated, pendingUpdateResults); pendingUpdateResults = null }
+    if(pendingDeleteResults != null) { addTo(deleted, pendingDeleteResults); pendingDeleteResults = null }
+  }
+
+  def addTo(target: java.util.HashMap[Int, CV], source: TIntObjectHashMap[CV]) {
+    val it = source.iterator
+    while(it.hasNext) {
+      it.advance()
+      target.put(it.key(), it.value())
+    }
   }
 
   def findSids(ops: Iterator[OperationLog[CV]]): RowIdMap[CV, Long] = {
@@ -577,7 +656,9 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
     target
   }
 
-  def processDeletes(sidSource: RowIdMap[CV, Long], deletes: java.util.ArrayList[OperationLog[CV]]) {
+  def processDeletes(sidSource: RowIdMap[CV, Long], deleteSizeX: Int, deletes: java.util.ArrayList[OperationLog[CV]]): TIntObjectHashMap[CV] = {
+    var deleteSize = deleteSizeX
+    var resultMap: TIntObjectHashMap[CV] = null
     if(!deletes.isEmpty) {
       using(connection.prepareStatement(sqlizer.prepareUserIdDeleteStatement)) { stmt =>
         val it = deletes.iterator()
@@ -593,6 +674,7 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
         assert(results.length == deletes.size, "Expected " + deletes.size + " results for deletes; got " + results.length)
 
         var i = 0
+        resultMap = new TIntObjectHashMap[CV]
         do {
           val op = deletes.get(i)
           if(results(i) == 1 || op.forceDeleteSuccess) {
@@ -601,7 +683,7 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
               case None if op.forceDeleteSuccess => // ok
               case None => sys.error("Successfully deleted row, but no sid found for it?")
             }
-            deleted.put(op.deleteJob, op.id)
+            resultMap.put(op.deleteJob, op.id)
           } else if(results(i) == 0) errors.put(op.deleteJob, NoSuchRowToDelete(op.id))
           else sys.error("Unexpected result code from delete: " + results(i))
           i += 1
@@ -609,9 +691,12 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
       }
     }
     assert(deleteSize == 0, "No deletes, but delete size is not 0?")
+    resultMap
   }
 
-  def processInserts(inserts: java.util.ArrayList[OperationLog[CV]]) {
+  def processInserts(insertSizeX: Int, inserts: java.util.ArrayList[OperationLog[CV]]): TIntObjectHashMap[CV] = {
+    var insertSize = insertSizeX
+    var resultMap: TIntObjectHashMap[CV] = null
     if(!inserts.isEmpty) {
       val sids = new Array[Long](inserts.size)
       val insertedCount = sqlizer.insertBatch(connection) { inserter =>
@@ -629,32 +714,31 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
       assert(insertedCount == inserts.size, "Expected " + inserts.size + " results for inserts; got " + insertedCount)
 
       var i = inserts.size
+      resultMap = new TIntObjectHashMap[CV]
       do {
         i -= 1
         val op = inserts.get(i)
         rowAuxData.insert(sids(i), op.upsertedRow)
-        inserted.put(op.upsertJob, op.id)
+        resultMap.put(op.upsertJob, op.id)
       } while(i != 0)
     }
     assert(insertSize == 0, "No inserts, but insert size is not 0?  Instead it's " + insertSize)
+    resultMap
   }
 
   // Note: destroys "updates"
-  def processUpdates(sidSource: RowIdMap[CV, Long], updates: java.util.ArrayList[OperationLog[CV]]) {
+  def processUpdates(sidSource: RowIdMap[CV, Long], updates: java.util.ArrayList[OperationLog[CV]]): TIntObjectHashMap[CV] = {
+    var resultMap: TIntObjectHashMap[CV] = null
     if(!updates.isEmpty) {
       using(connection.createStatement()) { stmt =>
         var i = 0
-        var updatesToRun = 0
         do {
-          assert(updatesToRun <= i)
           val op = updates.get(i)
           assert(op.hasUpsertJob, "No upsert job?")
 
           if(sidSource.contains(op.id)) {
             val sql = sqlizer.sqlizeUserIdUpdate(op.upsertedRow)
             stmt.addBatch(sql)
-            updates.set(updatesToRun, op)
-            updatesToRun += 1
           } else {
             sys.error("Update requested but no system id found?")
           }
@@ -662,35 +746,35 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
           i += 1
         } while(i != updates.size)
 
-        if(updatesToRun != 0) {
-          val results = stmt.executeBatch()
-          assert(results.length == updatesToRun, "Expected " + updatesToRun + " results for updates; got " + results.length)
+        val results = stmt.executeBatch()
+        assert(results.length == updates.size, "Expected " + updates.size + " results for updates; got " + results.length)
 
-          i = 0
-          do {
-            val op = updates.get(i)
-            if(results(i) == 1) {
-              val sid = sidSource.get(op.id).getOrElse(sys.error("Successfully updated row, but no sid found for it?"))
-              rowAuxData.update(sid, op.upsertedRow)
-              updated.put(op.upsertJob, op.id)
-            } else if(results(i) == 0) {
-              sys.error("Expected update to succeed")
-            } else sys.error("Unexpected result code from update: " + results(i))
+        i = 0
+        resultMap = new TIntObjectHashMap[CV]
+        do {
+          val op = updates.get(i)
+          if(results(i) == 1) {
+            val sid = sidSource.get(op.id).getOrElse(sys.error("Successfully updated row, but no sid found for it?"))
+            rowAuxData.update(sid, op.upsertedRow)
+            resultMap.put(op.upsertJob, op.id)
+          } else if(results(i) == 0) {
+            sys.error("Expected update to succeed")
+          } else sys.error("Unexpected result code from update: " + results(i))
 
-            i += 1
-          } while(i != updatesToRun)
-        }
+          i += 1
+        } while(i != results.size)
       }
     }
+    resultMap
   }
 }
 
 object PostgresTransaction {
-  def apply[CT, CV](connection: Connection, typeContext: TypeContext[CV], sqlizer: DataSqlizer[CT, CV], idProvider: IdProviderPool): PostgresTransaction[CT,CV] = {
+  def apply[CT, CV](connection: Connection, typeContext: TypeContext[CV], sqlizer: DataSqlizer[CT, CV], idProvider: IdProviderPool, executor: Executor): PostgresTransaction[CT,CV] = {
     if(sqlizer.datasetContext.hasUserPrimaryKey)
-      new UserPKPostgresTransaction(connection, typeContext, sqlizer, idProvider)
+      new UserPKPostgresTransaction(connection, typeContext, sqlizer, idProvider, executor)
     else
-      new SystemPKPostgresTransaction(connection, typeContext, sqlizer, idProvider)
+      new SystemPKPostgresTransaction(connection, typeContext, sqlizer, idProvider, executor)
   }
 
   object SystemIDOps {

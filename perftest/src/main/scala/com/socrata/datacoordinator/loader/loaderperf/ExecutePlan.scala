@@ -33,6 +33,7 @@ object ExecutePlan {
     val planFile = args(0)
     val trialsPerDataPoint = args(1).toInt
 
+    val executor = java.util.concurrent.Executors.newCachedThreadPool()
     try {
       val datapoints = for(trial <- 1 to trialsPerDataPoint) yield {
         val idProvider = new IdProviderPoolImpl(new InMemoryBlockIdProvider(releasable = false), new FixedSizeIdProvider(_, 1000))
@@ -147,7 +148,7 @@ object ExecutePlan {
           }
 
           val start = System.nanoTime()
-          val report = using(PostgresTransaction(conn, PerfTypeContext, sqlizer, idProvider)) { txn =>
+          val report = using(PostgresTransaction(conn, PerfTypeContext, sqlizer, idProvider, executor)) { txn =>
             def loop() {
               val line = plan.read()
               if(line != EndOfSection) {
@@ -186,6 +187,8 @@ object ExecutePlan {
         } else {
           e.printStackTrace()
         }
+    } finally {
+      executor.shutdown()
     }
   }
 

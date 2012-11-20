@@ -4,19 +4,27 @@ import scala.collection.immutable.VectorBuilder
 
 import java.sql.{Connection, DriverManager}
 
-import org.scalatest.FunSuite
+import org.scalatest.{FunSuite, BeforeAndAfterAll}
 import org.scalatest.matchers.MustMatchers
 import org.scalatest.prop.PropertyChecks
 import com.rojoma.simplearm.util._
 
 import com.socrata.id.numeric.{PushbackIdProvider, FixedSizeIdProvider, InMemoryBlockIdProvider}
 
-class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyChecks {
-  // In Java 6 (sun and open) driver registration is not thread-safe!
-  // So since SBT will run these tests in parallel, sometimes one of the
-  // first tests to run will randomly fail.  By forcing the driver to
-  // be loaded up front we can avoid this.
-  Class.forName("org.postgresql.Driver")
+class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyChecks with BeforeAndAfterAll {
+  val executor = java.util.concurrent.Executors.newCachedThreadPool()
+
+  override def beforeAll() {
+    // In Java 6 (sun and open) driver registration is not thread-safe!
+    // So since SBT will run these tests in parallel, sometimes one of the
+    // first tests to run will randomly fail.  By forcing the driver to
+    // be loaded up front we can avoid this.
+    Class.forName("org.postgresql.Driver")
+  }
+
+  override def afterAll() {
+    executor.shutdownNow()
+  }
 
   def idProvider(initial: Int) = new IdProviderPoolImpl(new InMemoryBlockIdProvider(releasable = false) { override def start = initial }, new FixedSizeIdProvider(_, 1024))
 
@@ -86,7 +94,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
       makeTables(conn, dsContext)
       conn.commit()
 
-      using(PostgresTransaction(conn, TestTypeContext, dataSqlizer, idProvider(15))) { txn =>
+      using(PostgresTransaction(conn, TestTypeContext, dataSqlizer, idProvider(15), executor)) { txn =>
         txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("a")))
         val report = txn.report
         report.inserted must equal (Map(0 -> LongValue(15)))
@@ -115,7 +123,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
       makeTables(conn, dsContext)
       conn.commit()
 
-      using(PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids)) { txn =>
+      using(PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids, executor)) { txn =>
         txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("a")))
         txn.upsert(Map(":id" -> LongValue(15), "num" -> LongValue(2), "str" -> StringValue("b")))
         val report = txn.report
@@ -144,7 +152,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
       makeTables(conn, dsContext)
       conn.commit()
 
-      using(PostgresTransaction(conn, TestTypeContext, dataSqlizer, idProvider(22))) { txn =>
+      using(PostgresTransaction(conn, TestTypeContext, dataSqlizer, idProvider(22), executor)) { txn =>
         txn.upsert(Map(":id" -> NullValue, "num" -> LongValue(1), "str" -> StringValue("a")))
         val report = txn.report
         report.inserted must be ('empty)
@@ -168,7 +176,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
       makeTables(conn, dsContext)
       conn.commit()
 
-      using(PostgresTransaction(conn, TestTypeContext, dataSqlizer, idProvider(6))) { txn =>
+      using(PostgresTransaction(conn, TestTypeContext, dataSqlizer, idProvider(6), executor)) { txn =>
         txn.upsert(Map(":id" -> LongValue(77), "num" -> LongValue(1), "str" -> StringValue("a")))
         val report = txn.report
         report.inserted must be ('empty)
@@ -195,7 +203,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
       )
       conn.commit()
 
-      using(PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids)) { txn =>
+      using(PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids, executor)) { txn =>
         txn.upsert(Map(":id" -> LongValue(7), "num" -> LongValue(44)))
         val report = txn.report
         report.inserted must be ('empty)
@@ -228,7 +236,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
       makeTables(conn, dsContext)
       conn.commit()
 
-      using(userCast(PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids))) { txn =>
+      using(userCast(PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids, executor))) { txn =>
         txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("a")))
         val report = txn.report
         report.inserted must equal (Map(0 -> StringValue("a")))
@@ -259,7 +267,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
       makeTables(conn, dsContext)
       conn.commit()
 
-      using(userCast(PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids))) { txn =>
+      using(userCast(PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids, executor))) { txn =>
         txn.upsert(Map("num" -> LongValue(1), "str" -> NullValue))
         val report = txn.report
         report.inserted must be ('empty)
@@ -286,7 +294,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
       makeTables(conn, dsContext)
       conn.commit()
 
-      using(userCast(PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids))) { txn =>
+      using(userCast(PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids, executor))) { txn =>
         txn.upsert(Map("num" -> LongValue(1)))
         val report = txn.report
         report.inserted must be ('empty)
@@ -315,7 +323,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
       )
       conn.commit()
 
-      using(userCast(PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids))) { txn =>
+      using(userCast(PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids, executor))) { txn =>
         txn.upsert(Map("str" -> StringValue("q"), "num" -> LongValue(44)))
         val report = txn.report
         report.inserted must be ('empty)
@@ -346,7 +354,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
       makeTables(conn, dsContext)
       conn.commit()
 
-      using(userCast(PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids))) { txn =>
+      using(userCast(PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids, executor))) { txn =>
         txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("q")))
         txn.upsert(Map("num" -> LongValue(2), "str" -> StringValue("q")))
         val report = txn.report
@@ -378,7 +386,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
       makeTables(conn, dsContext)
       conn.commit()
 
-      using(userCast(PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids))) { txn =>
+      using(userCast(PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids, executor))) { txn =>
         txn.upsert(Map(":id" -> LongValue(15), "num" -> LongValue(1), "str" -> StringValue("q")))
         val report = txn.report
         report.inserted must be ('empty)
@@ -405,7 +413,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
       makeTables(conn, dsContext)
       conn.commit()
 
-      using(userCast(PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids))) { txn =>
+      using(userCast(PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids, executor))) { txn =>
         txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("q")))
         txn.delete(StringValue("q"))
         val report = txn.report
@@ -435,7 +443,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
       makeTables(conn, dsContext)
       conn.commit()
 
-      using(PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids)) { txn =>
+      using(PostgresTransaction(conn, TestTypeContext, dataSqlizer, ids, executor)) { txn =>
         txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("q")))
         txn.delete(LongValue(15))
         val report = txn.report
@@ -507,7 +515,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
           makeTables(stupidConn, stupidDsContext)
 
           def runCompareTest(ops: List[Op]) {
-            val smartReport = using(userCast(PostgresTransaction(smartConn, TestTypeContext, dataSqlizer, ids))) { txn =>
+            val smartReport = using(userCast(PostgresTransaction(smartConn, TestTypeContext, dataSqlizer, ids, executor))) { txn =>
               applyOps(txn, ops)
               val report = txn.report
               txn.commit()
@@ -633,7 +641,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
 
           def runCompareTest(ops: List[Op]) {
             val smartReport = locally {
-              val txn = PostgresTransaction(smartConn, TestTypeContext, dataSqlizer, smartIds)
+              val txn = PostgresTransaction(smartConn, TestTypeContext, dataSqlizer, smartIds, executor)
               applyOps(txn, ops)
               val report = txn.report
               txn.commit()
