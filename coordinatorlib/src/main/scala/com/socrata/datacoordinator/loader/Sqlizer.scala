@@ -37,7 +37,7 @@ trait DataSqlizer[CT, CV] extends Sqlizer {
   def findCurrentVersion: String
   def newRowAuxDataAccumulator(rowWriter: (LogAuxColumn) => Unit): RowAuxDataAccumulator
   def prepareLogRowsChangedStatement: String
-  def prepareLogRowsChanged(stmt: PreparedStatement, version: Long, rowsJson: LogAuxColumn): Int
+  def prepareLogRowsChanged(stmt: PreparedStatement, version: Long, subversion: Long, rowsJson: LogAuxColumn): Int
 
   trait RowAuxDataAccumulator {
     def insert(systemID: Long, row: Row[CV])

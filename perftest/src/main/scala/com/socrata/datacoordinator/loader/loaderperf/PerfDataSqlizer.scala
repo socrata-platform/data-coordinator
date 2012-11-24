@@ -8,6 +8,7 @@ import com.rojoma.json.util.JsonUtil
 import com.rojoma.json.codec.JsonCodec
 import org.postgresql.core.BaseConnection
 import org.postgresql.copy.CopyManager
+import com.rojoma.json.io.CompactJsonWriter
 
 class PerfDataSqlizer(user: String, val datasetContext: DatasetContext[PerfType, PerfValue]) extends PerfSqlizer(datasetContext) with DataSqlizer[PerfType, PerfValue] {
   val userSqlized = PVText(user).sqlize
@@ -19,7 +20,7 @@ class PerfDataSqlizer(user: String, val datasetContext: DatasetContext[PerfType,
   def sizeof(bd: BigDecimal) = bd.precision
   def sizeofNull = 1
 
-  def softMaxBatchSize = 1000000
+  def softMaxBatchSize = 2000000
 
   def sizerFrom(base: Int, t: PerfType): PerfValue => Int = t match {
     case PTId => {
@@ -87,10 +88,16 @@ class PerfDataSqlizer(user: String, val datasetContext: DatasetContext[PerfType,
     copyManager.copyIn(bulkInsertStatement, inserter.reader)
   }
 
+  def prepareForInsert(row: Row[PerfValue], systemId: Long) =
+    row + (datasetContext.systemIdColumnName -> PVId(systemId))
+
+  def prepareForUpdate(row: Row[PerfValue]) =
+    row
+
   class InserterImpl extends Inserter {
     val sb = new java.lang.StringBuilder
     def insert(sid: Long, row: Row[PerfValue]) {
-      val trueRow = row + (datasetContext.systemIdColumnName -> PVId(sid))
+      val trueRow = prepareForInsert(row, sid)
       var didOne = false
       for(k <- logicalColumns) {
         if(didOne) sb.append(',')
@@ -139,9 +146,6 @@ class PerfDataSqlizer(user: String, val datasetContext: DatasetContext[PerfType,
     }
   }
 
-  def prepareSystemIdInsertStatement =
-    "INSERT INTO " + dataTableName + " (" + physicalColumns.mkString(",") + ") SELECT " + physicalColumns.map(_ => "?").mkString(",") + " WHERE NOT EXISTS (SELECT 1 FROM " + dataTableName + " WHERE id = ?)"
-
   def prepareSystemIdDelete(stmt: PreparedStatement, sid: Long) = {
     stmt.setLong(1, sid)
     sizeof(sid)
@@ -150,7 +154,7 @@ class PerfDataSqlizer(user: String, val datasetContext: DatasetContext[PerfType,
   def prepareSystemIdInsert(stmt: PreparedStatement, sid: Long, row: Row[PerfValue]) = {
     var totalSize = 0
     var i = 0
-    val fullRow = row + (datasetContext.systemIdColumnName -> PVId(sid))
+    val fullRow = prepareForInsert(row, sid)
     while(i != logicalColumns.length) {
       totalSize += setValue(stmt, i + 1, datasetContext.fullSchema(logicalColumns(i)), fullRow.getOrElse(logicalColumns(i), PVNull))
       i += 1
@@ -162,13 +166,10 @@ class PerfDataSqlizer(user: String, val datasetContext: DatasetContext[PerfType,
   }
 
   def sqlizeSystemIdUpdate(sid: Long, row: Row[PerfValue]) =
-    "UPDATE " + dataTableName + " SET " + row.map { case (col, v) => mapToPhysical(col) + " = " + v.sqlize }.mkString(",") + " WHERE id = " + row(datasetContext.systemIdColumnName).sqlize
+    "UPDATE " + dataTableName + " SET " + prepareForUpdate(row).map { case (col, v) => mapToPhysical(col) + " = " + v.sqlize }.mkString(",") + " WHERE id = " + sid
 
   val prepareUserIdDeleteStatement =
     "DELETE FROM " + dataTableName + " WHERE " + pkCol + " = ?"
-
-  def prepareUserIdInsertStatement =
-    "INSERT INTO " + dataTableName + " (" + physicalColumns.mkString(",") + ") SELECT " + physicalColumns.map(_ => "?").mkString(",") + " WHERE NOT EXISTS (SELECT 1 FROM " + dataTableName + " WHERE " + pkCol + " = ?)"
 
   def prepareUserIdDelete(stmt: PreparedStatement, id: PerfValue) = {
     setValue(stmt, 1, datasetContext.userSchema(datasetContext.userPrimaryKeyColumn.get), id)
@@ -189,35 +190,23 @@ class PerfDataSqlizer(user: String, val datasetContext: DatasetContext[PerfType,
     }
   }
 
-  def prepareUserIdInsert(stmt: PreparedStatement, sid: Long, row: Row[PerfValue]) = {
-    var totalSize = 0
-    var i = 0
-    val fullRow = row + (datasetContext.systemIdColumnName -> PVId(sid))
-    while(i != logicalColumns.length) {
-      totalSize += setValue(stmt, i + 1, datasetContext.fullSchema(logicalColumns(i)), fullRow.getOrElse(logicalColumns(i), PVNull))
-      i += 1
-    }
-    val c = datasetContext.userPrimaryKeyColumn.get
-    totalSize += setValue(stmt, i + 1, datasetContext.userSchema(c), fullRow(c))
-    totalSize
-  }
-
   def sqlizeUserIdUpdate(row: Row[PerfValue]) =
-    "UPDATE " + dataTableName + " SET " + (row - pkCol).map { case (col, v) => mapToPhysical(col) + " = " + v.sqlize }.mkString(",") + " WHERE " + pkCol + " = " + row(datasetContext.primaryKeyColumn).sqlize
+    "UPDATE " + dataTableName + " SET " + prepareForUpdate(row).map { case (col, v) => mapToPhysical(col) + " = " + v.sqlize }.mkString(",") + " WHERE " + pkCol + " = " + row(datasetContext.primaryKeyColumn).sqlize
 
   // txn log has (serial, row id, who did the update)
   val findCurrentVersion =
-    "SELECT COALESCE(MAX(id), 0) FROM " + logTableName
+    "SELECT COALESCE(MAX(version), 0) FROM " + logTableName
 
   type LogAuxColumn = Array[Byte]
 
   val prepareLogRowsChangedStatement =
-    "INSERT INTO " + logTableName + " (id, rows, who) VALUES (?, ?," + userSqlized + ")"
+    "INSERT INTO " + logTableName + " (version, subversion, rows, who) VALUES (?, ?, ?," + userSqlized + ")"
 
-  def prepareLogRowsChanged(stmt: PreparedStatement, version: Long, rowsJson: LogAuxColumn) = {
+  def prepareLogRowsChanged(stmt: PreparedStatement, version: Long, subversion: Long, rowsJson: LogAuxColumn) = {
     stmt.setLong(1, version)
-    stmt.setBytes(2, rowsJson)
-    sizeof(version) + rowsJson.length
+    stmt.setLong(2, subversion)
+    stmt.setBytes(3, rowsJson)
+    sizeof(version) + sizeof(subversion) + rowsJson.length
   }
 
   def newRowAuxDataAccumulator(auxUser: (LogAuxColumn) => Unit) = new RowAuxDataAccumulator {
@@ -269,18 +258,20 @@ class PerfDataSqlizer(user: String, val datasetContext: DatasetContext[PerfType,
       }
     }
 
-    val codec = implicitly[JsonCodec[Map[String, Map[String, PerfValue]]]]
+    val rowCodec = implicitly[JsonCodec[Row[PerfValue]]]
+    val insertCodec = implicitly[JsonCodec[Map[String, Row[PerfValue]]]]
+    val updateCodec = implicitly[JsonCodec[Map[String, JValue]]]
 
     def insert(sid: Long, row: Row[PerfValue]) {
       maybeComma()
       // sorting because this is test code and we want to be able to use it sanely
-      out.write(JsonUtil.renderJson(Map("i" -> (row + (datasetContext.systemIdColumnName -> PVId(sid)))))(codec))
+      out.write(JsonUtil.renderJson(Map("i" -> prepareForInsert(row, sid)))(insertCodec))
       maybeFlush()
     }
 
     def update(sid: Long, row: Row[PerfValue]) {
       maybeComma()
-      out.write(JsonUtil.renderJson(Map("u" -> (row + (datasetContext.systemIdColumnName -> PVId(sid)))))(codec))
+      out.write(CompactJsonWriter.toString(JObject(Map("u" -> rowCodec.encode(prepareForUpdate(row)), "s" -> JNumber(sid)))))
       maybeFlush()
     }
 

@@ -185,7 +185,7 @@ class TestDataSqlizer(user: String, val datasetContext: DatasetContext[TestColum
     "UPDATE " + dataTableName + " SET " + (row - pkCol).map { case (col, v) => mapToPhysical(col) + " = " + v.sqlize }.mkString(",") + " WHERE " + pkCol + " = " + row(datasetContext.primaryKeyColumn).sqlize
 
   val findCurrentVersion =
-    "SELECT COALESCE(MAX(id), 0) FROM " + logTableName
+    "SELECT COALESCE(MAX(version), 0) FROM " + logTableName
 
   def newRowAuxDataAccumulator(auxUser: (LogAuxColumn) => Unit) = new RowAuxDataAccumulator {
     var sw: java.io.StringWriter = _
@@ -264,12 +264,13 @@ class TestDataSqlizer(user: String, val datasetContext: DatasetContext[TestColum
   type LogAuxColumn = String
 
   val prepareLogRowsChangedStatement =
-    "INSERT INTO " + logTableName + " (id, rows, who) VALUES (?,?," + userSqlized + ")"
+    "INSERT INTO " + logTableName + " (version, subversion, rows, who) VALUES (?,?,?," + userSqlized + ")"
 
-  def prepareLogRowsChanged(stmt: PreparedStatement, version: Long, rowsJson: LogAuxColumn): Int = {
+  def prepareLogRowsChanged(stmt: PreparedStatement, version: Long, subversion: Long, rowsJson: LogAuxColumn): Int = {
     stmt.setLong(1, version)
-    stmt.setString(2, rowsJson)
-    sizeof(version) + sizeof(rowsJson)
+    stmt.setLong(2, subversion)
+    stmt.setString(3, rowsJson)
+    sizeof(version) + sizeof(subversion) + sizeof(rowsJson)
   }
 
   def selectRow(id: TestColumnValue): String =

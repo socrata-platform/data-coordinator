@@ -7,6 +7,7 @@ import java.sql.Connection
 import com.rojoma.simplearm.util._
 
 import com.socrata.id.numeric.{Unallocatable, IdProvider}
+import com.socrata.datacoordinator.util.Counter
 
 class StupidPostgresTransaction[CT, CV](val connection: Connection,
                                         val typeContext: TypeContext[CV],
@@ -16,22 +17,26 @@ class StupidPostgresTransaction[CT, CV](val connection: Connection,
 {
   val datasetContext = sqlizer.datasetContext
 
-  var totalRows = 0
   val inserted = new java.util.HashMap[Int, CV]
   val elided = new java.util.HashMap[Int, (CV, Int)]
   val updated = new java.util.HashMap[Int, CV]
   val deleted = new java.util.HashMap[Int, CV]
   val errors = new java.util.HashMap[Int, Failure[CV]]
 
-  def nextJobNum() = {
-    val r = totalRows
-    totalRows += 1
-    r
-  }
+  val nextJobNum = new Counter
 
+  lazy val txnVersion = for {
+    stmt <- managed(connection.createStatement())
+    rs <- managed(stmt.executeQuery(sqlizer.findCurrentVersion))
+  } yield {
+    val hasNext = rs.next()
+    assert(hasNext, "next version query didn't return anything?")
+    rs.getLong(1) + 1
+  }
+  val nextSubVersionNum = new Counter(init = 1)
   val rowAuxData = sqlizer.newRowAuxDataAccumulator { auxData =>
     using(connection.prepareStatement(sqlizer.prepareLogRowsChangedStatement)) { stmt =>
-      sqlizer.prepareLogRowsChanged(stmt, nextVersionNum(), auxData)
+      sqlizer.prepareLogRowsChanged(stmt, txnVersion, nextSubVersionNum(), auxData)
       val result = stmt.executeUpdate()
       assert(result == 1, "Inserting a log row... didn't insert a log row?")
     }
@@ -83,24 +88,6 @@ class StupidPostgresTransaction[CT, CV](val connection: Connection,
             rowAuxData.insert(sid, row)
             inserted.put(job, typeContext.makeValueFromSystemId(sid))
         }
-    }
-  }
-
-  object nextVersionNum {
-    val currentVersion = for {
-      stmt <- managed(connection.createStatement())
-      rs <- managed(stmt.executeQuery(sqlizer.findCurrentVersion))
-    } yield {
-      val hasNext = rs.next()
-      assert(hasNext, "next version query didn't return anything?")
-      rs.getLong(1)
-    }
-
-    var nextVersion = currentVersion + 1
-    def apply() = {
-      val r = nextVersion
-      nextVersion += 1
-      r
     }
   }
 

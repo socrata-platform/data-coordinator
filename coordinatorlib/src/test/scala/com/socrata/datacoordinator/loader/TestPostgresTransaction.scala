@@ -69,7 +69,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
       execute(conn, "CREATE INDEX " + ctx.baseName + "_data_userid ON " + ctx.baseName + "_data(u_" + pkCol + ")")
     }
     // varchar rows because h2 returns a clob for TEXT columns instead of a string
-    execute(conn, "CREATE TABLE " + ctx.baseName + "_log (id bigint not null primary key, rows varchar(65536) not null, who varchar(100) null)")
+    execute(conn, "CREATE TABLE " + ctx.baseName + "_log (version bigint not null, subversion bigint not null, rows varchar(65536) not null, who varchar(100) null, PRIMARY KEY(version, subversion))")
   }
 
   def preload(conn: Connection, ctx: DatasetContext[TestColumnType, TestColumnValue])(rows: Map[String, TestColumnValue]*) {
@@ -108,8 +108,8 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(
         Map("ID" -> 15L, "NUM" -> 1L, "STR" -> "a")
       ))
-      query(conn, "SELECT id as ID, rows as ROWS, who as WHO from test_log") must equal (Seq(
-        Map("ID" -> 1, "ROWS" -> """[{"i":{":id":15,"num":1,"str":"a"}}]""", "WHO" -> "hello")
+      query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq(
+        Map("VERSION" -> 1L, "SUBVERSION" -> 1L, "ROWS" -> """[{"i":{":id":15,"num":1,"str":"a"}}]""", "WHO" -> "hello")
       ))
     }
   }
@@ -138,8 +138,8 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
       ids.borrow().allocate() must be (16)
 
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(Map("ID" -> 15L, "NUM" -> 2L, "STR" -> "b")))
-      query(conn, "SELECT id as ID, rows as ROWS, who as WHO from test_log") must equal (Seq(
-        Map("ID" -> 1, "ROWS" -> """[{"i":{":id":15,"num":2,"str":"b"}}]""", "WHO" -> "hello")
+      query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq(
+        Map("VERSION" -> 1L, "SUBVERSION" -> 1L, "ROWS" -> """[{"i":{":id":15,"num":2,"str":"b"}}]""", "WHO" -> "hello")
       ))
     }
   }
@@ -164,7 +164,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
       }
 
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq.empty)
-      query(conn, "SELECT id as ID, rows as ROWS, who as WHO from test_log") must equal (Seq.empty)
+      query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq.empty)
     }
   }
 
@@ -188,7 +188,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
       }
 
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq.empty)
-      query(conn, "SELECT id as ID, rows as ROWS, who as WHO from test_log") must equal (Seq.empty)
+      query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq.empty)
     }
   }
 
@@ -219,8 +219,8 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(
         Map("ID" -> 7L, "NUM" -> 44L, "STR" -> "q")
       ))
-      query(conn, "SELECT id as ID, rows as ROWS, who as WHO from test_log") must equal (Seq(
-        Map("ID" -> 1, "ROWS" -> """[{"u":{":id":7,"num":44}}]""", "WHO" -> "hello")
+      query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq(
+        Map("VERSION" -> 1L, "SUBVERSION" -> 1L, "ROWS" -> """[{"u":{":id":7,"num":44}}]""", "WHO" -> "hello")
       ))
     }
   }
@@ -252,8 +252,8 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(
         Map("ID" -> 15L, "NUM" -> 1L, "STR" -> "a")
       ))
-      query(conn, "SELECT id as ID, rows as ROWS, who as WHO from test_log") must equal (Seq(
-        Map("ID" -> 1, "ROWS" -> """[{"i":{":id":15,"num":1,"str":"a"}}]""", "WHO" -> "hello")
+      query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq(
+        Map("VERSION" -> 1L, "SUBVERSION" -> 1L, "ROWS" -> """[{"i":{":id":15,"num":1,"str":"a"}}]""", "WHO" -> "hello")
       ))
     }
   }
@@ -281,7 +281,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
       ids.borrow().allocate() must equal (22)
 
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq.empty)
-      query(conn, "SELECT id as ID, rows as ROWS, who as WHO from test_log") must equal (Seq.empty)
+      query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq.empty)
     }
   }
 
@@ -308,7 +308,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
       ids.borrow().allocate() must equal (22)
 
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq.empty)
-      query(conn, "SELECT id as ID, rows as ROWS, who as WHO from test_log") must equal (Seq.empty)
+      query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq.empty)
     }
   }
 
@@ -339,8 +339,8 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(
         Map("ID" -> 7L, "NUM" -> 44L, "STR" -> "q")
       ))
-      query(conn, "SELECT id as ID, rows as ROWS, who as WHO from test_log") must equal (Seq(
-        Map("ID" -> 1, "ROWS" -> """[{"u":{":id":7,"num":44,"str":"q"}}]""", "WHO" -> "hello")
+      query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq(
+        Map("VERSION" -> 1L, "SUBVERSION" -> 1L, "ROWS" -> """[{"u":{":id":7,"num":44,"str":"q"}}]""", "WHO" -> "hello")
       ))
     }
   }
@@ -371,8 +371,8 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq(
         Map("ID" -> 15L, "NUM" -> 2L, "STR" -> "q")
       ))
-      query(conn, "SELECT id as ID, rows as ROWS, who as WHO from test_log") must equal (Seq(
-        Map("ID" -> 1, "ROWS" -> """[{"i":{":id":15,"num":2,"str":"q"}}]""", "WHO" -> "hello")
+      query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq(
+        Map("VERSION" -> 1L, "SUBVERSION" -> 1L, "ROWS" -> """[{"i":{":id":15,"num":2,"str":"q"}}]""", "WHO" -> "hello")
       ))
     }
   }
@@ -400,7 +400,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
       ids.borrow().allocate() must be (15)
 
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq.empty)
-      query(conn, "SELECT id as ID, rows as ROWS, who as WHO from test_log") must equal (Seq.empty)
+      query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq.empty)
     }
   }
 
@@ -428,7 +428,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
       ids.borrow().allocate() must be (15) // and it never even allocated a sid for it
 
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq.empty)
-      query(conn, "SELECT id as ID, rows as ROWS, who as WHO from test_log") must equal (Seq.empty)
+      query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq.empty)
     }
   }
 
@@ -458,7 +458,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
       ids.borrow().allocate() must be (16)
 
       query(conn, "SELECT id as ID, u_num as NUM, u_str as STR from test_data") must equal (Seq.empty)
-      query(conn, "SELECT id as ID, rows as ROWS, who as WHO from test_log") must equal (Seq.empty)
+      query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq.empty)
     }
   }
 

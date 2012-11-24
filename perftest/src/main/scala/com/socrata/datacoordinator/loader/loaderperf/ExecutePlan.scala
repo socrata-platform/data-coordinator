@@ -54,7 +54,7 @@ object ExecutePlan {
           executeDDL("ALTER TABLE perf_data ALTER COLUMN u_uid SET NOT NULL")
           executeDDL("CREATE UNIQUE INDEX perf_data_uid ON perf_data(u_uid)")
           executeDDL("ALTER TABLE perf_data ADD UNIQUE USING INDEX perf_data_uid")
-          executeDDL("CREATE TABLE perf_log (id bigint not null primary key, rows bytea not null, who varchar(14) not null)")
+          executeDDL("CREATE TABLE perf_log (version bigint not null, subversion bigint not null, rows bytea not null, who varchar(14) not null, primary key (version, subversion))")
 
           val userSchema = schema.mapValues {
             case "TEXT" => PTText

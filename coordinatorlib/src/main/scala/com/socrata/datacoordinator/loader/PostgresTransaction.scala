@@ -1,8 +1,6 @@
 package com.socrata.datacoordinator.loader
 
 import scala.{collection => sc}
-import sc.{mutable => scm}
-import sc.JavaConverters._
 
 import java.sql.{Connection, PreparedStatement}
 import java.util.concurrent.Executor
@@ -10,6 +8,7 @@ import java.util.concurrent.Executor
 import com.rojoma.simplearm.util._
 import gnu.trove.map.hash.TIntObjectHashMap
 import gnu.trove.map.hash.TLongObjectHashMap
+import com.socrata.datacoordinator.util.{TIntObjectHashMapWrapper, Counter}
 
 abstract class PostgresTransaction[CT, CV](val connection: Connection,
                                            val typeContext: TypeContext[CV],
@@ -18,67 +17,33 @@ abstract class PostgresTransaction[CT, CV](val connection: Connection,
                                            val executor: Executor)
   extends Transaction[CV]
 {
-  private val log = org.slf4j.LoggerFactory.getLogger(classOf[PostgresTransaction[_,_]])
+  private val log = PostgresTransaction.log
 
   val datasetContext = sqlizer.datasetContext
 
   val softMaxBatchSizeInBytes = sqlizer.softMaxBatchSize
 
-  val inserted = new java.util.HashMap[Int, CV]
-  val elided = new java.util.HashMap[Int, (CV, Int)]
-  val updated = new java.util.HashMap[Int, CV]
-  val deleted = new java.util.HashMap[Int, CV]
-  val errors = new java.util.HashMap[Int, Failure[CV]]
+  val inserted = new TIntObjectHashMap[CV]
+  val elided = new TIntObjectHashMap[(CV, Int)]
+  val updated = new TIntObjectHashMap[CV]
+  val deleted = new TIntObjectHashMap[CV]
+  val errors = new TIntObjectHashMap[Failure[CV]]
 
   protected val connectionMutex = new Object
   def checkAsyncJob()
 
-  // These three initializations must run in THIS order.  Any further
-  // initializations must take care to clean up after themselves if
-  // they may throw!  In particular they must either early-initialize or
-  // rollback the transaction and return the id provider to the pool.
+  val nextJobNum = new Counter
 
-  require(!connection.getAutoCommit, "Connection must be in non-auto-commit mode")
-
-  val idProvider = idProviderPool.borrow()
-
-  using(connection.createStatement()) { stmt =>
-    var success = false
-    try {
-      stmt.execute(sqlizer.lockTableAgainstWrites(sqlizer.dataTableName))
-      success = true
-    } finally {
-      if(!success) idProviderPool.release(idProvider)
-    }
+  lazy val versionNum = for {
+    stmt <- managed(connection.createStatement())
+    rs <- managed(stmt.executeQuery(sqlizer.findCurrentVersion))
+  } yield {
+    val hasNext = rs.next()
+    assert(hasNext, "next version query didn't return anything?")
+    rs.getLong(1) + 1
   }
 
-  object nextJobNum extends (() => Int) {
-    var totalRows = 0
-
-    def apply() = {
-      val r = totalRows
-      totalRows += 1
-      r
-    }
-  }
-
-  object nextVersionNum extends (() => Long) {
-    val currentVersion = for {
-      stmt <- managed(connection.createStatement())
-      rs <- managed(stmt.executeQuery(sqlizer.findCurrentVersion))
-    } yield {
-      val hasNext = rs.next()
-      assert(hasNext, "next version query didn't return anything?")
-      rs.getLong(1)
-    }
-
-    var nextVersion = currentVersion + 1
-    def apply() = {
-      val r = nextVersion
-      nextVersion += 1
-      r
-    }
-  }
+  val nextSubVersionNum = new Counter(init = 1)
 
   object rowAuxDataState extends (sqlizer.LogAuxColumn => Unit) {
     var stmt: PreparedStatement = null
@@ -88,7 +53,7 @@ abstract class PostgresTransaction[CT, CV](val connection: Connection,
 
     def apply(auxData: sqlizer.LogAuxColumn) {
       if(stmt == null) stmt = connection.prepareStatement(sqlizer.prepareLogRowsChangedStatement)
-      size += sqlizer.prepareLogRowsChanged(stmt, nextVersionNum(), auxData)
+      size += sqlizer.prepareLogRowsChanged(stmt, versionNum, nextSubVersionNum(), auxData)
       stmt.addBatch()
       batched += 1
       if(size > sqlizer.softMaxBatchSize) flush()
@@ -111,6 +76,25 @@ abstract class PostgresTransaction[CT, CV](val connection: Connection,
   }
   val rowAuxData = sqlizer.newRowAuxDataAccumulator(rowAuxDataState)
 
+  // These three initializations must run in THIS order.  Any further
+  // initializations must take care to clean up after themselves if
+  // they may throw!  In particular they must either early-initialize or
+  // rollback the transaction and return the id provider to the pool.
+
+  require(!connection.getAutoCommit, "Connection must be in non-auto-commit mode")
+
+  val idProvider = idProviderPool.borrow()
+
+  using(connection.createStatement()) { stmt =>
+    var success = false
+    try {
+      stmt.execute(sqlizer.lockTableAgainstWrites(sqlizer.dataTableName))
+      success = true
+    } finally {
+      if(!success) idProviderPool.release(idProvider)
+    }
+  }
+
   def flush()
 
   def lookup(id: CV) = {
@@ -128,7 +112,8 @@ abstract class PostgresTransaction[CT, CV](val connection: Connection,
     flush()
     connectionMutex.synchronized {
       checkAsyncJob()
-      new PostgresTransaction.JobReport(inserted.asScala, updated.asScala, deleted.asScala, elided.asScala, errors.asScala)
+      implicit def wrap[T](x: TIntObjectHashMap[T]) = TIntObjectHashMapWrapper(x)
+      new PostgresTransaction.JobReport(inserted, updated, deleted, elided, errors)
     }
   }
 
@@ -166,11 +151,17 @@ abstract class PostgresTransaction[CT, CV](val connection: Connection,
   }
 }
 
-class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s: DataSqlizer[CT, CV], _i: IdProviderPool, _e: Executor)
-  extends PostgresTransaction(_c, _tc, _s, _i, _e)
+final class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s: DataSqlizer[CT, CV], _i: IdProviderPool, _e: Executor)
+  extends
 {
-  private val log = org.slf4j.LoggerFactory.getLogger(classOf[SystemPKPostgresTransaction[_,_]])
-
+  // all these are early because they are all potential sources of exceptions, and I want all
+  // such things in the constructor to occur _before_ the resource acquisitions in PostgresTransaction's
+  // constructor.
+  // so that if an OOM exception occurs the initializations in the base class are rolled back.
+  private val log = PostgresTransaction.SystemIDOps.log
+  var jobs = new TLongObjectHashMap[PostgresTransaction.SystemIDOps.Operation[CV]]() // map from sid to operation
+} with PostgresTransaction(_c, _tc, _s, _i, _e)
+{
   import PostgresTransaction.SystemIDOps._
 
   val primaryKey = datasetContext.systemIdColumnName
@@ -184,9 +175,6 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
   var insertSize = 0
   var updateSize = 0
   var deleteSize = 0
-
-  // map from sid to operation
-  var jobs = new TLongObjectHashMap[Operation[CV]]()
 
   def upsert(row: Row[CV]) {
     val job = nextJobNum()
@@ -462,28 +450,24 @@ class SystemPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], 
       throw e
     }
 
-    if(pendingInsertResults != null) { addTo(inserted, pendingInsertResults); pendingInsertResults = null }
-    if(pendingUpdateResults != null) { addTo(updated, pendingUpdateResults); pendingUpdateResults = null }
-    if(pendingDeleteResults != null) { addTo(deleted, pendingDeleteResults); pendingDeleteResults = null }
-    if(pendingErrors != null) { addTo(errors, pendingErrors); pendingErrors = null }
-  }
-
-  def addTo[T](target: java.util.HashMap[Int, T], source: TIntObjectHashMap[T]) {
-    val it = source.iterator
-    while(it.hasNext) {
-      it.advance()
-      target.put(it.key(), it.value())
-    }
+    if(pendingInsertResults != null) { inserted.putAll(pendingInsertResults); pendingInsertResults = null }
+    if(pendingUpdateResults != null) { updated.putAll(pendingUpdateResults); pendingUpdateResults = null }
+    if(pendingDeleteResults != null) { deleted.putAll(pendingDeleteResults); pendingDeleteResults = null }
+    if(pendingErrors != null) { errors.putAll(pendingErrors); pendingErrors = null }
   }
 }
 
-class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s: DataSqlizer[CT, CV], _i: IdProviderPool, _e: Executor)
-  extends {
+final class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s: DataSqlizer[CT, CV], _i: IdProviderPool, _e: Executor)
+  extends
+{
+  // all these are early because they are all potential sources of exceptions, and I want all
+  // such things in the constructor to occur _before_ the resource acquisitions in PostgresTransaction's
+  // constructor.
+  private val log = PostgresTransaction.UserIDOps.log
   val primaryKey = _s.datasetContext.userPrimaryKeyColumn.getOrElse(sys.error("Created a UserPKPostgresTranasction but didn't have a user PK"))
+  var jobs = _s.datasetContext.makeIdMap[PostgresTransaction.UserIDOps.OperationLog[CV]]()
 } with PostgresTransaction(_c, _tc, _s, _i, _e)
 {
-  private val log = org.slf4j.LoggerFactory.getLogger(classOf[UserPKPostgresTransaction[_,_]])
-
   import PostgresTransaction.UserIDOps._
 
   var pendingException: Throwable = null
@@ -491,7 +475,6 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
   var pendingUpdateResults: TIntObjectHashMap[CV] = null
   var pendingDeleteResults: TIntObjectHashMap[CV] = null
 
-  var jobs = datasetContext.makeIdMap[OperationLog[CV]]()
   var insertSize = 0
   var deleteSize = 0
 
@@ -657,17 +640,9 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
       throw e
     }
 
-    if(pendingInsertResults != null) { addTo(inserted, pendingInsertResults); pendingInsertResults = null }
-    if(pendingUpdateResults != null) { addTo(updated, pendingUpdateResults); pendingUpdateResults = null }
-    if(pendingDeleteResults != null) { addTo(deleted, pendingDeleteResults); pendingDeleteResults = null }
-  }
-
-  def addTo(target: java.util.HashMap[Int, CV], source: TIntObjectHashMap[CV]) {
-    val it = source.iterator
-    while(it.hasNext) {
-      it.advance()
-      target.put(it.key(), it.value())
-    }
+    if(pendingInsertResults != null) { inserted.putAll(pendingInsertResults); pendingInsertResults = null }
+    if(pendingUpdateResults != null) { updated.putAll(pendingUpdateResults); pendingUpdateResults = null }
+    if(pendingDeleteResults != null) { deleted.putAll(pendingDeleteResults); pendingDeleteResults = null }
   }
 
   def findSids(ops: Iterator[OperationLog[CV]]): RowIdMap[CV, Long] = {
@@ -800,6 +775,10 @@ class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[CV], _s
 }
 
 object PostgresTransaction {
+  def pkg = classOf[PostgresTransaction[_, _]].getPackage.getName
+
+  val log = org.slf4j.LoggerFactory.getLogger(classOf[PostgresTransaction[_, _]])
+
   def apply[CT, CV](connection: Connection, typeContext: TypeContext[CV], sqlizer: DataSqlizer[CT, CV], idProvider: IdProviderPool, executor: Executor): PostgresTransaction[CT,CV] = {
     if(sqlizer.datasetContext.hasUserPrimaryKey)
       new UserPKPostgresTransaction(connection, typeContext, sqlizer, idProvider, executor)
@@ -808,6 +787,8 @@ object PostgresTransaction {
   }
 
   object SystemIDOps {
+    val log = org.slf4j.LoggerFactory.getLogger(pkg + ".SystemPKPostgresTransaction")
+
     sealed abstract class Operation[+CV] {
       def id: Long
       def job: Int
@@ -823,6 +804,8 @@ object PostgresTransaction {
   }
 
   object UserIDOps {
+    val log = org.slf4j.LoggerFactory.getLogger(pkg + ".UserPKPostgresTransaction")
+
     class OperationLog[CV] {
       var id: CV = _
       var deleteJob: Int = -1
