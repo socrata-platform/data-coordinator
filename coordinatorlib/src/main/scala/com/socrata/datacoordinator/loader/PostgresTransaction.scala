@@ -474,6 +474,7 @@ final class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[C
   var pendingInsertResults: TIntObjectHashMap[CV] = null
   var pendingUpdateResults: TIntObjectHashMap[CV] = null
   var pendingDeleteResults: TIntObjectHashMap[CV] = null
+  var pendingErrors: TIntObjectHashMap[Failure[CV]] = null
 
   var insertSize = 0
   var deleteSize = 0
@@ -614,9 +615,11 @@ final class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[C
                 }
               }
 
-              pendingDeleteResults = processDeletes(sidsForUpdateAndDelete, currentDeleteSize, deletes)
+              val errors = new TIntObjectHashMap[Failure[CV]]
+              pendingDeleteResults = processDeletes(sidsForUpdateAndDelete, currentDeleteSize, deletes, errors)
               pendingInsertResults = processInserts(remainingInsertSize, inserts)
               pendingUpdateResults = processUpdates(sidsForUpdateAndDelete, updates)
+              if(!errors.isEmpty) pendingErrors = errors
             } catch {
               case e: Throwable =>
                 pendingException = e
@@ -643,6 +646,7 @@ final class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[C
     if(pendingInsertResults != null) { inserted.putAll(pendingInsertResults); pendingInsertResults = null }
     if(pendingUpdateResults != null) { updated.putAll(pendingUpdateResults); pendingUpdateResults = null }
     if(pendingDeleteResults != null) { deleted.putAll(pendingDeleteResults); pendingDeleteResults = null }
+    if(pendingErrors != null) { errors.putAll(pendingErrors); pendingErrors = null }
   }
 
   def findSids(ops: Iterator[OperationLog[CV]]): RowIdMap[CV, Long] = {
@@ -661,7 +665,7 @@ final class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[C
     target
   }
 
-  def processDeletes(sidSource: RowIdMap[CV, Long], deleteSizeX: Int, deletes: java.util.ArrayList[OperationLog[CV]]): TIntObjectHashMap[CV] = {
+  def processDeletes(sidSource: RowIdMap[CV, Long], deleteSizeX: Int, deletes: java.util.ArrayList[OperationLog[CV]], errors: TIntObjectHashMap[Failure[CV]]): TIntObjectHashMap[CV] = {
     var deleteSize = deleteSizeX
     var resultMap: TIntObjectHashMap[CV] = null
     if(!deletes.isEmpty) {
