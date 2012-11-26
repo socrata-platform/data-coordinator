@@ -731,7 +731,6 @@ final class UserPKPostgresTransaction[CT, CV](_c: Connection, _tc: TypeContext[C
     resultMap
   }
 
-  // Note: destroys "updates"
   def processUpdates(sidSource: RowIdMap[CV, Long], updates: java.util.ArrayList[OperationLog[CV]]): TIntObjectHashMap[CV] = {
     var resultMap: TIntObjectHashMap[CV] = null
     if(!updates.isEmpty) {
