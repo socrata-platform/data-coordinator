@@ -9,6 +9,7 @@ import com.rojoma.json.codec.JsonCodec
 import org.postgresql.core.BaseConnection
 import org.postgresql.copy.CopyManager
 import com.rojoma.json.io.CompactJsonWriter
+import com.socrata.datacoordinator.util.StringBuilderReader
 
 class PerfDataSqlizer(user: String, val datasetContext: DatasetContext[PerfType, PerfValue]) extends PerfSqlizer(datasetContext) with DataSqlizer[PerfType, PerfValue] {
   val userSqlized = PVText(user).sqlize
@@ -108,19 +109,7 @@ class PerfDataSqlizer(user: String, val datasetContext: DatasetContext[PerfType,
 
     def close() {}
 
-    def reader: java.io.Reader = new java.io.Reader {
-      var srcPtr = 0
-      def read(dst: Array[Char], off: Int, len: Int): Int = {
-        val remaining = sb.length - srcPtr
-        if(remaining == 0) return -1
-        val count = java.lang.Math.min(remaining, len)
-        val end = srcPtr + count
-        sb.getChars(srcPtr, end, dst, off)
-        srcPtr = end
-        count
-      }
-      def close() {}
-    }
+    def reader: java.io.Reader = new StringBuilderReader(sb)
   }
 
   def csvize(sb: java.lang.StringBuilder, k: String, v: PerfValue) = {
