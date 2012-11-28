@@ -8,4 +8,5 @@ object TestTypeContext extends TypeContext[TestColumnValue] {
   }
 
   def isNull(v: TestColumnValue) = v == NullValue
+  def nullValue = NullValue
 }

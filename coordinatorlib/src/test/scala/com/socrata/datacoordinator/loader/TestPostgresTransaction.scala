@@ -56,9 +56,9 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
     }
 
   def makeTables(conn: Connection, ctx: DatasetContext[TestColumnType, TestColumnValue]) {
-    execute(conn, "drop table if exists " + ctx.baseName + "_data")
-    execute(conn, "drop table if exists " + ctx.baseName + "_log")
-    execute(conn, "CREATE TABLE " + ctx.baseName + "_data (id bigint not null primary key," + ctx.userSchema.map { case (c,t) =>
+    execute(conn, "drop table if exists " + ctx.dataTableName)
+    execute(conn, "drop table if exists " + ctx.logTableName)
+    execute(conn, "CREATE TABLE " + ctx.dataTableName + " (id bigint not null primary key," + ctx.userSchema.map { case (c,t) =>
       val sqltype = t match {
         case LongColumn => "BIGINT"
         case StringColumn => "VARCHAR(100)"
@@ -66,10 +66,10 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
       "u_" + c + " " + sqltype + (if(ctx.userPrimaryKeyColumn == Some(c)) " NOT NULL" else " NULL")
     }.mkString(",") + ")")
     ctx.userPrimaryKeyColumn.foreach { pkCol =>
-      execute(conn, "CREATE INDEX " + ctx.baseName + "_data_userid ON " + ctx.baseName + "_data(u_" + pkCol + ")")
+      execute(conn, "CREATE INDEX " + ctx.dataTableName + "_userid ON " + ctx.dataTableName + "(u_" + pkCol + ")")
     }
     // varchar rows because h2 returns a clob for TEXT columns instead of a string
-    execute(conn, "CREATE TABLE " + ctx.baseName + "_log (version bigint not null, subversion bigint not null, rows varchar(65536) not null, who varchar(100) null, PRIMARY KEY(version, subversion))")
+    execute(conn, "CREATE TABLE " + ctx.logTableName + " (version bigint not null, subversion bigint not null, rows varchar(65536) not null, who varchar(100) null, PRIMARY KEY(version, subversion))")
   }
 
   def preload(conn: Connection, ctx: DatasetContext[TestColumnType, TestColumnValue])(rows: Map[String, TestColumnValue]*) {
@@ -78,7 +78,7 @@ class TestPostgresTransaction extends FunSuite with MustMatchers with PropertyCh
       val LongValue(id) = row.getOrElse(ctx.systemIdColumnName, sys.error("No :id"))
       val remainingColumns = row - ctx.systemIdColumnName
       assert(remainingColumns.keySet.subsetOf(ctx.userSchema.keySet), "row contains extraneous keys")
-      val sql = "insert into " + ctx.baseName + "_data (id," + remainingColumns.keys.map("u_" + _).mkString(",") + ") values (" + id + "," + remainingColumns.values.map(_.sqlize).mkString(",") + ")"
+      val sql = "insert into " + ctx.dataTableName + " (id," + remainingColumns.keys.map("u_" + _).mkString(",") + ") values (" + id + "," + remainingColumns.values.map(_.sqlize).mkString(",") + ")"
       execute(conn, sql)
     }
   }

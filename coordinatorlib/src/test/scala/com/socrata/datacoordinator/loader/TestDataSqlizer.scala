@@ -9,8 +9,8 @@ import com.rojoma.json.codec.JsonCodec
 import com.rojoma.simplearm.util._
 
 class TestDataSqlizer(user: String, val datasetContext: DatasetContext[TestColumnType, TestColumnValue]) extends TestSqlizer with DataSqlizer[TestColumnType, TestColumnValue] {
-  val dataTableName = datasetContext.baseName + "_data"
-  val logTableName = datasetContext.baseName + "_log"
+  val dataTableName = datasetContext.dataTableName
+  val logTableName = datasetContext.logTableName
 
   def sizeof(x: Long) = 8
   def sizeof(s: String) = s.length << 1
@@ -276,17 +276,22 @@ class TestDataSqlizer(user: String, val datasetContext: DatasetContext[TestColum
   def selectRow(id: TestColumnValue): String =
     "SELECT id," + columns.mkString(",") + " FROM " + dataTableName + " WHERE " + pkCol + " = " + id.sqlize
 
-  def extract(resultSet: ResultSet, logicalColumn: String) = {
-    datasetContext.fullSchema(logicalColumn) match {
-      case LongColumn =>
-        val l = resultSet.getLong(mapToPhysical(logicalColumn))
-        if(resultSet.wasNull) NullValue
-        else LongValue(l)
-      case StringColumn =>
-        val s = resultSet.getString(mapToPhysical(logicalColumn))
-        if(s == null) NullValue
-        else StringValue(s)
+  def extractRow(resultSet: ResultSet) = {
+    val result = Map.newBuilder[String, TestColumnValue]
+    for(logicalColumn <- datasetContext.fullSchema.keys) {
+      val v = datasetContext.fullSchema(logicalColumn) match {
+        case LongColumn =>
+          val l = resultSet.getLong(mapToPhysical(logicalColumn))
+          if(resultSet.wasNull) NullValue
+          else LongValue(l)
+        case StringColumn =>
+          val s = resultSet.getString(mapToPhysical(logicalColumn))
+          if(s == null) NullValue
+          else StringValue(s)
+      }
+      result += logicalColumn -> v
     }
+    result.result()
   }
 
   // TODO: it is possible that grouping this differently will be more performant in Postgres

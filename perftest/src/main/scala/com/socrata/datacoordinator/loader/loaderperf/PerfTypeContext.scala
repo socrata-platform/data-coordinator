@@ -10,4 +10,6 @@ object PerfTypeContext extends TypeContext[PerfValue] {
     case PVId(x) => x
     case _ => sys.error("Not an id: " + id)
   }
+
+  val nullValue = PVNull
 }

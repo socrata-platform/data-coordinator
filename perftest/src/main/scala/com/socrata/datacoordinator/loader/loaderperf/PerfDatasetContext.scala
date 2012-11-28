@@ -4,6 +4,9 @@ package loaderperf
 import scala.collection.JavaConverters._
 
 class PerfDatasetContext(val baseName: String, val userSchema: Map[String, PerfType], val userPrimaryKeyColumn: Option[String]) extends DatasetContext[PerfType, PerfValue] {
+  val dataTableName = baseName + "_data"
+  val logTableName = baseName + "_log"
+
   userPrimaryKeyColumn.foreach { pkCol =>
     require(userSchema.contains(pkCol), "PK col defined but does not exist in the schema")
   }

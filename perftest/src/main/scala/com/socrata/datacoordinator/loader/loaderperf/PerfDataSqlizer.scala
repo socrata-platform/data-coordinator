@@ -12,8 +12,8 @@ import com.rojoma.json.io.CompactJsonWriter
 
 class PerfDataSqlizer(user: String, val datasetContext: DatasetContext[PerfType, PerfValue]) extends PerfSqlizer(datasetContext) with DataSqlizer[PerfType, PerfValue] {
   val userSqlized = PVText(user).sqlize
-  val dataTableName = datasetContext.baseName + "_data"
-  val logTableName = datasetContext.baseName + "_log"
+  val dataTableName = datasetContext.dataTableName
+  val logTableName = datasetContext.logTableName
 
   def sizeof(x: Long) = 8
   def sizeof(s: String) = s.length << 1
@@ -76,7 +76,6 @@ class PerfDataSqlizer(user: String, val datasetContext: DatasetContext[PerfType,
 
   val prepareSystemIdDeleteStatement =
     "DELETE FROM " + dataTableName + " WHERE id = ?"
-
 
   val bulkInsertStatement =
     "COPY " + dataTableName + " (" + physicalColumns.mkString(",") + ") from stdin with csv"
@@ -288,7 +287,7 @@ class PerfDataSqlizer(user: String, val datasetContext: DatasetContext[PerfType,
 
   def selectRow(id: PerfValue) = null
 
-  def extract(resultSet: ResultSet, logicalColumn: String) = null
+  def extractRow(resultSet: ResultSet) = null
 
   // This may batch the "ids" into multiple queries.  The queries
   def findSystemIds(ids: Iterator[PerfValue]) = {

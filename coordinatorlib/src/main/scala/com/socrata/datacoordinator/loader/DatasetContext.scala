@@ -4,7 +4,8 @@ package com.socrata.datacoordinator.loader
 trait DatasetContext[CT, CV] {
   def hasCopy: Boolean
 
-  def baseName: String
+  def dataTableName: String
+  def logTableName: String
 
   def userSchema: Map[String, CT]
 
