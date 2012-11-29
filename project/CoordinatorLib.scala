@@ -11,6 +11,7 @@ object CoordinatorLib {
         "com.socrata" %% "socrata-id" % "2.1.0",
         "com.rojoma" %% "rojoma-json" % "2.0.0",
         "com.rojoma" %% "simple-arm" % "1.1.10",
+        "org.scalaj" %% "scalaj-time" % "0.6",
         "net.sf.trove4j" % "trove4j" % "3.0.3",
         "org.xerial.snappy" % "snappy-java" % "1.0.4.1",
         "com.h2database" % "h2" % "1.3.166" % "test",
