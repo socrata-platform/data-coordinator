@@ -13,11 +13,11 @@ trait Loader[CV] extends Closeable {
   /** Flushes any changes which have accumulated in-memory and
     * returns a report summarizing the changes.
     *
-    * @note This should be the last method on this interface called
-    *       before closing it; calling any other method after this results
-    *       in undefined behaviour.
-    * @note If this method is not called, the database transaction MUST
-    *       be rolled back.
+    * @note This should be just about the last method on this interface called
+    *       before closing it; calling either `upsert` or `delete` after this
+    *       results in undefined behaviour.
+    * @note If any changes were made and this method is not called, the database
+    *       transaction MUST be rolled back.
     */
   def report: Report[CV]
 }
