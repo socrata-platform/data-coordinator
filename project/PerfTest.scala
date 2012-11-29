@@ -14,6 +14,6 @@ object PerfTest {
         "org.slf4j" % "slf4j-simple" % slf4jVersion
       )
     },
-    mainClass in assembly := Some("com.socrata.datacoordinator.loader.loaderperf.ExecutePlan")
+    mainClass in assembly := Some("com.socrata.datacoordinator.truth.loader.sql.perf.ExecutePlan")
   )
 }
