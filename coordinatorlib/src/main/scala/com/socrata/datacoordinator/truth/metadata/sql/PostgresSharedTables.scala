@@ -176,36 +176,38 @@ class PostgresSharedTables(conn: Connection) extends GlobalLog with DatasetMapRe
       ColumnInfo(versionInfo, logicalName, typeName, physicalColumnBase)
     }
 
-  def dropColumn(versionInfo: VersionInfo, logicalName: String) {
+  def dropColumn(columnInfo: ColumnInfo) {
     using(conn.prepareStatement("DELETE FROM column_map WHERE dataset_system_id = ? AND lifecycle_version = ? AND logical_column = ?")) { stmt =>
-      stmt.setLong(1, versionInfo.tableInfo.systemId)
-      stmt.setLong(2, versionInfo.lifecycleVersion)
-      stmt.setString(3, logicalName)
+      stmt.setLong(1, columnInfo.versionInfo.tableInfo.systemId)
+      stmt.setLong(2, columnInfo.versionInfo.lifecycleVersion)
+      stmt.setString(3, columnInfo.logicalName)
       val count = stmt.executeUpdate()
       assert(count == 1, "Delete from column_map didn't remove a row?")
     }
   }
 
-  def renameColumn(versionInfo: VersionInfo, oldLogicalName: String, newLogicalName: String) {
+  def renameColumn(columnInfo: ColumnInfo, newLogicalName: String): ColumnInfo = {
     using(conn.prepareStatement("UPDATE column_map SET logical_column = ? WHERE dataset_system_id = ? AND lifecycle_version = ? AND logical_column = ?")) { stmt =>
       stmt.setString(1, newLogicalName)
-      stmt.setLong(2, versionInfo.tableInfo.systemId)
-      stmt.setLong(3, versionInfo.lifecycleVersion)
-      stmt.setString(4, oldLogicalName)
+      stmt.setLong(2, columnInfo.versionInfo.tableInfo.systemId)
+      stmt.setLong(3, columnInfo.versionInfo.lifecycleVersion)
+      stmt.setString(4, columnInfo.logicalName)
       val count = stmt.executeUpdate()
       assert(count == 1, "Rename column in column_map didn't change a row?")
+      columnInfo.copy(logicalName =  newLogicalName)
     }
   }
 
-  def convertColumn(versionInfo: VersionInfo, logicalName: String, newType: String, newPhysicalColumnBase: String) {
+  def convertColumn(columnInfo: ColumnInfo, newType: String, newPhysicalColumnBase: String): ColumnInfo = {
     using(conn.prepareStatement("UPDATE column_map SET type_name = ?, physical_column_base = ? WHERE dataset_system_id = ? AND lifecycle_version = ? AND logical_column = ?")) { stmt =>
       stmt.setString(1, newType)
       stmt.setString(2, newPhysicalColumnBase)
-      stmt.setLong(3, versionInfo.tableInfo.systemId)
-      stmt.setLong(4, versionInfo.lifecycleVersion)
-      stmt.setString(5, logicalName)
+      stmt.setLong(3, columnInfo.versionInfo.tableInfo.systemId)
+      stmt.setLong(4, columnInfo.versionInfo.lifecycleVersion)
+      stmt.setString(5, columnInfo.logicalName)
       val count = stmt.executeUpdate()
       assert(count == 1, "Change type of column in column_map didn't change a row?")
+      columnInfo.copy(typeName = newType, physicalColumnBase = newPhysicalColumnBase)
     }
   }
 

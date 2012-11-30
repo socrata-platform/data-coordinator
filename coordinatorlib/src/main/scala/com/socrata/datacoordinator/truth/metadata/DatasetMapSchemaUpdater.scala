@@ -7,14 +7,14 @@ trait DatasetMapSchemaUpdater {
 
   /** Removes a column from this table-version.
     * @note Does not change the actual table; this just updates the bookkeeping. */
-  def dropColumn(versionInfo: VersionInfo, logicalName: String)
+  def dropColumn(columnInfo: ColumnInfo)
 
   /** Changes the logical name of a column in this table-version. */
-  def renameColumn(versionInfo: VersionInfo, oldLogicalName: String, newLogicalName: String)
+  def renameColumn(columnInfo: ColumnInfo, newLogicalName: String): ColumnInfo
 
   /** Changes the type and physical column base of a column in this table-version.
     * @note Does not change the actual table; this just updates the bookkeeping. */
-  def convertColumn(versionInfo: VersionInfo, logicalName: String, newType: String, newPhysicalColumnBase: String)
+  def convertColumn(columnInfo: ColumnInfo, newType: String, newPhysicalColumnBase: String): ColumnInfo
 
   /** Changes the primary key column for this table-version.
     * @note Does not change the actual table (or verify it is a valid column to use as a PK); this just updates
