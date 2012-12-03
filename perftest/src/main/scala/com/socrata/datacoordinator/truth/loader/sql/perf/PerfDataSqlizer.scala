@@ -6,7 +6,6 @@ package perf
 import java.sql.{Connection, PreparedStatement, ResultSet}
 
 import org.postgresql.core.BaseConnection
-import org.postgresql.copy.CopyManager
 import com.socrata.datacoordinator.util.StringBuilderReader
 import com.socrata.datacoordinator.truth.RowLogCodec
 
@@ -85,7 +84,7 @@ class PerfDataSqlizer(tableBase: String, user: String, val datasetContext: Datas
   def insertBatch(conn: Connection)(f: Inserter => Unit): Long = {
     val inserter = new InserterImpl
     f(inserter)
-    val copyManager = new CopyManager(conn.asInstanceOf[BaseConnection])
+    val copyManager = conn.asInstanceOf[BaseConnection].getCopyAPI
     copyManager.copyIn(bulkInsertStatement, inserter.reader)
   }
 
