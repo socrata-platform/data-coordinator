@@ -277,10 +277,6 @@ class PerfDataSqlizer(tableBase: String, user: String, val datasetContext: Datas
     }
   }
 
-  def selectRow(id: PerfValue) = null
-
-  def extractRow(resultSet: ResultSet) = null
-
   // This may batch the "ids" into multiple queries.  The queries
   def findSystemIds(ids: Iterator[PerfValue]) = {
     require(datasetContext.hasUserPrimaryKey, "findSystemIds called without a user primary key")

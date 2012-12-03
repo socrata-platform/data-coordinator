@@ -8,7 +8,6 @@ import java.io.Closeable
 trait Loader[CV] extends Closeable {
   def upsert(row: Row[CV])
   def delete(id: CV)
-  def lookup(id: CV): Option[Row[CV]]
 
   /** Flushes any changes which have accumulated in-memory and
     * returns a report summarizing the changes.

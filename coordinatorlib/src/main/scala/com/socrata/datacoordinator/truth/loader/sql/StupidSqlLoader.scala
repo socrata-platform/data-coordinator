@@ -136,15 +136,6 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
     }
   }
 
-  def lookup(id: CV) =
-    for {
-      stmt <- managed(connection.createStatement())
-      rs <- managed(stmt.executeQuery(sqlizer.selectRow(id)))
-    } yield {
-      if(rs.next()) Some(sqlizer.extractRow(rs))
-      else None
-    }
-
   def report = {
     rowAuxData.finish()
     SqlLoader.JobReport(txnVersion, inserted.asScala, updated.asScala, deleted.asScala, elided.asScala, errors.asScala)

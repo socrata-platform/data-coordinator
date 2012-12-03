@@ -50,10 +50,6 @@ trait DataSqlizer[CT, CV] extends Sqlizer {
     def finish()
   }
 
-  def selectRow(id: CV): String
-
-  def extractRow(resultSet: ResultSet): Row[CV]
-
   // This may batch the "ids" into multiple queries.  The queries
   // returned will contain two columns: "sid" and "uid".  THIS MUST
   // ONLY BE CALLED IF THIS DATASET HAS A USER PK COLUMN!

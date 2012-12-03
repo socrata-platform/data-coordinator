@@ -100,17 +100,6 @@ abstract class SqlLoader[CT, CV](val connection: Connection,
 
   def flush()
 
-  def lookup(id: CV) = {
-    flush()
-    for {
-      stmt <- managed(connection.createStatement())
-      rs <- managed(stmt.executeQuery(sqlizer.selectRow(id)))
-    } yield {
-      if(rs.next()) Some(sqlizer.extractRow(rs))
-      else None
-    }
-  }
-
   def report: Report[CV] = {
     flush()
 
