@@ -5,16 +5,12 @@ package perf
 
 import java.sql.{Connection, PreparedStatement, ResultSet}
 
-import com.rojoma.json.ast._
-import com.rojoma.json.util.JsonUtil
-import com.rojoma.json.codec.JsonCodec
 import org.postgresql.core.BaseConnection
 import org.postgresql.copy.CopyManager
-import com.rojoma.json.io.CompactJsonWriter
 import com.socrata.datacoordinator.util.StringBuilderReader
-import com.socrata.datacoordinator.truth.loader.DatasetContext
+import com.socrata.datacoordinator.truth.RowLogCodec
 
-class PerfDataSqlizer(tableBase: String, user: String, val datasetContext: DatasetContext[PerfType, PerfValue]) extends PerfSqlizer(datasetContext) with DataSqlizer[PerfType, PerfValue] {
+class PerfDataSqlizer(tableBase: String, user: String, val datasetContext: DatasetContext[PerfType, PerfValue], rowCodecFactory: () => RowLogCodec[PerfValue]) extends PerfSqlizer(datasetContext) with DataSqlizer[PerfType, PerfValue] {
   val userSqlized = PVText(user).sqlize
   val dataTableName = tableBase + "_data"
   val logTableName = tableBase + "_log"
@@ -204,29 +200,26 @@ class PerfDataSqlizer(tableBase: String, user: String, val datasetContext: Datas
 
   def newRowAuxDataAccumulator(auxUser: (LogAuxColumn) => Unit) = new RowAuxDataAccumulator {
     var baos: java.io.ByteArrayOutputStream = _
-    var out: java.io.Writer = _
+    var out: java.io.DataOutputStream = _
+    var rowCodec: RowLogCodec[PerfValue] = _
     var didOne: Boolean = _
     reset()
 
     def reset() {
       baos = new java.io.ByteArrayOutputStream
-      out = new java.io.OutputStreamWriter(new org.xerial.snappy.SnappyOutputStream(baos), "utf-8")
-      out.write("[")
+      out = new java.io.DataOutputStream(new org.xerial.snappy.SnappyOutputStream(baos))
       didOne = false
-    }
-
-    def maybeComma() {
-      if(didOne) out.write(",")
-      else didOne = true
+      rowCodec = rowCodecFactory()
+      rowCodec.writeVersion(out)
     }
 
     def maybeFlush() {
+      didOne=true
       if(baos.size > 128000) flush()
     }
 
     def flush() {
       if(didOne) {
-        out.write("]")
         out.close()
         val bytes = baos.toByteArray
         reset()
@@ -234,43 +227,18 @@ class PerfDataSqlizer(tableBase: String, user: String, val datasetContext: Datas
       }
     }
 
-    implicit val jCodec = new JsonCodec[PerfValue] {
-      def encode(x: PerfValue) = x match {
-        case PVId(i) => JArray(Seq(JNumber(i)))
-        case PVText(s) => JString(s)
-        case PVNumber(n) => JNumber(n)
-        case PVNull => JNull
-      }
-
-      def decode(x: JValue) = x match {
-        case JArray(Seq(JNumber(i))) => Some(PVId(i.longValue))
-        case JString(s) => Some(PVText(s))
-        case JNumber(n) => Some(PVNumber(n.toLong))
-        case JNull => Some(PVNull)
-        case _ => None
-      }
-    }
-
-    val rowCodec = implicitly[JsonCodec[Row[PerfValue]]]
-    val insertCodec = implicitly[JsonCodec[Map[String, Row[PerfValue]]]]
-    val updateCodec = implicitly[JsonCodec[Map[String, JValue]]]
-
     def insert(sid: Long, row: Row[PerfValue]) {
-      maybeComma()
-      // sorting because this is test code and we want to be able to use it sanely
-      out.write(JsonUtil.renderJson(Map("i" -> prepareForInsert(row, sid)))(insertCodec))
+      rowCodec.insert(out, sid, prepareForInsert(row, sid))
       maybeFlush()
     }
 
     def update(sid: Long, row: Row[PerfValue]) {
-      maybeComma()
-      out.write(CompactJsonWriter.toString(JObject(Map("u" -> rowCodec.encode(prepareForUpdate(row)), "s" -> JNumber(sid)))))
+      rowCodec.update(out, sid, prepareForUpdate(row))
       maybeFlush()
     }
 
     def delete(systemID: Long) {
-      maybeComma()
-      out.write(systemID.toString)
+      rowCodec.delete(out, systemID)
       maybeFlush()
     }
 

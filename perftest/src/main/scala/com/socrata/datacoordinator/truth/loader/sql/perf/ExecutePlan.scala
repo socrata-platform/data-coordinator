@@ -65,7 +65,7 @@ object ExecutePlan {
             case "NUMERIC" => PTNumber
           }.toMap
           val datasetContext = new PerfDatasetContext(userSchema, Some("uid"))
-          val sqlizer = new PerfDataSqlizer("perf", "me", datasetContext)
+          val sqlizer = new PerfDataSqlizer("perf", "me", datasetContext, () => new PerfRowCodec)
 
           time("Prepopulating") {
             import org.postgresql.copy.CopyManager
