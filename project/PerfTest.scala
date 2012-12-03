@@ -10,7 +10,6 @@ object PerfTest {
   lazy val settings: Seq[Setting[_]] = BuildSettings.projectSettings(assembly = true) ++ Seq(
     libraryDependencies <++= (slf4jVersion) { slf4jVersion =>
       Seq(
-        "postgresql" % "postgresql" % "9.1-901-1.jdbc4",
         "org.slf4j" % "slf4j-simple" % slf4jVersion
       )
     },
