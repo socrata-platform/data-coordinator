@@ -19,6 +19,8 @@ class PerfDataSqlizer(tableBase: String, user: String, val datasetContext: Datas
   val dataTableName = tableBase + "_data"
   val logTableName = tableBase + "_log"
 
+  def typeContext = PerfTypeContext
+
   def sizeof(x: Long) = 8
   def sizeof(s: String) = s.length << 1
   def sizeof(bd: BigDecimal) = bd.precision

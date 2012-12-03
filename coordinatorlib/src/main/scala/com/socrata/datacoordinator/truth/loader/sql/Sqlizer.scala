@@ -12,6 +12,7 @@ trait Sqlizer {
 /** Generates SQL for execution. */
 trait DataSqlizer[CT, CV] extends Sqlizer {
   def datasetContext: DatasetContext[CT, CV]
+  def typeContext: TypeContext[CV]
 
   def dataTableName: String
   def logTableName: String

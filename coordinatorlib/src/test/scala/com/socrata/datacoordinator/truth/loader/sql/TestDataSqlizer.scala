@@ -14,6 +14,8 @@ class TestDataSqlizer(tableBase: String, user: String, val datasetContext: Datas
   val dataTableName = tableBase + "_data"
   val logTableName = tableBase + "_log"
 
+  def typeContext = TestTypeContext
+
   def sizeof(x: Long) = 8
   def sizeof(s: String) = s.length << 1
   def sizeofNull = 1
