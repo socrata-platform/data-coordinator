@@ -10,7 +10,7 @@ import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.util.{FastGroupedIterator, CloseableIterator, StringBuilderReader}
 import com.socrata.datacoordinator.truth.RowLogCodec
 
-class PerfDataSqlizer(tableBase: String, user: String, val datasetContext: DatasetContext[PerfType, PerfValue], rowCodecFactory: () => RowLogCodec[PerfValue]) extends PerfSqlizer(datasetContext) with DataSqlizer[PerfType, PerfValue] {
+class PerfDataSqlizer(tableBase: String, user: String, val datasetContext: DatasetContext[PerfType, PerfValue], rowCodecFactory: () => RowLogCodec[PerfValue]) extends DataSqlizer[PerfType, PerfValue] {
   val userSqlized = PVText(user).sqlize
   val dataTableName = tableBase + "_data"
   val logTableName = tableBase + "_log"

@@ -13,7 +13,7 @@ import com.rojoma.json.codec.JsonCodec
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.util.CloseableIterator
 
-class TestDataSqlizer(tableBase: String, user: String, val datasetContext: DatasetContext[TestColumnType, TestColumnValue]) extends TestSqlizer with DataSqlizer[TestColumnType, TestColumnValue] {
+class TestDataSqlizer(tableBase: String, user: String, val datasetContext: DatasetContext[TestColumnType, TestColumnValue]) extends DataSqlizer[TestColumnType, TestColumnValue] {
   val dataTableName = tableBase + "_data"
   val logTableName = tableBase + "_log"
 

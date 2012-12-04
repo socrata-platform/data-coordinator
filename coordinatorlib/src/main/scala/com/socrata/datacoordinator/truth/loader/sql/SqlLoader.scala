@@ -79,24 +79,11 @@ abstract class SqlLoader[CT, CV](val connection: Connection,
   }
   val rowAuxData = sqlizer.newRowAuxDataAccumulator(rowAuxDataState)
 
-  // These three initializations must run in THIS order.  Any further
-  // initializations must take care to clean up after themselves if
-  // they may throw!  In particular they must either early-initialize or
-  // rollback the transaction and return the id provider to the pool.
-
-  require(!connection.getAutoCommit, "Connection must be in non-auto-commit mode")
-
+  // Any further initializations after this borrow must take care to
+  // clean up after themselves if they may throw!  In particular they
+  // must either early-initialize or rollback the transaction and
+  // return the id provider to the pool.
   val idProvider = idProviderPool.borrow()
-
-  using(connection.createStatement()) { stmt =>
-    var success = false
-    try {
-      stmt.execute(sqlizer.lockTableAgainstWrites(sqlizer.dataTableName))
-      success = true
-    } finally {
-      if(!success) idProviderPool.release(idProvider)
-    }
-  }
 
   def flush()
 

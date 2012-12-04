@@ -5,13 +5,8 @@ package sql
 import java.sql.{Connection, PreparedStatement, ResultSet}
 import util.CloseableIterator
 
-trait Sqlizer {
-  def logTransactionComplete() // whole-database log has : (dataset id, last updated at, new txn log serial id)
-  def lockTableAgainstWrites(table: String): String
-}
-
 /** Generates SQL for execution. */
-trait DataSqlizer[CT, CV] extends Sqlizer {
+trait DataSqlizer[CT, CV] {
   def datasetContext: DatasetContext[CT, CV]
   def typeContext: TypeContext[CV]
 
@@ -58,7 +53,7 @@ trait DataSqlizer[CT, CV] extends Sqlizer {
 
 case class IdPair[+CV](systemId: Long, userId: CV)
 
-trait SchemaSqlizer[CT, CV] extends Sqlizer {
+trait SchemaSqlizer[CT, CV] {
   // all these include log-generation statements in their output
   def addColumn(column: String, typ: CT): Iterator[String]
   def dropColumn(column: String, typ: CT): Iterator[String]
