@@ -9,6 +9,7 @@ import gnu.trove.map.hash.{TIntObjectHashMap, TLongObjectHashMap}
 import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.util.IdProviderPool
+import com.socrata.datacoordinator.truth.TypeContext
 
 final class SystemPKSqlLoader[CT, CV](_c: Connection, _tc: TypeContext[CV], _s: DataSqlizer[CT, CV], _i: IdProviderPool, _e: Executor)
   extends

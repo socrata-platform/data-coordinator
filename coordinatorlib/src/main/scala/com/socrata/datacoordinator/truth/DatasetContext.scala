@@ -1,5 +1,6 @@
-package com.socrata.datacoordinator
-package truth.loader
+package com.socrata.datacoordinator.truth
+
+import com.socrata.datacoordinator._
 
 /** Extracts information about a dataset and from rows within the context of a dataset. */
 trait DatasetContext[CT, CV] {

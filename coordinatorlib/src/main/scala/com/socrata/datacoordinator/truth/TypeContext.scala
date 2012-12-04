@@ -1,5 +1,4 @@
-package com.socrata.datacoordinator
-package truth.loader
+package com.socrata.datacoordinator.truth
 
 /** Non-dataset-specific operations on column values. */
 trait TypeContext[CV] {

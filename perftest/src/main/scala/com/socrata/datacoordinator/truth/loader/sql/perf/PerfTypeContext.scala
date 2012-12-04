@@ -3,6 +3,8 @@ package truth.loader
 package sql
 package perf
 
+import com.socrata.datacoordinator.truth.TypeContext
+
 object PerfTypeContext extends TypeContext[PerfValue] {
   def isNull(value: PerfValue) = value eq PVNull
 

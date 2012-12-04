@@ -4,6 +4,8 @@ package sql
 
 import scala.collection.JavaConverters._
 
+import com.socrata.datacoordinator.truth.{RowIdMap, DatasetContext}
+
 class TestDatasetContext(val userSchema: Map[String, TestColumnType], val userPrimaryKeyColumn: Option[String]) extends DatasetContext[TestColumnType, TestColumnValue] {
   userPrimaryKeyColumn.foreach { pkCol =>
     require(userSchema.contains(pkCol), "PK col defined but does not exist in the schema")

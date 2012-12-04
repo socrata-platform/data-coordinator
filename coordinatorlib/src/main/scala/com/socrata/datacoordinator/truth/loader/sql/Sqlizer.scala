@@ -2,8 +2,10 @@ package com.socrata.datacoordinator
 package truth.loader
 package sql
 
-import java.sql.{Connection, PreparedStatement, ResultSet}
-import util.CloseableIterator
+import java.sql.{Connection, PreparedStatement}
+
+import com.socrata.datacoordinator.util.CloseableIterator
+import com.socrata.datacoordinator.truth.{DatasetContext, TypeContext}
 
 /** Generates SQL for execution. */
 trait DataSqlizer[CT, CV] {

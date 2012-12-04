@@ -9,6 +9,7 @@ import java.sql.Connection
 import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.util.{Counter, IdProviderPool}
+import com.socrata.datacoordinator.truth.TypeContext
 
 class StupidSqlLoader[CT, CV](val connection: Connection,
                               val typeContext: TypeContext[CV],

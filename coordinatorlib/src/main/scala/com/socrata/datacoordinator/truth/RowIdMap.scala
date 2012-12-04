@@ -1,5 +1,4 @@
-package com.socrata.datacoordinator
-package truth.loader
+package com.socrata.datacoordinator.truth
 
 trait RowIdMap[CV, T] {
   def put(x: CV, v: T)

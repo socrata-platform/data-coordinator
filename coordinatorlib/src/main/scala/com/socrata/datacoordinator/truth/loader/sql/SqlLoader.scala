@@ -9,7 +9,9 @@ import java.util.concurrent.Executor
 
 import com.rojoma.simplearm.util._
 import gnu.trove.map.hash.TIntObjectHashMap
+
 import com.socrata.datacoordinator.util.{TIntObjectHashMapWrapper, Counter, IdProviderPool}
+import com.socrata.datacoordinator.truth.TypeContext
 
 abstract class SqlLoader[CT, CV](val connection: Connection,
                                  val typeContext: TypeContext[CV],

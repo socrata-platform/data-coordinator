@@ -3,12 +3,13 @@ package truth.loader
 package sql
 package perf
 
-import java.sql.{Connection, PreparedStatement, ResultSet}
+import java.sql.{Connection, PreparedStatement}
 
 import org.postgresql.core.BaseConnection
 import com.rojoma.simplearm.util._
+
 import com.socrata.datacoordinator.util.{FastGroupedIterator, CloseableIterator, StringBuilderReader}
-import com.socrata.datacoordinator.truth.RowLogCodec
+import com.socrata.datacoordinator.truth.{DatasetContext, RowLogCodec}
 
 class PerfDataSqlizer(tableBase: String, user: String, val datasetContext: DatasetContext[PerfType, PerfValue], rowCodecFactory: () => RowLogCodec[PerfValue]) extends DataSqlizer[PerfType, PerfValue] {
   val userSqlized = PVText(user).sqlize
