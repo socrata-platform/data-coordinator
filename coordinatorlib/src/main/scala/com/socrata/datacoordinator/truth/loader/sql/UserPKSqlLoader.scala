@@ -203,19 +203,11 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _tc: TypeContext[CV], _s: Da
   }
 
   def findSids(ops: Iterator[OperationLog[CV]]): RowIdMap[CV, Long] = {
-    val target = datasetContext.makeIdMap[Long]()
-    using(connection.createStatement()) { stmt =>
-      var blockCount = 0
-      for(sql <- sqlizer.findSystemIds(ops.map(_.id))) {
-        blockCount += 1
-        for {
-          rs <- managed(stmt.executeQuery(sql))
-          idPair <- sqlizer.extractIdPairs(rs)
-        } target.put(idPair.userId, idPair.systemId)
-      }
-      log.debug("Looked up {} ID(s) in {} block(s)", target.size, blockCount)
+    using(sqlizer.findSystemIds(connection, ops.map(_.id))) { blocks =>
+      val target = datasetContext.makeIdMap[Long]()
+      for(idPair <- blocks.flatten) target.put(idPair.userId, idPair.systemId)
+      target
     }
-    target
   }
 
   def processDeletes(sidSource: RowIdMap[CV, Long], deleteSizeX: Int, deletes: java.util.ArrayList[OperationLog[CV]], errors: TIntObjectHashMap[Failure[CV]]): TIntObjectHashMap[CV] = {

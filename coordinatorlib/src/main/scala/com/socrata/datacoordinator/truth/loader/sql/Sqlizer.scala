@@ -3,6 +3,7 @@ package truth.loader
 package sql
 
 import java.sql.{Connection, PreparedStatement, ResultSet}
+import util.CloseableIterator
 
 trait Sqlizer {
   def logTransactionComplete() // whole-database log has : (dataset id, last updated at, new txn log serial id)
@@ -51,11 +52,8 @@ trait DataSqlizer[CT, CV] extends Sqlizer {
     def finish()
   }
 
-  // This may batch the "ids" into multiple queries.  The queries
-  // returned will contain two columns: "sid" and "uid".  THIS MUST
-  // ONLY BE CALLED IF THIS DATASET HAS A USER PK COLUMN!
-  def findSystemIds(ids: Iterator[CV]): Iterator[String]
-  def extractIdPairs(rs: ResultSet): Iterator[IdPair[CV]]
+  // THIS MUST ONLY BE CALLED IF THIS DATASET HAS A USER PK COLUMN!
+  def findSystemIds(conn: Connection, ids: Iterator[CV]): CloseableIterator[Seq[IdPair[CV]]]
 }
 
 case class IdPair[+CV](systemId: Long, userId: CV)

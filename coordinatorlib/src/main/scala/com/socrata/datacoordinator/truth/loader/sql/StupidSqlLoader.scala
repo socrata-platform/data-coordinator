@@ -93,14 +93,10 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
   }
 
   def findSid(id: CV): Option[Long] = {
-    using(connection.createStatement()) { stmt =>
-      val sql = sqlizer.findSystemIds(Iterator.single(id)).toSeq
-      assert(sql.length == 1)
-      using(stmt.executeQuery(sql.head)) { rs =>
-        val sids = sqlizer.extractIdPairs(rs).map(_.systemId).toSeq
-        assert(sids.length < 2)
-        sids.headOption
-      }
+    using(sqlizer.findSystemIds(connection, Iterator.single(id))) { blocks =>
+      val sids = blocks.flatten.map(_.systemId).toSeq
+      assert(sids.length < 2)
+      sids.headOption
     }
   }
 

@@ -6,7 +6,8 @@ package perf
 import java.sql.{Connection, PreparedStatement, ResultSet}
 
 import org.postgresql.core.BaseConnection
-import com.socrata.datacoordinator.util.StringBuilderReader
+import com.rojoma.simplearm.util._
+import com.socrata.datacoordinator.util.{FastGroupedIterator, CloseableIterator, StringBuilderReader}
 import com.socrata.datacoordinator.truth.RowLogCodec
 
 class PerfDataSqlizer(tableBase: String, user: String, val datasetContext: DatasetContext[PerfType, PerfValue], rowCodecFactory: () => RowLogCodec[PerfValue]) extends PerfSqlizer(datasetContext) with DataSqlizer[PerfType, PerfValue] {
@@ -246,47 +247,75 @@ class PerfDataSqlizer(tableBase: String, user: String, val datasetContext: Datas
     }
   }
 
+  val findSystemIdsPrefix = "SELECT id as sid, " + pkCol + " as uid FROM " + dataTableName + " WHERE "
+
+  def findSystemIds(conn: Connection, ids: Iterator[PerfValue]): CloseableIterator[Seq[IdPair[PerfValue]]] = {
+    val typ = datasetContext.userSchema(datasetContext.userPrimaryKeyColumn.getOrElse(sys.error("findSystemIds called without a user primary key")))
+
+    new CloseableIterator[Seq[IdPair[PerfValue]]] {
+      val blockSize = 100
+      val grouped = new FastGroupedIterator(ids, blockSize)
+      val stmt = conn.prepareStatement(findSystemIdsPrefix + (1 to blockSize).map(_ => "?").mkString(pkCol + " in (", ",", ")"))
+
+      def hasNext = grouped.hasNext
+
+      def next(): Seq[IdPair[PerfValue]] = {
+        val block = grouped.next()
+        if(block.size != blockSize) {
+          using(conn.prepareStatement(findSystemIdsPrefix + (1 to block.size).map(_ => "?").mkString(pkCol + " in (", ",", ")"))) { stmt2 =>
+            fillAndResult(stmt2, block)
+          }
+        } else {
+          fillAndResult(stmt, block)
+        }
+      }
+
+      def fillAndResult(stmt: PreparedStatement, block: Seq[PerfValue]): Seq[IdPair[PerfValue]] = {
+        var i = 1
+        for(cv <- block) {
+          setValue(stmt, i, typ, cv)
+          i += 1
+        }
+        using(stmt.executeQuery()) { rs =>
+          val extractor = typ match {
+            case PTNumber =>
+              { () =>
+                val l = rs.getBigDecimal("uid")
+                if(l == null) PVNull
+                else PVNumber(l)
+              }
+            case PTText =>
+              { () =>
+                val s = rs.getString("uid")
+                if(s == null) PVNull
+                else PVText(s)
+              }
+            case PTId =>
+              { () =>
+                val l = rs.getLong("uid")
+                if(rs.wasNull) PVNull
+                else PVId(l)
+              }
+          }
+
+          val result = new scala.collection.mutable.ArrayBuffer[IdPair[PerfValue]](block.length)
+          while(rs.next()) {
+            val sid = rs.getLong(1)
+            val uid = extractor()
+            result += IdPair(sid, uid)
+          }
+          result
+        }
+      }
+
+      def close() { stmt.close() }
+    }
+  }
   // This may batch the "ids" into multiple queries.  The queries
   def findSystemIds(ids: Iterator[PerfValue]) = {
     require(datasetContext.hasUserPrimaryKey, "findSystemIds called without a user primary key")
     ids.grouped(100).map { block =>
       block.map(_.sqlize).mkString("SELECT id AS sid, " + pkCol + " AS uid FROM " + dataTableName + " WHERE " + pkCol + " IN (", ",", ")")
     }
-  }
-
-  def extractIdPairs(rs: ResultSet) = {
-    val typ = datasetContext.userSchema(datasetContext.userPrimaryKeyColumn.getOrElse(sys.error("extractIdPairs called without a user primary key")))
-
-    val extractor = typ match {
-      case PTNumber =>
-        { () =>
-          val l = rs.getBigDecimal("uid")
-          if(l == null) PVNull
-          else PVNumber(l)
-        }
-      case PTText =>
-        { () =>
-          val s = rs.getString("uid")
-          if(s == null) PVNull
-          else PVText(s)
-        }
-      case PTId =>
-        { () =>
-          val l = rs.getLong("uid")
-          if(rs.wasNull) PVNull
-          else PVId(l)
-        }
-    }
-
-    def loop(): Stream[IdPair[PerfValue]] = {
-      if(rs.next()) {
-        val sid = rs.getLong("sid")
-        val uid = extractor()
-        IdPair(sid, uid) #:: loop()
-      } else {
-        Stream.empty
-      }
-    }
-    loop().iterator
   }
 }
