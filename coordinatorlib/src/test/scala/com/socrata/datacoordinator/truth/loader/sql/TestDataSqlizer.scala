@@ -99,15 +99,14 @@ class TestDataSqlizer(tableBase: String, user: String, val datasetContext: Datas
     val stmt = conn.prepareStatement("INSERT INTO " + dataTableName + "(" + columns.mkString(",") + ") SELECT " + columns.map(_ => "?").mkString(",") + " WHERE NOT EXISTS (SELECT 1 FROM " + dataTableName + " WHERE " + pkCol + " = ?)")
 
     def insert(sid: Long, row: Row[TestColumnValue]) {
-      val trueRow = row + (datasetContext.systemIdColumnName -> LongValue(sid))
       var i = 1
       val it = keys.iterator
       while(it.hasNext) {
         val k = it.next()
-        add(stmt, i, k, trueRow.getOrElse(k, NullValue))
+        add(stmt, i, k, row.getOrElse(k, NullValue))
         i += 1
       }
-      add(stmt, i, datasetContext.primaryKeyColumn, trueRow(datasetContext.primaryKeyColumn))
+      add(stmt, i, datasetContext.primaryKeyColumn, row(datasetContext.primaryKeyColumn))
       stmt.addBatch()
     }
 
@@ -129,13 +128,11 @@ class TestDataSqlizer(tableBase: String, user: String, val datasetContext: Datas
     }
   }
 
-
   def prepareSystemIdInsert(stmt: PreparedStatement, sid: Long, row: Row[TestColumnValue]) {
-    val trueRow = row + (datasetContext.systemIdColumnName -> LongValue(sid))
     var i = 1
 
     for(k <- keys) {
-      add(stmt, i, k, trueRow.getOrElse(k, NullValue))
+      add(stmt, i, k, row.getOrElse(k, NullValue))
       i += 1
     }
 
@@ -143,16 +140,15 @@ class TestDataSqlizer(tableBase: String, user: String, val datasetContext: Datas
   }
 
   def prepareUserIdInsert(stmt: PreparedStatement, sid: Long, row: Row[TestColumnValue]) = {
-    val trueRow = row + (datasetContext.systemIdColumnName -> LongValue(sid))
     var i = 1
 
     for(k <- keys) {
-      add(stmt, i, k, trueRow.getOrElse(k, NullValue))
+      add(stmt, i, k, row.getOrElse(k, NullValue))
       i += 1
     }
 
     val c = datasetContext.userPrimaryKeyColumn.getOrElse(sys.error("No user PK column defined"))
-    add(stmt, i, c, trueRow.getOrElse(c, NullValue))
+    add(stmt, i, c, row.getOrElse(c, NullValue))
   }
 
 
@@ -192,116 +188,6 @@ class TestDataSqlizer(tableBase: String, user: String, val datasetContext: Datas
 
   def sqlizeUserIdUpdate(row: Row[TestColumnValue]) =
     "UPDATE " + dataTableName + " SET " + (row - pkCol).map { case (col, v) => mapToPhysical(col) + " = " + v.sqlize }.mkString(",") + " WHERE " + pkCol + " = " + row(datasetContext.primaryKeyColumn).sqlize
-
-  val findCurrentVersion =
-    "SELECT COALESCE(MAX(version), 0) FROM " + logTableName
-
-  def newRowAuxDataAccumulator(auxUser: (LogAuxColumn) => Unit) = new RowAuxDataAccumulator {
-    var sw: java.io.StringWriter = _
-    var didOne: Boolean = _
-
-    reset()
-
-    def reset() {
-      sw = new java.io.StringWriter
-      sw.write('[')
-      didOne = false
-    }
-
-    def maybeComma() {
-      if(didOne) sw.write(',')
-      else didOne = true
-    }
-
-    def maybeFlush() {
-      if(sw.getBuffer.length > logRowsSize) flush()
-    }
-
-    val logRowsSize = 65000
-
-    def flush() {
-      sw.write(']')
-      val str = sw.toString
-      reset()
-      if(str != "[]") {
-        auxUser(str)
-      }
-    }
-
-    implicit val jCodec = new JsonCodec[TestColumnValue] {
-      def encode(x: TestColumnValue) = x match {
-        case StringValue(s) => JString(s)
-        case LongValue(n) => JNumber(n)
-        case NullValue => JNull
-      }
-
-      def decode(x: JValue) = x match {
-        case JString(s) => Some(StringValue(s))
-        case JNumber(n) => Some(LongValue(n.toLong))
-        case JNull => Some(NullValue)
-        case _ => None
-      }
-    }
-
-    val codec = implicitly[JsonCodec[Map[String, Map[String, TestColumnValue]]]]
-
-    def insert(systemID: Long, row: Row[TestColumnValue]) {
-      maybeComma()
-      // sorting because this is test code and we want to be able to check it sanely
-      JsonUtil.writeJson(sw, Map("i" -> (scala.collection.immutable.SortedMap(datasetContext.systemIdColumnName -> LongValue(systemID)) ++ row)))
-      maybeFlush()
-    }
-
-    def update(systemID: Long, row: Row[TestColumnValue]) {
-      maybeComma()
-      // sorting because this is test code and we want to be able to check it sanely
-      JsonUtil.writeJson(sw, Map("u" -> (scala.collection.immutable.SortedMap(datasetContext.systemIdColumnName -> LongValue(systemID)) ++ row)))
-      maybeFlush()
-    }
-
-    def delete(systemID: Long) {
-      maybeComma()
-      sw.write(systemID.toString)
-      maybeFlush()
-    }
-
-    def finish() {
-      flush()
-    }
-  }
-
-  type LogAuxColumn = String
-
-  val prepareLogRowsChangedStatement =
-    "INSERT INTO " + logTableName + " (version, subversion, rows, who) VALUES (?,?,?," + userSqlized + ")"
-
-  def prepareLogRowsChanged(stmt: PreparedStatement, version: Long, subversion: Long, rowsJson: LogAuxColumn): Int = {
-    stmt.setLong(1, version)
-    stmt.setLong(2, subversion)
-    stmt.setString(3, rowsJson)
-    sizeof(version) + sizeof(subversion) + sizeof(rowsJson)
-  }
-
-  def selectRow(id: TestColumnValue): String =
-    "SELECT id," + columns.mkString(",") + " FROM " + dataTableName + " WHERE " + pkCol + " = " + id.sqlize
-
-  def extractRow(resultSet: ResultSet) = {
-    val result = Map.newBuilder[String, TestColumnValue]
-    for(logicalColumn <- datasetContext.fullSchema.keys) {
-      val v = datasetContext.fullSchema(logicalColumn) match {
-        case LongColumn =>
-          val l = resultSet.getLong(mapToPhysical(logicalColumn))
-          if(resultSet.wasNull) NullValue
-          else LongValue(l)
-        case StringColumn =>
-          val s = resultSet.getString(mapToPhysical(logicalColumn))
-          if(s == null) NullValue
-          else StringValue(s)
-      }
-      result += logicalColumn -> v
-    }
-    result.result()
-  }
 
   // TODO: it is possible that grouping this differently will be more performant in Postgres
   // (e.g., having too many items in an IN clause might cause a full-table scan) -- we need

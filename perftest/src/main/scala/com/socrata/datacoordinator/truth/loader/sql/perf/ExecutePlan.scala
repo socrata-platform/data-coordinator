@@ -58,14 +58,22 @@ object ExecutePlan {
           executeDDL("ALTER TABLE perf_data ALTER COLUMN u_uid SET NOT NULL")
           executeDDL("CREATE UNIQUE INDEX perf_data_uid ON perf_data(u_uid)")
           executeDDL("ALTER TABLE perf_data ADD UNIQUE USING INDEX perf_data_uid")
-          executeDDL("CREATE TABLE perf_log (version bigint not null, subversion bigint not null, rows bytea not null, who varchar(14) not null, primary key (version, subversion))")
+          executeDDL("CREATE TABLE perf_log (version bigint not null, subversion bigint not null, what varchar(16) not null, aux bytea not null, primary key (version, subversion))")
 
           val userSchema = schema.mapValues {
             case "TEXT" => PTText
             case "NUMERIC" => PTNumber
           }.toMap
           val datasetContext = new PerfDatasetContext(userSchema, Some("uid"))
-          val sqlizer = new PerfDataSqlizer("perf", "me", datasetContext, () => new PerfRowCodec)
+          val sqlizer = new PerfDataSqlizer("perf", datasetContext)
+
+          val rowPreparer = new RowPreparer[PerfValue] {
+            def prepareForInsert(row: Row[PerfValue], systemId: Long) =
+              row + (datasetContext.systemIdColumnName -> PVId(systemId))
+
+            def prepareForUpdate(row: Row[PerfValue]) =
+              row
+          }
 
           time("Prepopulating") {
             import org.postgresql.copy.CopyManager
@@ -152,7 +160,10 @@ object ExecutePlan {
           }
 
           val start = System.nanoTime()
-          val report = using(SqlLoader(conn, PerfTypeContext, sqlizer, idProvider, executor)) { txn =>
+          val report = for {
+            dataLogger <- managed(new SqlDataLogger(conn, sqlizer, () => new PerfRowCodec))
+            txn <- managed(SqlLoader(conn, PerfTypeContext, rowPreparer, sqlizer, dataLogger, idProvider, executor))
+          } yield {
             def loop() {
               val line = plan.read()
               if(line != EndOfSection) {
@@ -166,7 +177,9 @@ object ExecutePlan {
               }
             }
             loop()
-            txn.report
+            val result = txn.report
+            dataLogger.finish()
+            result
           }
           conn.commit()
           val end = System.nanoTime()

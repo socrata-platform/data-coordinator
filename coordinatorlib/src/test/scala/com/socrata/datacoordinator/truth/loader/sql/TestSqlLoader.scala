@@ -89,6 +89,13 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
   val standardTableName = "test"
   val standardSchema = Map("num" -> LongColumn, "str" -> StringColumn)
 
+  val rowPreparer = new RowPreparer[TestColumnValue] {
+    def prepareForInsert(row: Row[TestColumnValue], sid: Long) =
+      row + (":id" -> LongValue(sid))
+
+    def prepareForUpdate(row: Row[TestColumnValue]) = row
+  }
+
   test("adding a new row with system PK succeeds") {
     val dsContext = new TestDatasetContext(standardSchema, None)
     val dataSqlizer = new TestDataSqlizer(standardTableName, "hello", dsContext)
@@ -97,9 +104,14 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       makeTables(conn, dataSqlizer)
       conn.commit()
 
-      using(SqlLoader(conn, TestTypeContext, dataSqlizer, idProvider(15), executor)) { txn =>
+      for {
+        dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
+        txn <- managed(SqlLoader(conn, TestTypeContext, rowPreparer, dataSqlizer, dataLogger, idProvider(15), executor))
+      } {
         txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("a")))
         val report = txn.report
+        dataLogger.finish()
+
         report.inserted must equal (Map(0 -> LongValue(15)))
         report.updated must be ('empty)
         report.deleted must be ('empty)
@@ -126,10 +138,15 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       makeTables(conn, dataSqlizer)
       conn.commit()
 
-      using(SqlLoader(conn, TestTypeContext, dataSqlizer, ids, executor)) { txn =>
+      for {
+        dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
+        txn <- managed(SqlLoader(conn, TestTypeContext, rowPreparer, dataSqlizer, dataLogger, ids, executor))
+      } {
         txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("a")))
         txn.upsert(Map(":id" -> LongValue(15), "num" -> LongValue(2), "str" -> StringValue("b")))
         val report = txn.report
+        dataLogger.finish()
+
         report.inserted must equal (Map(0 -> LongValue(15)))
         report.updated must be ('empty)
         report.deleted must be ('empty)
@@ -155,9 +172,14 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       makeTables(conn, dataSqlizer)
       conn.commit()
 
-      using(SqlLoader(conn, TestTypeContext, dataSqlizer, idProvider(22), executor)) { txn =>
+      for {
+        dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
+        txn <- managed(SqlLoader(conn, TestTypeContext, rowPreparer, dataSqlizer, dataLogger, idProvider(22), executor))
+      } {
         txn.upsert(Map(":id" -> NullValue, "num" -> LongValue(1), "str" -> StringValue("a")))
         val report = txn.report
+        dataLogger.finish()
+
         report.inserted must be ('empty)
         report.updated must be ('empty)
         report.deleted must be ('empty)
@@ -179,9 +201,14 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       makeTables(conn, dataSqlizer)
       conn.commit()
 
-      using(SqlLoader(conn, TestTypeContext, dataSqlizer, idProvider(6), executor)) { txn =>
+      for {
+        dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
+        txn <- managed(SqlLoader(conn, TestTypeContext, rowPreparer, dataSqlizer, dataLogger, idProvider(6), executor))
+      } {
         txn.upsert(Map(":id" -> LongValue(77), "num" -> LongValue(1), "str" -> StringValue("a")))
         val report = txn.report
+        dataLogger.finish()
+
         report.inserted must be ('empty)
         report.updated must be ('empty)
         report.deleted must be ('empty)
@@ -206,9 +233,14 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       )
       conn.commit()
 
-      using(SqlLoader(conn, TestTypeContext, dataSqlizer, ids, executor)) { txn =>
+      for {
+        dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
+        txn <- managed(SqlLoader(conn, TestTypeContext, rowPreparer, dataSqlizer, dataLogger, ids, executor))
+      } {
         txn.upsert(Map(":id" -> LongValue(7), "num" -> LongValue(44)))
         val report = txn.report
+        dataLogger.finish()
+
         report.inserted must be ('empty)
         report.updated must equal (Map(0 -> LongValue(7)))
         report.deleted must be ('empty)
@@ -223,7 +255,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         Map("ID" -> 7L, "NUM" -> 44L, "STR" -> "q")
       ))
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq(
-        Map("VERSION" -> 1L, "SUBVERSION" -> 1L, "ROWS" -> """[{"u":{":id":7,"num":44}}]""", "WHO" -> "hello")
+        Map("VERSION" -> 1L, "SUBVERSION" -> 1L, "ROWS" -> """[{"u":{"num":44}}]""", "WHO" -> "hello")
       ))
     }
   }
@@ -237,9 +269,14 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       makeTables(conn, dataSqlizer)
       conn.commit()
 
-      using(SqlLoader(conn, TestTypeContext, dataSqlizer, ids, executor)) { txn =>
+      for {
+        dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
+        txn <- managed(SqlLoader(conn, TestTypeContext, rowPreparer, dataSqlizer, dataLogger, ids, executor))
+      } {
         txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("a")))
         val report = txn.report
+        dataLogger.finish()
+
         report.inserted must equal (Map(0 -> StringValue("a")))
         report.updated must be ('empty)
         report.deleted must be ('empty)
@@ -268,9 +305,14 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       makeTables(conn, dataSqlizer)
       conn.commit()
 
-      using(SqlLoader(conn, TestTypeContext, dataSqlizer, ids, executor)) { txn =>
+      for {
+        dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
+        txn <- managed(SqlLoader(conn, TestTypeContext, rowPreparer, dataSqlizer, dataLogger, ids, executor))
+      } {
         txn.upsert(Map("num" -> LongValue(1), "str" -> NullValue))
         val report = txn.report
+        dataLogger.finish()
+
         report.inserted must be ('empty)
         report.updated must be ('empty)
         report.deleted must be ('empty)
@@ -295,9 +337,14 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       makeTables(conn, dataSqlizer)
       conn.commit()
 
-      using(SqlLoader(conn, TestTypeContext, dataSqlizer, ids, executor)) { txn =>
+      for {
+        dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
+        txn <- managed(SqlLoader(conn, TestTypeContext, rowPreparer, dataSqlizer, dataLogger, ids, executor))
+      } {
         txn.upsert(Map("num" -> LongValue(1)))
         val report = txn.report
+        dataLogger.finish()
+
         report.inserted must be ('empty)
         report.updated must be ('empty)
         report.deleted must be ('empty)
@@ -324,9 +371,14 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       )
       conn.commit()
 
-      using(SqlLoader(conn, TestTypeContext, dataSqlizer, ids, executor)) { txn =>
+      for {
+        dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
+        txn <- managed(SqlLoader(conn, TestTypeContext, rowPreparer, dataSqlizer, dataLogger, ids, executor))
+      } {
         txn.upsert(Map("str" -> StringValue("q"), "num" -> LongValue(44)))
         val report = txn.report
+        dataLogger.finish()
+
         report.inserted must be ('empty)
         report.updated must equal (Map(0 -> StringValue("q")))
         report.deleted must be ('empty)
@@ -341,7 +393,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         Map("ID" -> 7L, "NUM" -> 44L, "STR" -> "q")
       ))
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq(
-        Map("VERSION" -> 1L, "SUBVERSION" -> 1L, "ROWS" -> """[{"u":{":id":7,"num":44,"str":"q"}}]""", "WHO" -> "hello")
+        Map("VERSION" -> 1L, "SUBVERSION" -> 1L, "ROWS" -> """[{"u":{"num":44,"str":"q"}}]""", "WHO" -> "hello")
       ))
     }
   }
@@ -355,10 +407,15 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       makeTables(conn, dataSqlizer)
       conn.commit()
 
-      using(SqlLoader(conn, TestTypeContext, dataSqlizer, ids, executor)) { txn =>
+      for {
+        dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
+        txn <- managed(SqlLoader(conn, TestTypeContext, rowPreparer, dataSqlizer, dataLogger, ids, executor))
+      } {
         txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("q")))
         txn.upsert(Map("num" -> LongValue(2), "str" -> StringValue("q")))
         val report = txn.report
+        dataLogger.finish()
+
         report.inserted must equal (Map(0 -> StringValue("q")))
         report.updated must be ('empty)
         report.deleted must be ('empty)
@@ -387,9 +444,14 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       makeTables(conn, dataSqlizer)
       conn.commit()
 
-      using(SqlLoader(conn, TestTypeContext, dataSqlizer, ids, executor)) { txn =>
+      for {
+        dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
+        txn <- managed(SqlLoader(conn, TestTypeContext, rowPreparer, dataSqlizer, dataLogger, ids, executor))
+      } {
         txn.upsert(Map(":id" -> LongValue(15), "num" -> LongValue(1), "str" -> StringValue("q")))
         val report = txn.report
+        dataLogger.finish()
+
         report.inserted must be ('empty)
         report.updated must be ('empty)
         report.deleted must be ('empty)
@@ -414,10 +476,15 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       makeTables(conn, dataSqlizer)
       conn.commit()
 
-      using(SqlLoader(conn, TestTypeContext, dataSqlizer, ids, executor)) { txn =>
+      for {
+        dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
+        txn <- managed(SqlLoader(conn, TestTypeContext, rowPreparer, dataSqlizer, dataLogger, ids, executor))
+      } {
         txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("q")))
         txn.delete(StringValue("q"))
         val report = txn.report
+        dataLogger.finish()
+
         report.inserted must be ('empty)
         report.updated must be ('empty)
         report.deleted must equal (Map(1 -> StringValue("q")))
@@ -444,10 +511,15 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       makeTables(conn, dataSqlizer)
       conn.commit()
 
-      using(SqlLoader(conn, TestTypeContext, dataSqlizer, ids, executor)) { txn =>
+      for {
+        dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
+        txn <- managed(SqlLoader(conn, TestTypeContext, rowPreparer, dataSqlizer, dataLogger, ids, executor))
+      } {
         txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("q")))
         txn.delete(LongValue(15))
         val report = txn.report
+        dataLogger.finish()
+
         report.inserted must be ('empty)
         report.updated must be ('empty)
         report.deleted must equal (Map(1 -> LongValue(15)))
@@ -516,13 +588,13 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
           makeTables(stupidConn, stupidDataSqlizer)
 
           def runCompareTest(ops: List[Op]) {
-            val smartReport = using(SqlLoader(smartConn, TestTypeContext, dataSqlizer, ids, executor)) { txn =>
+            val smartReport = using(SqlLoader(smartConn, TestTypeContext, rowPreparer, dataSqlizer, NullDataLogger, ids, executor)) { txn =>
               applyOps(txn, ops)
               txn.report
             }
             smartConn.commit()
 
-            val stupidReport = using(new StupidSqlLoader(stupidConn, TestTypeContext, stupidDataSqlizer, ids)) { txn =>
+            val stupidReport = using(new StupidSqlLoader(stupidConn, TestTypeContext, rowPreparer, stupidDataSqlizer, NullDataLogger, ids)) { txn =>
               applyOps(txn, ops)
               txn.report
             }
@@ -641,14 +713,14 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
           def runCompareTest(ops: List[Op]) {
             val smartReport =
-              using(SqlLoader(smartConn, TestTypeContext, dataSqlizer, smartIds, executor)) { txn =>
+              using(SqlLoader(smartConn, TestTypeContext, rowPreparer, dataSqlizer, NullDataLogger, smartIds, executor)) { txn =>
                 applyOps(txn, ops)
                 txn.report
               }
             smartConn.commit()
 
             val stupidReport =
-              using(new StupidSqlLoader(stupidConn, TestTypeContext, stupidDataSqlizer, stupidIds)) { txn =>
+              using(new StupidSqlLoader(stupidConn, TestTypeContext, rowPreparer, stupidDataSqlizer, NullDataLogger, stupidIds)) { txn =>
                 applyOps(txn, ops)
                 txn.report
               }

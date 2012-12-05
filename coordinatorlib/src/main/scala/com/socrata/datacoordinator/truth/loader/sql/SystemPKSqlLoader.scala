@@ -11,7 +11,7 @@ import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.util.IdProviderPool
 import com.socrata.datacoordinator.truth.TypeContext
 
-final class SystemPKSqlLoader[CT, CV](_c: Connection, _tc: TypeContext[CV], _s: DataSqlizer[CT, CV], _i: IdProviderPool, _e: Executor)
+final class SystemPKSqlLoader[CT, CV](_c: Connection, _tc: TypeContext[CV], _p: RowPreparer[CV], _s: DataSqlizer[CT, CV], _l: DataLogger[CV], _i: IdProviderPool, _e: Executor)
   extends
 {
   // all these are early because they are all potential sources of exceptions, and I want all
@@ -20,7 +20,7 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _tc: TypeContext[CV], _s: 
   // so that if an OOM exception occurs the initializations in the base class are rolled back.
   private val log = SystemPKSqlLoader.log
   var jobs = new TLongObjectHashMap[SystemPKSqlLoader.Operation[CV]]() // map from sid to operation
-} with SqlLoader(_c, _tc, _s, _i, _e)
+} with SqlLoader(_c, _tc, _p, _s, _l, _i, _e)
 {
   import SystemPKSqlLoader._
 
@@ -48,7 +48,7 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _tc: TypeContext[CV], _s: 
             val oldJobNullable = jobs.get(systemId)
             if(oldJobNullable == null) { // first job of this type
               maybeFlush()
-              val op = Update(systemId, row, job, sqlizer.sizeofUpdate(row))
+              val op = Update(systemId, rowPreparer.prepareForUpdate(row), job, sqlizer.sizeofUpdate(row))
               jobs.put(systemId, op)
               updateSize += op.size
             } else oldJobNullable match {
@@ -79,7 +79,7 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _tc: TypeContext[CV], _s: 
           case None =>
             val systemId = idProvider.allocate()
             val oldJobNullable = jobs.get(systemId)
-            val insert = Insert(systemId, row, job, sqlizer.sizeofInsert(row))
+            val insert = Insert(systemId, rowPreparer.prepareForInsert(row, systemId), job, sqlizer.sizeofInsert(row))
             if(oldJobNullable == null) {
               maybeFlush()
               jobs.put(systemId, insert)
@@ -225,7 +225,7 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _tc: TypeContext[CV], _s: 
           val op = deletes.get(i)
           val idValue = typeContext.makeValueFromSystemId(op.id)
           if(results(i) == 1) {
-            rowAuxData.delete(op.id)
+            dataLogger.delete(op.id)
             resultMap.put(op.job, idValue)
           } else if(results(i) == 0) errors.put(op.job, NoSuchRowToDelete(idValue))
           else sys.error("Unexpected result code from delete: " + results(i))
@@ -259,7 +259,7 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _tc: TypeContext[CV], _s: 
           val op = updates.get(i)
           val idValue = typeContext.makeValueFromSystemId(op.id)
           if(results(i) == 1) {
-            rowAuxData.update(op.id, op.row - datasetContext.systemIdColumnName)
+            dataLogger.update(op.id, op.row - datasetContext.systemIdColumnName)
             resultMap.put(op.job, idValue)
           } else if(results(i) == 0) {
             errors.put(op.job, NoSuchRowToUpdate(idValue))
@@ -294,7 +294,7 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _tc: TypeContext[CV], _s: 
       do {
         val op = inserts.get(i)
         val idValue = typeContext.makeValueFromSystemId(op.id)
-        rowAuxData.insert(op.id, op.row)
+        dataLogger.insert(op.id, op.row)
         resultMap.put(op.job, idValue)
         i += 1
       } while(i != insertCount)

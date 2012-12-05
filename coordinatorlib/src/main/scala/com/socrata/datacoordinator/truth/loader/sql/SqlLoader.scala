@@ -4,25 +4,29 @@ package sql
 
 import scala.{collection => sc}
 
-import java.sql.{Connection, PreparedStatement}
+import java.sql.Connection
 import java.util.concurrent.Executor
 
-import com.rojoma.simplearm.util._
 import gnu.trove.map.hash.TIntObjectHashMap
 
 import com.socrata.datacoordinator.util.{TIntObjectHashMapWrapper, Counter, IdProviderPool}
 import com.socrata.datacoordinator.truth.TypeContext
 
+/**
+ * @note After passing the `dataLogger` to this constructor, the created `SqlLoader`
+ *       should be considered to own it until `report` or `close` are called.  Until
+ *       that point, it may be accessed by another thread.
+ */
 abstract class SqlLoader[CT, CV](val connection: Connection,
                                  val typeContext: TypeContext[CV],
+                                 val rowPreparer: RowPreparer[CV],
                                  val sqlizer: DataSqlizer[CT, CV],
+                                 val dataLogger: DataLogger[CV],
                                  val idProviderPool: IdProviderPool,
                                  val executor: Executor)
   extends Loader[CV]
 {
   require(!connection.getAutoCommit, "Connection is in auto-commit mode")
-
-  private val log = SqlLoader.log
 
   val datasetContext = sqlizer.datasetContext
 
@@ -39,48 +43,6 @@ abstract class SqlLoader[CT, CV](val connection: Connection,
 
   val nextJobNum = new Counter
 
-  lazy val versionNum = for {
-    stmt <- managed(connection.createStatement())
-    rs <- managed(stmt.executeQuery(sqlizer.findCurrentVersion))
-  } yield {
-    val hasNext = rs.next()
-    assert(hasNext, "next version query didn't return anything?")
-    rs.getLong(1) + 1
-  }
-
-  val nextSubVersionNum = new Counter(init = 1)
-
-  object rowAuxDataState extends (sqlizer.LogAuxColumn => Unit) {
-    var stmt: PreparedStatement = null
-
-    var batched = 0
-    var size = 0
-
-    def apply(auxData: sqlizer.LogAuxColumn) {
-      if(stmt == null) stmt = connection.prepareStatement(sqlizer.prepareLogRowsChangedStatement)
-      size += sqlizer.prepareLogRowsChanged(stmt, versionNum, nextSubVersionNum(), auxData)
-      stmt.addBatch()
-      batched += 1
-      if(size > sqlizer.softMaxBatchSize) flush()
-    }
-
-    def flush() {
-      if(batched != 0) {
-        log.debug("Flushing {} log rows", batched)
-        val rs = stmt.executeBatch()
-        assert(rs.length == batched)
-        assert(rs.forall(_ == 1), "Inserting a log row... didn't insert a log row?")
-        batched = 0
-        size = 0
-      }
-    }
-
-    def close() {
-      if(stmt != null) stmt.close()
-    }
-  }
-  val rowAuxData = sqlizer.newRowAuxDataAccumulator(rowAuxDataState)
-
   // Any further initializations after this borrow must take care to
   // clean up after themselves if they may throw!  In particular they
   // must either early-initialize or rollback the transaction and
@@ -95,11 +57,8 @@ abstract class SqlLoader[CT, CV](val connection: Connection,
     connectionMutex.synchronized {
       checkAsyncJob()
 
-      rowAuxData.finish()
-      rowAuxDataState.flush()
-
       implicit def wrap[T](x: TIntObjectHashMap[T]) = TIntObjectHashMapWrapper(x)
-      new SqlLoader.JobReport(versionNum, inserted, updated, deleted, elided, errors)
+      new SqlLoader.JobReport(inserted, updated, deleted, elided, errors)
     }
   }
 
@@ -108,25 +67,19 @@ abstract class SqlLoader[CT, CV](val connection: Connection,
       try {
         checkAsyncJob()
       } finally {
-        try {
-          rowAuxDataState.close()
-        } finally {
-          idProviderPool.release(idProvider)
-        }
+        idProviderPool.release(idProvider)
       }
     }
   }
 }
 
 object SqlLoader {
-  val log = org.slf4j.LoggerFactory.getLogger(classOf[SqlLoader[_, _]])
-
-  def apply[CT, CV](connection: Connection, typeContext: TypeContext[CV], sqlizer: DataSqlizer[CT, CV], idProvider: IdProviderPool, executor: Executor): SqlLoader[CT,CV] = {
+  def apply[CT, CV](connection: Connection, typeContext: TypeContext[CV], preparer: RowPreparer[CV], sqlizer: DataSqlizer[CT, CV], dataLogger: DataLogger[CV], idProvider: IdProviderPool, executor: Executor): SqlLoader[CT,CV] = {
     if(sqlizer.datasetContext.hasUserPrimaryKey)
-      new UserPKSqlLoader(connection, typeContext, sqlizer, idProvider, executor)
+      new UserPKSqlLoader(connection, typeContext, preparer, sqlizer, dataLogger, idProvider, executor)
     else
-      new SystemPKSqlLoader(connection, typeContext, sqlizer, idProvider, executor)
+      new SystemPKSqlLoader(connection, typeContext, preparer, sqlizer, dataLogger, idProvider, executor)
   }
 
-  case class JobReport[CV](newVersion: Long, inserted: sc.Map[Int, CV], updated: sc.Map[Int, CV], deleted: sc.Map[Int, CV], elided: sc.Map[Int, (CV, Int)], errors: sc.Map[Int, Failure[CV]]) extends Report[CV]
+  case class JobReport[CV](inserted: sc.Map[Int, CV], updated: sc.Map[Int, CV], deleted: sc.Map[Int, CV], elided: sc.Map[Int, (CV, Int)], errors: sc.Map[Int, Failure[CV]]) extends Report[CV]
 }

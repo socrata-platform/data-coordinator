@@ -11,7 +11,7 @@ import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.util.IdProviderPool
 import com.socrata.datacoordinator.truth.{RowIdMap, TypeContext}
 
-final class UserPKSqlLoader[CT, CV](_c: Connection, _tc: TypeContext[CV], _s: DataSqlizer[CT, CV], _i: IdProviderPool, _e: Executor)
+final class UserPKSqlLoader[CT, CV](_c: Connection, _tc: TypeContext[CV], _p: RowPreparer[CV], _s: DataSqlizer[CT, CV], _l: DataLogger[CV], _i: IdProviderPool, _e: Executor)
   extends
 {
   // all these are early because they are all potential sources of exceptions, and I want all
@@ -20,7 +20,7 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _tc: TypeContext[CV], _s: Da
   private val log = UserPKSqlLoader.log
   val primaryKey = _s.datasetContext.userPrimaryKeyColumn.getOrElse(sys.error("Created a UserPKPostgresTranasction but didn't have a user PK"))
   var jobs = _s.datasetContext.makeIdMap[UserPKSqlLoader.OperationLog[CV]]()
-} with SqlLoader(_c, _tc, _s, _i, _e)
+} with SqlLoader(_c, _tc, _p, _s, _l, _i, _e)
 {
   import UserPKSqlLoader._
 
@@ -234,7 +234,7 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _tc: TypeContext[CV], _s: Da
           val op = deletes.get(i)
           if(results(i) == 1 || op.forceDeleteSuccess) {
             sidSource.get(op.id) match {
-              case Some(sid) => rowAuxData.delete(sid)
+              case Some(sid) => dataLogger.delete(sid)
               case None if op.forceDeleteSuccess => // ok
               case None => sys.error("Successfully deleted row, but no sid found for it?")
             }
@@ -261,6 +261,7 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _tc: TypeContext[CV], _s: Da
           assert(op.hasUpsertJob, "No upsert job?")
           val sid = idProvider.allocate()
           sids(i) = sid
+          op.upsertedRow = rowPreparer.prepareForInsert(op.upsertedRow, sid)
           inserter.insert(sid, op.upsertedRow)
           insertSize -= op.upsertSize
           i += 1
@@ -273,7 +274,7 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _tc: TypeContext[CV], _s: Da
       do {
         i -= 1
         val op = inserts.get(i)
-        rowAuxData.insert(sids(i), op.upsertedRow)
+        dataLogger.insert(sids(i), op.upsertedRow)
         resultMap.put(op.upsertJob, op.id)
       } while(i != 0)
     }
@@ -291,6 +292,7 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _tc: TypeContext[CV], _s: Da
           assert(op.hasUpsertJob, "No upsert job?")
 
           if(sidSource.contains(op.id)) {
+            op.upsertedRow = rowPreparer.prepareForUpdate(op.upsertedRow)
             val sql = sqlizer.sqlizeUserIdUpdate(op.upsertedRow)
             stmt.addBatch(sql)
           } else {
@@ -309,7 +311,7 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _tc: TypeContext[CV], _s: Da
           val op = updates.get(i)
           if(results(i) == 1) {
             val sid = sidSource.get(op.id).getOrElse(sys.error("Successfully updated row, but no sid found for it?"))
-            rowAuxData.update(sid, op.upsertedRow)
+            dataLogger.update(sid, op.upsertedRow)
             resultMap.put(op.upsertJob, op.id)
           } else if(results(i) == 0) {
             sys.error("Expected update to succeed")

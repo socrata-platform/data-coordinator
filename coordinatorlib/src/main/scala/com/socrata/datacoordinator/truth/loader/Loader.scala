@@ -29,8 +29,6 @@ trait Loader[CV] extends Closeable {
   *       be called immediately before `commit()`.
   */
 trait Report[CV] {
-  def newVersion: Long
-
   /** Map from job number to the identifier of the row that was created. */
   def inserted: sc.Map[Int, CV]
 

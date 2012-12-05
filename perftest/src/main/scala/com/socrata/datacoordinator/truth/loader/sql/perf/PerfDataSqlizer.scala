@@ -9,10 +9,9 @@ import org.postgresql.core.BaseConnection
 import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.util.{FastGroupedIterator, CloseableIterator, StringBuilderReader}
-import com.socrata.datacoordinator.truth.{DatasetContext, RowLogCodec}
+import com.socrata.datacoordinator.truth.DatasetContext
 
-class PerfDataSqlizer(tableBase: String, user: String, val datasetContext: DatasetContext[PerfType, PerfValue], rowCodecFactory: () => RowLogCodec[PerfValue]) extends DataSqlizer[PerfType, PerfValue] {
-  val userSqlized = PVText(user).sqlize
+class PerfDataSqlizer(tableBase: String, val datasetContext: DatasetContext[PerfType, PerfValue]) extends DataSqlizer[PerfType, PerfValue] {
   val dataTableName = tableBase + "_data"
   val logTableName = tableBase + "_log"
 
@@ -90,21 +89,14 @@ class PerfDataSqlizer(tableBase: String, user: String, val datasetContext: Datas
     copyManager.copyIn(bulkInsertStatement, inserter.reader)
   }
 
-  def prepareForInsert(row: Row[PerfValue], systemId: Long) =
-    row + (datasetContext.systemIdColumnName -> PVId(systemId))
-
-  def prepareForUpdate(row: Row[PerfValue]) =
-    row
-
   class InserterImpl extends Inserter {
     val sb = new java.lang.StringBuilder
     def insert(sid: Long, row: Row[PerfValue]) {
-      val trueRow = prepareForInsert(row, sid)
       var didOne = false
       for(k <- logicalColumns) {
         if(didOne) sb.append(',')
         else didOne = true
-        csvize(sb, k, trueRow.getOrElse(k, PVNull))
+        csvize(sb, k, row.getOrElse(k, PVNull))
       }
       sb.append('\n')
     }
@@ -144,9 +136,8 @@ class PerfDataSqlizer(tableBase: String, user: String, val datasetContext: Datas
   def prepareSystemIdInsert(stmt: PreparedStatement, sid: Long, row: Row[PerfValue]) = {
     var totalSize = 0
     var i = 0
-    val fullRow = prepareForInsert(row, sid)
     while(i != logicalColumns.length) {
-      totalSize += setValue(stmt, i + 1, datasetContext.fullSchema(logicalColumns(i)), fullRow.getOrElse(logicalColumns(i), PVNull))
+      totalSize += setValue(stmt, i + 1, datasetContext.fullSchema(logicalColumns(i)), row.getOrElse(logicalColumns(i), PVNull))
       i += 1
     }
     stmt.setLong(i + 1, sid)
@@ -156,7 +147,7 @@ class PerfDataSqlizer(tableBase: String, user: String, val datasetContext: Datas
   }
 
   def sqlizeSystemIdUpdate(sid: Long, row: Row[PerfValue]) =
-    "UPDATE " + dataTableName + " SET " + prepareForUpdate(row).map { case (col, v) => mapToPhysical(col) + " = " + v.sqlize }.mkString(",") + " WHERE id = " + sid
+    "UPDATE " + dataTableName + " SET " + row.map { case (col, v) => mapToPhysical(col) + " = " + v.sqlize }.mkString(",") + " WHERE id = " + sid
 
   val prepareUserIdDeleteStatement =
     "DELETE FROM " + dataTableName + " WHERE " + pkCol + " = ?"
@@ -181,72 +172,7 @@ class PerfDataSqlizer(tableBase: String, user: String, val datasetContext: Datas
   }
 
   def sqlizeUserIdUpdate(row: Row[PerfValue]) =
-    "UPDATE " + dataTableName + " SET " + prepareForUpdate(row).map { case (col, v) => mapToPhysical(col) + " = " + v.sqlize }.mkString(",") + " WHERE " + pkCol + " = " + row(datasetContext.primaryKeyColumn).sqlize
-
-  // txn log has (serial, row id, who did the update)
-  val findCurrentVersion =
-    "SELECT COALESCE(MAX(version), 0) FROM " + logTableName
-
-  type LogAuxColumn = Array[Byte]
-
-  val prepareLogRowsChangedStatement =
-    "INSERT INTO " + logTableName + " (version, subversion, rows, who) VALUES (?, ?, ?," + userSqlized + ")"
-
-  def prepareLogRowsChanged(stmt: PreparedStatement, version: Long, subversion: Long, rowsJson: LogAuxColumn) = {
-    stmt.setLong(1, version)
-    stmt.setLong(2, subversion)
-    stmt.setBytes(3, rowsJson)
-    sizeof(version) + sizeof(subversion) + rowsJson.length
-  }
-
-  def newRowAuxDataAccumulator(auxUser: (LogAuxColumn) => Unit) = new RowAuxDataAccumulator {
-    var baos: java.io.ByteArrayOutputStream = _
-    var out: java.io.DataOutputStream = _
-    var rowCodec: RowLogCodec[PerfValue] = _
-    var didOne: Boolean = _
-    reset()
-
-    def reset() {
-      baos = new java.io.ByteArrayOutputStream
-      out = new java.io.DataOutputStream(new org.xerial.snappy.SnappyOutputStream(baos))
-      didOne = false
-      rowCodec = rowCodecFactory()
-      rowCodec.writeVersion(out)
-    }
-
-    def maybeFlush() {
-      didOne=true
-      if(baos.size > 128000) flush()
-    }
-
-    def flush() {
-      if(didOne) {
-        out.close()
-        val bytes = baos.toByteArray
-        reset()
-        auxUser(bytes)
-      }
-    }
-
-    def insert(sid: Long, row: Row[PerfValue]) {
-      rowCodec.insert(out, sid, prepareForInsert(row, sid))
-      maybeFlush()
-    }
-
-    def update(sid: Long, row: Row[PerfValue]) {
-      rowCodec.update(out, sid, prepareForUpdate(row))
-      maybeFlush()
-    }
-
-    def delete(systemID: Long) {
-      rowCodec.delete(out, systemID)
-      maybeFlush()
-    }
-
-    def finish() {
-      flush()
-    }
-  }
+    "UPDATE " + dataTableName + " SET " + row.map { case (col, v) => mapToPhysical(col) + " = " + v.sqlize }.mkString(",") + " WHERE " + pkCol + " = " + row(datasetContext.primaryKeyColumn).sqlize
 
   val findSystemIdsPrefix = "SELECT id as sid, " + pkCol + " as uid FROM " + dataTableName + " WHERE "
 
