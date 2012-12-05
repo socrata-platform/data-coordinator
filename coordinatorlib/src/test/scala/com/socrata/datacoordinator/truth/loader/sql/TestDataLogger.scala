@@ -45,7 +45,7 @@ class TestDataLogger(conn: Connection, dataSqlizer: DataSqlizer[TestColumnType, 
     list += JObject(Map("d" -> JNumber(systemID)))
   }
 
-  def finish() = {
+  def finish() {
     val ops = list.result()
     if(ops.nonEmpty) {
       using(conn.prepareStatement("INSERT INTO " + dataSqlizer.logTableName + " (version, subversion, rows, who) VALUES (1, ?, ?, 'hello')")) { stmt =>
@@ -54,7 +54,6 @@ class TestDataLogger(conn: Connection, dataSqlizer: DataSqlizer[TestColumnType, 
         stmt.executeUpdate()
       }
     }
-    1
   }
 
   def close() {}

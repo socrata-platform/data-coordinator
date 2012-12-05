@@ -13,7 +13,7 @@ import com.socrata.datacoordinator.truth.{DatasetContext, TypeContext}
 
 class SqlReader[CT, CV](connection: Connection,
                         datasetContext: DatasetContext[CT, CV],
-                        typeContext: TypeContext[CV],
+                        typeContext: TypeContext[CT, CV],
                         repSchemaBuilder: Map[String, CT] => Map[String,SqlColumnRep[CT, CV]])
   extends Reader[CV]
 {

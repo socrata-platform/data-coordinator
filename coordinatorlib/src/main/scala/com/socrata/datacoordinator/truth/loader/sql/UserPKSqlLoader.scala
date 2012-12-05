@@ -11,7 +11,7 @@ import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.util.IdProviderPool
 import com.socrata.datacoordinator.truth.{RowIdMap, TypeContext}
 
-final class UserPKSqlLoader[CT, CV](_c: Connection, _tc: TypeContext[CV], _p: RowPreparer[CV], _s: DataSqlizer[CT, CV], _l: DataLogger[CV], _i: IdProviderPool, _e: Executor)
+final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: DataSqlizer[CT, CV], _l: DataLogger[CV], _i: IdProviderPool, _e: Executor)
   extends
 {
   // all these are early because they are all potential sources of exceptions, and I want all
@@ -20,7 +20,7 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _tc: TypeContext[CV], _p: Ro
   private val log = UserPKSqlLoader.log
   val primaryKey = _s.datasetContext.userPrimaryKeyColumn.getOrElse(sys.error("Created a UserPKPostgresTranasction but didn't have a user PK"))
   var jobs = _s.datasetContext.makeIdMap[UserPKSqlLoader.OperationLog[CV]]()
-} with SqlLoader(_c, _tc, _p, _s, _l, _i, _e)
+} with SqlLoader(_c, _p, _s, _l, _i, _e)
 {
   import UserPKSqlLoader._
 

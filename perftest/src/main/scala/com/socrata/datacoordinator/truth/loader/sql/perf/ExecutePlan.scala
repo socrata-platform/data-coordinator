@@ -161,8 +161,8 @@ object ExecutePlan {
 
           val start = System.nanoTime()
           val report = for {
-            dataLogger <- managed(new SqlDataLogger(conn, sqlizer, () => new PerfRowCodec))
-            txn <- managed(SqlLoader(conn, PerfTypeContext, rowPreparer, sqlizer, dataLogger, idProvider, executor))
+            dataLogger <- managed(new SqlLogger(conn, sqlizer, () => new PerfRowCodec))
+            txn <- managed(SqlLoader(conn, rowPreparer, sqlizer, dataLogger, idProvider, executor))
           } yield {
             def loop() {
               val line = plan.read()
@@ -178,7 +178,7 @@ object ExecutePlan {
             }
             loop()
             val result = txn.report
-            dataLogger.finish()
+            dataLogger.endTransaction()
             result
           }
           conn.commit()

@@ -11,7 +11,7 @@ import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.util.IdProviderPool
 import com.socrata.datacoordinator.truth.TypeContext
 
-final class SystemPKSqlLoader[CT, CV](_c: Connection, _tc: TypeContext[CV], _p: RowPreparer[CV], _s: DataSqlizer[CT, CV], _l: DataLogger[CV], _i: IdProviderPool, _e: Executor)
+final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: DataSqlizer[CT, CV], _l: DataLogger[CV], _i: IdProviderPool, _e: Executor)
   extends
 {
   // all these are early because they are all potential sources of exceptions, and I want all
@@ -20,7 +20,7 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _tc: TypeContext[CV], _p: 
   // so that if an OOM exception occurs the initializations in the base class are rolled back.
   private val log = SystemPKSqlLoader.log
   var jobs = new TLongObjectHashMap[SystemPKSqlLoader.Operation[CV]]() // map from sid to operation
-} with SqlLoader(_c, _tc, _p, _s, _l, _i, _e)
+} with SqlLoader(_c, _p, _s, _l, _i, _e)
 {
   import SystemPKSqlLoader._
 

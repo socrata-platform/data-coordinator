@@ -106,7 +106,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       for {
         dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
-        txn <- managed(SqlLoader(conn, TestTypeContext, rowPreparer, dataSqlizer, dataLogger, idProvider(15), executor))
+        txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, idProvider(15), executor))
       } {
         txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("a")))
         val report = txn.report
@@ -140,7 +140,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       for {
         dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
-        txn <- managed(SqlLoader(conn, TestTypeContext, rowPreparer, dataSqlizer, dataLogger, ids, executor))
+        txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, ids, executor))
       } {
         txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("a")))
         txn.upsert(Map(":id" -> LongValue(15), "num" -> LongValue(2), "str" -> StringValue("b")))
@@ -174,7 +174,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       for {
         dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
-        txn <- managed(SqlLoader(conn, TestTypeContext, rowPreparer, dataSqlizer, dataLogger, idProvider(22), executor))
+        txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, idProvider(22), executor))
       } {
         txn.upsert(Map(":id" -> NullValue, "num" -> LongValue(1), "str" -> StringValue("a")))
         val report = txn.report
@@ -203,7 +203,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       for {
         dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
-        txn <- managed(SqlLoader(conn, TestTypeContext, rowPreparer, dataSqlizer, dataLogger, idProvider(6), executor))
+        txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, idProvider(6), executor))
       } {
         txn.upsert(Map(":id" -> LongValue(77), "num" -> LongValue(1), "str" -> StringValue("a")))
         val report = txn.report
@@ -235,7 +235,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       for {
         dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
-        txn <- managed(SqlLoader(conn, TestTypeContext, rowPreparer, dataSqlizer, dataLogger, ids, executor))
+        txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, ids, executor))
       } {
         txn.upsert(Map(":id" -> LongValue(7), "num" -> LongValue(44)))
         val report = txn.report
@@ -271,7 +271,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       for {
         dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
-        txn <- managed(SqlLoader(conn, TestTypeContext, rowPreparer, dataSqlizer, dataLogger, ids, executor))
+        txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, ids, executor))
       } {
         txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("a")))
         val report = txn.report
@@ -307,7 +307,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       for {
         dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
-        txn <- managed(SqlLoader(conn, TestTypeContext, rowPreparer, dataSqlizer, dataLogger, ids, executor))
+        txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, ids, executor))
       } {
         txn.upsert(Map("num" -> LongValue(1), "str" -> NullValue))
         val report = txn.report
@@ -339,7 +339,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       for {
         dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
-        txn <- managed(SqlLoader(conn, TestTypeContext, rowPreparer, dataSqlizer, dataLogger, ids, executor))
+        txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, ids, executor))
       } {
         txn.upsert(Map("num" -> LongValue(1)))
         val report = txn.report
@@ -373,7 +373,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       for {
         dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
-        txn <- managed(SqlLoader(conn, TestTypeContext, rowPreparer, dataSqlizer, dataLogger, ids, executor))
+        txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, ids, executor))
       } {
         txn.upsert(Map("str" -> StringValue("q"), "num" -> LongValue(44)))
         val report = txn.report
@@ -409,7 +409,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       for {
         dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
-        txn <- managed(SqlLoader(conn, TestTypeContext, rowPreparer, dataSqlizer, dataLogger, ids, executor))
+        txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, ids, executor))
       } {
         txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("q")))
         txn.upsert(Map("num" -> LongValue(2), "str" -> StringValue("q")))
@@ -446,7 +446,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       for {
         dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
-        txn <- managed(SqlLoader(conn, TestTypeContext, rowPreparer, dataSqlizer, dataLogger, ids, executor))
+        txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, ids, executor))
       } {
         txn.upsert(Map(":id" -> LongValue(15), "num" -> LongValue(1), "str" -> StringValue("q")))
         val report = txn.report
@@ -478,7 +478,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       for {
         dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
-        txn <- managed(SqlLoader(conn, TestTypeContext, rowPreparer, dataSqlizer, dataLogger, ids, executor))
+        txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, ids, executor))
       } {
         txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("q")))
         txn.delete(StringValue("q"))
@@ -513,7 +513,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       for {
         dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
-        txn <- managed(SqlLoader(conn, TestTypeContext, rowPreparer, dataSqlizer, dataLogger, ids, executor))
+        txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, ids, executor))
       } {
         txn.upsert(Map("num" -> LongValue(1), "str" -> StringValue("q")))
         txn.delete(LongValue(15))
@@ -588,13 +588,13 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
           makeTables(stupidConn, stupidDataSqlizer)
 
           def runCompareTest(ops: List[Op]) {
-            val smartReport = using(SqlLoader(smartConn, TestTypeContext, rowPreparer, dataSqlizer, NullDataLogger, ids, executor)) { txn =>
+            val smartReport = using(SqlLoader(smartConn, rowPreparer, dataSqlizer, NullLogger(), ids, executor)) { txn =>
               applyOps(txn, ops)
               txn.report
             }
             smartConn.commit()
 
-            val stupidReport = using(new StupidSqlLoader(stupidConn, TestTypeContext, rowPreparer, stupidDataSqlizer, NullDataLogger, ids)) { txn =>
+            val stupidReport = using(new StupidSqlLoader(stupidConn, rowPreparer, stupidDataSqlizer, NullLogger(), ids)) { txn =>
               applyOps(txn, ops)
               txn.report
             }
@@ -713,14 +713,14 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
           def runCompareTest(ops: List[Op]) {
             val smartReport =
-              using(SqlLoader(smartConn, TestTypeContext, rowPreparer, dataSqlizer, NullDataLogger, smartIds, executor)) { txn =>
+              using(SqlLoader(smartConn, rowPreparer, dataSqlizer, NullLogger(), smartIds, executor)) { txn =>
                 applyOps(txn, ops)
                 txn.report
               }
             smartConn.commit()
 
             val stupidReport =
-              using(new StupidSqlLoader(stupidConn, TestTypeContext, rowPreparer, stupidDataSqlizer, NullDataLogger, stupidIds)) { txn =>
+              using(new StupidSqlLoader(stupidConn, rowPreparer, stupidDataSqlizer, NullLogger(), stupidIds)) { txn =>
                 applyOps(txn, ops)
                 txn.report
               }

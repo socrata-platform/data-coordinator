@@ -5,7 +5,7 @@ package perf
 
 import com.socrata.datacoordinator.truth.TypeContext
 
-object PerfTypeContext extends TypeContext[PerfValue] {
+object PerfTypeContext extends TypeContext[PerfType, PerfValue] {
   def isNull(value: PerfValue) = value eq PVNull
 
   def makeValueFromSystemId(id: Long) = PVId(id)
@@ -16,4 +16,16 @@ object PerfTypeContext extends TypeContext[PerfValue] {
   }
 
   val nullValue = PVNull
+
+  def typeFromName(name: String) = name match {
+    case "id" => PTId
+    case "number" => PTNumber
+    case "text" => PTText
+  }
+
+  def nameFromType(typ: PerfType) = typ match {
+    case PTId => "id"
+    case PTNumber => "number"
+    case PTText => "text"
+  }
 }

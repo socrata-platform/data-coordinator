@@ -12,7 +12,6 @@ import com.socrata.datacoordinator.util.{Counter, IdProviderPool}
 import com.socrata.datacoordinator.truth.TypeContext
 
 class StupidSqlLoader[CT, CV](val connection: Connection,
-                              val typeContext: TypeContext[CV],
                               val rowPreparer: RowPreparer[CV],
                               val sqlizer: DataSqlizer[CT, CV],
                               val dataLogger: DataLogger[CV],
@@ -20,6 +19,7 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
   extends Loader[CV]
 {
   val datasetContext = sqlizer.datasetContext
+  val typeContext = sqlizer.typeContext
 
   val inserted = new java.util.HashMap[Int, CV]
   val elided = new java.util.HashMap[Int, (CV, Int)]

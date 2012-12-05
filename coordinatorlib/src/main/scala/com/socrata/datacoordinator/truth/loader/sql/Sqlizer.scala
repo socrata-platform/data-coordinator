@@ -10,7 +10,7 @@ import com.socrata.datacoordinator.truth.{DatasetContext, TypeContext}
 /** Generates SQL for execution. */
 trait DataSqlizer[CT, CV] {
   def datasetContext: DatasetContext[CT, CV]
-  def typeContext: TypeContext[CV]
+  def typeContext: TypeContext[CT, CV]
 
   def dataTableName: String
   def logTableName: String
