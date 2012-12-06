@@ -3,6 +3,7 @@ package com.socrata.datacoordinator.util
 import java.io.Closeable
 
 trait CloseableIterator[+T] extends Iterator[T] with Closeable
+
 object CloseableIterator {
   val empty: CloseableIterator[Nothing] = new CloseableIterator[Nothing] {
     def hasNext = false

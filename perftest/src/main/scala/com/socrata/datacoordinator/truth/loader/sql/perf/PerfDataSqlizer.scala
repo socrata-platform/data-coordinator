@@ -8,7 +8,7 @@ import java.sql.{Connection, PreparedStatement}
 import org.postgresql.core.BaseConnection
 import com.rojoma.simplearm.util._
 
-import com.socrata.datacoordinator.util.{FastGroupedIterator, CloseableIterator, StringBuilderReader}
+import com.socrata.datacoordinator.util.{LeakDetect, FastGroupedIterator, CloseableIterator, StringBuilderReader}
 import com.socrata.datacoordinator.truth.DatasetContext
 
 class PerfDataSqlizer(tableBase: String, val datasetContext: DatasetContext[PerfType, PerfValue]) extends DataSqlizer[PerfType, PerfValue] {
@@ -179,7 +179,7 @@ class PerfDataSqlizer(tableBase: String, val datasetContext: DatasetContext[Perf
   def findSystemIds(conn: Connection, ids: Iterator[PerfValue]): CloseableIterator[Seq[IdPair[PerfValue]]] = {
     val typ = datasetContext.userSchema(datasetContext.userPrimaryKeyColumn.getOrElse(sys.error("findSystemIds called without a user primary key")))
 
-    new CloseableIterator[Seq[IdPair[PerfValue]]] {
+    class SystemIdIterator extends CloseableIterator[Seq[IdPair[PerfValue]]] {
       val blockSize = 100
       val grouped = new FastGroupedIterator(ids, blockSize)
       val stmt = conn.prepareStatement(findSystemIdsPrefix + (1 to blockSize).map(_ => "?").mkString(pkCol + " in (", ",", ")"))
@@ -237,6 +237,8 @@ class PerfDataSqlizer(tableBase: String, val datasetContext: DatasetContext[Perf
 
       def close() { stmt.close() }
     }
+
+    new SystemIdIterator with LeakDetect
   }
   // This may batch the "ids" into multiple queries.  The queries
   def findSystemIds(ids: Iterator[PerfValue]) = {
