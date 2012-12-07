@@ -7,7 +7,7 @@ import com.socrata.datacoordinator.truth.sql.DatabasePopulator
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.truth.metadata.LifecycleStage
 
-class PostgresSharedTablesTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
+class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
   override def beforeAll() {
     // In Java 6 (sun and open) driver registration is not thread-safe!
     // So since SBT will run these tests in parallel, sometimes one of the
@@ -44,7 +44,7 @@ class PostgresSharedTablesTest extends FunSuite with MustMatchers with BeforeAnd
 
   test("Can create a table") {
     withDb() { conn =>
-      val tables = new PostgresSharedTables(conn)
+      val tables = new PostgresDatasetMapWriter(conn)
       val vi = tables.create("hello", "world")
 
       vi.tableInfo.datasetId must be ("hello")
@@ -52,14 +52,14 @@ class PostgresSharedTablesTest extends FunSuite with MustMatchers with BeforeAnd
       vi.lifecycleStage must be (LifecycleStage.Unpublished)
       vi.lifecycleVersion must be (1)
 
-      tables.tableInfo("hello") must equal (Some(vi.tableInfo))
+      tables.datasetInfo("hello") must equal (Some(vi.tableInfo))
       tables.unpublished(vi.tableInfo) must equal (Some(vi))
     }
   }
 
   test("Can add a column to a table") {
     withDb() { conn =>
-      val tables = new PostgresSharedTables(conn)
+      val tables = new PostgresDatasetMapWriter(conn)
       val vi = tables.create("hello", "world")
       val ci = tables.addColumn(vi, "col1", "typ", "colbase")
 
@@ -75,7 +75,7 @@ class PostgresSharedTablesTest extends FunSuite with MustMatchers with BeforeAnd
 
   test("Can make a column a primary key") {
     withDb() { conn =>
-      val tables = new PostgresSharedTables(conn)
+      val tables = new PostgresDatasetMapWriter(conn)
       val vi = tables.create("hello", "world")
       val ci = tables.addColumn(vi, "col1", "typ", "colbase")
 
@@ -87,7 +87,7 @@ class PostgresSharedTablesTest extends FunSuite with MustMatchers with BeforeAnd
 
   test("Can add a second column to a table") {
     withDb() { conn =>
-      val tables = new PostgresSharedTables(conn)
+      val tables = new PostgresDatasetMapWriter(conn)
       val vi = tables.create("hello", "world")
       val ci1 = tables.addColumn(vi, "col1", "typ", "colbase")
       val ci2 = tables.addColumn(vi, "col2", "typ2", "colbase2")
@@ -104,7 +104,7 @@ class PostgresSharedTablesTest extends FunSuite with MustMatchers with BeforeAnd
 
   test("Cannot have multiple primary keys") {
     withDb() { conn =>
-      val tables = new PostgresSharedTables(conn)
+      val tables = new PostgresDatasetMapWriter(conn)
       val vi = tables.create("hello", "world")
       val ci1 = tables.addColumn(vi, "col1", "typ", "colbase")
       val ci2 = tables.addColumn(vi, "col2", "typ2", "colbase2")
@@ -118,7 +118,7 @@ class PostgresSharedTablesTest extends FunSuite with MustMatchers with BeforeAnd
 
   test("Can clear a user primary key and re-seat it") {
     withDb() { conn =>
-      val tables = new PostgresSharedTables(conn)
+      val tables = new PostgresDatasetMapWriter(conn)
       val vi = tables.create("hello", "world")
       val ci1 = tables.addColumn(vi, "col1", "typ", "colbase")
       val ci2 = tables.addColumn(vi, "col2", "typ2", "colbase2")
@@ -133,7 +133,7 @@ class PostgresSharedTablesTest extends FunSuite with MustMatchers with BeforeAnd
 
   test("Cannot add the same column twice") {
     withDb() { conn =>
-      val tables = new PostgresSharedTables(conn)
+      val tables = new PostgresDatasetMapWriter(conn)
       val vi = tables.create("hello", "world")
       tables.addColumn(vi, "col1", "typ", "colbase")
 
@@ -143,19 +143,19 @@ class PostgresSharedTablesTest extends FunSuite with MustMatchers with BeforeAnd
 
   test("Can publish the initial working copy") {
     withDb() { conn =>
-      val tables = new PostgresSharedTables(conn)
+      val tables = new PostgresDatasetMapWriter(conn)
       val vi1 = tables.create("hello", "world")
-      val vi2 = tables.publish(vi1.tableInfo)
-      vi2 must equal (Some(vi1.copy(lifecycleStage = LifecycleStage.Published)))
+      val vi2 = tables.publish(vi1)
+      vi2 must equal (vi1.copy(lifecycleStage = LifecycleStage.Published))
 
-      tables.published(vi2.get.tableInfo) must equal (vi2)
+      tables.published(vi2.tableInfo) must equal (Some(vi2))
       tables.unpublished(vi1.tableInfo) must be (None)
     }
   }
 
   test("Can drop a column") {
     withDb() { conn =>
-      val tables = new PostgresSharedTables(conn)
+      val tables = new PostgresDatasetMapWriter(conn)
       val vi = tables.create("hello", "world")
       val c1 = tables.addColumn(vi, "col1", "typ1", "pcol1")
       val c2 = tables.addColumn(vi, "col2", "typ2", "pcol2")
@@ -168,14 +168,14 @@ class PostgresSharedTablesTest extends FunSuite with MustMatchers with BeforeAnd
 
   test("Can make a working copy") {
     withDb() { conn =>
-      val tables = new PostgresSharedTables(conn)
-      val vi1 = tables.publish(tables.create("hello", "world").tableInfo).get
+      val tables = new PostgresDatasetMapWriter(conn)
+      val vi1 = tables.publish(tables.create("hello", "world"))
       val ci1 = tables.addColumn(vi1, "col1", "typ", "colbase")
       val ci2 = tables.addColumn(vi1, "col2", "typ2", "colbase2")
 
       tables.unpublished(vi1.tableInfo) must be (None)
 
-      val vi2 = tables.ensureUnpublishedCopy(vi1.tableInfo).get
+      val vi2 = tables.ensureUnpublishedCopy(vi1.tableInfo)
 
       // and columns get copied...
       val schema1 = tables.schema(vi1)
@@ -187,9 +187,9 @@ class PostgresSharedTablesTest extends FunSuite with MustMatchers with BeforeAnd
 
   test("Cannot drop a published version") {
     withDb() { conn =>
-      val tables = new PostgresSharedTables(conn)
+      val tables = new PostgresDatasetMapWriter(conn)
       val vi1 = tables.create("hello", "world")
-      val vi2 = tables.publish(vi1.tableInfo).get
+      val vi2 = tables.publish(vi1)
 
       vi2.lifecycleStage must be (LifecycleStage.Published)
       evaluating { tables.dropCopy(vi2) } must produce [IllegalArgumentException]
@@ -198,7 +198,7 @@ class PostgresSharedTablesTest extends FunSuite with MustMatchers with BeforeAnd
 
   test("Cannot drop the initial version when it's still unpublished") {
     withDb() { conn =>
-      val tables = new PostgresSharedTables(conn)
+      val tables = new PostgresDatasetMapWriter(conn)
       val vi = tables.create("hello", "world")
       vi.lifecycleStage must be (LifecycleStage.Unpublished)
       evaluating { tables.dropCopy(vi) } must produce [IllegalArgumentException]
@@ -207,14 +207,13 @@ class PostgresSharedTablesTest extends FunSuite with MustMatchers with BeforeAnd
 
   test("Can drop a non-initial unpublished version") {
     withDb() { conn =>
-      val tables = new PostgresSharedTables(conn)
+      val tables = new PostgresDatasetMapWriter(conn)
       val vi1 = tables.create("hello", "world")
-      val vi2 = tables.publish(vi1.tableInfo).get
+      val vi2 = tables.publish(vi1)
       val vi3 = tables.ensureUnpublishedCopy(vi2.tableInfo)
-      vi3 must be ('defined)
-      tables.unpublished(vi1.tableInfo) must equal (vi3)
+      tables.unpublished(vi1.tableInfo) must equal (Some(vi3))
 
-      tables.dropCopy(vi3.get)
+      tables.dropCopy(vi3)
 
       tables.unpublished(vi1.tableInfo) must be (None)
     }
@@ -222,26 +221,26 @@ class PostgresSharedTablesTest extends FunSuite with MustMatchers with BeforeAnd
 
   test("Can delete a table entirely") {
     withDb() { conn =>
-      val tables = new PostgresSharedTables(conn)
+      val tables = new PostgresDatasetMapWriter(conn)
       val vi1 = tables.create("hello", "world")
       tables.addColumn(vi1, "col1", "typ1", "pcol1")
       tables.addColumn(vi1, "col2", "typ2", "pcol2")
 
       (1 to 5).foldLeft(vi1) { (vi, _) =>
-        val vi2 = tables.publish(vi.tableInfo).get
-        tables.ensureUnpublishedCopy(vi2.tableInfo).get
+        val vi2 = tables.publish(vi)
+        tables.ensureUnpublishedCopy(vi2.tableInfo)
       }
 
       // ok, there should be six copies now, which means twelve columns....
       count(conn, "column_map") must equal (12)
       count(conn, "version_map") must equal (6)
-      count(conn, "table_map") must equal (1)
+      count(conn, "dataset_map") must equal (1)
 
       tables.delete(vi1.tableInfo)
 
       count(conn, "column_map") must equal (0)
       count(conn, "version_map") must equal (0)
-      count(conn, "table_map") must equal (0)
+      count(conn, "dataset_map") must equal (0)
     }
   }
 }

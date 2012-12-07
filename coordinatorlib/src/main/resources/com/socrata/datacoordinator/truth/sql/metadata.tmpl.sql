@@ -19,7 +19,7 @@ CREATE TABLE truth_manifest (
   dirty             BOOLEAN                  NOT NULL
 );
 
-CREATE TABLE table_map (
+CREATE TABLE dataset_map (
   system_id  BIGSERIAL                   NOT NULL PRIMARY KEY,
   dataset_id VARCHAR(%DATASET_ID_LEN%)   NOT NULL UNIQUE, -- This probably contains the domain ID in some manner...
   table_base VARCHAR(%PHYSTAB_BASE_LEN%) NOT NULL -- this + version_map's lifecycle_version is used to name per-dataset tables.
@@ -27,7 +27,7 @@ CREATE TABLE table_map (
 
 CREATE TABLE version_map (
   system_id             BIGSERIAL                  NOT NULL PRIMARY KEY,
-  dataset_system_id     BIGINT                     NOT NULL REFERENCES table_map(system_id),
+  dataset_system_id     BIGINT                     NOT NULL REFERENCES dataset_map(system_id),
   lifecycle_version     BIGINT                     NOT NULL, -- this gets incremented per copy made.  It has nothing to do with the log's version
   lifecycle_stage       dataset_lifecycle_stage    NOT NULL,
   UNIQUE (dataset_system_id, lifecycle_version)
