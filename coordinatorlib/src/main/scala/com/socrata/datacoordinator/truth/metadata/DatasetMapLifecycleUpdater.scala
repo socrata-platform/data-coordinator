@@ -3,7 +3,7 @@ package com.socrata.datacoordinator.truth.metadata
 trait DatasetMapLifecycleUpdater {
   /** Creates a new table in the truthstore.
     * @note Does not actually create any tables; this just updates the bookkeeping. */
-  def create(datasetId: String, tableBase: String, userPrimaryKey: Option[String]): VersionInfo
+  def create(datasetId: String, tableBase: String): VersionInfo
 
   /** Completely removes a table (all its versions) from the truthstore.
     * @note Does not actually drop (or queue for dropping) any tables; this just updates the bookkeeping. */
@@ -18,7 +18,7 @@ trait DatasetMapLifecycleUpdater {
     * @note Does not copy the actual tables; this just updates the bookkeeping. */
   def ensureUnpublishedCopy(tableInfo: TableInfo): VersionInfo
 
-  /** Promotes the current the "published" table record (if it exists) to an "snapshot" one, and promotes the
+  /** Promotes the current the "published" table record (if it exists) to a "snapshot" one, and promotes the
     * current "unpublished" table record to "published".
     * @return The version info for the newly-published dataset if there was an unpublished copy,
     *         or `None` if there wasn't. */
