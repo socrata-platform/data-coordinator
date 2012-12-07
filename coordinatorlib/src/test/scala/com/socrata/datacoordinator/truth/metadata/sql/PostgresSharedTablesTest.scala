@@ -166,6 +166,25 @@ class PostgresSharedTablesTest extends FunSuite with MustMatchers with BeforeAnd
     }
   }
 
+  test("Can make a working copy") {
+    withDb() { conn =>
+      val tables = new PostgresSharedTables(conn)
+      val vi1 = tables.publish(tables.create("hello", "world").tableInfo).get
+      val ci1 = tables.addColumn(vi1, "col1", "typ", "colbase")
+      val ci2 = tables.addColumn(vi1, "col2", "typ2", "colbase2")
+
+      tables.unpublished(vi1.tableInfo) must be (None)
+
+      val vi2 = tables.ensureUnpublishedCopy(vi1.tableInfo).get
+
+      // and columns get copied...
+      val schema1 = tables.schema(vi1)
+      val schema2 = tables.schema(vi2)
+
+      schema1.mapValues(_.copy(systemId = 0, versionInfo = null)) must equal (schema2.mapValues(_.copy(systemId = 0, versionInfo = null)))
+    }
+  }
+
   test("Cannot drop a published version") {
     withDb() { conn =>
       val tables = new PostgresSharedTables(conn)
