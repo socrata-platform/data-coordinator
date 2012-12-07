@@ -19,22 +19,14 @@ trait DatasetMapReaderAPI {
     * name and its type. */
   type ColumnInfo <: IColumnInfo
 
-  trait IDatasetInfo {
-    def datasetId: String
-    def tableBase: String
-  }
+  trait IDatasetInfo extends com.socrata.datacoordinator.truth.metadata.DatasetInfo
 
-  trait IVersionInfo {
+  trait IVersionInfo extends com.socrata.datacoordinator.truth.metadata.VersionInfo {
     def tableInfo: DatasetInfo
-    def lifecycleVersion: Long
-    def lifecycleStage: LifecycleStage
   }
 
-  trait IColumnInfo {
+  trait IColumnInfo extends com.socrata.datacoordinator.truth.metadata.ColumnInfo {
     def versionInfo: VersionInfo
-    def logicalName: String
-    def typeName: String
-    def isPrimaryKey: Boolean
   }
 
   /** Looks up a dataset record by its ID */
