@@ -7,7 +7,7 @@ import org.joda.time.DateTime
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.truth.metadata._
 
-class PostgresSharedTables(conn: Connection, templateEnumsNeedCast: Boolean = true) extends GlobalLog with DatasetMapReader with DatasetMapLifecycleUpdater with DatasetMapSchemaUpdater {
+class PostgresSharedTables(conn: Connection) extends GlobalLog with DatasetMapReader with DatasetMapLifecycleUpdater with DatasetMapSchemaUpdater {
   require(!conn.getAutoCommit, "Connection is in auto-commit mode")
 
   def log(tableInfo: TableInfo, version: Long, updatedAt: DateTime, updatedBy: String) {

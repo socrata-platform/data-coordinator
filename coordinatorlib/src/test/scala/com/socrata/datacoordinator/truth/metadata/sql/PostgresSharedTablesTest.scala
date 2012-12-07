@@ -34,7 +34,7 @@ class PostgresSharedTablesTest extends FunSuite with MustMatchers with BeforeAnd
 
   test("Can create a table") {
     withDb() { conn =>
-      val tables = new PostgresSharedTables(conn, templateEnumsNeedCast = false)
+      val tables = new PostgresSharedTables(conn)
       val vi = tables.create("hello", "world")
 
       vi.tableInfo.datasetId must be ("hello")
@@ -49,7 +49,7 @@ class PostgresSharedTablesTest extends FunSuite with MustMatchers with BeforeAnd
 
   test("Can add a column to a table") {
     withDb() { conn =>
-      val tables = new PostgresSharedTables(conn, templateEnumsNeedCast = false)
+      val tables = new PostgresSharedTables(conn)
       val vi = tables.create("hello", "world")
       val ci = tables.addColumn(vi, "col1", "typ", "colbase")
 
@@ -65,7 +65,7 @@ class PostgresSharedTablesTest extends FunSuite with MustMatchers with BeforeAnd
 
   test("Can make a column a primary key") {
     withDb() { conn =>
-      val tables = new PostgresSharedTables(conn, templateEnumsNeedCast = false)
+      val tables = new PostgresSharedTables(conn)
       val vi = tables.create("hello", "world")
       val ci = tables.addColumn(vi, "col1", "typ", "colbase")
 
@@ -77,7 +77,7 @@ class PostgresSharedTablesTest extends FunSuite with MustMatchers with BeforeAnd
 
   test("Can add a second column to a table") {
     withDb() { conn =>
-      val tables = new PostgresSharedTables(conn, templateEnumsNeedCast = false)
+      val tables = new PostgresSharedTables(conn)
       val vi = tables.create("hello", "world")
       val ci1 = tables.addColumn(vi, "col1", "typ", "colbase")
       val ci2 = tables.addColumn(vi, "col2", "typ2", "colbase2")
@@ -94,7 +94,7 @@ class PostgresSharedTablesTest extends FunSuite with MustMatchers with BeforeAnd
 
   test("Cannot have multiple primary keys") {
     withDb() { conn =>
-      val tables = new PostgresSharedTables(conn, templateEnumsNeedCast = false)
+      val tables = new PostgresSharedTables(conn)
       val vi = tables.create("hello", "world")
       val ci1 = tables.addColumn(vi, "col1", "typ", "colbase")
       val ci2 = tables.addColumn(vi, "col2", "typ2", "colbase2")
@@ -108,7 +108,7 @@ class PostgresSharedTablesTest extends FunSuite with MustMatchers with BeforeAnd
 
   test("Can clear a user primary key and re-seat it") {
     withDb() { conn =>
-      val tables = new PostgresSharedTables(conn, templateEnumsNeedCast = false)
+      val tables = new PostgresSharedTables(conn)
       val vi = tables.create("hello", "world")
       val ci1 = tables.addColumn(vi, "col1", "typ", "colbase")
       val ci2 = tables.addColumn(vi, "col2", "typ2", "colbase2")
@@ -123,7 +123,7 @@ class PostgresSharedTablesTest extends FunSuite with MustMatchers with BeforeAnd
 
   test("Cannot add the same column twice") {
     withDb() { conn =>
-      val tables = new PostgresSharedTables(conn, templateEnumsNeedCast = false)
+      val tables = new PostgresSharedTables(conn)
       val vi = tables.create("hello", "world")
       tables.addColumn(vi, "col1", "typ", "colbase")
 
@@ -133,7 +133,7 @@ class PostgresSharedTablesTest extends FunSuite with MustMatchers with BeforeAnd
 
   test("Can publish the initial working copy") {
     withDb() { conn =>
-      val tables = new PostgresSharedTables(conn, templateEnumsNeedCast = false)
+      val tables = new PostgresSharedTables(conn)
       val vi1 = tables.create("hello", "world")
       val vi2 = tables.publish(vi1.tableInfo)
       vi2 must equal (Some(vi1.copy(lifecycleStage = LifecycleStage.Published)))
