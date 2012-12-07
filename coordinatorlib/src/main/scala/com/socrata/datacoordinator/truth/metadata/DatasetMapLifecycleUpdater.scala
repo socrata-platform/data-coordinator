@@ -15,15 +15,17 @@ trait DatasetMapLifecycleUpdater {
 
   /** Delete this version of the table.
     * @note Does not drop the actual tables or even queue them for dropping; this just updates the bookkeeping.
-    * @throws IllegalArgumentException if the version does not name a snapshot or unpublished copy.
+    * @throws IllegalArgumentException if the version does not name a snapshot or unpublished copy, or if
+    *                                  the dataset has not yet been published for the first time.
     * @return `true` if `versionInfo` referred to a version that existed, with the correct lifecycle version,
     *        otherwise false. */
   def dropCopy(versionInfo: VersionInfo): Boolean
 
   /** Ensures that an "unpublished" table exists, creating it if necessary.
     * @note Does not copy the actual tables; this just updates the bookkeeping.
-    * @return A [[com.socrata.datacoordinator.truth.metadata.VersionInfo]] for an unpublished version. */
-  def ensureUnpublishedCopy(tableInfo: TableInfo): VersionInfo
+    * @return A [[com.socrata.datacoordinator.truth.metadata.VersionInfo]] for an unpublished version if this
+    *         table existed at all. */
+  def ensureUnpublishedCopy(tableInfo: TableInfo): Option[VersionInfo]
 
   /** Promotes the current the "published" table record (if it exists) to a "snapshot" one, and promotes the
     * current "unpublished" table record to "published".

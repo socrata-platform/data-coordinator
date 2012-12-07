@@ -32,6 +32,16 @@ class PostgresSharedTablesTest extends FunSuite with MustMatchers with BeforeAnd
     }
   }
 
+  def count(conn: Connection, table: String, where: String = null): Int = {
+    for {
+      stmt <- managed(conn.createStatement())
+      rs <- managed(stmt.executeQuery("SELECT count(*) FROM " + table + (if(where != null) " WHERE " + where else "")))
+    } yield {
+      rs.next()
+      rs.getInt(1)
+    }
+  }
+
   test("Can create a table") {
     withDb() { conn =>
       val tables = new PostgresSharedTables(conn)
@@ -153,6 +163,66 @@ class PostgresSharedTablesTest extends FunSuite with MustMatchers with BeforeAnd
       tables.dropColumn(c2)
 
       tables.schema(vi) must equal (Map("col1" -> c1))
+    }
+  }
+
+  test("Cannot drop a published version") {
+    withDb() { conn =>
+      val tables = new PostgresSharedTables(conn)
+      val vi1 = tables.create("hello", "world")
+      val vi2 = tables.publish(vi1.tableInfo).get
+
+      vi2.lifecycleStage must be (LifecycleStage.Published)
+      evaluating { tables.dropCopy(vi2) } must produce [IllegalArgumentException]
+    }
+  }
+
+  test("Cannot drop the initial version when it's still unpublished") {
+    withDb() { conn =>
+      val tables = new PostgresSharedTables(conn)
+      val vi = tables.create("hello", "world")
+      vi.lifecycleStage must be (LifecycleStage.Unpublished)
+      evaluating { tables.dropCopy(vi) } must produce [IllegalArgumentException]
+    }
+  }
+
+  test("Can drop a non-initial unpublished version") {
+    withDb() { conn =>
+      val tables = new PostgresSharedTables(conn)
+      val vi1 = tables.create("hello", "world")
+      val vi2 = tables.publish(vi1.tableInfo).get
+      val vi3 = tables.ensureUnpublishedCopy(vi2.tableInfo)
+      vi3 must be ('defined)
+      tables.unpublished(vi1.tableInfo) must equal (vi3)
+
+      tables.dropCopy(vi3.get)
+
+      tables.unpublished(vi1.tableInfo) must be (None)
+    }
+  }
+
+  test("Can delete a table entirely") {
+    withDb() { conn =>
+      val tables = new PostgresSharedTables(conn)
+      val vi1 = tables.create("hello", "world")
+      tables.addColumn(vi1, "col1", "typ1", "pcol1")
+      tables.addColumn(vi1, "col2", "typ2", "pcol2")
+
+      (1 to 5).foldLeft(vi1) { (vi, _) =>
+        val vi2 = tables.publish(vi.tableInfo).get
+        tables.ensureUnpublishedCopy(vi2.tableInfo).get
+      }
+
+      // ok, there should be six copies now, which means twelve columns....
+      count(conn, "column_map") must equal (12)
+      count(conn, "version_map") must equal (6)
+      count(conn, "table_map") must equal (1)
+
+      tables.delete(vi1.tableInfo)
+
+      count(conn, "column_map") must equal (0)
+      count(conn, "version_map") must equal (0)
+      count(conn, "table_map") must equal (0)
     }
   }
 }

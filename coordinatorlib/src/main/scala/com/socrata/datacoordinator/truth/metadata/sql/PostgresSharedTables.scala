@@ -48,12 +48,11 @@ class PostgresSharedTables(conn: Connection) extends GlobalLog with DatasetMapRe
   // zookeeper lock before doing anything, but since it's possible to unknowingly lose a ZK lock...
   // better safe than corrupted.
   def lockTableRowQuery = "SELECT * FROM table_map WHERE system_id = ? FOR UPDATE"
-  private def lockTableRow(tableInfo: TableInfo) {
+  private def lockTableRow(tableInfo: TableInfo): Boolean = {
     using(conn.prepareStatement(lockTableRowQuery)) { stmt =>
       stmt.setLong(1, tableInfo.systemId)
       using(stmt.executeQuery()) { rs =>
-        val ok = rs.next()
-        assert(ok, "Unable to find a row to lock")
+        rs.next()
       }
     }
   }
@@ -88,12 +87,28 @@ class PostgresSharedTables(conn: Connection) extends GlobalLog with DatasetMapRe
     versionInfo.copy(systemId = versionSystemId)
   }
 
-  def deleteQuery = "DELETE FROM table_map WHERE system_id = ? CASCADE"
+  // Yay no "DELETE ... CASCADE"!
+  def deleteQuery_columnMap = "DELETE FROM column_map WHERE version_system_id IN (SELECT system_id FROM version_map WHERE dataset_system_id = ?)"
+  def deleteQuery_versionMap = "DELETE FROM version_map WHERE dataset_system_id = ?"
+  def deleteQuery_tableMap = "DELETE FROM table_map WHERE system_id = ?"
   def delete(tableInfo: TableInfo): Boolean = {
-    using(conn.prepareStatement(deleteQuery)) { stmt =>
-      stmt.setLong(1, tableInfo.systemId)
-      val count = stmt.executeUpdate()
-      count == 1
+    if(lockTableRow(tableInfo)) {
+      using(conn.prepareStatement(deleteQuery_columnMap)) { stmt =>
+        stmt.setLong(1, tableInfo.systemId)
+        stmt.executeUpdate()
+      }
+      using(conn.prepareStatement(deleteQuery_versionMap)) { stmt =>
+        stmt.setLong(1, tableInfo.systemId)
+        stmt.executeUpdate()
+      }
+      using(conn.prepareStatement(deleteQuery_tableMap)) { stmt =>
+        stmt.setLong(1, tableInfo.systemId)
+        val count = stmt.executeUpdate()
+        assert(count == 1, "Locked a row but it's not there anymore?")
+      }
+      true
+    } else {
+      false
     }
   }
 
@@ -230,13 +245,23 @@ class PostgresSharedTables(conn: Connection) extends GlobalLog with DatasetMapRe
     }
   }
 
-  def dropCopyQuery = "DELETE FROM version_map WHERE system_id = ? AND lifecycle_stage = CAST(? AS dataset_lifecycle_stage) CASCADE"
+  def dropCopyQuery_columnMap = "DELETE FROM column_map WHERE version_system_id IN (SELECT system_id FROM version_map WHERE system_id = ? AND lifecycle_stage = CAST(? AS dataset_lifecycle_stage))"
+  def dropCopyQuery_versionMap = "DELETE FROM version_map WHERE system_id = ? AND lifecycle_stage = CAST(? AS dataset_lifecycle_stage)"
   def dropCopy(versionInfo: VersionInfo): Boolean = {
     if(versionInfo.lifecycleStage != LifecycleStage.Snapshotted && versionInfo.lifecycleStage != LifecycleStage.Unpublished) {
       throw new IllegalArgumentException("Can only drop a snapshot or an unpublished copy of a dataset.")
     }
+    if(versionInfo.lifecycleStage == LifecycleStage.Unpublished && versionInfo.lifecycleVersion == 1) {
+      throw new IllegalArgumentException("Cannot drop the initial version")
+    }
 
-    using(conn.prepareStatement(dropCopyQuery)) { stmt =>
+    using(conn.prepareStatement(dropCopyQuery_columnMap)) { stmt =>
+      stmt.setLong(1, versionInfo.systemId)
+      stmt.setString(2, versionInfo.lifecycleStage.name) // just to make sure the user wasn't mistaken about the stage
+      stmt.executeUpdate()
+    }
+
+    using(conn.prepareStatement(dropCopyQuery_versionMap)) { stmt =>
       stmt.setLong(1, versionInfo.systemId)
       stmt.setString(2, versionInfo.lifecycleStage.name) // just to make sure the user wasn't mistaken about the stage
       stmt.executeUpdate() == 1
@@ -244,49 +269,52 @@ class PostgresSharedTables(conn: Connection) extends GlobalLog with DatasetMapRe
   }
 
   def ensureUnpublishedCopyQuery_newLifecycleVersion = "SELECT max(lifecycle_version) + 1 FROM version_map WHERE dataset_system_id = ?"
-  def ensureUnpublishedCopyQuery_versionMap = "INSERT INTO version_map (dataset_system_id, lifecycle_version, lifecycle_stage) values (?, ?, CAST(? AS dataset_lifecycle_stage), ?) RETURNING system_id"
+  def ensureUnpublishedCopyQuery_versionMap = "INSERT INTO version_map (dataset_system_id, lifecycle_version, lifecycle_stage) values (?, ?, CAST(? AS dataset_lifecycle_stage)) RETURNING system_id"
   def ensureUnpublishedCopyQuery_columnMap = "INSERT INTO column_map (version_system_id, logical_column, type_name, physical_column_base, is_primary_key) SELECT ?, logical_column, type_name, physical_column_base, is_primary_key FROM column_map WHERE version_system_id = ?"
-  def ensureUnpublishedCopy(tableInfo: TableInfo): VersionInfo = {
-    lockTableRow(tableInfo)
-    unpublished(tableInfo) match {
-      case Some(unpublished) =>
-        unpublished
-      case None =>
-        published(tableInfo) match {
-          case Some(publishedCopy) =>
-            val newLifecycleVersion = using(conn.prepareStatement(ensureUnpublishedCopyQuery_newLifecycleVersion)) { stmt =>
-              stmt.setLong(1, publishedCopy.tableInfo.systemId)
-              using(stmt.executeQuery()) { rs =>
-                rs.next()
-                rs.getLong(1)
+  def ensureUnpublishedCopy(tableInfo: TableInfo): Option[VersionInfo] = {
+    if(lockTableRow(tableInfo)) {
+      unpublished(tableInfo) match {
+        case unpublished@Some(_) =>
+          unpublished
+        case None =>
+          published(tableInfo) match {
+            case Some(publishedCopy) =>
+              val newLifecycleVersion = using(conn.prepareStatement(ensureUnpublishedCopyQuery_newLifecycleVersion)) { stmt =>
+                stmt.setLong(1, publishedCopy.tableInfo.systemId)
+                using(stmt.executeQuery()) { rs =>
+                  rs.next()
+                  rs.getLong(1)
+                }
               }
-            }
 
-            val newVersion = using(conn.prepareStatement(ensureUnpublishedCopyQuery_versionMap)) { stmt =>
-              val newVersion = publishedCopy.copy(
-                lifecycleVersion = newLifecycleVersion,
-                lifecycleStage = LifecycleStage.Unpublished)
+              val newVersion = using(conn.prepareStatement(ensureUnpublishedCopyQuery_versionMap)) { stmt =>
+                val newVersion = publishedCopy.copy(
+                  lifecycleVersion = newLifecycleVersion,
+                  lifecycleStage = LifecycleStage.Unpublished)
 
-              stmt.setLong(1, newVersion.tableInfo.systemId)
-              stmt.setLong(2, newVersion.lifecycleVersion)
-              stmt.setString(3, newVersion.lifecycleStage.name)
-              using(stmt.executeQuery()) { rs =>
-                val returnedSomething = rs.next()
-                assert(returnedSomething, "Making an unpublished copy didn't add a row?")
-                newVersion.copy(systemId = rs.getLong(1))
+                stmt.setLong(1, newVersion.tableInfo.systemId)
+                stmt.setLong(2, newVersion.lifecycleVersion)
+                stmt.setString(3, newVersion.lifecycleStage.name)
+                using(stmt.executeQuery()) { rs =>
+                  val returnedSomething = rs.next()
+                  assert(returnedSomething, "Making an unpublished copy didn't add a row?")
+                  newVersion.copy(systemId = rs.getLong(1))
+                }
               }
-            }
 
-            using(conn.prepareStatement(ensureUnpublishedCopyQuery_columnMap)) { stmt =>
-              stmt.setLong(1, newVersion.systemId)
-              stmt.setLong(2, publishedCopy.systemId)
-              stmt.execute()
-            }
+              using(conn.prepareStatement(ensureUnpublishedCopyQuery_columnMap)) { stmt =>
+                stmt.setLong(1, newVersion.systemId)
+                stmt.setLong(2, publishedCopy.systemId)
+                stmt.execute()
+              }
 
-            newVersion
-          case None =>
-            sys.error("No published copy available?")
-        }
+              Some(newVersion)
+            case None =>
+              sys.error("No published copy available?")
+          }
+      }
+    } else {
+      None
     }
   }
 
