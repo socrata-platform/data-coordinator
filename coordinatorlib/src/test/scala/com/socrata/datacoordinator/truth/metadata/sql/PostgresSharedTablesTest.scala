@@ -142,4 +142,17 @@ class PostgresSharedTablesTest extends FunSuite with MustMatchers with BeforeAnd
       tables.unpublished(vi1.tableInfo) must be (None)
     }
   }
+
+  test("Can drop a column") {
+    withDb() { conn =>
+      val tables = new PostgresSharedTables(conn)
+      val vi = tables.create("hello", "world")
+      val c1 = tables.addColumn(vi, "col1", "typ1", "pcol1")
+      val c2 = tables.addColumn(vi, "col2", "typ2", "pcol2")
+
+      tables.dropColumn(c2)
+
+      tables.schema(vi) must equal (Map("col1" -> c1))
+    }
+  }
 }

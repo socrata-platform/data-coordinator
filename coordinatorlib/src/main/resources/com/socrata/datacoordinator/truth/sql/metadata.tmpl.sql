@@ -26,22 +26,21 @@ CREATE TABLE table_map (
 );
 
 CREATE TABLE version_map (
+  system_id             BIGSERIAL                  NOT NULL PRIMARY KEY,
   dataset_system_id     BIGINT                     NOT NULL REFERENCES table_map(system_id),
   lifecycle_version     BIGINT                     NOT NULL, -- this gets incremented per copy made.  It has nothing to do with the log's version
   lifecycle_stage       dataset_lifecycle_stage    NOT NULL,
-  PRIMARY KEY (dataset_system_id, lifecycle_version)
+  UNIQUE (dataset_system_id, lifecycle_version)
 );
 
 CREATE TABLE column_map (
-  system_id            BIGSERIAL                   NOT NULL,
-  dataset_system_id    BIGINT                      NOT NULL REFERENCES table_map(system_id),
-  lifecycle_version    BIGINT                      NOT NULL,
+  system_id            BIGSERIAL                   NOT NULL PRIMARY KEY,
+  version_system_id    BIGINT                      NOT NULL REFERENCES version_map(system_id),
   logical_column       VARCHAR(%COLUMN_NAME_LEN%)  NOT NULL, -- "logical column" is roughly "user-visible SoQL name"
   type_name            VARCHAR(%TYPE_NAME_LEN%)    NOT NULL,
   physical_column_base VARCHAR(%PHYSCOL_BASE_LEN%) NOT NULL, -- "base" because some SoQL data types may require multiple physical columns
   is_primary_key       unit                        NULL, -- evil "unique" hack
-  PRIMARY KEY (dataset_system_id, lifecycle_version, system_id),
-  UNIQUE (dataset_system_id, lifecycle_version, logical_column),
-  UNIQUE (dataset_system_id, lifecycle_version, is_primary_key), -- hack hack hack
-  FOREIGN KEY (dataset_system_id, lifecycle_version) REFERENCES version_map (dataset_system_id, lifecycle_version) MATCH FULL
+  UNIQUE (version_system_id, logical_column),
+  UNIQUE (version_system_id, physical_column_base), -- two columns shouldn't share the same basename
+  UNIQUE (version_system_id, is_primary_key) -- hack hack hack
 );

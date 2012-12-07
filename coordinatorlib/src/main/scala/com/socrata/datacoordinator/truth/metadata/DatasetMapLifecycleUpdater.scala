@@ -16,7 +16,8 @@ trait DatasetMapLifecycleUpdater {
   /** Delete this version of the table.
     * @note Does not drop the actual tables or even queue them for dropping; this just updates the bookkeeping.
     * @throws IllegalArgumentException if the version does not name a snapshot or unpublished copy.
-    * @return `true` if `versionInfo` referred to a version that existed, otherwise false. */
+    * @return `true` if `versionInfo` referred to a version that existed, with the correct lifecycle version,
+    *        otherwise false. */
   def dropCopy(versionInfo: VersionInfo): Boolean
 
   /** Ensures that an "unpublished" table exists, creating it if necessary.
