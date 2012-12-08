@@ -29,7 +29,7 @@ trait DatasetMapReaderAPI {
     def versionInfo: VersionInfo
   }
 
-  /** Looks up a dataset record by its ID */
+  /** Looks up a dataset record by its ID. */
   def datasetInfo(datasetId: String): Option[DatasetInfo]
 
   /** Finds version information for this dataset's unpublished copy, if it has one. */

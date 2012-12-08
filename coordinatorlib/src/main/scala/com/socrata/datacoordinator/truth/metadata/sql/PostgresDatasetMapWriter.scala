@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator.truth.metadata
 package sql
 
-import java.sql.{Timestamp, Connection}
+import java.sql.{ResultSet, Timestamp, Connection}
 
 import org.joda.time.DateTime
 
@@ -27,11 +27,20 @@ class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatase
     }
   }
 
-  def datasetInfoQuery = "SELECT system_id, dataset_id, table_base FROM dataset_map WHERE dataset_id = ? FOR UPDATE"
+  def datasetInfoQuery = "SELECT system_id, dataset_id, table_base FROM dataset_map WHERE dataset_id = ? FOR UPDATE NOWAIT"
   def datasetInfo(datasetId: String) =
     using(conn.prepareStatement(datasetInfoQuery)) { stmt =>
       stmt.setString(1, datasetId)
-      using(stmt.executeQuery()) { rs =>
+
+      def executeOrThrow(): ResultSet =
+        try {
+          stmt.executeQuery()
+        } catch {
+          case e: org.postgresql.util.PSQLException if e.getServerErrorMessage.getSQLState == "55P03" /* Lock not available */ =>
+            throw new DatasetInUseByWriterException(datasetId, e)
+        }
+
+      using(executeOrThrow()) { rs =>
         if(rs.next()) {
           Some(SqlDatasetInfo(rs.getLong("system_id"), rs.getString("dataset_id"), rs.getString("table_base")))
         } else {
