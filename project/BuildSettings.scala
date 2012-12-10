@@ -17,6 +17,7 @@ object BuildSettings {
 
   def projectSettings(assembly: Boolean = false): Seq[Setting[_]] =
     BuildSettings.buildSettings ++ socrataProjectSettings(assembly = assembly) ++ Seq(
-      slf4jVersion := "1.7.2"
+      slf4jVersion := "1.7.2",
+      fork in test := true
     )
 }
