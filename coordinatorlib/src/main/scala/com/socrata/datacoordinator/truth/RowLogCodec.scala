@@ -1,7 +1,9 @@
 package com.socrata.datacoordinator
 package truth
 
-import java.io.{EOFException, IOException, DataInputStream, DataOutputStream}
+import java.io.{EOFException, IOException}
+
+import com.google.protobuf.{CodedInputStream, CodedOutputStream, InvalidProtocolBufferException}
 
 // Hm, may want to refactor this somewhat.  In particular, we'll
 // probably want to plug in different decoders depending on
@@ -15,56 +17,59 @@ trait RowLogCodec[CV] {
   def structureVersion: Short = 0
 
   def rowDataVersion: Short
-  protected def encode(target: DataOutputStream, row: Row[CV])
-  protected def decode(source: DataInputStream): Row[CV]
+  protected def encode(target: CodedOutputStream, row: Row[CV])
+  protected def decode(source: CodedInputStream): Row[CV]
 
-  def writeVersion(target: DataOutputStream) {
-    target.writeShort(structureVersion)
-    target.writeShort(rowDataVersion)
+  def writeVersion(target: CodedOutputStream) {
+    target.writeFixed32NoTag((structureVersion.toInt << 16) | (rowDataVersion & 0xffff))
   }
 
-  def insert(target: DataOutputStream, systemID: Long, row: Row[CV]) {
-    target.writeByte(0)
-    target.writeLong(systemID)
+  def insert(target: CodedOutputStream, systemID: Long, row: Row[CV]) {
+    target.writeRawByte(0)
+    target.writeInt64NoTag(systemID)
     encode(target, row)
   }
 
-  def update(target: DataOutputStream, systemID: Long, row: Row[CV]) {
-    target.writeByte(1)
-    target.writeLong(systemID)
+  def update(target: CodedOutputStream, systemID: Long, row: Row[CV]) {
+    target.writeRawByte(1)
+    target.writeInt64NoTag(systemID)
     encode(target, row)
   }
 
-  def delete(target: DataOutputStream, systemID: Long) {
-    target.writeByte(2)
-    target.writeLong(systemID)
+  def delete(target: CodedOutputStream, systemID: Long) {
+    target.writeRawByte(2)
+    target.writeInt64NoTag(systemID)
   }
 
-  def skipVersion(source: DataInputStream) {
-    source.readShort()
-    source.readShort()
+  def skipVersion(source: CodedInputStream) {
+    source.readFixed32()
   }
 
-  def extract(source: DataInputStream): Option[Operation[CV]] = {
+  def extract(source: CodedInputStream): Option[Operation[CV]] = {
     try {
-      source.read() match {
-        case -1 =>
-          None
-        case 0 =>
-          val sid = source.readLong()
-          val row = decode(source)
-          Some(Insert(sid, row))
-        case 1 =>
-          val sid = source.readLong()
-          val row = decode(source)
-          Some(Update(sid, row))
-        case 2 =>
-          val sid = source.readLong()
-          Some(Delete(sid))
-        case other =>
-          throw new UnknownRowLogOperationException(other)
+      if(source.isAtEnd) {
+        None
+      } else {
+        val op = source.readRawByte() match {
+          case 0 =>
+            val sid = source.readInt64()
+            val row = decode(source)
+            Insert(sid, row)
+          case 1 =>
+            val sid = source.readInt64()
+            val row = decode(source)
+            Update(sid, row)
+          case 2 =>
+            val sid = source.readInt64()
+            Delete(sid)
+          case other =>
+            throw new UnknownRowLogOperationException(other)
+        }
+        Some(op)
       }
     } catch {
+      case e: InvalidProtocolBufferException =>
+        throw new RowLogTruncatedException(e)
       case e: EOFException =>
         throw new RowLogTruncatedException(e)
     }

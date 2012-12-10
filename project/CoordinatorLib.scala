@@ -15,6 +15,7 @@ object CoordinatorLib {
         "net.sf.trove4j" % "trove4j" % "3.0.3",
         "org.xerial.snappy" % "snappy-java" % "1.0.4.1",
         "postgresql" % "postgresql" % "9.1-901-1.jdbc4", // we do use postgres-specific features some places
+        "com.google.protobuf" % "protobuf-java" % "2.4.1",
         "com.h2database" % "h2" % "1.3.166" % "test",
         "org.scalacheck" %% "scalacheck" % "1.10.0" % "test",
         "org.slf4j" % "slf4j-simple" % slf4jVersion % "test"

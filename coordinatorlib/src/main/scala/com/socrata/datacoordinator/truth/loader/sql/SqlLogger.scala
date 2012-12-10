@@ -136,14 +136,16 @@ class SqlLogger[CT, CV](connection: Connection,
   // DataLogger facet starts here
 
   var baos: java.io.ByteArrayOutputStream = _
-  var out: java.io.DataOutputStream = _
+  var sos: org.xerial.snappy.SnappyOutputStream = _
+  var out: com.google.protobuf.CodedOutputStream = _
   var rowCodec: RowLogCodec[CV] = _
   var didOne: Boolean = _
   reset()
 
   def reset() {
     baos = new java.io.ByteArrayOutputStream
-    out = new java.io.DataOutputStream(new org.xerial.snappy.SnappyOutputStream(baos))
+    sos = new org.xerial.snappy.SnappyOutputStream(baos)
+    out = com.google.protobuf.CodedOutputStream.newInstance(sos)
     didOne = false
     rowCodec = rowCodecFactory()
     rowCodec.writeVersion(out)
@@ -163,7 +165,8 @@ class SqlLogger[CT, CV](connection: Connection,
 
   def flushInner() {
     if(didOne) {
-      out.close()
+      out.flush()
+      sos.flush()
       val bytes = baos.toByteArray
       reset()
       logLine(SqlLogger.RowDataUpdated, bytes)
