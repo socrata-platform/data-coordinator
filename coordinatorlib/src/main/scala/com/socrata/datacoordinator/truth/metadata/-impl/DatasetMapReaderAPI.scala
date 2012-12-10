@@ -32,23 +32,11 @@ trait DatasetMapReaderAPI {
   /** Looks up a dataset record by its ID. */
   def datasetInfo(datasetId: String): Option[DatasetInfo]
 
-  /** Finds version information for this dataset's unpublished copy, if it has one. */
-  def unpublished(table: DatasetInfo): Option[VersionInfo]
-
-  /** Finds version information for this dataset's published copy, if it has one.
-    * @note After a dataset is published for the first time, it always has a published
-    *       version.*/
-  def published(table: DatasetInfo): Option[VersionInfo]
-
-  /** Finds version information for this dataset's `age`th-oldest snapshotted copy, if it has one.
-    * @param age 0 gets the newest snapshot, 1 the next newest, etc... */
-  def snapshot(table: DatasetInfo, age: Int): Option[VersionInfo]
+  /** Gets the newest copy, no matter what the lifecycle stage is. */
+  def latest(datasetInfo: DatasetInfo): VersionInfo
 
   /** Returns the number of snapshots attached to this dataset. */
-  def snapshotCount(table: DatasetInfo): Int
-
-  /** Gets the newest copy, no matter what the lifecycle stage is. */
-  def latest(table: DatasetInfo): VersionInfo
+  def snapshotCount(datasetInfo: DatasetInfo): Int
 
   /** Loads the schema for the indicated dataset-version. */
   def schema(versionInfo: VersionInfo): Map[String, ColumnInfo]

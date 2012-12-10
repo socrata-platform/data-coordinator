@@ -21,19 +21,10 @@ abstract class PostgresDatasetMapReaderAPI(val conn: Connection) extends Dataset
 
   require(!conn.getAutoCommit, "Connection is in auto-commit mode")
 
-  def unpublished(table: DatasetInfo) =
-    lookup(table, LifecycleStage.Unpublished)
-
-  def published(table: DatasetInfo) =
-    lookup(table, LifecycleStage.Published)
-
-  def snapshot(table: DatasetInfo, age: Int) =
-    lookup(table, LifecycleStage.Snapshotted, age)
-
   def snapshotCountQuery = "SELECT count(system_id) FROM version_map WHERE dataset_system_id = ? AND lifecycle_stage = CAST(? AS dataset_lifecycle_stage)"
-  def snapshotCount(table: DatasetInfo) =
+  def snapshotCount(dataset: DatasetInfo) =
     using(conn.prepareStatement(snapshotCountQuery)) { stmt =>
-      stmt.setLong(1, table.systemId)
+      stmt.setLong(1, dataset.systemId)
       stmt.setString(2, LifecycleStage.Snapshotted.name)
       using(stmt.executeQuery()) { rs =>
         rs.next()
@@ -42,24 +33,24 @@ abstract class PostgresDatasetMapReaderAPI(val conn: Connection) extends Dataset
     }
 
   def latestQuery = "SELECT system_id, lifecycle_version, lifecycle_stage :: TEXT FROM version_map WHERE dataset_system_id = ? ORDER BY lifecycle_version DESC LIMIT 1"
-  def latest(table: DatasetInfo) =
+  def latest(datasetInfo: DatasetInfo) =
     using(conn.prepareStatement(latestQuery)) { stmt =>
-      stmt.setLong(1, table.systemId)
+      stmt.setLong(1, datasetInfo.systemId)
       using(stmt.executeQuery()) { rs =>
-        if(!rs.next()) sys.error("Looked up a table for " + table.datasetId + " but didn't find any version info?")
-        SqlVersionInfo(table, rs.getLong("system_id"), rs.getLong("lifecycle_version"), LifecycleStage.valueOf(rs.getString("lifecycle_stage")))
+        if(!rs.next()) sys.error("Looked up a table for " + datasetInfo.datasetId + " but didn't find any version info?")
+        SqlVersionInfo(datasetInfo, rs.getLong("system_id"), rs.getLong("lifecycle_version"), LifecycleStage.valueOf(rs.getString("lifecycle_stage")))
       }
     }
 
   def lookupQuery = "SELECT system_id, lifecycle_version FROM version_map WHERE dataset_system_id = ? AND lifecycle_stage = CAST(? AS dataset_lifecycle_stage) ORDER BY lifecycle_version DESC OFFSET ? LIMIT 1"
-  def lookup(table: DatasetInfo, stage: LifecycleStage, nth: Int = 0) = {
+  def lookup(datasetInfo: DatasetInfo, stage: LifecycleStage, nth: Int = 0) = {
     using(conn.prepareStatement(lookupQuery)) { stmt =>
-      stmt.setLong(1, table.systemId)
+      stmt.setLong(1, datasetInfo.systemId)
       stmt.setString(2, stage.name)
       stmt.setInt(3, nth)
       using(stmt.executeQuery()) { rs =>
         if(rs.next()) {
-          Some(SqlVersionInfo(table, rs.getLong("system_id"), rs.getLong("lifecycle_version"), stage))
+          Some(SqlVersionInfo(datasetInfo, rs.getLong("system_id"), rs.getLong("lifecycle_version"), stage))
         } else {
           None
         }
@@ -82,4 +73,14 @@ abstract class PostgresDatasetMapReaderAPI(val conn: Connection) extends Dataset
       }
     }
   }
+
+  // These are from the reader trait but they're used in the writer tests
+  def unpublished(datasetInfo: DatasetInfo) =
+    lookup(datasetInfo, LifecycleStage.Unpublished)
+
+  def published(datasetInfo: DatasetInfo) =
+    lookup(datasetInfo, LifecycleStage.Published)
+
+  def snapshot(datasetInfo: DatasetInfo, age: Int) =
+    lookup(datasetInfo, LifecycleStage.Snapshotted, age)
 }

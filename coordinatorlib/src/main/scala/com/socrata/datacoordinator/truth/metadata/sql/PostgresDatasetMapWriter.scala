@@ -195,11 +195,11 @@ class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatase
   def ensureUnpublishedCopyQuery_versionMap = "INSERT INTO version_map (dataset_system_id, lifecycle_version, lifecycle_stage) values (?, ?, CAST(? AS dataset_lifecycle_stage)) RETURNING system_id"
   def ensureUnpublishedCopyQuery_columnMap = "INSERT INTO column_map (version_system_id, logical_column, type_name, physical_column_base, is_primary_key) SELECT ?, logical_column, type_name, physical_column_base, is_primary_key FROM column_map WHERE version_system_id = ?"
   def ensureUnpublishedCopy(tableInfo: DatasetInfo): VersionInfo =
-    unpublished(tableInfo) match {
+    lookup(tableInfo, LifecycleStage.Unpublished) match {
       case Some(unpublished) =>
         unpublished
       case None =>
-        published(tableInfo) match {
+        lookup(tableInfo, LifecycleStage.Published) match {
           case Some(publishedCopy) =>
             val newLifecycleVersion = using(conn.prepareStatement(ensureUnpublishedCopyQuery_newLifecycleVersion)) { stmt =>
               stmt.setLong(1, publishedCopy.tableInfo.systemId)

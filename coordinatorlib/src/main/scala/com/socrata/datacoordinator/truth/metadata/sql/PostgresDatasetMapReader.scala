@@ -18,4 +18,18 @@ class PostgresDatasetMapReader(_conn: Connection) extends `-impl`.PostgresDatase
         }
       }
     }
+
+  val versionQuery = "SELECT system_id, lifecycle_stage FROM version_map WHERE dataset_system_id = ? AND lifecycle_version = ?"
+  def version(datasetInfo: DatasetInfo, lifecycleVersion: Long) =
+    using(conn.prepareStatement(versionQuery)) { stmt =>
+      stmt.setLong(1, datasetInfo.systemId)
+      stmt.setLong(2, lifecycleVersion)
+      using(stmt.executeQuery()) { rs =>
+        if(rs.next()) {
+          Some(SqlVersionInfo(datasetInfo, rs.getLong("system_id"), lifecycleVersion, LifecycleStage.valueOf(rs.getString("lifecycle_stage"))))
+        } else {
+          None
+        }
+      }
+    }
 }
