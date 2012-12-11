@@ -11,12 +11,11 @@ CREATE TABLE global_log (
 
 -- or this?
 CREATE TABLE truth_manifest (
-  id                BIGSERIAL                NOT NULL PRIMARY KEY,
-  dataset_system_id BIGINT                   NOT NULL, -- Not REFERENCES because datasets can be deleted
-  published_version BIGINT                   NULL, -- The last version before the creation of the current working copy (null if there is no working copy)
-  version           BIGINT                   NOT NULL,
-  updated_at        TIMESTAMP WITH TIME ZONE NOT NULL,
-  dirty             BOOLEAN                  NOT NULL
+  dataset_system_id    BIGINT NOT NULL PRIMARY KEY, -- Not REFERENCES because datasets can be deleted
+  published_version    BIGINT NOT NULL, -- The last (data log) version set to "published" (0 if never)
+  version              BIGINT NOT NULL, -- The last (data log) version, published or not (0 if none)
+  coordinator_version  BIGINT NOT NULL, -- The last (data log) version seen by the coordinator (0 if none)
+  truncatedAt          BIGINT NOT NULL  -- The last (data log) version at which the table was truncated (0 if never)
 );
 
 CREATE TABLE dataset_map (
