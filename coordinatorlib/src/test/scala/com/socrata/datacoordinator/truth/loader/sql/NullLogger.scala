@@ -4,8 +4,6 @@ package truth.loader.sql
 import com.socrata.datacoordinator.truth.loader.Logger
 
 class NullLogger[A, B] extends Logger[A, B] {
-  def versionNum = 0L
-
   def columnCreated(name: String, typ: A) {}
 
   def columnRemoved(name: String) {}
@@ -18,7 +16,7 @@ class NullLogger[A, B] extends Logger[A, B] {
 
   def workingCopyPublished() {}
 
-  def endTransaction() {}
+  def endTransaction() = None
 
   def insert(systemID: Long, row: Row[B]) {}
 

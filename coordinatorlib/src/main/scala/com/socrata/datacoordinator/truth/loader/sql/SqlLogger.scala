@@ -123,14 +123,19 @@ class SqlLogger[CT, CV](connection: Connection,
     logLine(SqlLogger.WorkingCopyPublished, nullBytes)
   }
 
-  def endTransaction() {
+  def endTransaction() = {
     checkTxn()
     transactionEnded = true
 
     flushRowData()
 
-    if(nextSubVersionNum.peek != 1) logLine(SqlLogger.TransactionEnded, nullBytes)
-    flushBatch()
+    if(nextSubVersionNum.peek != 1) {
+      logLine(SqlLogger.TransactionEnded, nullBytes)
+      flushBatch()
+      Some(versionNum)
+    } else {
+      None
+    }
   }
 
   // DataLogger facet starts here
@@ -202,7 +207,6 @@ object SqlLogger {
   // all of these must be exactly 3 characters long and consist of
   // nothing but upper-case ASCII letters.
   val RowDataUpdated = "ROW"
-  val DatasetTruncated = "TRN"
   val ColumnCreated = "CCR"
   val ColumnRemoved = "CRM"
   val RowIdentifierChanged = "RID"

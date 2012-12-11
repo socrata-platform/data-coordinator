@@ -64,6 +64,7 @@ class PerfRowCodec extends RowLogCodec[PerfValue] {
   protected def decode(source: CodedInputStream) = {
     val count = source.readInt32()
     val result = Map.newBuilder[String, PerfValue]
+    result.sizeHint(count)
     for(i <- 0 until count) {
       val k = readKey(source)
       val v = source.readRawByte() match {
