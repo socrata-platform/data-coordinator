@@ -8,8 +8,8 @@ import gnu.trove.map.hash.{TIntObjectHashMap, TLongObjectHashMap}
 
 import com.rojoma.simplearm.util._
 
-import util.{LongLikeMap, IdProviderPool}
-import com.socrata.datacoordinator.truth.TypeContext
+import com.socrata.datacoordinator.util.IdProviderPool
+import com.socrata.datacoordinator.util.collection.MutableLongLikeMap
 
 final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: DataSqlizer[CT, CV], _l: DataLogger[CV], _i: IdProviderPool, _e: Executor)
   extends
@@ -19,7 +19,7 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
   // constructor.
   // so that if an OOM exception occurs the initializations in the base class are rolled back.
   private val log = SystemPKSqlLoader.log
-  var jobs = new LongLikeMap[RowId, SystemPKSqlLoader.Operation[CV]]() // map from sid to operation
+  var jobs = new MutableLongLikeMap[RowId, SystemPKSqlLoader.Operation[CV]]() // map from sid to operation
 } with SqlLoader(_c, _p, _s, _l, _i, _e)
 {
   import SystemPKSqlLoader._
@@ -203,7 +203,7 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
 
     started.acquire()
 
-    jobs = new LongLikeMap[RowId, Operation[CV]](new TLongObjectHashMap[Operation[CV]](jobs.underlying.capacity))
+    jobs = new MutableLongLikeMap[RowId, Operation[CV]](new TLongObjectHashMap[Operation[CV]](jobs.underlying.capacity))
     insertSize = 0
     updateSize = 0
     deleteSize = 0

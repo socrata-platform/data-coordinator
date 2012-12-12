@@ -14,9 +14,9 @@ import com.rojoma.json.codec.JsonCodec
 import com.rojoma.json.ast.{JValue, JNull, JNumber, JString}
 import java.util.zip.GZIPInputStream
 import com.socrata.id.numeric.{InMemoryBlockIdProvider, FixedSizeIdProvider, PushbackIdProvider}
-import util.{Counter, LongLikeMap, IdProviderPoolImpl}
+import util.{Counter, IdProviderPoolImpl}
+import util.collection.{LongLikeMap, MutableLongLikeMap}
 import com.socrata.datacoordinator.truth.loader.sql.SqlLoader
-import gnu.trove.map.hash.TLongObjectHashMap
 
 class ExecutePlan
 
@@ -77,9 +77,9 @@ object ExecutePlan {
 
           val rowPreparer = new RowPreparer[PerfValue] {
             def prepareForInsert(row: Row[PerfValue], systemId: Long) = {
-              val newRow = new LongLikeMap(row)
+              val newRow = new MutableLongLikeMap(row)
               newRow(datasetContext.systemIdColumnName) = PVId(systemId)
-              newRow
+              newRow.freeze()
             }
 
             def prepareForUpdate(row: Row[PerfValue]) =
@@ -159,16 +159,17 @@ object ExecutePlan {
               userSchema(schemaIdMap(field)) match {
                 case PTText => PVText(in.asInstanceOf[JString].string)
                 case PTNumber => PVNumber(in.asInstanceOf[JNumber].number)
+                case PTId => sys.error("Shouldn't have found an ID value here")
               }
             }
           }
 
           def convert(row: sc.Map[String, JValue]): Row[PerfValue] = {
-            val result = new Row[PerfValue]
+            val result = new MutableRow[PerfValue]
             for((k, v) <- row) {
               result(schemaIdMap(k)) = convertValue(k, v)
             }
-            result
+            result.freeze()
           }
 
           val start = System.nanoTime()

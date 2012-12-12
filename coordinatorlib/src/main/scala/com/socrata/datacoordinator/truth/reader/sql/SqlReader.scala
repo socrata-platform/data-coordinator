@@ -6,7 +6,8 @@ import java.sql.{PreparedStatement, Connection}
 
 import com.rojoma.simplearm.util._
 
-import util.{LongLikeMap, LeakDetect, CloseableIterator, FastGroupedIterator}
+import com.socrata.datacoordinator.util.{LeakDetect, CloseableIterator, FastGroupedIterator}
+import com.socrata.datacoordinator.util.collection.{LongLikeMap, MutableLongLikeMap}
 import com.socrata.datacoordinator.truth.sql.{SqlPKableColumnReadRep, SqlColumnReadRep}
 import com.socrata.datacoordinator.truth.{DatasetContext, TypeContext}
 
@@ -71,10 +72,10 @@ class SqlReader[CT, CV](connection: Connection,
         sidRep.prepareMultiLookup(stmt, typeContext.makeValueFromSystemId(id), start)
       }
       using(stmt.executeQuery()) { rs =>
-        val result = new LongLikeMap[RowId, Row[CV]]
+        val result = new MutableLongLikeMap[RowId, Row[CV]]
         while(rs.next()) {
           val sid = typeContext.makeSystemIdFromValue(sidRep.fromResultSet(rs, 1))
-          val row = new Row[CV]
+          val row = new MutableLongLikeMap[ColumnId, CV]
           var i = 1 + sidRep.physColumnsForQuery.length
           for(c <- columns) {
             val rep = repSchema(c)
@@ -82,7 +83,7 @@ class SqlReader[CT, CV](connection: Connection,
             i += rep.physColumnsForQuery.length
             row(c) = v
           }
-          result(sid) = row
+          result(sid) = row.freeze()
         }
         block.map { sid =>
           result.get(sid)
@@ -146,7 +147,7 @@ class SqlReader[CT, CV](connection: Connection,
           val result = datasetContext.makeIdMap[Row[CV]]()
           while(rs.next()) {
             val uid = uidRep.fromResultSet(rs, 1)
-            val row = new Row[CV]
+            val row = new MutableLongLikeMap[ColumnId, CV]
             var i = 1 + uidRep.physColumnsForQuery.length
             for(c <- columns) {
               val rep = repSchema(c)
@@ -154,7 +155,7 @@ class SqlReader[CT, CV](connection: Connection,
               i += rep.physColumnsForQuery.length
               row += c -> v
             }
-            result.put(uid, row)
+            result.put(uid, row.freeze())
           }
           block.map(result.get)
         }

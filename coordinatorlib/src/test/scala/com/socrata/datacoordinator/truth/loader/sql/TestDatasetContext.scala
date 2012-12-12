@@ -5,7 +5,7 @@ package sql
 import scala.collection.JavaConverters._
 
 import com.socrata.datacoordinator.truth.{RowIdMap, DatasetContext}
-import util.LongLikeMap
+import com.socrata.datacoordinator.util.collection.LongLikeMap
 
 class TestDatasetContext(val userSchema: LongLikeMap[ColumnId, TestColumnType], val systemIdColumnName: ColumnId, val userPrimaryKeyColumn: Option[ColumnId]) extends DatasetContext[TestColumnType, TestColumnValue] {
   userPrimaryKeyColumn.foreach { pkCol =>
@@ -25,7 +25,7 @@ class TestDatasetContext(val userSchema: LongLikeMap[ColumnId, TestColumnType], 
   def systemIdAsValue(row: Row[TestColumnValue]) = row.get(systemIdColumnName)
 
   def systemColumns(row: Row[TestColumnValue]) = row.keySet.filter(systemSchema.contains).toSet
-  val systemSchema = LongLikeMap[ColumnId, TestColumnType](systemIdColumnName -> LongColumn)
+  val systemSchema = LongLikeMap(systemIdColumnName -> LongColumn)
 
   val fullSchema = userSchema ++ systemSchema
 

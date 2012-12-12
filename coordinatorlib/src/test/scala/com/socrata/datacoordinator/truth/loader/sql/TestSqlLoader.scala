@@ -11,8 +11,9 @@ import org.scalatest.matchers.MustMatchers
 import org.scalatest.prop.PropertyChecks
 import com.rojoma.simplearm.util._
 
-import com.socrata.id.numeric.{PushbackIdProvider, FixedSizeIdProvider, InMemoryBlockIdProvider}
-import com.socrata.datacoordinator.util.{IdProviderPoolImpl, LongLikeMap}
+import com.socrata.id.numeric.{FixedSizeIdProvider, InMemoryBlockIdProvider}
+import com.socrata.datacoordinator.util.IdProviderPoolImpl
+import com.socrata.datacoordinator.util.collection.{LongLikeMap, MutableLongLikeMap}
 
 class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with BeforeAndAfterAll {
   val executor = java.util.concurrent.Executors.newCachedThreadPool()
@@ -82,7 +83,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     makeTables(conn, ctx)
     for(row <- rows) {
       val LongValue(id) = row.getOrElse(ctx.datasetContext.systemIdColumnName, sys.error("No :id"))
-      val remainingColumns = new Row[TestColumnValue](row)
+      val remainingColumns = new MutableRow[TestColumnValue](row)
       remainingColumns -= ctx.datasetContext.systemIdColumnName
       assert(remainingColumns.keySet.toSet.subsetOf(ctx.datasetContext.userSchema.keySet.toSet), "row contains extraneous keys")
       val sql = "insert into " + ctx.dataTableName + " (" + idColName + "," + remainingColumns.keys.map("c_" + _).mkString(",") + ") values (" + id + "," + remainingColumns.values.map(_.sqlize).mkString(",") + ")"
@@ -101,9 +102,9 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
   val rowPreparer = new RowPreparer[TestColumnValue] {
     def prepareForInsert(row: Row[TestColumnValue], sid: Long) = {
-      val newRow = new LongLikeMap(row)
+      val newRow = new MutableLongLikeMap(row)
       newRow(idCol) = LongValue(sid)
-      newRow
+      newRow.freeze()
     }
 
     def prepareForUpdate(row: Row[TestColumnValue]) = row
@@ -712,9 +713,9 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
           )
           val row = id match {
             case Some(sid) =>
-              val newRow = new LongLikeMap(baseRow)
+              val newRow = new MutableLongLikeMap(baseRow)
               newRow(idCol) = LongValue(sid)
-              newRow
+              newRow.freeze()
             case None => baseRow
           }
           txn.upsert(row)

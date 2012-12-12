@@ -6,7 +6,7 @@ package perf
 import scala.collection.JavaConverters._
 
 import com.socrata.datacoordinator.truth.{RowIdMap, DatasetContext}
-import util.LongLikeMap
+import util.collection.LongLikeMap
 
 class PerfDatasetContext(val userSchema: LongLikeMap[ColumnId, PerfType], val systemIdColumnName: ColumnId, val userPrimaryKeyColumn: Option[ColumnId]) extends DatasetContext[PerfType, PerfValue] {
   userPrimaryKeyColumn.foreach { pkCol =>
@@ -26,11 +26,7 @@ class PerfDatasetContext(val userSchema: LongLikeMap[ColumnId, PerfType], val sy
   def systemIdAsValue(row: Row[PerfValue]) = row.get(systemIdColumnName)
 
   def systemColumns(row: Row[PerfValue]) = row.keySet.filter(systemSchema.contains).toSet
-  val systemSchema = locally {
-    val tmp = new LongLikeMap[ColumnId, PerfType]
-    tmp(systemIdColumnName) = PTId
-    tmp
-  }
+  val systemSchema = LongLikeMap(systemIdColumnName -> PTId)
 
   val fullSchema = userSchema ++ systemSchema
 

@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator
 package truth
 
-import com.socrata.datacoordinator.util.LongLikeMap
+import com.socrata.datacoordinator.util.collection.LongLikeMap
 
 /** Extracts information about a dataset and from rows within the context of a dataset. */
 trait DatasetContext[CT, CV] {

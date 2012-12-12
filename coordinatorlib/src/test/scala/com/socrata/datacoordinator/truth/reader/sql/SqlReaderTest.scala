@@ -1,14 +1,15 @@
 package com.socrata.datacoordinator
 package truth.reader.sql
 
+import java.sql.{DriverManager, Connection}
+
 import org.scalatest.{BeforeAndAfterAll, FunSuite}
 import org.scalatest.matchers.MustMatchers
 import com.rojoma.simplearm.util._
 
-import truth.{RowIdMap, DatasetContext}
-import java.sql.{DriverManager, Connection}
-import truth.sql.SqlColumnReadRep
-import util.LongLikeMap
+import com.socrata.datacoordinator.truth.{RowIdMap, DatasetContext}
+import com.socrata.datacoordinator.truth.sql.SqlColumnReadRep
+import com.socrata.datacoordinator.util.collection.{LongLikeMap, MutableLongLikeMap}
 
 class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
   override def beforeAll() {
@@ -75,17 +76,14 @@ class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
 
   def managedConn = managed(DriverManager.getConnection("jdbc:h2:mem:"))
 
-  def repSchemaBuilder(schema: LongLikeMap[ColumnId, TestColumnType]): LongLikeMap[ColumnId, SqlColumnReadRep[TestColumnType, TestColumnValue]] = {
-    val res = new LongLikeMap[ColumnId, SqlColumnReadRep[TestColumnType, TestColumnValue]]
-    for((k, v) <- schema.iterator) {
-      res += k -> (v match {
-        case IdType => new IdRep(0L)
-        case NumberType => new NumberRep(k)
-        case StringType => new StringRep(k)
-      })
+  def repSchemaBuilder(schema: LongLikeMap[ColumnId, TestColumnType]): LongLikeMap[ColumnId, SqlColumnReadRep[TestColumnType, TestColumnValue]] =
+    schema.transform { (col, typ) =>
+      typ match {
+        case IdType => new IdRep(col)
+        case NumberType => new NumberRep(col)
+        case StringType => new StringRep(col)
+      }
     }
-    res
-  }
 
   val tableName = "tab"
 
