@@ -9,11 +9,11 @@ import com.socrata.datacoordinator.truth.{RowIdMap, DatasetContext}
 import util.collection.LongLikeMap
 
 class PerfDatasetContext(val userSchema: LongLikeMap[ColumnId, PerfType], val systemIdColumn: ColumnId, val userPrimaryKeyColumn: Option[ColumnId]) extends DatasetContext[PerfType, PerfValue] {
+  val typeContext = PerfTypeContext
+
   userPrimaryKeyColumn.foreach { pkCol =>
     require(userSchema.contains(pkCol), "PK col defined but does not exist in the schema")
   }
-
-  def hasCopy = sys.error("hasCopy called")
 
   def userPrimaryKey(row: Row[PerfValue]) = for {
     userPKColumn <- userPrimaryKeyColumn

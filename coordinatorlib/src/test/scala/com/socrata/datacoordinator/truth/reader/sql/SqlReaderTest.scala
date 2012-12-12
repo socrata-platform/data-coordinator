@@ -21,7 +21,7 @@ class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
   }
 
   def datasetContext(schema: LongLikeMap[ColumnId, TestColumnType]) = new DatasetContext[TestColumnType, TestColumnValue] {
-    def hasCopy = false
+    val typeContext = TestTypeContext
 
     val userSchema = schema
 

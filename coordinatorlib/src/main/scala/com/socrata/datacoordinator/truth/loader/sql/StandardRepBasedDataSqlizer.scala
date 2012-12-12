@@ -12,9 +12,8 @@ import com.socrata.datacoordinator.truth.sql.SqlColumnRep
 
 class StandardRepBasedDataSqlizer[CT, CV](tableBase: String,
                                           datasetContext: DatasetContext[CT, CV],
-                                          typeContext: TypeContext[CT, CV],
                                           repSchemaBuilder: LongLikeMap[ColumnId, CT] => LongLikeMap[ColumnId, SqlColumnRep[CT, CV]])
-  extends AbstractRepBasedDataSqlizer(tableBase, datasetContext, typeContext, repSchemaBuilder)
+  extends AbstractRepBasedDataSqlizer(tableBase, datasetContext, repSchemaBuilder)
 {
   def insertBatch(conn: Connection)(f: Inserter => Unit): Long = {
     using(new InserterImpl(conn)) { inserter =>
@@ -35,7 +34,7 @@ class StandardRepBasedDataSqlizer[CT, CV](tableBase: String,
         it.advance()
         val k = it.key
         val rep = it.value
-        i += rep.prepareInsert(stmt, row.getOrElse(k, typeContext.nullValue), i)
+        i = rep.prepareInsert(stmt, row.getOrElse(k, typeContext.nullValue), i)
       }
       stmt.addBatch()
     }

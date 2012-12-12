@@ -5,7 +5,7 @@ import com.socrata.datacoordinator.util.collection.LongLikeMap
 
 /** Extracts information about a dataset and from rows within the context of a dataset. */
 trait DatasetContext[CT, CV] {
-  def hasCopy: Boolean
+  def typeContext: TypeContext[CT, CV]
 
   def userSchema: LongLikeMap[ColumnId, CT]
 

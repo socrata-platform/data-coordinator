@@ -13,10 +13,9 @@ import com.socrata.datacoordinator.util.StringBuilderReader
 
 class PostgresRepBasedDataSqlizer[CT, CV](tableBase: String,
                                           datasetContext: DatasetContext[CT, CV],
-                                          typeContext: TypeContext[CT, CV],
                                           repSchemaBuilder: LongLikeMap[ColumnId, CT] => LongLikeMap[ColumnId, SqlColumnRep[CT, CV]],
                                           extractCopier: Connection => CopyManager = PostgresRepBasedDataSqlizer.pgCopyManager)
-  extends AbstractRepBasedDataSqlizer(tableBase, datasetContext, typeContext, repSchemaBuilder)
+  extends AbstractRepBasedDataSqlizer(tableBase, datasetContext, repSchemaBuilder)
 {
   val bulkInsertStatement =
     "COPY " + dataTableName + " (" + repSchema.values.flatMap(_.physColumnsForInsert).mkString(",") + ") from stdin with csv"

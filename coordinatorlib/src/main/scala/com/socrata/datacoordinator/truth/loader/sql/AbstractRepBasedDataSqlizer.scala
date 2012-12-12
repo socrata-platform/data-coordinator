@@ -12,10 +12,11 @@ import com.socrata.datacoordinator.util.collection.LongLikeMap
 
 abstract class AbstractRepBasedDataSqlizer[CT, CV](tableBase: String,
                                                    val datasetContext: DatasetContext[CT, CV],
-                                                   val typeContext: TypeContext[CT, CV],
                                                    repSchemaBuilder: LongLikeMap[ColumnId, CT] => LongLikeMap[ColumnId, SqlColumnRep[CT, CV]])
   extends DataSqlizer[CT, CV]
 {
+  val typeContext = datasetContext.typeContext
+
   val nullValue = typeContext.nullValue
 
   val logicalPKColumnName = datasetContext.primaryKeyColumn
@@ -23,8 +24,8 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](tableBase: String,
   // map from column IDs to the corresponding rep
   val repSchema = repSchemaBuilder(datasetContext.fullSchema)
 
-  val sidRep = repSchema.get(datasetContext.systemIdColumn).asInstanceOf[SqlPKableColumnRep[CT, CV]]
-  val pkRep = repSchema.get(logicalPKColumnName).asInstanceOf[SqlPKableColumnRep[CT, CV]]
+  val sidRep = repSchema(datasetContext.systemIdColumn).asInstanceOf[SqlPKableColumnRep[CT, CV]]
+  val pkRep = repSchema(logicalPKColumnName).asInstanceOf[SqlPKableColumnRep[CT, CV]]
 
   def dataTableName: String = tableBase + "_data"
   def logTableName: String = tableBase + "_log"
@@ -91,7 +92,7 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](tableBase: String,
   def sqlizeUserIdUpdate(row: Row[CV]) =
     updatePrefix(row).append(pkRep sql_== row(logicalPKColumnName)).toString
 
-  val findSystemIdsPrefix = "SELECT " + sidRep.physColumnsForQuery.mkString(",") + "," + pkRep.physColumnsForQuery.mkString(",") + " WHERE "
+  val findSystemIdsPrefix = "SELECT " + sidRep.physColumnsForQuery.mkString(",") + "," + pkRep.physColumnsForQuery.mkString(",") + " FROM " + dataTableName + " WHERE "
 
   def findSystemIds(conn: Connection, ids: Iterator[CV]): CloseableIterator[Seq[IdPair[CV]]] = {
     require(datasetContext.hasUserPrimaryKey, "findSystemIds called without a user primary key")
