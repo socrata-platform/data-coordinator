@@ -42,7 +42,7 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
               stmt.executeUpdate(sqlizer.sqlizeUserIdUpdate(updateRow))
             }
             if(updatedCount == 0) {
-              val sid = idProvider.allocate()
+              val sid = RowId(idProvider.allocate())
               val row = rowPreparer.prepareForInsert(unpreparedRow, sid)
               val result = sqlizer.insertBatch(connection) { inserter =>
                 inserter.insert(sid, row)
@@ -65,12 +65,12 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
               val updateRow = rowPreparer.prepareForUpdate(unpreparedRow)
               if(stmt.executeUpdate(sqlizer.sqlizeSystemIdUpdate(id, updateRow)) == 1) {
                 updated.put(job, typeContext.makeValueFromSystemId(id))
-                dataLogger.update(id, updateRow - datasetContext.systemIdColumnName)
+                dataLogger.update(id, updateRow)
               } else
                 errors.put(job, NoSuchRowToUpdate(typeContext.makeValueFromSystemId(id)))
             }
           case None =>
-            val sid = idProvider.allocate()
+            val sid = RowId(idProvider.allocate())
             val row = rowPreparer.prepareForInsert(unpreparedRow, sid)
             val result = sqlizer.insertBatch(connection) { inserter =>
               inserter.insert(sid, row)
@@ -82,7 +82,7 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
     }
   }
 
-  def findSid(id: CV): Option[Long] = {
+  def findSid(id: CV): Option[RowId] = {
     using(sqlizer.findSystemIds(connection, Iterator.single(id))) { blocks =>
       val sids = blocks.flatten.map(_.systemId).toSeq
       assert(sids.length < 2)

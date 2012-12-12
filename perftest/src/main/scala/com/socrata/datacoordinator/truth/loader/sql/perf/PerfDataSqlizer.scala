@@ -41,16 +41,12 @@ class PerfDataSqlizer(tableBase: String, val datasetContext: DatasetContext[Perf
       case other => sys.error("Unexpected value for type " + t + other.getClass.getSimpleName)
     }
   }
-  def updateSizerForType(c: String, t: PerfType) = sizerFrom(c.length, t)
-  def insertSizerForType(c: String, t: PerfType) = sizerFrom(0, t)
+  def updateSizerForType(c: ColumnId, t: PerfType) = sizerFrom(8, t)
+  def insertSizerForType(c: ColumnId, t: PerfType) = sizerFrom(0, t)
 
-  val updateSizes = datasetContext.fullSchema.map { case (c, t) =>
-    c -> updateSizerForType(c, t)
-  }
+  val updateSizes = datasetContext.fullSchema.transform(updateSizerForType)
 
-  val insertSizes = datasetContext.fullSchema.map { case (c, t) =>
-    c -> insertSizerForType(c, t)
-  }
+  val insertSizes = datasetContext.fullSchema.transform(insertSizerForType)
 
   def sizeofDelete = 8
 
@@ -67,9 +63,7 @@ class PerfDataSqlizer(tableBase: String, val datasetContext: DatasetContext[Perf
       total + insertSizes(c)(v)
     }
 
-  val mapToPhysical = Map.empty[String, String] ++ datasetContext.systemSchema.keys.map { k => k -> k.substring(1) } ++ datasetContext.userSchema.keys.map { k =>
-    k -> ("u_" + k)
-  }
+  def mapToPhysical(columnId: ColumnId) = "c_" + columnId
 
   val logicalColumns = datasetContext.fullSchema.keys.toArray
   val physicalColumns = logicalColumns.map(mapToPhysical)
@@ -106,7 +100,7 @@ class PerfDataSqlizer(tableBase: String, val datasetContext: DatasetContext[Perf
     def reader: java.io.Reader = new StringBuilderReader(sb)
   }
 
-  def csvize(sb: java.lang.StringBuilder, k: String, v: PerfValue) = {
+  def csvize(sb: java.lang.StringBuilder, k: ColumnId, v: PerfValue) = {
     v match {
       case PVText(s) =>
         sb.append('"')
@@ -147,7 +141,7 @@ class PerfDataSqlizer(tableBase: String, val datasetContext: DatasetContext[Perf
   }
 
   def sqlizeSystemIdUpdate(sid: Long, row: Row[PerfValue]) =
-    "UPDATE " + dataTableName + " SET " + row.map { case (col, v) => mapToPhysical(col) + " = " + v.sqlize }.mkString(",") + " WHERE id = " + sid
+    "UPDATE " + dataTableName + " SET " + row.iterator.map { case (col, v) => mapToPhysical(col) + " = " + v.sqlize }.mkString(",") + " WHERE id = " + sid
 
   val prepareUserIdDeleteStatement =
     "DELETE FROM " + dataTableName + " WHERE " + pkCol + " = ?"
@@ -172,9 +166,9 @@ class PerfDataSqlizer(tableBase: String, val datasetContext: DatasetContext[Perf
   }
 
   def sqlizeUserIdUpdate(row: Row[PerfValue]) =
-    "UPDATE " + dataTableName + " SET " + row.map { case (col, v) => mapToPhysical(col) + " = " + v.sqlize }.mkString(",") + " WHERE " + pkCol + " = " + row(datasetContext.primaryKeyColumn).sqlize
+    "UPDATE " + dataTableName + " SET " + row.iterator.map { case (col, v) => mapToPhysical(col) + " = " + v.sqlize }.mkString(",") + " WHERE " + pkCol + " = " + row(datasetContext.primaryKeyColumn).sqlize
 
-  val findSystemIdsPrefix = "SELECT id as sid, " + pkCol + " as uid FROM " + dataTableName + " WHERE "
+  val findSystemIdsPrefix = "SELECT c_" + datasetContext.systemIdColumnName + " as sid, " + pkCol + " as uid FROM " + dataTableName + " WHERE "
 
   def findSystemIds(conn: Connection, ids: Iterator[PerfValue]): CloseableIterator[Seq[IdPair[PerfValue]]] = {
     val typ = datasetContext.userSchema(datasetContext.userPrimaryKeyColumn.getOrElse(sys.error("findSystemIds called without a user primary key")))

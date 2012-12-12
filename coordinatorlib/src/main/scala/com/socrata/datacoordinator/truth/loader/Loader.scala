@@ -47,7 +47,7 @@ trait Report[CV] {
 
 sealed abstract class Failure[+CV]
 case object NullPrimaryKey extends Failure[Nothing]
-case class SystemColumnsSet(names: Set[String]) extends Failure[Nothing]
+case class SystemColumnsSet(names: Set[ColumnId]) extends Failure[Nothing]
 case class NoSuchRowToDelete[CV](id: CV) extends Failure[CV]
 case class NoSuchRowToUpdate[CV](id: CV) extends Failure[CV]
 case object NoPrimaryKey extends Failure[Nothing]

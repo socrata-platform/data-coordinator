@@ -1,11 +1,14 @@
-package com.socrata.datacoordinator.truth.reader.sql
+package com.socrata.datacoordinator
+package truth.reader.sql
 
 import com.socrata.datacoordinator.truth.sql.{SqlColumnReadRep, SqlPKableColumnReadRep}
 import java.sql.{PreparedStatement, ResultSet}
 import java.lang.StringBuilder
 
-class IdRep(val base: String) extends SqlPKableColumnReadRep[TestColumnType, TestColumnValue] {
+class IdRep(cid: ColumnId) extends SqlPKableColumnReadRep[TestColumnType, TestColumnValue] {
   def representedType = IdType
+
+  val base = "c_" + cid
 
   def physColumns = Array(base)
 
@@ -34,8 +37,10 @@ class IdRep(val base: String) extends SqlPKableColumnReadRep[TestColumnType, Tes
   def equalityIndexExpression = base
 }
 
-class NumberRep(val base: String) extends SqlColumnReadRep[TestColumnType, TestColumnValue] {
+class NumberRep(val cid: ColumnId) extends SqlColumnReadRep[TestColumnType, TestColumnValue] {
   def representedType = NumberType
+
+  val base = "c_" + cid
 
   def physColumns = Array(base)
 
@@ -48,8 +53,10 @@ class NumberRep(val base: String) extends SqlColumnReadRep[TestColumnType, TestC
   }
 }
 
-class StringRep(val base: String) extends SqlPKableColumnReadRep[TestColumnType, TestColumnValue] {
+class StringRep(val cid: ColumnId) extends SqlPKableColumnReadRep[TestColumnType, TestColumnValue] {
   def representedType = StringType
+
+  val base = "c_" + cid
 
   def physColumns = Array(base)
 

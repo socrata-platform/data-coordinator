@@ -8,6 +8,7 @@ import com.rojoma.simplearm.util._
 import truth.{RowIdMap, DatasetContext}
 import java.sql.{DriverManager, Connection}
 import truth.sql.SqlColumnReadRep
+import util.LongLikeMap
 
 class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
   override def beforeAll() {
@@ -18,24 +19,24 @@ class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
     Class.forName("org.h2.Driver")
   }
 
-  def datasetContext(schema: Map[String, TestColumnType]) = new DatasetContext[TestColumnType, TestColumnValue] {
+  def datasetContext(schema: LongLikeMap[ColumnId, TestColumnType]) = new DatasetContext[TestColumnType, TestColumnValue] {
     def hasCopy = false
 
     val userSchema = schema
 
-    val userPrimaryKeyColumn = if(schema.contains("pk")) Some("pk") else None
+    val userPrimaryKeyColumn = if(schema.contains(100L)) Some(100L) else None
 
     def userPrimaryKey(row: Row[TestColumnValue]) = row.get(userPrimaryKeyColumn.get)
 
-    def systemId(row: Row[TestColumnValue]) = row.get(":id").map(_.asInstanceOf[IdValue].value)
+    def systemId(row: Row[TestColumnValue]) = row.get(0L).map(_.asInstanceOf[IdValue].value)
 
-    def systemIdAsValue(row: Row[TestColumnValue]) = row.get(":id")
+    def systemIdAsValue(row: Row[TestColumnValue]) = row.get(0L)
 
-    def systemColumns(row: Row[TestColumnValue]) = row.keySet.filter(_.startsWith(":"))
+    def systemColumns(row: Row[TestColumnValue]) = row.keySet.filter(_ != 0L).toSet
 
-    val systemSchema = Map(":id" -> IdType)
+    val systemSchema = LongLikeMap[ColumnId, TestColumnType](0L -> IdType)
 
-    def systemIdColumnName = ":id"
+    def systemIdColumnName = 0L
 
     val fullSchema = userSchema ++ systemSchema
 
@@ -74,22 +75,24 @@ class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
 
   def managedConn = managed(DriverManager.getConnection("jdbc:h2:mem:"))
 
-  def repSchemaBuilder(schema: Map[String, TestColumnType]): Map[String, SqlColumnReadRep[TestColumnType, TestColumnValue]] = {
-    schema.map { case (k, v) =>
-      k -> (v match {
-        case IdType => new IdRep("id")
+  def repSchemaBuilder(schema: LongLikeMap[ColumnId, TestColumnType]): LongLikeMap[ColumnId, SqlColumnReadRep[TestColumnType, TestColumnValue]] = {
+    val res = new LongLikeMap[ColumnId, SqlColumnReadRep[TestColumnType, TestColumnValue]]
+    for((k, v) <- schema.iterator) {
+      res += k -> (v match {
+        case IdType => new IdRep(0L)
         case NumberType => new NumberRep(k)
         case StringType => new StringRep(k)
       })
     }
+    res
   }
 
   val tableName = "tab"
 
-  def create(conn: Connection, schema: Map[String, TestColumnType]) {
-    val sb = new StringBuilder("CREATE TABLE ").append(tableName).append(" (id BIGINT NOT NULL PRIMARY KEY")
-    for((k, v) <- schema) {
-      sb.append(",").append(k).append(" ")
+  def create(conn: Connection, schema: LongLikeMap[ColumnId, TestColumnType]) {
+    val sb = new StringBuilder("CREATE TABLE ").append(tableName).append(" (c_0 BIGINT NOT NULL PRIMARY KEY")
+    for((k, v) <- schema.iterator) {
+      sb.append(",").append("c_" + k).append(" ")
       val typ = v match {
         case StringType => "VARCHAR(255)"
         case NumberType => "BIGINT"
@@ -104,10 +107,10 @@ class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
     }
   }
 
-  def load(conn: Connection)(rows: Seq[(String, TestColumnValue)]*) {
+  def load(conn: Connection)(rows: Seq[(Long, TestColumnValue)]*) {
     using(conn.createStatement()) { stmt =>
       for(row <- rows) {
-        val sb = new StringBuilder("INSERT INTO ").append(tableName).append(" (").append(row.map(_._1).mkString(",")).append(") VALUES (")
+        val sb = new StringBuilder("INSERT INTO ").append(tableName).append(" (").append(row.iterator.map(c => "c_" + c._1).mkString(",")).append(") VALUES (")
         val vals = row.map(_._2).map {
           case IdValue(v) => v
           case NumberValue(v) => v
@@ -121,33 +124,33 @@ class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
   }
 
   def stdSidTable(conn: Connection) = {
-    val schema = Map(
-      "str" -> StringType,
-      "num" -> NumberType
+    val schema = LongLikeMap[ColumnId, TestColumnType](
+      1L -> StringType,
+      2L -> NumberType
     )
     create(conn, schema)
     load(conn)(
-      List("id" -> IdValue(1), "str" -> StringValue("a"), "num" -> NumberValue(1000)),
-      List("id" -> IdValue(2), "str" -> NullValue, "num" -> NumberValue(1001)),
-      List("id" -> IdValue(3), "str" -> StringValue("b"), "num" -> NullValue),
-      List("id" -> IdValue(4), "str" -> NullValue, "num" -> NullValue)
+      List(0L -> IdValue(1), 1L -> StringValue("a"), 2L -> NumberValue(1000)),
+      List(0L -> IdValue(2), 1L -> NullValue, 2L -> NumberValue(1001)),
+      List(0L -> IdValue(3), 1L -> StringValue("b"), 2L -> NullValue),
+      List(0L -> IdValue(4), 1L -> NullValue, 2L -> NullValue)
     )
 
     managed(new SqlReader(conn, tableName, datasetContext(schema), TestTypeContext, repSchemaBuilder, blockSize = 3))
   }
 
   def stdUidTable(conn: Connection) = {
-    val schema = Map(
-      "pk" -> StringType,
-      "str" -> StringType,
-      "num" -> NumberType
+    val schema = LongLikeMap[ColumnId, TestColumnType](
+      100L -> StringType,
+      1L -> StringType,
+      2L -> NumberType
     )
     create(conn, schema)
     load(conn)(
-      List("id" -> IdValue(1), "pk" -> StringValue("alpha"), "str" -> StringValue("a"), "num" -> NumberValue(1000)),
-      List("id" -> IdValue(2), "pk" -> StringValue("beta"), "str" -> NullValue, "num" -> NumberValue(1001)),
-      List("id" -> IdValue(3), "pk" -> StringValue("gamma"), "str" -> StringValue("b"), "num" -> NullValue),
-      List("id" -> IdValue(4), "pk" -> StringValue("delta"), "str" -> NullValue, "num" -> NullValue)
+      List(0L -> IdValue(1), 100L -> StringValue("alpha"), 1L -> StringValue("a"), 2L -> NumberValue(1000)),
+      List(0L -> IdValue(2), 100L -> StringValue("beta"), 1L -> NullValue, 2L -> NumberValue(1001)),
+      List(0L -> IdValue(3), 100L -> StringValue("gamma"), 1L -> StringValue("b"), 2L -> NullValue),
+      List(0L -> IdValue(4), 100L -> StringValue("delta"), 1L -> NullValue, 2L -> NullValue)
     )
 
     managed(new SqlReader(conn, tableName, datasetContext(schema), TestTypeContext, repSchemaBuilder, blockSize = 3))
@@ -157,13 +160,13 @@ class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
     for {
       conn <- managedConn
       r <- stdSidTable(conn)
-      rows <- managed(r.lookupBySystemId(Set("str"), Iterator(4,3,2,1)))
+      rows <- managed(r.lookupBySystemId(Set(1L), Iterator(4,3,2,1)))
     } {
       rows.flatten.toList must equal (List(
-        4 -> Some(Map("str" -> NullValue)),
-        3 -> Some(Map("str" -> StringValue("b"))),
-        2 -> Some(Map("str" -> NullValue)),
-        1 -> Some(Map("str" -> StringValue("a")))
+        4 -> Some(LongLikeMap(1L -> NullValue)),
+        3 -> Some(LongLikeMap(1L -> StringValue("b"))),
+        2 -> Some(LongLikeMap(1L -> NullValue)),
+        1 -> Some(LongLikeMap(1L -> StringValue("a")))
       ))
     }
   }
@@ -172,10 +175,10 @@ class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
     for {
       conn <- managedConn
       r <- stdSidTable(conn)
-      rows <- managed(r.lookupBySystemId(Set("str","num"), Iterator(2)))
+      rows <- managed(r.lookupBySystemId(Set(1L, 2L), Iterator(2)))
     } {
       rows.flatten.toList must equal (List(
-        2 -> Some(Map("str" -> NullValue, "num" -> NumberValue(1001)))
+        2 -> Some(LongLikeMap(1L -> NullValue, 2L -> NumberValue(1001)))
       ))
     }
   }
@@ -184,13 +187,13 @@ class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
     for {
       conn <- managedConn
       r <- stdSidTable(conn)
-      rows <- managed(r.lookupBySystemId(Set("str"), Iterator(4,99,98,1)))
+      rows <- managed(r.lookupBySystemId(Set(1L), Iterator(4,99,98,1)))
     } {
       rows.flatten.toList must equal (List(
-        4 -> Some(Map("str" -> NullValue)),
+        4 -> Some(LongLikeMap(1L -> NullValue)),
         99 -> None,
         98 -> None,
-        1 -> Some(Map("str" -> StringValue("a")))
+        1 -> Some(LongLikeMap(1L -> StringValue("a")))
       ))
     }
   }
@@ -199,13 +202,13 @@ class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
     for {
       conn <- managedConn
       r <- stdUidTable(conn)
-      rows <- managed(r.lookupByUserId(Set("str"), Iterator("delta", "gamma", "beta", "alpha").map(StringValue(_))))
+      rows <- managed(r.lookupByUserId(Set(1L), Iterator("delta", "gamma", "beta", "alpha").map(StringValue(_))))
     } {
       rows.flatten.toList must equal (List(
-        StringValue("delta") -> Some(Map("str" -> NullValue)),
-        StringValue("gamma") -> Some(Map("str" -> StringValue("b"))),
-        StringValue("beta") -> Some(Map("str" -> NullValue)),
-        StringValue("alpha") -> Some(Map("str" -> StringValue("a")))
+        StringValue("delta") -> Some(LongLikeMap(1L -> NullValue)),
+        StringValue("gamma") -> Some(LongLikeMap(1L -> StringValue("b"))),
+        StringValue("beta") -> Some(LongLikeMap(1L -> NullValue)),
+        StringValue("alpha") -> Some(LongLikeMap(1L -> StringValue("a")))
       ))
     }
   }
@@ -214,10 +217,10 @@ class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
     for {
       conn <- managedConn
       r <- stdUidTable(conn)
-      rows <- managed(r.lookupByUserId(Set("str","num"), Iterator(StringValue("beta"))))
+      rows <- managed(r.lookupByUserId(Set(1L,2L), Iterator(StringValue("beta"))))
     } {
       rows.flatten.toList must equal (List(
-        StringValue("beta") -> Some(Map("str" -> NullValue, "num" -> NumberValue(1001)))
+        StringValue("beta") -> Some(LongLikeMap(1L -> NullValue, 2L -> NumberValue(1001)))
       ))
     }
   }
@@ -226,13 +229,13 @@ class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
     for {
       conn <- managedConn
       r <- stdUidTable(conn)
-      rows <- managed(r.lookupByUserId(Set("str"), Iterator("delta", "psi", "omega", "alpha").map(StringValue(_))))
+      rows <- managed(r.lookupByUserId(Set(1L), Iterator("delta", "psi", "omega", "alpha").map(StringValue(_))))
     } {
       rows.flatten.toList must equal (List(
-        StringValue("delta") -> Some(Map("str" -> NullValue)),
+        StringValue("delta") -> Some(LongLikeMap(1L -> NullValue)),
         StringValue("psi") -> None,
         StringValue("omega") -> None,
-        StringValue("alpha") -> Some(Map("str" -> StringValue("a")))
+        StringValue("alpha") -> Some(LongLikeMap(1L -> StringValue("a")))
       ))
     }
   }

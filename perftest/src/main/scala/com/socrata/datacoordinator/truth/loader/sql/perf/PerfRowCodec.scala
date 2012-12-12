@@ -4,7 +4,7 @@ package sql
 package perf
 
 import com.socrata.datacoordinator.truth.{UnknownDataTypeException, RowLogCodec}
-import gnu.trove.map.hash.{TObjectIntHashMap, TIntObjectHashMap}
+import gnu.trove.map.hash.{TLongIntHashMap, TIntLongHashMap, TObjectIntHashMap, TIntObjectHashMap}
 import gnu.trove.impl.Constants
 
 import com.google.protobuf.{CodedInputStream, CodedOutputStream, InvalidProtocolBufferException}
@@ -14,26 +14,26 @@ class PerfRowCodec extends RowLogCodec[PerfValue] {
 
   val UTF8 = scala.io.Codec.UTF8
 
-  private val colNameReadCache = new TIntObjectHashMap[String]
-  private val colNameWriteCache = new TObjectIntHashMap[String](Constants.DEFAULT_CAPACITY, Constants.DEFAULT_LOAD_FACTOR, -1)
+  private val colNameReadCache = new TIntLongHashMap(Constants.DEFAULT_CAPACITY, Constants.DEFAULT_LOAD_FACTOR, -1, -1)
+  private val colNameWriteCache = new TLongIntHashMap(Constants.DEFAULT_CAPACITY, Constants.DEFAULT_LOAD_FACTOR, -1, -1)
 
-  private def writeKey(target: CodedOutputStream, key: String) {
+  private def writeKey(target: CodedOutputStream, key: ColumnId) {
     val cached = colNameWriteCache.get(key)
     if(cached == -1) {
       val id = colNameWriteCache.size()
       colNameWriteCache.put(key, id)
       target.writeInt32NoTag(id)
-      target.writeStringNoTag(key)
+      target.writeInt64NoTag(key)
     } else {
       target.writeInt32NoTag(cached)
     }
   }
 
-  private def readKey(source: CodedInputStream): String = {
+  private def readKey(source: CodedInputStream): ColumnId = {
     val id = source.readInt32()
     val cached = colNameReadCache.get(id)
-    if(cached == null) {
-      val key = source.readString()
+    if(cached == -1) {
+      val key = source.readInt64()
       colNameReadCache.put(id, key)
       key
     } else {
@@ -43,7 +43,11 @@ class PerfRowCodec extends RowLogCodec[PerfValue] {
 
   protected def encode(target: CodedOutputStream, row: Row[PerfValue]) {
     target.writeInt32NoTag(row.size)
-    for((k,v) <- row) {
+    val it = row.iterator
+    while(it.hasNext) {
+      it.advance()
+      val k = it.key
+      val v = it.value
       writeKey(target, k)
       v match {
         case PVId(i) =>
@@ -63,8 +67,7 @@ class PerfRowCodec extends RowLogCodec[PerfValue] {
 
   protected def decode(source: CodedInputStream) = {
     val count = source.readInt32()
-    val result = Map.newBuilder[String, PerfValue]
-    result.sizeHint(count)
+    val result = new Row[PerfValue]
     for(i <- 0 until count) {
       val k = readKey(source)
       val v = source.readRawByte() match {
@@ -79,8 +82,8 @@ class PerfRowCodec extends RowLogCodec[PerfValue] {
         case other =>
           throw new UnknownDataTypeException(other)
       }
-      result += k -> v
+      result(k) = v
     }
-    result.result()
+    result
   }
 }

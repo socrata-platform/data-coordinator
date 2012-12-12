@@ -203,15 +203,15 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: Dat
     if(pendingErrors != null) { errors.putAll(pendingErrors); pendingErrors = null }
   }
 
-  def findSids(ops: Iterator[OperationLog[CV]]): RowIdMap[CV, Long] = {
+  def findSids(ops: Iterator[OperationLog[CV]]): RowIdMap[CV, RowId] = {
     using(sqlizer.findSystemIds(connection, ops.map(_.id))) { blocks =>
-      val target = datasetContext.makeIdMap[Long]()
+      val target = datasetContext.makeIdMap[RowId]()
       for(idPair <- blocks.flatten) target.put(idPair.userId, idPair.systemId)
       target
     }
   }
 
-  def processDeletes(sidSource: RowIdMap[CV, Long], deleteSizeX: Int, deletes: java.util.ArrayList[OperationLog[CV]], errors: TIntObjectHashMap[Failure[CV]]): TIntObjectHashMap[CV] = {
+  def processDeletes(sidSource: RowIdMap[CV, RowId], deleteSizeX: Int, deletes: java.util.ArrayList[OperationLog[CV]], errors: TIntObjectHashMap[Failure[CV]]): TIntObjectHashMap[CV] = {
     var deleteSize = deleteSizeX
     var resultMap: TIntObjectHashMap[CV] = null
     if(!deletes.isEmpty) {
@@ -253,13 +253,13 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: Dat
     var insertSize = insertSizeX
     var resultMap: TIntObjectHashMap[CV] = null
     if(!inserts.isEmpty) {
-      val sids = new Array[Long](inserts.size)
+      val sids = new Array[RowId](inserts.size)
       val insertedCount = sqlizer.insertBatch(connection) { inserter =>
         var i = 0
         do {
           val op = inserts.get(i)
           assert(op.hasUpsertJob, "No upsert job?")
-          val sid = idProvider.allocate()
+          val sid = RowId(idProvider.allocate())
           sids(i) = sid
           op.upsertedRow = rowPreparer.prepareForInsert(op.upsertedRow, sid)
           inserter.insert(sid, op.upsertedRow)
@@ -282,7 +282,7 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: Dat
     resultMap
   }
 
-  def processUpdates(sidSource: RowIdMap[CV, Long], updates: java.util.ArrayList[OperationLog[CV]]): TIntObjectHashMap[CV] = {
+  def processUpdates(sidSource: RowIdMap[CV, RowId], updates: java.util.ArrayList[OperationLog[CV]]): TIntObjectHashMap[CV] = {
     var resultMap: TIntObjectHashMap[CV] = null
     if(!updates.isEmpty) {
       using(connection.createStatement()) { stmt =>

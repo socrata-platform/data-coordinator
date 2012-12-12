@@ -6,14 +6,11 @@ package perf
 import scala.collection.JavaConverters._
 
 import com.socrata.datacoordinator.truth.{RowIdMap, DatasetContext}
+import util.LongLikeMap
 
-class PerfDatasetContext(val userSchema: Map[String, PerfType], val userPrimaryKeyColumn: Option[String]) extends DatasetContext[PerfType, PerfValue] {
+class PerfDatasetContext(val userSchema: LongLikeMap[ColumnId, PerfType], val systemIdColumnName: ColumnId, val userPrimaryKeyColumn: Option[ColumnId]) extends DatasetContext[PerfType, PerfValue] {
   userPrimaryKeyColumn.foreach { pkCol =>
     require(userSchema.contains(pkCol), "PK col defined but does not exist in the schema")
-  }
-
-  userSchema.keys.foreach { col =>
-    require(!col.startsWith(":"), "User schema column starts with :")
   }
 
   def hasCopy = sys.error("hasCopy called")
@@ -28,12 +25,14 @@ class PerfDatasetContext(val userSchema: Map[String, PerfType], val userPrimaryK
 
   def systemIdAsValue(row: Row[PerfValue]) = row.get(systemIdColumnName)
 
-  def systemColumns(row: Row[PerfValue]) = row.keySet.filter(_.startsWith(":"))
-  val systemSchema = PerfDatasetContext.systemSchema
+  def systemColumns(row: Row[PerfValue]) = row.keySet.filter(systemSchema.contains).toSet
+  val systemSchema = locally {
+    val tmp = new LongLikeMap[ColumnId, PerfType]
+    tmp(systemIdColumnName) = PTId
+    tmp
+  }
 
   val fullSchema = userSchema ++ systemSchema
-
-  def systemIdColumnName = ":id"
 
   def mergeRows(a: Row[PerfValue], b: Row[PerfValue]) = a ++ b
 
@@ -64,8 +63,4 @@ class PerfDatasetContext(val userSchema: Map[String, PerfType], val userPrimaryK
       def valuesIterator = m.values.iterator.asScala
     }
   }
-}
-
-object PerfDatasetContext {
-  val systemSchema = Map(":id" -> PTId)
 }

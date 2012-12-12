@@ -34,11 +34,11 @@ class TestDataLogger(conn: Connection, dataSqlizer: DataSqlizer[TestColumnType, 
   }
 
   def insert(systemID: Long, row: Row[TestColumnValue]) {
-    list += JObject(Map("i" -> JsonCodec.toJValue(SortedMap(row.toSeq : _*))))
+    list += JObject(Map("i" -> JsonCodec.toJValue(SortedMap(row.toSeq : _*).map { kv => kv._1.toString -> kv._2 })))
   }
 
   def update(sid: Long, row: Row[TestColumnValue]) {
-    list += JObject(Map("u" -> JsonCodec.toJValue(SortedMap(row.toSeq : _*))))
+    list += JObject(Map("u" -> JsonCodec.toJValue(SortedMap(row.toSeq : _*).map { kv => kv._1.toString -> kv._2 })))
   }
 
   def delete(systemID: Long) {

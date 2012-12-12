@@ -14,8 +14,9 @@ import com.rojoma.json.codec.JsonCodec
 import com.rojoma.json.ast.{JValue, JNull, JNumber, JString}
 import java.util.zip.GZIPInputStream
 import com.socrata.id.numeric.{InMemoryBlockIdProvider, FixedSizeIdProvider, PushbackIdProvider}
-import com.socrata.datacoordinator.util.IdProviderPoolImpl
+import util.{Counter, LongLikeMap, IdProviderPoolImpl}
 import com.socrata.datacoordinator.truth.loader.sql.SqlLoader
+import gnu.trove.map.hash.TLongObjectHashMap
 
 class ExecutePlan
 
@@ -43,7 +44,7 @@ object ExecutePlan {
         val idProvider = new IdProviderPoolImpl(new InMemoryBlockIdProvider(releasable = false), new FixedSizeIdProvider(_, 1000))
         for {
           planReader <- managed(new BufferedReader(new InputStreamReader(new GZIPInputStream(new FileInputStream(planFile)), "UTF-8")))
-          conn <- managed(DriverManager.getConnection("jdbc:postgresql:robertm", "robertm", "lof9afw3"))
+          conn <- managed(DriverManager.getConnection("jdbc:postgresql://10.0.5.104:5432/robertm", "robertm", "lof9afw3"))
         } yield {
           val plan = new JsonReader(new JsonEventIterator(new BlockJsonTokenIterator(planReader, blockSize = 10240)))
           implicit def connImplict = conn
@@ -52,24 +53,34 @@ object ExecutePlan {
           executeDDL("DROP TABLE IF EXISTS perf_data")
           executeDDL("DROP TABLE IF EXISTS perf_log")
           val schema = JsonCodec.fromJValue[Map[String, String]](plan.read()).getOrElse(sys.error("Cannot read schema"))
-          val createSql = schema.toSeq.map { case (col, typ) => "u_" + col + " " + typ }.mkString("CREATE TABLE perf_data (id bigint not null primary key,",",",")")
+
+          val schemaCtr = new Counter
+          val schemaIdMap = schema.map { case (k, v) => k -> ColumnId(schemaCtr()) }
+          val idColumnId = ColumnId(schemaCtr())
+          val cId = "c_" + idColumnId
+          val cUid = "c_" + schemaIdMap("uid")
+
+          val createSql = schema.toSeq.map { case (col, typ) => "c_" + schemaIdMap(col) + " " + typ }.mkString("CREATE TABLE perf_data (" + cId + " bigint not null primary key,",",",")")
           log.info(createSql)
           executeDDL(createSql)
-          executeDDL("ALTER TABLE perf_data ALTER COLUMN u_uid SET NOT NULL")
-          executeDDL("CREATE UNIQUE INDEX perf_data_uid ON perf_data(u_uid)")
+          executeDDL("ALTER TABLE perf_data ALTER COLUMN " + cUid + " SET NOT NULL")
+          executeDDL("CREATE UNIQUE INDEX perf_data_uid ON perf_data(" + cUid + ")")
           executeDDL("ALTER TABLE perf_data ADD UNIQUE USING INDEX perf_data_uid")
           executeDDL("CREATE TABLE perf_log (version bigint not null, subversion bigint not null, what varchar(16) not null, aux bytea not null, primary key (version, subversion))")
 
-          val userSchema = schema.mapValues {
-            case "TEXT" => PTText
-            case "NUMERIC" => PTNumber
-          }.toMap
-          val datasetContext = new PerfDatasetContext(userSchema, Some("uid"))
+          val userSchema = new LongLikeMap[ColumnId, PerfType](schema.map {
+            case (k, "TEXT") => schemaIdMap(k) -> PTText
+            case (k, "NUMERIC") => schemaIdMap(k) -> PTNumber
+          })
+          val datasetContext = new PerfDatasetContext(userSchema, idColumnId, Some(schemaIdMap("uid")))
           val sqlizer = new PerfDataSqlizer("perf", datasetContext)
 
           val rowPreparer = new RowPreparer[PerfValue] {
-            def prepareForInsert(row: Row[PerfValue], systemId: Long) =
-              row + (datasetContext.systemIdColumnName -> PVId(systemId))
+            def prepareForInsert(row: Row[PerfValue], systemId: Long) = {
+              val newRow = new LongLikeMap(row)
+              newRow(datasetContext.systemIdColumnName) = PVId(systemId)
+              newRow
+            }
 
             def prepareForUpdate(row: Row[PerfValue]) =
               row
@@ -128,7 +139,7 @@ object ExecutePlan {
                   }
                 }
               }
-              copier.copyIn("COPY perf_data (id," + schema.keys.toSeq.map("u_"+).mkString(",") + ") from stdin with csv", reader)
+              copier.copyIn("COPY perf_data (" + cId + "," + schema.keys.toSeq.map(c => "c_"+schemaIdMap(c)).mkString(",") + ") from stdin with csv", reader)
               time("Committing prepopulation") {
                 conn.commit()
               }
@@ -145,18 +156,19 @@ object ExecutePlan {
           def convertValue(field: String, in: JValue): PerfValue = {
             if(in == JNull) PVNull
             else {
-              userSchema(field) match {
+              userSchema(schemaIdMap(field)) match {
                 case PTText => PVText(in.asInstanceOf[JString].string)
                 case PTNumber => PVNumber(in.asInstanceOf[JNumber].number)
               }
             }
           }
 
-          def convert(row: sc.Map[String, JValue]): Map[String, PerfValue] = {
-            row.foldLeft(Map.empty[String, PerfValue]) { (result, kv) =>
-              val (k,v) = kv
-              result + (k -> convertValue(k, v))
+          def convert(row: sc.Map[String, JValue]): Row[PerfValue] = {
+            val result = new Row[PerfValue]
+            for((k, v) <- row) {
+              result(schemaIdMap(k)) = convertValue(k, v)
             }
+            result
           }
 
           val start = System.nanoTime()

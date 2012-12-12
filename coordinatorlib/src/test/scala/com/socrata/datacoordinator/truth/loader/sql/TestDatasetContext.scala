@@ -5,14 +5,11 @@ package sql
 import scala.collection.JavaConverters._
 
 import com.socrata.datacoordinator.truth.{RowIdMap, DatasetContext}
+import util.LongLikeMap
 
-class TestDatasetContext(val userSchema: Map[String, TestColumnType], val userPrimaryKeyColumn: Option[String]) extends DatasetContext[TestColumnType, TestColumnValue] {
+class TestDatasetContext(val userSchema: LongLikeMap[ColumnId, TestColumnType], val systemIdColumnName: ColumnId, val userPrimaryKeyColumn: Option[ColumnId]) extends DatasetContext[TestColumnType, TestColumnValue] {
   userPrimaryKeyColumn.foreach { pkCol =>
     require(userSchema.contains(pkCol), "PK col defined but does not exist in the schema")
-  }
-
-  userSchema.keys.foreach { col =>
-    require(!col.startsWith(":"), "User schema column starts with :")
   }
 
   def hasCopy = sys.error("hasCopy called")
@@ -27,12 +24,10 @@ class TestDatasetContext(val userSchema: Map[String, TestColumnType], val userPr
 
   def systemIdAsValue(row: Row[TestColumnValue]) = row.get(systemIdColumnName)
 
-  def systemColumns(row: Row[TestColumnValue]) = row.keySet.filter(_.startsWith(":"))
-  val systemSchema = TestDatasetContext.systemSchema
+  def systemColumns(row: Row[TestColumnValue]) = row.keySet.filter(systemSchema.contains).toSet
+  val systemSchema = LongLikeMap[ColumnId, TestColumnType](systemIdColumnName -> LongColumn)
 
   val fullSchema = userSchema ++ systemSchema
-
-  def systemIdColumnName = ":id"
 
   def mergeRows(a: Row[TestColumnValue], b: Row[TestColumnValue]) = a ++ b
 
@@ -63,8 +58,4 @@ class TestDatasetContext(val userSchema: Map[String, TestColumnType], val userPr
       def valuesIterator = m.values().iterator.asScala
     }
   }
-}
-
-object TestDatasetContext {
-  val systemSchema = Map(":id" -> LongColumn)
 }

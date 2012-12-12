@@ -40,15 +40,15 @@ class TestDataSqlizer(tableBase: String, user: String, val datasetContext: Datas
     }
   }
 
-  def updateSizerForType(c: String, t: TestColumnType) = sizerFrom(c.length, t)
-  def insertSizerForType(c: String, t: TestColumnType) = sizerFrom(0, t)
+  def updateSizerForType(c: ColumnId, t: TestColumnType) = sizerFrom(8, t)
+  def insertSizerForType(c: ColumnId, t: TestColumnType) = sizerFrom(0, t)
 
-  val updateSizes = datasetContext.fullSchema.map { case (c, t) =>
-    c -> updateSizerForType(c, t)
+  val updateSizes = datasetContext.fullSchema.transform { (c, t) =>
+    updateSizerForType(c, t)
   }
 
-  val insertSizes = datasetContext.fullSchema.map { case (c, t) =>
-    c -> insertSizerForType(c, t)
+  val insertSizes = datasetContext.fullSchema.transform { (c, t) =>
+    insertSizerForType(c, t)
   }
 
   def sizeofDelete = sizeof(0L)
@@ -66,14 +66,7 @@ class TestDataSqlizer(tableBase: String, user: String, val datasetContext: Datas
       total + insertSizes(c)(v)
     }
 
-  def mapToPhysical(column: String): String =
-    if(datasetContext.systemSchema.contains(column)) {
-      column.substring(1)
-    } else if(datasetContext.userSchema.contains(column)) {
-      "u_" + column
-    } else {
-      sys.error("unknown column " + column)
-    }
+  def mapToPhysical(column: ColumnId): String = "c_" + column
 
   val keys = datasetContext.fullSchema.keys.toSeq
   val columns = keys.map(mapToPhysical)
@@ -98,7 +91,7 @@ class TestDataSqlizer(tableBase: String, user: String, val datasetContext: Datas
   class InserterImpl(conn: Connection) extends Inserter with Closeable {
     val stmt = conn.prepareStatement("INSERT INTO " + dataTableName + "(" + columns.mkString(",") + ") SELECT " + columns.map(_ => "?").mkString(",") + " WHERE NOT EXISTS (SELECT 1 FROM " + dataTableName + " WHERE " + pkCol + " = ?)")
 
-    def insert(sid: Long, row: Row[TestColumnValue]) {
+    def insert(sid: RowId, row: Row[TestColumnValue]) {
       var i = 1
       val it = keys.iterator
       while(it.hasNext) {
@@ -115,7 +108,7 @@ class TestDataSqlizer(tableBase: String, user: String, val datasetContext: Datas
     }
   }
 
-  def csvize(sb: java.lang.StringBuilder, k: String, v: TestColumnValue) = {
+  def csvize(sb: java.lang.StringBuilder, k: ColumnId, v: TestColumnValue) = {
     v match {
       case StringValue(s) =>
         sb.append('"')
@@ -166,7 +159,7 @@ class TestDataSqlizer(tableBase: String, user: String, val datasetContext: Datas
     add(stmt, 1, c, id)
   }
 
-  def add(stmt: PreparedStatement, i: Int, k: String, v: TestColumnValue) {
+  def add(stmt: PreparedStatement, i: Int, k: ColumnId, v: TestColumnValue) {
     datasetContext.fullSchema(k) match {
       case StringColumn =>
         v match {
@@ -187,7 +180,7 @@ class TestDataSqlizer(tableBase: String, user: String, val datasetContext: Datas
     sqlizeUserIdUpdate(row)
 
   def sqlizeUserIdUpdate(row: Row[TestColumnValue]) =
-    "UPDATE " + dataTableName + " SET " + (row - pkCol).map { case (col, v) => mapToPhysical(col) + " = " + v.sqlize }.mkString(",") + " WHERE " + pkCol + " = " + row(datasetContext.primaryKeyColumn).sqlize
+    "UPDATE " + dataTableName + " SET " + row.iterator.map { case (col, v) => mapToPhysical(col) + " = " + v.sqlize }.mkString(",") + " WHERE " + pkCol + " = " + row(datasetContext.primaryKeyColumn).sqlize
 
   // TODO: it is possible that grouping this differently will be more performant in Postgres
   // (e.g., having too many items in an IN clause might cause a full-table scan) -- we need
@@ -199,7 +192,7 @@ class TestDataSqlizer(tableBase: String, user: String, val datasetContext: Datas
     } else {
       for {
         stmt <- managed(conn.createStatement())
-        rs <- managed(stmt.executeQuery(ids.map(_.sqlize).mkString("SELECT id AS sid, " + pkCol + " AS uid FROM " + dataTableName + " WHERE " + pkCol + " IN (", ",", ")")))
+        rs <- managed(stmt.executeQuery(ids.map(_.sqlize).mkString("SELECT c_" + datasetContext.systemIdColumnName + " AS sid, " + pkCol + " AS uid FROM " + dataTableName + " WHERE " + pkCol + " IN (", ",", ")")))
       } yield {
         val buf = new mutable.ArrayBuffer[IdPair[TestColumnValue]]
         while(rs.next()) {
