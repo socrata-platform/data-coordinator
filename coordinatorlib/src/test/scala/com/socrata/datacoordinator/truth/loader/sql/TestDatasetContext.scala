@@ -7,7 +7,7 @@ import scala.collection.JavaConverters._
 import com.socrata.datacoordinator.truth.{RowIdMap, DatasetContext}
 import com.socrata.datacoordinator.util.collection.LongLikeMap
 
-class TestDatasetContext(val userSchema: LongLikeMap[ColumnId, TestColumnType], val systemIdColumnName: ColumnId, val userPrimaryKeyColumn: Option[ColumnId]) extends DatasetContext[TestColumnType, TestColumnValue] {
+class TestDatasetContext(val userSchema: LongLikeMap[ColumnId, TestColumnType], val systemIdColumn: ColumnId, val userPrimaryKeyColumn: Option[ColumnId]) extends DatasetContext[TestColumnType, TestColumnValue] {
   userPrimaryKeyColumn.foreach { pkCol =>
     require(userSchema.contains(pkCol), "PK col defined but does not exist in the schema")
   }
@@ -20,12 +20,12 @@ class TestDatasetContext(val userSchema: LongLikeMap[ColumnId, TestColumnType], 
   } yield value
 
   def systemId(row: Row[TestColumnValue]) =
-    row.get(systemIdColumnName).map(_.asInstanceOf[LongValue].value)
+    row.get(systemIdColumn).map(_.asInstanceOf[LongValue].value)
 
-  def systemIdAsValue(row: Row[TestColumnValue]) = row.get(systemIdColumnName)
+  def systemIdAsValue(row: Row[TestColumnValue]) = row.get(systemIdColumn)
 
   def systemColumns(row: Row[TestColumnValue]) = row.keySet.filter(systemSchema.contains).toSet
-  val systemSchema = LongLikeMap(systemIdColumnName -> LongColumn)
+  val systemSchema = LongLikeMap(systemIdColumn-> LongColumn)
 
   val fullSchema = userSchema ++ systemSchema
 

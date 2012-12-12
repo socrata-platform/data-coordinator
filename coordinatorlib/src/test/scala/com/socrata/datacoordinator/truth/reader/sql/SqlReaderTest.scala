@@ -37,7 +37,7 @@ class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
 
     val systemSchema = LongLikeMap[ColumnId, TestColumnType](0L -> IdType)
 
-    def systemIdColumnName = 0L
+    def systemIdColumn = 0L
 
     val fullSchema = userSchema ++ systemSchema
 

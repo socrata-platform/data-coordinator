@@ -82,9 +82,9 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
   def preload(conn: Connection, ctx: DataSqlizer[TestColumnType, TestColumnValue])(rows: Row[TestColumnValue]*) {
     makeTables(conn, ctx)
     for(row <- rows) {
-      val LongValue(id) = row.getOrElse(ctx.datasetContext.systemIdColumnName, sys.error("No :id"))
+      val LongValue(id) = row.getOrElse(ctx.datasetContext.systemIdColumn, sys.error("No :id"))
       val remainingColumns = new MutableRow[TestColumnValue](row)
-      remainingColumns -= ctx.datasetContext.systemIdColumnName
+      remainingColumns -= ctx.datasetContext.systemIdColumn
       assert(remainingColumns.keySet.toSet.subsetOf(ctx.datasetContext.userSchema.keySet.toSet), "row contains extraneous keys")
       val sql = "insert into " + ctx.dataTableName + " (" + idColName + "," + remainingColumns.keys.map("c_" + _).mkString(",") + ") values (" + id + "," + remainingColumns.values.map(_.sqlize).mkString(",") + ")"
       execute(conn, sql)

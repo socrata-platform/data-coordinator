@@ -78,7 +78,7 @@ object ExecutePlan {
           val rowPreparer = new RowPreparer[PerfValue] {
             def prepareForInsert(row: Row[PerfValue], systemId: Long) = {
               val newRow = new MutableLongLikeMap(row)
-              newRow(datasetContext.systemIdColumnName) = PVId(systemId)
+              newRow(datasetContext.systemIdColumn) = PVId(systemId)
               newRow.freeze()
             }
 

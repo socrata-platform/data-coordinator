@@ -24,7 +24,7 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
 {
   import SystemPKSqlLoader._
 
-  val primaryKey = datasetContext.systemIdColumnName
+  val systemIdColumn = datasetContext.systemIdColumn
 
   var pendingException: Throwable = null
   var pendingInsertResults: TIntObjectHashMap[CV] = null
@@ -38,7 +38,7 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
 
   def upsert(row: Row[CV]) {
     val job = nextJobNum()
-    row.get(primaryKey) match {
+    row.get(systemIdColumn) match {
       case Some(systemIdValue) => // update
         if(typeContext.isNull(systemIdValue)) {
           errors.put(job, NullPrimaryKey)
@@ -149,7 +149,7 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
   }
 
   def checkNoSystemColumnsExceptId(row: Row[CV]): Option[Failure[CV]] = {
-    val systemColumns = datasetContext.systemColumns(row) - primaryKey
+    val systemColumns = datasetContext.systemColumns(row) - systemIdColumn
     if(systemColumns.isEmpty) None
     else Some(SystemColumnsSet(systemColumns))
   }

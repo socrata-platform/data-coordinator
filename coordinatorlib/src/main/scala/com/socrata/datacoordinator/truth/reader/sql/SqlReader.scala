@@ -24,7 +24,7 @@ class SqlReader[CT, CV](connection: Connection,
   def close() {}
 
   private class SidIterator(columns: Seq[ColumnId], ids: Iterator[RowId]) extends CloseableIterator[Seq[(RowId, Option[Row[CV]])]] {
-    val sidRep = repSchema(datasetContext.systemIdColumnName).asInstanceOf[SqlPKableColumnReadRep[CT, CV]]
+    val sidRep = repSchema(datasetContext.systemIdColumn).asInstanceOf[SqlPKableColumnReadRep[CT, CV]]
     val underlying = new FastGroupedIterator(ids, blockSize)
     val selectPrefix = {
       val sb = new StringBuilder("SELECT ")

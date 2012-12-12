@@ -18,13 +18,13 @@ trait DatasetContext[CT, CV] {
 
   def systemColumns(row: Row[CV]): Set[ColumnId]
   def systemSchema: LongLikeMap[ColumnId, CT]
-  def systemIdColumnName: ColumnId
+  def systemIdColumn: ColumnId
 
   def fullSchema: LongLikeMap[ColumnId, CT]
 
   def makeIdMap[T](): RowIdMap[CV, T]
 
-  def primaryKeyColumn: ColumnId = userPrimaryKeyColumn.getOrElse(systemIdColumnName)
+  def primaryKeyColumn: ColumnId = userPrimaryKeyColumn.getOrElse(systemIdColumn)
 
   def mergeRows(base: Row[CV], overlay: Row[CV]): Row[CV]
 }

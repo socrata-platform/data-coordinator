@@ -8,7 +8,7 @@ import scala.collection.JavaConverters._
 import com.socrata.datacoordinator.truth.{RowIdMap, DatasetContext}
 import util.collection.LongLikeMap
 
-class PerfDatasetContext(val userSchema: LongLikeMap[ColumnId, PerfType], val systemIdColumnName: ColumnId, val userPrimaryKeyColumn: Option[ColumnId]) extends DatasetContext[PerfType, PerfValue] {
+class PerfDatasetContext(val userSchema: LongLikeMap[ColumnId, PerfType], val systemIdColumn: ColumnId, val userPrimaryKeyColumn: Option[ColumnId]) extends DatasetContext[PerfType, PerfValue] {
   userPrimaryKeyColumn.foreach { pkCol =>
     require(userSchema.contains(pkCol), "PK col defined but does not exist in the schema")
   }
@@ -21,12 +21,12 @@ class PerfDatasetContext(val userSchema: LongLikeMap[ColumnId, PerfType], val sy
   } yield value
 
   def systemId(row: Row[PerfValue]) =
-    row.get(systemIdColumnName).map(_.asInstanceOf[PVId].value)
+    row.get(systemIdColumn).map(_.asInstanceOf[PVId].value)
 
-  def systemIdAsValue(row: Row[PerfValue]) = row.get(systemIdColumnName)
+  def systemIdAsValue(row: Row[PerfValue]) = row.get(systemIdColumn)
 
   def systemColumns(row: Row[PerfValue]) = row.keySet.filter(systemSchema.contains).toSet
-  val systemSchema = LongLikeMap(systemIdColumnName -> PTId)
+  val systemSchema = LongLikeMap(systemIdColumn -> PTId)
 
   val fullSchema = userSchema ++ systemSchema
 

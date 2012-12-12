@@ -192,7 +192,7 @@ class TestDataSqlizer(tableBase: String, user: String, val datasetContext: Datas
     } else {
       for {
         stmt <- managed(conn.createStatement())
-        rs <- managed(stmt.executeQuery(ids.map(_.sqlize).mkString("SELECT c_" + datasetContext.systemIdColumnName + " AS sid, " + pkCol + " AS uid FROM " + dataTableName + " WHERE " + pkCol + " IN (", ",", ")")))
+        rs <- managed(stmt.executeQuery(ids.map(_.sqlize).mkString("SELECT c_" + datasetContext.systemIdColumn + " AS sid, " + pkCol + " AS uid FROM " + dataTableName + " WHERE " + pkCol + " IN (", ",", ")")))
       } yield {
         val buf = new mutable.ArrayBuffer[IdPair[TestColumnValue]]
         while(rs.next()) {

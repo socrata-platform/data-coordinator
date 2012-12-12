@@ -168,7 +168,7 @@ class PerfDataSqlizer(tableBase: String, val datasetContext: DatasetContext[Perf
   def sqlizeUserIdUpdate(row: Row[PerfValue]) =
     "UPDATE " + dataTableName + " SET " + row.iterator.map { case (col, v) => mapToPhysical(col) + " = " + v.sqlize }.mkString(",") + " WHERE " + pkCol + " = " + row(datasetContext.primaryKeyColumn).sqlize
 
-  val findSystemIdsPrefix = "SELECT c_" + datasetContext.systemIdColumnName + " as sid, " + pkCol + " as uid FROM " + dataTableName + " WHERE "
+  val findSystemIdsPrefix = "SELECT c_" + datasetContext.systemIdColumn + " as sid, " + pkCol + " as uid FROM " + dataTableName + " WHERE "
 
   def findSystemIds(conn: Connection, ids: Iterator[PerfValue]): CloseableIterator[Seq[IdPair[PerfValue]]] = {
     val typ = datasetContext.userSchema(datasetContext.userPrimaryKeyColumn.getOrElse(sys.error("findSystemIds called without a user primary key")))
