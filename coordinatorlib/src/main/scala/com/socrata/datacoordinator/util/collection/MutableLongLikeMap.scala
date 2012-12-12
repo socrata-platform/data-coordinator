@@ -6,7 +6,10 @@ import gnu.trove.map.hash.TLongObjectHashMap
 object MutableLongLikeMap {
   private def copyToTMap[T <: Long, V](m: Map[T, V]) = {
     val result = new TLongObjectHashMap[V]
-    for((k, v) <- m) result.put(k, v)
+    for((k, v) <- m) {
+      if(v.asInstanceOf[AnyRef] == null) throw new NullPointerException("Cannot store null values here")
+      result.put(k, v)
+    }
     result
   }
 }

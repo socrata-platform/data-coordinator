@@ -7,24 +7,15 @@ import gnu.trove.map.hash.TLongObjectHashMap
 import gnu.trove.iterator.TLongObjectIterator
 
 object LongLikeMap {
-  private def copyToTMap[K <: Long, V](m: Map[K, V]) = {
-    val result = new TLongObjectHashMap[V]
-    for((k, v) <- m) result.put(k, v)
-    result
-  }
-
   def apply[K <: Long, V](kvs: (K, V)*) = {
-    val tmp = new TLongObjectHashMap[V]()
-    for((t, v) <- kvs) {
-      if(v.asInstanceOf[AnyRef] eq null) throw new NullPointerException
-      tmp.put(t, v)
-    }
-    new LongLikeMap[K, V](tmp)
+    val tmp = new MutableLongLikeMap[K, V]
+    tmp ++= kvs
+    tmp.freeze()
   }
 }
 
 class LongLikeMap[K <: Long, +V] private[collection] (val unsafeUnderlying: TLongObjectHashMap[V @uncheckedVariance]) /* extends AnyVal -- oh man I so want value classes! */ {
-  def this(orig: Map[K, V]) = this(LongLikeMap.copyToTMap(orig))
+  def this(orig: Map[K, V]) = this(new MutableLongLikeMap(orig).underlying)
 
   @inline def size = unsafeUnderlying.size
 
