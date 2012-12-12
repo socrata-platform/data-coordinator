@@ -287,7 +287,7 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
         var i = 0
         do {
           val op = inserts.get(i)
-          inserter.insert(op.id, op.row)
+          inserter.insert(op.row)
           insertSize -= op.size
           i += 1
         } while(i != inserts.size)

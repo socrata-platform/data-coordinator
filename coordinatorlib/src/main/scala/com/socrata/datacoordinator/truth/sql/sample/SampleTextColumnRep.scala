@@ -43,6 +43,8 @@ class SampleTextColumnRep(val base: String) extends SqlPKableColumnRep[SampleTyp
     }
   }
 
+  def prepareInsert(stmt: PreparedStatement, v: SampleValue, n: Int) = prepareMultiLookup(stmt, v, n)
+
   def estimateInsertSize(v: SampleValue) = v match {
     case SampleText(text) => text.length
     case SampleNull => 0

@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator.truth.sql
 package sample
 
-import java.sql.ResultSet
+import java.sql.{Types, PreparedStatement, ResultSet}
 
 class SamplePointColumnRep(val base: String) extends SqlColumnRep[SampleType, SampleValue] {
   def representedType = SamplePointColumn
@@ -17,6 +17,21 @@ class SamplePointColumnRep(val base: String) extends SqlColumnRep[SampleType, Sa
         sb.append(vx).append(",").append(vy)
       case SampleNull =>
         sb.append(",")
+      case _ =>
+        sys.error("Illegal value for point column")
+    }
+  }
+
+  def prepareInsert(stmt: PreparedStatement, v: SampleValue, i: Int) = {
+    v match {
+      case SamplePoint(vx, vy) =>
+        stmt.setDouble(i, vx)
+        stmt.setDouble(i + 1, vy)
+        i + 2
+      case SampleNull =>
+        stmt.setNull(i, Types.DOUBLE)
+        stmt.setNull(i + 1, Types.DOUBLE)
+        i + 2
       case _ =>
         sys.error("Illegal value for point column")
     }

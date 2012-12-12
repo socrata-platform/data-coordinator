@@ -91,7 +91,7 @@ class TestDataSqlizer(tableBase: String, user: String, val datasetContext: Datas
   class InserterImpl(conn: Connection) extends Inserter with Closeable {
     val stmt = conn.prepareStatement("INSERT INTO " + dataTableName + "(" + columns.mkString(",") + ") SELECT " + columns.map(_ => "?").mkString(",") + " WHERE NOT EXISTS (SELECT 1 FROM " + dataTableName + " WHERE " + pkCol + " = ?)")
 
-    def insert(sid: RowId, row: Row[TestColumnValue]) {
+    def insert(row: Row[TestColumnValue]) {
       var i = 1
       val it = keys.iterator
       while(it.hasNext) {

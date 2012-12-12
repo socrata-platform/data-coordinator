@@ -45,7 +45,7 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
               val sid = RowId(idProvider.allocate())
               val row = rowPreparer.prepareForInsert(unpreparedRow, sid)
               val result = sqlizer.insertBatch(connection) { inserter =>
-                inserter.insert(sid, row)
+                inserter.insert(row)
               }
               assert(result == 1, "From insert: " + result)
               dataLogger.insert(sid, row)
@@ -73,7 +73,7 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
             val sid = RowId(idProvider.allocate())
             val row = rowPreparer.prepareForInsert(unpreparedRow, sid)
             val result = sqlizer.insertBatch(connection) { inserter =>
-              inserter.insert(sid, row)
+              inserter.insert(row)
             }
             assert(result == 1, "From insert: " + result)
             dataLogger.insert(sid, row)

@@ -22,7 +22,7 @@ trait DataSqlizer[CT, CV] {
 
   def insertBatch(conn: Connection)(t: Inserter => Unit): Long
   trait Inserter {
-    def insert(systemID: RowId, row: Row[CV])
+    def insert(row: Row[CV])
   }
 
   def prepareSystemIdDeleteStatement: String

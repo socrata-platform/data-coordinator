@@ -34,6 +34,8 @@ class SampleSidColumnRep(val base: String) extends SqlPKableColumnRep[SampleType
     sb.append(extract(v))
   }
 
+  def prepareInsert(stmt: PreparedStatement, v: SampleValue, start: Int): Int = prepareMultiLookup(stmt, v, start)
+
   def estimateInsertSize(v: SampleValue) = 10
 
   def SETsForUpdate(sb: java.lang.StringBuilder, v: SampleValue) {

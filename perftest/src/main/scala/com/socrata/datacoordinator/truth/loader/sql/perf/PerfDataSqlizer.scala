@@ -85,7 +85,7 @@ class PerfDataSqlizer(tableBase: String, val datasetContext: DatasetContext[Perf
 
   class InserterImpl extends Inserter {
     val sb = new java.lang.StringBuilder
-    def insert(sid: Long, row: Row[PerfValue]) {
+    def insert(row: Row[PerfValue]) {
       var didOne = false
       for(k <- logicalColumns) {
         if(didOne) sb.append(',')

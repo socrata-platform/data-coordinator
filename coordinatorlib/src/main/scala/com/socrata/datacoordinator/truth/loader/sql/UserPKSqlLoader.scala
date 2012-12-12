@@ -262,7 +262,7 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: Dat
           val sid = RowId(idProvider.allocate())
           sids(i) = sid
           op.upsertedRow = rowPreparer.prepareForInsert(op.upsertedRow, sid)
-          inserter.insert(sid, op.upsertedRow)
+          inserter.insert(op.upsertedRow)
           insertSize -= op.upsertSize
           i += 1
         } while(i != inserts.size)
