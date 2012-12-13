@@ -6,7 +6,7 @@ import java.sql.Connection
 import org.postgresql.copy.CopyManager
 import org.postgresql.core.BaseConnection
 
-import com.socrata.datacoordinator.truth.{TypeContext, DatasetContext}
+import com.socrata.datacoordinator.truth.DatasetContext
 import com.socrata.datacoordinator.util.collection.LongLikeMap
 import com.socrata.datacoordinator.truth.sql.SqlColumnRep
 import com.socrata.datacoordinator.util.StringBuilderReader

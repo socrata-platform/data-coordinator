@@ -108,7 +108,7 @@ class StringRep(columnId: ColumnId) extends TestColumnRep(columnId) {
   }
 
   def prepareInsert(stmt: PreparedStatement, v: TestColumnValue, start: Int) = {
-    if(v == NullValue) stmt.setNull(start, Types.BIGINT)
+    if(v == NullValue) stmt.setNull(start, Types.VARCHAR)
     else stmt.setString(start, v.asInstanceOf[StringValue].value)
     start + 1
   }

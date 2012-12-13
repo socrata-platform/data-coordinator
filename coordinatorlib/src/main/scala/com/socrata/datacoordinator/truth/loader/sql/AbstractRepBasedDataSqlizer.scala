@@ -5,7 +5,7 @@ import java.sql.{Connection, PreparedStatement}
 
 import com.rojoma.simplearm.util._
 
-import com.socrata.datacoordinator.truth.{TypeContext, DatasetContext}
+import com.socrata.datacoordinator.truth.DatasetContext
 import com.socrata.datacoordinator.truth.sql.{SqlPKableColumnRep, SqlColumnRep}
 import com.socrata.datacoordinator.util.{CloseableIterator, FastGroupedIterator, LeakDetect}
 import com.socrata.datacoordinator.util.collection.LongLikeMap
