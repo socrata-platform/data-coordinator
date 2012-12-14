@@ -1,22 +1,33 @@
-package com.socrata.datacoordinator.truth.metadata
+package com.socrata.datacoordinator
+package truth.metadata
 package sql
 
-import java.sql.Connection
+import java.sql.{PreparedStatement, Connection}
 
 import com.rojoma.simplearm.util._
 
 class PostgresDatasetMapReader(_conn: Connection) extends `-impl`.PostgresDatasetMapReaderAPI(_conn) with DatasetMapReader {
-  def datasetInfoQuery = "SELECT system_id, dataset_id, table_base FROM dataset_map WHERE dataset_id = ?"
+  def datasetInfoByUserIdQuery = "SELECT system_id, dataset_id, table_base FROM dataset_map WHERE dataset_id = ?"
   def datasetInfo(datasetId: String) =
-    using(conn.prepareStatement(datasetInfoQuery)) { stmt =>
+    using(conn.prepareStatement(datasetInfoByUserIdQuery)) { stmt =>
       stmt.setString(1, datasetId)
-      using(stmt.executeQuery()) { rs =>
-        if(rs.next()) {
-          Some(SqlDatasetInfo(rs.getLong("system_id"), rs.getString("dataset_id"), rs.getString("table_base")))
-        } else {
-          None
-        }
+      extractDatasetInfoFromResultSet(stmt)
+    }
+
+  def extractDatasetInfoFromResultSet(stmt: PreparedStatement) =
+    using(stmt.executeQuery()) { rs =>
+      if(rs.next()) {
+        Some(SqlDatasetInfo(rs.getLong("system_id"), rs.getString("dataset_id"), rs.getString("table_base")))
+      } else {
+        None
       }
+    }
+
+  def datasetInfoBySystemIdQuery = "SELECT system_id, dataset_id, table_base FROM dataset_map WHERE system_id = ?"
+  def datasetInfo(datasetId: DatasetId) =
+    using(conn.prepareStatement(datasetInfoBySystemIdQuery)) { stmt =>
+      stmt.setLong(1, datasetId)
+      extractDatasetInfoFromResultSet(stmt)
     }
 
   val versionQuery = "SELECT system_id, lifecycle_stage FROM version_map WHERE dataset_system_id = ? AND lifecycle_version = ?"

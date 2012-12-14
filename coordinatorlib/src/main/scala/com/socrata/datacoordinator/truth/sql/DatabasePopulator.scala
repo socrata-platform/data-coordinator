@@ -14,7 +14,8 @@ class DatabasePopulator {
                            columnNameLen: Int,
                            physcolBaseLen: Int,
                            phystabBaseLen: Int,
-                           typeNameLen: Int): String =
+                           typeNameLen: Int,
+                           storeIdLen: Int): String =
     TemplateReplacer(
       load("metadata.tmpl.sql"),
       Map(
@@ -23,7 +24,8 @@ class DatabasePopulator {
         "column_name_len" -> columnNameLen.toString,
         "physcol_base_len" -> physcolBaseLen.toString,
         "phystab_base_len" -> phystabBaseLen.toString,
-        "type_name_len" -> typeNameLen.toString
+        "type_name_len" -> typeNameLen.toString,
+        "store_id_len" -> storeIdLen.toString
       )
     )
 

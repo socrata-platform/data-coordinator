@@ -1,13 +1,6 @@
 package com.socrata.datacoordinator.truth.metadata
 
 trait DatasetMapWriter extends `-impl`.DatasetMapReaderAPI {
-  /** Looks up a dataset record by its ID.
-    * @throws com.socrata.datacoordinator.truth.metadata.DatasetInUseByWriterException if another writer
-    *                                                                                  is simultaneously trying
-    *                                                                                  to access this dataset.
-    */
-  override def datasetInfo(datasetId: String): Option[DatasetInfo]
-
   /** Creates a new dataset in the truthstore.
     * @note Does not actually create any tables; this just updates the bookkeeping.
     * @note `datasetId` needs to be globally unique; if you have namespacing do it yourself.

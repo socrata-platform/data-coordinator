@@ -1,11 +1,13 @@
-package com.socrata.datacoordinator.truth.metadata
+package com.socrata.datacoordinator
+package truth.metadata
 package sql
 
-import java.sql.{ResultSet, Timestamp, Connection}
+import java.sql.{PreparedStatement, Timestamp, Connection}
 
 import org.joda.time.DateTime
-
 import com.rojoma.simplearm.util._
+
+import com.socrata.datacoordinator.truth.{DatasetSystemIdInUseByWriterException, DatasetIdInUseByWriterException}
 
 class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatasetMapReaderAPI(_conn) with GlobalLog with DatasetMapWriter {
   def log(tableInfo: DatasetInfo, version: Long, updatedAt: DateTime, updatedBy: String) {
@@ -27,25 +29,38 @@ class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatase
     }
   }
 
-  def datasetInfoQuery = "SELECT system_id, dataset_id, table_base FROM dataset_map WHERE dataset_id = ? FOR UPDATE NOWAIT"
+  def lockNotAvailableState = "55P03"
+
+  def datasetInfoByUserIdQuery = "SELECT system_id, dataset_id, table_base FROM dataset_map WHERE dataset_id = ? FOR UPDATE NOWAIT"
   def datasetInfo(datasetId: String) =
-    using(conn.prepareStatement(datasetInfoQuery)) { stmt =>
+    using(conn.prepareStatement(datasetInfoByUserIdQuery)) { stmt =>
       stmt.setString(1, datasetId)
+      try {
+        extractDatasetInfoFromResultSet(stmt)
+      } catch {
+        case e: org.postgresql.util.PSQLException if e.getServerErrorMessage.getSQLState == lockNotAvailableState =>
+          throw new DatasetIdInUseByWriterException(datasetId, e)
+      }
+    }
 
-      def executeOrThrow(): ResultSet =
-        try {
-          stmt.executeQuery()
-        } catch {
-          case e: org.postgresql.util.PSQLException if e.getServerErrorMessage.getSQLState == "55P03" /* Lock not available */ =>
-            throw new DatasetInUseByWriterException(datasetId, e)
-        }
+  def extractDatasetInfoFromResultSet(stmt: PreparedStatement) =
+    using(stmt.executeQuery) { rs =>
+      if(rs.next()) {
+        Some(SqlDatasetInfo(rs.getLong("system_id"), rs.getString("dataset_id"), rs.getString("table_base")))
+      } else {
+        None
+      }
+    }
 
-      using(executeOrThrow()) { rs =>
-        if(rs.next()) {
-          Some(SqlDatasetInfo(rs.getLong("system_id"), rs.getString("dataset_id"), rs.getString("table_base")))
-        } else {
-          None
-        }
+  def datasetInfoBySystemIdQuery = "SELECT system_id, dataset_id, table_base FROM dataset_map WHERE system_id = ? FOR UPDATE NOWAIT"
+  def datasetInfo(datasetId: DatasetId) =
+    using(conn.prepareStatement(datasetInfoBySystemIdQuery)) { stmt =>
+      stmt.setLong(1, datasetId)
+      try {
+        extractDatasetInfoFromResultSet(stmt)
+      } catch {
+        case e: org.postgresql.util.PSQLException if e.getServerErrorMessage.getSQLState == lockNotAvailableState =>
+          throw new DatasetSystemIdInUseByWriterException(datasetId, e)
       }
     }
 

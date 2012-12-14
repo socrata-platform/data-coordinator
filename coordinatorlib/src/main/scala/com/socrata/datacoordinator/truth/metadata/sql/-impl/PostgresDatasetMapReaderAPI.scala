@@ -1,4 +1,5 @@
-package com.socrata.datacoordinator.truth.metadata
+package com.socrata.datacoordinator
+package truth.metadata
 package sql
 package `-impl`
 
@@ -15,9 +16,9 @@ abstract class PostgresDatasetMapReaderAPI(val conn: Connection) extends Dataset
   type VersionInfo = SqlVersionInfo
   type ColumnInfo = SqlColumnInfo
 
-  case class SqlDatasetInfo(systemId: Long, datasetId: String, tableBase: String) extends IDatasetInfo
-  case class SqlVersionInfo(tableInfo: SqlDatasetInfo, systemId: Long, lifecycleVersion: Long, lifecycleStage: LifecycleStage) extends IVersionInfo
-  case class SqlColumnInfo(versionInfo: SqlVersionInfo, systemId: Long, logicalName: String, typeName: String, physicalColumnBase: String, isPrimaryKey: Boolean) extends IColumnInfo
+  case class SqlDatasetInfo(systemId: DatasetId, datasetId: String, tableBase: String) extends IDatasetInfo
+  case class SqlVersionInfo(tableInfo: SqlDatasetInfo, systemId: VersionId, lifecycleVersion: Long, lifecycleStage: LifecycleStage) extends IVersionInfo
+  case class SqlColumnInfo(versionInfo: SqlVersionInfo, systemId: ColumnId, logicalName: String, typeName: String, physicalColumnBase: String, isPrimaryKey: Boolean) extends IColumnInfo
 
   require(!conn.getAutoCommit, "Connection is in auto-commit mode")
 

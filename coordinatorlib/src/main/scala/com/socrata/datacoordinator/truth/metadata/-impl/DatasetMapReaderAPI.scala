@@ -1,4 +1,5 @@
-package com.socrata.datacoordinator.truth.metadata
+package com.socrata.datacoordinator
+package truth.metadata
 package `-impl`
 
 /** This shouldn't ever be referred to directly.  It exists to ensure that the
@@ -31,6 +32,9 @@ trait DatasetMapReaderAPI {
 
   /** Looks up a dataset record by its ID. */
   def datasetInfo(datasetId: String): Option[DatasetInfo]
+
+  /** Looks up a dataset record by its system ID. */
+  def datasetInfo(datasetId: DatasetId): Option[DatasetInfo]
 
   /** Gets the newest copy, no matter what the lifecycle stage is. */
   def latest(datasetInfo: DatasetInfo): VersionInfo

@@ -9,16 +9,30 @@ CREATE TABLE global_log (
   updated_by        VARCHAR(%USER_UID_LEN%)  NOT NULL
 );
 
--- or this?
+-- This is a separate table from dataset_map so it can continue to exist
+-- even if the dataset_map entry goes away.
 CREATE TABLE truth_manifest (
-  dataset_system_id    BIGINT NOT NULL PRIMARY KEY, -- Not REFERENCES because datasets can be deleted
-  published_version    BIGINT NOT NULL, -- The last (data log) version set to "published" (0 if never)
-  version              BIGINT NOT NULL, -- The last (data log) version, published or not (0 if none)
-  coordinator_version  BIGINT NOT NULL, -- The last (data log) version seen by the coordinator (0 if none)
-  truncatedAt          BIGINT NOT NULL  -- The last (data log) version at which the table was truncated (0 if never)
+  dataset_system_id    BIGINT NOT NULL PRIMARY KEY,
+  published_version    BIGINT NOT NULL -- The last (data log) version set to "published" (0 if never)
+);
+
+CREATE TABLE secondary_stores (
+  system_id         BIGSERIAL               NOT NULL PRIMARY KEY,
+  store_id          VARCHAR(%STORE_ID_LEN%) NOT NULL UNIQUE,
+  wants_unpublished BOOLEAN                 NOT NULL
+);
+
+CREATE TABLE secondary_manifest (
+  store_system_id   BIGINT NOT NULL REFERENCES secondary_stores(system_id),
+  dataset_system_id BIGINT NOT NULL REFERENCES truth_manifest(dataset_system_id),
+  version           BIGINT NOT NULL, -- data log version.  0 if never fed anything in
+  PRIMARY KEY (store_system_id, dataset_system_id)
 );
 
 CREATE TABLE dataset_map (
+  -- Note that IT IS ASSUMED THAT dataset_id WILL NEVER CHANGE.  In other words, dataset_id should
+  -- not have anything in particular to do with SoQL resource names.  It is NOT assumed that they will
+  -- not be re-used, however.
   system_id  BIGSERIAL                   NOT NULL PRIMARY KEY,
   dataset_id VARCHAR(%DATASET_ID_LEN%)   NOT NULL UNIQUE, -- This probably contains the domain ID in some manner...
   table_base VARCHAR(%PHYSTAB_BASE_LEN%) NOT NULL -- this + version_map's lifecycle_version is used to name per-dataset tables.
