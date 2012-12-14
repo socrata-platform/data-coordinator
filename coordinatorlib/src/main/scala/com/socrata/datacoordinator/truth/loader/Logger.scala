@@ -1,6 +1,8 @@
-package com.socrata.datacoordinator.truth.loader
+package com.socrata.datacoordinator
+package truth.loader
 
 trait Logger[CT, CV] extends DataLogger[CV] {
+  def truncated(schema: Map[ColumnId, CT])
   def columnCreated(name: String, typ: CT)
   def columnRemoved(name: String)
   def rowIdentifierChanged(name: Option[String])

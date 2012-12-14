@@ -10,6 +10,7 @@ trait Delogger[CT, CV] extends Closeable {
 
 object Delogger {
   sealed abstract class LogEvent[+CT, +CV]
+  case class Truncated[CT](schema: Map[ColumnId, CT]) extends LogEvent[CT, Nothing]
   case class ColumnCreated[CT](name: String, typ: CT) extends LogEvent[CT, Nothing]
   case class ColumnRemoved(name: String) extends LogEvent[Nothing, Nothing]
   case class RowIdentifierChanged(name: Option[String]) extends LogEvent[Nothing, Nothing]

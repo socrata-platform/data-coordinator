@@ -25,6 +25,8 @@ class NullLogger[A, B] extends Logger[A, B] {
   def delete(systemID: Long) {}
 
   def close() {}
+
+  def truncated(schema: Map[ColumnId, A]) {}
 }
 
 object NullLogger extends NullLogger[Any, Any] {

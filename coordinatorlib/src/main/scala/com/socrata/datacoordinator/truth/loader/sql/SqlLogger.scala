@@ -79,6 +79,15 @@ class SqlLogger[CT, CV](connection: Connection,
     assert(!transactionEnded, "Operation logged after saying the transaction was over")
   }
 
+  assert(ColumnId(5).toString == "5") // so that when ColumnId is a value class I remember to update "truncated"
+  def truncated(schema: Map[ColumnId, CT]) {
+    checkTxn()
+    flushRowData()
+    logLine(SqlLogger.Truncated, Codec.toUTF8(CompactJsonWriter.toString(JObject(schema.map { case (cid, typ) =>
+      cid.toString -> JString(sqlizer.typeContext.nameFromType(typ))
+    }))))
+  }
+
   def columnCreated(name: String, typ: CT) {
     checkTxn()
     flushRowData()
@@ -207,6 +216,7 @@ object SqlLogger {
   // all of these must be exactly 3 characters long and consist of
   // nothing but upper-case ASCII letters.
   val RowDataUpdated = "ROW"
+  val Truncated = "TRN"
   val ColumnCreated = "CCR"
   val ColumnRemoved = "CRM"
   val RowIdentifierChanged = "RID"

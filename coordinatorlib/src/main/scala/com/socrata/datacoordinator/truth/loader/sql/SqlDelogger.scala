@@ -1,4 +1,5 @@
-package com.socrata.datacoordinator.truth.loader.sql
+package com.socrata.datacoordinator
+package truth.loader.sql
 
 import scala.io.Codec
 
@@ -83,6 +84,8 @@ class SqlDelogger[CT, CV](connection: Connection,
       nextResult = op match {
         case SqlLogger.RowDataUpdated =>
           decodeRowDataUpdated(aux)
+        case SqlLogger.Truncated =>
+          decodeTruncated(aux)
         case SqlLogger.ColumnCreated =>
           decodeColumnCreated(aux)
         case SqlLogger.ColumnRemoved =>
@@ -132,6 +135,25 @@ class SqlDelogger[CT, CV](connection: Connection,
         }
       }
       Delogger.RowDataUpdated(loop())
+    }
+
+    def decodeTruncated(aux: Array[Byte]) = {
+      val json = fromJson(aux).cast[JObject].getOrElse {
+        sys.error("Parameter for `truncated' was not an object")
+      }
+      val schema = Map.newBuilder[ColumnId, CT]
+      try {
+        for((k, v) <- json) {
+          val cv = v.cast[JString].getOrElse {
+            sys.error("value in truncated was not a string")
+          }
+          schema += k.toLong -> sqlizer.typeContext.typeFromName(cv.string)
+        }
+      } catch {
+        case _: NumberFormatException =>
+          sys.error("key in truncated was not a valid column id")
+      }
+      Delogger.Truncated(schema.result())
     }
 
     def decodeColumnCreated(aux: Array[Byte]) = {
