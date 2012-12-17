@@ -26,7 +26,7 @@ class TemplateReplacerTest extends FunSuite with MustMatchers {
 
   test("No changes must return the original string") {
     val x = "Blah"
-    TemplateReplacer(x, Map.empty) must be theSameInstanceAs (x)
+    TemplateReplacer(x, Map.empty) must equal (x)
   }
 
   test("Unknown variable throws the right exception") {
