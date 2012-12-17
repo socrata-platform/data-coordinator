@@ -12,13 +12,16 @@ import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.util.Counter
 import com.socrata.datacoordinator.truth.RowLogCodec
+import com.socrata.datacoordinator.truth.metadata.ColumnInfo
+import com.rojoma.json.util.JsonUtil
+import com.rojoma.json.codec.JsonCodec
 
 class SqlLogger[CT, CV](connection: Connection,
                         sqlizer: DataSqlizer[CT, CV],
                         rowCodecFactory: () => RowLogCodec[CV],
                         rowFlushSize: Int = 128000,
                         batchFlushSize: Int = 2000000)
-  extends Logger[CT, CV]
+  extends Logger[CV]
 {
   import SqlLogger.log
 
@@ -80,37 +83,34 @@ class SqlLogger[CT, CV](connection: Connection,
   }
 
   assert(ColumnId(5).toString == "5") // so that when ColumnId is a value class I remember to update "truncated"
-  def truncated(schema: Map[ColumnId, CT]) {
+  def truncated(schema: Map[ColumnId, ColumnInfo]) {
     checkTxn()
     flushRowData()
-    logLine(SqlLogger.Truncated, Codec.toUTF8(CompactJsonWriter.toString(JObject(schema.map { case (cid, typ) =>
-      cid.toString -> JString(sqlizer.typeContext.nameFromType(typ))
+    logLine(SqlLogger.Truncated, Codec.toUTF8(CompactJsonWriter.toString(JObject(schema.map { case (cid, colSpec) =>
+      cid.toString -> JsonCodec.toJValue(colSpec)
     }))))
   }
 
-  def columnCreated(name: String, typ: CT) {
+  def columnCreated(info: ColumnInfo) {
     checkTxn()
     flushRowData()
-    logLine(SqlLogger.ColumnCreated, Codec.toUTF8(CompactJsonWriter.toString(JObject(Map(
-      "c" -> JString(name),
-      "t" -> JString(sqlizer.typeContext.nameFromType(typ))
-    )))))
+    logLine(SqlLogger.ColumnCreated, Codec.toUTF8(JsonUtil.renderJson(info)))
   }
 
-  def columnRemoved(name: String) {
+  def columnRemoved(info: ColumnInfo) {
     checkTxn()
     flushRowData()
-    logLine(SqlLogger.ColumnRemoved, Codec.toUTF8(CompactJsonWriter.toString(JObject(Map("c" -> JString(name))))))
+    logLine(SqlLogger.ColumnRemoved, Codec.toUTF8(JsonUtil.renderJson(info)))
   }
 
-  def rowIdentifierChanged(name: Option[String]) {
+  def rowIdentifierChanged(name: Option[ColumnInfo]) {
     checkTxn()
     flushRowData()
-    val nameJson = name match {
-      case Some(n) => JString(n)
+    val columnJson = name match {
+      case Some(n) => JsonCodec.toJValue(n)
       case None => JNull
     }
-    logLine(SqlLogger.RowIdentifierChanged, Codec.toUTF8(CompactJsonWriter.toString(JObject(Map("c" -> nameJson)))))
+    logLine(SqlLogger.RowIdentifierChanged, Codec.toUTF8(CompactJsonWriter.toString(columnJson)))
   }
 
   def workingCopyCreated() {

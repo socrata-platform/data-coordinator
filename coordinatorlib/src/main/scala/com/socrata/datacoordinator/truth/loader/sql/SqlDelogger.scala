@@ -2,21 +2,24 @@ package com.socrata.datacoordinator
 package truth.loader.sql
 
 import scala.io.Codec
+import scala.collection.immutable.VectorBuilder
 
 import java.sql.{ResultSet, PreparedStatement, Connection}
+import java.io.ByteArrayInputStream
+
+import com.rojoma.json.io.JsonReader
+import com.rojoma.json.ast.{JNull, JString, JObject}
 
 import com.socrata.datacoordinator.truth.RowLogCodec
 import com.socrata.datacoordinator.truth.loader.Delogger
 import com.socrata.datacoordinator.util.{CloseableIterator, LeakDetect}
-import com.rojoma.json.io.JsonReader
-import com.rojoma.json.ast.{JNull, JString, JObject}
-import java.io.ByteArrayInputStream
-import collection.immutable.VectorBuilder
+import com.socrata.datacoordinator.truth.metadata.ColumnInfo
+import com.rojoma.json.codec.JsonCodec
 
 class SqlDelogger[CT, CV](connection: Connection,
                           sqlizer: DataSqlizer[CT, CV],
                           rowCodecFactory: () => RowLogCodec[CV])
-  extends Delogger[CT, CV]
+  extends Delogger[CV]
 {
   var stmt: PreparedStatement = null
 
@@ -32,10 +35,10 @@ class SqlDelogger[CT, CV](connection: Connection,
     new LogIterator(version) with LeakDetect
   }
 
-  class LogIterator(version: Long) extends CloseableIterator[Delogger.LogEvent[CT, CV]] {
+  class LogIterator(version: Long) extends CloseableIterator[Delogger.LogEvent[CV]] {
     var rs: ResultSet = null
     var lastSubversion = 0L
-    var nextResult: Delogger.LogEvent[CT, CV] = null
+    var nextResult: Delogger.LogEvent[CV] = null
     var done = false
     val UTF8 = Codec.UTF8
 
@@ -141,13 +144,13 @@ class SqlDelogger[CT, CV](connection: Connection,
       val json = fromJson(aux).cast[JObject].getOrElse {
         sys.error("Parameter for `truncated' was not an object")
       }
-      val schema = Map.newBuilder[ColumnId, CT]
+      val schema = Map.newBuilder[ColumnId, ColumnInfo]
       try {
         for((k, v) <- json) {
-          val cv = v.cast[JString].getOrElse {
-            sys.error("value in truncated was not a string")
+          val ci = JsonCodec.fromJValue[ColumnInfo](v).getOrElse {
+            sys.error("value in truncated was not a ColumnInfo")
           }
-          schema += k.toLong -> sqlizer.typeContext.typeFromName(cv.string)
+          schema += k.toLong -> ci
         }
       } catch {
         case _: NumberFormatException =>
@@ -157,36 +160,27 @@ class SqlDelogger[CT, CV](connection: Connection,
     }
 
     def decodeColumnCreated(aux: Array[Byte]) = {
-      val json = fromJson(aux).cast[JObject].getOrElse {
-        sys.error("Parameter for `column created' was not an object")
+      val ci = JsonCodec.fromJValue[ColumnInfo](fromJson(aux)).getOrElse {
+        sys.error("Parameter for `column created' was not a ColumnInfo")
       }
-      val name = getString("c", json)
-      val typ = getString("t", json)
 
-      Delogger.ColumnCreated(name, sqlizer.typeContext.typeFromName(typ))
+      Delogger.ColumnCreated(ci)
     }
 
     def decodeColumnRemoved(aux: Array[Byte]) = {
-      val json = fromJson(aux).cast[JObject].getOrElse {
+      val ci = JsonCodec.fromJValue[ColumnInfo](fromJson(aux)).getOrElse {
         sys.error("Parameter for `column created' was not an object")
       }
-      val name = getString("c", json)
-
-      Delogger.ColumnRemoved(name)
+      Delogger.ColumnRemoved(ci)
     }
 
     def decodeRowIdentifierChanged(aux: Array[Byte]) = {
-      val json = fromJson(aux).cast[JObject].getOrElse {
-        sys.error("Parameter for `column created' was not an object")
-      }
-      val newCol = json.get("c") match {
-        case Some(JString(c)) => Some(c)
-        case Some(JNull) => None
-        case Some(_) => sys.error("Parameter `c' was not a string or null")
-        case None => sys.error("Parameter `c' did not exist")
-      }
+      val json = fromJson(aux)
+      val ci =
+        if(json == JNull) None
+        else Some(JsonCodec.fromJValue[ColumnInfo](json).getOrElse(sys.error("Parameter for `row identifier changed' was not a ColumnInfo")))
 
-      Delogger.RowIdentifierChanged(newCol)
+      Delogger.RowIdentifierChanged(ci)
     }
 
     def fromJson(aux: Array[Byte]) = JsonReader.fromString(new String(aux, UTF8))

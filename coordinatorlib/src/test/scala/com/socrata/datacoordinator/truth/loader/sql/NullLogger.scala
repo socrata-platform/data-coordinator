@@ -2,13 +2,14 @@ package com.socrata.datacoordinator
 package truth.loader.sql
 
 import com.socrata.datacoordinator.truth.loader.Logger
+import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 
-class NullLogger[A, B] extends Logger[A, B] {
-  def columnCreated(name: String, typ: A) {}
+class NullLogger[CV] extends Logger[CV] {
+  def columnCreated(info: ColumnInfo) {}
 
-  def columnRemoved(name: String) {}
+  def columnRemoved(info :ColumnInfo) {}
 
-  def rowIdentifierChanged(name: Option[String]) {}
+  def rowIdentifierChanged(name: Option[ColumnInfo]) {}
 
   def workingCopyCreated() {}
 
@@ -18,17 +19,17 @@ class NullLogger[A, B] extends Logger[A, B] {
 
   def endTransaction() = None
 
-  def insert(systemID: Long, row: Row[B]) {}
+  def insert(systemID: Long, row: Row[CV]) {}
 
-  def update(sid: Long, row: Row[B]) {}
+  def update(sid: Long, row: Row[CV]) {}
 
   def delete(systemID: Long) {}
 
   def close() {}
 
-  def truncated(schema: Map[ColumnId, A]) {}
+  def truncated(schema: Map[ColumnId, ColumnInfo]) {}
 }
 
-object NullLogger extends NullLogger[Any, Any] {
-  def apply[A, B]() = this.asInstanceOf[NullLogger[A, B]]
+object NullLogger extends NullLogger[Any] {
+  def apply[A]() = this.asInstanceOf[NullLogger[A]]
 }

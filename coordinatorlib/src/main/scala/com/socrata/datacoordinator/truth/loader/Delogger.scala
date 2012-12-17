@@ -2,23 +2,25 @@ package com.socrata.datacoordinator
 package truth.loader
 
 import java.io.Closeable
-import util.CloseableIterator
 
-trait Delogger[CT, CV] extends Closeable {
-  def delog(version: Long): CloseableIterator[Delogger.LogEvent[CT, CV]]
+import com.socrata.datacoordinator.util.CloseableIterator
+import com.socrata.datacoordinator.truth.metadata.ColumnInfo
+
+trait Delogger[CV] extends Closeable {
+  def delog(version: Long): CloseableIterator[Delogger.LogEvent[CV]]
 }
 
 object Delogger {
-  sealed abstract class LogEvent[+CT, +CV]
-  case class Truncated[CT](schema: Map[ColumnId, CT]) extends LogEvent[CT, Nothing]
-  case class ColumnCreated[CT](name: String, typ: CT) extends LogEvent[CT, Nothing]
-  case class ColumnRemoved(name: String) extends LogEvent[Nothing, Nothing]
-  case class RowIdentifierChanged(name: Option[String]) extends LogEvent[Nothing, Nothing]
-  case object WorkingCopyCreated extends LogEvent[Nothing, Nothing]
-  case object WorkingCopyDropped extends LogEvent[Nothing, Nothing]
-  case object WorkingCopyPublished extends LogEvent[Nothing, Nothing]
-  case class RowDataUpdated[CV](operations: Seq[Operation[CV]]) extends LogEvent[Nothing, CV]
-  case object EndTransaction extends LogEvent[Nothing, Nothing]
+  sealed abstract class LogEvent[+CV]
+  case class Truncated(schema: Map[ColumnId, ColumnInfo]) extends LogEvent[Nothing]
+  case class ColumnCreated(info: ColumnInfo) extends LogEvent[Nothing]
+  case class ColumnRemoved(info: ColumnInfo) extends LogEvent[Nothing]
+  case class RowIdentifierChanged(info: Option[ColumnInfo]) extends LogEvent[Nothing]
+  case object WorkingCopyCreated extends LogEvent[Nothing]
+  case object WorkingCopyDropped extends LogEvent[Nothing]
+  case object WorkingCopyPublished extends LogEvent[Nothing]
+  case class RowDataUpdated[CV](operations: Seq[Operation[CV]]) extends LogEvent[CV]
+  case object EndTransaction extends LogEvent[Nothing]
 
   sealed abstract class Operation[+CV]
   case class Insert[CV](systemId: Long, data: Row[CV]) extends Operation[CV]

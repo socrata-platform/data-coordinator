@@ -1,11 +1,13 @@
 package com.socrata.datacoordinator
 package truth.loader
 
-trait Logger[CT, CV] extends DataLogger[CV] {
-  def truncated(schema: Map[ColumnId, CT])
-  def columnCreated(name: String, typ: CT)
-  def columnRemoved(name: String)
-  def rowIdentifierChanged(name: Option[String])
+import com.socrata.datacoordinator.truth.metadata.ColumnInfo
+
+trait Logger[CV] extends DataLogger[CV] {
+  def truncated(schema: Map[ColumnId, ColumnInfo])
+  def columnCreated(info: ColumnInfo)
+  def columnRemoved(info: ColumnInfo)
+  def rowIdentifierChanged(newIdentifier: Option[ColumnInfo])
   def workingCopyCreated()
   def workingCopyDropped()
   def workingCopyPublished()
