@@ -16,6 +16,9 @@ package object datacoordinator {
   type RowId = Long
   def RowId(x: Long): RowId = x
 
+  type StoreId = Long
+  def StoreId(x: Long): StoreId = x
+
   type Row[ColumnValue] = LongLikeMap[ColumnId, ColumnValue]
   type MutableRow[ColumnValue] = MutableLongLikeMap[ColumnId, ColumnValue]
   def Row[ColumnValue](xs: (ColumnId, ColumnValue)*) = LongLikeMap[ColumnId, ColumnValue](xs: _*)

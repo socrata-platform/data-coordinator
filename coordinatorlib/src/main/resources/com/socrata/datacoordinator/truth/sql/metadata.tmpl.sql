@@ -13,7 +13,8 @@ CREATE TABLE global_log (
 -- even if the dataset_map entry goes away.
 CREATE TABLE truth_manifest (
   dataset_system_id    BIGINT NOT NULL PRIMARY KEY,
-  published_version    BIGINT NOT NULL -- The last (data log) version set to "published" (0 if never)
+  published_version    BIGINT NOT NULL, -- The last (data log) version set to "published" (0 if never)
+  latest_version       BIGINT NOT NULL  -- The last version
 );
 
 CREATE TABLE secondary_stores (
