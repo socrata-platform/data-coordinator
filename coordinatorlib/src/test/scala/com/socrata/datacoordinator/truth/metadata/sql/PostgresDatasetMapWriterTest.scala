@@ -69,7 +69,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       ci.physicalColumnBase must be ("colbase")
       ci.isPrimaryKey must be (false)
 
-      tables.schema(vi) must equal (Map("col1" -> ci))
+      tables.schema(vi) must equal (Map(ci.systemId -> ci))
     }
   }
 
@@ -81,7 +81,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
       tables.setUserPrimaryKey(ci)
 
-      tables.schema(vi) must equal (Map("col1" -> ci.copy(isPrimaryKey = true)))
+      tables.schema(vi) must equal (Map(ci.systemId -> ci.copy(isPrimaryKey = true)))
     }
   }
 
@@ -98,7 +98,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       ci2.physicalColumnBase must be ("colbase2")
       ci2.isPrimaryKey must be (false)
 
-      tables.schema(vi) must equal (Map("col1" -> ci1, "col2" -> ci2))
+      tables.schema(vi) must equal (Map(ci1.systemId -> ci1, ci2.systemId -> ci2))
     }
   }
 
@@ -127,7 +127,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       tables.clearUserPrimaryKey(vi)
       tables.setUserPrimaryKey(ci2)
 
-      tables.schema(vi) must equal (Map("col1" -> ci1, "col2" -> ci2.copy(isPrimaryKey = true)))
+      tables.schema(vi) must equal (Map(ci1.systemId -> ci1, ci2.systemId -> ci2.copy(isPrimaryKey = true)))
     }
   }
 
@@ -162,7 +162,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
       tables.dropColumn(c2)
 
-      tables.schema(vi) must equal (Map("col1" -> c1))
+      tables.schema(vi) must equal (Map(c1.systemId -> c1))
     }
   }
 
@@ -181,7 +181,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       val schema1 = tables.schema(vi1)
       val schema2 = tables.schema(vi2)
 
-      schema1.mapValues(_.copy(systemId = 0, versionInfo = null)) must equal (schema2.mapValues(_.copy(systemId = 0, versionInfo = null)))
+      schema1.values.toSeq.map(_.copy(systemId = 0, versionInfo = null)).sortBy(_.logicalName) must equal (schema2.values.toSeq.map(_.copy(systemId = 0, versionInfo = null)).sortBy(_.logicalName))
     }
   }
 

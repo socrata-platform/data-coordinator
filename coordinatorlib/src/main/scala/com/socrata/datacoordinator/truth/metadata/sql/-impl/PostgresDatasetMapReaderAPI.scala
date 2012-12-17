@@ -64,11 +64,10 @@ abstract class PostgresDatasetMapReaderAPI(val conn: Connection) extends Dataset
     using(conn.prepareStatement(schemaQuery)) { stmt =>
       stmt.setLong(1, versionInfo.systemId)
       using(stmt.executeQuery()) { rs =>
-        val result = Map.newBuilder[String, ColumnInfo]
+        val result = Map.newBuilder[ColumnId, ColumnInfo]
         while(rs.next()) {
           val systemId = rs.getLong("system_id")
-          val col = rs.getString("logical_column")
-          result += col -> SqlColumnInfo(versionInfo, systemId, col, rs.getString("type_name"), rs.getString("physical_column_base"), rs.getBoolean("is_primary_key"))
+          result += systemId -> SqlColumnInfo(versionInfo, systemId, rs.getString("logical_column"), rs.getString("type_name"), rs.getString("physical_column_base"), rs.getBoolean("is_primary_key"))
         }
         result.result()
       }

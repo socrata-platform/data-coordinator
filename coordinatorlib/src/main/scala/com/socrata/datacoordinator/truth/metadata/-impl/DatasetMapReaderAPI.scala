@@ -43,5 +43,5 @@ trait DatasetMapReaderAPI {
   def snapshotCount(datasetInfo: DatasetInfo): Int
 
   /** Loads the schema for the indicated dataset-version. */
-  def schema(versionInfo: VersionInfo): Map[String, ColumnInfo]
+  def schema(versionInfo: VersionInfo): Map[ColumnId, ColumnInfo]
 }
