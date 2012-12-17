@@ -1,6 +1,8 @@
 package com.socrata.datacoordinator
 package truth.metadata
 
+import scala.runtime.ScalaRunTime
+
 import com.rojoma.json.codec.JsonCodec
 import com.rojoma.json.matcher.{PObject, Variable}
 import com.rojoma.json.ast.JValue
@@ -10,6 +12,15 @@ trait VersionInfo {
   def systemId: VersionId
   def lifecycleVersion: Long
   def lifecycleStage: LifecycleStage
+
+  final override def hashCode = ScalaRunTime._hashCode((datasetInfo, systemId, lifecycleVersion, lifecycleStage))
+  final override def equals(o: Any) = o match {
+    case that: VersionInfo =>
+      (this eq that) ||
+        (this.datasetInfo == that.datasetInfo && this.systemId == that.systemId && this.lifecycleVersion == that.lifecycleVersion && this.lifecycleStage == that.lifecycleStage)
+    case _ =>
+      false
+  }
 }
 
 object VersionInfo {

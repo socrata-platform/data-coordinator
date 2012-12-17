@@ -1,6 +1,8 @@
 package com.socrata.datacoordinator
 package truth.metadata
 
+import scala.runtime.ScalaRunTime
+
 import com.rojoma.json.codec.JsonCodec
 import com.rojoma.json.ast.JValue
 import com.rojoma.json.matcher.{PObject, Variable}
@@ -11,6 +13,15 @@ trait ColumnInfo {
   def logicalName: String
   def typeName: String
   def isPrimaryKey: Boolean
+
+  override final def hashCode = ScalaRunTime._hashCode((versionInfo, systemId, logicalName, typeName, isPrimaryKey))
+  override final def equals(o: Any) = o match {
+    case that: ColumnInfo =>
+      (this eq that) ||
+        (this.versionInfo == that.versionInfo && this.systemId == that.systemId && this.logicalName == that.logicalName && this.typeName == that.typeName && this.isPrimaryKey == that.isPrimaryKey)
+    case _ =>
+      false
+  }
 }
 
 object ColumnInfo {
