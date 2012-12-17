@@ -17,7 +17,7 @@ class TemplateReplacerTest extends FunSuite with MustMatchers {
   }
 
   test("multiple replaces") {
-    TemplateReplacer("The canonical first program is %h%, %w%!", Map("h" -> "hello", "w" -> "world")) must equal ("The canonical first program is hello, world!")
+    TemplateReplacer("The canonical first program is %H%, %W%!", Map("h" -> "hello", "w" -> "world")) must equal ("The canonical first program is hello, world!")
   }
 
   test("Allows other percents") {
@@ -30,6 +30,6 @@ class TemplateReplacerTest extends FunSuite with MustMatchers {
   }
 
   test("Unknown variable throws the right exception") {
-    evaluating { TemplateReplacer("%x%", Map.empty) } must produce[UnboundVariableException]
+    evaluating { TemplateReplacer("%X%", Map.empty) } must produce[UnboundVariableException]
   }
 }

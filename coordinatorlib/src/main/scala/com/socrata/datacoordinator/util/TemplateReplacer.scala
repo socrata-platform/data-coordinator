@@ -12,7 +12,7 @@ object TemplateReplacer extends ((String, sc.Map[String, String]) => String) {
     pattern.replaceAllIn(source, replacer _)
   }
 
-  private val pattern = "%([A-Za-z_]+)%".r
+  private val pattern = "%([A-Z_]+)%".r
 }
 
 class UnboundVariableException(pattern: String) extends RuntimeException("Unbound variable " + pattern)
