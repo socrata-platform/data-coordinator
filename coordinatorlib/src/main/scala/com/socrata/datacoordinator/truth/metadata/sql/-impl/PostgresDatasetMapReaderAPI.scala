@@ -17,7 +17,7 @@ abstract class PostgresDatasetMapReaderAPI(val conn: Connection) extends Dataset
   type ColumnInfo = SqlColumnInfo
 
   case class SqlDatasetInfo(systemId: DatasetId, datasetId: String, tableBase: String) extends IDatasetInfo
-  case class SqlVersionInfo(tableInfo: SqlDatasetInfo, systemId: VersionId, lifecycleVersion: Long, lifecycleStage: LifecycleStage) extends IVersionInfo
+  case class SqlVersionInfo(datasetInfo: SqlDatasetInfo, systemId: VersionId, lifecycleVersion: Long, lifecycleStage: LifecycleStage) extends IVersionInfo
   case class SqlColumnInfo(versionInfo: SqlVersionInfo, systemId: ColumnId, logicalName: String, typeName: String, physicalColumnBase: String, isPrimaryKey: Boolean) extends IColumnInfo
 
   require(!conn.getAutoCommit, "Connection is in auto-commit mode")

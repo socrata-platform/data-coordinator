@@ -81,7 +81,7 @@ class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatase
     val versionInfo = SqlVersionInfo(tableInfo, Int.MinValue, 1, LifecycleStage.Unpublished)
 
     val versionSystemId = using(conn.prepareStatement(createQuery_versionMap)) { stmt =>
-      stmt.setLong(1, versionInfo.tableInfo.systemId)
+      stmt.setLong(1, versionInfo.datasetInfo.systemId)
       stmt.setLong(2, versionInfo.lifecycleVersion)
       stmt.setString(3, versionInfo.lifecycleStage.name)
       using(stmt.executeQuery()) { rs =>
@@ -217,7 +217,7 @@ class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatase
         lookup(tableInfo, LifecycleStage.Published) match {
           case Some(publishedCopy) =>
             val newLifecycleVersion = using(conn.prepareStatement(ensureUnpublishedCopyQuery_newLifecycleVersion)) { stmt =>
-              stmt.setLong(1, publishedCopy.tableInfo.systemId)
+              stmt.setLong(1, publishedCopy.datasetInfo.systemId)
               using(stmt.executeQuery()) { rs =>
                 rs.next()
                 rs.getLong(1)
@@ -229,7 +229,7 @@ class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatase
                 lifecycleVersion = newLifecycleVersion,
                 lifecycleStage = LifecycleStage.Unpublished)
 
-              stmt.setLong(1, newVersion.tableInfo.systemId)
+              stmt.setLong(1, newVersion.datasetInfo.systemId)
               stmt.setLong(2, newVersion.lifecycleVersion)
               stmt.setString(3, newVersion.lifecycleStage.name)
               using(stmt.executeQuery()) { rs =>
@@ -257,7 +257,7 @@ class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatase
       throw new IllegalArgumentException("Version does not name an unpublished copy")
     }
     using(conn.prepareStatement(publishQuery)) { stmt =>
-      for(published <- lookup(unpublishedCopy.tableInfo, LifecycleStage.Published)) {
+      for(published <- lookup(unpublishedCopy.datasetInfo, LifecycleStage.Published)) {
         stmt.setString(1, LifecycleStage.Snapshotted.name)
         stmt.setLong(2, published.systemId)
         val count = stmt.executeUpdate()

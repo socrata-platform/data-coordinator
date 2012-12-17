@@ -47,13 +47,13 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       val tables = new PostgresDatasetMapWriter(conn)
       val vi = tables.create("hello", "world")
 
-      vi.tableInfo.datasetId must be ("hello")
-      vi.tableInfo.tableBase must be ("world")
+      vi.datasetInfo.datasetId must be ("hello")
+      vi.datasetInfo.tableBase must be ("world")
       vi.lifecycleStage must be (LifecycleStage.Unpublished)
       vi.lifecycleVersion must be (1)
 
-      tables.datasetInfo("hello") must equal (Some(vi.tableInfo))
-      tables.unpublished(vi.tableInfo) must equal (Some(vi))
+      tables.datasetInfo("hello") must equal (Some(vi.datasetInfo))
+      tables.unpublished(vi.datasetInfo) must equal (Some(vi))
     }
   }
 
@@ -148,8 +148,8 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       val vi2 = tables.publish(vi1)
       vi2 must equal (vi1.copy(lifecycleStage = LifecycleStage.Published))
 
-      tables.published(vi2.tableInfo) must equal (Some(vi2))
-      tables.unpublished(vi1.tableInfo) must be (None)
+      tables.published(vi2.datasetInfo) must equal (Some(vi2))
+      tables.unpublished(vi1.datasetInfo) must be (None)
     }
   }
 
@@ -173,9 +173,9 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       val ci1 = tables.addColumn(vi1, "col1", "typ", "colbase")
       val ci2 = tables.addColumn(vi1, "col2", "typ2", "colbase2")
 
-      tables.unpublished(vi1.tableInfo) must be (None)
+      tables.unpublished(vi1.datasetInfo) must be (None)
 
-      val vi2 = tables.ensureUnpublishedCopy(vi1.tableInfo)
+      val vi2 = tables.ensureUnpublishedCopy(vi1.datasetInfo)
 
       // and columns get copied...
       val schema1 = tables.schema(vi1)
@@ -210,12 +210,12 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       val tables = new PostgresDatasetMapWriter(conn)
       val vi1 = tables.create("hello", "world")
       val vi2 = tables.publish(vi1)
-      val vi3 = tables.ensureUnpublishedCopy(vi2.tableInfo)
-      tables.unpublished(vi1.tableInfo) must equal (Some(vi3))
+      val vi3 = tables.ensureUnpublishedCopy(vi2.datasetInfo)
+      tables.unpublished(vi1.datasetInfo) must equal (Some(vi3))
 
       tables.dropCopy(vi3)
 
-      tables.unpublished(vi1.tableInfo) must be (None)
+      tables.unpublished(vi1.datasetInfo) must be (None)
     }
   }
 
@@ -228,7 +228,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
       (1 to 5).foldLeft(vi1) { (vi, _) =>
         val vi2 = tables.publish(vi)
-        tables.ensureUnpublishedCopy(vi2.tableInfo)
+        tables.ensureUnpublishedCopy(vi2.datasetInfo)
       }
 
       // ok, there should be six copies now, which means twelve columns....
@@ -236,7 +236,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       count(conn, "version_map") must equal (6)
       count(conn, "dataset_map") must equal (1)
 
-      tables.delete(vi1.tableInfo)
+      tables.delete(vi1.datasetInfo)
 
       count(conn, "column_map") must equal (0)
       count(conn, "version_map") must equal (0)
