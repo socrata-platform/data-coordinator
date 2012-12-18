@@ -1,0 +1,7 @@
+package com.socrata.datacoordinator.secondary
+
+class BadVersionIncrementException extends RuntimeException
+class BadSubversionIncrementException extends RuntimeException
+class UnknownDataset extends RuntimeException
+class WorkingCopyUnsupported extends RuntimeException
+class VersionUnfinished extends RuntimeException
