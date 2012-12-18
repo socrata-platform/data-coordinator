@@ -173,12 +173,11 @@ class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatase
       userPrimaryKey.copy(isPrimaryKey = true)
     }
 
-  def clearUserPrimaryKeyQuery = "UPDATE column_map SET is_primary_key = NULL WHERE system_id = ?"
+  def clearUserPrimaryKeyQuery = "UPDATE column_map SET is_primary_key = NULL WHERE version_system_id = ?"
   def clearUserPrimaryKey(versionInfo: VersionInfo) {
     using(conn.prepareStatement(clearUserPrimaryKeyQuery)) { stmt =>
       stmt.setLong(1, versionInfo.systemId)
-      val count = stmt.executeUpdate()
-      assert(count == 1, "Column did not exist to have it unset as primary key?")
+      stmt.executeUpdate()
     }
   }
 
@@ -208,7 +207,7 @@ class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatase
 
   def ensureUnpublishedCopyQuery_newLifecycleVersion = "SELECT max(lifecycle_version) + 1 FROM version_map WHERE dataset_system_id = ?"
   def ensureUnpublishedCopyQuery_versionMap = "INSERT INTO version_map (dataset_system_id, lifecycle_version, lifecycle_stage) values (?, ?, CAST(? AS dataset_lifecycle_stage)) RETURNING system_id"
-  def ensureUnpublishedCopyQuery_columnMap = "INSERT INTO column_map (version_system_id, logical_column, type_name, physical_column_base, is_primary_key) SELECT ?, logical_column, type_name, physical_column_base, is_primary_key FROM column_map WHERE version_system_id = ?"
+  def ensureUnpublishedCopyQuery_columnMap = "INSERT INTO column_map (version_system_id, system_id, logical_column, type_name, physical_column_base, is_primary_key) SELECT ?, system_id, logical_column, type_name, physical_column_base, is_primary_key FROM column_map WHERE version_system_id = ?"
   def ensureUnpublishedCopy(tableInfo: DatasetInfo): VersionInfo =
     lookup(tableInfo, LifecycleStage.Unpublished) match {
       case Some(unpublished) =>

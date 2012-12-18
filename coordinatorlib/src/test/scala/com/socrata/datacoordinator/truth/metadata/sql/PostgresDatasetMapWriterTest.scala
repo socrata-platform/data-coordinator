@@ -181,7 +181,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       val schema1 = tables.schema(vi1)
       val schema2 = tables.schema(vi2)
 
-      schema1.values.toSeq.map(_.copy(systemId = 0, versionInfo = null)).sortBy(_.logicalName) must equal (schema2.values.toSeq.map(_.copy(systemId = 0, versionInfo = null)).sortBy(_.logicalName))
+      schema1.values.toSeq.map(_.copy(versionInfo = null)).sortBy(_.logicalName) must equal (schema2.values.toSeq.map(_.copy(versionInfo = null)).sortBy(_.logicalName))
     }
   }
 
