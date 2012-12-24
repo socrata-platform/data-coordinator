@@ -22,4 +22,7 @@ object DataCoordinator extends Build {
 
   lazy val perfTest = p("perftest", PerfTest,
     coordinatorLib)
+
+  lazy val coordinator = p("coordinator", Coordinator,
+    coordinatorLib)
 }
