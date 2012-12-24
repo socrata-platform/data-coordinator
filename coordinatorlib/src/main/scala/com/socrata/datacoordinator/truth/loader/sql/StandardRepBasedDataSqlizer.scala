@@ -10,10 +10,10 @@ import com.socrata.datacoordinator.truth.{TypeContext, DatasetContext}
 import com.socrata.datacoordinator.util.collection.LongLikeMap
 import com.socrata.datacoordinator.truth.sql.SqlColumnRep
 
-class StandardRepBasedDataSqlizer[CT, CV](tableBase: String,
+class StandardRepBasedDataSqlizer[CT, CV](tableName: String,
                                           datasetContext: DatasetContext[CT, CV],
                                           repSchemaBuilder: LongLikeMap[ColumnId, CT] => LongLikeMap[ColumnId, SqlColumnRep[CT, CV]])
-  extends AbstractRepBasedDataSqlizer(tableBase, datasetContext, repSchemaBuilder)
+  extends AbstractRepBasedDataSqlizer(tableName, datasetContext, repSchemaBuilder)
 {
   def insertBatch(conn: Connection)(f: Inserter => Unit): Long = {
     using(new InserterImpl(conn)) { inserter =>

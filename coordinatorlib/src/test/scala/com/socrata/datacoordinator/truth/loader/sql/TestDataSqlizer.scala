@@ -6,9 +6,9 @@ import com.socrata.datacoordinator.truth.DatasetContext
 import com.socrata.datacoordinator.truth.sql.SqlColumnRep
 import com.socrata.datacoordinator.util.collection.LongLikeMap
 
-class TestDataSqlizer(tableBase: String, datasetContext: DatasetContext[TestColumnType, TestColumnValue])
+class TestDataSqlizer(tableName: String, datasetContext: DatasetContext[TestColumnType, TestColumnValue])
   extends StandardRepBasedDataSqlizer[TestColumnType, TestColumnValue](
-    tableBase,
+    tableName,
     datasetContext,
     TestDataSqlizer.repSchemaBuilder
   )

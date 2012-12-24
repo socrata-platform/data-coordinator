@@ -50,8 +50,10 @@ object ExecutePlan {
           implicit def connImplict = conn
 
           conn.setAutoCommit(false)
-          executeDDL("DROP TABLE IF EXISTS perf_data")
-          executeDDL("DROP TABLE IF EXISTS perf_log")
+          val dataTableName = "perf_data"
+          val logTableName = "perf_log"
+          executeDDL("DROP TABLE IF EXISTS " + dataTableName)
+          executeDDL("DROP TABLE IF EXISTS " + logTableName)
           val schema = JsonCodec.fromJValue[Map[String, String]](plan.read()).getOrElse(sys.error("Cannot read schema"))
 
           val schemaCtr = new Counter
@@ -60,20 +62,20 @@ object ExecutePlan {
           val cId = "c_" + idColumnId
           val cUid = "c_" + schemaIdMap("uid")
 
-          val createSql = schema.toSeq.map { case (col, typ) => "c_" + schemaIdMap(col) + " " + typ }.mkString("CREATE TABLE perf_data (" + cId + " bigint not null primary key,",",",")")
+          val createSql = schema.toSeq.map { case (col, typ) => "c_" + schemaIdMap(col) + " " + typ }.mkString("CREATE TABLE " + dataTableName + " (" + cId + " bigint not null primary key,",",",")")
           log.info(createSql)
           executeDDL(createSql)
-          executeDDL("ALTER TABLE perf_data ALTER COLUMN " + cUid + " SET NOT NULL")
-          executeDDL("CREATE UNIQUE INDEX perf_data_uid ON perf_data(" + cUid + ")")
-          executeDDL("ALTER TABLE perf_data ADD UNIQUE USING INDEX perf_data_uid")
-          executeDDL("CREATE TABLE perf_log (version bigint not null, subversion bigint not null, what varchar(16) not null, aux bytea not null, primary key (version, subversion))")
+          executeDDL("ALTER TABLE " + dataTableName + " ALTER COLUMN " + cUid + " SET NOT NULL")
+          executeDDL("CREATE UNIQUE INDEX perf_data_uid ON " + dataTableName + "(" + cUid + ")")
+          executeDDL("ALTER TABLE " + dataTableName + " ADD UNIQUE USING INDEX perf_data_uid")
+          executeDDL("CREATE TABLE " + logTableName + " (version bigint not null, subversion bigint not null, what varchar(16) not null, aux bytea not null, primary key (version, subversion))")
 
           val userSchema = new LongLikeMap[ColumnId, PerfType](schema.map {
             case (k, "TEXT") => schemaIdMap(k) -> PTText
             case (k, "NUMERIC") => schemaIdMap(k) -> PTNumber
           })
           val datasetContext = new PerfDatasetContext(userSchema, idColumnId, Some(schemaIdMap("uid")))
-          val sqlizer = new PerfDataSqlizer("perf", datasetContext)
+          val sqlizer = new PerfDataSqlizer(dataTableName, datasetContext)
 
           val rowPreparer = new RowPreparer[PerfValue] {
             def prepareForInsert(row: Row[PerfValue], systemId: Long) = {
@@ -174,7 +176,7 @@ object ExecutePlan {
 
           val start = System.nanoTime()
           val report = for {
-            dataLogger <- managed(new SqlLogger(conn, sqlizer, () => new PerfRowCodec))
+            dataLogger <- managed(new SqlLogger(conn, logTableName, () => new PerfRowCodec))
             txn <- managed(SqlLoader(conn, rowPreparer, sqlizer, dataLogger, idProvider, executor))
           } yield {
             def loop() {

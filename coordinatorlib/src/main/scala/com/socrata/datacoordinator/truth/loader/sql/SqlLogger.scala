@@ -16,18 +16,18 @@ import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.rojoma.json.util.JsonUtil
 import com.rojoma.json.codec.JsonCodec
 
-class SqlLogger[CT, CV](connection: Connection,
-                        sqlizer: DataSqlizer[CT, CV],
-                        rowCodecFactory: () => RowLogCodec[CV],
-                        rowFlushSize: Int = 128000,
-                        batchFlushSize: Int = 2000000)
+class SqlLogger[CV](connection: Connection,
+                    logTableName: String,
+                    rowCodecFactory: () => RowLogCodec[CV],
+                    rowFlushSize: Int = 128000,
+                    batchFlushSize: Int = 2000000)
   extends Logger[CV]
 {
   import SqlLogger.log
 
   lazy val versionNum = for {
     stmt <- managed(connection.createStatement())
-    rs <- managed(stmt.executeQuery("SELECT MAX(version) FROM " + sqlizer.logTableName))
+    rs <- managed(stmt.executeQuery("SELECT MAX(version) FROM " + logTableName))
   } yield {
     val hasNext = rs.next()
     assert(hasNext, "next version query didn't return anything?")
@@ -47,7 +47,7 @@ class SqlLogger[CT, CV](connection: Connection,
 
   def insertStmt = {
     if(_insertStmt == null) {
-      _insertStmt = connection.prepareStatement("INSERT INTO " + sqlizer.logTableName + " (version, subversion, what, aux) VALUES (" + versionNum + ", ?, ?, ?)")
+      _insertStmt = connection.prepareStatement("INSERT INTO " + logTableName + " (version, subversion, what, aux) VALUES (" + versionNum + ", ?, ?, ?)")
     }
     _insertStmt
   }
@@ -211,7 +211,7 @@ class SqlLogger[CT, CV](connection: Connection,
 }
 
 object SqlLogger {
-  private val log = org.slf4j.LoggerFactory.getLogger(classOf[SqlLogger[_,_]])
+  private val log = org.slf4j.LoggerFactory.getLogger(classOf[SqlLogger[_]])
 
   // all of these must be exactly 3 characters long and consist of
   // nothing but upper-case ASCII letters.

@@ -10,7 +10,7 @@ import com.socrata.datacoordinator.truth.sql.{SqlPKableColumnRep, SqlColumnRep}
 import com.socrata.datacoordinator.util.{CloseableIterator, FastGroupedIterator, LeakDetect}
 import com.socrata.datacoordinator.util.collection.LongLikeMap
 
-abstract class AbstractRepBasedDataSqlizer[CT, CV](tableBase: String,
+abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
                                                    val datasetContext: DatasetContext[CT, CV],
                                                    repSchemaBuilder: LongLikeMap[ColumnId, CT] => LongLikeMap[ColumnId, SqlColumnRep[CT, CV]])
   extends DataSqlizer[CT, CV]
@@ -26,9 +26,6 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](tableBase: String,
 
   val sidRep = repSchema(datasetContext.systemIdColumn).asInstanceOf[SqlPKableColumnRep[CT, CV]]
   val pkRep = repSchema(logicalPKColumnName).asInstanceOf[SqlPKableColumnRep[CT, CV]]
-
-  def dataTableName: String = tableBase + "_data"
-  def logTableName: String = tableBase + "_log"
 
   def softMaxBatchSize = 2000000
 

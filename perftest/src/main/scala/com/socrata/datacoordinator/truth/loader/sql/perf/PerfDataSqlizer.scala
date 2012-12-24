@@ -13,9 +13,9 @@ import com.socrata.datacoordinator.truth.DatasetContext
 import util.collection.LongLikeMap
 import truth.sql.SqlColumnRep
 
-class PerfDataSqlizer(tableBase: String, datasetContext: DatasetContext[PerfType, PerfValue])
+class PerfDataSqlizer(tableName: String, datasetContext: DatasetContext[PerfType, PerfValue])
   extends PostgresRepBasedDataSqlizer[PerfType, PerfValue](
-    tableBase,
+    tableName,
     datasetContext,
     PerfDataSqlizer.repSchemaBuilder
   )

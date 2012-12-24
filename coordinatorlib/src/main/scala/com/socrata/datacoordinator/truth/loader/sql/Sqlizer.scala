@@ -13,7 +13,6 @@ trait DataSqlizer[CT, CV] {
   def typeContext: TypeContext[CT, CV]
 
   def dataTableName: String
-  def logTableName: String
 
   def softMaxBatchSize: Int
   def sizeofDelete: Int

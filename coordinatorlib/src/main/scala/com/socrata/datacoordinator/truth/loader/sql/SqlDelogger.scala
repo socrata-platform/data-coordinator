@@ -16,16 +16,16 @@ import com.socrata.datacoordinator.util.{CloseableIterator, LeakDetect}
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.rojoma.json.codec.JsonCodec
 
-class SqlDelogger[CT, CV](connection: Connection,
-                          sqlizer: DataSqlizer[CT, CV],
-                          rowCodecFactory: () => RowLogCodec[CV])
+class SqlDelogger[CV](connection: Connection,
+                      logTableName: String,
+                      rowCodecFactory: () => RowLogCodec[CV])
   extends Delogger[CV]
 {
   var stmt: PreparedStatement = null
 
   def query = {
     if(stmt == null) {
-      stmt = connection.prepareStatement("select subversion, what, aux from " + sqlizer.logTableName + " where version = ? order by subversion")
+      stmt = connection.prepareStatement("select subversion, what, aux from " + logTableName + " where version = ? order by subversion")
       stmt.setFetchSize(1)
     }
     stmt

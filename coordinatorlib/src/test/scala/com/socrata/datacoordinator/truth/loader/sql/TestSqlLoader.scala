@@ -62,9 +62,9 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
   val idCol: ColumnId = 0
   val idColName = "c_" + idCol
 
-  def makeTables(conn: Connection, ctx: DataSqlizer[TestColumnType, TestColumnValue]) {
+  def makeTables(conn: Connection, ctx: DataSqlizer[TestColumnType, TestColumnValue], logTableName: String) {
     execute(conn, "drop table if exists " + ctx.dataTableName)
-    execute(conn, "drop table if exists " + ctx.logTableName)
+    execute(conn, "drop table if exists " + logTableName)
     execute(conn, "CREATE TABLE " + ctx.dataTableName + " (c_" + idCol + " bigint not null primary key," + ctx.datasetContext.userSchema.iterator.map { case (c,t) =>
       val sqltype = t match {
         case LongColumn => "BIGINT"
@@ -76,11 +76,11 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       execute(conn, "CREATE INDEX " + ctx.dataTableName + "_userid ON " + ctx.dataTableName + "(c_" + pkCol + ")")
     }
     // varchar rows because h2 returns a clob for TEXT columns instead of a string
-    execute(conn, "CREATE TABLE " + ctx.logTableName + " (version bigint not null, subversion bigint not null, rows varchar(65536) not null, who varchar(100) null, PRIMARY KEY(version, subversion))")
+    execute(conn, "CREATE TABLE " + logTableName + " (version bigint not null, subversion bigint not null, rows varchar(65536) not null, who varchar(100) null, PRIMARY KEY(version, subversion))")
   }
 
-  def preload(conn: Connection, ctx: DataSqlizer[TestColumnType, TestColumnValue])(rows: Row[TestColumnValue]*) {
-    makeTables(conn, ctx)
+  def preload(conn: Connection, ctx: DataSqlizer[TestColumnType, TestColumnValue], logTableName: String)(rows: Row[TestColumnValue]*) {
+    makeTables(conn, ctx, logTableName)
     for(row <- rows) {
       val LongValue(id) = row.getOrElse(ctx.datasetContext.systemIdColumn, sys.error("No :id"))
       val remainingColumns = new MutableRow[TestColumnValue](row)
@@ -91,7 +91,9 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     }
   }
 
-  val standardTableName = "test"
+  val standardTableBase = "test"
+  val standardTableName = standardTableBase + "_data"
+  val standardLogTableName = standardTableBase + "_log"
   val num: ColumnId = 1L
   val numName = "c_" + num
   val str: ColumnId = 2L
@@ -115,11 +117,11 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
 
     withDB() { conn =>
-      makeTables(conn, dataSqlizer)
+      makeTables(conn, dataSqlizer, standardLogTableName)
       conn.commit()
 
       for {
-        dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
         txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, idProvider(15), executor))
       } {
         txn.upsert(Row[TestColumnValue](num -> LongValue(1), str -> StringValue("a")))
@@ -149,11 +151,11 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
 
     withDB() { conn =>
-      makeTables(conn, dataSqlizer)
+      makeTables(conn, dataSqlizer, standardLogTableName)
       conn.commit()
 
       for {
-        dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
         txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, ids, executor))
       } {
         txn.upsert(Row[TestColumnValue](num -> LongValue(1), str -> StringValue("a")))
@@ -183,11 +185,11 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
 
     withDB() { conn =>
-      makeTables(conn, dataSqlizer)
+      makeTables(conn, dataSqlizer, standardLogTableName)
       conn.commit()
 
       for {
-        dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
         txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, idProvider(22), executor))
       } {
         txn.upsert(Row(idCol -> NullValue, num -> LongValue(1), str -> StringValue("a")))
@@ -212,11 +214,11 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
 
     withDB() { conn =>
-      makeTables(conn, dataSqlizer)
+      makeTables(conn, dataSqlizer, standardLogTableName)
       conn.commit()
 
       for {
-        dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
         txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, idProvider(6), executor))
       } {
         txn.upsert(Row(idCol -> LongValue(77), num -> LongValue(1), str -> StringValue("a")))
@@ -242,13 +244,13 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
 
     withDB() { conn =>
-      preload(conn, dataSqlizer)(
+      preload(conn, dataSqlizer, standardLogTableName)(
         Row(idCol -> LongValue(7), str -> StringValue("q"), num -> LongValue(2))
       )
       conn.commit()
 
       for {
-        dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
         txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, ids, executor))
       } {
         txn.upsert(Row(idCol -> LongValue(7), num -> LongValue(44)))
@@ -280,11 +282,11 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
 
     withDB() { conn =>
-      makeTables(conn, dataSqlizer)
+      makeTables(conn, dataSqlizer, standardLogTableName)
       conn.commit()
 
       for {
-        dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
         txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, ids, executor))
       } {
         txn.upsert(Row(num -> LongValue(1), str -> StringValue("a")))
@@ -316,11 +318,11 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
 
     withDB() { conn =>
-      makeTables(conn, dataSqlizer)
+      makeTables(conn, dataSqlizer, standardLogTableName)
       conn.commit()
 
       for {
-        dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
         txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, ids, executor))
       } {
         txn.upsert(Row(num -> LongValue(1), str -> NullValue))
@@ -348,11 +350,11 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
 
     withDB() { conn =>
-      makeTables(conn, dataSqlizer)
+      makeTables(conn, dataSqlizer, standardLogTableName)
       conn.commit()
 
       for {
-        dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
         txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, ids, executor))
       } {
         txn.upsert(Row(num -> LongValue(1)))
@@ -380,13 +382,13 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
 
     withDB() { conn =>
-      preload(conn, dataSqlizer)(
+      preload(conn, dataSqlizer, standardLogTableName)(
         Row(idCol -> LongValue(7), str -> StringValue("q"), num -> LongValue(2))
       )
       conn.commit()
 
       for {
-        dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
         txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, ids, executor))
       } {
         txn.upsert(Row(str -> StringValue("q"), num -> LongValue(44)))
@@ -418,11 +420,11 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
 
     withDB() { conn =>
-      makeTables(conn, dataSqlizer)
+      makeTables(conn, dataSqlizer, standardLogTableName)
       conn.commit()
 
       for {
-        dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
         txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, ids, executor))
       } {
         txn.upsert(Row(num -> LongValue(1), str -> StringValue("q")))
@@ -455,11 +457,11 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
 
     withDB() { conn =>
-      makeTables(conn, dataSqlizer)
+      makeTables(conn, dataSqlizer, standardLogTableName)
       conn.commit()
 
       for {
-        dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
         txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, ids, executor))
       } {
         txn.upsert(Row(idCol -> LongValue(15), num -> LongValue(1), str -> StringValue("q")))
@@ -487,11 +489,11 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
 
     withDB() { conn =>
-      makeTables(conn, dataSqlizer)
+      makeTables(conn, dataSqlizer, standardLogTableName)
       conn.commit()
 
       for {
-        dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
         txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, ids, executor))
       } {
         txn.upsert(Row(num -> LongValue(1), str -> StringValue("q")))
@@ -522,11 +524,11 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
 
     withDB() { conn =>
-      makeTables(conn, dataSqlizer)
+      makeTables(conn, dataSqlizer, standardLogTableName)
       conn.commit()
 
       for {
-        dataLogger <- managed(new TestDataLogger(conn, dataSqlizer))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
         txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, ids, executor))
       } {
         txn.upsert(Row(num -> LongValue(1), str -> StringValue("q")))
@@ -601,8 +603,8 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     forAll { (opss: List[List[Op]]) =>
       withDB() { stupidConn =>
         withDB() { smartConn =>
-          makeTables(smartConn, dataSqlizer)
-          makeTables(stupidConn, stupidDataSqlizer)
+          makeTables(smartConn, dataSqlizer, standardLogTableName)
+          makeTables(stupidConn, stupidDataSqlizer, "stupid_log")
 
           def runCompareTest(ops: List[Op]) {
             val smartReport = using(SqlLoader(smartConn, rowPreparer, dataSqlizer, NullLogger(), ids, executor)) { txn =>
@@ -725,8 +727,8 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     forAll { (opss: List[List[Op]]) =>
       withDB() { stupidConn =>
         withDB() { smartConn =>
-          makeTables(smartConn, dataSqlizer)
-          makeTables(stupidConn, stupidDataSqlizer)
+          makeTables(smartConn, dataSqlizer, standardLogTableName)
+          makeTables(stupidConn, stupidDataSqlizer, "stupid_log")
 
           val smartIds = idProvider(1)
           val stupidIds = idProvider(1)

@@ -13,7 +13,7 @@ import com.socrata.datacoordinator.truth.loader.DataLogger
 import com.socrata.datacoordinator.util.Counter
 import com.rojoma.json.util.JsonUtil
 
-class TestDataLogger(conn: Connection, dataSqlizer: DataSqlizer[TestColumnType, TestColumnValue]) extends DataLogger[TestColumnValue] {
+class TestDataLogger(conn: Connection, logTableName: String) extends DataLogger[TestColumnValue] {
   val subVersion = new Counter(init = 1)
 
   val list = new VectorBuilder[JValue]
@@ -48,7 +48,7 @@ class TestDataLogger(conn: Connection, dataSqlizer: DataSqlizer[TestColumnType, 
   def finish() {
     val ops = list.result()
     if(ops.nonEmpty) {
-      using(conn.prepareStatement("INSERT INTO " + dataSqlizer.logTableName + " (version, subversion, rows, who) VALUES (1, ?, ?, 'hello')")) { stmt =>
+      using(conn.prepareStatement("INSERT INTO " + logTableName + " (version, subversion, rows, who) VALUES (1, ?, ?, 'hello')")) { stmt =>
         stmt.setLong(1, subVersion())
         stmt.setString(2, JsonUtil.renderJson(list.result()))
         stmt.executeUpdate()
