@@ -9,26 +9,7 @@ import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.truth.{DatasetSystemIdInUseByWriterException, DatasetIdInUseByWriterException}
 
-class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatasetMapReaderAPI(_conn) with GlobalLog with DatasetMapWriter {
-  def log(tableInfo: DatasetInfo, version: Long, updatedAt: DateTime, updatedBy: String) {
-    // bit heavyweight but we want an absolute ordering on these log entries.  In particular,
-    // we never want row with id n+1 to become visible to outsiders before row n, even ignoring
-    // any other problems.  This is the reason for the "this should be the last thing a txn does"
-    // note on the interface.
-    using(conn.createStatement()) { stmt =>
-      stmt.execute("LOCK TABLE global_log IN EXCLUSIVE MODE")
-    }
-
-    using(conn.prepareStatement("INSERT INTO global_log (id, dataset_system_id, version, updated_at, updated_by) SELECT COALESCE(max(id), 0) + 1, ?, ?, ?, ? FROM global_log")) { stmt =>
-      stmt.setLong(1, tableInfo.systemId)
-      stmt.setLong(2, version)
-      stmt.setTimestamp(3, new Timestamp(updatedAt.getMillis))
-      stmt.setString(4, updatedBy)
-      val count = stmt.executeUpdate()
-      assert(count == 1, "Insert into global_log didn't create a row?")
-    }
-  }
-
+class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatasetMapReaderAPI(_conn) with DatasetMapWriter {
   def lockNotAvailableState = "55P03"
 
   def datasetInfoByUserIdQuery = "SELECT system_id, dataset_id, table_base FROM dataset_map WHERE dataset_id = ? FOR UPDATE NOWAIT"
