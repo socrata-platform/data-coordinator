@@ -8,10 +8,11 @@ object CoordinatorLib {
   lazy val settings: Seq[Setting[_]] = BuildSettings.projectSettings() ++ Seq(
     libraryDependencies <++= (slf4jVersion) { slf4jVersion =>
       Seq(
-        "com.socrata" %% "socrata-id" % "2.1.0",
-        "com.rojoma" %% "rojoma-json" % "2.0.0",
+        "com.socrata" %% "socrata-id" % "2.1.1",
+        "com.rojoma" %% "rojoma-json" % "2.1.0",
         "com.rojoma" %% "simple-arm" % "1.1.10",
-        "org.scalaj" %% "scalaj-time" % "0.6",
+        "joda-time" % "joda-time" % "2.1",
+        "org.joda" % "joda-convert" % "1.2",
         "net.sf.trove4j" % "trove4j" % "3.0.3",
         "org.xerial.snappy" % "snappy-java" % "1.0.4.1",
         "postgresql" % "postgresql" % "9.1-901-1.jdbc4", // we do use postgres-specific features some places

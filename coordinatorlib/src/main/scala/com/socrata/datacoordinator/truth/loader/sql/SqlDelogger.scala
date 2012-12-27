@@ -40,7 +40,7 @@ class SqlDelogger[CV](connection: Connection,
     var lastSubversion = 0L
     var nextResult: Delogger.LogEvent[CV] = null
     var done = false
-    val UTF8 = Codec.UTF8
+    val UTF8 = Codec.UTF8.charSet
 
     def advance() {
       nextResult = null

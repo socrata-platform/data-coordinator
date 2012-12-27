@@ -56,8 +56,8 @@ abstract class SqlLoader[CT, CV](val connection: Connection,
     connectionMutex.synchronized {
       checkAsyncJob()
 
-      implicit def wrap[T](x: TIntObjectHashMap[T]) = TIntObjectHashMapWrapper(x)
-      new SqlLoader.JobReport(inserted, updated, deleted, elided, errors)
+      def w[T](x: TIntObjectHashMap[T]) = TIntObjectHashMapWrapper(x)
+      new SqlLoader.JobReport(w(inserted), w(updated), w(deleted), w(elided), w(errors))
     }
   }
 

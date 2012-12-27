@@ -7,7 +7,7 @@ import com.socrata.socratasbt.CheckClasspath
 
 object BuildSettings {
   val buildSettings: Seq[Setting[_]] = Defaults.defaultSettings ++ socrataBuildSettings ++ Seq(
-    scalaVersion := "2.9.2",
+    scalaVersion := "2.10.0",
     compile in Compile <<= (compile in Compile) dependsOn (CheckClasspath.Keys.failIfConflicts in Compile),
     compile in Test <<= (compile in Test) dependsOn (CheckClasspath.Keys.failIfConflicts in Test),
     testOptions in Test ++= Seq(
