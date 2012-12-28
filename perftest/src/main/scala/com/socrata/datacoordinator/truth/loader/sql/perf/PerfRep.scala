@@ -5,6 +5,7 @@ package perf
 import com.socrata.datacoordinator.truth.sql.SqlPKableColumnRep
 import java.sql.{Types, PreparedStatement, ResultSet}
 import java.lang.StringBuilder
+import com.socrata.datacoordinator.id.{ColumnId, RowId}
 
 abstract class PerfRep(val columnId: ColumnId) extends SqlPKableColumnRep[PerfType, PerfValue] {
   def templateForMultiLookup(n: Int) = {
@@ -24,14 +25,14 @@ abstract class PerfRep(val columnId: ColumnId) extends SqlPKableColumnRep[PerfTy
 
   def equalityIndexExpression = base
 
-  val base = "c_" + columnId
+  val base = "c_" + columnId.underlying
 
   val physColumns = Array(base)
 }
 
 class IdRep(columnId: ColumnId) extends PerfRep(columnId) {
   def prepareMultiLookup(stmt: PreparedStatement, v: PerfValue, start: Int) = {
-    stmt.setLong(start, v.asInstanceOf[PVId].value)
+    stmt.setLong(start, v.asInstanceOf[PVId].value.underlying)
     start + 1
   }
 
@@ -40,38 +41,38 @@ class IdRep(columnId: ColumnId) extends PerfRep(columnId) {
     val it = literals.iterator
     sb.append(it.next())
     while(it.hasNext) {
-      sb.append(',').append(it.next().asInstanceOf[PVId].value)
+      sb.append(',').append(it.next().asInstanceOf[PVId].value.underlying)
     }
     sb.append("))")
     sb.toString
   }
 
   def sql_==(literal: PerfValue) =
-    "(" + base + "=" + literal.asInstanceOf[PVId].value + ")"
+    "(" + base + "=" + literal.asInstanceOf[PVId].value.underlying + ")"
 
   def representedType = PTId
 
   val sqlTypes = Array("BIGINT")
 
   def csvifyForInsert(sb: StringBuilder, v: PerfValue) {
-    sb.append(v.asInstanceOf[PVId].value)
+    sb.append(v.asInstanceOf[PVId].value.underlying)
   }
 
   def prepareInsert(stmt: PreparedStatement, v: PerfValue, start: Int) = {
-    stmt.setLong(start, v.asInstanceOf[PVId].value)
+    stmt.setLong(start, v.asInstanceOf[PVId].value.underlying)
     start + 1
   }
 
   def estimateInsertSize(v: PerfValue) = 8
 
   def SETsForUpdate(sb: StringBuilder, v: PerfValue) {
-    sb.append(base).append('=').append(v.asInstanceOf[PVId].value)
+    sb.append(base).append('=').append(v.asInstanceOf[PVId].value.underlying)
   }
 
   def estimateUpdateSize(v: PerfValue) = base.length + 8
 
   def fromResultSet(rs: ResultSet, start: Int) =
-    PVId(rs.getLong(start))
+    PVId(new RowId(rs.getLong(start)))
 }
 
 class NumberRep(columnId: ColumnId) extends PerfRep(columnId) {

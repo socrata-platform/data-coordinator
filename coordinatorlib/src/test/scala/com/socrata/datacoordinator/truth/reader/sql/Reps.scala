@@ -4,35 +4,36 @@ package truth.reader.sql
 import com.socrata.datacoordinator.truth.sql.{SqlColumnReadRep, SqlPKableColumnReadRep}
 import java.sql.{PreparedStatement, ResultSet}
 import java.lang.StringBuilder
+import com.socrata.datacoordinator.id.{RowId, ColumnId}
 
 class IdRep(cid: ColumnId) extends SqlPKableColumnReadRep[TestColumnType, TestColumnValue] {
   def representedType = IdType
 
-  val base = "c_" + cid
+  val base = "c_" + cid.underlying
 
   def physColumns = Array(base)
 
   def sqlTypes = Array("BIGINT")
 
   def fromResultSet(rs: ResultSet, start: Int) =
-    IdValue(rs.getLong(start))
+    IdValue(new RowId(rs.getLong(start)))
 
   def templateForMultiLookup(n: Int) = (1 to n).map(_ => "?").mkString("(" + base + " in (", ",", "))")
 
   def prepareMultiLookup(stmt: PreparedStatement, v: TestColumnValue, start: Int) = {
-    stmt.setLong(start, v.asInstanceOf[IdValue].value)
+    stmt.setLong(start, v.asInstanceOf[IdValue].value.underlying)
     start + 1
   }
 
   def sql_in(literals: Iterable[TestColumnValue]) =
-    literals.map(_.asInstanceOf[IdValue].value).mkString("(" + base + " in (", ",", "))")
+    literals.map(_.asInstanceOf[IdValue].value.underlying).mkString("(" + base + " in (", ",", "))")
 
   def templateForSingleLookup = "(" + base + " = ?)"
 
   def prepareSingleLookup(stmt: PreparedStatement, v: TestColumnValue, start: Int) =
     prepareMultiLookup(stmt, v, start)
 
-  def sql_==(literal: TestColumnValue) = "(" + base + " = " + literal.asInstanceOf[IdValue].value + ")"
+  def sql_==(literal: TestColumnValue) = "(" + base + " = " + literal.asInstanceOf[IdValue].value.underlying + ")"
 
   def equalityIndexExpression = base
 }
@@ -40,7 +41,7 @@ class IdRep(cid: ColumnId) extends SqlPKableColumnReadRep[TestColumnType, TestCo
 class NumberRep(val cid: ColumnId) extends SqlColumnReadRep[TestColumnType, TestColumnValue] {
   def representedType = NumberType
 
-  val base = "c_" + cid
+  val base = "c_" + cid.underlying
 
   def physColumns = Array(base)
 
@@ -56,7 +57,7 @@ class NumberRep(val cid: ColumnId) extends SqlColumnReadRep[TestColumnType, Test
 class StringRep(val cid: ColumnId) extends SqlPKableColumnReadRep[TestColumnType, TestColumnValue] {
   def representedType = StringType
 
-  val base = "c_" + cid
+  val base = "c_" + cid.underlying
 
   def physColumns = Array(base)
 

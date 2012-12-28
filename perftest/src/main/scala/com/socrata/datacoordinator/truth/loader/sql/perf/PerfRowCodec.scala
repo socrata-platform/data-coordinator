@@ -8,6 +8,7 @@ import gnu.trove.map.hash.{TLongIntHashMap, TIntLongHashMap, TObjectIntHashMap, 
 import gnu.trove.impl.Constants
 
 import com.google.protobuf.{CodedInputStream, CodedOutputStream, InvalidProtocolBufferException}
+import com.socrata.datacoordinator.id.{RowId, ColumnId}
 
 class PerfRowCodec extends RowLogCodec[PerfValue] {
   def rowDataVersion = 0
@@ -18,12 +19,12 @@ class PerfRowCodec extends RowLogCodec[PerfValue] {
   private val colNameWriteCache = new TLongIntHashMap(Constants.DEFAULT_CAPACITY, Constants.DEFAULT_LOAD_FACTOR, -1, -1)
 
   private def writeKey(target: CodedOutputStream, key: ColumnId) {
-    val cached = colNameWriteCache.get(key)
+    val cached = colNameWriteCache.get(key.underlying)
     if(cached == -1) {
       val id = colNameWriteCache.size()
-      colNameWriteCache.put(key, id)
+      colNameWriteCache.put(key.underlying, id)
       target.writeInt32NoTag(id)
-      target.writeInt64NoTag(key)
+      target.writeInt64NoTag(key.underlying)
     } else {
       target.writeInt32NoTag(cached)
     }
@@ -35,9 +36,9 @@ class PerfRowCodec extends RowLogCodec[PerfValue] {
     if(cached == -1) {
       val key = source.readInt64()
       colNameReadCache.put(id, key)
-      key
+      new ColumnId(key)
     } else {
-      cached
+      new ColumnId(cached)
     }
   }
 
@@ -52,7 +53,7 @@ class PerfRowCodec extends RowLogCodec[PerfValue] {
       v match {
         case PVId(i) =>
           target.writeRawByte(0)
-          target.writeInt64NoTag(i)
+          target.writeInt64NoTag(i.underlying)
         case PVText(s) =>
           target.writeRawByte(1)
           target.writeStringNoTag(s)
@@ -72,7 +73,7 @@ class PerfRowCodec extends RowLogCodec[PerfValue] {
       val k = readKey(source)
       val v = source.readRawByte() match {
         case 0 =>
-          PVId(source.readInt64())
+          PVId(new RowId(source.readInt64()))
         case 1 =>
           PVText(source.readString())
         case 2 =>

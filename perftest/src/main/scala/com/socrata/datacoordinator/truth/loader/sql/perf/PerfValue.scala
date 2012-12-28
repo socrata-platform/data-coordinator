@@ -3,12 +3,13 @@ package truth.loader
 package sql
 package perf
 
-import runtime.ScalaRunTime
+import scala.runtime.ScalaRunTime
+import com.socrata.datacoordinator.id.RowId
 
 sealed abstract class PerfValue {
   def sqlize: String
 }
-case class PVId(value: Long) extends PerfValue {
+case class PVId(value: RowId) extends PerfValue {
   def sqlize = value.toString
 }
 case class PVNumber(value: BigDecimal) extends PerfValue {

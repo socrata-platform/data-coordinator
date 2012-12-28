@@ -1,11 +1,12 @@
 package com.socrata.datacoordinator.truth.reader.sql
 
 import com.socrata.datacoordinator.truth.TypeContext
+import com.socrata.datacoordinator.id.RowId
 
 object TestTypeContext extends TypeContext[TestColumnType, TestColumnValue] {
   def isNull(value: TestColumnValue) = value eq NullValue
 
-  def makeValueFromSystemId(id: Long) = IdValue(id)
+  def makeValueFromSystemId(id: RowId) = IdValue(id)
 
   def makeSystemIdFromValue(id: TestColumnValue) = id.asInstanceOf[IdValue].value
 

@@ -15,6 +15,8 @@ import com.socrata.datacoordinator.truth.RowLogCodec
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.rojoma.json.util.JsonUtil
 import com.rojoma.json.codec.JsonCodec
+import com.socrata.datacoordinator.id.{RowId, ColumnId}
+import com.socrata.datacoordinator.util.collection.ColumnIdMap
 
 class SqlLogger[CV](connection: Connection,
                     logTableName: String,
@@ -82,12 +84,12 @@ class SqlLogger[CV](connection: Connection,
     assert(!transactionEnded, "Operation logged after saying the transaction was over")
   }
 
-  assert(ColumnId(5).toString == "5") // so that when ColumnId is a value class I remember to update "truncated"
-  def truncated(schema: Map[ColumnId, ColumnInfo]) {
+  def truncated(schema: ColumnIdMap[ColumnInfo]) {
     checkTxn()
     flushRowData()
-    logLine(SqlLogger.Truncated, Codec.toUTF8(CompactJsonWriter.toString(JObject(schema.map { case (cid, colSpec) =>
-      cid.toString -> JsonCodec.toJValue(colSpec)
+    logLine(SqlLogger.Truncated, Codec.toUTF8(CompactJsonWriter.toString(JObject(schema.foldLeft(Map.empty[String, JValue]) { (result, sidCol) =>
+      val (cid, colSpec) = sidCol
+      result + (cid.underlying.toString -> JsonCodec.toJValue(colSpec))
     }))))
   }
 
@@ -187,19 +189,19 @@ class SqlLogger[CV](connection: Connection,
     }
   }
 
-  def insert(sid: Long, row: Row[CV]) {
+  def insert(sid: RowId, row: Row[CV]) {
     checkTxn()
     rowCodec.insert(out, sid, row)
     maybeFlushRowData()
   }
 
-  def update(sid: Long, row: Row[CV]) {
+  def update(sid: RowId, row: Row[CV]) {
     checkTxn()
     rowCodec.update(out, sid, row)
     maybeFlushRowData()
   }
 
-  def delete(systemID: Long) {
+  def delete(systemID: RowId) {
     checkTxn()
     rowCodec.delete(out, systemID)
     maybeFlushRowData()

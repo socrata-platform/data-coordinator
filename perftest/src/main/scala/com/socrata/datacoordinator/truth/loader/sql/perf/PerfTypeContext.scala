@@ -4,11 +4,12 @@ package sql
 package perf
 
 import com.socrata.datacoordinator.truth.TypeContext
+import com.socrata.datacoordinator.id.RowId
 
 object PerfTypeContext extends TypeContext[PerfType, PerfValue] {
   def isNull(value: PerfValue) = value eq PVNull
 
-  def makeValueFromSystemId(id: Long) = PVId(id)
+  def makeValueFromSystemId(id: RowId) = PVId(id)
 
   def makeSystemIdFromValue(id: PerfValue) = id match {
     case PVId(x) => x

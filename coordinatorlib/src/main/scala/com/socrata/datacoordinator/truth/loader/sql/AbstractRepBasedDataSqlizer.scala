@@ -8,11 +8,12 @@ import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.truth.DatasetContext
 import com.socrata.datacoordinator.truth.sql.{SqlPKableColumnRep, SqlColumnRep}
 import com.socrata.datacoordinator.util.{CloseableIterator, FastGroupedIterator, LeakDetect}
-import com.socrata.datacoordinator.util.collection.LongLikeMap
+import com.socrata.datacoordinator.util.collection.ColumnIdMap
+import com.socrata.datacoordinator.id.RowId
 
 abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
                                                    val datasetContext: DatasetContext[CT, CV],
-                                                   repSchemaBuilder: LongLikeMap[ColumnId, CT] => LongLikeMap[ColumnId, SqlColumnRep[CT, CV]])
+                                                   repSchemaBuilder: ColumnIdMap[CT] => ColumnIdMap[SqlColumnRep[CT, CV]])
   extends DataSqlizer[CT, CV]
 {
   val typeContext = datasetContext.typeContext
@@ -54,11 +55,11 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
   val prepareSystemIdDeleteStatement =
     "DELETE FROM " + dataTableName + " WHERE " + sidRep.templateForSingleLookup
 
-  def prepareSystemIdDelete(stmt: PreparedStatement, sid: Long) {
+  def prepareSystemIdDelete(stmt: PreparedStatement, sid: RowId) {
     sidRep.prepareSingleLookup(stmt, typeContext.makeValueFromSystemId(sid), 1)
   }
 
-  def sqlizeSystemIdUpdate(sid: Long, row: Row[CV]) = {
+  def sqlizeSystemIdUpdate(sid: RowId, row: Row[CV]) = {
     updatePrefix(row).append(sidRep sql_== typeContext.makeValueFromSystemId(sid)).toString
   }
 

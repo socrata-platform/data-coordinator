@@ -2,6 +2,8 @@ package com.socrata.datacoordinator
 package secondary
 
 import java.io.Closeable
+import com.socrata.datacoordinator.id.DatasetId
+import com.socrata.datacoordinator.util.collection.ColumnIdMap
 
 trait Secondary[CT, CV] extends Closeable {
   /**
@@ -28,7 +30,7 @@ trait Secondary[CT, CV] extends Closeable {
    *
    * @param version the final version which will be present after this StoreWriter completes.
    */
-  def replace(datasetID: DatasetId, schema: Map[ColumnId, CT], version: Long): SecondaryWriter[CT, CV]
+  def replace(datasetID: DatasetId, schema: ColumnIdMap[CT], version: Long): SecondaryWriter[CT, CV]
 
   /**
    * Destroys the dataset.  If the dataset does not exist, this does nothing.

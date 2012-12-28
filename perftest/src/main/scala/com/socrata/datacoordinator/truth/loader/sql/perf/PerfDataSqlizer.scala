@@ -3,15 +3,9 @@ package truth.loader
 package sql
 package perf
 
-import java.sql.{Connection, PreparedStatement}
-
-import org.postgresql.core.BaseConnection
-import com.rojoma.simplearm.util._
-
-import com.socrata.datacoordinator.util.{LeakDetect, FastGroupedIterator, CloseableIterator, StringBuilderReader}
 import com.socrata.datacoordinator.truth.DatasetContext
-import util.collection.LongLikeMap
-import truth.sql.SqlColumnRep
+import com.socrata.datacoordinator.truth.sql.SqlColumnRep
+import com.socrata.datacoordinator.util.collection.ColumnIdMap
 
 class PerfDataSqlizer(tableName: String, datasetContext: DatasetContext[PerfType, PerfValue])
   extends PostgresRepBasedDataSqlizer[PerfType, PerfValue](
@@ -21,7 +15,7 @@ class PerfDataSqlizer(tableName: String, datasetContext: DatasetContext[PerfType
   )
 
 object PerfDataSqlizer {
-  def repSchemaBuilder(schema: LongLikeMap[ColumnId, PerfType]): LongLikeMap[ColumnId, SqlColumnRep[PerfType, PerfValue]] =
+  def repSchemaBuilder(schema: ColumnIdMap[PerfType]): ColumnIdMap[SqlColumnRep[PerfType, PerfValue]] =
     schema.transform { (col, typ) =>
       typ match {
         case PTId => new IdRep(col)

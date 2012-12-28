@@ -6,6 +6,7 @@ import scala.runtime.ScalaRunTime
 import com.rojoma.json.codec.JsonCodec
 import com.rojoma.json.matcher.{PObject, Variable}
 import com.rojoma.json.ast.JValue
+import com.socrata.datacoordinator.id.VersionId
 
 trait VersionInfo {
   def datasetInfo: DatasetInfo

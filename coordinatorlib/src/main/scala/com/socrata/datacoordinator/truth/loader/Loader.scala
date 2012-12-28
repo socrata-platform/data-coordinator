@@ -4,6 +4,7 @@ package truth.loader
 import scala.{collection => sc}
 
 import java.io.Closeable
+import com.socrata.datacoordinator.id.ColumnId
 
 trait Loader[CV] extends Closeable {
   def upsert(row: Row[CV])

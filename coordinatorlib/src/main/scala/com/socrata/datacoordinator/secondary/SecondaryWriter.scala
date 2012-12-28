@@ -2,6 +2,7 @@ package com.socrata.datacoordinator
 package secondary
 
 import java.io.Closeable
+import com.socrata.datacoordinator.id.{ColumnId, RowId}
 
 trait SecondaryWriter[CT, CV] extends Closeable {
   // A store should be aware that commands can be re-played.  Each one of

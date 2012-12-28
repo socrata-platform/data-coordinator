@@ -14,9 +14,10 @@ import com.rojoma.json.codec.JsonCodec
 import com.rojoma.json.ast.{JValue, JNull, JNumber, JString}
 import java.util.zip.GZIPInputStream
 import com.socrata.id.numeric.{InMemoryBlockIdProvider, FixedSizeIdProvider, PushbackIdProvider}
-import util.{Counter, IdProviderPoolImpl}
-import util.collection.{LongLikeMap, MutableLongLikeMap}
 import com.socrata.datacoordinator.truth.loader.sql.SqlLoader
+import com.socrata.datacoordinator.util.{Counter, IdProviderPoolImpl}
+import com.socrata.datacoordinator.id.{RowId, ColumnId}
+import com.socrata.datacoordinator.util.collection.{MutableColumnIdMap, ColumnIdMap}
 
 class ExecutePlan
 
@@ -57,12 +58,12 @@ object ExecutePlan {
           val schema = JsonCodec.fromJValue[Map[String, String]](plan.read()).getOrElse(sys.error("Cannot read schema"))
 
           val schemaCtr = new Counter
-          val schemaIdMap = schema.map { case (k, v) => k -> ColumnId(schemaCtr()) }
-          val idColumnId = ColumnId(schemaCtr())
-          val cId = "c_" + idColumnId
-          val cUid = "c_" + schemaIdMap("uid")
+          val schemaIdMap = schema.map { case (k, v) => k -> new ColumnId(schemaCtr()) }
+          val idColumnId = new ColumnId(schemaCtr())
+          val cId = "c_" + idColumnId.underlying
+          val cUid = "c_" + schemaIdMap("uid").underlying
 
-          val createSql = schema.toSeq.map { case (col, typ) => "c_" + schemaIdMap(col) + " " + typ }.mkString("CREATE TABLE " + dataTableName + " (" + cId + " bigint not null primary key,",",",")")
+          val createSql = schema.toSeq.map { case (col, typ) => "c_" + schemaIdMap(col).underlying + " " + typ }.mkString("CREATE TABLE " + dataTableName + " (" + cId + " bigint not null primary key,",",",")")
           log.info(createSql)
           executeDDL(createSql)
           executeDDL("ALTER TABLE " + dataTableName + " ALTER COLUMN " + cUid + " SET NOT NULL")
@@ -70,7 +71,7 @@ object ExecutePlan {
           executeDDL("ALTER TABLE " + dataTableName + " ADD UNIQUE USING INDEX perf_data_uid")
           executeDDL("CREATE TABLE " + logTableName + " (version bigint not null, subversion bigint not null, what varchar(16) not null, aux bytea not null, primary key (version, subversion))")
 
-          val userSchema = new LongLikeMap[ColumnId, PerfType](schema.map {
+          val userSchema = ColumnIdMap[PerfType](schema.map {
             case (k, "TEXT") => schemaIdMap(k) -> PTText
             case (k, "NUMERIC") => schemaIdMap(k) -> PTNumber
           })
@@ -78,8 +79,8 @@ object ExecutePlan {
           val sqlizer = new PerfDataSqlizer(dataTableName, datasetContext)
 
           val rowPreparer = new RowPreparer[PerfValue] {
-            def prepareForInsert(row: Row[PerfValue], systemId: Long) = {
-              val newRow = new MutableLongLikeMap(row)
+            def prepareForInsert(row: Row[PerfValue], systemId: RowId) = {
+              val newRow = MutableColumnIdMap(row)
               newRow(datasetContext.systemIdColumn) = PVId(systemId)
               newRow.freeze()
             }
@@ -141,7 +142,7 @@ object ExecutePlan {
                   }
                 }
               }
-              copier.copyIn("COPY perf_data (" + cId + "," + schema.keys.toSeq.map(c => "c_"+schemaIdMap(c)).mkString(",") + ") from stdin with csv", reader)
+              copier.copyIn("COPY perf_data (" + cId + "," + schema.keys.toSeq.map(c => "c_"+schemaIdMap(c).underlying).mkString(",") + ") from stdin with csv", reader)
               time("Committing prepopulation") {
                 conn.commit()
               }

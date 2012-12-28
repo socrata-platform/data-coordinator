@@ -1,6 +1,8 @@
 package com.socrata.datacoordinator
 package truth
 
+import com.socrata.datacoordinator.id.DatasetId
+
 sealed abstract class DatasetInUseByWriterException(name: Any, cause: Throwable)
   extends RuntimeException("Dataset " + name + " is in use by another writer", cause)
 

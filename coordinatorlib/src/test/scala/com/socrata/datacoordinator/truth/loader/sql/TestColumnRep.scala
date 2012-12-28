@@ -4,6 +4,7 @@ package truth.loader.sql
 import com.socrata.datacoordinator.truth.sql.SqlPKableColumnRep
 import java.sql.{Types, PreparedStatement, ResultSet}
 import java.lang.StringBuilder
+import com.socrata.datacoordinator.id.ColumnId
 
 abstract class TestColumnRep(val columnId: ColumnId) extends SqlPKableColumnRep[TestColumnType, TestColumnValue] {
   def templateForMultiLookup(n: Int) = {
@@ -23,7 +24,7 @@ abstract class TestColumnRep(val columnId: ColumnId) extends SqlPKableColumnRep[
 
   def equalityIndexExpression = base
 
-  val base = "c_" + columnId
+  val base = "c_" + columnId.underlying
 
   val physColumns = Array(base)
 }

@@ -12,6 +12,7 @@ import com.rojoma.json.codec.JsonCodec
 import com.socrata.datacoordinator.truth.loader.DataLogger
 import com.socrata.datacoordinator.util.Counter
 import com.rojoma.json.util.JsonUtil
+import com.socrata.datacoordinator.id.RowId
 
 class TestDataLogger(conn: Connection, logTableName: String) extends DataLogger[TestColumnValue] {
   val subVersion = new Counter(init = 1)
@@ -33,16 +34,16 @@ class TestDataLogger(conn: Connection, logTableName: String) extends DataLogger[
     }
   }
 
-  def insert(systemID: Long, row: Row[TestColumnValue]) {
-    list += JObject(Map("i" -> JsonCodec.toJValue(SortedMap(row.toSeq : _*).map { kv => kv._1.toString -> kv._2 })))
+  def insert(systemID: RowId, row: Row[TestColumnValue]) {
+    list += JObject(Map("i" -> JsonCodec.toJValue(SortedMap(row.toSeq : _*).map { kv => kv._1.underlying.toString -> kv._2 })))
   }
 
-  def update(sid: Long, row: Row[TestColumnValue]) {
-    list += JObject(Map("u" -> JsonCodec.toJValue(SortedMap(row.toSeq : _*).map { kv => kv._1.toString -> kv._2 })))
+  def update(sid: RowId, row: Row[TestColumnValue]) {
+    list += JObject(Map("u" -> JsonCodec.toJValue(SortedMap(row.toSeq : _*).map { kv => kv._1.underlying.toString -> kv._2 })))
   }
 
-  def delete(systemID: Long) {
-    list += JObject(Map("d" -> JNumber(systemID)))
+  def delete(systemID: RowId) {
+    list += JObject(Map("d" -> JNumber(systemID.underlying)))
   }
 
   def finish() {

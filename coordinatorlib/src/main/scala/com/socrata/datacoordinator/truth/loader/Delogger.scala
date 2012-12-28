@@ -5,6 +5,8 @@ import java.io.Closeable
 
 import com.socrata.datacoordinator.util.CloseableIterator
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
+import com.socrata.datacoordinator.id.ColumnId
+import com.socrata.datacoordinator.util.collection.ColumnIdMap
 
 trait Delogger[CV] extends Closeable {
   def delog(version: Long): CloseableIterator[Delogger.LogEvent[CV]]
@@ -12,7 +14,7 @@ trait Delogger[CV] extends Closeable {
 
 object Delogger {
   sealed abstract class LogEvent[+CV]
-  case class Truncated(schema: Map[ColumnId, ColumnInfo]) extends LogEvent[Nothing]
+  case class Truncated(schema: ColumnIdMap[ColumnInfo]) extends LogEvent[Nothing]
   case class ColumnCreated(info: ColumnInfo) extends LogEvent[Nothing]
   case class ColumnRemoved(info: ColumnInfo) extends LogEvent[Nothing]
   case class RowIdentifierChanged(info: Option[ColumnInfo]) extends LogEvent[Nothing]

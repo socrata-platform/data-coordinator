@@ -6,6 +6,7 @@ import java.sql.{SQLException, Connection, DriverManager}
 import com.socrata.datacoordinator.truth.sql.DatabasePopulator
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.truth.metadata.LifecycleStage
+import com.socrata.datacoordinator.util.collection.ColumnIdMap
 
 class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
   override def beforeAll() {
@@ -69,7 +70,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       ci.physicalColumnBase must be ("colbase")
       ci.isPrimaryKey must be (false)
 
-      tables.schema(vi) must equal (Map(ci.systemId -> ci))
+      tables.schema(vi) must equal (ColumnIdMap(ci.systemId -> ci))
     }
   }
 
@@ -81,7 +82,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
       tables.setUserPrimaryKey(ci)
 
-      tables.schema(vi) must equal (Map(ci.systemId -> ci.copy(isPrimaryKey = true)))
+      tables.schema(vi) must equal (ColumnIdMap(ci.systemId -> ci.copy(isPrimaryKey = true)))
     }
   }
 
@@ -98,7 +99,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       ci2.physicalColumnBase must be ("colbase2")
       ci2.isPrimaryKey must be (false)
 
-      tables.schema(vi) must equal (Map(ci1.systemId -> ci1, ci2.systemId -> ci2))
+      tables.schema(vi) must equal (ColumnIdMap(ci1.systemId -> ci1, ci2.systemId -> ci2))
     }
   }
 
@@ -127,7 +128,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       tables.clearUserPrimaryKey(vi)
       tables.setUserPrimaryKey(ci2)
 
-      tables.schema(vi) must equal (Map(ci1.systemId -> ci1, ci2.systemId -> ci2.copy(isPrimaryKey = true)))
+      tables.schema(vi) must equal (ColumnIdMap(ci1.systemId -> ci1, ci2.systemId -> ci2.copy(isPrimaryKey = true)))
     }
   }
 
@@ -162,7 +163,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
       tables.dropColumn(c2)
 
-      tables.schema(vi) must equal (Map(c1.systemId -> c1))
+      tables.schema(vi) must equal (ColumnIdMap(c1.systemId -> c1))
     }
   }
 

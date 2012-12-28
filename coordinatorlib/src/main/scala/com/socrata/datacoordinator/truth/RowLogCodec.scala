@@ -4,6 +4,7 @@ package truth
 import java.io.{EOFException, IOException}
 
 import com.google.protobuf.{CodedInputStream, CodedOutputStream, InvalidProtocolBufferException}
+import com.socrata.datacoordinator.id.RowId
 
 // Hm, may want to refactor this somewhat.  In particular, we'll
 // probably want to plug in different decoders depending on
@@ -24,21 +25,21 @@ trait RowLogCodec[CV] {
     target.writeFixed32NoTag((structureVersion.toInt << 16) | (rowDataVersion & 0xffff))
   }
 
-  def insert(target: CodedOutputStream, systemID: Long, row: Row[CV]) {
+  def insert(target: CodedOutputStream, systemID: RowId, row: Row[CV]) {
     target.writeRawByte(0)
-    target.writeInt64NoTag(systemID)
+    target.writeInt64NoTag(systemID.underlying)
     encode(target, row)
   }
 
-  def update(target: CodedOutputStream, systemID: Long, row: Row[CV]) {
+  def update(target: CodedOutputStream, systemID: RowId, row: Row[CV]) {
     target.writeRawByte(1)
-    target.writeInt64NoTag(systemID)
+    target.writeInt64NoTag(systemID.underlying)
     encode(target, row)
   }
 
-  def delete(target: CodedOutputStream, systemID: Long) {
+  def delete(target: CodedOutputStream, systemID: RowId) {
     target.writeRawByte(2)
-    target.writeInt64NoTag(systemID)
+    target.writeInt64NoTag(systemID.underlying)
   }
 
   def skipVersion(source: CodedInputStream) {

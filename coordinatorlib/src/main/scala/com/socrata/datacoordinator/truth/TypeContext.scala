@@ -1,6 +1,8 @@
 package com.socrata.datacoordinator
 package truth
 
+import com.socrata.datacoordinator.id.RowId
+
 /** Non-dataset-specific operations on column values. */
 trait TypeContext[CT, CV] {
   def isNull(value: CV): Boolean

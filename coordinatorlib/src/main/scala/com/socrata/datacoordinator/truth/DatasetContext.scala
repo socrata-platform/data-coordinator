@@ -1,13 +1,14 @@
 package com.socrata.datacoordinator
 package truth
 
-import com.socrata.datacoordinator.util.collection.LongLikeMap
+import com.socrata.datacoordinator.util.collection.ColumnIdMap
+import com.socrata.datacoordinator.id.{RowId, ColumnId}
 
 /** Extracts information about a dataset and from rows within the context of a dataset. */
 trait DatasetContext[CT, CV] {
   def typeContext: TypeContext[CT, CV]
 
-  def userSchema: LongLikeMap[ColumnId, CT]
+  def userSchema: ColumnIdMap[CT]
 
   def userPrimaryKeyColumn: Option[ColumnId]
   def hasUserPrimaryKey: Boolean = userPrimaryKeyColumn.isDefined
@@ -17,10 +18,10 @@ trait DatasetContext[CT, CV] {
   def systemIdAsValue(row: Row[CV]): Option[CV]
 
   def systemColumns(row: Row[CV]): Set[ColumnId]
-  def systemSchema: LongLikeMap[ColumnId, CT]
+  def systemSchema: ColumnIdMap[CT]
   def systemIdColumn: ColumnId
 
-  def fullSchema: LongLikeMap[ColumnId, CT]
+  def fullSchema: ColumnIdMap[CT]
 
   def makeIdMap[T](): RowIdMap[CV, T]
 

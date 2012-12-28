@@ -15,6 +15,8 @@ import com.socrata.datacoordinator.truth.loader.Delogger
 import com.socrata.datacoordinator.util.{CloseableIterator, LeakDetect}
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.rojoma.json.codec.JsonCodec
+import com.socrata.datacoordinator.util.collection.MutableColumnIdMap
+import com.socrata.datacoordinator.id.ColumnId
 
 class SqlDelogger[CV](connection: Connection,
                       logTableName: String,
@@ -144,19 +146,19 @@ class SqlDelogger[CV](connection: Connection,
       val json = fromJson(aux).cast[JObject].getOrElse {
         sys.error("Parameter for `truncated' was not an object")
       }
-      val schema = Map.newBuilder[ColumnId, ColumnInfo]
+      val schema = new MutableColumnIdMap[ColumnInfo]
       try {
         for((k, v) <- json) {
           val ci = JsonCodec.fromJValue[ColumnInfo](v).getOrElse {
             sys.error("value in truncated was not a ColumnInfo")
           }
-          schema += k.toLong -> ci
+          schema(new ColumnId(k.toLong)) -> ci
         }
       } catch {
         case _: NumberFormatException =>
           sys.error("key in truncated was not a valid column id")
       }
-      Delogger.Truncated(schema.result())
+      Delogger.Truncated(schema.freeze())
     }
 
     def decodeColumnCreated(aux: Array[Byte]) = {

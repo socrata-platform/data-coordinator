@@ -2,6 +2,9 @@ package com.socrata.datacoordinator
 package truth.metadata
 package `-impl`
 
+import com.socrata.datacoordinator.id.DatasetId
+import com.socrata.datacoordinator.util.collection.ColumnIdMap
+
 /** This shouldn't ever be referred to directly.  It exists to ensure that the
   * [[com.socrata.datacoordinator.truth.metadata.DatasetMapReader]] and
   * [[com.socrata.datacoordinator.truth.metadata.DatasetMapWriter]] have the
@@ -43,5 +46,5 @@ trait DatasetMapReaderAPI {
   def snapshotCount(datasetInfo: DatasetInfo): Int
 
   /** Loads the schema for the indicated dataset-version. */
-  def schema(versionInfo: VersionInfo): Map[ColumnId, ColumnInfo]
+  def schema(versionInfo: VersionInfo): ColumnIdMap[ColumnInfo]
 }

@@ -5,6 +5,7 @@ package sql
 import java.sql.Connection
 
 import com.rojoma.simplearm.util._
+import com.socrata.datacoordinator.id.StoreId
 
 class SqlSecondaryMap(conn: Connection) extends SecondaryMap {
   def create(storeId: String, wantsUnpublished: Boolean) =
@@ -14,7 +15,7 @@ class SqlSecondaryMap(conn: Connection) extends SecondaryMap {
       using(stmt.executeQuery()) { rs =>
         val returnedSomething = rs.next()
         assert(returnedSomething, "Insert didn't return anything?")
-        rs.getLong(1)
+        new StoreId(rs.getLong(1))
       }
     }
 
@@ -23,7 +24,7 @@ class SqlSecondaryMap(conn: Connection) extends SecondaryMap {
       stmt.setString(1, storeId)
       using(stmt.executeQuery()) { rs =>
         if(rs.next()) {
-          val sId = StoreId(rs.getLong("system_id"))
+          val sId = new StoreId(rs.getLong("system_id"))
           val wantsUnpublished = rs.getBoolean("wants_unpublished")
           Some((sId, wantsUnpublished))
         } else {
@@ -34,7 +35,7 @@ class SqlSecondaryMap(conn: Connection) extends SecondaryMap {
 
   def lookup(storeId: StoreId) =
     using(conn.prepareStatement("SELECT store_id, wants_unpublished FROM secondary_stores WHERE system_id = ?")) { stmt =>
-      stmt.setLong(1, storeId)
+      stmt.setLong(1, storeId.underlying)
       using(stmt.executeQuery()) { rs =>
         if(rs.next()) {
           val sId = rs.getString("store_id")

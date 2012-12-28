@@ -5,9 +5,10 @@ package sql
 import scala.collection.JavaConverters._
 
 import com.socrata.datacoordinator.truth.{RowIdMap, DatasetContext}
-import com.socrata.datacoordinator.util.collection.LongLikeMap
+import com.socrata.datacoordinator.util.collection.ColumnIdMap
+import com.socrata.datacoordinator.id.{RowId, ColumnId}
 
-class TestDatasetContext(val userSchema: LongLikeMap[ColumnId, TestColumnType], val systemIdColumn: ColumnId, val userPrimaryKeyColumn: Option[ColumnId]) extends DatasetContext[TestColumnType, TestColumnValue] {
+class TestDatasetContext(val userSchema: ColumnIdMap[TestColumnType], val systemIdColumn: ColumnId, val userPrimaryKeyColumn: Option[ColumnId]) extends DatasetContext[TestColumnType, TestColumnValue] {
   val typeContext = TestTypeContext
 
   userPrimaryKeyColumn.foreach { pkCol =>
@@ -20,12 +21,12 @@ class TestDatasetContext(val userSchema: LongLikeMap[ColumnId, TestColumnType], 
   } yield value
 
   def systemId(row: Row[TestColumnValue]) =
-    row.get(systemIdColumn).map(_.asInstanceOf[LongValue].value)
+    row.get(systemIdColumn).map { i => new RowId(i.asInstanceOf[LongValue].value) }
 
   def systemIdAsValue(row: Row[TestColumnValue]) = row.get(systemIdColumn)
 
   def systemColumns(row: Row[TestColumnValue]) = row.keySet.filter(systemSchema.contains).toSet
-  val systemSchema = LongLikeMap(systemIdColumn-> LongColumn)
+  val systemSchema = ColumnIdMap(systemIdColumn -> LongColumn)
 
   val fullSchema = userSchema ++ systemSchema
 

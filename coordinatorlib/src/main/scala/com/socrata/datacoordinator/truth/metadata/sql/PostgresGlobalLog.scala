@@ -18,7 +18,7 @@ class PostgresGlobalLog(conn: Connection) extends GlobalLog {
     }
 
     using(conn.prepareStatement("INSERT INTO global_log (id, dataset_system_id, version, updated_at, updated_by) SELECT COALESCE(max(id), 0) + 1, ?, ?, ?, ? FROM global_log")) { stmt =>
-      stmt.setLong(1, tableInfo.systemId)
+      stmt.setLong(1, tableInfo.systemId.underlying)
       stmt.setLong(2, version)
       stmt.setTimestamp(3, new Timestamp(updatedAt.getMillis))
       stmt.setString(4, updatedBy)

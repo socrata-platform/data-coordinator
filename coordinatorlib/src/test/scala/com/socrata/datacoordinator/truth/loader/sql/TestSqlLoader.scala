@@ -13,7 +13,8 @@ import com.rojoma.simplearm.util._
 
 import com.socrata.id.numeric.{FixedSizeIdProvider, InMemoryBlockIdProvider}
 import com.socrata.datacoordinator.util.IdProviderPoolImpl
-import com.socrata.datacoordinator.util.collection.{LongLikeMap, MutableLongLikeMap}
+import com.socrata.datacoordinator.id.{RowId, ColumnId}
+import com.socrata.datacoordinator.util.collection.{MutableColumnIdMap, ColumnIdMap}
 
 class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with BeforeAndAfterAll {
   val executor = java.util.concurrent.Executors.newCachedThreadPool()
@@ -59,21 +60,21 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       result.result()
     }
 
-  val idCol: ColumnId = 0
-  val idColName = "c_" + idCol
+  val idCol: ColumnId = new ColumnId(0)
+  val idColName = "c_" + idCol.underlying
 
   def makeTables(conn: Connection, ctx: DataSqlizer[TestColumnType, TestColumnValue], logTableName: String) {
     execute(conn, "drop table if exists " + ctx.dataTableName)
     execute(conn, "drop table if exists " + logTableName)
-    execute(conn, "CREATE TABLE " + ctx.dataTableName + " (c_" + idCol + " bigint not null primary key," + ctx.datasetContext.userSchema.iterator.map { case (c,t) =>
+    execute(conn, "CREATE TABLE " + ctx.dataTableName + " (c_" + idCol.underlying + " bigint not null primary key," + ctx.datasetContext.userSchema.iterator.map { case (c,t) =>
       val sqltype = t match {
         case LongColumn => "BIGINT"
         case StringColumn => "VARCHAR(100)"
       }
-      "c_" + c + " " + sqltype + (if(ctx.datasetContext.userPrimaryKeyColumn == Some(c)) " NOT NULL" else " NULL")
+      "c_" + c.underlying + " " + sqltype + (if(ctx.datasetContext.userPrimaryKeyColumn == Some(c)) " NOT NULL" else " NULL")
     }.mkString(",") + ")")
     ctx.datasetContext.userPrimaryKeyColumn.foreach { pkCol =>
-      execute(conn, "CREATE INDEX " + ctx.dataTableName + "_userid ON " + ctx.dataTableName + "(c_" + pkCol + ")")
+      execute(conn, "CREATE INDEX " + ctx.dataTableName + "_userid ON " + ctx.dataTableName + "(c_" + pkCol.underlying + ")")
     }
     // varchar rows because h2 returns a clob for TEXT columns instead of a string
     execute(conn, "CREATE TABLE " + logTableName + " (version bigint not null, subversion bigint not null, rows varchar(65536) not null, who varchar(100) null, PRIMARY KEY(version, subversion))")
@@ -86,7 +87,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       val remainingColumns = new MutableRow[TestColumnValue](row)
       remainingColumns -= ctx.datasetContext.systemIdColumn
       assert(remainingColumns.keySet.toSet.subsetOf(ctx.datasetContext.userSchema.keySet.toSet), "row contains extraneous keys")
-      val sql = "insert into " + ctx.dataTableName + " (" + idColName + "," + remainingColumns.keys.map("c_" + _).mkString(",") + ") values (" + id + "," + remainingColumns.values.map(_.sqlize).mkString(",") + ")"
+      val sql = "insert into " + ctx.dataTableName + " (" + idColName + "," + remainingColumns.keys.map { c => "c_" + c.underlying }.mkString(",") + ") values (" + id + "," + remainingColumns.values.map(_.sqlize).mkString(",") + ")"
       execute(conn, sql)
     }
   }
@@ -94,18 +95,18 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
   val standardTableBase = "test"
   val standardTableName = standardTableBase + "_data"
   val standardLogTableName = standardTableBase + "_log"
-  val num: ColumnId = 1L
-  val numName = "c_" + num
-  val str: ColumnId = 2L
-  val strName = "c_" + str
-  val standardSchema = LongLikeMap[ColumnId,TestColumnType](num -> LongColumn, str -> StringColumn)
+  val num = new ColumnId(1L)
+  val numName = "c_" + num.underlying
+  val str = new ColumnId(2L)
+  val strName = "c_" + str.underlying
+  val standardSchema = ColumnIdMap(num -> LongColumn, str -> StringColumn)
 
   val rawSelect = "SELECT " + idColName + ", " + numName + ", " + strName + " from test_data"
 
   val rowPreparer = new RowPreparer[TestColumnValue] {
-    def prepareForInsert(row: Row[TestColumnValue], sid: Long) = {
-      val newRow = new MutableLongLikeMap(row)
-      newRow(idCol) = LongValue(sid)
+    def prepareForInsert(row: Row[TestColumnValue], sid: RowId) = {
+      val newRow = new MutableColumnIdMap(row)
+      newRow(idCol) = LongValue(sid.underlying)
       newRow.freeze()
     }
 
@@ -140,7 +141,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         Map(idColName -> 15L, numName -> 1L, strName -> "a")
       ))
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq(
-        Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"i":{"""" + idCol + """":15,"""" + num + """":1,"""" + str + """":"a"}}]"""), "who" -> "hello")
+        Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"i":{"""" + idCol.underlying + """":15,"""" + num.underlying + """":1,"""" + str.underlying + """":"a"}}]"""), "who" -> "hello")
       ))
     }
   }
@@ -175,7 +176,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       query(conn, rawSelect) must equal (Seq(Map(idColName -> 15L, numName -> 2L, strName -> "b")))
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq(
-        Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"i":{"""" + idCol+ """":15,"""" + num + """":2,"""" + str + """":"b"}}]"""), "who" -> "hello")
+        Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"i":{"""" + idCol.underlying + """":15,"""" + num.underlying + """":2,"""" + str.underlying + """":"b"}}]"""), "who" -> "hello")
       ))
     }
   }
@@ -271,7 +272,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         Map(idColName -> 7L, numName -> 44L, strName -> "q")
       ))
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq(
-        Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"u":{"""" + idCol + """":7,"""" + num + """":44}}]"""), "who" -> "hello")
+        Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"u":{"""" + idCol.underlying + """":7,"""" + num.underlying + """":44}}]"""), "who" -> "hello")
       ))
     }
   }
@@ -307,7 +308,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         Map(idColName -> 15L, numName -> 1L, strName -> "a")
       ))
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq(
-        Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"i":{"""" + idCol + """":15,"""" + num + """":1,"""" + str + """":"a"}}]"""), "who" -> "hello")
+        Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"i":{"""" + idCol.underlying + """":15,"""" + num.underlying + """":1,"""" + str.underlying + """":"a"}}]"""), "who" -> "hello")
       ))
     }
   }
@@ -409,7 +410,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         Map(idColName -> 7L, numName -> 44L, strName -> "q")
       ))
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq(
-        Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"u":{"""" + num + """":44,"""" + str + """":"q"}}]"""), "who" -> "hello")
+        Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"u":{"""" + num.underlying + """":44,"""" + str.underlying + """":"q"}}]"""), "who" -> "hello")
       ))
     }
   }
@@ -446,7 +447,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         Map(idColName -> 15L, numName -> 2L, strName -> "q")
       ))
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq(
-        Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"i":{"""" + idCol + """":15,"""" + num + """":2,"""" + str + """":"q"}}]"""), "who" -> "hello")
+        Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"i":{"""" + idCol.underlying + """":15,"""" + num.underlying + """":2,"""" + str.underlying + """":"q"}}]"""), "who" -> "hello")
       ))
     }
   }
@@ -574,10 +575,10 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
     val ids = idProvider(1)
 
-    val userIdCol = 3L
-    val userIdColName = "c_" + userIdCol
+    val userIdCol = new ColumnId(3L)
+    val userIdColName = "c_" + userIdCol.underlying
 
-    val schema = LongLikeMap[ColumnId, TestColumnType](
+    val schema = ColumnIdMap(
       userIdCol -> LongColumn,
       num -> LongColumn,
       str -> StringColumn
@@ -715,7 +716,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
           )
           val row = id match {
             case Some(sid) =>
-              val newRow = new MutableLongLikeMap(baseRow)
+              val newRow = new MutableColumnIdMap(baseRow)
               newRow(idCol) = LongValue(sid)
               newRow.freeze()
             case None => baseRow

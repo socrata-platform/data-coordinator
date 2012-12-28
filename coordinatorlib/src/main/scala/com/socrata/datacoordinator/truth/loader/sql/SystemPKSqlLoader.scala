@@ -9,7 +9,8 @@ import gnu.trove.map.hash.{TIntObjectHashMap, TLongObjectHashMap}
 import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.util.IdProviderPool
-import com.socrata.datacoordinator.util.collection.MutableLongLikeMap
+import com.socrata.datacoordinator.util.collection.MutableRowIdMap
+import com.socrata.datacoordinator.id.RowId
 
 final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: DataSqlizer[CT, CV], _l: DataLogger[CV], _i: IdProviderPool, _e: Executor)
   extends
@@ -19,7 +20,7 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
   // constructor.
   // so that if an OOM exception occurs the initializations in the base class are rolled back.
   private val log = SystemPKSqlLoader.log
-  var jobs = new MutableLongLikeMap[RowId, SystemPKSqlLoader.Operation[CV]]() // map from sid to operation
+  var jobs = new MutableRowIdMap[SystemPKSqlLoader.Operation[CV]]() // map from sid to operation
 } with SqlLoader(_c, _p, _s, _l, _i, _e)
 {
   import SystemPKSqlLoader._
@@ -54,7 +55,7 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
               case Some(oldJob) =>
                 oldJob match {
                   case Insert(insSid, oldRow, oldJob, oldSize) =>
-                    assert(insSid.asInstanceOf[Long] == systemId.asInstanceOf[Long])
+                    assert(insSid == systemId)
                     insertSize -= oldSize
                     val newRow = datasetContext.mergeRows(oldRow, row)
                     val newOp = Insert(systemId, newRow, oldJob, sqlizer.sizeofInsert(newRow))
@@ -62,7 +63,7 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
                     insertSize += newOp.size
                     elided.put(job, (systemIdValue, oldJob))
                   case Update(updSid, oldRow, oldJob, oldSize) =>
-                    assert(updSid.asInstanceOf[Long] == systemId.asInstanceOf[Long])
+                    assert(updSid == systemId)
                     updateSize -= oldSize
                     val newRow = datasetContext.mergeRows(oldRow, row)
                     val newOp = Update(systemId, newRow, oldJob, sqlizer.sizeofUpdate(newRow))
@@ -79,7 +80,7 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
       case None => // insert
         checkNoSystemColumnsExceptId(row) match {
           case None =>
-            val systemId = RowId(idProvider.allocate())
+            val systemId = new RowId(idProvider.allocate())
             val insert = Insert(systemId, rowPreparer.prepareForInsert(row, systemId), job, sqlizer.sizeofInsert(row))
             jobs.get(systemId) match {
               case None =>
@@ -203,7 +204,7 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
 
     started.acquire()
 
-    jobs = new MutableLongLikeMap[RowId, Operation[CV]](new TLongObjectHashMap[Operation[CV]](jobs.underlying.capacity))
+    jobs = new MutableRowIdMap[Operation[CV]](new TLongObjectHashMap[Operation[CV]](jobs.underlying.capacity))
     insertSize = 0
     updateSize = 0
     deleteSize = 0
@@ -329,7 +330,7 @@ object SystemPKSqlLoader {
   val log = org.slf4j.LoggerFactory.getLogger(getClass.getName.replaceAll("\\$$", ""))
 
   sealed abstract class Operation[+CV] {
-    def id: Long
+    def id: RowId
     def job: Int
   }
 

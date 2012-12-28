@@ -3,6 +3,8 @@ package truth.loader.sql
 
 import com.socrata.datacoordinator.truth.loader.Logger
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
+import com.socrata.datacoordinator.util.collection.ColumnIdMap
+import com.socrata.datacoordinator.id.RowId
 
 class NullLogger[CV] extends Logger[CV] {
   def columnCreated(info: ColumnInfo) {}
@@ -19,15 +21,15 @@ class NullLogger[CV] extends Logger[CV] {
 
   def endTransaction() = None
 
-  def insert(systemID: Long, row: Row[CV]) {}
+  def insert(systemID: RowId, row: Row[CV]) {}
 
-  def update(sid: Long, row: Row[CV]) {}
+  def update(sid: RowId, row: Row[CV]) {}
 
-  def delete(systemID: Long) {}
+  def delete(systemID: RowId) {}
 
   def close() {}
 
-  def truncated(schema: Map[ColumnId, ColumnInfo]) {}
+  def truncated(schema: ColumnIdMap[ColumnInfo]) {}
 }
 
 object NullLogger extends NullLogger[Any] {

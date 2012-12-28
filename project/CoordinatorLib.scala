@@ -21,6 +21,13 @@ object CoordinatorLib {
         "org.scalacheck" %% "scalacheck" % "1.10.0" % "test",
         "org.slf4j" % "slf4j-simple" % slf4jVersion % "test"
       )
+    },
+    sourceGenerators in Compile <+= (sourceManaged in Compile) map { targetDir =>
+      GenLongLikeMap(targetDir, "com.socrata.datacoordinator.util.collection", "com.socrata.datacoordinator.id", "ColumnId") ++
+        GenLongLikeMap(targetDir, "com.socrata.datacoordinator.util.collection", "com.socrata.datacoordinator.id", "DatasetId") ++
+        GenLongLikeMap(targetDir, "com.socrata.datacoordinator.util.collection", "com.socrata.datacoordinator.id", "StoreId") ++
+        GenLongLikeMap(targetDir, "com.socrata.datacoordinator.util.collection", "com.socrata.datacoordinator.id", "VersionId") ++
+        GenLongLikeMap(targetDir, "com.socrata.datacoordinator.util.collection", "com.socrata.datacoordinator.id", "RowId")
     }
   )
 }

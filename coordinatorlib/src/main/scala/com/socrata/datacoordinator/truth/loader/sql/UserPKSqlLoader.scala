@@ -10,6 +10,8 @@ import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.util.IdProviderPool
 import com.socrata.datacoordinator.truth.{RowIdMap, TypeContext}
+import com.socrata.datacoordinator.util.collection.ColumnIdMap
+import com.socrata.datacoordinator.id.RowId
 
 final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: DataSqlizer[CT, CV], _l: DataLogger[CV], _i: IdProviderPool, _e: Executor)
   extends
@@ -259,7 +261,7 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: Dat
         do {
           val op = inserts.get(i)
           assert(op.hasUpsertJob, "No upsert job?")
-          val sid = RowId(idProvider.allocate())
+          val sid = new RowId(idProvider.allocate())
           sids(i) = sid
           op.upsertedRow = rowPreparer.prepareForInsert(op.upsertedRow, sid)
           inserter.insert(op.upsertedRow)
@@ -336,7 +338,7 @@ object UserPKSqlLoader {
     var forceDeleteSuccess = false
 
     var upsertJob: Int = -1
-    var upsertedRow: Row[CV] = null
+    var upsertedRow: Row[CV] = ColumnIdMap.empty[CV]
     var upsertSize: Int = -1
     var forceInsert: Boolean = false
 
@@ -347,7 +349,7 @@ object UserPKSqlLoader {
 
     def clearUpsert() {
       upsertJob = -1
-      upsertedRow = null
+      upsertedRow = ColumnIdMap.empty[CV]
       upsertSize = -1
       forceInsert = false
     }

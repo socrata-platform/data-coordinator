@@ -10,6 +10,7 @@ import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.util.{Counter, IdProviderPool}
 import com.socrata.datacoordinator.truth.TypeContext
+import com.socrata.datacoordinator.id.RowId
 
 class StupidSqlLoader[CT, CV](val connection: Connection,
                               val rowPreparer: RowPreparer[CV],
@@ -42,7 +43,7 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
               stmt.executeUpdate(sqlizer.sqlizeUserIdUpdate(updateRow))
             }
             if(updatedCount == 0) {
-              val sid = RowId(idProvider.allocate())
+              val sid = new RowId(idProvider.allocate())
               val row = rowPreparer.prepareForInsert(unpreparedRow, sid)
               val result = sqlizer.insertBatch(connection) { inserter =>
                 inserter.insert(row)
@@ -70,7 +71,7 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
                 errors.put(job, NoSuchRowToUpdate(typeContext.makeValueFromSystemId(id)))
             }
           case None =>
-            val sid = RowId(idProvider.allocate())
+            val sid = new RowId(idProvider.allocate())
             val row = rowPreparer.prepareForInsert(unpreparedRow, sid)
             val result = sqlizer.insertBatch(connection) { inserter =>
               inserter.insert(row)

@@ -2,9 +2,10 @@ package com.socrata.datacoordinator
 package truth.loader
 
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
+import com.socrata.datacoordinator.util.collection.ColumnIdMap
 
 trait Logger[CV] extends DataLogger[CV] {
-  def truncated(schema: Map[ColumnId, ColumnInfo])
+  def truncated(schema: ColumnIdMap[ColumnInfo])
   def columnCreated(info: ColumnInfo)
   def columnRemoved(info: ColumnInfo)
   def rowIdentifierChanged(newIdentifier: Option[ColumnInfo])

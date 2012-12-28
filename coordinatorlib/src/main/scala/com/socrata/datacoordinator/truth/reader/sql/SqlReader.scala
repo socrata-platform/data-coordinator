@@ -7,15 +7,16 @@ import java.sql.{PreparedStatement, Connection}
 import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.util.{LeakDetect, CloseableIterator, FastGroupedIterator}
-import com.socrata.datacoordinator.util.collection.{LongLikeMap, MutableLongLikeMap}
+import com.socrata.datacoordinator.util.collection.{MutableRowIdMap, ColumnIdMap, MutableColumnIdMap}
 import com.socrata.datacoordinator.truth.sql.{SqlPKableColumnReadRep, SqlColumnReadRep}
 import com.socrata.datacoordinator.truth.{DatasetContext, TypeContext}
+import com.socrata.datacoordinator.id.{RowId, ColumnId}
 
 class SqlReader[CT, CV](connection: Connection,
                         dataTableName: String,
                         datasetContext: DatasetContext[CT, CV],
                         typeContext: TypeContext[CT, CV],
-                        repSchemaBuilder: LongLikeMap[ColumnId, CT] => LongLikeMap[ColumnId, SqlColumnReadRep[CT, CV]],
+                        repSchemaBuilder: ColumnIdMap[CT] => ColumnIdMap[SqlColumnReadRep[CT, CV]],
                         val blockSize: Int = 100)
   extends Reader[CV]
 {
@@ -72,10 +73,10 @@ class SqlReader[CT, CV](connection: Connection,
         sidRep.prepareMultiLookup(stmt, typeContext.makeValueFromSystemId(id), start)
       }
       using(stmt.executeQuery()) { rs =>
-        val result = new MutableLongLikeMap[RowId, Row[CV]]
+        val result = new MutableRowIdMap[Row[CV]]
         while(rs.next()) {
           val sid = typeContext.makeSystemIdFromValue(sidRep.fromResultSet(rs, 1))
-          val row = new MutableLongLikeMap[ColumnId, CV]
+          val row = new MutableColumnIdMap[CV]
           var i = 1 + sidRep.physColumnsForQuery.length
           for(c <- columns) {
             val rep = repSchema(c)
@@ -147,7 +148,7 @@ class SqlReader[CT, CV](connection: Connection,
           val result = datasetContext.makeIdMap[Row[CV]]()
           while(rs.next()) {
             val uid = uidRep.fromResultSet(rs, 1)
-            val row = new MutableLongLikeMap[ColumnId, CV]
+            val row = new MutableColumnIdMap[CV]
             var i = 1 + uidRep.physColumnsForQuery.length
             for(c <- columns) {
               val rep = repSchema(c)

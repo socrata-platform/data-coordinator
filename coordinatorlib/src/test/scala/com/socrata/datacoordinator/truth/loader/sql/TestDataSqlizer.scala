@@ -4,7 +4,7 @@ package sql
 
 import com.socrata.datacoordinator.truth.DatasetContext
 import com.socrata.datacoordinator.truth.sql.SqlColumnRep
-import com.socrata.datacoordinator.util.collection.LongLikeMap
+import com.socrata.datacoordinator.util.collection.ColumnIdMap
 
 class TestDataSqlizer(tableName: String, datasetContext: DatasetContext[TestColumnType, TestColumnValue])
   extends StandardRepBasedDataSqlizer[TestColumnType, TestColumnValue](
@@ -14,7 +14,7 @@ class TestDataSqlizer(tableName: String, datasetContext: DatasetContext[TestColu
   )
 
 object TestDataSqlizer {
-  def repSchemaBuilder(schema: LongLikeMap[ColumnId, TestColumnType]): LongLikeMap[ColumnId, SqlColumnRep[TestColumnType, TestColumnValue]] = {
+  def repSchemaBuilder(schema: ColumnIdMap[TestColumnType]): ColumnIdMap[SqlColumnRep[TestColumnType, TestColumnValue]] = {
     schema.transform { (col, typ) =>
       typ match {
         case LongColumn => new LongRep(col)

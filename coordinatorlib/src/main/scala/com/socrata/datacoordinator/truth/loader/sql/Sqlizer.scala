@@ -6,6 +6,7 @@ import java.sql.{Connection, PreparedStatement}
 
 import com.socrata.datacoordinator.util.CloseableIterator
 import com.socrata.datacoordinator.truth.{DatasetContext, TypeContext}
+import com.socrata.datacoordinator.id.RowId
 
 /** Generates SQL for execution. */
 trait DataSqlizer[CT, CV] {

@@ -3,12 +3,13 @@ package truth.loader
 package sql
 
 import com.socrata.datacoordinator.truth.TypeContext
+import com.socrata.datacoordinator.id.RowId
 
 object TestTypeContext extends TypeContext[TestColumnType, TestColumnValue] {
-  def makeValueFromSystemId(id: Long) = LongValue(id)
+  def makeValueFromSystemId(id: RowId) = LongValue(id.underlying)
   def makeSystemIdFromValue(id: TestColumnValue) = {
     require(id.isInstanceOf[LongValue], "Not an id")
-    id.asInstanceOf[LongValue].value
+    new RowId(id.asInstanceOf[LongValue].value)
   }
 
   def isNull(v: TestColumnValue) = v == NullValue
