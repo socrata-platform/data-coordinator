@@ -1,14 +1,10 @@
 import sbt._
 
-import Keys._
-
-import com.socrata.socratasbt._
-
 object DataCoordinator extends Build {
   lazy val dataCoordinator = Project(
     "data-coordinator",
     file("."),
-    settings = Defaults.defaultSettings ++ SocrataSbt.socrataBuildSettings ++ Seq(scalaVersion := "2.10.0")
+    settings = BuildSettings.buildSettings
   ) aggregate (allOtherProjects: _*)
 
   private def allOtherProjects =
