@@ -1,44 +1,20 @@
 package com.socrata.datacoordinator.main
+package sql
 
-import com.socrata.datacoordinator.truth.loader.sql.{RepBasedSchemaLoader, SqlLogger}
-import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, GlobalLog, DatasetMapWriter}
-import com.socrata.datacoordinator.truth.loader.{SchemaLoader, Logger}
-import com.socrata.datacoordinator.manifest.TruthManifest
-import org.joda.time.DateTime
+import com.socrata.datacoordinator.util.IdProviderPool
 import javax.sql.DataSource
 import java.sql.Connection
+
 import org.postgresql.copy.CopyManager
 import com.rojoma.simplearm.util._
-import com.socrata.datacoordinator.truth.metadata.sql.{PostgresGlobalLog, PostgresDatasetMapWriter}
-import com.socrata.datacoordinator.manifest.sql.SqlTruthManifest
-import com.socrata.datacoordinator.util.IdProviderPool
-import com.socrata.datacoordinator.util.collection.ColumnIdMap
+import org.joda.time.DateTime
+
+import com.socrata.datacoordinator.truth.metadata.DatasetMapWriter
 import com.socrata.datacoordinator.truth.sql.SqlColumnRep
-
-abstract class DatabaseMutator[CT, CV] {
-  trait ProviderOfNecessaryThings {
-    val now: DateTime
-    val datasetMapWriter: DatasetMapWriter
-    def datasetLog(ds: datasetMapWriter.DatasetInfo): Logger[CV]
-    val globalLog: GlobalLog
-    val truthManifest: TruthManifest
-    val idProviderPool: IdProviderPool
-    def physicalColumnBaseForType(typ: CT): String
-    def loader(version: datasetMapWriter.VersionInfo): SchemaLoader
-    def nameForType(typ: CT): String
-
-    def singleId() = {
-      val provider = idProviderPool.borrow()
-      try {
-        provider.allocate()
-      } finally {
-        idProviderPool.release(provider)
-      }
-    }
-  }
-
-  def withTransaction[T]()(f: ProviderOfNecessaryThings => T): T
-}
+import com.socrata.datacoordinator.truth.metadata.sql.{PostgresGlobalLog, PostgresDatasetMapWriter}
+import com.socrata.datacoordinator.truth.loader.Logger
+import com.socrata.datacoordinator.truth.loader.sql.{RepBasedSchemaLoader, SqlLogger}
+import com.socrata.datacoordinator.manifest.sql.SqlTruthManifest
 
 trait PostgresDatabaseMutator[CT, CV] extends DatabaseMutator[CT, CV] { self =>
   def idProviderPool: IdProviderPool
