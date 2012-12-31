@@ -13,6 +13,8 @@ trait DatasetInfo {
   def datasetId: String
   def tableBase: String
 
+  lazy val logTableName = tableBase + "_log"
+
   final override def hashCode = ScalaRunTime._hashCode((systemId, datasetId, tableBase))
   final override def equals(o: Any) = o match {
     case that: DatasetInfo =>

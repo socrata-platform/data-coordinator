@@ -4,7 +4,7 @@ package truth.loader
 import com.socrata.datacoordinator.truth.metadata.DatasetMapWriter
 
 trait SchemaLoader {
-  def create()
+  def create(versionInfo: DatasetMapWriter#VersionInfo)
 
   def addColumn(colInfo: DatasetMapWriter#ColumnInfo)
   def dropColumn(colInfo: DatasetMapWriter#ColumnInfo)

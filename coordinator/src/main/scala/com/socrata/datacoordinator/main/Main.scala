@@ -62,7 +62,7 @@ trait PostgresDatabaseMutator[CT, CV] extends DatabaseMutator[CT, CV] { self =>
           new SqlLogger[CV](conn, ds.tableBase + "_log", ???)
 
         def loader(version: datasetMapWriter.VersionInfo) =
-          new RepBasedSchemaLoader[CT, CV](conn, version.datasetInfo.tableBase + "_" + version.lifecycleVersion) {
+          new RepBasedSchemaLoader[CT, CV](conn) {
             def repFor(columnInfo:DatasetMapWriter#ColumnInfo) = self.repFor(columnInfo)
           }
 

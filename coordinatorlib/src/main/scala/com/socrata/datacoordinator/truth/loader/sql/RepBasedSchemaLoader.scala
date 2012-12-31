@@ -6,19 +6,19 @@ import java.sql.Connection
 
 import com.rojoma.simplearm.util._
 
-import com.socrata.datacoordinator.truth.sql.{SqlPKableColumnRep, SqlColumnRep}
+import com.socrata.datacoordinator.truth.sql.{DatabasePopulator, SqlPKableColumnRep, SqlColumnRep}
 import com.socrata.datacoordinator.truth.metadata.DatasetMapWriter
 
-abstract class RepBasedSchemaLoader[CT, CV](conn: Connection, dataTableName: String) extends SchemaLoader {
+abstract class RepBasedSchemaLoader[CT, CV](conn: Connection) extends SchemaLoader {
   def repFor(columnInfo: DatasetMapWriter#ColumnInfo): SqlColumnRep[CT, CV]
 
   // overriddeden when things need to go in tablespaces
   def postgresTablespaceSuffix: String = ""
 
-  def create() {
+  def create(versionInfo: DatasetMapWriter#VersionInfo) {
     using(conn.createStatement()) { stmt =>
-      stmt.execute("CREATE TABLE " + dataTableName + " ()" + postgresTablespaceSuffix)
-      // TODO: also create the log table
+      stmt.execute("CREATE TABLE " + versionInfo.dataTableName + " ()" + postgresTablespaceSuffix)
+      stmt.execute(DatabasePopulator.logTableCreate(versionInfo.datasetInfo.logTableName, SqlLogger.opLength))
     }
   }
 
@@ -26,7 +26,7 @@ abstract class RepBasedSchemaLoader[CT, CV](conn: Connection, dataTableName: Str
     val rep = repFor(columnInfo)
     using(conn.createStatement()) { stmt =>
       for((col, colTyp) <- rep.physColumns.zip(rep.sqlTypes)) {
-        stmt.execute("ALTER TABLE " + dataTableName + " ADD COLUMN " + col + " " + colTyp + " NULL")
+        stmt.execute("ALTER TABLE " + columnInfo.versionInfo.dataTableName + " ADD COLUMN " + col + " " + colTyp + " NULL")
       }
     }
   }
@@ -35,7 +35,7 @@ abstract class RepBasedSchemaLoader[CT, CV](conn: Connection, dataTableName: Str
     val rep = repFor(columnInfo)
     using(conn.createStatement()) { stmt =>
       for(col <- rep.physColumns) {
-        stmt.execute("ALTER TABLE " + dataTableName + " DROP COLUMN " + col)
+        stmt.execute("ALTER TABLE " + columnInfo.versionInfo.dataTableName + " DROP COLUMN " + col)
       }
     }
   }
@@ -44,9 +44,10 @@ abstract class RepBasedSchemaLoader[CT, CV](conn: Connection, dataTableName: Str
     repFor(columnInfo) match {
       case rep: SqlPKableColumnRep[CT, CV] =>
         using(conn.createStatement()) { stmt =>
-          stmt.execute("CREATE INDEX " + dataTableName + "_" + rep.base + " ON " + dataTableName + "(" + rep.equalityIndexExpression + ")" + postgresTablespaceSuffix)
+          val table = columnInfo.versionInfo.dataTableName
+          stmt.execute("CREATE INDEX " + table + "_" + rep.base + " ON " + table + "(" + rep.equalityIndexExpression + ")" + postgresTablespaceSuffix)
           for(col <- rep.physColumns) {
-            stmt.execute("ALTER TABLE " + dataTableName + " ALTER " + col + " SET NOT NULL")
+            stmt.execute("ALTER TABLE " + table + " ALTER " + col + " SET NOT NULL")
           }
         }
         true
@@ -59,9 +60,10 @@ abstract class RepBasedSchemaLoader[CT, CV](conn: Connection, dataTableName: Str
     repFor(columnInfo) match {
       case rep: SqlPKableColumnRep[CT, CV] => // FIXME I think scala 2.10 will make this warning go away
         using(conn.createStatement()) { stmt =>
-          stmt.execute("DROP INDEX " + dataTableName + "_" + rep.base)
+          val table = columnInfo.versionInfo.dataTableName
+          stmt.execute("DROP INDEX " + table + "_" + rep.base)
           for(col <- rep.physColumns) {
-            stmt.execute("ALTER TABLE " + dataTableName + " ALTER " + col + " DROP NOT NULL")
+            stmt.execute("ALTER TABLE " + table + " ALTER " + col + " DROP NOT NULL")
           }
         }
         true

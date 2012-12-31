@@ -227,11 +227,13 @@ object SqlLogger {
   val WorkingCopyPublished = "PUB"
   val TransactionEnded = "END"
 
-  private def good(s: String) = s.length == 3 && s.forall { c => c >= 'A' && c <= 'Z' }
+  val opLength = 3
+
+  private def good(s: String) = s.length == opLength && s.forall { c => c >= 'A' && c <= 'Z' }
 
   for {
     method <- getClass.getDeclaredMethods
     if java.lang.reflect.Modifier.isPublic(method.getModifiers) && method.getParameterTypes.length == 0
     if method.getReturnType == classOf[String]
-  } assert(good(method.invoke(this).asInstanceOf[String]), method.getName + " is either not 3 characters long or contains something which isn't an uppercase letter")
+  } assert(good(method.invoke(this).asInstanceOf[String]), s"${method.getName} is either not $opLength characters long or contains something which isn't an uppercase letter")
 }

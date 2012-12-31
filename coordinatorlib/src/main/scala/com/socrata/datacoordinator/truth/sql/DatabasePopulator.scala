@@ -3,7 +3,7 @@ package com.socrata.datacoordinator.truth.sql
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.util.TemplateReplacer
 
-class DatabasePopulator {
+object DatabasePopulator {
   private def load(template: String) =
     using(getClass.getResourceAsStream(template)) { stream =>
       scala.io.Source.fromInputStream(stream, "UTF-8").getLines().mkString("\n")
@@ -29,12 +29,12 @@ class DatabasePopulator {
       )
     )
 
-  def logTableCreate(tableBase: String,
+  def logTableCreate(tableName: String,
                      operationLen: Int): String =
     TemplateReplacer(
       load("table_log.tmpl.sql"),
       Map(
-        "table_base" -> tableBase,
+        "table_name" -> tableName,
         "operation_len" -> operationLen.toString
       ))
 }

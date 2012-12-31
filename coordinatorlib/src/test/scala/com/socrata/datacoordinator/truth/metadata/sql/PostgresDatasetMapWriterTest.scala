@@ -18,8 +18,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
   }
 
   def populateDatabase(conn: Connection) {
-    val populator = new DatabasePopulator
-    val sql = populator.metadataTablesCreate(20, 20, 20, 20, 20, 20, 20)
+    val sql = DatabasePopulator.metadataTablesCreate(20, 20, 20, 20, 20, 20, 20)
     using(conn.createStatement()) { stmt =>
       stmt.execute(sql)
     }

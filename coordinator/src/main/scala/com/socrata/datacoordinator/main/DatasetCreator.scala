@@ -8,7 +8,7 @@ class DatasetCreator[CT, CV](mutator: DatabaseMutator[CT, CV], systemColumns: Ma
       val schemaLoader = loader(table)
       val logger = datasetLog(table.datasetInfo)
 
-      schemaLoader.create()
+      schemaLoader.create(table)
       logger.workingCopyCreated()
       truthManifest.create(table.datasetInfo)
 
@@ -18,7 +18,7 @@ class DatasetCreator[CT, CV](mutator: DatabaseMutator[CT, CV], systemColumns: Ma
         logger.columnCreated(col)
       }
 
-      val newVersion =  logger.endTransaction().getOrElse(sys.error(s"No record of the `working copy created' or ${systemColumns.size} columns?"))
+      val newVersion = logger.endTransaction().getOrElse(sys.error(s"No record of the `working copy created' or ${systemColumns.size} columns?"))
 
       truthManifest.updateLatestVersion(table.datasetInfo, newVersion)
       globalLog.log(table.datasetInfo, newVersion, now, username)
