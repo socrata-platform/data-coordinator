@@ -15,7 +15,7 @@ abstract class DatabaseMutator[CT, CV] {
     val truthManifest: TruthManifest
     val idProviderPool: IdProviderPool
     def physicalColumnBaseForType(typ: CT): String
-    def loader(version: datasetMapWriter.VersionInfo): SchemaLoader
+    def loader(version: datasetMapWriter.VersionInfo, logger: Logger[CV]): SchemaLoader
     def nameForType(typ: CT): String
 
     def singleId() = {
