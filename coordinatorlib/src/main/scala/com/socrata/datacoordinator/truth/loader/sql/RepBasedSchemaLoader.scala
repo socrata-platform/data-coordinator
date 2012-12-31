@@ -18,6 +18,7 @@ abstract class RepBasedSchemaLoader[CT, CV](conn: Connection, dataTableName: Str
   def create() {
     using(conn.createStatement()) { stmt =>
       stmt.execute("CREATE TABLE " + dataTableName + " ()" + postgresTablespaceSuffix)
+      // TODO: also create the log table
     }
   }
 

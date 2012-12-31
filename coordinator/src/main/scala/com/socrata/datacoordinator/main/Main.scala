@@ -23,10 +23,19 @@ abstract class DatabaseMutator[CT, CV] {
     val globalLog: GlobalLog
     val truthManifest: TruthManifest
     val idProviderPool: IdProviderPool
+    def physicalColumnBaseForType(typ: CT): String
     def loader(version: datasetMapWriter.VersionInfo): SchemaLoader
-  }
+    def nameForType(typ: CT): String
 
-  def nameForType(typ: CT): String
+    def singleId() = {
+      val provider = idProviderPool.borrow()
+      try {
+        provider.allocate()
+      } finally {
+        idProviderPool.release(provider)
+      }
+    }
+  }
 
   def withTransaction[T]()(f: ProviderOfNecessaryThings => T): T
 }
@@ -36,6 +45,8 @@ trait PostgresDatabaseMutator[CT, CV] extends DatabaseMutator[CT, CV] { self =>
   def postgresDataSource: DataSource
   def copyManagerFromConnection(conn: Connection): CopyManager =
     conn.asInstanceOf[org.postgresql.PGConnection].getCopyAPI
+  def physicalColumnBaseForType(typ: CT): String
+  def nameForType(typ: CT): String
   def repFor(columnInfo: DatasetMapWriter#ColumnInfo): SqlColumnRep[CT, CV]
 
   final def withTransaction[T]()(f: ProviderOfNecessaryThings => T): T = {
@@ -60,42 +71,15 @@ trait PostgresDatabaseMutator[CT, CV] extends DatabaseMutator[CT, CV] { self =>
         val truthManifest = new SqlTruthManifest(conn)
 
         val idProviderPool = PostgresDatabaseMutator.this.idProviderPool
+
+        def physicalColumnBaseForType(typ: CT) = self.physicalColumnBaseForType(typ)
+
+        def nameForType(typ: CT) = self.nameForType(typ)
       }
 
       val result = f(provider)
       conn.commit()
       result
-    }
-  }
-}
-
-abstract class ColumnAdder[CT, CV] extends DatabaseMutator[CT, CV] {
-  // Glue points we want/need
-  //
-  // Data updates (schema changes, upsert, etc)
-  // Global log listener (specifically: a playback in some postgres table)
-  // A secondary store (just a dummy for plugging in)
-  // Store-update operations
-  //  * Refresh dataset X to {StoreSet} : Future[Either[Error, NewVersion]]
-  //  * Remove dataset X from {StoreSet} : Future[Option[Error]]
-  // Get replication status : Map[Store, Version] (from secondary manifest)
-
-  def addToSchema(dataset: String, columnName: String, columnType: CT) {
-    withTransaction() { providerOfNecessaryThings =>
-      import providerOfNecessaryThings._
-      val ds = datasetMapWriter.datasetInfo(dataset).getOrElse(sys.error("Augh no such dataset"))
-      val table = datasetMapWriter.latest(ds)
-      val baseName = "c" + idProviderPool.withProvider(_.allocate())
-      val col = datasetMapWriter.addColumn(table, columnName, nameForType(columnType), baseName)
-      val logger = datasetLog(ds)
-
-      loader(col.versionInfo).addColumn(col)
-      logger.columnCreated(col)
-
-      logger.endTransaction().foreach { ver =>
-        truthManifest.updateLatestVersion(ds, ver)
-        globalLog.log(ds, ver, now, "who")
-      }
     }
   }
 }
