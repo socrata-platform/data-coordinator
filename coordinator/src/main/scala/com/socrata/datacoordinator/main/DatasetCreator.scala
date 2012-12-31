@@ -6,14 +6,14 @@ class DatasetCreator[CT, CV](mutator: DatabaseMutator[CT, CV], systemColumns: Ma
       import providerOfNecessaryThings._
       val table = datasetMapWriter.create(datasetId, "t")
       val logger = datasetLog(table.datasetInfo)
-      val schemaLoader = loader(table, logger)
+      val loader = schemaLoader(table, logger)
 
-      schemaLoader.create(table)
+      loader.create(table)
       truthManifest.create(table.datasetInfo)
 
       for((name, typ) <- systemColumns) {
         val col = datasetMapWriter.addColumn(table, name, nameForType(typ), physicalColumnBaseForType(typ))
-        schemaLoader.addColumn(col)
+        loader.addColumn(col)
       }
 
       val newVersion = logger.endTransaction().getOrElse(sys.error(s"No record of the `working copy created' or ${systemColumns.size} columns?"))

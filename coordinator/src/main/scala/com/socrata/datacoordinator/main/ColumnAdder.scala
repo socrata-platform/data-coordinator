@@ -20,7 +20,7 @@ abstract class ColumnAdder[CT, CV](mutator: DatabaseMutator[CT, CV]) {
       val col = datasetMapWriter.addColumn(table, columnName, nameForType(columnType), baseName)
       val logger = datasetLog(ds)
 
-      loader(col.versionInfo, logger).addColumn(col)
+      schemaLoader(col.versionInfo, logger).addColumn(col)
 
       logger.endTransaction().foreach { ver =>
         truthManifest.updateLatestVersion(ds, ver)

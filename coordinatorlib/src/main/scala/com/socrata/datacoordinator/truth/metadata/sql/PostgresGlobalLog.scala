@@ -8,7 +8,7 @@ import org.joda.time.DateTime
 import com.rojoma.simplearm.util._
 
 class PostgresGlobalLog(conn: Connection) extends GlobalLog {
-  def log(tableInfo: DatasetMapWriter#DatasetInfo, version: Long, updatedAt: DateTime, updatedBy: String) {
+  def log(tableInfo: DatasetInfo, version: Long, updatedAt: DateTime, updatedBy: String) {
     // bit heavyweight but we want an absolute ordering on these log entries.  In particular,
     // we never want row with id n+1 to become visible to outsiders before row n, even ignoring
     // any other problems.  This is the reason for the "this should be the last thing a txn does"

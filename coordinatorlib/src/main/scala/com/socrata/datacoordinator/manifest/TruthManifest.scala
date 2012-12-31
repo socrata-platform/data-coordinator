@@ -1,9 +1,9 @@
 package com.socrata.datacoordinator.manifest
 
-import com.socrata.datacoordinator.truth.metadata.DatasetMapWriter
+import com.socrata.datacoordinator.truth.metadata.{DatasetInfo, DatasetMapWriter}
 
 trait TruthManifest {
   def create(dataset: DatasetMapWriter#DatasetInfo)
-  def updatePublishedVersion(dataset: DatasetMapWriter#DatasetInfo, version: Long)
-  def updateLatestVersion(dataset: DatasetMapWriter#DatasetInfo, version: Long)
+  def updatePublishedVersion(dataset: DatasetInfo, version: Long)
+  def updateLatestVersion(dataset: DatasetInfo, version: Long)
 }

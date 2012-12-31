@@ -31,7 +31,7 @@ class PostgresDatasetMapReader(_conn: Connection) extends `-impl`.PostgresDatase
       extractDatasetInfoFromResultSet(stmt)
     }
 
-  val versionQuery = "SELECT system_id, lifecycle_stage FROM version_map WHERE dataset_system_id = ? AND lifecycle_version = ?"
+  def versionQuery = "SELECT system_id, lifecycle_stage FROM version_map WHERE dataset_system_id = ? AND lifecycle_version = ?"
   def version(datasetInfo: DatasetInfo, lifecycleVersion: Long) =
     using(conn.prepareStatement(versionQuery)) { stmt =>
       stmt.setLong(1, datasetInfo.systemId.underlying)

@@ -9,9 +9,9 @@ import org.postgresql.copy.CopyManager
 import com.rojoma.simplearm.util._
 import org.joda.time.DateTime
 
-import com.socrata.datacoordinator.truth.metadata.DatasetMapWriter
+import com.socrata.datacoordinator.truth.metadata.{DatasetInfo, DatasetMapWriter}
 import com.socrata.datacoordinator.truth.sql.SqlColumnRep
-import com.socrata.datacoordinator.truth.metadata.sql.{PostgresGlobalLog, PostgresDatasetMapWriter}
+import com.socrata.datacoordinator.truth.metadata.sql.{PostgresDatasetMapReader, PostgresGlobalLog, PostgresDatasetMapWriter}
 import com.socrata.datacoordinator.truth.loader.Logger
 import com.socrata.datacoordinator.truth.loader.sql.{RepBasedSchemaLoader, SqlLogger}
 import com.socrata.datacoordinator.manifest.sql.SqlTruthManifest
@@ -33,11 +33,12 @@ trait PostgresDatabaseMutator[CT, CV] extends DatabaseMutator[CT, CV] { self =>
         val now = DateTime.now()
 
         val datasetMapWriter = new PostgresDatasetMapWriter(conn)
+        val datasetMapReader = new PostgresDatasetMapReader(conn)
 
-        def datasetLog(ds: datasetMapWriter.DatasetInfo): Logger[CV] =
+        def datasetLog(ds: DatasetInfo): Logger[CV] =
           new SqlLogger[CV](conn, ds.tableBase + "_log", ???)
 
-        def loader(version: datasetMapWriter.VersionInfo, logger: Logger[CV]) =
+        def schemaLoader(version: datasetMapWriter.VersionInfo, logger: Logger[CV]) =
           new RepBasedSchemaLoader[CT, CV](conn, logger) {
             def repFor(columnInfo:DatasetMapWriter#ColumnInfo) = self.repFor(columnInfo)
           }

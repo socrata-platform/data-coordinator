@@ -6,7 +6,7 @@ import java.sql.Connection
 
 import com.rojoma.simplearm.util._
 
-import com.socrata.datacoordinator.truth.metadata.DatasetMapWriter
+import com.socrata.datacoordinator.truth.metadata.{DatasetInfo, DatasetMapWriter}
 
 class SqlTruthManifest(conn: Connection) extends TruthManifest {
   def create(dataset: DatasetMapWriter#DatasetInfo) {
@@ -16,7 +16,7 @@ class SqlTruthManifest(conn: Connection) extends TruthManifest {
     }
   }
 
-  def updatePublishedVersion(dataset: DatasetMapWriter#DatasetInfo, version: Long) {
+  def updatePublishedVersion(dataset: DatasetInfo, version: Long) {
     using(conn.prepareStatement("UPDATE truth_manifest SET published_version = ? WHERE dataset_system_id = ?")) { stmt =>
       stmt.setLong(1, version)
       stmt.setLong(2, dataset.systemId.underlying)
@@ -25,7 +25,7 @@ class SqlTruthManifest(conn: Connection) extends TruthManifest {
     }
   }
 
-  def updateLatestVersion(dataset: DatasetMapWriter#DatasetInfo, version: Long) {
+  def updateLatestVersion(dataset: DatasetInfo, version: Long) {
     using(conn.prepareStatement("UPDATE truth_manifest SET latest_version = ? WHERE dataset_system_id = ?")) { stmt =>
       stmt.setLong(1, version)
       stmt.setLong(2, dataset.systemId.underlying)
