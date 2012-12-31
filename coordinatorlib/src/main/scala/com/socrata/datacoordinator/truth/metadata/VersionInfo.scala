@@ -14,7 +14,7 @@ trait VersionInfo {
   def lifecycleVersion: Long
   def lifecycleStage: LifecycleStage
 
-  lazy val dataTableName = datasetInfo.tableBase + "_" + lifecycleVersion
+  lazy val dataTableName = datasetInfo.tableBase + "_" + systemId.underlying + "_" + lifecycleVersion
 
   final override def hashCode = ScalaRunTime._hashCode((datasetInfo, systemId, lifecycleVersion, lifecycleStage))
   final override def equals(o: Any) = o match {

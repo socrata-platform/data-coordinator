@@ -4,7 +4,7 @@ class DatasetCreator[CT, CV](mutator: DatabaseMutator[CT, CV], systemColumns: Ma
   def createDataset(datasetId: String, username: String) {
     mutator.withTransaction() { providerOfNecessaryThings =>
       import providerOfNecessaryThings._
-      val table = datasetMapWriter.create(datasetId, "t" + singleId())
+      val table = datasetMapWriter.create(datasetId, "t")
       val schemaLoader = loader(table)
       val logger = datasetLog(table.datasetInfo)
 
