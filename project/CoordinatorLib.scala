@@ -9,7 +9,7 @@ object CoordinatorLib {
     libraryDependencies <++= (slf4jVersion) { slf4jVersion =>
       Seq(
         "com.socrata" %% "socrata-id" % "2.1.1",
-        "com.rojoma" %% "rojoma-json" % "2.1.0",
+        "com.rojoma" %% "rojoma-json" % "2.2.0",
         "com.rojoma" %% "simple-arm" % "1.1.10",
         "joda-time" % "joda-time" % "2.1",
         "org.joda" % "joda-convert" % "1.2",

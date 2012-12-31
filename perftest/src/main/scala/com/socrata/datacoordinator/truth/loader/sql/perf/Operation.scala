@@ -3,7 +3,7 @@ package truth.loader
 package sql
 package perf
 
-import com.rojoma.json.util.{InternalTag, SimpleHierarchyCodecBuilder, SimpleJsonCodecBuilder}
+import com.rojoma.json.util.{InternalTag, SimpleHierarchyCodecBuilder, AutomaticJsonCodecBuilder}
 import com.rojoma.json.ast.{JValue, JObject}
 
 sealed abstract class Operation {
@@ -15,7 +15,7 @@ case class Insert(id: Long, fields: JObject) extends Operation {
   def isUpsert = true
 }
 object Insert {
-  implicit val jCodec = SimpleJsonCodecBuilder[Insert].build("id", _.id, "fields", _.fields)
+  implicit val jCodec = AutomaticJsonCodecBuilder[Insert]
 }
 
 case class Update(id: Long, fields: JObject) extends Operation {
@@ -23,14 +23,14 @@ case class Update(id: Long, fields: JObject) extends Operation {
   def isUpsert = true
 }
 object Update {
-  implicit val jCodec = SimpleJsonCodecBuilder[Update].build("id", _.id, "fields", _.fields)
+  implicit val jCodec = AutomaticJsonCodecBuilder[Update]
 }
 
 case class Delete(id: Long, uid: JValue) extends Operation {
   def isUpsert = false
 }
 object Delete {
-  implicit val jCodec = SimpleJsonCodecBuilder[Delete].build("id", _.id, "uid", _.uid)
+  implicit val jCodec = AutomaticJsonCodecBuilder[Delete]
 }
 
 object Operation {
