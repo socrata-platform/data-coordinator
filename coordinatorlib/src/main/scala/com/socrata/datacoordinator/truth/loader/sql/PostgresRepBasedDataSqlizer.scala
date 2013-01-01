@@ -6,16 +6,13 @@ import java.sql.Connection
 import org.postgresql.copy.CopyManager
 import org.postgresql.core.BaseConnection
 
-import com.socrata.datacoordinator.truth.DatasetContext
-import com.socrata.datacoordinator.util.collection.ColumnIdMap
-import com.socrata.datacoordinator.truth.sql.SqlColumnRep
+import com.socrata.datacoordinator.truth.sql.RepBasedSqlDatasetContext
 import com.socrata.datacoordinator.util.StringBuilderReader
 
 class PostgresRepBasedDataSqlizer[CT, CV](tableName: String,
-                                          datasetContext: DatasetContext[CT, CV],
-                                          repSchemaBuilder: ColumnIdMap[CT] => ColumnIdMap[SqlColumnRep[CT, CV]],
+                                          datasetContext: RepBasedSqlDatasetContext[CT, CV],
                                           extractCopier: Connection => CopyManager = PostgresRepBasedDataSqlizer.pgCopyManager)
-  extends AbstractRepBasedDataSqlizer(tableName, datasetContext, repSchemaBuilder)
+  extends AbstractRepBasedDataSqlizer(tableName, datasetContext)
 {
   val bulkInsertStatement =
     "COPY " + dataTableName + " (" + repSchema.values.flatMap(_.physColumnsForInsert).mkString(",") + ") from stdin with csv"

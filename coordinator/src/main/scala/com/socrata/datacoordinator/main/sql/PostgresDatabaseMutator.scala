@@ -9,7 +9,7 @@ import org.postgresql.copy.CopyManager
 import com.rojoma.simplearm.util._
 import org.joda.time.DateTime
 
-import com.socrata.datacoordinator.truth.metadata.{DatasetInfo, DatasetMapWriter}
+import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, DatasetInfo, DatasetMapWriter}
 import com.socrata.datacoordinator.truth.sql.SqlColumnRep
 import com.socrata.datacoordinator.truth.metadata.sql.{PostgresDatasetMapReader, PostgresGlobalLog, PostgresDatasetMapWriter}
 import com.socrata.datacoordinator.truth.loader.Logger
@@ -23,7 +23,7 @@ trait PostgresDatabaseMutator[CT, CV] extends DatabaseMutator[CT, CV] { self =>
     conn.asInstanceOf[org.postgresql.PGConnection].getCopyAPI
   def physicalColumnBaseForType(typ: CT): String
   def nameForType(typ: CT): String
-  def repFor(columnInfo: DatasetMapWriter#ColumnInfo): SqlColumnRep[CT, CV]
+  def repFor(columnInfo: ColumnInfo): SqlColumnRep[CT, CV]
 
   final def withTransaction[T]()(f: ProviderOfNecessaryThings => T): T = {
     using(postgresDataSource.getConnection) { conn =>

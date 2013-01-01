@@ -8,8 +8,8 @@ import org.scalatest.matchers.MustMatchers
 import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.truth.{RowIdMap, DatasetContext}
-import com.socrata.datacoordinator.truth.sql.SqlColumnReadRep
-import com.socrata.datacoordinator.util.collection.ColumnIdMap
+import com.socrata.datacoordinator.truth.sql.{ReadOnlyRepBasedSqlDatasetContext, SqlColumnRep, RepBasedSqlDatasetContext, SqlColumnReadRep}
+import com.socrata.datacoordinator.util.collection.{MutableColumnIdMap, ColumnIdMap}
 import com.socrata.datacoordinator.id.{RowId, ColumnId}
 
 class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
@@ -21,10 +21,9 @@ class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
     Class.forName("org.h2.Driver")
   }
 
-  def datasetContext(schema: ColumnIdMap[TestColumnType]) = new DatasetContext[TestColumnType, TestColumnValue] {
+  def datasetContext(s: ColumnIdMap[SqlColumnReadRep[TestColumnType, TestColumnValue]]) = new ReadOnlyRepBasedSqlDatasetContext[TestColumnType, TestColumnValue] {
+    val schema = s
     val typeContext = TestTypeContext
-
-    val userSchema = schema
 
     val userPrimaryKeyColumn = if(schema.contains(new ColumnId(100L))) Some(new ColumnId(100L)) else None
 
@@ -36,11 +35,9 @@ class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
 
     def systemColumns(row: Row[TestColumnValue]) = row.keySet.filter(_ != systemIdColumn).toSet
 
-    val systemSchema = ColumnIdMap[TestColumnType](systemIdColumn -> IdType)
+    val systemIdColumn = new ColumnId(0L)
 
-    def systemIdColumn = new ColumnId(0L)
-
-    val fullSchema = userSchema ++ systemSchema
+    val systemColumnSet = Set(systemIdColumn)
 
     def makeIdMap[T]() = new RowIdMap[TestColumnValue, T] {
       val underlying = new scala.collection.mutable.HashMap[String, T]
@@ -77,14 +74,18 @@ class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
 
   def managedConn = managed(DriverManager.getConnection("jdbc:h2:mem:"))
 
-  def repSchemaBuilder(schema: ColumnIdMap[TestColumnType]): ColumnIdMap[SqlColumnReadRep[TestColumnType, TestColumnValue]] =
-    schema.transform { (col, typ) =>
-      typ match {
-        case IdType => new IdRep(col)
+  def repSchemaBuilder(schema: ColumnIdMap[TestColumnType]): ColumnIdMap[SqlColumnReadRep[TestColumnType, TestColumnValue]] = {
+    val res = new MutableColumnIdMap[SqlColumnReadRep[TestColumnType, TestColumnValue]]
+    for((col, typ) <- schema) {
+      res(col) = typ match {
+        case IdType => sys.error("Shouldn't have an ID col at this point")
         case NumberType => new NumberRep(col)
         case StringType => new StringRep(col)
       }
     }
+    res(new ColumnId(0)) = new IdRep(new ColumnId(0))
+    res.freeze()
+  }
 
   val tableName = "tab"
 
@@ -135,7 +136,7 @@ class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
       List(0L -> IdValue(new RowId(4)), 1L -> NullValue, 2L -> NullValue)
     )
 
-    managed(new SqlReader(conn, tableName, datasetContext(schema), TestTypeContext, repSchemaBuilder, blockSize = 3))
+    managed(new SqlReader(conn, tableName, datasetContext(repSchemaBuilder(schema)), TestTypeContext, blockSize = 3))
   }
 
   def stdUidTable(conn: Connection) = {
@@ -152,7 +153,7 @@ class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
       List(0L -> IdValue(new RowId(4)), 100L -> StringValue("delta"), 1L -> NullValue, 2L -> NullValue)
     )
 
-    managed(new SqlReader(conn, tableName, datasetContext(schema), TestTypeContext, repSchemaBuilder, blockSize = 3))
+    managed(new SqlReader(conn, tableName, datasetContext(repSchemaBuilder(schema)), TestTypeContext, blockSize = 3))
   }
 
   test("Can read rows that exist from a table by system id") {

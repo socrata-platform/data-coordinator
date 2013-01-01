@@ -8,12 +8,11 @@ import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.truth.DatasetContext
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
-import com.socrata.datacoordinator.truth.sql.SqlColumnRep
+import com.socrata.datacoordinator.truth.sql.{RepBasedSqlDatasetContext, SqlColumnRep}
 
 class StandardRepBasedDataSqlizer[CT, CV](tableName: String,
-                                          datasetContext: DatasetContext[CT, CV],
-                                          repSchemaBuilder: ColumnIdMap[CT] => ColumnIdMap[SqlColumnRep[CT, CV]])
-  extends AbstractRepBasedDataSqlizer(tableName, datasetContext, repSchemaBuilder)
+                                          datasetContext: RepBasedSqlDatasetContext[CT, CV])
+  extends AbstractRepBasedDataSqlizer(tableName, datasetContext)
 {
   def insertBatch(conn: Connection)(f: Inserter => Unit): Long = {
     using(new InserterImpl(conn)) { inserter =>

@@ -5,15 +5,12 @@ import java.sql.{Connection, PreparedStatement}
 
 import com.rojoma.simplearm.util._
 
-import com.socrata.datacoordinator.truth.DatasetContext
-import com.socrata.datacoordinator.truth.sql.{SqlPKableColumnRep, SqlColumnRep}
+import com.socrata.datacoordinator.truth.sql.{RepBasedSqlDatasetContext, SqlPKableColumnRep, SqlColumnRep}
 import com.socrata.datacoordinator.util.{CloseableIterator, FastGroupedIterator, LeakDetect}
-import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.id.RowId
 
 abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
-                                                   val datasetContext: DatasetContext[CT, CV],
-                                                   repSchemaBuilder: ColumnIdMap[CT] => ColumnIdMap[SqlColumnRep[CT, CV]])
+                                                   val datasetContext: RepBasedSqlDatasetContext[CT, CV])
   extends DataSqlizer[CT, CV]
 {
   val typeContext = datasetContext.typeContext
@@ -22,8 +19,7 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
 
   val logicalPKColumnName = datasetContext.primaryKeyColumn
 
-  // map from column IDs to the corresponding rep
-  val repSchema = repSchemaBuilder(datasetContext.fullSchema)
+  val repSchema = datasetContext.schema
 
   val sidRep = repSchema(datasetContext.systemIdColumn).asInstanceOf[SqlPKableColumnRep[CT, CV]]
   val pkRep = repSchema(logicalPKColumnName).asInstanceOf[SqlPKableColumnRep[CT, CV]]

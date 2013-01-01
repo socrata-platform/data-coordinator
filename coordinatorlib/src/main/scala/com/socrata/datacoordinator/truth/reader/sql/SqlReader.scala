@@ -8,21 +8,20 @@ import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.util.{LeakDetect, CloseableIterator, FastGroupedIterator}
 import com.socrata.datacoordinator.util.collection.{MutableRowIdMap, ColumnIdMap, MutableColumnIdMap}
-import com.socrata.datacoordinator.truth.sql.{SqlPKableColumnReadRep, SqlColumnReadRep}
+import com.socrata.datacoordinator.truth.sql.{ReadOnlyRepBasedSqlDatasetContext, RepBasedSqlDatasetContext, SqlPKableColumnReadRep, SqlColumnReadRep}
 import com.socrata.datacoordinator.truth.{DatasetContext, TypeContext}
 import com.socrata.datacoordinator.id.{RowId, ColumnId}
 
 class SqlReader[CT, CV](connection: Connection,
                         dataTableName: String,
-                        datasetContext: DatasetContext[CT, CV],
+                        datasetContext: ReadOnlyRepBasedSqlDatasetContext[CT, CV],
                         typeContext: TypeContext[CT, CV],
-                        repSchemaBuilder: ColumnIdMap[CT] => ColumnIdMap[SqlColumnReadRep[CT, CV]],
                         val blockSize: Int = 100)
   extends Reader[CV]
 {
-  val repSchema = repSchemaBuilder(datasetContext.fullSchema)
-
   def close() {}
+
+  val repSchema = datasetContext.schema
 
   private class SidIterator(columns: Seq[ColumnId], ids: Iterator[RowId]) extends CloseableIterator[Seq[(RowId, Option[Row[CV]])]] {
     val sidRep = repSchema(datasetContext.systemIdColumn).asInstanceOf[SqlPKableColumnReadRep[CT, CV]]

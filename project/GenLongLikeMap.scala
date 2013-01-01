@@ -152,6 +152,34 @@ class """ + targetClassName + """[+V] private[""" + lastElemOf(targetPackage) + 
     arr
   }
 
+  def foreach[U](f: ((""" + sourceType + """, V)) => U) {
+    val it = unsafeUnderlying.iterator
+    while(it.hasNext) {
+      it.advance()
+      f(new """ + sourceType + """(it.key), it.value)
+    }
+  }
+
+  def filter(f: (""" + sourceType + """, V) => Boolean) = {
+    val x = new TLongObjectHashMap[V]
+    val it = unsafeUnderlying.iterator
+    while(it.hasNext) {
+      it.advance()
+      if(f(new """ + sourceType + """(it.key), it.value)) x.put(it.key, it.value)
+    }
+    new """ + targetClassName + """[V](x)
+  }
+
+  def filterNot(f: (""" + sourceType + """, V) => Boolean) = {
+    val x = new TLongObjectHashMap[V]
+    val it = unsafeUnderlying.iterator
+    while(it.hasNext) {
+      it.advance()
+      if(!f(new """ + sourceType + """(it.key), it.value)) x.put(it.key, it.value)
+    }
+    new """ + targetClassName + """[V](x)
+  }
+
   override def hashCode = unsafeUnderlying.hashCode
   override def equals(o: Any) = o match {
     case that: """ + targetClassName + """[_] => this.unsafeUnderlying == that.unsafeUnderlying

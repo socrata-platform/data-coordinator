@@ -8,12 +8,13 @@ import scala.collection.JavaConverters._
 import com.socrata.datacoordinator.truth.{RowIdMap, DatasetContext}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.id.ColumnId
+import com.socrata.datacoordinator.truth.sql.{RepBasedSqlDatasetContext, SqlColumnRep}
 
-class PerfDatasetContext(val userSchema: ColumnIdMap[PerfType], val systemIdColumn: ColumnId, val userPrimaryKeyColumn: Option[ColumnId]) extends DatasetContext[PerfType, PerfValue] {
+class PerfDatasetContext(val schema: ColumnIdMap[SqlColumnRep[PerfType, PerfValue]], val systemIdColumn: ColumnId, val userPrimaryKeyColumn: Option[ColumnId]) extends RepBasedSqlDatasetContext[PerfType, PerfValue] {
   val typeContext = PerfTypeContext
 
   userPrimaryKeyColumn.foreach { pkCol =>
-    require(userSchema.contains(pkCol), "PK col defined but does not exist in the schema")
+    require(schema.contains(pkCol), "PK col defined but does not exist in the schema")
   }
 
   def userPrimaryKey(row: Row[PerfValue]) = for {
@@ -26,10 +27,9 @@ class PerfDatasetContext(val userSchema: ColumnIdMap[PerfType], val systemIdColu
 
   def systemIdAsValue(row: Row[PerfValue]) = row.get(systemIdColumn)
 
-  def systemColumns(row: Row[PerfValue]) = row.keySet.filter(systemSchema.contains).toSet
-  val systemSchema = ColumnIdMap(systemIdColumn -> PTId)
+  def systemColumns(row: Row[PerfValue]) = if(row.contains(systemIdColumn)) Set(systemIdColumn) else Set.empty
 
-  val fullSchema = userSchema ++ systemSchema
+  val systemColumnSet = Set(systemIdColumn)
 
   def mergeRows(a: Row[PerfValue], b: Row[PerfValue]) = a ++ b
 

@@ -7,9 +7,12 @@ import scala.collection.JavaConverters._
 import com.socrata.datacoordinator.truth.{RowIdMap, DatasetContext}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.id.{RowId, ColumnId}
+import com.socrata.datacoordinator.truth.sql.{SqlColumnRep, RepBasedSqlDatasetContext}
 
-class TestDatasetContext(val userSchema: ColumnIdMap[TestColumnType], val systemIdColumn: ColumnId, val userPrimaryKeyColumn: Option[ColumnId]) extends DatasetContext[TestColumnType, TestColumnValue] {
+class TestDatasetContext(val schema: ColumnIdMap[SqlColumnRep[TestColumnType, TestColumnValue]], val systemIdColumn: ColumnId, val userPrimaryKeyColumn: Option[ColumnId]) extends RepBasedSqlDatasetContext[TestColumnType, TestColumnValue] {
   val typeContext = TestTypeContext
+
+  val systemColumnSet = Set(systemIdColumn)
 
   userPrimaryKeyColumn.foreach { pkCol =>
     require(userSchema.contains(pkCol), "PK col defined but does not exist in the schema")
@@ -26,9 +29,6 @@ class TestDatasetContext(val userSchema: ColumnIdMap[TestColumnType], val system
   def systemIdAsValue(row: Row[TestColumnValue]) = row.get(systemIdColumn)
 
   def systemColumns(row: Row[TestColumnValue]) = row.keySet.filter(systemSchema.contains).toSet
-  val systemSchema = ColumnIdMap(systemIdColumn -> LongColumn)
-
-  val fullSchema = userSchema ++ systemSchema
 
   def mergeRows(a: Row[TestColumnValue], b: Row[TestColumnValue]) = a ++ b
 

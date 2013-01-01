@@ -99,7 +99,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
   val numName = "c_" + num.underlying
   val str = new ColumnId(2L)
   val strName = "c_" + str.underlying
-  val standardSchema = ColumnIdMap(num -> LongColumn, str -> StringColumn)
+  val standardSchema = ColumnIdMap(idCol -> new LongRep(idCol), num -> new LongRep(num), str -> new StringRep(str))
 
   val rawSelect = "SELECT " + idColName + ", " + numName + ", " + strName + " from test_data"
 
@@ -579,9 +579,10 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     val userIdColName = "c_" + userIdCol.underlying
 
     val schema = ColumnIdMap(
-      userIdCol -> LongColumn,
-      num -> LongColumn,
-      str -> StringColumn
+      idCol -> new LongRep(idCol),
+      userIdCol -> new LongRep(userIdCol),
+      num -> new LongqzeRep(num),
+      str -> new StringRep(str)
     )
 
     val dsContext = new TestDatasetContext(schema, idCol, Some(userIdCol))

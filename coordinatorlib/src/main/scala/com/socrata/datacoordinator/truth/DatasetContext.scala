@@ -8,8 +8,6 @@ import com.socrata.datacoordinator.id.{RowId, ColumnId}
 trait DatasetContext[CT, CV] {
   def typeContext: TypeContext[CT, CV]
 
-  def userSchema: ColumnIdMap[CT]
-
   def userPrimaryKeyColumn: Option[ColumnId]
   def hasUserPrimaryKey: Boolean = userPrimaryKeyColumn.isDefined
   def userPrimaryKey(row: Row[CV]): Option[CV]
@@ -18,14 +16,16 @@ trait DatasetContext[CT, CV] {
   def systemIdAsValue(row: Row[CV]): Option[CV]
 
   def systemColumns(row: Row[CV]): Set[ColumnId]
-  def systemSchema: ColumnIdMap[CT]
   def systemIdColumn: ColumnId
-
-  def fullSchema: ColumnIdMap[CT]
+  val systemColumnSet: Set[ColumnId]
 
   def makeIdMap[T](): RowIdMap[CV, T]
 
   def primaryKeyColumn: ColumnId = userPrimaryKeyColumn.getOrElse(systemIdColumn)
 
   def mergeRows(base: Row[CV], overlay: Row[CV]): Row[CV]
+
+  def fullSchema: ColumnIdMap[CT]
+  def userSchema: ColumnIdMap[CT]
+  def systemSchema: ColumnIdMap[CT]
 }

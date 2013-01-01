@@ -75,7 +75,18 @@ object ExecutePlan {
             case (k, "TEXT") => schemaIdMap(k) -> PTText
             case (k, "NUMERIC") => schemaIdMap(k) -> PTNumber
           })
-          val datasetContext = new PerfDatasetContext(userSchema, idColumnId, Some(schemaIdMap("uid")))
+          val repSchema = locally {
+            val fullSchema = new MutableColumnIdMap(userSchema)
+            fullSchema += idColumnId -> PTId
+            fullSchema.transform { (cid, typ) =>
+              typ match {
+                case PTId => new IdRep(cid)
+                case PTNumber => new NumberRep(cid)
+                case PTText => new TextRep(cid)
+              }
+            }
+          }
+          val datasetContext = new PerfDatasetContext(repSchema, idColumnId, Some(schemaIdMap("uid")))
           val sqlizer = new PerfDataSqlizer(dataTableName, datasetContext)
 
           val rowPreparer = new RowPreparer[PerfValue] {

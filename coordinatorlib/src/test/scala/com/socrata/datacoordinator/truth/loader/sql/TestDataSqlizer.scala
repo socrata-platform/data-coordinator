@@ -2,17 +2,15 @@ package com.socrata.datacoordinator
 package truth.loader
 package sql
 
-import com.socrata.datacoordinator.truth.DatasetContext
-import com.socrata.datacoordinator.truth.sql.SqlColumnRep
-import com.socrata.datacoordinator.util.collection.ColumnIdMap
+import com.socrata.datacoordinator.truth.sql.RepBasedSqlDatasetContext
 
-class TestDataSqlizer(tableName: String, datasetContext: DatasetContext[TestColumnType, TestColumnValue])
+class TestDataSqlizer(tableName: String, datasetContext: RepBasedSqlDatasetContext[TestColumnType, TestColumnValue])
   extends StandardRepBasedDataSqlizer[TestColumnType, TestColumnValue](
     tableName,
-    datasetContext,
-    TestDataSqlizer.repSchemaBuilder
+    datasetContext
   )
 
+/*
 object TestDataSqlizer {
   def repSchemaBuilder(schema: ColumnIdMap[TestColumnType]): ColumnIdMap[SqlColumnRep[TestColumnType, TestColumnValue]] = {
     schema.transform { (col, typ) =>
@@ -23,3 +21,4 @@ object TestDataSqlizer {
     }
   }
 }
+*/
