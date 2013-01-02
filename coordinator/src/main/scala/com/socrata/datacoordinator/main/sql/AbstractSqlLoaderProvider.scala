@@ -10,7 +10,7 @@ import com.socrata.datacoordinator.Row
 import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, VersionInfo}
 import com.socrata.datacoordinator.truth.loader.{RowPreparer, Loader, Logger}
 import com.socrata.datacoordinator.truth.loader.sql._
-import com.socrata.datacoordinator.truth.{TypeContext, RowIdMap, DatasetContext}
+import com.socrata.datacoordinator.truth.{TypeContext, RowUserIdMap, DatasetContext}
 import com.socrata.datacoordinator.truth.sql.{RepBasedSqlDatasetContext, SqlColumnRep}
 import com.socrata.datacoordinator.util.collection.{ColumnIdSet, ColumnIdMap}
 import com.socrata.datacoordinator.util.IdProviderPool
@@ -27,15 +27,15 @@ abstract class AbstractSqlLoaderProvider[CT, CV](conn: Connection, idProviderPoo
 
     val repSchema = schema.mapValuesStrict(repFor)
 
-    val userPrimaryKey = schema.iterator.find { case (_, colInfo) =>
-      colInfo.isPrimaryKey
-    }.map(_._1)
+    val userPrimaryKeyInfo = schema.values.iterator.find(_.isPrimaryKey).map { colInfo =>
+      (colInfo.systemId, repSchema(colInfo.systemId).representedType)
+    }
 
     val systemPrimaryKey = schema.iterator.find { case (_, colInfo) =>
       colInfo.logicalName == SystemColumns.id
     }.map(_._1).getOrElse { sys.error(s"No ${SystemColumns.id} column?") }
 
-    val datasetContext = makeDatasetContext(versionInfo, repSchema, userPrimaryKey, systemPrimaryKey, schema.filter { (_, i) => i.logicalName.startsWith(":") }.keySet)
+    val datasetContext = makeDatasetContext(versionInfo, repSchema, userPrimaryKeyInfo, systemPrimaryKey, schema.filter { (_, i) => i.logicalName.startsWith(":") }.keySet)
 
     // hrm, this seems like it should be done in a more straightforward
     // manner...
@@ -46,7 +46,7 @@ abstract class AbstractSqlLoaderProvider[CT, CV](conn: Connection, idProviderPoo
     managed(SqlLoader(conn, rowPreparer, sqlizer, logger, idProviderPool, executor))
   }
 
-  def makeDatasetContext(versionInfo: VersionInfo, rawSchema: ColumnIdMap[SqlColumnRep[CT, CV]], userPKCol: Option[ColumnId], idCol: ColumnId, systemIds: ColumnIdSet) =
+  def makeDatasetContext(versionInfo: VersionInfo, rawSchema: ColumnIdMap[SqlColumnRep[CT, CV]], userPKCol: Option[(ColumnId, CT)], idCol: ColumnId, systemIds: ColumnIdSet) =
     new RepBasedSqlDatasetContext[CT, CV] {
       val typeContext: TypeContext[CT, CV] = self.typeContext
 
@@ -56,7 +56,8 @@ abstract class AbstractSqlLoaderProvider[CT, CV](conn: Connection, idProviderPoo
 
       val systemIdColumn = idCol
 
-      val userPrimaryKeyColumn: Option[ColumnId] = userPKCol
+      val userPrimaryKeyColumn: Option[ColumnId] = userPKCol.map(_._1)
+      val userPrimaryKeyType: Option[CT] = userPKCol.map(_._2)
 
       def userPrimaryKey(row: Row[CV]): Option[CV] =
         row.get(userPrimaryKeyColumn.get)
@@ -67,9 +68,7 @@ abstract class AbstractSqlLoaderProvider[CT, CV](conn: Connection, idProviderPoo
       def systemIdAsValue(row: Row[CV]): Option[CV] =
         row.get(systemIdColumn)
 
-      def makeIdMap[T](): RowIdMap[CV, T] = ???
-
-      def mergeRows(base: Row[CV], overlay: Row[CV]): Row[CV] = ???
+      def mergeRows(base: Row[CV], overlay: Row[CV]): Row[CV] = base ++ overlay
     }
 }
 

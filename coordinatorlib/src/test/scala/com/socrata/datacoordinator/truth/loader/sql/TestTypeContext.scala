@@ -2,7 +2,9 @@ package com.socrata.datacoordinator
 package truth.loader
 package sql
 
-import com.socrata.datacoordinator.truth.TypeContext
+import scala.collection.JavaConverters._
+
+import com.socrata.datacoordinator.truth.{RowUserIdMap, TypeContext}
 import com.socrata.datacoordinator.id.RowId
 
 object TestTypeContext extends TypeContext[TestColumnType, TestColumnValue] {
@@ -24,5 +26,32 @@ object TestTypeContext extends TypeContext[TestColumnType, TestColumnValue] {
   def nameFromType(typ: TestColumnType) = typ match {
     case LongColumn => "long"
     case StringColumn => "string"
+  }
+
+  def makeIdMap[V](ignored: TestColumnType) = {
+    new RowUserIdMap[TestColumnValue, V] {
+      val m = new java.util.HashMap[TestColumnValue, V]
+      def put(x: TestColumnValue, v: V) { m.put(x, v) }
+      def apply(x: TestColumnValue) = { val r = m.get(x); if(r == null) throw new NoSuchElementException; r }
+      def contains(x: TestColumnValue) = m.containsKey(x)
+
+      def get(x: TestColumnValue) = Option(m.get(x))
+
+      def clear() { m.clear() }
+
+      def isEmpty = m.isEmpty
+
+      def size = m.size
+
+      def foreach(f: (TestColumnValue, V) => Unit) {
+        val it = m.entrySet.iterator
+        while(it.hasNext) {
+          val ent = it.next()
+          f(ent.getKey, ent.getValue)
+        }
+      }
+
+      def valuesIterator = m.values().iterator.asScala
+    }
   }
 }

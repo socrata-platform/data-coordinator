@@ -11,4 +11,5 @@ trait TypeContext[CT, CV] {
   def nullValue: CV
   def typeFromName(name: String): CT
   def nameFromType(typ: CT): String
+  def makeIdMap[T](idColumnType: CT): RowUserIdMap[CV, T]
 }

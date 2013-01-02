@@ -7,7 +7,7 @@ import org.scalatest.{BeforeAndAfterAll, FunSuite}
 import org.scalatest.matchers.MustMatchers
 import com.rojoma.simplearm.util._
 
-import com.socrata.datacoordinator.truth.{RowIdMap, DatasetContext}
+import com.socrata.datacoordinator.truth.{RowUserIdMap, DatasetContext}
 import com.socrata.datacoordinator.truth.sql.{ReadOnlyRepBasedSqlDatasetContext, SqlColumnRep, RepBasedSqlDatasetContext, SqlColumnReadRep}
 import com.socrata.datacoordinator.util.collection.{ColumnIdSet, MutableColumnIdMap, ColumnIdMap}
 import com.socrata.datacoordinator.id.{RowId, ColumnId}
@@ -26,6 +26,7 @@ class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
     val typeContext = TestTypeContext
 
     val userPrimaryKeyColumn = if(schema.contains(new ColumnId(100L))) Some(new ColumnId(100L)) else None
+    val userPrimaryKeyType = userPrimaryKeyColumn.map(_ => StringType)
 
     def userPrimaryKey(row: Row[TestColumnValue]) = row.get(userPrimaryKeyColumn.get)
 
@@ -36,36 +37,6 @@ class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
     val systemIdColumn = new ColumnId(0L)
 
     val systemColumnIds = ColumnIdSet(systemIdColumn)
-
-    def makeIdMap[T]() = new RowIdMap[TestColumnValue, T] {
-      val underlying = new scala.collection.mutable.HashMap[String, T]
-
-      def s(x: TestColumnValue) = x.asInstanceOf[StringValue].value
-
-      def put(x: TestColumnValue, v: T) {
-        underlying += s(x) -> v
-      }
-
-      def apply(x: TestColumnValue) = underlying(s(x))
-
-      def get(x: TestColumnValue) = underlying.get(s(x))
-
-      def clear() { underlying.clear() }
-
-      def contains(x: TestColumnValue) = underlying.contains(s(x))
-
-      def isEmpty = underlying.isEmpty
-
-      def size = underlying.size
-
-      def foreach(f: (TestColumnValue, T) => Unit) {
-        underlying.foreach { case (k,v) =>
-          f(StringValue(k), v)
-        }
-      }
-
-      def valuesIterator = underlying.valuesIterator
-    }
 
     def mergeRows(base: Row[TestColumnValue], overlay: Row[TestColumnValue]) = sys.error("Shouldn't call this")
   }

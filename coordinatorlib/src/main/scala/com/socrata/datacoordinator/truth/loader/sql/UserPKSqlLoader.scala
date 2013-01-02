@@ -9,7 +9,7 @@ import gnu.trove.map.hash.TIntObjectHashMap
 import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.util.IdProviderPool
-import com.socrata.datacoordinator.truth.{RowIdMap, TypeContext}
+import com.socrata.datacoordinator.truth.{RowUserIdMap, TypeContext}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.id.RowId
 
@@ -205,7 +205,7 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: Dat
     if(pendingErrors != null) { errors.putAll(pendingErrors); pendingErrors = null }
   }
 
-  def findSids(ops: Iterator[OperationLog[CV]]): RowIdMap[CV, RowId] = {
+  def findSids(ops: Iterator[OperationLog[CV]]): RowUserIdMap[CV, RowId] = {
     using(sqlizer.findSystemIds(connection, ops.map(_.id))) { blocks =>
       val target = datasetContext.makeIdMap[RowId]()
       for(idPair <- blocks.flatten) target.put(idPair.userId, idPair.systemId)
@@ -213,7 +213,7 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: Dat
     }
   }
 
-  def processDeletes(sidSource: RowIdMap[CV, RowId], deleteSizeX: Int, deletes: java.util.ArrayList[OperationLog[CV]], errors: TIntObjectHashMap[Failure[CV]]): TIntObjectHashMap[CV] = {
+  def processDeletes(sidSource: RowUserIdMap[CV, RowId], deleteSizeX: Int, deletes: java.util.ArrayList[OperationLog[CV]], errors: TIntObjectHashMap[Failure[CV]]): TIntObjectHashMap[CV] = {
     var deleteSize = deleteSizeX
     var resultMap: TIntObjectHashMap[CV] = null
     if(!deletes.isEmpty) {
@@ -284,7 +284,7 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: Dat
     resultMap
   }
 
-  def processUpdates(sidSource: RowIdMap[CV, RowId], updates: java.util.ArrayList[OperationLog[CV]]): TIntObjectHashMap[CV] = {
+  def processUpdates(sidSource: RowUserIdMap[CV, RowId], updates: java.util.ArrayList[OperationLog[CV]]): TIntObjectHashMap[CV] = {
     var resultMap: TIntObjectHashMap[CV] = null
     if(!updates.isEmpty) {
       using(connection.createStatement()) { stmt =>

@@ -8,6 +8,7 @@ import com.socrata.datacoordinator.id.{RowId, ColumnId}
 trait DatasetContext[CT, CV] {
   val typeContext: TypeContext[CT, CV]
   val userPrimaryKeyColumn: Option[ColumnId]
+  val userPrimaryKeyType: Option[CT]
   val systemIdColumn: ColumnId
   val allColumnIds: ColumnIdSet
   val userColumnIds: ColumnIdSet
@@ -21,7 +22,7 @@ trait DatasetContext[CT, CV] {
 
   def systemColumns(row: Row[CV]): ColumnIdSet = row.keySet.intersect(systemColumnIds)
 
-  def makeIdMap[T](): RowIdMap[CV, T]
+  def makeIdMap[T](): RowUserIdMap[CV, T] = typeContext.makeIdMap(userPrimaryKeyType.getOrElse(sys.error("No user-defined primary key specified")))
 
   def mergeRows(base: Row[CV], overlay: Row[CV]): Row[CV]
 

@@ -1,6 +1,6 @@
 package com.socrata.datacoordinator.truth
 
-trait RowIdMap[CV, T] {
+trait RowUserIdMap[CV, T] {
   def put(x: CV, v: T)
   def apply(x: CV): T
   def get(x: CV): Option[T]
