@@ -9,7 +9,7 @@ import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.truth.{RowIdMap, DatasetContext}
 import com.socrata.datacoordinator.truth.sql.{ReadOnlyRepBasedSqlDatasetContext, SqlColumnRep, RepBasedSqlDatasetContext, SqlColumnReadRep}
-import com.socrata.datacoordinator.util.collection.{MutableColumnIdMap, ColumnIdMap}
+import com.socrata.datacoordinator.util.collection.{ColumnIdSet, MutableColumnIdMap, ColumnIdMap}
 import com.socrata.datacoordinator.id.{RowId, ColumnId}
 
 class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
@@ -33,11 +33,9 @@ class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
 
     def systemIdAsValue(row: Row[TestColumnValue]) = row.get(systemIdColumn)
 
-    def systemColumns(row: Row[TestColumnValue]) = row.keySet.filter(_ != systemIdColumn).toSet
-
     val systemIdColumn = new ColumnId(0L)
 
-    val systemColumnSet = Set(systemIdColumn)
+    val systemColumnIds = ColumnIdSet(systemIdColumn)
 
     def makeIdMap[T]() = new RowIdMap[TestColumnValue, T] {
       val underlying = new scala.collection.mutable.HashMap[String, T]

@@ -6,7 +6,7 @@ package perf
 import scala.collection.JavaConverters._
 
 import com.socrata.datacoordinator.truth.{RowIdMap, DatasetContext}
-import com.socrata.datacoordinator.util.collection.ColumnIdMap
+import com.socrata.datacoordinator.util.collection.{ColumnIdSet, ColumnIdMap}
 import com.socrata.datacoordinator.id.ColumnId
 import com.socrata.datacoordinator.truth.sql.{RepBasedSqlDatasetContext, SqlColumnRep}
 
@@ -27,9 +27,7 @@ class PerfDatasetContext(val schema: ColumnIdMap[SqlColumnRep[PerfType, PerfValu
 
   def systemIdAsValue(row: Row[PerfValue]) = row.get(systemIdColumn)
 
-  def systemColumns(row: Row[PerfValue]) = if(row.contains(systemIdColumn)) Set(systemIdColumn) else Set.empty
-
-  val systemColumnSet = Set(systemIdColumn)
+  val systemColumnIds = ColumnIdSet(systemIdColumn)
 
   def mergeRows(a: Row[PerfValue], b: Row[PerfValue]) = a ++ b
 

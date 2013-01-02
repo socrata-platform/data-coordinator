@@ -5,6 +5,7 @@ import scala.{collection => sc}
 
 import java.io.Closeable
 import com.socrata.datacoordinator.id.ColumnId
+import com.socrata.datacoordinator.util.collection.ColumnIdSet
 
 trait Loader[CV] extends Closeable {
   def upsert(row: Row[CV])
@@ -48,7 +49,7 @@ trait Report[CV] {
 
 sealed abstract class Failure[+CV]
 case object NullPrimaryKey extends Failure[Nothing]
-case class SystemColumnsSet(names: Set[ColumnId]) extends Failure[Nothing]
+case class SystemColumnsSet(names: ColumnIdSet) extends Failure[Nothing]
 case class NoSuchRowToDelete[CV](id: CV) extends Failure[CV]
 case class NoSuchRowToUpdate[CV](id: CV) extends Failure[CV]
 case object NoPrimaryKey extends Failure[Nothing]

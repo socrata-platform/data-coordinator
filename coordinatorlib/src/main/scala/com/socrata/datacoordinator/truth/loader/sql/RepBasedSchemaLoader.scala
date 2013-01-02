@@ -48,10 +48,10 @@ abstract class RepBasedSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV]
       case rep: SqlPKableColumnRep[CT, CV] =>
         using(conn.createStatement()) { stmt =>
           val table = columnInfo.versionInfo.dataTableName
-          stmt.execute("CREATE INDEX " + table + "_" + rep.base + " ON " + table + "(" + rep.equalityIndexExpression + ")" + postgresTablespaceSuffix)
           for(col <- rep.physColumns) {
             stmt.execute("ALTER TABLE " + table + " ALTER " + col + " SET NOT NULL")
           }
+          stmt.execute("CREATE UNIQUE INDEX uniq_" + table + "_" + rep.base + " ON " + table + "(" + rep.equalityIndexExpression + ")" + postgresTablespaceSuffix)
         }
         logger.rowIdentifierChanged(Some(columnInfo))
         true
@@ -65,7 +65,7 @@ abstract class RepBasedSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV]
       case rep: SqlPKableColumnRep[CT, CV] =>
         using(conn.createStatement()) { stmt =>
           val table = columnInfo.versionInfo.dataTableName
-          stmt.execute("DROP INDEX " + table + "_" + rep.base)
+          stmt.execute("DROP INDEX uniq_" + table + "_" + rep.base)
           for(col <- rep.physColumns) {
             stmt.execute("ALTER TABLE " + table + " ALTER " + col + " DROP NOT NULL")
           }

@@ -402,8 +402,46 @@ import gnu.trove.set.TLongSet
 import gnu.trove.set.hash.TLongHashSet
 import gnu.trove.procedure.TLongProcedure
 
+object """ + targetClassName + """ {
+  def apply(xs: """ + sourceType + """*): """ + targetClassName + """ = {
+    val tmp = new TLongHashSet
+    xs.foreach { x => tmp.add(x.underlying) }
+    new """ + targetClassName + """(tmp)
+  }
+
+  val empty = apply()
+}
+
 class """ + targetClassName + """(val unsafeUnderlying: TLongSet) extends (""" + sourceType + """ => Boolean) {
   def apply(x: """ + sourceType + """) = unsafeUnderlying.contains(x.underlying)
+
+  def contains(x: """ + sourceType + """) = unsafeUnderlying.contains(x.underlying)
+
+  def intersect(that: """ + targetClassName + """): """ + targetClassName + """ = {
+    if(this.unsafeUnderlying.size <= that.unsafeUnderlying.size) {
+      val filter = that.unsafeUnderlying
+      val it = unsafeUnderlying.iterator
+      val target = new TLongHashSet
+      while(it.hasNext) {
+        val elem = it.next()
+        if(filter.contains(elem)) target.add(elem)
+      }
+      new """ + targetClassName + """(target)
+    } else {
+      that.intersect(this)
+    }
+  }
+
+  def -(x: """ + sourceType + """) = {
+    val copy = new TLongHashSet(unsafeUnderlying)
+    copy.remove(x.underlying)
+    new """ + targetClassName + """(copy)
+  }
+
+  def size = unsafeUnderlying.size
+
+  def isEmpty = unsafeUnderlying.isEmpty
+  def nonEmpty = !unsafeUnderlying.isEmpty
 
   def filter(f: """ + sourceType + """ => Boolean) = {
     val result = new TLongHashSet
@@ -416,6 +454,30 @@ class """ + targetClassName + """(val unsafeUnderlying: TLongSet) extends (""" +
     new """ + targetClassName + """(result)
   }
 
+  def filterNot(f: """ + sourceType + """ => Boolean) = {
+    val result = new TLongHashSet
+    unsafeUnderlying.forEach(new TLongProcedure {
+      def execute(l: Long) = {
+        if(!f(new """ + sourceType + """(l))) result.add(l)
+        true
+      }
+    })
+    new """ + targetClassName + """(result)
+  }
+
+  def partition(f: """ + sourceType + """ => Boolean) = {
+    val yes = new TLongHashSet
+    val no = new TLongHashSet
+    unsafeUnderlying.forEach(new TLongProcedure {
+      def execute(l: Long) = {
+        if(f(new """ + sourceType + """(l))) yes.add(l)
+        else no.add(l)
+        true
+      }
+    })
+    (new """ + targetClassName + """(yes), new """ + targetClassName + """(no))
+  }
+
   def toSet = {
     val b = Set.newBuilder[""" + sourceType + """]
     unsafeUnderlying.forEach(new TLongProcedure {
@@ -425,6 +487,12 @@ class """ + targetClassName + """(val unsafeUnderlying: TLongSet) extends (""" +
       }
     })
     b.result()
+  }
+
+  override def hashCode = unsafeUnderlying.hashCode
+  override def equals(o: Any) = o match {
+    case that: """ + targetClassName + """ => this.unsafeUnderlying == that.unsafeUnderlying
+    case _ => false
   }
 }
 """

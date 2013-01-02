@@ -14,7 +14,7 @@ import com.rojoma.simplearm.util._
 import com.socrata.id.numeric.{FixedSizeIdProvider, InMemoryBlockIdProvider}
 import com.socrata.datacoordinator.util.IdProviderPoolImpl
 import com.socrata.datacoordinator.id.{RowId, ColumnId}
-import com.socrata.datacoordinator.util.collection.{MutableColumnIdMap, ColumnIdMap}
+import com.socrata.datacoordinator.util.collection.{ColumnIdSet, MutableColumnIdMap, ColumnIdMap}
 
 class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with BeforeAndAfterAll {
   val executor = java.util.concurrent.Executors.newCachedThreadPool()
@@ -63,11 +63,11 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
   val idCol: ColumnId = new ColumnId(0)
   val idColName = "c_" + idCol.underlying
 
-  def makeTables(conn: Connection, ctx: DataSqlizer[TestColumnType, TestColumnValue], logTableName: String) {
+  def makeTables(conn: Connection, ctx: AbstractRepBasedDataSqlizer[TestColumnType, TestColumnValue], logTableName: String) {
     execute(conn, "drop table if exists " + ctx.dataTableName)
     execute(conn, "drop table if exists " + logTableName)
-    execute(conn, "CREATE TABLE " + ctx.dataTableName + " (c_" + idCol.underlying + " bigint not null primary key," + ctx.datasetContext.userSchema.iterator.map { case (c,t) =>
-      val sqltype = t match {
+    execute(conn, "CREATE TABLE " + ctx.dataTableName + " (c_" + idCol.underlying + " bigint not null primary key," + ctx.datasetContext.schema.iterator.filter(_._1 != idCol).map { case (c,t) =>
+      val sqltype = t.representedType match {
         case LongColumn => "BIGINT"
         case StringColumn => "VARCHAR(100)"
       }
@@ -80,13 +80,13 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     execute(conn, "CREATE TABLE " + logTableName + " (version bigint not null, subversion bigint not null, rows varchar(65536) not null, who varchar(100) null, PRIMARY KEY(version, subversion))")
   }
 
-  def preload(conn: Connection, ctx: DataSqlizer[TestColumnType, TestColumnValue], logTableName: String)(rows: Row[TestColumnValue]*) {
+  def preload(conn: Connection, ctx: AbstractRepBasedDataSqlizer[TestColumnType, TestColumnValue], logTableName: String)(rows: Row[TestColumnValue]*) {
     makeTables(conn, ctx, logTableName)
     for(row <- rows) {
       val LongValue(id) = row.getOrElse(ctx.datasetContext.systemIdColumn, sys.error("No :id"))
       val remainingColumns = new MutableRow[TestColumnValue](row)
       remainingColumns -= ctx.datasetContext.systemIdColumn
-      assert(remainingColumns.keySet.toSet.subsetOf(ctx.datasetContext.userSchema.keySet.toSet), "row contains extraneous keys")
+      assert(remainingColumns.keySet.toSet.subsetOf(ctx.datasetContext.userColumnIds.toSet), "row contains extraneous keys")
       val sql = "insert into " + ctx.dataTableName + " (" + idColName + "," + remainingColumns.keys.map { c => "c_" + c.underlying }.mkString(",") + ") values (" + id + "," + remainingColumns.values.map(_.sqlize).mkString(",") + ")"
       execute(conn, sql)
     }
@@ -472,7 +472,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         report.inserted must be ('empty)
         report.updated must be ('empty)
         report.deleted must be ('empty)
-        report.errors must equal (Map(0 -> SystemColumnsSet(Set(idCol))))
+        report.errors must equal (Map(0 -> SystemColumnsSet(ColumnIdSet(idCol))))
         report.elided must be ('empty)
       }
       conn.commit()
@@ -581,7 +581,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     val schema = ColumnIdMap(
       idCol -> new LongRep(idCol),
       userIdCol -> new LongRep(userIdCol),
-      num -> new LongqzeRep(num),
+      num -> new LongRep(num),
       str -> new StringRep(str)
     )
 
