@@ -3,7 +3,10 @@ package com.socrata.datacoordinator.id
 import com.rojoma.json.codec.JsonCodec
 import com.rojoma.json.ast.{JValue, JNumber}
 
-class VersionId(val underlying: Long) extends AnyVal
+class VersionId(val underlying: Long) extends AnyVal {
+  override def toString = s"VersionId($underlying)"
+}
+
 object VersionId {
   implicit val jCodec = new JsonCodec[VersionId] {
     def encode(versionId: VersionId) = JNumber(versionId.underlying)
