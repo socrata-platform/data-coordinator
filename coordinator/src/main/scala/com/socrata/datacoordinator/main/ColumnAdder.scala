@@ -11,16 +11,18 @@ abstract class ColumnAdder[CT, CV](mutator: DatabaseMutator[CT, CV]) {
   //  * Remove dataset X from {StoreSet} : Future[Option[Error]]
   // Get replication status : Map[Store, Version] (from secondary manifest)
 
-  def addToSchema(dataset: String, columnName: String, columnType: CT, username: String) {
+  def addToSchema(dataset: String, columns: Map[String, CT], username: String) {
     mutator.withTransaction() { providerOfNecessaryThings =>
       import providerOfNecessaryThings._
       val ds = datasetMapWriter.datasetInfo(dataset).getOrElse(sys.error("Augh no such dataset"))
       val table = datasetMapWriter.latest(ds)
-      val baseName = physicalColumnBaseForType(columnType) + "_" + singleId()
-      val col = datasetMapWriter.addColumn(table, columnName, nameForType(columnType), baseName)
       val logger = datasetLog(ds)
 
-      schemaLoader(col.versionInfo, logger).addColumn(col)
+      for((columnName, columnType) <- columns) {
+        val baseName = physicalColumnBaseForType(columnType) + "_" + singleId()
+        val col = datasetMapWriter.addColumn(table, columnName, nameForType(columnType), baseName)
+        schemaLoader(col.versionInfo, logger).addColumn(col)
+      }
 
       logger.endTransaction().foreach { ver =>
         truthManifest.updateLatestVersion(ds, ver)
