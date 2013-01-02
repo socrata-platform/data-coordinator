@@ -1,6 +1,6 @@
 package com.socrata.datacoordinator.main
 
-abstract class ColumnAdder[CT, CV](mutator: DatabaseMutator[CT, CV]) {
+class ColumnAdder[CT, CV](mutator: DatabaseMutator[CT, CV]) {
   // Glue points we want/need
   //
   // Data updates (schema changes, upsert, etc)
