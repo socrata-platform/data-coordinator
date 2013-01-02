@@ -7,8 +7,7 @@ import org.scalatest.{BeforeAndAfterAll, FunSuite}
 import org.scalatest.matchers.MustMatchers
 import com.rojoma.simplearm.util._
 
-import com.socrata.datacoordinator.truth.{RowUserIdMap, DatasetContext}
-import com.socrata.datacoordinator.truth.sql.{ReadOnlyRepBasedSqlDatasetContext, SqlColumnRep, RepBasedSqlDatasetContext, SqlColumnReadRep}
+import com.socrata.datacoordinator.truth.sql.{ReadOnlyRepBasedSqlDatasetContext, SqlColumnReadRep}
 import com.socrata.datacoordinator.util.collection.{ColumnIdSet, MutableColumnIdMap, ColumnIdMap}
 import com.socrata.datacoordinator.id.{RowId, ColumnId}
 

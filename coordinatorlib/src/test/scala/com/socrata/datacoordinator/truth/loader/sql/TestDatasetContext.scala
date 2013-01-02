@@ -2,9 +2,6 @@ package com.socrata.datacoordinator
 package truth.loader
 package sql
 
-import scala.collection.JavaConverters._
-
-import com.socrata.datacoordinator.truth.{RowUserIdMap, DatasetContext}
 import com.socrata.datacoordinator.util.collection.{ColumnIdSet, ColumnIdMap}
 import com.socrata.datacoordinator.id.{RowId, ColumnId}
 import com.socrata.datacoordinator.truth.sql.{SqlColumnRep, RepBasedSqlDatasetContext}

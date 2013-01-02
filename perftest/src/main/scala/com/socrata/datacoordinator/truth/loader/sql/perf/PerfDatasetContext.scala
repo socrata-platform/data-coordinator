@@ -3,9 +3,6 @@ package truth.loader
 package sql
 package perf
 
-import scala.collection.JavaConverters._
-
-import com.socrata.datacoordinator.truth.{RowUserIdMap, DatasetContext}
 import com.socrata.datacoordinator.util.collection.{ColumnIdSet, ColumnIdMap}
 import com.socrata.datacoordinator.id.ColumnId
 import com.socrata.datacoordinator.truth.sql.{RepBasedSqlDatasetContext, SqlColumnRep}

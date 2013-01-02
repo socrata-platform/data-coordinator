@@ -15,7 +15,7 @@ import com.socrata.datacoordinator.truth.RowLogCodec
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.rojoma.json.util.JsonUtil
 import com.rojoma.json.codec.JsonCodec
-import com.socrata.datacoordinator.id.{RowId, ColumnId}
+import com.socrata.datacoordinator.id.RowId
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 
 class SqlLogger[CV](connection: Connection,

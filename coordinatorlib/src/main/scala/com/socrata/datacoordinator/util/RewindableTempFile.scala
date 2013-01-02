@@ -1,7 +1,6 @@
 package com.socrata.datacoordinator.util
 
 import java.io._
-import java.nio.ByteBuffer
 
 /** @note Not thread safe. */
 class RewindableTempFile(dir: File = null, readBlockSize: Int = 1024, writeBlockSize: Int = 1024) extends Closeable { self =>

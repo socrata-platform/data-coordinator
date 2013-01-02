@@ -7,9 +7,9 @@ import java.sql.{PreparedStatement, Connection}
 import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.util.{LeakDetect, CloseableIterator, FastGroupedIterator}
-import com.socrata.datacoordinator.util.collection.{MutableRowIdMap, ColumnIdMap, MutableColumnIdMap}
-import com.socrata.datacoordinator.truth.sql.{ReadOnlyRepBasedSqlDatasetContext, RepBasedSqlDatasetContext, SqlPKableColumnReadRep, SqlColumnReadRep}
-import com.socrata.datacoordinator.truth.{DatasetContext, TypeContext}
+import com.socrata.datacoordinator.util.collection.{MutableRowIdMap, MutableColumnIdMap}
+import com.socrata.datacoordinator.truth.sql.{ReadOnlyRepBasedSqlDatasetContext, SqlPKableColumnReadRep}
+import com.socrata.datacoordinator.truth.TypeContext
 import com.socrata.datacoordinator.id.{RowId, ColumnId}
 
 class SqlReader[CT, CV](connection: Connection,

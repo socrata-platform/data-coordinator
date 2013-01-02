@@ -13,7 +13,7 @@ import com.rojoma.json.io.{BlockJsonTokenIterator, JsonEventIterator, JsonReader
 import com.rojoma.json.codec.JsonCodec
 import com.rojoma.json.ast.{JValue, JNull, JNumber, JString}
 import java.util.zip.GZIPInputStream
-import com.socrata.id.numeric.{InMemoryBlockIdProvider, FixedSizeIdProvider, PushbackIdProvider}
+import com.socrata.id.numeric.{InMemoryBlockIdProvider, FixedSizeIdProvider}
 import com.socrata.datacoordinator.truth.loader.sql.SqlLoader
 import com.socrata.datacoordinator.util.{Counter, IdProviderPoolImpl}
 import com.socrata.datacoordinator.id.{RowId, ColumnId}

@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator
 package truth
 
-import com.socrata.datacoordinator.util.collection.{ColumnIdSet, ColumnIdMap}
+import com.socrata.datacoordinator.util.collection.ColumnIdSet
 import com.socrata.datacoordinator.id.{RowId, ColumnId}
 
 /** Extracts information about a dataset and from rows within the context of a dataset. */

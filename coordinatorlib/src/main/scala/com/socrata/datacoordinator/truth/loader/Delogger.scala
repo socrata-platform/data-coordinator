@@ -5,7 +5,6 @@ import java.io.Closeable
 
 import com.socrata.datacoordinator.util.CloseableIterator
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
-import com.socrata.datacoordinator.id.ColumnId
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 
 trait Delogger[CV] extends Closeable {

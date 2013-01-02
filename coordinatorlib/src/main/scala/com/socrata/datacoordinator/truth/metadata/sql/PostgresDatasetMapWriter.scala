@@ -2,9 +2,8 @@ package com.socrata.datacoordinator
 package truth.metadata
 package sql
 
-import java.sql.{PreparedStatement, Timestamp, Connection}
+import java.sql.{PreparedStatement, Connection}
 
-import org.joda.time.DateTime
 import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.truth.{DatasetSystemIdInUseByWriterException, DatasetIdInUseByWriterException}

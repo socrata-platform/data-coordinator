@@ -9,7 +9,7 @@ import gnu.trove.map.hash.TIntObjectHashMap
 import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.util.IdProviderPool
-import com.socrata.datacoordinator.truth.{RowUserIdMap, TypeContext}
+import com.socrata.datacoordinator.truth.RowUserIdMap
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.id.RowId
 

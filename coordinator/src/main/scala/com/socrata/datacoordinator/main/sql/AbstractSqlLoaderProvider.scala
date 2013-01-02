@@ -10,7 +10,7 @@ import com.socrata.datacoordinator.Row
 import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, VersionInfo}
 import com.socrata.datacoordinator.truth.loader.{RowPreparer, Loader, Logger}
 import com.socrata.datacoordinator.truth.loader.sql._
-import com.socrata.datacoordinator.truth.{TypeContext, RowUserIdMap, DatasetContext}
+import com.socrata.datacoordinator.truth.{TypeContext, DatasetContext}
 import com.socrata.datacoordinator.truth.sql.{RepBasedSqlDatasetContext, SqlColumnRep}
 import com.socrata.datacoordinator.util.collection.{ColumnIdSet, ColumnIdMap}
 import com.socrata.datacoordinator.util.IdProviderPool

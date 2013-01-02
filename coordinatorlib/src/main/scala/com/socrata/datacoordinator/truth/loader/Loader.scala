@@ -4,7 +4,6 @@ package truth.loader
 import scala.{collection => sc}
 
 import java.io.Closeable
-import com.socrata.datacoordinator.id.ColumnId
 import com.socrata.datacoordinator.util.collection.ColumnIdSet
 
 trait Loader[CV] extends Closeable {

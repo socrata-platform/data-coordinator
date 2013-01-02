@@ -4,10 +4,10 @@ package sql
 package perf
 
 import com.socrata.datacoordinator.truth.{UnknownDataTypeException, RowLogCodec}
-import gnu.trove.map.hash.{TLongIntHashMap, TIntLongHashMap, TObjectIntHashMap, TIntObjectHashMap}
+import gnu.trove.map.hash.{TLongIntHashMap, TIntLongHashMap}
 import gnu.trove.impl.Constants
 
-import com.google.protobuf.{CodedInputStream, CodedOutputStream, InvalidProtocolBufferException}
+import com.google.protobuf.{CodedInputStream, CodedOutputStream}
 import com.socrata.datacoordinator.id.{RowId, ColumnId}
 
 class PerfRowCodec extends RowLogCodec[PerfValue] {
