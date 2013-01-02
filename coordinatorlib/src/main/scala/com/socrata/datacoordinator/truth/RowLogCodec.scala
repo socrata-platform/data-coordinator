@@ -4,7 +4,9 @@ package truth
 import java.io.{EOFException, IOException}
 
 import com.google.protobuf.{CodedInputStream, CodedOutputStream, InvalidProtocolBufferException}
-import com.socrata.datacoordinator.id.RowId
+import com.socrata.datacoordinator.id.{ColumnId, RowId}
+import gnu.trove.map.hash.{TLongIntHashMap, TIntLongHashMap}
+import gnu.trove.impl.Constants
 
 // Hm, may want to refactor this somewhat.  In particular, we'll
 // probably want to plug in different decoders depending on
@@ -74,6 +76,61 @@ trait RowLogCodec[CV] {
       case e: EOFException =>
         throw new RowLogTruncatedException(e)
     }
+  }
+}
+
+trait IdCachingRowLogCodec[CV] extends RowLogCodec[CV] {
+  private val colNameReadCache = new TIntLongHashMap(Constants.DEFAULT_CAPACITY, Constants.DEFAULT_LOAD_FACTOR, -1, -1)
+  private val colNameWriteCache = new TLongIntHashMap(Constants.DEFAULT_CAPACITY, Constants.DEFAULT_LOAD_FACTOR, -1, -1)
+
+  private def writeKey(target: CodedOutputStream, key: ColumnId) {
+    val cached = colNameWriteCache.get(key.underlying)
+    if(cached == -1) {
+      val id = colNameWriteCache.size()
+      colNameWriteCache.put(key.underlying, id)
+      target.writeInt32NoTag(id)
+      target.writeInt64NoTag(key.underlying)
+    } else {
+      target.writeInt32NoTag(cached)
+    }
+  }
+
+  private def readKey(source: CodedInputStream): ColumnId = {
+    val id = source.readInt32()
+    val cached = colNameReadCache.get(id)
+    if(cached == -1) {
+      val key = source.readInt64()
+      colNameReadCache.put(id, key)
+      new ColumnId(key)
+    } else {
+      new ColumnId(cached)
+    }
+  }
+
+  protected def writeValue(target: CodedOutputStream, cv: CV)
+  protected def readValue(source: CodedInputStream): CV
+
+  protected def encode(target: CodedOutputStream, row: Row[CV]) {
+    target.writeInt32NoTag(row.size)
+    val it = row.iterator
+    while(it.hasNext) {
+      it.advance()
+      val k = it.key
+      val v = it.value
+      writeKey(target, k)
+      writeValue(target, v)
+    }
+  }
+
+  protected def decode(source: CodedInputStream) = {
+    val count = source.readInt32()
+    val result = new MutableRow[CV]
+    for(i <- 0 until count) {
+      val k = readKey(source)
+      val v = readValue(source)
+      result(k) = v
+    }
+    result.freeze()
   }
 }
 

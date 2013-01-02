@@ -6,7 +6,7 @@ import com.socrata.soql.types.SoQLType
 import com.socrata.datacoordinator.truth.sql.SqlColumnRep
 import com.socrata.datacoordinator.id.ColumnId
 
-abstract class RepFactory extends (ColumnId => SqlColumnRep[SoQLType, Any]) {
+abstract class RepFactory extends (String => SqlColumnRep[SoQLType, Any]) {
   val standardNullInsertSize = 8
 
   def sqlescape(s: String): String = {
@@ -21,7 +21,7 @@ abstract class RepFactory extends (ColumnId => SqlColumnRep[SoQLType, Any]) {
   def csvescape(sb: StringBuilder, s: String) =
     doubler('"', sb, s)
 
-  def doubler(q: Char, sb: StringBuilder, s: String) {
+  def doubler(q: Char, sb: StringBuilder, s: String) = {
     sb.append(q)
     var i = 0
     while(i != s.length) {

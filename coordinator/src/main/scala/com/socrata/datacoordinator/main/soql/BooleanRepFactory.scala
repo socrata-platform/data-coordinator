@@ -3,15 +3,14 @@ package com.socrata.datacoordinator.main.soql
 import java.lang.StringBuilder
 import java.sql.{ResultSet, Types, PreparedStatement}
 
-import com.socrata.datacoordinator.id.ColumnId
 import com.socrata.datacoordinator.truth.sql.SqlPKableColumnRep
 import com.socrata.soql.types.{SoQLBoolean, SoQLType}
 
 object BooleanRepFactory extends RepFactory {
-  def apply(columnId: ColumnId) =
+  def apply(colBase: String) =
     new SqlPKableColumnRep[SoQLType, Any] {
       def templateForMultiLookup(n: Int): String =
-        s"(lower($base) in (${(1 to n).map(_ => "lower(?)").mkString(",")})"
+        s"($base in (${(1 to n).map(_ => "?").mkString(",")})"
 
       def prepareMultiLookup(stmt: PreparedStatement, v: Any, start: Int): Int = {
         stmt.setBoolean(start, v.asInstanceOf[Boolean])
@@ -35,14 +34,14 @@ object BooleanRepFactory extends RepFactory {
 
       def sql_==(literal: Any): String = {
         val v = literal.asInstanceOf[Boolean].toString
-        s"(lower($base) = $v)"
+        s"($base = $v)"
       }
 
       def equalityIndexExpression: String = base
 
       def representedType: SoQLType = SoQLBoolean
 
-      val base: String = "bool_" + columnId.underlying
+      val base: String = colBase
 
       val physColumns: Array[String] = Array(base)
 

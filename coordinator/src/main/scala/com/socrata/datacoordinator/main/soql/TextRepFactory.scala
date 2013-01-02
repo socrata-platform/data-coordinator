@@ -3,12 +3,11 @@ package com.socrata.datacoordinator.main.soql
 import java.lang.StringBuilder
 import java.sql.{ResultSet, Types, PreparedStatement}
 
-import com.socrata.datacoordinator.id.ColumnId
 import com.socrata.datacoordinator.truth.sql.SqlPKableColumnRep
 import com.socrata.soql.types.{SoQLText, SoQLType}
 
 object TextRepFactory extends RepFactory {
-  def apply(columnId: ColumnId) =
+  def apply(colBase: String) =
     new SqlPKableColumnRep[SoQLType, Any] {
       def templateForMultiLookup(n: Int): String =
         s"(lower($base) in (${(1 to n).map(_ => "lower(?)").mkString(",")})"
@@ -43,7 +42,7 @@ object TextRepFactory extends RepFactory {
 
       def representedType: SoQLType = SoQLText
 
-      val base: String = "text_" + columnId.underlying
+      val base: String = colBase
 
       val physColumns: Array[String] = Array(base)
 

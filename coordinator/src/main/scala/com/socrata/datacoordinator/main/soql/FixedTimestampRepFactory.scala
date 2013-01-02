@@ -3,31 +3,28 @@ package com.socrata.datacoordinator.main.soql
 import java.lang.StringBuilder
 import java.sql.{ResultSet, Types, PreparedStatement}
 
-import com.socrata.datacoordinator.truth.sql.SqlPKableColumnRep
-import com.socrata.soql.types.SoQLType
+import org.joda.time.DateTime
 
-class NumberLikeFactory(repType: SoQLType) extends RepFactory {
+import com.socrata.datacoordinator.truth.sql.SqlPKableColumnRep
+import com.socrata.soql.types.{SoQLFixedTimestamp, SoQLType}
+import org.joda.time.format.{ISODateTimeFormat, DateTimeFormatter}
+
+object FixedTimestampRepFactory extends RepFactory {
+  val literalFormatter: DateTimeFormatter = ISODateTimeFormat.dateTime
+
   def apply(colBase: String) =
     new SqlPKableColumnRep[SoQLType, Any] {
-      def representedType = repType
-
       def templateForMultiLookup(n: Int): String =
-        s"(lower($base) in (${(1 to n).map(_ => "lower(?)").mkString(",")})"
+        s"($base in (${(1 to n).map(_ => "?").mkString(",")})"
 
       def prepareMultiLookup(stmt: PreparedStatement, v: Any, start: Int): Int = {
-        stmt.setBigDecimal(start, v.asInstanceOf[BigDecimal].underlying)
+        stmt.setTimestamp(start, new java.sql.Timestamp(v.asInstanceOf[DateTime].getMillis))
         start + 1
       }
 
-      /** Generates a SQL expression equivalent to "`column in (literals...)`".
-        * @param literals The `StringBuilder` to which to add the data.  Must be non-empty.
-        *                 The individual values' types must be equal to (not merely compatible with!)
-        *                 `representedType`.
-        * @return An expression suitable for splicing into a SQL statement.
-        */
       def sql_in(literals: Iterable[Any]): String =
         literals.iterator.map { lit =>
-          lit.asInstanceOf[BigDecimal].toString
+          literalFormatter.print(lit.asInstanceOf[DateTime])
         }.mkString(s"($base in (", ",", "))")
 
       def templateForSingleLookup: String = s"($base = ?)"
@@ -35,46 +32,48 @@ class NumberLikeFactory(repType: SoQLType) extends RepFactory {
       def prepareSingleLookup(stmt: PreparedStatement, v: Any, start: Int): Int = prepareMultiLookup(stmt, v, start)
 
       def sql_==(literal: Any): String = {
-        val v = literal.asInstanceOf[BigDecimal].toString
-        s"(lower($base) = $v)"
+        val v = literal.asInstanceOf[Boolean].toString
+        s"($base = $v)"
       }
 
       def equalityIndexExpression: String = base
+
+      def representedType: SoQLType = SoQLFixedTimestamp
 
       val base: String = colBase
 
       val physColumns: Array[String] = Array(base)
 
-      val sqlTypes: Array[String] = Array("NUMERIC")
+      val sqlTypes: Array[String] = Array("TIMESTAMP WITH TIME ZONE")
 
       def csvifyForInsert(sb: StringBuilder, v: Any) {
         if(v == SoQLNullValue) { /* pass */ }
-        else sb.append(v.asInstanceOf[BigDecimal].toString)
+        else sb.append(literalFormatter.print(v.asInstanceOf[DateTime]))
       }
 
       def prepareInsert(stmt: PreparedStatement, v: Any, start: Int): Int = {
-        if(v == SoQLNullValue) stmt.setNull(start, Types.DECIMAL)
-        else stmt.setBigDecimal(start, v.asInstanceOf[BigDecimal].underlying)
+        if(v == SoQLNullValue) stmt.setNull(start, Types.BOOLEAN)
+        else stmt.setTimestamp(start, new java.sql.Timestamp(v.asInstanceOf[DateTime].getMillis))
         start + 1
       }
 
       def estimateInsertSize(v: Any): Int =
         if(v == SoQLNullValue) standardNullInsertSize
-        else v.asInstanceOf[BigDecimal].toString.length //ick
+        else 30
 
       def SETsForUpdate(sb: StringBuilder, v: Any) {
         sb.append(base).append('=')
         if(v == SoQLNullValue) sb.append("NULL")
-        else sb.append(v.asInstanceOf[BigDecimal].toString)
+        else sqlescape(sb, literalFormatter.print(v.asInstanceOf[DateTime])).append(":: TIMESTAMP WITH TIME ZONE")
       }
 
       def estimateUpdateSize(v: Any): Int =
-        base.length + estimateInsertSize(v)
+        base.length + 30
 
       def fromResultSet(rs: ResultSet, start: Int): Any = {
-        val b = rs.getBigDecimal(start)
-        if(b == null) SoQLNullValue
-        else BigDecimal(b)
+        val ts = rs.getTimestamp(start)
+        if(ts == null) SoQLNullValue
+        else new DateTime(ts.getTime)
       }
     }
 }

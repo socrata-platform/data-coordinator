@@ -14,6 +14,7 @@ trait ColumnInfo {
   def logicalName: String
   def typeName: String
   def isPrimaryKey: Boolean
+  def physicalColumnBase: String
 
   override final def hashCode = ScalaRunTime._hashCode((versionInfo, systemId, logicalName, typeName, isPrimaryKey))
   override final def equals(o: Any) = o match {
@@ -32,13 +33,15 @@ object ColumnInfo {
     val logicalNameV = Variable[String]
     val typeNameV = Variable[String]
     val isPrimaryKeyV = Variable[Boolean]
+    val physicalColumnBaseV = Variable[String]
 
     val Pattern = new PObject(
       "versionInfo" -> versionInfoV,
       "systemId" -> systemIdV,
       "logicalName" -> logicalNameV,
       "typeName" -> typeNameV,
-      "isPrimaryKey" -> isPrimaryKeyV
+      "isPrimaryKey" -> isPrimaryKeyV,
+      "physicalColumnBase" -> physicalColumnBaseV
     )
 
     def encode(ci: ColumnInfo): JValue =
@@ -47,7 +50,8 @@ object ColumnInfo {
         systemIdV := ci.systemId,
         logicalNameV := ci.logicalName,
         typeNameV := ci.typeName,
-        isPrimaryKeyV := ci.isPrimaryKey
+        isPrimaryKeyV := ci.isPrimaryKey,
+        physicalColumnBaseV := ci.physicalColumnBase
       )
 
     def decode(x: JValue) = Pattern.matches(x) map { res =>
@@ -57,6 +61,7 @@ object ColumnInfo {
         val logicalName = logicalNameV(res)
         val typeName = typeNameV(res)
         val isPrimaryKey = isPrimaryKeyV(res)
+        val physicalColumnBase = physicalColumnBaseV(res)
       }
     }
   }
