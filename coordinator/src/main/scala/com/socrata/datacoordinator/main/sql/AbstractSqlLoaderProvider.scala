@@ -18,9 +18,9 @@ import com.socrata.datacoordinator.id.{RowId, ColumnId}
 import com.socrata.datacoordinator.main.soql.SystemColumns
 
 abstract class AbstractSqlLoaderProvider[CT, CV](conn: Connection, idProviderPool: IdProviderPool, executor: Executor, typeContext: TypeContext[CT, CV])
-  extends ((VersionInfo, Logger[CV]) => Managed[Loader[CV]])
+  extends ((VersionInfo, ColumnIdMap[ColumnInfo], RowPreparer[CV], Logger[CV], ColumnInfo => SqlColumnRep[CT, CV]) => Managed[Loader[CV]])
 { self =>
-  def produce(tableName: String, datasetContext: DatasetContext[CT, CV], repSchemaBuilder: ColumnIdMap[CT] => ColumnIdMap[SqlColumnRep[CT, CV]]): DataSqlizer[CT, CV]
+  def produce(tableName: String, datasetContext: RepBasedSqlDatasetContext[CT, CV]): DataSqlizer[CT, CV]
 
   def apply(versionInfo: VersionInfo, schema: ColumnIdMap[ColumnInfo], rowPreparer: RowPreparer[CV], logger: Logger[CV], repFor: ColumnInfo => SqlColumnRep[CT, CV]) = {
     val tableName = versionInfo.dataTableName
@@ -37,12 +37,7 @@ abstract class AbstractSqlLoaderProvider[CT, CV](conn: Connection, idProviderPoo
 
     val datasetContext = makeDatasetContext(versionInfo, repSchema, userPrimaryKeyInfo, systemPrimaryKey, schema.filter { (_, i) => i.logicalName.startsWith(":") }.keySet)
 
-    // hrm, this seems like it should be done in a more straightforward
-    // manner...
-    def repSchemaBuilder(simpleSchema: ColumnIdMap[CT]): ColumnIdMap[SqlColumnRep[CT, CV]] =
-      repSchema
-
-    val sqlizer = produce(tableName, datasetContext, repSchemaBuilder)
+    val sqlizer = produce(tableName, datasetContext)
     managed(SqlLoader(conn, rowPreparer, sqlizer, logger, idProviderPool, executor))
   }
 
@@ -77,7 +72,7 @@ trait StandardSqlLoaderProvider[CT, CV] { this: AbstractSqlLoaderProvider[CT, CV
     new StandardRepBasedDataSqlizer(tableName, datasetContext)
 }
 
-class PostgresSqlLoaderProvider[CT, CV] { this: AbstractSqlLoaderProvider[CT, CV] =>
+trait PostgresSqlLoaderProvider[CT, CV] { this: AbstractSqlLoaderProvider[CT, CV] =>
   def produce(tableName: String, datasetContext: RepBasedSqlDatasetContext[CT, CV]) =
     new PostgresRepBasedDataSqlizer(tableName, datasetContext)
 }
