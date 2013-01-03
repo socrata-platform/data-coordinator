@@ -15,12 +15,12 @@ import com.socrata.id.numeric.{FibonacciIdProvider, InMemoryBlockIdProvider}
 import com.socrata.datacoordinator.main.soql.{SoQLRep, SoQLNullValue, SystemColumns}
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth.loader.{RowPreparer, SchemaLoader, Loader, Logger}
-import com.socrata.datacoordinator.util.{IdProviderPoolImpl, IdProviderPool}
+import com.socrata.datacoordinator.util.{RotateSchema, IdProviderPoolImpl, IdProviderPool}
 import com.socrata.datacoordinator.manifest.TruthManifest
 import com.socrata.datacoordinator.truth._
 import com.socrata.datacoordinator.truth.metadata.sql.{PostgresGlobalLog, PostgresDatasetMapWriter, PostgresDatasetMapReader}
 import com.socrata.datacoordinator.manifest.sql.SqlTruthManifest
-import com.socrata.datacoordinator.truth.loader.sql.{SqlLoader, PostgresRepBasedDataSqlizer, SqlLogger, RepBasedSchemaLoader}
+import com.socrata.datacoordinator.truth.loader.sql._
 import com.socrata.datacoordinator.truth.sql.{DatabasePopulator, SqlColumnRep}
 import com.socrata.datacoordinator.id.RowId
 import com.socrata.datacoordinator.{Row, MutableRow}
@@ -28,6 +28,7 @@ import com.socrata.soql.environment.TypeName
 import java.util.concurrent.Executors
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.main.sql.{PostgresSqlLoaderProvider, AbstractSqlLoaderProvider}
+import scala.Some
 
 object ChicagoCrimesLoadScript extends App {
   val executor = Executors.newCachedThreadPool()
@@ -202,6 +203,8 @@ object ChicagoCrimesLoadScript extends App {
                 lp(table, schema, rowPreparer(schema), logger, genericRepFor)
               }
 
+              def delogger(dataset: DatasetInfo) = new SqlDelogger[Any](conn, dataset.logTableName, rowCodecFactory)
+
               def rowPreparer(schema: ColumnIdMap[ColumnInfo]) =
                 new RowPreparer[Any] {
                   def findCol(name: String) =
@@ -257,11 +260,23 @@ object ChicagoCrimesLoadScript extends App {
 
     val user = "robertm"
 
-    datasetCreator.createDataset("crimes", user)
+    try { datasetCreator.createDataset("crimes", user) }
+    catch { case _: DatasetAlreadyExistsException => /* pass */ }
     columnAdder.addToSchema("crimes", Map("id" -> SoQLText, "penalty" -> SoQLText), user)
     primaryKeySetter.makePrimaryKey("crimes", "id", user)
     loadRows("crimes", upserter, user)
     loadRows2("crimes", upserter, user)
+
+    mutator.withTransaction() { mutator =>
+      val t = mutator.datasetMapReader.datasetInfo("crimes").getOrElse(sys.error("No crimes db?"))
+      val delogger = mutator.delogger(t)
+
+      def pt(n: Long) = using(delogger.delog(n)) { it =>
+        it.foreach { ev => println(n + " : " + ev) }
+      }
+
+      (1L to 6) foreach (pt)
+    }
   } finally {
     executor.shutdown()
   }
@@ -273,22 +288,20 @@ object ChicagoCrimesLoadScript extends App {
 
   def loadRows(ds: String, upserter: Upserter[SoQLType, Any], user: String) {
     upserter.upsert(ds, user) { schema =>
-      val idCol = schema.iterator.find { _._2.logicalName == "id" }.getOrElse(sys.error("No id column?"))._1
-      val penaltyCol = schema.iterator.find { _._2.logicalName == "penalty" }.getOrElse(sys.error("No id column?"))._1
+      val byName = RotateSchema(schema)
       noopManagement(Iterator[Either[Any, Row[Any]]](
-        Right(Row(idCol -> "robbery", penaltyCol -> "short jail term")),
-        Right(Row(idCol -> "murder", penaltyCol -> "long jail term"))
+        Right(Row(byName("id").systemId -> "robbery", byName("penalty").systemId -> "short jail term")),
+        Right(Row(byName("id").systemId -> "murder", byName("penalty").systemId -> "long jail term"))
       ))
     }
   }
 
   def loadRows2(ds: String, upserter: Upserter[SoQLType, Any], user: String) {
     upserter.upsert(ds, user) { schema =>
-      val idCol = schema.iterator.find { _._2.logicalName == "id" }.getOrElse(sys.error("No id column?"))._1
-      val penaltyCol = schema.iterator.find { _._2.logicalName == "penalty" }.getOrElse(sys.error("No id column?"))._1
+      val byName = RotateSchema(schema)
       noopManagement(Iterator[Either[Any, Row[Any]]](
-        Left("robbery"),
-        Right(Row(idCol -> "murder", penaltyCol -> "DEATH"))
+        Right(Row(byName("id").systemId -> "murder", byName("penalty").systemId -> "DEATH")),
+        Left("robbery")
       ))
     }
   }

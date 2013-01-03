@@ -4,7 +4,7 @@ import org.joda.time.DateTime
 import com.rojoma.simplearm.Managed
 
 import com.socrata.datacoordinator.truth.metadata._
-import com.socrata.datacoordinator.truth.loader.{RowPreparer, Loader, SchemaLoader, Logger}
+import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.manifest.TruthManifest
 import com.socrata.datacoordinator.util.IdProviderPool
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
@@ -15,6 +15,7 @@ abstract class DatabaseMutator[CT, CV] {
     val datasetMapReader: DatasetMapReader
     val datasetMapWriter: DatasetMapWriter
     def datasetLog(ds: DatasetInfo): Logger[CV]
+    def delogger(ds: DatasetInfo): Delogger[CV]
     val globalLog: GlobalLog
     val truthManifest: TruthManifest
     val idProviderPool: IdProviderPool

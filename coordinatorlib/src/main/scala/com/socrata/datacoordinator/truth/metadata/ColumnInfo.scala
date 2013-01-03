@@ -16,6 +16,8 @@ trait ColumnInfo {
   def isPrimaryKey: Boolean
   def physicalColumnBase: String
 
+  override def toString = ColumnInfo.jCodec.encode(this).toString
+
   override final def hashCode = ScalaRunTime._hashCode((versionInfo, systemId, logicalName, typeName, isPrimaryKey))
   override final def equals(o: Any) = o match {
     case that: ColumnInfo =>
@@ -27,7 +29,7 @@ trait ColumnInfo {
 }
 
 object ColumnInfo {
-  implicit val jCodec = new JsonCodec[ColumnInfo] {
+  implicit val jCodec: JsonCodec[ColumnInfo] = new JsonCodec[ColumnInfo] {
     val versionInfoV = Variable[VersionInfo]
     val systemIdV = Variable[ColumnId]
     val logicalNameV = Variable[String]
