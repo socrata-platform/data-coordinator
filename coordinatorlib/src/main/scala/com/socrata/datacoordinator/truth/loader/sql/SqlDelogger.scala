@@ -58,7 +58,7 @@ class SqlDelogger[CV](connection: Connection,
       if(done) false
       else {
         if(nextResult == null) advance()
-        done
+        !done
       }
     }
 
