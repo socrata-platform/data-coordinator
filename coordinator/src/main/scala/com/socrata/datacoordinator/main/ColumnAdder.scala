@@ -1,5 +1,8 @@
 package com.socrata.datacoordinator.main
 
+import com.socrata.datacoordinator.truth.metadata.ColumnInfo
+import com.socrata.datacoordinator.util.collection.ColumnIdMap
+
 class ColumnAdder[CT, CV](mutator: DatabaseMutator[CT, CV]) {
   // Glue points we want/need
   //

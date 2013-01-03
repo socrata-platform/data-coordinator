@@ -1,10 +1,13 @@
 package com.socrata.datacoordinator.main
 
-import com.socrata.datacoordinator.truth.metadata.{DatasetInfo, DatasetMapReader, GlobalLog, DatasetMapWriter}
-import com.socrata.datacoordinator.truth.loader.{SchemaLoader, Logger}
-import com.socrata.datacoordinator.manifest.TruthManifest
 import org.joda.time.DateTime
+import com.rojoma.simplearm.Managed
+
+import com.socrata.datacoordinator.truth.metadata._
+import com.socrata.datacoordinator.truth.loader.{RowPreparer, Loader, SchemaLoader, Logger}
+import com.socrata.datacoordinator.manifest.TruthManifest
 import com.socrata.datacoordinator.util.IdProviderPool
+import com.socrata.datacoordinator.util.collection.ColumnIdMap
 
 abstract class DatabaseMutator[CT, CV] {
   trait ProviderOfNecessaryThings {
@@ -18,6 +21,9 @@ abstract class DatabaseMutator[CT, CV] {
     def physicalColumnBaseForType(typ: CT): String
     def schemaLoader(version: datasetMapWriter.VersionInfo, logger: Logger[CV]): SchemaLoader
     def nameForType(typ: CT): String
+
+    def dataLoader(table: VersionInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[CV]): Managed[Loader[CV]]
+    def rowPreparer(schema: ColumnIdMap[ColumnInfo]): RowPreparer[CV]
 
     def singleId() = {
       val provider = idProviderPool.borrow()

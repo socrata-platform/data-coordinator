@@ -6,6 +6,7 @@ import com.socrata.datacoordinator.id.ColumnId
 
 object SoQLRep {
   val repFactories = Map[SoQLType, String => SqlColumnRep[SoQLType, Any]](
+    SoQLID -> IDRepFactory,
     SoQLText -> TextRepFactory,
     SoQLBoolean -> BooleanRepFactory,
     SoQLNumber -> new NumberLikeFactory(SoQLNumber),

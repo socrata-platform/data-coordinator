@@ -1,8 +1,6 @@
 package com.socrata.datacoordinator.main
 
-import com.socrata.datacoordinator.main.soql.SystemColumns
-
-class DatasetCreator[CT, CV](mutator: DatabaseMutator[CT, CV], systemColumns: Map[String, CT]) {
+class DatasetCreator[CT, CV](mutator: DatabaseMutator[CT, CV], systemColumns: Map[String, CT], idColumnName: String) {
   def createDataset(datasetId: String, username: String) {
     mutator.withTransaction() { providerOfNecessaryThings =>
       import providerOfNecessaryThings._
@@ -16,7 +14,7 @@ class DatasetCreator[CT, CV](mutator: DatabaseMutator[CT, CV], systemColumns: Ma
       for((name, typ) <- systemColumns) {
         val col = datasetMapWriter.addColumn(table, name, nameForType(typ), physicalColumnBaseForType(typ) + "_" + singleId())
         loader.addColumn(col)
-        if(col.logicalName == SystemColumns.id) {
+        if(col.logicalName == idColumnName) {
           loader.makePrimaryKey(col) // hm.  I definitely want these indices/constraints, but do I want the log entry?
         }
       }

@@ -10,7 +10,7 @@ object TextRepFactory extends RepFactory {
   def apply(colBase: String) =
     new SqlPKableColumnRep[SoQLType, Any] {
       def templateForMultiLookup(n: Int): String =
-        s"(lower($base) in (${(1 to n).map(_ => "lower(?)").mkString(",")})"
+        s"(lower($base) in (${(1 to n).map(_ => "lower(?)").mkString(",")}))"
 
       def prepareMultiLookup(stmt: PreparedStatement, v: Any, start: Int): Int = {
         stmt.setString(start, v.asInstanceOf[String])
@@ -27,7 +27,7 @@ object TextRepFactory extends RepFactory {
         literals.iterator.map { lit =>
           val escaped = sqlescape(lit.asInstanceOf[String])
           s"lower($escaped)"
-        }.mkString(s"($base in (", ",", "))")
+        }.mkString(s"(lower($base) in (", ",", "))")
 
       def templateForSingleLookup: String = s"(lower($base) = lower(?))"
 
