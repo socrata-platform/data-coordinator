@@ -4,7 +4,7 @@ trait DatasetMapWriter extends `-impl`.DatasetMapReaderAPI {
   /** Creates a new dataset in the truthstore.
     * @note Does not actually create any tables; this just updates the bookkeeping.
     * @note `datasetId` needs to be globally unique; if you have namespacing do it yourself.
-    * @throws Exception if `datasetId` is already in use. TODO: better exception.
+    * @throws DatasetAlreadyExistsException if `datasetId` is already in use.
     * @return A `VersionInfo` that refers to an unpublished version. */
   def create(datasetId: String, tableBase: String): VersionInfo
 
@@ -32,7 +32,8 @@ trait DatasetMapWriter extends `-impl`.DatasetMapReaderAPI {
 
   /** Adds a column to this table-version.
     * @note Does not change the actual table; this just updates the bookkeeping.
-    * @return The new column */
+    * @return The new column
+    * @throws ColumnAlreadyExistsException if the column already exists */
   def addColumn(versionInfo: VersionInfo, logicalName: String, typeName: String, physicalColumnBase: String): ColumnInfo
 
   /** Removes a column from this dataset-version.

@@ -8,9 +8,11 @@ import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.truth.{DatasetSystemIdInUseByWriterException, DatasetIdInUseByWriterException}
 import com.socrata.datacoordinator.id.{ColumnId, VersionId, DatasetId}
+import org.postgresql.util.PSQLException
 
 class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatasetMapReaderAPI(_conn) with DatasetMapWriter {
   def lockNotAvailableState = "55P03"
+  def uniqueViolationState = "23505"
 
   def datasetInfoByUserIdQuery = "SELECT system_id, dataset_id, table_base FROM dataset_map WHERE dataset_id = ? FOR UPDATE NOWAIT"
   def datasetInfo(datasetId: String) =
@@ -51,10 +53,15 @@ class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatase
     val tableSystemId = using(conn.prepareStatement(createQuery_tableMap)) { stmt =>
       stmt.setString(1, datasetId)
       stmt.setString(2, tableBase)
-      using(stmt.executeQuery()) { rs =>
-        val returnedSomething = rs.next()
-        assert(returnedSomething, "Insert into dataset_map didn't return an ID?")
-        new DatasetId(rs.getLong(1))
+      try {
+        using(stmt.executeQuery()) { rs =>
+          val returnedSomething = rs.next()
+          assert(returnedSomething, "Insert into dataset_map didn't return an ID?")
+          new DatasetId(rs.getLong(1))
+        }
+      } catch {
+        case e: PSQLException if e.getSQLState == uniqueViolationState =>
+          throw new DatasetAlreadyExistsException(datasetId)
       }
     }
 
@@ -102,13 +109,21 @@ class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatase
       stmt.setString(2, logicalName)
       stmt.setString(3, typeName)
       stmt.setString(4, physicalColumnBase)
-      val systemId = using(stmt.executeQuery()) { rs =>
-        val returnedSomething = rs.next()
-        assert(returnedSomething, "Insert into dataset_map didn't return an ID?")
-        rs.getLong(1)
-      }
+      try {
+        val systemId = using(stmt.executeQuery()) { rs =>
+          val returnedSomething = rs.next()
+          assert(returnedSomething, "Insert into dataset_map didn't return an ID?")
+          rs.getLong(1)
+        }
 
-      SqlColumnInfo(versionInfo, new ColumnId(systemId), logicalName, typeName, physicalColumnBase, isPrimaryKey = false)
+        SqlColumnInfo(versionInfo, new ColumnId(systemId), logicalName, typeName, physicalColumnBase, isPrimaryKey = false)
+      } catch {
+        case e: PSQLException if e.getSQLState == uniqueViolationState =>
+          // n.b., this is not STRICTLY correct, as it's also possible that
+          // the physicalColumnBase is the duplicate.  However, THAT case is
+          // only possible through programming error, not user error.
+          throw new ColumnAlreadyExistsException(versionInfo, logicalName)
+      }
     }
 
   def dropColumnQuery = "DELETE FROM column_map WHERE version_system_id = ? AND system_id = ?"
