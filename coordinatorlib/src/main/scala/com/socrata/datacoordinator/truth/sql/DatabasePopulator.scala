@@ -37,4 +37,8 @@ object DatabasePopulator {
         "table_name" -> tableName,
         "operation_len" -> operationLen.toString
       ))
+
+  def populate(conn: java.sql.Connection) {
+    using(conn.createStatement()) { stmt => stmt.execute(metadataTablesCreate(20, 20, 20, 20, 20, 20, 20)) }
+  }
 }
