@@ -5,7 +5,7 @@ import org.scalatest.matchers.MustMatchers
 import java.sql.{SQLException, Connection, DriverManager}
 import com.socrata.datacoordinator.truth.sql.DatabasePopulator
 import com.rojoma.simplearm.util._
-import com.socrata.datacoordinator.truth.metadata.LifecycleStage
+import com.socrata.datacoordinator.truth.metadata.{ColumnAlreadyExistsException, LifecycleStage}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 
 class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
@@ -137,7 +137,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       val vi = tables.create("hello", "world")
       tables.addColumn(vi, "col1", "typ", "colbase")
 
-      evaluating(tables.addColumn(vi, "col1", "typ2", "colbase2")) must produce [SQLException]
+      evaluating(tables.addColumn(vi, "col1", "typ2", "colbase2")) must produce [ColumnAlreadyExistsException]
     }
   }
 
@@ -181,7 +181,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       val schema1 = tables.schema(vi1)
       val schema2 = tables.schema(vi2)
 
-      schema1.values.toSeq.map(_.copy(versionInfo = null)).sortBy(_.logicalName) must equal (schema2.values.toSeq.map(_.copy(versionInfo = null)).sortBy(_.logicalName))
+      schema1.values.toSeq.map(_.copy(versionInfo = vi2)).sortBy(_.logicalName) must equal (schema2.values.toSeq.sortBy(_.logicalName))
     }
   }
 
