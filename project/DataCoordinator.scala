@@ -16,14 +16,10 @@ object DataCoordinator extends Build {
   private def p(name: String, settings: { def settings: Seq[Setting[_]] }, dependencies: ClasspathDep[ProjectReference]*) =
     Project(name, file(name), settings = settings.settings).
       dependsOn(dependencies: _*).
-<<<<<<< HEAD
-      configs(UnitTest, IntegrationTestClone, ExploratoryTest).
+      configs(UnitTest, IntegrationTest, IntegrationTestClone, ExploratoryTest).
       settings( Defaults.itSettings : _*).
+      settings( inConfig(UnitTest)(Defaults.testSettings) : _*).
       settings( inConfig(ExploratoryTest)(Defaults.testSettings) : _*)
-=======
-      configs(UnitTest).
-      settings( inConfig(UnitTest)(Defaults.testSettings) : _*)
->>>>>>> 86b7b1d... test tags!
 
   lazy val coordinatorLib = p("coordinatorlib", CoordinatorLib)
 
@@ -33,11 +29,7 @@ object DataCoordinator extends Build {
   lazy val coordinator = p("coordinator", Coordinator,
     coordinatorLib)
 
-<<<<<<< HEAD
   lazy val ExploratoryTest = config("explore") extend (Test)
   lazy val UnitTest = config("unit") extend (Test)
   lazy val IntegrationTestClone = config("integration") extend (IntegrationTest)
-=======
-  lazy val UnitTest = config("unit") extend (Test)
->>>>>>> 86b7b1d... test tags!
 }

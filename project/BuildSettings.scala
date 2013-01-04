@@ -13,17 +13,11 @@ object BuildSettings {
     testOptions in Test ++= Seq(
       Tests.Argument("-oFD")
     ),
-<<<<<<< HEAD
     testOptions in DataCoordinator.ExploratoryTest := Seq(Tests.Argument("-oFD")),
-    testOptions in DataCoordinator.UnitTest := Seq(
-      Tests.Argument("-oFD")
-=======
     testOptions in DataCoordinator.UnitTest ++= Seq(
       Tests.Argument("-oFD"),
       Tests.Argument(TestFrameworks.ScalaTest, "-l", "Slow") // option "-l" will exclude the specified tags
->>>>>>> 86b7b1d... test tags!
     )
-
   )
 
   def projectSettings(assembly: Boolean = false): Seq[Setting[_]] =
