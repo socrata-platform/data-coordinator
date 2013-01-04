@@ -3,6 +3,7 @@ package com.socrata.datacoordinator.main
 import scala.collection.JavaConverters._
 
 import java.sql.DriverManager
+import java.util.concurrent.Executors
 
 import org.joda.time.{DateTimeZone, DateTime}
 import com.rojoma.simplearm.{SimpleArm, Managed}
@@ -11,11 +12,12 @@ import com.google.protobuf.{CodedOutputStream, CodedInputStream}
 
 import com.socrata.soql.types._
 import com.socrata.id.numeric.{FibonacciIdProvider, InMemoryBlockIdProvider}
+import com.socrata.soql.environment.TypeName
 
 import com.socrata.datacoordinator.main.soql.{SoQLRep, SoQLNullValue, SystemColumns}
 import com.socrata.datacoordinator.truth.metadata._
-import com.socrata.datacoordinator.truth.loader.{RowPreparer, SchemaLoader, Loader, Logger}
-import com.socrata.datacoordinator.util.{RotateSchema, IdProviderPoolImpl, IdProviderPool}
+import com.socrata.datacoordinator.truth.loader._
+import com.socrata.datacoordinator.util.{CloseableIterator, RotateSchema, IdProviderPoolImpl, IdProviderPool}
 import com.socrata.datacoordinator.manifest.TruthManifest
 import com.socrata.datacoordinator.truth._
 import com.socrata.datacoordinator.truth.metadata.sql.{PostgresGlobalLog, PostgresDatasetMapWriter, PostgresDatasetMapReader}
@@ -24,11 +26,8 @@ import com.socrata.datacoordinator.truth.loader.sql._
 import com.socrata.datacoordinator.truth.sql.{DatabasePopulator, SqlColumnRep}
 import com.socrata.datacoordinator.id.RowId
 import com.socrata.datacoordinator.{Row, MutableRow}
-import com.socrata.soql.environment.TypeName
-import java.util.concurrent.Executors
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.main.sql.{PostgresSqlLoaderProvider, AbstractSqlLoaderProvider}
-import scala.Some
 
 object ChicagoCrimesLoadScript extends App {
   val executor = Executors.newCachedThreadPool()
@@ -262,21 +261,29 @@ object ChicagoCrimesLoadScript extends App {
 
     try { datasetCreator.createDataset("crimes", user) }
     catch { case _: DatasetAlreadyExistsException => /* pass */ }
-    columnAdder.addToSchema("crimes", Map("id" -> SoQLText, "penalty" -> SoQLText), user)
-    primaryKeySetter.makePrimaryKey("crimes", "id", user)
-    loadRows("crimes", upserter, user)
-    loadRows2("crimes", upserter, user)
-
-    mutator.withTransaction() { mutator =>
-      val t = mutator.datasetMapReader.datasetInfo("crimes").getOrElse(sys.error("No crimes db?"))
-      val delogger = mutator.delogger(t)
-
-      def pt(n: Long) = using(delogger.delog(n)) { it =>
-        it.foreach { ev => println(n + " : " + ev) }
+    using(loadCSV("/home/robertm/chicagocrime.csv")) { it =>
+      val headers = it.next()
+      val schema = columnAdder.addToSchema("crimes", headers.map(_ -> SoQLText).toMap, user)
+      primaryKeySetter.makePrimaryKey("crimes", "ID", user)
+      upserter.upsert("crimes", user) { _ =>
+        noopManagement(it.map(transformToRow(schema, headers, _)).map(Right(_)))
       }
-
-      (1L to 6) foreach (pt)
     }
+    // columnAdder.addToSchema("crimes", Map("id" -> SoQLText, "penalty" -> SoQLText), user)
+    // primaryKeySetter.makePrimaryKey("crimes", "id", user)
+    // loadRows("crimes", upserter, user)
+    // loadRows2("crimes", upserter, user)
+
+//    mutator.withTransaction() { mutator =>
+//      val t = mutator.datasetMapReader.datasetInfo("crimes").getOrElse(sys.error("No crimes db?"))
+//      val delogger = mutator.delogger(t)
+//
+//      def pt(n: Long) = using(delogger.delog(n)) { it =>
+//        it/*.filterNot(_.isInstanceOf[Delogger.RowDataUpdated[_]])*/.foreach { ev => println(n + " : " + ev) }
+//      }
+//
+//      (1L to 6) foreach (pt)
+//    }
   } finally {
     executor.shutdown()
   }
@@ -303,6 +310,39 @@ object ChicagoCrimesLoadScript extends App {
         Right(Row(byName("id").systemId -> "murder", byName("penalty").systemId -> "DEATH")),
         Left("robbery")
       ))
+    }
+  }
+
+  def transformToRow(schema: Map[String, ColumnInfo], headers: IndexedSeq[String], row: IndexedSeq[String]): Row[Any] = {
+    assert(headers.length == row.length, "Bad row; different number of columns from the headers")
+    val result = new MutableRow[Any]
+    (headers, row).zipped.foreach { (header, value) =>
+      result += schema(header).systemId -> value
+    }
+    result.freeze()
+  }
+
+  def loadCSV(filename: String, skip: Int = 0): CloseableIterator[IndexedSeq[String]] = new CloseableIterator[IndexedSeq[String]] {
+    import au.com.bytecode.opencsv._
+    import java.io._
+    val reader = new FileReader(filename)
+
+    lazy val it = locally {
+      val r = new CSVReader(reader)
+      def loop(idx: Int = 1): Stream[Array[String]] = {
+        r.readNext() match {
+          case null => Stream.empty
+          case row => row #:: loop(idx + 1)
+        }
+      }
+      loop().iterator
+    }
+
+    def hasNext = it.hasNext
+    def next() = it.next()
+
+    def close() {
+      reader.close()
     }
   }
 }

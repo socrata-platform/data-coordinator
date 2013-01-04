@@ -8,7 +8,8 @@ object Coordinator {
   lazy val settings: Seq[Setting[_]] = BuildSettings.projectSettings() ++ Seq(
     libraryDependencies <++= (slf4jVersion) { slf4jVersion =>
       Seq(
-        "com.socrata" %% "soql-types" % "0.0.9"
+        "com.socrata" %% "soql-types" % "0.0.9",
+        "net.sf.opencsv" % "opencsv" % "2.3"
       )
     }
   )
