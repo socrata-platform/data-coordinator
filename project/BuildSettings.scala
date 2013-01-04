@@ -12,12 +12,24 @@ object BuildSettings {
     compile in Test <<= (compile in Test) dependsOn (CheckClasspath.Keys.failIfConflicts in Test),
     testOptions in Test ++= Seq(
       Tests.Argument("-oFD")
+    ),
+<<<<<<< HEAD
+    testOptions in DataCoordinator.ExploratoryTest := Seq(Tests.Argument("-oFD")),
+    testOptions in DataCoordinator.UnitTest := Seq(
+      Tests.Argument("-oFD")
+=======
+    testOptions in DataCoordinator.UnitTest ++= Seq(
+      Tests.Argument("-oFD"),
+      Tests.Argument(TestFrameworks.ScalaTest, "-l", "Slow") // option "-l" will exclude the specified tags
+>>>>>>> 86b7b1d... test tags!
     )
+
   )
 
   def projectSettings(assembly: Boolean = false): Seq[Setting[_]] =
     BuildSettings.buildSettings ++ socrataProjectSettings(assembly = assembly) ++ Seq(
       slf4jVersion := "1.7.2",
-      fork in test := true
+      fork in test := true,
+      test in Test <<= (test in Test) dependsOn (test in DataCoordinator.IntegrationTestClone)
     )
 }

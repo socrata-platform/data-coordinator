@@ -17,9 +17,10 @@ object CoordinatorLib {
         "org.xerial.snappy" % "snappy-java" % "1.0.4.1",
         "postgresql" % "postgresql" % "9.1-901-1.jdbc4", // we do use postgres-specific features some places
         "com.google.protobuf" % "protobuf-java" % "2.4.1",
-        "com.h2database" % "h2" % "1.3.166" % "test",
-        "org.scalacheck" %% "scalacheck" % "1.10.0" % "test",
-        "org.slf4j" % "slf4j-simple" % slf4jVersion % "test"
+        "com.h2database" % "h2" % "1.3.166" % "test,it",
+        "org.scalacheck" %% "scalacheck" % "1.10.0" % "test,it",
+        "org.slf4j" % "slf4j-simple" % slf4jVersion % "test,it",
+        "org.scalatest" %% "scalatest" % "1.9.1" % "it"
       )
     },
     sourceGenerators in Compile <+= (sourceManaged in Compile) map { targetDir =>
@@ -28,6 +29,7 @@ object CoordinatorLib {
         GenLongLikeMap(targetDir, "com.socrata.datacoordinator.util.collection", "com.socrata.datacoordinator.id", "StoreId") ++
         GenLongLikeMap(targetDir, "com.socrata.datacoordinator.util.collection", "com.socrata.datacoordinator.id", "VersionId") ++
         GenLongLikeMap(targetDir, "com.socrata.datacoordinator.util.collection", "com.socrata.datacoordinator.id", "RowId")
-    }
+    },
+    sourceDirectories in IntegrationTest += file("/home/rathbone1200cc/work/code/data-coordinator/coordinatorlib/source/test/scala")
   )
 }

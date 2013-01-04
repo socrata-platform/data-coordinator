@@ -2,11 +2,12 @@ package com.socrata.datacoordinator
 package truth.loader
 package sql
 
+import org.scalatest.{Tag, FunSuite, BeforeAndAfterAll}
+
 import scala.collection.immutable.VectorBuilder
 
 import java.sql.{Connection, DriverManager}
 
-import org.scalatest.{FunSuite, BeforeAndAfterAll}
 import org.scalatest.matchers.MustMatchers
 import org.scalatest.prop.PropertyChecks
 import com.rojoma.simplearm.util._
@@ -552,7 +553,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     }
   }
 
-  test("must contain the same data as a table manipulated by a StupidPostgresTransaction when using user IDs") {
+  test("must contain the same data as a table manipulated by a StupidPostgresTransaction when using user IDs", Tag("Slow")) {
     import org.scalacheck.{Gen, Arbitrary}
 
     sealed abstract class Op
@@ -680,7 +681,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     }
   }
 
-  test("must contain the same data as a table manipulated by a StupidPostgresTransaction when using system IDs") {
+  test("must contain the same data as a table manipulated by a StupidPostgresTransaction when using system IDs", Tag("Slow")) {
     import org.scalacheck.{Gen, Arbitrary}
 
     sealed abstract class Op
