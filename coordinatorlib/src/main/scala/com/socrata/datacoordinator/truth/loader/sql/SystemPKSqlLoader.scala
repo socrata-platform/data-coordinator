@@ -144,7 +144,7 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
   }
 
   def maybeFlush() {
-    if(deleteSize >= softMaxBatchSizeInBytes || updateSize >= softMaxBatchSizeInBytes || deleteSize >= softMaxBatchSizeInBytes) {
+    if(deleteSize >= softMaxBatchSizeInBytes || updateSize >= softMaxBatchSizeInBytes || insertSize >= softMaxBatchSizeInBytes) {
       flush()
     }
   }
@@ -204,7 +204,7 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
 
     started.acquire()
 
-    jobs = new MutableRowIdMap[Operation[CV]](new TLongObjectHashMap[Operation[CV]](jobs.underlying.capacity))
+    jobs = new MutableRowIdMap[Operation[CV]]
     insertSize = 0
     updateSize = 0
     deleteSize = 0
