@@ -27,7 +27,7 @@ abstract class AbstractSqlLoaderProvider[CT, CV](conn: Connection, idProviderPoo
 
     val repSchema = schema.mapValuesStrict(repFor)
 
-    val userPrimaryKeyInfo = schema.values.iterator.find(_.isPrimaryKey).map { colInfo =>
+    val userPrimaryKeyInfo = schema.values.iterator.find(_.isUserPrimaryKey).map { colInfo =>
       (colInfo.systemId, repSchema(colInfo.systemId).representedType)
     }
 

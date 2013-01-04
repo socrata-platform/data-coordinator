@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS column_map (
   logical_column       VARCHAR(%COLUMN_NAME_LEN%)  NOT NULL, -- "logical column" is roughly "user-visible SoQL name"
   type_name            VARCHAR(%TYPE_NAME_LEN%)    NOT NULL,
   physical_column_base VARCHAR(%PHYSCOL_BASE_LEN%) NOT NULL, -- "base" because some SoQL data types may require multiple physical columns
-  is_primary_key       unit                        NULL, -- evil "unique" hack
+  is_user_primary_key  unit                        NULL, -- evil "unique" hack
   -- Making a copy preserves the system_id of columns.  Therefore, we need a two-part primary key
   -- in order to uniquely identifiy a column.
   -- It's in the order version-id-then-column-id so the implied index can (I think!) be used for
@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS column_map (
   PRIMARY KEY (version_system_id, system_id),
   UNIQUE (version_system_id, logical_column),
   UNIQUE (version_system_id, physical_column_base), -- two columns shouldn't share the same basename
-  UNIQUE (version_system_id, is_primary_key) -- hack hack hack
+  UNIQUE (version_system_id, is_user_primary_key) -- hack hack hack
 );
 
 END$$;

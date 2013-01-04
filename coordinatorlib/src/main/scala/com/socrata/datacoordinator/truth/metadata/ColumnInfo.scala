@@ -13,16 +13,16 @@ trait ColumnInfo {
   def systemId: ColumnId
   def logicalName: String
   def typeName: String
-  def isPrimaryKey: Boolean
+  def isUserPrimaryKey: Boolean
   def physicalColumnBase: String
 
   override def toString = ColumnInfo.jCodec.encode(this).toString
 
-  override final def hashCode = ScalaRunTime._hashCode((versionInfo, systemId, logicalName, typeName, isPrimaryKey))
+  override final def hashCode = ScalaRunTime._hashCode((versionInfo, systemId, logicalName, typeName, isUserPrimaryKey))
   override final def equals(o: Any) = o match {
     case that: ColumnInfo =>
       (this eq that) ||
-        (this.versionInfo == that.versionInfo && this.systemId == that.systemId && this.logicalName == that.logicalName && this.typeName == that.typeName && this.isPrimaryKey == that.isPrimaryKey)
+        (this.versionInfo == that.versionInfo && this.systemId == that.systemId && this.logicalName == that.logicalName && this.typeName == that.typeName && this.isUserPrimaryKey == that.isUserPrimaryKey)
     case _ =>
       false
   }
@@ -34,7 +34,7 @@ object ColumnInfo {
     val systemIdV = Variable[ColumnId]
     val logicalNameV = Variable[String]
     val typeNameV = Variable[String]
-    val isPrimaryKeyV = Variable[Boolean]
+    val isUserPrimaryKeyV = Variable[Boolean]
     val physicalColumnBaseV = Variable[String]
 
     val Pattern = new PObject(
@@ -42,7 +42,7 @@ object ColumnInfo {
       "systemId" -> systemIdV,
       "logicalName" -> logicalNameV,
       "typeName" -> typeNameV,
-      "isPrimaryKey" -> isPrimaryKeyV,
+      "isPrimaryKey" -> isUserPrimaryKeyV,
       "physicalColumnBase" -> physicalColumnBaseV
     )
 
@@ -52,7 +52,7 @@ object ColumnInfo {
         systemIdV := ci.systemId,
         logicalNameV := ci.logicalName,
         typeNameV := ci.typeName,
-        isPrimaryKeyV := ci.isPrimaryKey,
+        isUserPrimaryKeyV := ci.isUserPrimaryKey,
         physicalColumnBaseV := ci.physicalColumnBase
       )
 
@@ -62,7 +62,7 @@ object ColumnInfo {
         val systemId = systemIdV(res)
         val logicalName = logicalNameV(res)
         val typeName = typeNameV(res)
-        val isPrimaryKey = isPrimaryKeyV(res)
+        val isUserPrimaryKey = isUserPrimaryKeyV(res)
         val physicalColumnBase = physicalColumnBaseV(res)
       }
     }

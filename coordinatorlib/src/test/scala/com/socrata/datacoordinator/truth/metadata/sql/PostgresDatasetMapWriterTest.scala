@@ -67,7 +67,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       ci.logicalName must be ("col1")
       ci.typeName must be ("typ")
       ci.physicalColumnBase must be ("colbase")
-      ci.isPrimaryKey must be (false)
+      ci.isUserPrimaryKey must be (false)
 
       tables.schema(vi) must equal (ColumnIdMap(ci.systemId -> ci))
     }
@@ -81,7 +81,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
       tables.setUserPrimaryKey(ci)
 
-      tables.schema(vi) must equal (ColumnIdMap(ci.systemId -> ci.copy(isPrimaryKey = true)))
+      tables.schema(vi) must equal (ColumnIdMap(ci.systemId -> ci.copy(isUserPrimaryKey = true)))
     }
   }
 
@@ -96,7 +96,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       ci2.logicalName must be ("col2")
       ci2.typeName must be ("typ2")
       ci2.physicalColumnBase must be ("colbase2")
-      ci2.isPrimaryKey must be (false)
+      ci2.isUserPrimaryKey must be (false)
 
       tables.schema(vi) must equal (ColumnIdMap(ci1.systemId -> ci1, ci2.systemId -> ci2))
     }
@@ -127,7 +127,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       tables.clearUserPrimaryKey(vi)
       tables.setUserPrimaryKey(ci2)
 
-      tables.schema(vi) must equal (ColumnIdMap(ci1.systemId -> ci1, ci2.systemId -> ci2.copy(isPrimaryKey = true)))
+      tables.schema(vi) must equal (ColumnIdMap(ci1.systemId -> ci1, ci2.systemId -> ci2.copy(isUserPrimaryKey = true)))
     }
   }
 

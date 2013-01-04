@@ -116,7 +116,7 @@ class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatase
           rs.getLong(1)
         }
 
-        SqlColumnInfo(versionInfo, new ColumnId(systemId), logicalName, typeName, physicalColumnBase, isPrimaryKey = false)
+        SqlColumnInfo(versionInfo, new ColumnId(systemId), logicalName, typeName, physicalColumnBase, isUserPrimaryKey = false)
       } catch {
         case e: PSQLException if e.getSQLState == uniqueViolationState =>
           // n.b., this is not STRICTLY correct, as it's also possible that
@@ -159,17 +159,17 @@ class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatase
       columnInfo.copy(typeName = newType, physicalColumnBase = newPhysicalColumnBase)
     }
 
-  def setUserPrimaryKeyQuery = "UPDATE column_map SET is_primary_key = 'Unit' WHERE version_system_id = ? AND system_id = ?"
+  def setUserPrimaryKeyQuery = "UPDATE column_map SET is_user_primary_key = 'Unit' WHERE version_system_id = ? AND system_id = ?"
   def setUserPrimaryKey(userPrimaryKey: ColumnInfo) =
     using(conn.prepareStatement(setUserPrimaryKeyQuery)) { stmt =>
       stmt.setLong(1, userPrimaryKey.versionInfo.systemId.underlying)
       stmt.setLong(2, userPrimaryKey.systemId.underlying)
       val count = stmt.executeUpdate()
       assert(count == 1, "Column did not exist to have it set as primary key?")
-      userPrimaryKey.copy(isPrimaryKey = true)
+      userPrimaryKey.copy(isUserPrimaryKey = true)
     }
 
-  def clearUserPrimaryKeyQuery = "UPDATE column_map SET is_primary_key = NULL WHERE version_system_id = ?"
+  def clearUserPrimaryKeyQuery = "UPDATE column_map SET is_user_primary_key = NULL WHERE version_system_id = ?"
   def clearUserPrimaryKey(versionInfo: VersionInfo) {
     using(conn.prepareStatement(clearUserPrimaryKeyQuery)) { stmt =>
       stmt.setLong(1, versionInfo.systemId.underlying)
@@ -203,7 +203,7 @@ class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatase
 
   def ensureUnpublishedCopyQuery_newLifecycleVersion = "SELECT max(lifecycle_version) + 1 FROM version_map WHERE dataset_system_id = ?"
   def ensureUnpublishedCopyQuery_versionMap = "INSERT INTO version_map (dataset_system_id, lifecycle_version, lifecycle_stage) values (?, ?, CAST(? AS dataset_lifecycle_stage)) RETURNING system_id"
-  def ensureUnpublishedCopyQuery_columnMap = "INSERT INTO column_map (version_system_id, system_id, logical_column, type_name, physical_column_base, is_primary_key) SELECT ?, system_id, logical_column, type_name, physical_column_base, is_primary_key FROM column_map WHERE version_system_id = ?"
+  def ensureUnpublishedCopyQuery_columnMap = "INSERT INTO column_map (version_system_id, system_id, logical_column, type_name, physical_column_base, is_user_primary_key) SELECT ?, system_id, logical_column, type_name, physical_column_base, is_user_primary_key FROM column_map WHERE version_system_id = ?"
   def ensureUnpublishedCopy(tableInfo: DatasetInfo): VersionInfo =
     lookup(tableInfo, LifecycleStage.Unpublished) match {
       case Some(unpublished) =>

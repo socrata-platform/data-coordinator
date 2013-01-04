@@ -20,7 +20,7 @@ abstract class PostgresDatasetMapReaderAPI(val conn: Connection) extends Dataset
 
   case class SqlDatasetInfo(systemId: DatasetId, datasetId: String, tableBase: String) extends IDatasetInfo
   case class SqlVersionInfo(datasetInfo: SqlDatasetInfo, systemId: VersionId, lifecycleVersion: Long, lifecycleStage: LifecycleStage) extends IVersionInfo
-  case class SqlColumnInfo(versionInfo: SqlVersionInfo, systemId: ColumnId, logicalName: String, typeName: String, physicalColumnBase: String, isPrimaryKey: Boolean) extends IColumnInfo
+  case class SqlColumnInfo(versionInfo: SqlVersionInfo, systemId: ColumnId, logicalName: String, typeName: String, physicalColumnBase: String, isUserPrimaryKey: Boolean) extends IColumnInfo
 
   require(!conn.getAutoCommit, "Connection is in auto-commit mode")
 
@@ -61,7 +61,7 @@ abstract class PostgresDatasetMapReaderAPI(val conn: Connection) extends Dataset
     }
   }
 
-  def schemaQuery = "SELECT system_id, logical_column, type_name, physical_column_base, (is_primary_key IS NOT NULL) is_primary_key FROM column_map WHERE version_system_id = ?"
+  def schemaQuery = "SELECT system_id, logical_column, type_name, physical_column_base, (is_user_primary_key IS NOT NULL) is_user_primary_key FROM column_map WHERE version_system_id = ?"
   def schema(versionInfo: VersionInfo) = {
     using(conn.prepareStatement(schemaQuery)) { stmt =>
       stmt.setLong(1, versionInfo.systemId.underlying)
@@ -69,7 +69,7 @@ abstract class PostgresDatasetMapReaderAPI(val conn: Connection) extends Dataset
         val result = new MutableColumnIdMap[ColumnInfo]
         while(rs.next()) {
           val systemId = new ColumnId(rs.getLong("system_id"))
-          result += systemId -> SqlColumnInfo(versionInfo, systemId, rs.getString("logical_column"), rs.getString("type_name"), rs.getString("physical_column_base"), rs.getBoolean("is_primary_key"))
+          result += systemId -> SqlColumnInfo(versionInfo, systemId, rs.getString("logical_column"), rs.getString("type_name"), rs.getString("physical_column_base"), rs.getBoolean("is_user_primary_key"))
         }
         result.freeze()
       }
