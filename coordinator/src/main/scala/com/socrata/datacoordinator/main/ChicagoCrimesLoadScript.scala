@@ -28,9 +28,41 @@ import com.socrata.datacoordinator.id.RowId
 import com.socrata.datacoordinator.{Row, MutableRow}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.main.sql.{PostgresSqlLoaderProvider, AbstractSqlLoaderProvider}
+import org.joda.time.format.{DateTimeFormat, DateTimeParser}
 
 object ChicagoCrimesLoadScript extends App {
   val executor = Executors.newCachedThreadPool()
+
+
+  def convertNum(x: String) =
+    if(x.isEmpty) SoQLNullValue
+    else BigDecimal(x)
+
+  def convertBool(x: String) =
+    if(x.isEmpty) SoQLNullValue
+    else java.lang.Boolean.parseBoolean(x)
+
+  val tsParser = DateTimeFormat.forPattern("MM/dd/yyyy hh:mm aa").withZoneUTC
+
+  def convertTS(x: String) =
+    if(x.isEmpty) SoQLNullValue
+    else tsParser.parseDateTime(x)
+
+  val fmt = """^\(([0-9.-]+), ([0-9.-]+)\)$""".r
+  def convertLoc(x: String) =
+    if(x.isEmpty) SoQLNullValue
+    else {
+      val mtch = fmt.findFirstMatchIn(x).get
+      (mtch.group(1).toDouble, mtch.group(2).toDouble)
+    }
+
+  val converter: Map[SoQLType, String => Any] = Map (
+    SoQLText -> identity[String],
+    SoQLNumber -> convertNum,
+    SoQLBoolean -> convertBool,
+    SoQLFixedTimestamp -> convertTS,
+    SoQLLocation -> convertLoc
+  )
 
   try {
     val typeContext: TypeContext[SoQLType, Any] = new TypeContext[SoQLType, Any] {
@@ -42,7 +74,10 @@ object ChicagoCrimesLoadScript extends App {
 
       def nullValue: Any = SoQLNullValue
 
-      def typeFromName(name: String): SoQLType = SoQLType.typesByName(TypeName(name))
+      private val typesByStringName = SoQLType.typesByName.values.foldLeft(Map.empty[String, SoQLType]) { (acc, typ) =>
+        acc + (typ.toString -> typ)
+      }
+      def typeFromName(name: String): SoQLType = typesByStringName(name)
 
       def nameFromType(typ: SoQLType): String = typ.toString
 
@@ -126,6 +161,10 @@ object ChicagoCrimesLoadScript extends App {
             target.writeRawByte(4)
             target.writeStringNoTag(ts.getZone.getID)
             target.writeInt64NoTag(ts.getMillis)
+          case tt: Tuple2[_,_] =>
+            target.writeRawByte(5)
+            target.writeDoubleNoTag(tt._1.asInstanceOf[Double])
+            target.writeDoubleNoTag(tt._2.asInstanceOf[Double])
           case SoQLNullValue =>
             target.writeRawByte(-1)
         }
@@ -144,6 +183,10 @@ object ChicagoCrimesLoadScript extends App {
           case 4 =>
             val zone = DateTimeZone.forID(source.readString())
             new DateTime(source.readInt64(), zone)
+          case 5 =>
+            val lat = source.readDouble()
+            val lon = source.readDouble()
+            (lat, lon)
           case -1 =>
             SoQLNullValue
         }
@@ -262,8 +305,34 @@ object ChicagoCrimesLoadScript extends App {
     try { datasetCreator.createDataset("crimes", user) }
     catch { case _: DatasetAlreadyExistsException => /* pass */ }
     using(loadCSV("/home/robertm/chicagocrime.csv")) { it =>
+      val types = Map(
+        "ID" -> SoQLNumber,
+        "Case Number" -> SoQLText,
+        "Date" -> SoQLFixedTimestamp,
+        "Block" -> SoQLText,
+        "IUCR" -> SoQLText,
+        "Primary Type" -> SoQLText,
+        "Description" -> SoQLText,
+        "Location Description" -> SoQLText,
+        "Arrest" -> SoQLBoolean,
+        "Domestic" -> SoQLBoolean,
+        "Beat" -> SoQLText,
+        "District" -> SoQLText,
+        "Ward" -> SoQLText,
+        "Community Area" -> SoQLText,
+        "FBI Code" -> SoQLText,
+        "X Coordinate" -> SoQLNumber,
+        "Y Coordinate" -> SoQLNumber,
+        "Year" -> SoQLText,
+        "Updated On" -> SoQLFixedTimestamp,
+        "Latitude" -> SoQLNumber,
+        "Longitude" -> SoQLNumber,
+        "Location" -> SoQLLocation
+      )
       val headers = it.next()
-      val schema = columnAdder.addToSchema("crimes", headers.map(_ -> SoQLText).toMap, user)
+      val schema = columnAdder.addToSchema("crimes", headers.map { x => x -> types(x) }.toMap, user).mapValues { ci =>
+        (ci, typeContext.typeFromName(ci.typeName))
+      }.toMap
       primaryKeySetter.makePrimaryKey("crimes", "ID", user)
       upserter.upsert("crimes", user) { _ =>
         noopManagement(it.map(transformToRow(schema, headers, _)).map(Right(_)))
@@ -313,11 +382,13 @@ object ChicagoCrimesLoadScript extends App {
     }
   }
 
-  def transformToRow(schema: Map[String, ColumnInfo], headers: IndexedSeq[String], row: IndexedSeq[String]): Row[Any] = {
+  def transformToRow(schema: Map[String, (ColumnInfo, SoQLType)], headers: IndexedSeq[String], row: IndexedSeq[String]): Row[Any] = {
     assert(headers.length == row.length, "Bad row; different number of columns from the headers")
     val result = new MutableRow[Any]
     (headers, row).zipped.foreach { (header, value) =>
-      result += schema(header).systemId -> value
+      val (ci,typ) = schema(header)
+      result += ci.systemId -> (try { converter(typ)(value) }
+                                catch { case e: Exception => throw new Exception("Problem converting " + header + ": " + value, e) })
     }
     result.freeze()
   }
