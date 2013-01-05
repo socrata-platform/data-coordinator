@@ -12,7 +12,7 @@ class NumberLikeFactory(repType: SoQLType) extends RepFactory {
       def representedType = repType
 
       def templateForMultiLookup(n: Int): String =
-        s"(lower($base) in (${(1 to n).map(_ => "lower(?)").mkString(",")})"
+        s"($base in (${(1 to n).map(_ => "?").mkString(",")}))"
 
       def prepareMultiLookup(stmt: PreparedStatement, v: Any, start: Int): Int = {
         stmt.setBigDecimal(start, v.asInstanceOf[BigDecimal].underlying)
@@ -36,7 +36,7 @@ class NumberLikeFactory(repType: SoQLType) extends RepFactory {
 
       def sql_==(literal: Any): String = {
         val v = literal.asInstanceOf[BigDecimal].toString
-        s"(lower($base) = $v)"
+        s"($base = $v)"
       }
 
       def equalityIndexExpression: String = base
@@ -48,23 +48,23 @@ class NumberLikeFactory(repType: SoQLType) extends RepFactory {
       val sqlTypes: Array[String] = Array("NUMERIC")
 
       def csvifyForInsert(sb: StringBuilder, v: Any) {
-        if(v == SoQLNullValue) { /* pass */ }
+        if(SoQLNullValue == v) { /* pass */ }
         else sb.append(v.asInstanceOf[BigDecimal].toString)
       }
 
       def prepareInsert(stmt: PreparedStatement, v: Any, start: Int): Int = {
-        if(v == SoQLNullValue) stmt.setNull(start, Types.DECIMAL)
+        if(SoQLNullValue == v) stmt.setNull(start, Types.DECIMAL)
         else stmt.setBigDecimal(start, v.asInstanceOf[BigDecimal].underlying)
         start + 1
       }
 
       def estimateInsertSize(v: Any): Int =
-        if(v == SoQLNullValue) standardNullInsertSize
+        if(SoQLNullValue == v) standardNullInsertSize
         else v.asInstanceOf[BigDecimal].toString.length //ick
 
       def SETsForUpdate(sb: StringBuilder, v: Any) {
         sb.append(base).append('=')
-        if(v == SoQLNullValue) sb.append("NULL")
+        if(SoQLNullValue == v) sb.append("NULL")
         else sb.append(v.asInstanceOf[BigDecimal].toString)
       }
 

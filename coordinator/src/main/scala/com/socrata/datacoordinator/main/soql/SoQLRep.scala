@@ -11,12 +11,12 @@ object SoQLRep {
     SoQLBoolean -> BooleanRepFactory,
     SoQLNumber -> new NumberLikeFactory(SoQLNumber),
     SoQLMoney -> new NumberLikeFactory(SoQLNumber),
-    SoQLFixedTimestamp -> FixedTimestampRepFactory /*,
+    SoQLFixedTimestamp -> FixedTimestampRepFactory,
+    SoQLLocation -> LocationRepFactory /*,
     SoQLDouble -> doubleRepFactory,
     SoQLFloatingTimestamp -> floatingTimestampRepFactory,
     SoQLObject -> objectRepFactory,
-    SoQLArray -> arrayRepFactory,
-    SoQLLocation -> locationRepFactory */
+    SoQLArray -> arrayRepFactory */
   )
 
   // for(typ <- SoQLType.typesByName.values) assert(repFactories.contains(typ))

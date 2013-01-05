@@ -15,7 +15,7 @@ object FixedTimestampRepFactory extends RepFactory {
   def apply(colBase: String) =
     new SqlPKableColumnRep[SoQLType, Any] {
       def templateForMultiLookup(n: Int): String =
-        s"($base in (${(1 to n).map(_ => "?").mkString(",")})"
+        s"($base in (${(1 to n).map(_ => "?").mkString(",")}))"
 
       def prepareMultiLookup(stmt: PreparedStatement, v: Any, start: Int): Int = {
         stmt.setTimestamp(start, new java.sql.Timestamp(v.asInstanceOf[DateTime].getMillis))
