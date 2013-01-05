@@ -334,9 +334,12 @@ object ChicagoCrimesLoadScript extends App {
         (ci, typeContext.typeFromName(ci.typeName))
       }.toMap
       primaryKeySetter.makePrimaryKey("crimes", "ID", user)
+      val start = System.nanoTime()
       upserter.upsert("crimes", user) { _ =>
         noopManagement(it.map(transformToRow(schema, headers, _)).map(Right(_)))
       }
+      val end = System.nanoTime()
+      println(s"Upsert took ${(end - start) / 1000000L}ms")
     }
     // columnAdder.addToSchema("crimes", Map("id" -> SoQLText, "penalty" -> SoQLText), user)
     // primaryKeySetter.makePrimaryKey("crimes", "id", user)
