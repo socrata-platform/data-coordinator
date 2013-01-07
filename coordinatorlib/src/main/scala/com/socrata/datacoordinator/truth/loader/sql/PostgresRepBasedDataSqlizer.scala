@@ -46,7 +46,7 @@ class PostgresRepBasedDataSqlizer[CT, CV](tableName: String,
   }
 
   class InserterImpl extends Inserter {
-    val rw = new ReaderWriterPair(100000, 10)
+    val rw = new ReaderWriterPair(100000, 1)
     def insert(row: Row[CV]) {
       val sb = new java.lang.StringBuilder
       var didOne = false
