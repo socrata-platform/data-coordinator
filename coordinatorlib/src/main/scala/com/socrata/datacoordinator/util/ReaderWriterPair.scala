@@ -2,154 +2,209 @@ package com.socrata.datacoordinator.util
 
 import java.io.{Reader, Writer, IOException}
 import java.util.concurrent.locks.ReentrantLock
-import java.lang.Math.min
 
-class ReaderWriterPair(bufferSize: Int) { self =>
-  if(bufferSize < 2) throw new IllegalArgumentException("Buffer size must be at least 2")
-  private val buf = new Array[Char](bufferSize)
-  private val mutex = new ReentrantLock
-  private val readAvailable = mutex.newCondition()
-  private val writeAvailable = mutex.newCondition()
+private[util] class RWSharedState(val bufferSize: Int, val blockCount: Int) {
+  import RWSharedState._
 
-  private var readPtr = 0
-  private var writePtr = 0
+  if(bufferSize < 1) throw new IllegalArgumentException("bufferSize must be at least 1")
+  if(blockCount < 1) throw new IllegalArgumentException("blockCount must be at least 1")
 
-  private var readerClosed = false
-  private var writerClosed = false
+  val queue = new java.util.ArrayDeque[Message]
 
-  override def toString = {
+  var readerClosed = false
+
+  val mutex = new ReentrantLock
+  val readAvailable = mutex.newCondition()
+  val writeAvailable = mutex.newCondition()
+}
+
+private[util] object RWSharedState {
+  sealed abstract class Message
+  class Block(val buf: Array[Char], val endPtr: Int) extends Message {
+    var readPtr = 0
+    def available = endPtr - readPtr
+  }
+  case object EndSentinel extends Message
+}
+
+private[util] class RWReader(sharedState: RWSharedState) extends Reader {
+  import sharedState._
+  import RWSharedState._
+
+  var closed = false
+  var lastMessage: Message = null
+
+  def read(dst: Array[Char], off: Int, len: Int): Int = {
+    if(closed) throw new IOException("reader already closed")
+
+    val message =
+      if(lastMessage != null) {
+        lastMessage
+      } else {
+        var msg: Message = null
+        mutex.lock()
+        try {
+          while(queue.isEmpty) readAvailable.await()
+          msg = queue.removeFirst()
+          if(queue.size == blockCount - 1) writeAvailable.signal()
+        } finally {
+          mutex.unlock()
+        }
+        lastMessage = msg
+        msg
+      }
+
+    message match {
+      case block: Block =>
+        val toCopy = java.lang.Math.min(len, block.available)
+        System.arraycopy(block.buf, block.readPtr, dst, off, toCopy)
+        block.readPtr += toCopy
+        if(block.readPtr == block.endPtr) lastMessage = null
+        toCopy
+      case EndSentinel =>
+        -1
+    }
+  }
+
+  def close() {
     mutex.lock()
     try {
-      "readPtr: %d; writePtr: %d; readerClosed: %s; writerClosed: %s".format(readPtr, writePtr, readerClosed, writerClosed)
+      readerClosed = true
+      writeAvailable.signal()
     } finally {
       mutex.unlock()
     }
+
+    closed = true
   }
 
-  val reader: Reader = new Reader {
-    def read(dst: Array[Char], off: Int, len: Int): Int = {
-      var dstPtr = off
-      var dstRemaining = len
-
+  override def ready = {
+    if(closed || lastMessage != null) true
+    else {
       mutex.lock()
       try {
-        if(readerClosed) throw new IOException("reader closed")
-
-        while(readPtr == writePtr) {
-          if(writerClosed) return -1
-          if(len == 0) return 0
-          readAvailable.await()
-        }
-
-        val awakenWriters = if(readPtr == 0) writePtr == bufferSize - 1 else writePtr == readPtr - 1
-
-        val copied1 = if(readPtr > writePtr) {
-          val toCopy = min(dstRemaining, bufferSize - readPtr)
-          System.arraycopy(buf, readPtr, dst, dstPtr, toCopy)
-          dstPtr += toCopy
-          dstRemaining -= toCopy
-
-          readPtr += toCopy
-          if(readPtr == bufferSize) readPtr = 0
-          toCopy
-        } else {
-          0
-        }
-
-        val copied2 = if(dstRemaining != 0) {
-          val toCopy = min(dstRemaining, writePtr - readPtr)
-          System.arraycopy(buf, readPtr, dst, dstPtr, toCopy)
-          readPtr += toCopy
-          toCopy
-        } else {
-          0
-        }
-
-        if(awakenWriters) writeAvailable.signalAll()
-
-        copied1 + copied2
+        if(!queue.isEmpty) lastMessage = queue.removeFirst()
       } finally {
         mutex.unlock()
       }
+      lastMessage != null
     }
+  }
+}
 
-    def close() = {
-      mutex.lock()
-      try {
-        readerClosed = true
-        writeAvailable.signalAll()
-      } finally {
-        mutex.unlock()
-      }
-    }
+class RWWriter(sharedState: RWSharedState) extends Writer {
+  import sharedState._
+  import RWSharedState._
 
-    override def ready = {
-      mutex.lock()
-      try {
-        readPtr != writePtr
-      } finally {
-        mutex.unlock()
+  var currentBuffer: Array[Char] = null
+  var writePtr = 0
+  var closed = false
+
+  def testOpen() {
+    if(closed) throw new IOException("Writer already closed")
+  }
+
+  override def write(s: String, off: Int, len: Int) {
+    var ptr = off
+    var remainingData = len
+
+    testOpen()
+
+    while(remainingData > 0) {
+      if(currentBuffer == null) {
+        currentBuffer = new Array[Char](bufferSize)
+        writePtr = 0
       }
+
+      val remainingSpace = bufferSize - writePtr
+      var toCopy = math.min(remainingSpace, remainingData)
+      val cb = currentBuffer
+      var i = 0
+      var wP = writePtr
+      while(i != toCopy) {
+        cb(wP) = s.charAt(ptr + i)
+        wP += 1
+        i += 1
+      }
+      writePtr += toCopy
+      if(toCopy == remainingSpace) doFlush()
+
+      ptr += toCopy
+      remainingData -= toCopy
     }
   }
 
-  val writer: Writer = new Writer {
-    def write(src: Array[Char], off: Int, len: Int) {
-      var srcPtr = off
-      var srcRemaining = len
+  def write(src: Array[Char], off: Int, len: Int) {
+    var ptr = off
+    var remainingData = len
 
+    testOpen()
+
+    while(remainingData > 0) {
+      if(currentBuffer == null) {
+        currentBuffer = new Array[Char](bufferSize)
+        writePtr = 0
+      }
+
+      val remainingSpace = bufferSize - writePtr
+      val toCopy = math.min(remainingSpace, remainingData)
+      System.arraycopy(src, ptr, currentBuffer, writePtr, toCopy)
+      writePtr += toCopy
+      if(toCopy == remainingSpace) doFlush()
+
+      ptr += toCopy
+      remainingData -= toCopy
+    }
+  }
+
+  def flush() {
+    testOpen()
+    if(currentBuffer == null) return
+
+    doFlush()
+  }
+
+  def doFlush() {
+    mutex.lock()
+    try {
+      while(!readerClosed && queue.size >= blockCount) {
+        writeAvailable.await()
+      }
+
+      if(readerClosed) throw new IOException("Writer closed")
+
+      queue.addLast(new Block(currentBuffer, writePtr))
+      if(queue.size == 1) readAvailable.signal()
+    } finally {
+      mutex.unlock()
+    }
+
+    currentBuffer = null
+    writePtr = 0
+  }
+
+  def close() {
+    if(!closed) {
       mutex.lock()
       try {
-        if(writerClosed) throw new IOException("writer closed")
-
-        def hwm = if(readPtr == 0) bufferSize - 1 else readPtr - 1
-
-        while(srcRemaining > 0) {
-          while(writePtr == hwm && !readerClosed) {
-            writeAvailable.await()
-          }
-
-          if(readerClosed) {
-            return
-          }
-
-          val awakenReaders = readPtr == writePtr
-
-          if(writePtr > hwm) {
-            val toCopy = min(srcRemaining, bufferSize - writePtr)
-            System.arraycopy(src, srcPtr, buf, writePtr, toCopy)
-            srcPtr += toCopy
-            srcRemaining -= toCopy
-
-            writePtr += toCopy
-            if(writePtr == bufferSize) writePtr = 0
-          } else {
-            val toCopy = min(srcRemaining, hwm - writePtr)
-            System.arraycopy(src, srcPtr, buf, writePtr, toCopy)
-            writePtr += toCopy
-            srcPtr += toCopy
-            srcRemaining -= toCopy
-          }
-
-          if(awakenReaders) {
-            readAvailable.signalAll()
-          }
-        }
+        if(!readerClosed && currentBuffer != null) doFlush()
+        queue.add(EndSentinel)
+        readAvailable.signal()
       } finally {
         mutex.unlock()
       }
+      closed = true
     }
+  }
 
-    def flush() {}
+  override protected def finalize() {
+    close()
+  }
+}
 
-    def close() = {
-      mutex.lock()
-      try {
-        writerClosed = true
-        readAvailable.signalAll()
-      } finally {
-        mutex.unlock()
-      }
-    }
+class ReaderWriterPair(bufferSize: Int, blockCount: Int) { self =>
+  val (reader: Reader, writer: Writer) = locally {
+    val sharedState = new RWSharedState(bufferSize, blockCount)
+    (new RWReader(sharedState), new RWWriter(sharedState))
   }
 }

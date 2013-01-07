@@ -7,10 +7,12 @@ import org.postgresql.copy.CopyManager
 import org.postgresql.core.BaseConnection
 
 import com.socrata.datacoordinator.truth.sql.RepBasedSqlDatasetContext
-import com.socrata.datacoordinator.util.StringBuilderReader
+import com.socrata.datacoordinator.util.{ReaderWriterPair, StringBuilderReader}
+import java.util.concurrent.{Callable, ExecutorService, Executor}
 
 class PostgresRepBasedDataSqlizer[CT, CV](tableName: String,
                                           datasetContext: RepBasedSqlDatasetContext[CT, CV],
+                                          executor: ExecutorService,
                                           extractCopier: Connection => CopyManager = PostgresRepBasedDataSqlizer.pgCopyManager)
   extends AbstractRepBasedDataSqlizer(tableName, datasetContext)
 {
@@ -19,14 +21,34 @@ class PostgresRepBasedDataSqlizer[CT, CV](tableName: String,
 
   def insertBatch(conn: Connection)(f: (Inserter) => Unit) = {
     val inserter = new InserterImpl
-    f(inserter)
-    val copyManager = extractCopier(conn)
-    copyManager.copyIn(bulkInsertStatement, inserter.reader)
+    val result = executor.submit(new Callable[Long] {
+      def call() = {
+        val copyManager = extractCopier(conn)
+        copyManager.copyIn(bulkInsertStatement, inserter.rw.reader)
+      }
+    })
+    try {
+      try {
+        f(inserter)
+      } finally {
+        inserter.rw.writer.close()
+      }
+      result.get()
+    } catch {
+      case e: Throwable =>
+        // Ensure the future has completed before we leave this method.
+        // We don't actually care if it failed, because we're exiting
+        // abnormally.
+        try { result.get() }
+        catch { case e: Exception => /* ok */ }
+        throw e
+    }
   }
 
   class InserterImpl extends Inserter {
-    val sb = new java.lang.StringBuilder
+    val rw = new ReaderWriterPair(100000, 10)
     def insert(row: Row[CV]) {
+      val sb = new java.lang.StringBuilder
       var didOne = false
       val it = repSchema.iterator
       while(it.hasNext) {
@@ -38,11 +60,10 @@ class PostgresRepBasedDataSqlizer[CT, CV](tableName: String,
         v.csvifyForInsert(sb, value)
       }
       sb.append('\n')
+      rw.writer.write(sb.toString)
     }
 
     def close() {}
-
-    def reader: java.io.Reader = new StringBuilderReader(sb)
   }
 }
 

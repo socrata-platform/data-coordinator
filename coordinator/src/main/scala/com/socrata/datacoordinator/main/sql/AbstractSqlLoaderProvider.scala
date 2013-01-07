@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator.main.sql
 
 import java.sql.Connection
-import java.util.concurrent.Executor
+import java.util.concurrent.{ExecutorService, Executor}
 
 import com.rojoma.simplearm.Managed
 import com.rojoma.simplearm.util._
@@ -17,7 +17,7 @@ import com.socrata.datacoordinator.util.IdProviderPool
 import com.socrata.datacoordinator.id.{RowId, ColumnId}
 import com.socrata.datacoordinator.main.soql.SystemColumns
 
-abstract class AbstractSqlLoaderProvider[CT, CV](conn: Connection, idProviderPool: IdProviderPool, executor: Executor, typeContext: TypeContext[CT, CV])
+abstract class AbstractSqlLoaderProvider[CT, CV](conn: Connection, idProviderPool: IdProviderPool, val executor: ExecutorService, typeContext: TypeContext[CT, CV])
   extends ((VersionInfo, ColumnIdMap[ColumnInfo], RowPreparer[CV], Logger[CV], ColumnInfo => SqlColumnRep[CT, CV]) => Managed[Loader[CV]])
 { self =>
   def produce(tableName: String, datasetContext: RepBasedSqlDatasetContext[CT, CV]): DataSqlizer[CT, CV]
@@ -74,5 +74,5 @@ trait StandardSqlLoaderProvider[CT, CV] { this: AbstractSqlLoaderProvider[CT, CV
 
 trait PostgresSqlLoaderProvider[CT, CV] { this: AbstractSqlLoaderProvider[CT, CV] =>
   def produce(tableName: String, datasetContext: RepBasedSqlDatasetContext[CT, CV]) =
-    new PostgresRepBasedDataSqlizer(tableName, datasetContext)
+    new PostgresRepBasedDataSqlizer(tableName, datasetContext, executor)
 }

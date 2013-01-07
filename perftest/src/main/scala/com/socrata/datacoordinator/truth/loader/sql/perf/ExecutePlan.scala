@@ -87,7 +87,7 @@ object ExecutePlan {
             }
           }
           val datasetContext = new PerfDatasetContext(repSchema, idColumnId, Some(schemaIdMap("uid")))
-          val sqlizer = new PerfDataSqlizer(dataTableName, datasetContext)
+          val sqlizer = new PerfDataSqlizer(dataTableName, datasetContext, executor)
 
           val rowPreparer = new RowPreparer[PerfValue] {
             def prepareForInsert(row: Row[PerfValue], systemId: RowId) = {

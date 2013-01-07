@@ -6,12 +6,13 @@ import org.scalatest.FunSuite
 import org.scalatest.matchers.MustMatchers
 import org.scalatest.prop.PropertyChecks
 import org.scalacheck.{Arbitrary, Gen}
+import java.io.IOException
 
 class ReaderWriterPairTest extends FunSuite with MustMatchers with PropertyChecks {
   test("Should be able to read and write") {
-    forAll(implicitly[Arbitrary[Array[String]]].arbitrary, Gen.choose(2, 1000)) { (ss, size) =>
-      whenever(size > 1) {
-        val rwp = new ReaderWriterPair(size)
+    forAll(implicitly[Arbitrary[Array[String]]].arbitrary, Gen.choose(1, 1000), Gen.choose(1, 1000)) { (ss, size, count) =>
+      whenever(size > 0 && count > 0) {
+        val rwp = new ReaderWriterPair(size, count)
         val readResult = new ArrayBlockingQueue[String](1)
         val readerThread = new Thread {
           setName("Reader thread")
@@ -34,17 +35,20 @@ class ReaderWriterPairTest extends FunSuite with MustMatchers with PropertyCheck
         for(s <- ss) rwp.writer.write(s)
         rwp.writer.close()
 
-        readResult.take() must equal (ss.mkString)
+        readResult.take().map(_.toInt) must equal (ss.mkString.map(_.toInt))
       }
     }
   }
 
-  test("Writing when the reader is closed does not block") {
-    forAll(implicitly[Arbitrary[Array[String]]].arbitrary, Gen.choose(2, 1000)) { (ss, size) =>
-      whenever(size > 1) {
-        val rwp = new ReaderWriterPair(size)
+  test("Writing when the reader is closed throws") {
+    forAll(implicitly[Arbitrary[Array[String]]].arbitrary, Gen.choose(1, 1000), Gen.choose(1, 1000)) { (ss, size, count) =>
+      whenever(size > 0 && count > 0 && ss.exists(_.nonEmpty)) {
+        val rwp = new ReaderWriterPair(size, count)
         rwp.reader.close()
-        for(s <- ss) rwp.writer.write(s)
+        evaluating {
+          for(s <- ss) rwp.writer.write(s)
+          rwp.writer.flush()
+        } must produce[IOException]
       }
     }
   }
