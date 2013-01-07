@@ -14,4 +14,6 @@ object Coordinator {
       )
     }
   )
+
+  lazy val configs: Seq[Configuration] = BuildSettings.projectConfigs
 }

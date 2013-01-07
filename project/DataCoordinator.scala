@@ -13,13 +13,9 @@ object DataCoordinator extends Build {
       if method.getParameterTypes.isEmpty && classOf[Project].isAssignableFrom(method.getReturnType) && method.getName != "dataCoordinator"
     } yield method.invoke(this).asInstanceOf[Project] : ProjectReference
 
-  private def p(name: String, settings: { def settings: Seq[Setting[_]] }, dependencies: ClasspathDep[ProjectReference]*) =
-    Project(name, file(name), settings = settings.settings).
-      dependsOn(dependencies: _*).
-      configs(UnitTest, IntegrationTest, IntegrationTestClone, ExploratoryTest).
-      settings( Defaults.itSettings : _*).
-      settings( inConfig(UnitTest)(Defaults.testSettings) : _*).
-      settings( inConfig(ExploratoryTest)(Defaults.testSettings) : _*)
+  private def p(name: String, settings: { def settings: Seq[Setting[_]]; def configs: Seq[Configuration] }, dependencies: ClasspathDep[ProjectReference]*) =
+    Project(name, file(name), settings = settings.settings, configurations = settings.configs).
+      dependsOn(dependencies: _*)
 
   lazy val coordinatorLib = p("coordinatorlib", CoordinatorLib)
 
@@ -28,8 +24,4 @@ object DataCoordinator extends Build {
 
   lazy val coordinator = p("coordinator", Coordinator,
     coordinatorLib)
-
-  lazy val ExploratoryTest = config("explore") extend (Test)
-  lazy val UnitTest = config("unit") extend (Test)
-  lazy val IntegrationTestClone = config("integration") extend (IntegrationTest)
 }

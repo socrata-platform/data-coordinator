@@ -15,4 +15,6 @@ object PerfTest {
     },
     mainClass in assembly := Some("com.socrata.datacoordinator.truth.loader.sql.perf.ExecutePlan")
   )
+
+  lazy val configs: Seq[Configuration] = BuildSettings.projectConfigs
 }

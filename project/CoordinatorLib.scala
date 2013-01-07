@@ -32,4 +32,7 @@ object CoordinatorLib {
     },
     sourceDirectories in IntegrationTest += file("/home/rathbone1200cc/work/code/data-coordinator/coordinatorlib/source/test/scala")
   )
+
+
+  lazy val configs: Seq[Configuration] = BuildSettings.projectConfigs
 }
