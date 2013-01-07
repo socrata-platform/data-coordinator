@@ -16,6 +16,7 @@ object BuildSettings {
         scalaVersion := "2.10.0",
         compile in Compile <<= (compile in Compile) dependsOn (CheckClasspath.Keys.failIfConflicts in Compile),
         compile in Test <<= (compile in Test) dependsOn (CheckClasspath.Keys.failIfConflicts in Test),
+        dependenciesSnippet := <conflict org="com.socrata" manager="latest-compatible"/>,
         testOptions in Test ++= Seq(
           Tests.Argument("-oFD")
         ),
