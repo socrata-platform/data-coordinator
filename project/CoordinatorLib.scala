@@ -29,8 +29,7 @@ object CoordinatorLib {
         GenLongLikeMap(targetDir, "com.socrata.datacoordinator.util.collection", "com.socrata.datacoordinator.id", "StoreId") ++
         GenLongLikeMap(targetDir, "com.socrata.datacoordinator.util.collection", "com.socrata.datacoordinator.id", "VersionId") ++
         GenLongLikeMap(targetDir, "com.socrata.datacoordinator.util.collection", "com.socrata.datacoordinator.id", "RowId")
-    },
-    sourceDirectories in IntegrationTest += file("/home/rathbone1200cc/work/code/data-coordinator/coordinatorlib/source/test/scala")
+    }
   )
 
 
