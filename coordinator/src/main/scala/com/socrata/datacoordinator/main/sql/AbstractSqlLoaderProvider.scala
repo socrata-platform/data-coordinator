@@ -18,7 +18,7 @@ import com.socrata.datacoordinator.id.{RowId, ColumnId}
 import com.socrata.datacoordinator.main.soql.SystemColumns
 
 abstract class AbstractSqlLoaderProvider[CT, CV](conn: Connection, idProviderPool: IdProviderPool, val executor: ExecutorService, typeContext: TypeContext[CT, CV])
-  extends ((VersionInfo, ColumnIdMap[ColumnInfo], RowPreparer[CV], Logger[CV], ColumnInfo => SqlColumnRep[CT, CV]) => Managed[Loader[CV]])
+  extends ((VersionInfo, ColumnIdMap[ColumnInfo], RowPreparer[CV], Logger[CV], ColumnInfo => SqlColumnRep[CT, CV]) => Loader[CV])
 { self =>
   def produce(tableName: String, datasetContext: RepBasedSqlDatasetContext[CT, CV]): DataSqlizer[CT, CV]
 
@@ -38,7 +38,7 @@ abstract class AbstractSqlLoaderProvider[CT, CV](conn: Connection, idProviderPoo
     val datasetContext = makeDatasetContext(versionInfo, repSchema, userPrimaryKeyInfo, systemPrimaryKey, schema.filter { (_, i) => i.logicalName.startsWith(":") }.keySet)
 
     val sqlizer = produce(tableName, datasetContext)
-    managed(SqlLoader(conn, rowPreparer, sqlizer, logger, idProviderPool, executor))
+    SqlLoader(conn, rowPreparer, sqlizer, logger, idProviderPool, executor)
   }
 
   def makeDatasetContext(versionInfo: VersionInfo, rawSchema: ColumnIdMap[SqlColumnRep[CT, CV]], userPKCol: Option[(ColumnId, CT)], idCol: ColumnId, systemIds: ColumnIdSet) =

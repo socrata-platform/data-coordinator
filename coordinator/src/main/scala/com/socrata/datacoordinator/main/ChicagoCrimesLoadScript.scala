@@ -2,7 +2,7 @@ package com.socrata.datacoordinator.main
 
 import scala.collection.JavaConverters._
 
-import java.sql.DriverManager
+import java.sql.{Connection, DriverManager}
 import java.util.concurrent.Executors
 
 import org.joda.time.{DateTimeZone, DateTime}
@@ -11,7 +11,7 @@ import com.rojoma.simplearm.util._
 import com.google.protobuf.{CodedOutputStream, CodedInputStream}
 
 import com.socrata.soql.types._
-import com.socrata.id.numeric.{FibonacciIdProvider, InMemoryBlockIdProvider}
+import com.socrata.id.numeric.{IdProvider, FibonacciIdProvider, InMemoryBlockIdProvider}
 import com.socrata.soql.environment.TypeName
 
 import com.socrata.datacoordinator.main.soql.{SoQLRep, SoQLNullValue, SystemColumns}
@@ -29,6 +29,7 @@ import com.socrata.datacoordinator.{Row, MutableRow}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.main.sql.{PostgresSqlLoaderProvider, AbstractSqlLoaderProvider}
 import org.joda.time.format.{DateTimeFormat, DateTimeParser}
+import java.io.Closeable
 
 object ChicagoCrimesLoadScript extends App {
   val executor = Executors.newCachedThreadPool()
@@ -207,70 +208,74 @@ object ChicagoCrimesLoadScript extends App {
     }
 
     val mutator: DatabaseMutator[SoQLType, Any] = new DatabaseMutator[SoQLType, Any] {
+      class PoNT(val conn: Connection) extends ProviderOfNecessaryThings {
+        val now: DateTime = DateTime.now()
+        val datasetMapReader: DatasetMapReader = new PostgresDatasetMapReader(conn)
+        val datasetMapWriter: DatasetMapWriter = new PostgresDatasetMapWriter(conn)
+
+        def datasetLog(ds: DatasetInfo): Logger[Any] = new SqlLogger[Any](
+          conn,
+          ds.logTableName,
+          rowCodecFactory
+        )
+
+        val globalLog: GlobalLog = new PostgresGlobalLog(conn)
+        val truthManifest: TruthManifest = new SqlTruthManifest(conn)
+        val idProviderPool: IdProviderPool = providerPool
+
+        def physicalColumnBaseForType(typ: SoQLType): String =
+          soqlRepFactory(typ).base
+
+        def genericRepFor(columnInfo: ColumnInfo): SqlColumnRep[SoQLType, Any] =
+          soqlRepFactory(typeContext.typeFromName(columnInfo.typeName)).rep(columnInfo.physicalColumnBase)
+
+        def schemaLoader(version: datasetMapWriter.VersionInfo, logger: Logger[Any]): SchemaLoader =
+          new RepBasedSchemaLoader[SoQLType, Any](conn, logger) {
+            def repFor(columnInfo: DatasetMapWriter#ColumnInfo): SqlColumnRep[SoQLType, Any] =
+              genericRepFor(columnInfo)
+          }
+
+        def nameForType(typ: SoQLType): String = typeContext.nameFromType(typ)
+
+        def rawDataLoader(table: VersionInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[Any]): Loader[Any] = {
+          val lp = new AbstractSqlLoaderProvider(conn, providerPool, executor, typeContext) with PostgresSqlLoaderProvider[SoQLType, Any]
+          lp(table, schema, rowPreparer(schema), logger, genericRepFor)
+        }
+
+        def dataLoader(table: VersionInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[Any]): Managed[Loader[Any]] =
+          managed(rawDataLoader(table, schema, logger))
+
+        def delogger(dataset: DatasetInfo) = new SqlDelogger[Any](conn, dataset.logTableName, rowCodecFactory)
+
+        def rowPreparer(schema: ColumnIdMap[ColumnInfo]) =
+          new RowPreparer[Any] {
+            def findCol(name: String) =
+              schema.values.iterator.find(_.logicalName == name).getOrElse(sys.error(s"No $name column?")).systemId
+            val idColumn = findCol(SystemColumns.id)
+            val createdAtColumn = findCol(SystemColumns.createdAt)
+            val updatedAtColumn = findCol(SystemColumns.updatedAt)
+
+            def prepareForInsert(row: Row[Any], sid: RowId): Row[Any] = {
+              val tmp = new MutableRow[Any](row)
+              tmp(idColumn) = sid
+              tmp(createdAtColumn) = now
+              tmp(updatedAtColumn) = now
+              tmp.freeze()
+            }
+
+            def prepareForUpdate(row: Row[Any]): Row[Any] = {
+              val tmp = new MutableRow[Any](row)
+              tmp(updatedAtColumn) = now
+              tmp.freeze()
+            }
+          }
+      }
+
       def withTransaction[T]()(f: (ProviderOfNecessaryThings) => T): T = {
         using(DriverManager.getConnection("jdbc:postgresql://localhost:5432/robertm", "blist", "blist")) { conn =>
           conn.setAutoCommit(false)
           try {
-            object PoNT extends ProviderOfNecessaryThings {
-              val now: DateTime = DateTime.now()
-              val datasetMapReader: DatasetMapReader = new PostgresDatasetMapReader(conn)
-              val datasetMapWriter: DatasetMapWriter = new PostgresDatasetMapWriter(conn)
-
-              def datasetLog(ds: DatasetInfo): Logger[Any] = new SqlLogger[Any](
-                conn,
-                ds.logTableName,
-                rowCodecFactory
-              )
-
-              val globalLog: GlobalLog = new PostgresGlobalLog(conn)
-              val truthManifest: TruthManifest = new SqlTruthManifest(conn)
-              val idProviderPool: IdProviderPool = providerPool
-
-              def physicalColumnBaseForType(typ: SoQLType): String =
-                soqlRepFactory(typ).base
-
-              def genericRepFor(columnInfo: ColumnInfo): SqlColumnRep[SoQLType, Any] =
-                soqlRepFactory(typeContext.typeFromName(columnInfo.typeName)).rep(columnInfo.physicalColumnBase)
-
-              def schemaLoader(version: datasetMapWriter.VersionInfo, logger: Logger[Any]): SchemaLoader =
-                new RepBasedSchemaLoader[SoQLType, Any](conn, logger) {
-                  def repFor(columnInfo: DatasetMapWriter#ColumnInfo): SqlColumnRep[SoQLType, Any] =
-                    genericRepFor(columnInfo)
-                }
-
-              def nameForType(typ: SoQLType): String = typeContext.nameFromType(typ)
-
-              def dataLoader(table: VersionInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[Any]): Managed[Loader[Any]] = {
-                val lp = new AbstractSqlLoaderProvider(conn, providerPool, executor, typeContext) with PostgresSqlLoaderProvider[SoQLType, Any]
-                lp(table, schema, rowPreparer(schema), logger, genericRepFor)
-              }
-
-              def delogger(dataset: DatasetInfo) = new SqlDelogger[Any](conn, dataset.logTableName, rowCodecFactory)
-
-              def rowPreparer(schema: ColumnIdMap[ColumnInfo]) =
-                new RowPreparer[Any] {
-                  def findCol(name: String) =
-                    schema.values.iterator.find(_.logicalName == name).getOrElse(sys.error(s"No $name column?")).systemId
-                  val idColumn = findCol(SystemColumns.id)
-                  val createdAtColumn = findCol(SystemColumns.createdAt)
-                  val updatedAtColumn = findCol(SystemColumns.updatedAt)
-
-                  def prepareForInsert(row: Row[Any], sid: RowId): Row[Any] = {
-                    val tmp = new MutableRow[Any](row)
-                    tmp(idColumn) = sid
-                    tmp(createdAtColumn) = now
-                    tmp(updatedAtColumn) = now
-                    tmp.freeze()
-                  }
-
-                  def prepareForUpdate(row: Row[Any]): Row[Any] = {
-                    val tmp = new MutableRow[Any](row)
-                    tmp(updatedAtColumn) = now
-                    tmp.freeze()
-                  }
-                }
-            }
-            val result = f(PoNT)
+            val result = f(new PoNT(conn))
             conn.commit()
             result
           } finally {
@@ -278,6 +283,68 @@ object ChicagoCrimesLoadScript extends App {
           }
         }
       }
+
+      def withSchemaUpdate[T](datasetId: String, user: String)(f: SchemaUpdate => T): T =
+        withTransaction() { pont =>
+          class Operations extends SchemaUpdate with Closeable {
+            val now: DateTime = pont.now
+            val datasetMapWriter: pont.datasetMapWriter.type = pont.datasetMapWriter
+            val datasetInfo = datasetMapWriter.datasetInfo(datasetId).getOrElse(sys.error("no such dataset")) // TODO: Real error
+            val tableInfo = datasetMapWriter.latest(datasetInfo)
+            val datasetLog = pont.datasetLog(datasetInfo)
+
+            val idProviderHandle = new LazyBox(pont.idProviderPool.borrow())
+            lazy val idProvider: IdProvider = idProviderHandle.value
+
+            val schemaLoader: SchemaLoader = pont.schemaLoader(tableInfo, datasetLog)
+
+            def close() {
+              if(idProviderHandle.initialized) pont.idProviderPool.release(idProviderHandle.value)
+            }
+          }
+
+          using(new Operations) { operations =>
+            val result = f(operations)
+            operations.datasetLog.endTransaction() foreach { version =>
+              pont.truthManifest.updateLatestVersion(operations.datasetInfo, version)
+              pont.globalLog.log(operations.datasetInfo, version, pont.now, user)
+            }
+            result
+          }
+        }
+
+      def withDataUpdate[T](datasetId: String, user: String)(f: DataUpdate => T): T =
+        withTransaction() { pont =>
+          class Operations extends DataUpdate with Closeable {
+            val now: DateTime = pont.now
+            val datasetMapWriter: pont.datasetMapWriter.type = pont.datasetMapWriter
+            val datasetInfo = datasetMapWriter.datasetInfo(datasetId).getOrElse(sys.error("No such dataset?")) // TODO: better error
+            val tableInfo = datasetMapWriter.latest(datasetInfo)
+            val datasetLog = pont.datasetLog(datasetInfo)
+            val idProviderHandle = new LazyBox(pont.idProviderPool.borrow())
+            lazy val idProvider: IdProvider = idProviderHandle.value
+
+            val schema = datasetMapWriter.schema(tableInfo)
+            val dataLoader = pont.asInstanceOf[PoNT].rawDataLoader(tableInfo, schema, datasetLog)
+
+            def close() {
+              try {
+                dataLoader.close()
+              } finally {
+                if(idProviderHandle.initialized) pont.idProviderPool.release(idProviderHandle.value)
+              }
+            }
+          }
+
+          using(new Operations) { operations =>
+            val result = f(operations)
+            operations.datasetLog.endTransaction() foreach { version =>
+              pont.truthManifest.updateLatestVersion(operations.datasetInfo, version)
+              pont.globalLog.log(operations.datasetInfo, version, pont.now, user)
+            }
+            result
+          }
+        }
     }
 
     val datasetCreator = new DatasetCreator(mutator, Map(
