@@ -16,22 +16,13 @@ object BuildSettings {
         scalaVersion := "2.10.0",
         compile in Compile <<= (compile in Compile) dependsOn (CheckClasspath.Keys.failIfConflicts in Compile),
         compile in Test <<= (compile in Test) dependsOn (CheckClasspath.Keys.failIfConflicts in Test),
-        dependenciesSnippet := <conflict org="com.socrata" manager="latest-compatible"/>,
-        testOptions in Test ++= Seq(
-          Tests.Argument("-oFD")
-        ),
-        testOptions in ExploratoryTest := Seq(
-          Tests.Argument("-oFD")
-        ),
-        testOptions in UnitTest ++= Seq(
-          Tests.Argument("-oFD", "-l", "Slow") // option "-l" will exclude the specified tags
-        )
+        testOptions in ExploratoryTest <<= testOptions in Test,
+        testOptions in UnitTest <<= (testOptions in Test) map { _ ++ Seq(Tests.Argument("-l", "Slow")) }
       )
 
   def projectSettings(assembly: Boolean = false): Seq[Setting[_]] =
     BuildSettings.buildSettings ++ socrataProjectSettings(assembly = assembly) ++
       Seq(
-        slf4jVersion := "1.7.2",
         fork in test := true,
         test in Test <<= (test in Test) dependsOn (test in IntegrationTest)
       )

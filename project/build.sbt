@@ -7,4 +7,4 @@ externalResolvers <<= resolvers map { rs =>
   Resolver.withDefaultResolvers(rs, mavenCentral = false)
 }
 
-addSbtPlugin("com.socrata" % "socrata-sbt" % "0.2.6")
+addSbtPlugin("com.socrata" % "socrata-sbt" % "0.3.0")
