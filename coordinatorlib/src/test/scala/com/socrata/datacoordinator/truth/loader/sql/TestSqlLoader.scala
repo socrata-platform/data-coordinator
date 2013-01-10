@@ -32,7 +32,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     executor.shutdownNow()
   }
 
-  def idProvider(initial: Int) = new IdProviderPoolImpl(new InMemoryBlockIdProvider(releasable = false) { override def start = initial }, new FixedSizeIdProvider(_, 1024))
+  def idProvider(initial: Int) = new FixedSizeIdProvider(new InMemoryBlockIdProvider(releasable = false) { override def start = initial }, 1000)
 
   def withDB[T]()(f: Connection => T): T = {
     using(DriverManager.getConnection("jdbc:h2:mem:")) { conn =>
@@ -173,7 +173,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       }
       conn.commit()
 
-      ids.borrow().allocate() must be (16)
+      ids.allocate() must be (16)
 
       query(conn, rawSelect) must equal (Seq(Map(idColName -> 15L, numName -> 2L, strName -> "b")))
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq(
@@ -267,7 +267,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       }
       conn.commit()
 
-      ids.borrow().allocate() must be (13)
+      ids.allocate() must be (13)
 
       query(conn, rawSelect) must equal (Seq(
         Map(idColName -> 7L, numName -> 44L, strName -> "q")
@@ -303,7 +303,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       }
       conn.commit()
 
-      ids.borrow().allocate() must equal (16)
+      ids.allocate() must equal (16)
 
       query(conn, rawSelect) must equal (Seq(
         Map(idColName -> 15L, numName -> 1L, strName -> "a")
@@ -339,7 +339,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       }
       conn.commit()
 
-      ids.borrow().allocate() must equal (22)
+      ids.allocate() must equal (22)
 
       query(conn, rawSelect) must equal (Seq.empty)
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq.empty)
@@ -371,7 +371,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       }
       conn.commit()
 
-      ids.borrow().allocate() must equal (22)
+      ids.allocate() must equal (22)
 
       query(conn, rawSelect) must equal (Seq.empty)
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq.empty)
@@ -405,7 +405,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       }
       conn.commit()
 
-      ids.borrow().allocate() must be (13)
+      ids.allocate() must be (13)
 
       query(conn, rawSelect) must equal (Seq(
         Map(idColName -> 7L, numName -> 44L, strName -> "q")
@@ -442,7 +442,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       }
       conn.commit()
 
-      ids.borrow().allocate() must be (16)
+      ids.allocate() must be (16)
 
       query(conn, rawSelect) must equal (Seq(
         Map(idColName -> 15L, numName -> 2L, strName -> "q")
@@ -478,7 +478,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       }
       conn.commit()
 
-      ids.borrow().allocate() must be (15)
+      ids.allocate() must be (15)
 
       query(conn, rawSelect) must equal (Seq.empty)
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq.empty)
@@ -511,7 +511,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       }
       conn.commit()
 
-      ids.borrow().allocate() must be (15) // and it never even allocated a sid for it
+      ids.allocate() must be (15) // and it never even allocated a sid for it
 
       query(conn, rawSelect) must equal (Seq.empty)
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq.empty)
@@ -546,7 +546,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       }
       conn.commit()
 
-      ids.borrow().allocate() must be (16)
+      ids.allocate() must be (16)
 
       query(conn, rawSelect) must equal (Seq.empty)
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq.empty)

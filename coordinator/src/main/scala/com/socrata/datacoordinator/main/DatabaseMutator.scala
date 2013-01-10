@@ -3,12 +3,12 @@ package com.socrata.datacoordinator.main
 import org.joda.time.DateTime
 import com.rojoma.simplearm.Managed
 
+import com.socrata.id.numeric.IdProvider
+
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.manifest.TruthManifest
-import com.socrata.datacoordinator.util.IdProviderPool
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
-import com.socrata.id.numeric.IdProvider
 
 abstract class DatabaseMutator[CT, CV] {
   trait ProviderOfNecessaryThings {
@@ -19,22 +19,13 @@ abstract class DatabaseMutator[CT, CV] {
     def delogger(ds: DatasetInfo): Delogger[CV]
     val globalLog: GlobalLog
     val truthManifest: TruthManifest
-    val idProviderPool: IdProviderPool
+    val schemaIdProvider: IdProvider
     def physicalColumnBaseForType(typ: CT): String
     def schemaLoader(version: datasetMapWriter.VersionInfo, logger: Logger[CV]): SchemaLoader
     def nameForType(typ: CT): String
 
-    def dataLoader(table: VersionInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[CV]): Managed[Loader[CV]]
+    def dataLoader(table: VersionInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[CV], dataIdProvider: IdProvider): Managed[Loader[CV]]
     def rowPreparer(schema: ColumnIdMap[ColumnInfo]): RowPreparer[CV]
-
-    def singleId() = {
-      val provider = idProviderPool.borrow()
-      try {
-        provider.allocate()
-      } finally {
-        idProviderPool.release(provider)
-      }
-    }
   }
 
   trait BaseUpdate {
@@ -43,7 +34,6 @@ abstract class DatabaseMutator[CT, CV] {
     val datasetInfo: datasetMapWriter.DatasetInfo
     val tableInfo: datasetMapWriter.VersionInfo
     val datasetLog: Logger[CV]
-    val idProvider: IdProvider
   }
 
   trait SchemaUpdate extends BaseUpdate {

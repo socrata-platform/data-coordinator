@@ -42,7 +42,7 @@ object ExecutePlan {
     val executor = java.util.concurrent.Executors.newCachedThreadPool()
     try {
       val datapoints = for(trial <- 1 to trialsPerDataPoint) yield {
-        val idProvider = new IdProviderPoolImpl(new InMemoryBlockIdProvider(releasable = false), new FixedSizeIdProvider(_, 1000))
+        val idProviderPool = new IdProviderPoolImpl(new InMemoryBlockIdProvider(releasable = false), new FixedSizeIdProvider(_, 1000))
         for {
           planReader <- managed(new BufferedReader(new InputStreamReader(new GZIPInputStream(new FileInputStream(planFile)), "UTF-8")))
           conn <- managed(DriverManager.getConnection("jdbc:postgresql://10.0.5.104:5432/robertm", "robertm", "lof9afw3"))
@@ -104,7 +104,7 @@ object ExecutePlan {
             import org.postgresql.copy.CopyManager
             import org.postgresql.core.BaseConnection
 
-            idProvider.withProvider { idProvider =>
+            for(idProvider <- idProviderPool.borrow()) {
               val copier = new CopyManager(conn.asInstanceOf[BaseConnection])
               val reader = new java.io.Reader {
                 var line = ""
@@ -189,6 +189,7 @@ object ExecutePlan {
           val start = System.nanoTime()
           val report = for {
             dataLogger <- managed(new SqlLogger(conn, logTableName, () => new PerfRowCodec))
+            idProvider <- idProviderPool.borrow()
             txn <- managed(SqlLoader(conn, rowPreparer, sqlizer, dataLogger, idProvider, executor))
           } yield {
             def loop() {

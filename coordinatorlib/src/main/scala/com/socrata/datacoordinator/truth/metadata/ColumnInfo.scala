@@ -14,11 +14,13 @@ trait ColumnInfo {
   def logicalName: String
   def typeName: String
   def isUserPrimaryKey: Boolean
-  def physicalColumnBase: String
+  def physicalColumnBaseBase: String
+
+  def physicalColumnBase = physicalColumnBaseBase + "_" + systemId.underlying
 
   override def toString = ColumnInfo.jCodec.encode(this).toString
 
-  override final def hashCode = ScalaRunTime._hashCode((versionInfo, systemId, logicalName, typeName, isUserPrimaryKey))
+  override final def hashCode = ScalaRunTime._hashCode((versionInfo, systemId, logicalName, typeName, isUserPrimaryKey, physicalColumnBaseBase))
   override final def equals(o: Any) = o match {
     case that: ColumnInfo =>
       (this eq that) ||
@@ -35,7 +37,7 @@ object ColumnInfo {
     val logicalNameV = Variable[String]
     val typeNameV = Variable[String]
     val isUserPrimaryKeyV = Variable[Boolean]
-    val physicalColumnBaseV = Variable[String]
+    val physicalColumnBaseBaseV = Variable[String]
 
     val Pattern = new PObject(
       "versionInfo" -> versionInfoV,
@@ -43,7 +45,7 @@ object ColumnInfo {
       "logicalName" -> logicalNameV,
       "typeName" -> typeNameV,
       "isPrimaryKey" -> isUserPrimaryKeyV,
-      "physicalColumnBase" -> physicalColumnBaseV
+      "physicalColumnBaseBase" -> physicalColumnBaseBaseV
     )
 
     def encode(ci: ColumnInfo): JValue =
@@ -53,7 +55,7 @@ object ColumnInfo {
         logicalNameV := ci.logicalName,
         typeNameV := ci.typeName,
         isUserPrimaryKeyV := ci.isUserPrimaryKey,
-        physicalColumnBaseV := ci.physicalColumnBase
+        physicalColumnBaseBaseV := ci.physicalColumnBaseBase
       )
 
     def decode(x: JValue) = Pattern.matches(x) map { res =>
@@ -63,7 +65,7 @@ object ColumnInfo {
         val logicalName = logicalNameV(res)
         val typeName = typeNameV(res)
         val isUserPrimaryKey = isUserPrimaryKeyV(res)
-        val physicalColumnBase = physicalColumnBaseV(res)
+        val physicalColumnBaseBase = physicalColumnBaseBaseV(res)
       }
     }
   }

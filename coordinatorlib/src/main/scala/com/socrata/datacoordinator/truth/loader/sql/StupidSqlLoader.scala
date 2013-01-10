@@ -8,14 +8,16 @@ import java.sql.Connection
 
 import com.rojoma.simplearm.util._
 
-import com.socrata.datacoordinator.util.{Counter, IdProviderPool}
+import com.socrata.id.numeric.IdProvider
+
+import com.socrata.datacoordinator.util.Counter
 import com.socrata.datacoordinator.id.RowId
 
 class StupidSqlLoader[CT, CV](val connection: Connection,
                               val rowPreparer: RowPreparer[CV],
                               val sqlizer: DataSqlizer[CT, CV],
                               val dataLogger: DataLogger[CV],
-                              val idProviderPool: IdProviderPool)
+                              val idProvider: IdProvider)
   extends Loader[CV]
 {
   val datasetContext = sqlizer.datasetContext
@@ -28,8 +30,6 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
   val errors = new java.util.HashMap[Int, Failure[CV]]
 
   val nextJobNum = new Counter
-
-  val idProvider = idProviderPool.borrow()
 
   def upsert(unpreparedRow: Row[CV]) {
     val job = nextJobNum()
@@ -127,6 +127,5 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
   }
 
   def close() {
-    idProviderPool.release(idProvider)
   }
 }

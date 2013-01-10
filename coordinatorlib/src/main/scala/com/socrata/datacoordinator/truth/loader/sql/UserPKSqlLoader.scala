@@ -8,12 +8,13 @@ import java.util.concurrent.Executor
 import gnu.trove.map.hash.TIntObjectHashMap
 import com.rojoma.simplearm.util._
 
-import com.socrata.datacoordinator.util.IdProviderPool
+import com.socrata.id.numeric.IdProvider
+
 import com.socrata.datacoordinator.truth.RowUserIdMap
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.id.RowId
 
-final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: DataSqlizer[CT, CV], _l: DataLogger[CV], _i: IdProviderPool, _e: Executor)
+final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: DataSqlizer[CT, CV], _l: DataLogger[CV], _i: IdProvider, _e: Executor)
   extends
 {
   // all these are early because they are all potential sources of exceptions, and I want all

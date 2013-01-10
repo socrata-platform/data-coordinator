@@ -12,7 +12,7 @@ class DatasetCreator[CT, CV](mutator: DatabaseMutator[CT, CV], systemColumns: Ma
       truthManifest.create(table.datasetInfo)
 
       for((name, typ) <- systemColumns) {
-        val col = datasetMapWriter.addColumn(table, name, nameForType(typ), physicalColumnBaseForType(typ) + "_" + singleId())
+        val col = datasetMapWriter.addColumn(table, name, nameForType(typ), physicalColumnBaseForType(typ))
         loader.addColumn(col)
         if(col.logicalName == idColumnName) {
           loader.makePrimaryKey(col) // hm.  I definitely want these indices/constraints, but do I want the log entry?

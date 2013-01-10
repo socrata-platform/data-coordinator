@@ -135,9 +135,11 @@ object ChicagoCrimesLoadScript extends App {
         }
     }
 
-    val idSource = new InMemoryBlockIdProvider(releasable = true)
+    val schemaIdSource = new InMemoryBlockIdProvider(releasable = true)
+    val schemaProviderPool: IdProviderPool = new IdProviderPoolImpl(schemaIdSource, new FibonacciIdProvider(_))
 
-    val providerPool: IdProviderPool = new IdProviderPoolImpl(idSource, new FibonacciIdProvider(_))
+    val dataIdSource = new InMemoryBlockIdProvider(releasable = true)
+    val dataProviderPool: IdProviderPool = new IdProviderPoolImpl(dataIdSource, new FibonacciIdProvider(_))
 
     def rowCodecFactory(): RowLogCodec[Any] = new IdCachingRowLogCodec[Any] {
       def rowDataVersion: Short = 0
@@ -208,10 +210,10 @@ object ChicagoCrimesLoadScript extends App {
     }
 
     val mutator: DatabaseMutator[SoQLType, Any] = new DatabaseMutator[SoQLType, Any] {
-      class PoNT(val conn: Connection) extends ProviderOfNecessaryThings {
+      class PoNT(val conn: Connection, val schemaIdProvider: IdProvider) extends ProviderOfNecessaryThings {
         val now: DateTime = DateTime.now()
         val datasetMapReader: DatasetMapReader = new PostgresDatasetMapReader(conn)
-        val datasetMapWriter: DatasetMapWriter = new PostgresDatasetMapWriter(conn)
+        val datasetMapWriter: DatasetMapWriter = new PostgresDatasetMapWriter(conn, schemaIdProvider)
 
         def datasetLog(ds: DatasetInfo): Logger[Any] = new SqlLogger[Any](
           conn,
@@ -221,7 +223,6 @@ object ChicagoCrimesLoadScript extends App {
 
         val globalLog: GlobalLog = new PostgresGlobalLog(conn)
         val truthManifest: TruthManifest = new SqlTruthManifest(conn)
-        val idProviderPool: IdProviderPool = providerPool
 
         def physicalColumnBaseForType(typ: SoQLType): String =
           soqlRepFactory(typ).base
@@ -237,13 +238,13 @@ object ChicagoCrimesLoadScript extends App {
 
         def nameForType(typ: SoQLType): String = typeContext.nameFromType(typ)
 
-        def rawDataLoader(table: VersionInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[Any]): Loader[Any] = {
-          val lp = new AbstractSqlLoaderProvider(conn, providerPool, executor, typeContext) with PostgresSqlLoaderProvider[SoQLType, Any]
+        def rawDataLoader(table: VersionInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[Any], idProvider: IdProvider): Loader[Any] = {
+          val lp = new AbstractSqlLoaderProvider(conn, idProvider, executor, typeContext) with PostgresSqlLoaderProvider[SoQLType, Any]
           lp(table, schema, rowPreparer(schema), logger, genericRepFor)
         }
 
-        def dataLoader(table: VersionInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[Any]): Managed[Loader[Any]] =
-          managed(rawDataLoader(table, schema, logger))
+        def dataLoader(table: VersionInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[Any], idProvider: IdProvider): Managed[Loader[Any]] =
+          managed(rawDataLoader(table, schema, logger, idProvider))
 
         def delogger(dataset: DatasetInfo) = new SqlDelogger[Any](conn, dataset.logTableName, rowCodecFactory)
 
@@ -271,11 +272,14 @@ object ChicagoCrimesLoadScript extends App {
           }
       }
 
-      def withTransaction[T]()(f: (ProviderOfNecessaryThings) => T): T = {
-        using(DriverManager.getConnection("jdbc:postgresql://localhost:5432/robertm", "blist", "blist")) { conn =>
+      def withTransaction[T]()(f: ProviderOfNecessaryThings => T): T = {
+        for {
+          conn <- managed(DriverManager.getConnection("jdbc:postgresql://10.0.5.104:5432/robertm", "robertm", "lof9afw3")) // DriverManager.getConnection("jdbc:postgresql://localhost:5432/robertm", "blist", "blist"))
+          idProvider <- schemaProviderPool.borrow()
+        } yield {
           conn.setAutoCommit(false)
           try {
-            val result = f(new PoNT(conn))
+            val result = f(new PoNT(conn, idProvider))
             conn.commit()
             result
           } finally {
@@ -285,58 +289,48 @@ object ChicagoCrimesLoadScript extends App {
       }
 
       def withSchemaUpdate[T](datasetId: String, user: String)(f: SchemaUpdate => T): T =
-        withTransaction() { pont =>
-          class Operations extends SchemaUpdate with Closeable {
+        withTransaction() { pontRaw =>
+          val pont = pontRaw.asInstanceOf[PoNT]
+          object Operations extends SchemaUpdate {
             val now: DateTime = pont.now
             val datasetMapWriter: pont.datasetMapWriter.type = pont.datasetMapWriter
             val datasetInfo = datasetMapWriter.datasetInfo(datasetId).getOrElse(sys.error("no such dataset")) // TODO: Real error
             val tableInfo = datasetMapWriter.latest(datasetInfo)
             val datasetLog = pont.datasetLog(datasetInfo)
 
-            val idProviderHandle = new LazyBox(pont.idProviderPool.borrow())
-            lazy val idProvider: IdProvider = idProviderHandle.value
-
             val schemaLoader: SchemaLoader = pont.schemaLoader(tableInfo, datasetLog)
-
-            def close() {
-              if(idProviderHandle.initialized) pont.idProviderPool.release(idProviderHandle.value)
-            }
           }
 
-          using(new Operations) { operations =>
-            val result = f(operations)
-            operations.datasetLog.endTransaction() foreach { version =>
-              pont.truthManifest.updateLatestVersion(operations.datasetInfo, version)
-              pont.globalLog.log(operations.datasetInfo, version, pont.now, user)
-            }
-            result
+          val result = f(Operations)
+          Operations.datasetLog.endTransaction() foreach { version =>
+            pont.truthManifest.updateLatestVersion(Operations.datasetInfo, version)
+            pont.globalLog.log(Operations.datasetInfo, version, pont.now, user)
           }
+          result
         }
 
       def withDataUpdate[T](datasetId: String, user: String)(f: DataUpdate => T): T =
-        withTransaction() { pont =>
-          class Operations extends DataUpdate with Closeable {
+        withTransaction() { pontRaw =>
+          val pont = pontRaw.asInstanceOf[PoNT]
+          class Operations(val dataIdProvider: IdProvider) extends DataUpdate with Closeable {
             val now: DateTime = pont.now
             val datasetMapWriter: pont.datasetMapWriter.type = pont.datasetMapWriter
             val datasetInfo = datasetMapWriter.datasetInfo(datasetId).getOrElse(sys.error("No such dataset?")) // TODO: better error
             val tableInfo = datasetMapWriter.latest(datasetInfo)
             val datasetLog = pont.datasetLog(datasetInfo)
-            val idProviderHandle = new LazyBox(pont.idProviderPool.borrow())
-            lazy val idProvider: IdProvider = idProviderHandle.value
 
             val schema = datasetMapWriter.schema(tableInfo)
-            val dataLoader = pont.asInstanceOf[PoNT].rawDataLoader(tableInfo, schema, datasetLog)
+            val dataLoader = pont.rawDataLoader(tableInfo, schema, datasetLog, dataIdProvider)
 
             def close() {
-              try {
-                dataLoader.close()
-              } finally {
-                if(idProviderHandle.initialized) pont.idProviderPool.release(idProviderHandle.value)
-              }
+              dataLoader.close()
             }
           }
 
-          using(new Operations) { operations =>
+          for {
+            dataIdProvider <- dataProviderPool.borrow()
+            operations <- managed(new Operations(dataIdProvider))
+          } yield {
             val result = f(operations)
             operations.datasetLog.endTransaction() foreach { version =>
               pont.truthManifest.updateLatestVersion(operations.datasetInfo, version)
@@ -361,7 +355,7 @@ object ChicagoCrimesLoadScript extends App {
 
     // Everything above this point can be re-used for every operation
 
-    using(DriverManager.getConnection("jdbc:postgresql://localhost:5432/robertm", "blist", "blist")) { conn =>
+    using(DriverManager.getConnection("jdbc:postgresql://10.0.5.104:5432/robertm", "robertm", "lof9afw3")) { conn => //DriverManager.getConnection("jdbc:postgresql://localhost:5432/robertm", "blist", "blist")) { conn =>
       conn.setAutoCommit(false)
       DatabasePopulator.populate(conn)
       conn.commit()

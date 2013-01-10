@@ -9,7 +9,9 @@ import java.util.concurrent.Executor
 
 import gnu.trove.map.hash.TIntObjectHashMap
 
-import com.socrata.datacoordinator.util.{TIntObjectHashMapWrapper, Counter, IdProviderPool}
+import com.socrata.id.numeric.IdProvider
+
+import com.socrata.datacoordinator.util.{TIntObjectHashMapWrapper, Counter}
 
 /**
  * @note After passing the `dataLogger` to this constructor, the created `SqlLoader`
@@ -20,7 +22,7 @@ abstract class SqlLoader[CT, CV](val connection: Connection,
                                  val rowPreparer: RowPreparer[CV],
                                  val sqlizer: DataSqlizer[CT, CV],
                                  val dataLogger: DataLogger[CV],
-                                 val idProviderPool: IdProviderPool,
+                                 val idProvider: IdProvider,
                                  val executor: Executor)
   extends Loader[CV]
 {
@@ -42,12 +44,6 @@ abstract class SqlLoader[CT, CV](val connection: Connection,
 
   val nextJobNum = new Counter
 
-  // Any further initializations after this borrow must take care to
-  // clean up after themselves if they may throw!  In particular they
-  // must either early-initialize or rollback the transaction and
-  // return the id provider to the pool.
-  val idProvider = idProviderPool.borrow()
-
   def flush()
 
   def report: Report[CV] = {
@@ -63,17 +59,13 @@ abstract class SqlLoader[CT, CV](val connection: Connection,
 
   def close() {
     connectionMutex.synchronized {
-      try {
-        checkAsyncJob()
-      } finally {
-        idProviderPool.release(idProvider)
-      }
+      checkAsyncJob()
     }
   }
 }
 
 object SqlLoader {
-  def apply[CT, CV](connection: Connection, preparer: RowPreparer[CV], sqlizer: DataSqlizer[CT, CV], dataLogger: DataLogger[CV], idProvider: IdProviderPool, executor: Executor): SqlLoader[CT,CV] = {
+  def apply[CT, CV](connection: Connection, preparer: RowPreparer[CV], sqlizer: DataSqlizer[CT, CV], dataLogger: DataLogger[CV], idProvider: IdProvider, executor: Executor): SqlLoader[CT,CV] = {
     if(sqlizer.datasetContext.hasUserPrimaryKey)
       new UserPKSqlLoader(connection, preparer, sqlizer, dataLogger, idProvider, executor)
     else

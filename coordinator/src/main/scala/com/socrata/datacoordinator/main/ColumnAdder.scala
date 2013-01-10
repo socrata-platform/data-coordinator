@@ -23,7 +23,7 @@ class ColumnAdder[CT, CV](mutator: DatabaseMutator[CT, CV]) {
 
       var result = Map.empty[String, ColumnInfo]
       for((columnName, columnType) <- columns) {
-        val baseName = physicalColumnBaseForType(columnType) + "_" + singleId()
+        val baseName = physicalColumnBaseForType(columnType)
         val col = datasetMapWriter.addColumn(table, columnName, nameForType(columnType), baseName)
         schemaLoader(col.versionInfo, logger).addColumn(col)
         result += columnName -> col
