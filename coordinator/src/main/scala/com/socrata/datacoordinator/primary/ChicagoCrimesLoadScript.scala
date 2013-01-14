@@ -13,7 +13,7 @@ import com.google.protobuf.{CodedOutputStream, CodedInputStream}
 import com.socrata.soql.types._
 import com.socrata.id.numeric.{IdProvider, FibonacciIdProvider, InMemoryBlockIdProvider}
 
-import com.socrata.datacoordinator.common.soql.{SoQLRep, SoQLNullValue, SystemColumns}
+import com.socrata.datacoordinator.common.soql.{SoQLTypeContext, SoQLRep, SoQLNullValue, SystemColumns}
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.util.{CloseableIterator, RotateSchema, IdProviderPoolImpl, IdProviderPool}
@@ -65,74 +65,7 @@ object ChicagoCrimesLoadScript extends App {
   )
 
   try {
-    val typeContext: TypeContext[SoQLType, Any] = new TypeContext[SoQLType, Any] {
-      def isNull(value: Any): Boolean = SoQLNullValue == value
-
-      def makeValueFromSystemId(id: RowId): Any = id
-
-      def makeSystemIdFromValue(id: Any): RowId = id.asInstanceOf[RowId]
-
-      def nullValue: Any = SoQLNullValue
-
-      private val typesByStringName = SoQLType.typesByName.values.foldLeft(Map.empty[String, SoQLType]) { (acc, typ) =>
-        acc + (typ.toString -> typ)
-      }
-      def typeFromName(name: String): SoQLType = typesByStringName(name)
-
-      def nameFromType(typ: SoQLType): String = typ.toString
-
-      def makeIdMap[T](idColumnType: SoQLType): RowUserIdMap[Any, T] =
-        if(idColumnType == SoQLText) {
-          new RowUserIdMap[Any, T] {
-            val map = new java.util.HashMap[String, (String, T)]
-
-            def put(x: Any, v: T) {
-              val s = x.asInstanceOf[String]
-              map.put(s.toLowerCase, (s, v))
-            }
-
-            def apply(x: Any): T = {
-              val s = x.asInstanceOf[String]
-              val k = s.toLowerCase
-              if(map.containsKey(k)) map.get(k)._2
-              else throw new NoSuchElementException
-            }
-
-            def get(x: Any): Option[T] = {
-              val s = x.asInstanceOf[String]
-              val k = s.toLowerCase
-              if(map.containsKey(k)) Some(map.get(k)._2)
-              else None
-            }
-
-            def clear() {
-              map.clear()
-            }
-
-            def contains(x: Any): Boolean = {
-              val s = x.asInstanceOf[String]
-              map.containsKey(s.toLowerCase)
-            }
-
-            def isEmpty: Boolean = map.isEmpty
-
-            def size: Int = map.size
-
-            def foreach(f: (Any, T) => Unit) {
-              val it = map.values.iterator
-              while(it.hasNext) {
-                val (k, v) = it.next()
-                f(k, v)
-              }
-            }
-
-            def valuesIterator: Iterator[T] =
-              map.values.iterator.asScala.map(_._2)
-          }
-        } else {
-          new SimpleRowUserIdMap[Any, T]
-        }
-    }
+    val typeContext = SoQLTypeContext
 
     val dataIdSource = new InMemoryBlockIdProvider(releasable = true)
     val dataProviderPool: IdProviderPool = new IdProviderPoolImpl(dataIdSource, new FibonacciIdProvider(_))
