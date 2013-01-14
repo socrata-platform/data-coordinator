@@ -1,15 +1,14 @@
 package com.socrata.datacoordinator
-package truth.loader.sql
+package truth.loader
 
-import com.socrata.datacoordinator.truth.loader.Logger
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
-import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.id.RowId
+import com.socrata.datacoordinator.util.collection.ColumnIdMap
 
 class NullLogger[CV] extends Logger[CV] {
   def columnCreated(info: ColumnInfo) {}
 
-  def columnRemoved(info :ColumnInfo) {}
+  def columnRemoved(info: ColumnInfo) {}
 
   def rowIdentifierChanged(name: Option[ColumnInfo]) {}
 
@@ -33,5 +32,5 @@ class NullLogger[CV] extends Logger[CV] {
 }
 
 object NullLogger extends NullLogger[Any] {
-  def apply[A]() = this.asInstanceOf[NullLogger[A]]
+  def apply[A] = this.asInstanceOf[NullLogger[A]]
 }

@@ -610,13 +610,13 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
           makeTables(stupidConn, stupidDataSqlizer, "stupid_log")
 
           def runCompareTest(ops: List[Op]) {
-            val smartReport = using(SqlLoader(smartConn, rowPreparer, dataSqlizer, NullLogger(), ids, executor)) { txn =>
+            val smartReport = using(SqlLoader(smartConn, rowPreparer, dataSqlizer, NullLogger[TestColumnValue], ids, executor)) { txn =>
               applyOps(txn, ops)
               txn.report
             }
             smartConn.commit()
 
-            val stupidReport = using(new StupidSqlLoader(stupidConn, rowPreparer, stupidDataSqlizer, NullLogger(), ids)) { txn =>
+            val stupidReport = using(new StupidSqlLoader(stupidConn, rowPreparer, stupidDataSqlizer, NullLogger[TestColumnValue], ids)) { txn =>
               applyOps(txn, ops)
               txn.report
             }
@@ -738,14 +738,14 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
           def runCompareTest(ops: List[Op]) {
             val smartReport =
-              using(SqlLoader(smartConn, rowPreparer, dataSqlizer, NullLogger(), smartIds, executor)) { txn =>
+              using(SqlLoader(smartConn, rowPreparer, dataSqlizer, NullLogger[TestColumnValue], smartIds, executor)) { txn =>
                 applyOps(txn, ops)
                 txn.report
               }
             smartConn.commit()
 
             val stupidReport =
-              using(new StupidSqlLoader(stupidConn, rowPreparer, stupidDataSqlizer, NullLogger(), stupidIds)) { txn =>
+              using(new StupidSqlLoader(stupidConn, rowPreparer, stupidDataSqlizer, NullLogger[TestColumnValue], stupidIds)) { txn =>
                 applyOps(txn, ops)
                 txn.report
               }
