@@ -41,13 +41,16 @@ CREATE TABLE IF NOT EXISTS dataset_map (
   -- Note that IT IS ASSUMED THAT dataset_id WILL NEVER CHANGE.  In other words, dataset_id should
   -- not have anything in particular to do with SoQL resource names.  It is NOT assumed that they will
   -- not be re-used, however.
-  system_id  BIGINT                      NOT NULL PRIMARY KEY,
+  --
+  -- Note 2: when flipping a backup to primary, the system_id sequence object must be set since
+  -- playing back logs doesn't access the object.
+  system_id  BIGSERIAL                   NOT NULL PRIMARY KEY,
   dataset_id VARCHAR(%DATASET_ID_LEN%)   NOT NULL UNIQUE, -- This probably contains the domain ID in some manner...
   table_base VARCHAR(%PHYSTAB_BASE_LEN%) NOT NULL -- this + version_map's lifecycle_version is used to name per-dataset tables.
 );
 
 CREATE TABLE IF NOT EXISTS version_map (
-  system_id             BIGINT                     NOT NULL PRIMARY KEY,
+  system_id             BIGSERIAL                  NOT NULL PRIMARY KEY,
   dataset_system_id     BIGINT                     NOT NULL REFERENCES dataset_map(system_id),
   lifecycle_version     BIGINT                     NOT NULL, -- this gets incremented per copy made.  It has nothing to do with the log's version
   lifecycle_stage       dataset_lifecycle_stage    NOT NULL,

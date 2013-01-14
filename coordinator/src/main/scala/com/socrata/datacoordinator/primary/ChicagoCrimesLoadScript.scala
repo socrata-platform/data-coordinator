@@ -134,9 +134,6 @@ object ChicagoCrimesLoadScript extends App {
         }
     }
 
-    val schemaIdSource = new InMemoryBlockIdProvider(releasable = true)
-    val schemaProviderPool: IdProviderPool = new IdProviderPoolImpl(schemaIdSource, new FibonacciIdProvider(_))
-
     val dataIdSource = new InMemoryBlockIdProvider(releasable = true)
     val dataProviderPool: IdProviderPool = new IdProviderPoolImpl(dataIdSource, new FibonacciIdProvider(_))
 
@@ -209,10 +206,10 @@ object ChicagoCrimesLoadScript extends App {
     }
 
     val mutator: DatabaseMutator[SoQLType, Any] = new DatabaseMutator[SoQLType, Any] {
-      class PoNT(val conn: Connection, val schemaIdProvider: IdProvider) extends ProviderOfNecessaryThings {
+      class PoNT(val conn: Connection) extends ProviderOfNecessaryThings {
         val now: DateTime = DateTime.now()
         val datasetMapReader: DatasetMapReader = new PostgresDatasetMapReader(conn)
-        val datasetMapWriter: DatasetMapWriter = new PostgresDatasetMapWriter(conn, schemaIdProvider)
+        val datasetMapWriter: DatasetMapWriter = new PostgresDatasetMapWriter(conn)
 
         def datasetLog(ds: DatasetInfo): Logger[Any] = new SqlLogger[Any](
           conn,
@@ -271,11 +268,10 @@ object ChicagoCrimesLoadScript extends App {
       def withTransaction[T]()(f: ProviderOfNecessaryThings => T): T = {
         for {
           conn <- managed(DriverManager.getConnection("jdbc:postgresql://10.0.5.104:5432/robertm", "robertm", "lof9afw3")) // DriverManager.getConnection("jdbc:postgresql://localhost:5432/robertm", "blist", "blist"))
-          idProvider <- schemaProviderPool.borrow()
         } yield {
           conn.setAutoCommit(false)
           try {
-            val result = f(new PoNT(conn, idProvider))
+            val result = f(new PoNT(conn))
             conn.commit()
             result
           } finally {
