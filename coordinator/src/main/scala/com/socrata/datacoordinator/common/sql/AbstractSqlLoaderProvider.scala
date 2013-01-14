@@ -1,4 +1,4 @@
-package com.socrata.datacoordinator.main.sql
+package com.socrata.datacoordinator.common.sql
 
 import java.sql.Connection
 import java.util.concurrent.ExecutorService
@@ -13,7 +13,7 @@ import com.socrata.datacoordinator.truth.TypeContext
 import com.socrata.datacoordinator.truth.sql.{RepBasedSqlDatasetContext, SqlColumnRep}
 import com.socrata.datacoordinator.util.collection.{ColumnIdSet, ColumnIdMap}
 import com.socrata.datacoordinator.id.{RowId, ColumnId}
-import com.socrata.datacoordinator.main.soql.SystemColumns
+import com.socrata.datacoordinator.common.soql.SystemColumns
 
 abstract class AbstractSqlLoaderProvider[CT, CV](conn: Connection, idProvider: IdProvider, val executor: ExecutorService, typeContext: TypeContext[CT, CV])
   extends ((VersionInfo, ColumnIdMap[ColumnInfo], RowPreparer[CV], Logger[CV], ColumnInfo => SqlColumnRep[CT, CV]) => Loader[CV])

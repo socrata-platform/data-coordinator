@@ -1,4 +1,4 @@
-package com.socrata.datacoordinator.main.soql
+package com.socrata.datacoordinator.common.soql
 
 object SystemColumns {
   val id = ":id"

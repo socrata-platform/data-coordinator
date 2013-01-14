@@ -13,7 +13,7 @@ import com.google.protobuf.{CodedOutputStream, CodedInputStream}
 import com.socrata.soql.types._
 import com.socrata.id.numeric.{IdProvider, FibonacciIdProvider, InMemoryBlockIdProvider}
 
-import com.socrata.datacoordinator.main.soql.{SoQLRep, SoQLNullValue, SystemColumns}
+import com.socrata.datacoordinator.common.soql.{SoQLRep, SoQLNullValue, SystemColumns}
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.util.{CloseableIterator, RotateSchema, IdProviderPoolImpl, IdProviderPool}
@@ -26,7 +26,7 @@ import com.socrata.datacoordinator.truth.sql.{DatabasePopulator, SqlColumnRep}
 import com.socrata.datacoordinator.id.RowId
 import com.socrata.datacoordinator.{Row, MutableRow}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
-import com.socrata.datacoordinator.main.sql.{PostgresSqlLoaderProvider, AbstractSqlLoaderProvider}
+import com.socrata.datacoordinator.common.sql.{PostgresSqlLoaderProvider, AbstractSqlLoaderProvider}
 import org.joda.time.format.DateTimeFormat
 import java.io.Closeable
 
@@ -230,10 +230,7 @@ object ChicagoCrimesLoadScript extends App {
           soqlRepFactory(typeContext.typeFromName(columnInfo.typeName)).rep(columnInfo.physicalColumnBase)
 
         def schemaLoader(version: datasetMapWriter.VersionInfo, logger: Logger[Any]): SchemaLoader =
-          new RepBasedSqlSchemaLoader[SoQLType, Any](conn, logger) {
-            def repFor(columnInfo: DatasetMapWriter#ColumnInfo): SqlColumnRep[SoQLType, Any] =
-              genericRepFor(columnInfo)
-          }
+          new RepBasedSqlSchemaLoader[SoQLType, Any](conn, logger, genericRepFor)
 
         def nameForType(typ: SoQLType): String = typeContext.nameFromType(typ)
 

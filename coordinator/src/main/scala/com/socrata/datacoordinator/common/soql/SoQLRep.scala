@@ -1,4 +1,4 @@
-package com.socrata.datacoordinator.main.soql
+package com.socrata.datacoordinator.common.soql
 
 import com.socrata.soql.types._
 import com.socrata.datacoordinator.truth.sql.SqlColumnRep
