@@ -9,7 +9,7 @@ import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.truth.sql.{DatabasePopulator, SqlPKableColumnRep, SqlColumnRep}
 import com.socrata.datacoordinator.truth.metadata.DatasetMapWriter
 
-abstract class RepBasedSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV]) extends SchemaLoader {
+abstract class RepBasedSqlSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV]) extends SchemaLoader {
   def repFor(columnInfo: DatasetMapWriter#ColumnInfo): SqlColumnRep[CT, CV]
 
   // overriddeden when things need to go in tablespaces
