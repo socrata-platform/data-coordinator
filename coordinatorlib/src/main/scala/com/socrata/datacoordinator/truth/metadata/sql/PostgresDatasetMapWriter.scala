@@ -9,10 +9,10 @@ import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.truth.{DatasetSystemIdInUseByWriterException, DatasetIdInUseByWriterException}
 import com.socrata.datacoordinator.id.{ColumnId, VersionId, DatasetId}
+import com.socrata.datacoordinator.util.PostgresUniqueViolation
 
-class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatasetMapReaderAPI(_conn) with DatasetMapWriter {
+class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatasetMapReaderAPI(_conn) with DatasetMapWriter with BackupDatasetMapWriter {
   def lockNotAvailableState = "55P03"
-  def uniqueViolationState = "23505"
 
   def datasetInfoByUserIdQuery = "SELECT system_id, dataset_id, table_base FROM dataset_map WHERE dataset_id = ? FOR UPDATE NOWAIT"
   def datasetInfo(datasetId: String) =
@@ -21,7 +21,7 @@ class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatase
       try {
         extractDatasetInfoFromResultSet(stmt)
       } catch {
-        case e: org.postgresql.util.PSQLException if e.getServerErrorMessage.getSQLState == lockNotAvailableState =>
+        case e: PSQLException if e.getServerErrorMessage.getSQLState == lockNotAvailableState =>
           throw new DatasetIdInUseByWriterException(datasetId, e)
       }
     }
@@ -42,7 +42,7 @@ class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatase
       try {
         extractDatasetInfoFromResultSet(stmt)
       } catch {
-        case e: org.postgresql.util.PSQLException if e.getServerErrorMessage.getSQLState == lockNotAvailableState =>
+        case e: PSQLException if e.getServerErrorMessage.getSQLState == lockNotAvailableState =>
           throw new DatasetSystemIdInUseByWriterException(datasetId, e)
       }
     }
@@ -60,7 +60,7 @@ class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatase
           datasetInfoNoSystemId.copy(systemId = new DatasetId(rs.getLong(1)))
         }
       } catch {
-        case e: PSQLException if e.getSQLState == uniqueViolationState =>
+        case PostgresUniqueViolation("table_base") =>
           throw new DatasetAlreadyExistsException(datasetId)
       }
     }
@@ -77,8 +77,9 @@ class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatase
       try {
         stmt.execute()
       } catch {
-        case e: PSQLException if e.getSQLState == uniqueViolationState =>
-          // TODO: test to see if this is actually a collision of the system IDs
+        case PostgresUniqueViolation("system_id") =>
+          throw new DatasetSystemIdAlreadyInUse(systemId)
+        case PostgresUniqueViolation("table_base") =>
           throw new DatasetAlreadyExistsException(datasetId)
       }
     }
@@ -186,8 +187,9 @@ class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatase
       try {
         stmt.execute()
       } catch {
-        case e: PSQLException if e.getSQLState == uniqueViolationState =>
-          // TODO: check to see if this is actually a (version_system_id, system_id) collision
+        case PostgresUniqueViolation("version_system_id", "system_id") =>
+          throw new ColumnSystemIdAlreadyInUse(versionInfo, systemId)
+        case PostgresUniqueViolation("version_system_id", "logical_column") =>
           throw new ColumnAlreadyExistsException(versionInfo, logicalName)
       }
 
