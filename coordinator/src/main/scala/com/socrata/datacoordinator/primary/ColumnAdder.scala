@@ -1,4 +1,4 @@
-package com.socrata.datacoordinator.main
+package com.socrata.datacoordinator.primary
 
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.util.collection.ColumnIdMap

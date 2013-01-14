@@ -1,4 +1,4 @@
-package com.socrata.datacoordinator.main
+package com.socrata.datacoordinator.primary
 
 class DatasetCreator[CT, CV](mutator: DatabaseMutator[CT, CV], systemColumns: Map[String, CT], idColumnName: String) {
   def createDataset(datasetId: String, username: String) {

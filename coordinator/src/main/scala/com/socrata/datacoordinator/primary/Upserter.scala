@@ -1,4 +1,4 @@
-package com.socrata.datacoordinator.main
+package com.socrata.datacoordinator.primary
 
 import com.rojoma.simplearm.Managed
 

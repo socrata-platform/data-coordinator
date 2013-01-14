@@ -1,4 +1,4 @@
-package com.socrata.datacoordinator.main
+package com.socrata.datacoordinator.primary
 
 class LazyBox[T](x: => T) {
   private var evaluated = false
