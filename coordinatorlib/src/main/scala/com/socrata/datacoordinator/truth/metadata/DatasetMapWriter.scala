@@ -22,8 +22,9 @@ trait DatasetMapWriter extends `-impl`.DatasetMapReaderAPI {
 
   /** Ensures that an "unpublished" table exists, creating it if necessary.
     * @note Does not copy the actual tables; this just updates the bookkeeping.
-    * @return A `VersionInfo` for an unpublished version. */
-  def ensureUnpublishedCopy(datasetInfo: DatasetInfo): VersionInfo
+    * @return Either the `VersionInfo` of an existing copy, or a pair of version
+    *    infos for the version that was copied and the version it was copied to. */
+  def ensureUnpublishedCopy(datasetInfo: DatasetInfo): Either[VersionInfo, CopyPair[VersionInfo]]
 
   /** Promotes the current "published" table record (if it exists) to a "snapshot" one, and promotes the
     * current "unpublished" table record to "published".
@@ -64,7 +65,10 @@ trait DatasetMapWriter extends `-impl`.DatasetMapReaderAPI {
   def clearUserPrimaryKey(versionInfo: VersionInfo)
 }
 
+case class CopyPair[VersionInfo](oldVersionInfo: VersionInfo, newVersionInfo: VersionInfo)
+
 trait BackupDatasetMapWriter extends DatasetMapWriter {
   def createWithId(systemId: DatasetId, datasetId: String, tableBase: String, initialVersionSystemId: VersionId): VersionInfo
   def addColumnWithId(systemId: ColumnId, versionInfo: VersionInfo, logicalName: String, typeName: String, physicalColumnBase: String): ColumnInfo
+  def createUnpublishedCopyWithId(datasetInfo: DatasetInfo, systemId: VersionId): CopyPair[VersionInfo]
 }

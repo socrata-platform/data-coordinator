@@ -5,7 +5,7 @@ import org.scalatest.matchers.MustMatchers
 import java.sql.{SQLException, Connection, DriverManager}
 import com.socrata.datacoordinator.truth.sql.DatabasePopulator
 import com.rojoma.simplearm.util._
-import com.socrata.datacoordinator.truth.metadata.{ColumnAlreadyExistsException, LifecycleStage}
+import com.socrata.datacoordinator.truth.metadata.{CopyPair, ColumnAlreadyExistsException, LifecycleStage}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.id.numeric.{FixedSizeIdProvider, InMemoryBlockIdProvider, IdProvider}
 import com.socrata.datacoordinator.id.ColumnId
@@ -179,7 +179,8 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
       tables.unpublished(vi1.datasetInfo) must be (None)
 
-      val vi2 = tables.ensureUnpublishedCopy(vi1.datasetInfo)
+      val Right(CopyPair(vi1a, vi2)) = tables.ensureUnpublishedCopy(vi1.datasetInfo)
+      vi1a must equal (vi1)
 
       // and columns get copied...
       val schema1 = tables.schema(vi1)
@@ -214,7 +215,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       val tables = new PostgresDatasetMapWriter(conn)
       val vi1 = tables.create("hello", "world")
       val vi2 = tables.publish(vi1)
-      val vi3 = tables.ensureUnpublishedCopy(vi2.datasetInfo)
+      val Right(CopyPair(_, vi3)) = tables.ensureUnpublishedCopy(vi2.datasetInfo)
       tables.unpublished(vi1.datasetInfo) must equal (Some(vi3))
 
       tables.dropCopy(vi3)
@@ -262,7 +263,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
       (1 to 5).foldLeft(vi1) { (vi, _) =>
         val vi2 = tables.publish(vi)
-        tables.ensureUnpublishedCopy(vi2.datasetInfo)
+        tables.ensureUnpublishedCopy(vi2.datasetInfo).right.get.newVersionInfo
       }
 
       // ok, there should be six copies now, which means twelve columns....

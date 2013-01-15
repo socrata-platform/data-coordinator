@@ -288,11 +288,23 @@ class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatase
 
   def ensureUnpublishedCopyQuery_newLifecycleVersion = "SELECT max(lifecycle_version) + 1 FROM version_map WHERE dataset_system_id = ?"
   def ensureUnpublishedCopyQuery_versionMap = "INSERT INTO version_map (dataset_system_id, lifecycle_version, lifecycle_stage) values (?, ?, CAST(? AS dataset_lifecycle_stage)) RETURNING system_id"
+  def ensureUnpublishedCopyQueryWithId_versionMap = "INSERT INTO version_map (system_id, dataset_system_id, lifecycle_version, lifecycle_stage) values (?, ?, ?, CAST(? AS dataset_lifecycle_stage))"
   def ensureUnpublishedCopyQuery_columnMap = "INSERT INTO column_map (version_system_id, system_id, logical_column, type_name, physical_column_base_base, is_user_primary_key) SELECT ?, system_id, logical_column, type_name, physical_column_base_base, is_user_primary_key FROM column_map WHERE version_system_id = ?"
-  def ensureUnpublishedCopy(tableInfo: DatasetInfo): VersionInfo =
+  def ensureUnpublishedCopy(tableInfo: DatasetInfo): Either[VersionInfo, CopyPair[SqlVersionInfo]] =
+    ensureUnpublishedCopy(tableInfo, None)
+
+  def createUnpublishedCopyWithId(tableInfo: DatasetInfo, versionId: VersionId): CopyPair[SqlVersionInfo] =
+    ensureUnpublishedCopy(tableInfo, Some(versionId)) match {
+      case Left(_) =>
+        sys.error("Already a working copy present") // TODO: Better error
+      case Right(vi) =>
+        vi
+    }
+
+  def ensureUnpublishedCopy(tableInfo: DatasetInfo, newVersionId: Option[VersionId]): Either[VersionInfo, CopyPair[SqlVersionInfo]] =
     lookup(tableInfo, LifecycleStage.Unpublished) match {
       case Some(unpublished) =>
-        unpublished
+        Left(unpublished)
       case None =>
         lookup(tableInfo, LifecycleStage.Published) match {
           case Some(publishedCopy) =>
@@ -304,20 +316,42 @@ class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatase
               }
             }
 
-            val newVersionWithoutSystemId = publishedCopy.copy(
-              systemId = new VersionId(-1),
-              lifecycleVersion = newLifecycleVersion,
-              lifecycleStage = LifecycleStage.Unpublished)
+            val newVersion = newVersionId match {
+              case None =>
+                val newVersionWithoutSystemId = publishedCopy.copy(
+                  systemId = new VersionId(-1),
+                  lifecycleVersion = newLifecycleVersion,
+                  lifecycleStage = LifecycleStage.Unpublished)
 
-            val newVersion = using(conn.prepareStatement(ensureUnpublishedCopyQuery_versionMap)) { stmt =>
-              stmt.setLong(1, newVersionWithoutSystemId.datasetInfo.systemId.underlying)
-              stmt.setLong(2, newVersionWithoutSystemId.lifecycleVersion)
-              stmt.setString(3, newVersionWithoutSystemId.lifecycleStage.name)
-              using(stmt.executeQuery()) { rs =>
-                val foundSomething = rs.next()
-                assert(foundSomething, "Insert didn't create a row?")
-                newVersionWithoutSystemId.copy(systemId = new VersionId(rs.getLong(1)))
-              }
+                using(conn.prepareStatement(ensureUnpublishedCopyQuery_versionMap)) { stmt =>
+                  stmt.setLong(1, newVersionWithoutSystemId.datasetInfo.systemId.underlying)
+                  stmt.setLong(2, newVersionWithoutSystemId.lifecycleVersion)
+                  stmt.setString(3, newVersionWithoutSystemId.lifecycleStage.name)
+                  using(stmt.executeQuery()) { rs =>
+                    val foundSomething = rs.next()
+                    assert(foundSomething, "Insert didn't create a row?")
+                    newVersionWithoutSystemId.copy(systemId = new VersionId(rs.getLong(1)))
+                  }
+                }
+              case Some(vid) =>
+                val newVersion = publishedCopy.copy(
+                  systemId = vid,
+                  lifecycleVersion = newLifecycleVersion,
+                  lifecycleStage = LifecycleStage.Unpublished)
+
+                using(conn.prepareStatement(ensureUnpublishedCopyQuery_versionMap)) { stmt =>
+                  stmt.setLong(1, newVersion.systemId.underlying)
+                  stmt.setLong(2, newVersion.datasetInfo.systemId.underlying)
+                  stmt.setLong(3, newVersion.lifecycleVersion)
+                  stmt.setString(4, newVersion.lifecycleStage.name)
+                  try {
+                    stmt.execute()
+                  } catch {
+                    case PostgresUniqueViolation("system_id") =>
+                      throw new VersionSystemIdAlreadyInUse(vid)
+                  }
+                }
+                newVersion
             }
 
             using(conn.prepareStatement(ensureUnpublishedCopyQuery_columnMap)) { stmt =>
@@ -326,11 +360,13 @@ class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatase
               stmt.execute()
             }
 
-            newVersion
+            Right(CopyPair(publishedCopy, newVersion))
           case None =>
             sys.error("No published copy available?")
         }
     }
+
+
 
   def publishQuery = "UPDATE version_map SET lifecycle_stage = CAST(? AS dataset_lifecycle_stage) WHERE system_id = ?"
   def publish(unpublishedCopy: VersionInfo): VersionInfo = {
