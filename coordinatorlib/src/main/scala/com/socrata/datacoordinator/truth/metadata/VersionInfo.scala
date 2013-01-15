@@ -14,6 +14,13 @@ trait VersionInfo {
   def lifecycleVersion: Long
   def lifecycleStage: LifecycleStage
 
+  // The systemid is needed to prevent clashes in the following situation:
+  //   Working copy created
+  //   Working copy dropped (note: this enqueues the table for later dropping)
+  //   Working copy created
+  // If only the lifecycle version were used, the second working copy creation
+  // would try to make a table with the same name as the first, which at that
+  // point still exists.
   lazy val dataTableName = datasetInfo.tableBase + "_" + systemId.underlying + "_" + lifecycleVersion
 
   final override def hashCode = ScalaRunTime._hashCode((datasetInfo, systemId, lifecycleVersion, lifecycleStage))
