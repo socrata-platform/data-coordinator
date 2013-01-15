@@ -6,13 +6,13 @@ import com.socrata.datacoordinator.id.ColumnId
 
 object SoQLRep {
   val repFactories = Map[SoQLType, String => SqlColumnRep[SoQLType, Any]](
-    SoQLID -> IDRepFactory,
-    SoQLText -> TextRepFactory,
-    SoQLBoolean -> BooleanRepFactory,
-    SoQLNumber -> new NumberLikeFactory(SoQLNumber),
-    SoQLMoney -> new NumberLikeFactory(SoQLNumber),
-    SoQLFixedTimestamp -> FixedTimestampRepFactory,
-    SoQLLocation -> LocationRepFactory /*,
+    SoQLID -> (base => new IDRep(base)),
+    SoQLText -> (base => new TextRep(base)),
+    SoQLBoolean -> (base => new BooleanRep(base)),
+    SoQLNumber -> (base => new NumberLikeRep(SoQLNumber, base)),
+    SoQLMoney -> (base => new NumberLikeRep(SoQLNumber, base)),
+    SoQLFixedTimestamp -> (base => new FixedTimestampRep(base)),
+    SoQLLocation -> (base => new LocationRep(base)) /*,
     SoQLDouble -> doubleRepFactory,
     SoQLFloatingTimestamp -> floatingTimestampRepFactory,
     SoQLObject -> objectRepFactory,

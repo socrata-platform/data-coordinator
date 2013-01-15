@@ -6,8 +6,8 @@ import com.socrata.soql.types.SoQLType
 import com.socrata.datacoordinator.truth.sql.SqlColumnRep
 import com.socrata.datacoordinator.id.ColumnId
 
-abstract class RepFactory extends (String => SqlColumnRep[SoQLType, Any]) {
-  val standardNullInsertSize = 8
+abstract class RepUtils {
+  def standardNullInsertSize = 8
 
   def sqlescape(s: String): String = {
     val sb = new StringBuilder
