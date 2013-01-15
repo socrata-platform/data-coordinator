@@ -48,6 +48,7 @@ class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatase
     }
 
   def createQuery_tableMap = "INSERT INTO dataset_map (dataset_id, table_base) VALUES (?, ?) RETURNING system_id"
+  def createQuery_versionMap = "INSERT INTO version_map (dataset_system_id, lifecycle_version, lifecycle_stage) VALUES (?, ?, CAST(? AS dataset_lifecycle_stage)) RETURNING system_id"
   def create(datasetId: String, tableBase: String): VersionInfo = {
     val datasetInfo = using(conn.prepareStatement(createQuery_tableMap)) { stmt =>
       val datasetInfoNoSystemId = SqlDatasetInfo(new DatasetId(-1), datasetId, tableBase)
@@ -64,11 +65,24 @@ class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatase
           throw new DatasetAlreadyExistsException(datasetId)
       }
     }
-    finishCreate(datasetInfo)
+
+    using(conn.prepareStatement(createQuery_versionMap)) { stmt =>
+      val versionInfoNoSystemId = SqlVersionInfo(datasetInfo, new VersionId(-1), 1, LifecycleStage.Unpublished)
+
+      stmt.setLong(1, versionInfoNoSystemId.datasetInfo.systemId.underlying)
+      stmt.setLong(2, versionInfoNoSystemId.lifecycleVersion)
+      stmt.setString(3, versionInfoNoSystemId.lifecycleStage.name)
+      using(stmt.executeQuery()) { rs =>
+        val foundSomething = rs.next()
+        assert(foundSomething, "Didn't return a system ID?")
+        versionInfoNoSystemId.copy(systemId = new VersionId(rs.getLong(1)))
+      }
+    }
   }
 
   def createQuery_tableMapWithSystemId = "INSERT INTO dataset_map (system_id, dataset_id, table_base) VALUES (?, ?, ?)"
-  def createWithId(systemId: DatasetId, datasetId: String, tableBase: String): VersionInfo = {
+  def createQuery_versionMapWithSystemId = "INSERT INTO version_map (system_id, dataset_system_id, lifecycle_version, lifecycle_stage) VALUES (?, ?, ?, CAST(? AS dataset_lifecycle_stage))"
+  def createWithId(systemId: DatasetId, datasetId: String, tableBase: String, initialVersionId: VersionId): VersionInfo = {
     val datasetInfo = SqlDatasetInfo(systemId, datasetId, tableBase)
     using(conn.prepareStatement(createQuery_tableMapWithSystemId)) { stmt =>
       stmt.setLong(1, datasetInfo.systemId.underlying)
@@ -84,23 +98,23 @@ class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatase
       }
     }
 
-    finishCreate(datasetInfo)
-  }
+    using(conn.prepareStatement(createQuery_versionMapWithSystemId)) { stmt =>
+      val versionInfo = SqlVersionInfo(datasetInfo, initialVersionId, 1, LifecycleStage.Unpublished)
 
-  def createQuery_versionMap = "INSERT INTO version_map (dataset_system_id, lifecycle_version, lifecycle_stage) VALUES (?, ?, CAST(? AS dataset_lifecycle_stage)) RETURNING system_id"
-  def finishCreate(datasetInfo: DatasetInfo): VersionInfo =
-    using(conn.prepareStatement(createQuery_versionMap)) { stmt =>
-      val versionInfoNoSystemId = SqlVersionInfo(datasetInfo, new VersionId(-1), 1, LifecycleStage.Unpublished)
-
-      stmt.setLong(1, versionInfoNoSystemId.datasetInfo.systemId.underlying)
-      stmt.setLong(2, versionInfoNoSystemId.lifecycleVersion)
-      stmt.setString(3, versionInfoNoSystemId.lifecycleStage.name)
-      using(stmt.executeQuery()) { rs =>
-        val foundSomething = rs.next()
-        assert(foundSomething, "Didn't return a system ID?")
-        versionInfoNoSystemId.copy(systemId = new VersionId(rs.getLong(1)))
+      stmt.setLong(1, versionInfo.systemId.underlying)
+      stmt.setLong(2, versionInfo.datasetInfo.systemId.underlying)
+      stmt.setLong(3, versionInfo.lifecycleVersion)
+      stmt.setString(4, versionInfo.lifecycleStage.name)
+      try {
+        stmt.execute()
+      } catch {
+        case PostgresUniqueViolation("system_id") =>
+          throw new VersionSystemIdAlreadyInUse(initialVersionId)
       }
+
+      versionInfo
     }
+  }
 
   // Yay no "DELETE ... CASCADE"!
   def deleteQuery_columnMap = "DELETE FROM column_map WHERE version_system_id IN (SELECT system_id FROM version_map WHERE dataset_system_id = ?)"

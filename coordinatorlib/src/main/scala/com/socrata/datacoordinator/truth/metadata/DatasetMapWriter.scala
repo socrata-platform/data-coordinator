@@ -1,6 +1,6 @@
 package com.socrata.datacoordinator.truth.metadata
 
-import com.socrata.datacoordinator.id.{ColumnId, DatasetId}
+import com.socrata.datacoordinator.id.{VersionId, ColumnId, DatasetId}
 
 trait DatasetMapWriter extends `-impl`.DatasetMapReaderAPI {
   /** Creates a new dataset in the truthstore.
@@ -65,6 +65,6 @@ trait DatasetMapWriter extends `-impl`.DatasetMapReaderAPI {
 }
 
 trait BackupDatasetMapWriter extends DatasetMapWriter {
-  def createWithId(systemId: DatasetId, datasetId: String, tableBase: String): VersionInfo
+  def createWithId(systemId: DatasetId, datasetId: String, tableBase: String, initialVersionSystemId: VersionId): VersionInfo
   def addColumnWithId(systemId: ColumnId, versionInfo: VersionInfo, logicalName: String, typeName: String, physicalColumnBase: String): ColumnInfo
 }
