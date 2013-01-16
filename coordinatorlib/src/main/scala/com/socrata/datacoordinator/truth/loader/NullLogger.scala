@@ -12,6 +12,8 @@ class NullLogger[CV] extends Logger[CV] {
 
   def rowIdentifierChanged(name: Option[ColumnInfo]) {}
 
+  def systemIdColumnSet(info: ColumnInfo) {}
+
   def workingCopyCreated() {}
 
   def workingCopyDropped() {}

@@ -10,5 +10,6 @@ trait SchemaLoader {
   def dropColumn(colInfo: DatasetMapWriter#ColumnInfo)
 
   def makePrimaryKey(colInfo: DatasetMapWriter#ColumnInfo): Boolean // false if this type cannot be used as a PK by the database
+  def makeSystemPrimaryKey(colInfo: DatasetMapWriter#ColumnInfo): Boolean // false if this type cannot be used as a PK by the database
   def dropPrimaryKey(colInfo: DatasetMapWriter#ColumnInfo): Boolean
 }

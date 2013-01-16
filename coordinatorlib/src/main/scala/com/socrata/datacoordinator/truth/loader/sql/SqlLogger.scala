@@ -115,6 +115,13 @@ class SqlLogger[CV](connection: Connection,
     logLine(SqlLogger.RowIdentifierChanged, Codec.toUTF8(CompactJsonWriter.toString(columnJson)))
   }
 
+  def systemIdColumnSet(info: ColumnInfo) {
+    checkTxn()
+    flushRowData()
+    val columnJson = JsonCodec.toJValue(info)
+    logLine(SqlLogger.SystemRowIdentifierChanged, Codec.toUTF8(CompactJsonWriter.toString(columnJson)))
+  }
+
   def workingCopyCreated() {
     checkTxn()
     flushRowData()
@@ -222,6 +229,7 @@ object SqlLogger {
   val ColumnCreated = "CCR"
   val ColumnRemoved = "CRM"
   val RowIdentifierChanged = "RID"
+  val SystemRowIdentifierChanged = "SID"
   val WorkingCopyCreated = "CWC"
   val WorkingCopyDropped = "DWC"
   val WorkingCopyPublished = "PUB"

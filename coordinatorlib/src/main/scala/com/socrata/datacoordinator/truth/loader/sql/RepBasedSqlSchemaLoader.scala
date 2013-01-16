@@ -42,6 +42,23 @@ class RepBasedSqlSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV], repF
   }
 
   def makePrimaryKey(columnInfo: DatasetMapWriter#ColumnInfo): Boolean = {
+    if(makePrimaryKeyWithoutLogging(columnInfo)) {
+      logger.rowIdentifierChanged(Some(columnInfo))
+      true
+    } else {
+      false
+    }
+  }
+
+  def makeSystemPrimaryKey(columnInfo: DatasetMapWriter#ColumnInfo): Boolean =
+    if(makePrimaryKeyWithoutLogging(columnInfo)) {
+      logger.systemIdColumnSet(columnInfo)
+      true
+    } else {
+      false
+    }
+
+  def makePrimaryKeyWithoutLogging(columnInfo: DatasetMapWriter#ColumnInfo): Boolean = {
     repFor(columnInfo) match {
       case rep: SqlPKableColumnRep[CT, CV] =>
         using(conn.createStatement()) { stmt =>
@@ -51,7 +68,6 @@ class RepBasedSqlSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV], repF
           }
           stmt.execute("CREATE UNIQUE INDEX uniq_" + table + "_" + rep.base + " ON " + table + "(" + rep.equalityIndexExpression + ")" + postgresTablespaceSuffix)
         }
-        logger.rowIdentifierChanged(Some(columnInfo))
         true
       case _ =>
         false

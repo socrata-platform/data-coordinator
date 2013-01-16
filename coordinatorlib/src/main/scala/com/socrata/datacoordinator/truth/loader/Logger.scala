@@ -9,6 +9,7 @@ trait Logger[CV] extends DataLogger[CV] {
   def columnCreated(info: ColumnInfo)
   def columnRemoved(info: ColumnInfo)
   def rowIdentifierChanged(newIdentifier: Option[ColumnInfo])
+  def systemIdColumnSet(info: ColumnInfo)
   def workingCopyCreated()
   def workingCopyDropped()
   def workingCopyPublished()
