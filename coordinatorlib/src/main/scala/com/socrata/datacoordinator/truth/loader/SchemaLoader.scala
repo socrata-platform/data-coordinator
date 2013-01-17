@@ -1,15 +1,15 @@
 package com.socrata.datacoordinator
 package truth.loader
 
-import com.socrata.datacoordinator.truth.metadata.DatasetMapWriter
+import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, VersionInfo}
 
 trait SchemaLoader {
-  def create(versionInfo: DatasetMapWriter#VersionInfo)
+  def create(versionInfo: VersionInfo)
 
-  def addColumn(colInfo: DatasetMapWriter#ColumnInfo)
-  def dropColumn(colInfo: DatasetMapWriter#ColumnInfo)
+  def addColumn(colInfo: ColumnInfo)
+  def dropColumn(colInfo: ColumnInfo)
 
-  def makePrimaryKey(colInfo: DatasetMapWriter#ColumnInfo): Boolean // false if this type cannot be used as a PK by the database
-  def makeSystemPrimaryKey(colInfo: DatasetMapWriter#ColumnInfo): Boolean // false if this type cannot be used as a PK by the database
-  def dropPrimaryKey(colInfo: DatasetMapWriter#ColumnInfo): Boolean
+  def makePrimaryKey(colInfo: ColumnInfo): Boolean // false if this type cannot be used as a PK by the database
+  def makeSystemPrimaryKey(colInfo: ColumnInfo): Boolean // false if this type cannot be used as a PK by the database
+  def dropPrimaryKey(colInfo: ColumnInfo): Boolean
 }

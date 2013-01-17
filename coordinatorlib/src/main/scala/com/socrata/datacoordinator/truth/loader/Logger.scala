@@ -10,7 +10,8 @@ trait Logger[CV] extends DataLogger[CV] {
   def columnRemoved(info: ColumnInfo)
   def rowIdentifierChanged(newIdentifier: Option[ColumnInfo])
   def systemIdColumnSet(info: ColumnInfo)
-  def workingCopyCreated()
+  def workingCopyCreated() // this signifies that the new table has been created, not the schema nor the data
+  def dataCopied()
   def workingCopyDropped()
   def workingCopyPublished()
 

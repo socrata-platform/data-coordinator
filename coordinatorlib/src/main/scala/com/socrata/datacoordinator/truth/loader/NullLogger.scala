@@ -16,6 +16,8 @@ class NullLogger[CV] extends Logger[CV] {
 
   def workingCopyCreated() {}
 
+  def dataCopied() {}
+
   def workingCopyDropped() {}
 
   def workingCopyPublished() {}

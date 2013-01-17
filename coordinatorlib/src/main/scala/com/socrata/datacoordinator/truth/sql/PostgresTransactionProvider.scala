@@ -7,31 +7,31 @@ import javax.sql.DataSource
 import com.rojoma.simplearm.util._
 
 import truth.{DatasetIdInUseByWriterException, DatasetInUseByWriterException}
-import com.socrata.datacoordinator.truth.metadata.{DatasetMapWriter, DatasetMapReader}
+import com.socrata.datacoordinator.truth.metadata.DatasetMap
 import com.socrata.datacoordinator.util.{LockProvider, LockTimeoutException}
 
 final class PostgresTransactionProvider(lockProvider: LockProvider,
-                                        readerFactory: Connection => DatasetMapReader,
-                                        writerFactory: Connection => DatasetMapWriter,
+                                        mapFactory: Connection => DatasetMap,
                                         lockTimeout: Long, snapshotRetryCount: Int, dataSource: DataSource) extends TransactionProvider {
   def lockNameFor(datasetId: String) = "write-dataset-" + datasetId
 
-  def withReadOnlyTransaction[T](datasetId: String)(f: ReadConnectionInfo => T): T = {
+  def withReadTransaction[T](datasetId: String)(f: ConnectionInfo => T): T = {
     using(dataSource.getConnection()) { conn =>
       conn.setAutoCommit(false)
-      val connInfo = new ReadConnectionInfo {
+      conn.setReadOnly(true)
+      val connInfo = new ConnectionInfo {
         val connection = conn
-        val datasetMapReader = readerFactory(connection)
-        val datasetInfo = datasetMapReader.datasetInfo(datasetId)
+        val datasetMap = mapFactory(connection)
+        val datasetInfo = datasetMap.datasetInfo(datasetId)
       }
       f(connInfo)
     }
   }
 
-  def withWriteTransaction[T](datasetId: String)(f: WriteConnectionInfo => T): T =
+  def withWriteTransaction[T](datasetId: String)(f: ConnectionInfo => T): T =
     withWriteTransactionRemaining(datasetId, System.nanoTime + (lockTimeout * 1000000), f)
 
-  def withWriteTransactionRemaining[T](datasetId: String, deadline: Long, f: WriteConnectionInfo => T): T = {
+  def withWriteTransactionRemaining[T](datasetId: String, deadline: Long, f: ConnectionInfo => T): T = {
     while(true) {
       val databaseWaiter = try {
         val lock =
@@ -41,10 +41,10 @@ final class PostgresTransactionProvider(lockProvider: LockProvider,
           using(dataSource.getConnection()) { conn =>
             conn.setAutoCommit(false)
             val connInfo = try {
-              new WriteConnectionInfo {
+              new ConnectionInfo {
                 val connection = conn
-                val datasetMapWriter = writerFactory(connection)
-                val datasetInfo = datasetMapWriter.datasetInfo(datasetId)
+                val datasetMap = mapFactory(connection)
+                val datasetInfo = datasetMap.datasetInfo(datasetId)
               }
             } catch {
               case _: DatasetInUseByWriterException =>

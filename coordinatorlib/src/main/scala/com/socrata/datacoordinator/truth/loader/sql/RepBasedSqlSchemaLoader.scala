@@ -7,13 +7,13 @@ import java.sql.Connection
 import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.truth.sql.{DatabasePopulator, SqlPKableColumnRep, SqlColumnRep}
-import com.socrata.datacoordinator.truth.metadata.DatasetMapWriter
+import com.socrata.datacoordinator.truth.metadata.{VersionInfo, ColumnInfo}
 
-class RepBasedSqlSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV], repFor: DatasetMapWriter#ColumnInfo => SqlColumnRep[CT, CV]) extends SchemaLoader {
+class RepBasedSqlSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV], repFor: ColumnInfo => SqlColumnRep[CT, CV]) extends SchemaLoader {
   // overriddeden when things need to go in tablespaces
   def postgresTablespaceSuffix: String = ""
 
-  def create(versionInfo: DatasetMapWriter#VersionInfo) {
+  def create(versionInfo: VersionInfo) {
     using(conn.createStatement()) { stmt =>
       stmt.execute("CREATE TABLE " + versionInfo.dataTableName + " ()" + postgresTablespaceSuffix)
       stmt.execute(DatabasePopulator.logTableCreate(versionInfo.datasetInfo.logTableName, SqlLogger.opLength))
@@ -21,7 +21,7 @@ class RepBasedSqlSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV], repF
     logger.workingCopyCreated()
   }
 
-  def addColumn(columnInfo: DatasetMapWriter#ColumnInfo) {
+  def addColumn(columnInfo: ColumnInfo) {
     val rep = repFor(columnInfo)
     using(conn.createStatement()) { stmt =>
       for((col, colTyp) <- rep.physColumns.zip(rep.sqlTypes)) {
@@ -31,7 +31,7 @@ class RepBasedSqlSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV], repF
     logger.columnCreated(columnInfo)
   }
 
-  def dropColumn(columnInfo: DatasetMapWriter#ColumnInfo) {
+  def dropColumn(columnInfo: ColumnInfo) {
     val rep = repFor(columnInfo)
     using(conn.createStatement()) { stmt =>
       for(col <- rep.physColumns) {
@@ -41,7 +41,7 @@ class RepBasedSqlSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV], repF
     logger.columnRemoved(columnInfo)
   }
 
-  def makePrimaryKey(columnInfo: DatasetMapWriter#ColumnInfo): Boolean = {
+  def makePrimaryKey(columnInfo: ColumnInfo): Boolean = {
     if(makePrimaryKeyWithoutLogging(columnInfo)) {
       logger.rowIdentifierChanged(Some(columnInfo))
       true
@@ -50,7 +50,7 @@ class RepBasedSqlSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV], repF
     }
   }
 
-  def makeSystemPrimaryKey(columnInfo: DatasetMapWriter#ColumnInfo): Boolean =
+  def makeSystemPrimaryKey(columnInfo: ColumnInfo): Boolean =
     if(makePrimaryKeyWithoutLogging(columnInfo)) {
       logger.systemIdColumnSet(columnInfo)
       true
@@ -58,7 +58,7 @@ class RepBasedSqlSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV], repF
       false
     }
 
-  def makePrimaryKeyWithoutLogging(columnInfo: DatasetMapWriter#ColumnInfo): Boolean = {
+  def makePrimaryKeyWithoutLogging(columnInfo: ColumnInfo): Boolean = {
     repFor(columnInfo) match {
       case rep: SqlPKableColumnRep[CT, CV] =>
         using(conn.createStatement()) { stmt =>
@@ -74,7 +74,7 @@ class RepBasedSqlSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV], repF
     }
   }
 
-  def dropPrimaryKey(columnInfo: DatasetMapWriter#ColumnInfo): Boolean = {
+  def dropPrimaryKey(columnInfo: ColumnInfo): Boolean = {
     repFor(columnInfo) match {
       case rep: SqlPKableColumnRep[CT, CV] =>
         using(conn.createStatement()) { stmt =>

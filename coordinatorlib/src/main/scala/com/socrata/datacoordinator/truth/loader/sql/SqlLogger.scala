@@ -129,6 +129,13 @@ class SqlLogger[CV](connection: Connection,
     logLine(SqlLogger.WorkingCopyCreated, nullBytes)
   }
 
+  def dataCopied() {
+    checkTxn()
+    flushRowData()
+
+    logLine(SqlLogger.DataCopied, nullBytes)
+  }
+
   def workingCopyDropped() {
     checkTxn()
     flushRowData()
@@ -231,6 +238,7 @@ object SqlLogger {
   val RowIdentifierChanged = "RID"
   val SystemRowIdentifierChanged = "SID"
   val WorkingCopyCreated = "CWC"
+  val DataCopied = "CPY"
   val WorkingCopyDropped = "DWC"
   val WorkingCopyPublished = "PUB"
   val TransactionEnded = "END"

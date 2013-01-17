@@ -10,11 +10,94 @@ import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.truth.{DatasetSystemIdInUseByWriterException, DatasetIdInUseByWriterException}
 import com.socrata.datacoordinator.id.{ColumnId, VersionId, DatasetId}
 import com.socrata.datacoordinator.util.PostgresUniqueViolation
+import com.socrata.datacoordinator.util.collection.MutableColumnIdMap
 
-class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatasetMapReaderAPI(_conn) with DatasetMapWriter with BackupDatasetMapWriter {
+class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDatasetMap {
   def lockNotAvailableState = "55P03"
 
-  def datasetInfoByUserIdQuery = "SELECT system_id, dataset_id, table_base FROM dataset_map WHERE dataset_id = ? FOR UPDATE NOWAIT"
+  type DatasetInfo = com.socrata.datacoordinator.truth.metadata.DatasetInfo
+  type VersionInfo = com.socrata.datacoordinator.truth.metadata.VersionInfo
+  type ColumnInfo = com.socrata.datacoordinator.truth.metadata.ColumnInfo
+
+  require(!conn.getAutoCommit, "Connection is in auto-commit mode")
+
+  def snapshotCountQuery = "SELECT count(system_id) FROM version_map WHERE dataset_system_id = ? AND lifecycle_stage = CAST(? AS dataset_lifecycle_stage)"
+  def snapshotCount(dataset: DatasetInfo) =
+    using(conn.prepareStatement(snapshotCountQuery)) { stmt =>
+      stmt.setLong(1, dataset.systemId.underlying)
+      stmt.setString(2, LifecycleStage.Snapshotted.name)
+      using(stmt.executeQuery()) { rs =>
+        rs.next()
+        rs.getInt(1)
+      }
+    }
+
+  def latestQuery = "SELECT system_id, lifecycle_version, lifecycle_stage :: TEXT FROM version_map WHERE dataset_system_id = ? ORDER BY lifecycle_version DESC LIMIT 1"
+  def latest(datasetInfo: DatasetInfo) =
+    using(conn.prepareStatement(latestQuery)) { stmt =>
+      stmt.setLong(1, datasetInfo.systemId.underlying)
+      using(stmt.executeQuery()) { rs =>
+        if(!rs.next()) sys.error("Looked up a table for " + datasetInfo.datasetId + " but didn't find any version info?")
+        VersionInfo(datasetInfo, new VersionId(rs.getLong("system_id")), rs.getLong("lifecycle_version"), LifecycleStage.valueOf(rs.getString("lifecycle_stage")))
+      }
+    }
+
+  def lookupQuery = "SELECT system_id, lifecycle_version FROM version_map WHERE dataset_system_id = ? AND lifecycle_stage = CAST(? AS dataset_lifecycle_stage) ORDER BY lifecycle_version DESC OFFSET ? LIMIT 1"
+  def lookup(datasetInfo: DatasetInfo, stage: LifecycleStage, nth: Int = 0) = {
+    using(conn.prepareStatement(lookupQuery)) { stmt =>
+      stmt.setLong(1, datasetInfo.systemId.underlying)
+      stmt.setString(2, stage.name)
+      stmt.setInt(3, nth)
+      using(stmt.executeQuery()) { rs =>
+        if(rs.next()) {
+          Some(VersionInfo(datasetInfo, new VersionId(rs.getLong("system_id")), rs.getLong("lifecycle_version"), stage))
+        } else {
+          None
+        }
+      }
+    }
+  }
+
+  def versionQuery = "SELECT system_id, lifecycle_stage FROM version_map WHERE dataset_system_id = ? AND lifecycle_version = ?"
+  def version(datasetInfo: DatasetInfo, lifecycleVersion: Long) =
+    using(conn.prepareStatement(versionQuery)) { stmt =>
+      stmt.setLong(1, datasetInfo.systemId.underlying)
+      stmt.setLong(2, lifecycleVersion)
+      using(stmt.executeQuery()) { rs =>
+        if(rs.next()) {
+          Some(VersionInfo(datasetInfo, new VersionId(rs.getLong("system_id")), lifecycleVersion, LifecycleStage.valueOf(rs.getString("lifecycle_stage"))))
+        } else {
+          None
+        }
+      }
+    }
+
+  def schemaQuery = "SELECT system_id, logical_column, type_name, physical_column_base_base, (is_user_primary_key IS NOT NULL) is_user_primary_key FROM column_map WHERE version_system_id = ?"
+  def schema(versionInfo: VersionInfo) = {
+    using(conn.prepareStatement(schemaQuery)) { stmt =>
+      stmt.setLong(1, versionInfo.systemId.underlying)
+      using(stmt.executeQuery()) { rs =>
+        val result = new MutableColumnIdMap[ColumnInfo]
+        while(rs.next()) {
+          val systemId = new ColumnId(rs.getLong("system_id"))
+          result += systemId -> ColumnInfo(versionInfo, systemId, rs.getString("logical_column"), rs.getString("type_name"), rs.getString("physical_column_base_base"), rs.getBoolean("is_user_primary_key"))
+        }
+        result.freeze()
+      }
+    }
+  }
+
+  // These are from the reader trait but they're used in the writer tests
+  def unpublished(datasetInfo: DatasetInfo) =
+    lookup(datasetInfo, LifecycleStage.Unpublished)
+
+  def published(datasetInfo: DatasetInfo) =
+    lookup(datasetInfo, LifecycleStage.Published)
+
+  def snapshot(datasetInfo: DatasetInfo, age: Int) =
+    lookup(datasetInfo, LifecycleStage.Snapshotted, age)
+
+  def datasetInfoByUserIdQuery = "SELECT system_id, dataset_id, table_base_base FROM dataset_map WHERE dataset_id = ? FOR UPDATE NOWAIT"
   def datasetInfo(datasetId: String) =
     using(conn.prepareStatement(datasetInfoByUserIdQuery)) { stmt =>
       stmt.setString(1, datasetId)
@@ -29,13 +112,13 @@ class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatase
   def extractDatasetInfoFromResultSet(stmt: PreparedStatement) =
     using(stmt.executeQuery) { rs =>
       if(rs.next()) {
-        Some(SqlDatasetInfo(new DatasetId(rs.getLong("system_id")), rs.getString("dataset_id"), rs.getString("table_base")))
+        Some(DatasetInfo(new DatasetId(rs.getLong("system_id")), rs.getString("dataset_id"), rs.getString("table_base_base")))
       } else {
         None
       }
     }
 
-  def datasetInfoBySystemIdQuery = "SELECT system_id, dataset_id, table_base FROM dataset_map WHERE system_id = ? FOR UPDATE NOWAIT"
+  def datasetInfoBySystemIdQuery = "SELECT system_id, dataset_id, table_base_base FROM dataset_map WHERE system_id = ? FOR UPDATE NOWAIT"
   def datasetInfo(datasetId: DatasetId) =
     using(conn.prepareStatement(datasetInfoBySystemIdQuery)) { stmt =>
       stmt.setLong(1, datasetId.underlying)
@@ -47,13 +130,13 @@ class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatase
       }
     }
 
-  def createQuery_tableMap = "INSERT INTO dataset_map (dataset_id, table_base) VALUES (?, ?) RETURNING system_id"
+  def createQuery_tableMap = "INSERT INTO dataset_map (dataset_id, table_base_base) VALUES (?, ?) RETURNING system_id"
   def createQuery_versionMap = "INSERT INTO version_map (dataset_system_id, lifecycle_version, lifecycle_stage) VALUES (?, ?, CAST(? AS dataset_lifecycle_stage)) RETURNING system_id"
-  def create(datasetId: String, tableBase: String): VersionInfo = {
+  def create(datasetId: String, tableBaseBase: String): VersionInfo = {
     val datasetInfo = using(conn.prepareStatement(createQuery_tableMap)) { stmt =>
-      val datasetInfoNoSystemId = SqlDatasetInfo(new DatasetId(-1), datasetId, tableBase)
+      val datasetInfoNoSystemId = DatasetInfo(new DatasetId(-1), datasetId, tableBaseBase)
       stmt.setString(1, datasetInfoNoSystemId.datasetId)
-      stmt.setString(2, datasetInfoNoSystemId.tableBase)
+      stmt.setString(2, datasetInfoNoSystemId.tableBaseBase)
       try {
         using(stmt.executeQuery()) { rs =>
           val foundSomething = rs.next()
@@ -61,13 +144,13 @@ class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatase
           datasetInfoNoSystemId.copy(systemId = new DatasetId(rs.getLong(1)))
         }
       } catch {
-        case PostgresUniqueViolation("table_base") =>
+        case PostgresUniqueViolation("table_base_base") =>
           throw new DatasetAlreadyExistsException(datasetId)
       }
     }
 
     using(conn.prepareStatement(createQuery_versionMap)) { stmt =>
-      val versionInfoNoSystemId = SqlVersionInfo(datasetInfo, new VersionId(-1), 1, LifecycleStage.Unpublished)
+      val versionInfoNoSystemId = VersionInfo(datasetInfo, new VersionId(-1), 1, LifecycleStage.Unpublished)
 
       stmt.setLong(1, versionInfoNoSystemId.datasetInfo.systemId.underlying)
       stmt.setLong(2, versionInfoNoSystemId.lifecycleVersion)
@@ -80,26 +163,26 @@ class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatase
     }
   }
 
-  def createQuery_tableMapWithSystemId = "INSERT INTO dataset_map (system_id, dataset_id, table_base) VALUES (?, ?, ?)"
+  def createQuery_tableMapWithSystemId = "INSERT INTO dataset_map (system_id, dataset_id, table_base_base) VALUES (?, ?, ?)"
   def createQuery_versionMapWithSystemId = "INSERT INTO version_map (system_id, dataset_system_id, lifecycle_version, lifecycle_stage) VALUES (?, ?, ?, CAST(? AS dataset_lifecycle_stage))"
-  def createWithId(systemId: DatasetId, datasetId: String, tableBase: String, initialVersionId: VersionId): VersionInfo = {
-    val datasetInfo = SqlDatasetInfo(systemId, datasetId, tableBase)
+  def createWithId(systemId: DatasetId, datasetId: String, tableBaseBase: String, initialVersionId: VersionId): VersionInfo = {
+    val datasetInfo = DatasetInfo(systemId, datasetId, tableBaseBase)
     using(conn.prepareStatement(createQuery_tableMapWithSystemId)) { stmt =>
       stmt.setLong(1, datasetInfo.systemId.underlying)
       stmt.setString(2, datasetInfo.datasetId)
-      stmt.setString(3, datasetInfo.tableBase)
+      stmt.setString(3, datasetInfo.tableBaseBase)
       try {
         stmt.execute()
       } catch {
         case PostgresUniqueViolation("system_id") =>
           throw new DatasetSystemIdAlreadyInUse(systemId)
-        case PostgresUniqueViolation("table_base") =>
+        case PostgresUniqueViolation("table_base_base") =>
           throw new DatasetAlreadyExistsException(datasetId)
       }
     }
 
     using(conn.prepareStatement(createQuery_versionMapWithSystemId)) { stmt =>
-      val versionInfo = SqlVersionInfo(datasetInfo, initialVersionId, 1, LifecycleStage.Unpublished)
+      val versionInfo = VersionInfo(datasetInfo, initialVersionId, 1, LifecycleStage.Unpublished)
 
       stmt.setLong(1, versionInfo.systemId.underlying)
       stmt.setLong(2, versionInfo.datasetInfo.systemId.underlying)
@@ -191,7 +274,7 @@ class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatase
 
   def addColumnWithId(systemId: ColumnId, versionInfo: VersionInfo, logicalName: String, typeName: String, physicalColumnBaseBase: String): ColumnInfo = {
     using(conn.prepareStatement(addColumnQuery)) { stmt =>
-      val columnInfo = SqlColumnInfo(versionInfo, systemId, logicalName, typeName, physicalColumnBaseBase, isUserPrimaryKey = false)
+      val columnInfo = ColumnInfo(versionInfo, systemId, logicalName, typeName, physicalColumnBaseBase, isUserPrimaryKey = false)
 
       stmt.setLong(1, columnInfo.systemId.underlying)
       stmt.setLong(2, versionInfo.systemId.underlying)
@@ -290,18 +373,13 @@ class PostgresDatasetMapWriter(_conn: Connection) extends `-impl`.PostgresDatase
   def ensureUnpublishedCopyQuery_versionMap = "INSERT INTO version_map (dataset_system_id, lifecycle_version, lifecycle_stage) values (?, ?, CAST(? AS dataset_lifecycle_stage)) RETURNING system_id"
   def ensureUnpublishedCopyQueryWithId_versionMap = "INSERT INTO version_map (system_id, dataset_system_id, lifecycle_version, lifecycle_stage) values (?, ?, ?, CAST(? AS dataset_lifecycle_stage))"
   def ensureUnpublishedCopyQuery_columnMap = "INSERT INTO column_map (version_system_id, system_id, logical_column, type_name, physical_column_base_base, is_user_primary_key) SELECT ?, system_id, logical_column, type_name, physical_column_base_base, is_user_primary_key FROM column_map WHERE version_system_id = ?"
-  def ensureUnpublishedCopy(tableInfo: DatasetInfo): Either[VersionInfo, CopyPair[SqlVersionInfo]] =
+  def ensureUnpublishedCopy(tableInfo: DatasetInfo): Either[VersionInfo, CopyPair[VersionInfo]] =
     ensureUnpublishedCopy(tableInfo, None)
 
-  def createUnpublishedCopyWithId(tableInfo: DatasetInfo, versionId: VersionId): CopyPair[SqlVersionInfo] =
-    ensureUnpublishedCopy(tableInfo, Some(versionId)) match {
-      case Left(_) =>
-        sys.error("Already a working copy present") // TODO: Better error
-      case Right(vi) =>
-        vi
-    }
+  def createUnpublishedCopyWithId(tableInfo: DatasetInfo, versionId: VersionId): Option[CopyPair[VersionInfo]] =
+    ensureUnpublishedCopy(tableInfo, Some(versionId)).right.toOption
 
-  def ensureUnpublishedCopy(tableInfo: DatasetInfo, newVersionId: Option[VersionId]): Either[VersionInfo, CopyPair[SqlVersionInfo]] =
+  def ensureUnpublishedCopy(tableInfo: DatasetInfo, newVersionId: Option[VersionId]): Either[VersionInfo, CopyPair[VersionInfo]] =
     lookup(tableInfo, LifecycleStage.Unpublished) match {
       case Some(unpublished) =>
         Left(unpublished)

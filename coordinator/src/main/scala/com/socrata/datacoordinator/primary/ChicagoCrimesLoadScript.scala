@@ -19,7 +19,7 @@ import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.util.{CloseableIterator, RotateSchema, IdProviderPoolImpl, IdProviderPool}
 import com.socrata.datacoordinator.manifest.TruthManifest
 import com.socrata.datacoordinator.truth._
-import com.socrata.datacoordinator.truth.metadata.sql.{PostgresGlobalLog, PostgresDatasetMapWriter, PostgresDatasetMapReader}
+import com.socrata.datacoordinator.truth.metadata.sql.{PostgresGlobalLog, PostgresDatasetMap}
 import com.socrata.datacoordinator.manifest.sql.SqlTruthManifest
 import com.socrata.datacoordinator.truth.loader.sql._
 import com.socrata.datacoordinator.truth.sql.{DatabasePopulator, SqlColumnRep}
@@ -138,11 +138,13 @@ object ChicagoCrimesLoadScript extends App {
       acc + (typ -> rep(typ))
     }
 
+    def genericRepFor(columnInfo: ColumnInfo): SqlColumnRep[SoQLType, Any] =
+      soqlRepFactory(typeContext.typeFromName(columnInfo.typeName)).rep(columnInfo.physicalColumnBase)
+
     val mutator: DatabaseMutator[SoQLType, Any] = new DatabaseMutator[SoQLType, Any] {
       class PoNT(val conn: Connection) extends ProviderOfNecessaryThings {
         val now: DateTime = DateTime.now()
-        val datasetMapReader: DatasetMapReader = new PostgresDatasetMapReader(conn)
-        val datasetMapWriter: DatasetMapWriter = new PostgresDatasetMapWriter(conn)
+        val datasetMap: DatasetMap = new PostgresDatasetMap(conn)
 
         def datasetLog(ds: DatasetInfo): Logger[Any] = new SqlLogger[Any](
           conn,
@@ -156,10 +158,7 @@ object ChicagoCrimesLoadScript extends App {
         def physicalColumnBaseForType(typ: SoQLType): String =
           soqlRepFactory(typ).base
 
-        def genericRepFor(columnInfo: ColumnInfo): SqlColumnRep[SoQLType, Any] =
-          soqlRepFactory(typeContext.typeFromName(columnInfo.typeName)).rep(columnInfo.physicalColumnBase)
-
-        def schemaLoader(version: datasetMapWriter.VersionInfo, logger: Logger[Any]): SchemaLoader =
+        def schemaLoader(version: VersionInfo, logger: Logger[Any]): SchemaLoader =
           new RepBasedSqlSchemaLoader[SoQLType, Any](conn, logger, genericRepFor)
 
         def nameForType(typ: SoQLType): String = typeContext.nameFromType(typ)
@@ -218,12 +217,13 @@ object ChicagoCrimesLoadScript extends App {
           val pont = pontRaw.asInstanceOf[PoNT]
           object Operations extends SchemaUpdate {
             val now: DateTime = pont.now
-            val datasetMapWriter: pont.datasetMapWriter.type = pont.datasetMapWriter
-            val datasetInfo = datasetMapWriter.datasetInfo(datasetId).getOrElse(sys.error("no such dataset")) // TODO: Real error
-            val tableInfo = datasetMapWriter.latest(datasetInfo)
+            val datasetMap = pont.datasetMap
+            val datasetInfo = datasetMap.datasetInfo(datasetId).getOrElse(sys.error("no such dataset")) // TODO: Real error
+            val tableInfo = datasetMap.latest(datasetInfo)
             val datasetLog = pont.datasetLog(datasetInfo)
 
             val schemaLoader: SchemaLoader = pont.schemaLoader(tableInfo, datasetLog)
+            def datasetContentsCopier = new RepBasedSqlDatasetContentsCopier(pont.conn, datasetLog, genericRepFor)
           }
 
           val result = f(Operations)
@@ -239,12 +239,12 @@ object ChicagoCrimesLoadScript extends App {
           val pont = pontRaw.asInstanceOf[PoNT]
           class Operations(val dataIdProvider: IdProvider) extends DataUpdate with Closeable {
             val now: DateTime = pont.now
-            val datasetMapWriter: pont.datasetMapWriter.type = pont.datasetMapWriter
-            val datasetInfo = datasetMapWriter.datasetInfo(datasetId).getOrElse(sys.error("No such dataset?")) // TODO: better error
-            val tableInfo = datasetMapWriter.latest(datasetInfo)
+            val datasetMap = pont.datasetMap
+            val datasetInfo = datasetMap.datasetInfo(datasetId).getOrElse(sys.error("No such dataset?")) // TODO: better error
+            val tableInfo = datasetMap.latest(datasetInfo)
             val datasetLog = pont.datasetLog(datasetInfo)
 
-            val schema = datasetMapWriter.schema(tableInfo)
+            val schema = datasetMap.schema(tableInfo)
             val dataLoader = pont.rawDataLoader(tableInfo, schema, datasetLog, dataIdProvider)
 
             def close() {

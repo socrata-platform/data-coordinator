@@ -6,10 +6,10 @@ import java.sql.Connection
 
 import com.rojoma.simplearm.util._
 
-import com.socrata.datacoordinator.truth.metadata.{DatasetInfo, DatasetMapWriter}
+import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 
 class SqlTruthManifest(conn: Connection) extends TruthManifest {
-  def create(dataset: DatasetMapWriter#DatasetInfo) {
+  def create(dataset: DatasetInfo) {
     using(conn.prepareStatement("INSERT INTO truth_manifest (dataset_system_id, published_version, latest_version) VALUES (?, 0, 0)")) { stmt =>
       stmt.setLong(1, dataset.systemId.underlying)
       stmt.execute()

@@ -1,7 +1,6 @@
 package com.socrata.datacoordinator.primary
 
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
-import com.socrata.datacoordinator.util.collection.ColumnIdMap
 
 class ColumnAdder[CT, CV](mutator: DatabaseMutator[CT, CV]) {
   // Glue points we want/need
@@ -17,14 +16,14 @@ class ColumnAdder[CT, CV](mutator: DatabaseMutator[CT, CV]) {
   def addToSchema(dataset: String, columns: Map[String, CT], username: String): Map[String, ColumnInfo] = {
     mutator.withTransaction() { providerOfNecessaryThings =>
       import providerOfNecessaryThings._
-      val ds = datasetMapWriter.datasetInfo(dataset).getOrElse(sys.error("Augh no such dataset"))
-      val table = datasetMapWriter.latest(ds)
+      val ds = datasetMap.datasetInfo(dataset).getOrElse(sys.error("Augh no such dataset"))
+      val table = datasetMap.latest(ds)
       val logger = datasetLog(ds)
 
       var result = Map.empty[String, ColumnInfo]
       for((columnName, columnType) <- columns) {
         val baseName = physicalColumnBaseForType(columnType)
-        val col = datasetMapWriter.addColumn(table, columnName, nameForType(columnType), baseName)
+        val col = datasetMap.addColumn(table, columnName, nameForType(columnType), baseName)
         schemaLoader(col.versionInfo, logger).addColumn(col)
         result += columnName -> col
       }

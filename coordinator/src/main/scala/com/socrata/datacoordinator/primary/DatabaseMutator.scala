@@ -13,14 +13,13 @@ import com.socrata.datacoordinator.util.collection.ColumnIdMap
 abstract class DatabaseMutator[CT, CV] {
   trait ProviderOfNecessaryThings {
     val now: DateTime
-    val datasetMapReader: DatasetMapReader
-    val datasetMapWriter: DatasetMapWriter
+    val datasetMap: DatasetMap
     def datasetLog(ds: DatasetInfo): Logger[CV]
     def delogger(ds: DatasetInfo): Delogger[CV]
     val globalLog: GlobalLog
     val truthManifest: TruthManifest
     def physicalColumnBaseForType(typ: CT): String
-    def schemaLoader(version: datasetMapWriter.VersionInfo, logger: Logger[CV]): SchemaLoader
+    def schemaLoader(version: VersionInfo, logger: Logger[CV]): SchemaLoader
     def nameForType(typ: CT): String
 
     def dataLoader(table: VersionInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[CV], dataIdProvider: IdProvider): Managed[Loader[CV]]
@@ -29,18 +28,19 @@ abstract class DatabaseMutator[CT, CV] {
 
   trait BaseUpdate {
     val now: DateTime
-    val datasetMapWriter: DatasetMapWriter
-    val datasetInfo: datasetMapWriter.DatasetInfo
-    val tableInfo: datasetMapWriter.VersionInfo
+    val datasetMap: DatasetMap
+    val datasetInfo: datasetMap.DatasetInfo
+    val tableInfo: datasetMap.VersionInfo
     val datasetLog: Logger[CV]
   }
 
   trait SchemaUpdate extends BaseUpdate {
     val schemaLoader: SchemaLoader
+    def datasetContentsCopier: DatasetContentsCopier
   }
 
   trait DataUpdate extends BaseUpdate {
-    val schema: ColumnIdMap[ColumnInfo]
+    val schema: ColumnIdMap[datasetMap.ColumnInfo]
     val dataLoader: Loader[CV]
   }
 
