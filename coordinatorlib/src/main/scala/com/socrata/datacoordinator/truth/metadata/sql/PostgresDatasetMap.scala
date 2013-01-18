@@ -118,9 +118,11 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
       }
     }
 
-  def datasetInfoBySystemIdQuery = "SELECT system_id, dataset_id, table_base_base FROM dataset_map WHERE system_id = ? FOR UPDATE NOWAIT"
-  def datasetInfo(datasetId: DatasetId) =
-    using(conn.prepareStatement(datasetInfoBySystemIdQuery)) { stmt =>
+  def datasetInfoBySystemIdQuery          = "SELECT system_id, dataset_id, table_base_base FROM dataset_map WHERE system_id = ?"
+  def datasetInfoBySystemIdForUpdateQuery = "SELECT system_id, dataset_id, table_base_base FROM dataset_map WHERE system_id = ? FOR UPDATE NOWAIT"
+  def datasetInfo(datasetId: DatasetId) = {
+    val query = if(conn.isReadOnly) datasetInfoBySystemIdQuery else datasetInfoBySystemIdForUpdateQuery
+    using(conn.prepareStatement(query)) { stmt =>
       stmt.setLong(1, datasetId.underlying)
       try {
         extractDatasetInfoFromResultSet(stmt)
@@ -129,6 +131,7 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
           throw new DatasetSystemIdInUseByWriterException(datasetId, e)
       }
     }
+  }
 
   def createQuery_tableMap = "INSERT INTO dataset_map (dataset_id, table_base_base) VALUES (?, ?) RETURNING system_id"
   def createQuery_versionMap = "INSERT INTO version_map (dataset_system_id, lifecycle_version, lifecycle_stage) VALUES (?, ?, CAST(? AS dataset_lifecycle_stage)) RETURNING system_id"
