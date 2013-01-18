@@ -46,7 +46,8 @@ CREATE TABLE IF NOT EXISTS dataset_map (
   -- playing back logs doesn't access the object.
   system_id       BIGSERIAL                   NOT NULL PRIMARY KEY,
   dataset_id      VARCHAR(%DATASET_ID_LEN%)   NOT NULL UNIQUE, -- This probably contains the domain ID in some manner...
-  table_base_base VARCHAR(%PHYSTAB_BASE_LEN%) NOT NULL -- this + version_map's lifecycle_version is used to name per-dataset tables.
+  table_base_base VARCHAR(%PHYSTAB_BASE_LEN%) NOT NULL, -- this + version_map's lifecycle_version is used to name per-dataset tables.
+  next_row_id     BIGINT                      NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS version_map (

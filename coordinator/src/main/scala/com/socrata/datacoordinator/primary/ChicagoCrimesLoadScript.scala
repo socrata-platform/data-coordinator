@@ -16,7 +16,7 @@ import com.socrata.id.numeric.{IdProvider, FibonacciIdProvider, InMemoryBlockIdP
 import com.socrata.datacoordinator.common.soql.{SoQLTypeContext, SoQLRep, SoQLNullValue, SystemColumns}
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth.loader._
-import com.socrata.datacoordinator.util.{CloseableIterator, RotateSchema, IdProviderPoolImpl, IdProviderPool}
+import com.socrata.datacoordinator.util._
 import com.socrata.datacoordinator.manifest.TruthManifest
 import com.socrata.datacoordinator.truth._
 import com.socrata.datacoordinator.truth.metadata.sql.{PostgresGlobalLog, PostgresDatasetMap}
@@ -29,10 +29,10 @@ import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.common.sql.{PostgresSqlLoaderProvider, AbstractSqlLoaderProvider}
 import org.joda.time.format.DateTimeFormat
 import java.io.Closeable
+import scala.Tuple2
 
 object ChicagoCrimesLoadScript extends App {
   val executor = Executors.newCachedThreadPool()
-
 
   def convertNum(x: String) =
     if(x.isEmpty) SoQLNullValue
@@ -66,9 +66,6 @@ object ChicagoCrimesLoadScript extends App {
 
   try {
     val typeContext = SoQLTypeContext
-
-    val dataIdSource = new InMemoryBlockIdProvider(releasable = true)
-    val dataProviderPool: IdProviderPool = new IdProviderPoolImpl(dataIdSource, new FibonacciIdProvider(_))
 
     def rowCodecFactory(): RowLogCodec[Any] = new IdCachingRowLogCodec[Any] {
       def rowDataVersion: Short = 0
@@ -237,7 +234,7 @@ object ChicagoCrimesLoadScript extends App {
       def withDataUpdate[T](datasetId: String, user: String)(f: DataUpdate => T): T =
         withTransaction() { pontRaw =>
           val pont = pontRaw.asInstanceOf[PoNT]
-          class Operations(val dataIdProvider: IdProvider) extends DataUpdate with Closeable {
+          class Operations extends DataUpdate with Closeable {
             val now: DateTime = pont.now
             val datasetMap = pont.datasetMap
             val datasetInfo = datasetMap.datasetInfo(datasetId).getOrElse(sys.error("No such dataset?")) // TODO: better error
@@ -245,18 +242,17 @@ object ChicagoCrimesLoadScript extends App {
             val datasetLog = pont.datasetLog(datasetInfo)
 
             val schema = datasetMap.schema(tableInfo)
-            val dataLoader = pont.rawDataLoader(tableInfo, schema, datasetLog, dataIdProvider)
+            val rowIdProvider = new RowIdProvider(datasetInfo.nextRowId)
+            val dataLoader = pont.rawDataLoader(tableInfo, schema, datasetLog, rowIdProvider)
 
             def close() {
               dataLoader.close()
             }
           }
 
-          for {
-            dataIdProvider <- dataProviderPool.borrow()
-            operations <- managed(new Operations(dataIdProvider))
-          } yield {
+          using(new Operations) { operations =>
             val result = f(operations)
+            operations.datasetMap.updateNextRowId(operations.datasetInfo, operations.rowIdProvider.finish())
             operations.datasetLog.endTransaction() foreach { version =>
               pont.truthManifest.updateLatestVersion(operations.datasetInfo, version)
               pont.globalLog.log(operations.datasetInfo, version, pont.now, user)

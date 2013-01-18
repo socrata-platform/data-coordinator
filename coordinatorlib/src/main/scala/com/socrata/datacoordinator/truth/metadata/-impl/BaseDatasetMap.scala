@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator.truth.metadata
 package `-impl`
 
-import com.socrata.datacoordinator.id.DatasetId
+import com.socrata.datacoordinator.id.{RowId, DatasetId}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 
 trait BaseDatasetMap {
@@ -76,4 +76,7 @@ trait BaseDatasetMap {
   /** Clears the primary key column for this dataset-version.
     * @note Does not change the actual table; this just updates the bookkeeping. */
   def clearUserPrimaryKey(versionInfo: VersionInfo)
+
+  /** Stores the next available row ID for this dataset. */
+  def updateNextRowId(datasetInfo: DatasetInfo, newNextRowId: RowId): DatasetInfo
 }

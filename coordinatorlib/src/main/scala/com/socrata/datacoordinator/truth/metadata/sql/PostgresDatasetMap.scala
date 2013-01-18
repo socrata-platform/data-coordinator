@@ -8,7 +8,7 @@ import org.postgresql.util.PSQLException
 import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.truth.{DatasetSystemIdInUseByWriterException, DatasetIdInUseByWriterException}
-import com.socrata.datacoordinator.id.{ColumnId, VersionId, DatasetId}
+import com.socrata.datacoordinator.id.{RowId, ColumnId, VersionId, DatasetId}
 import com.socrata.datacoordinator.util.PostgresUniqueViolation
 import com.socrata.datacoordinator.util.collection.MutableColumnIdMap
 
@@ -97,14 +97,14 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
   def snapshot(datasetInfo: DatasetInfo, age: Int) =
     lookup(datasetInfo, LifecycleStage.Snapshotted, age)
 
-  def datasetInfoByUserIdQuery = "SELECT system_id, dataset_id, table_base_base FROM dataset_map WHERE dataset_id = ? FOR UPDATE NOWAIT"
+  def datasetInfoByUserIdQuery = "SELECT system_id, dataset_id, table_base_base, next_row_id FROM dataset_map WHERE dataset_id = ? FOR UPDATE NOWAIT"
   def datasetInfo(datasetId: String) =
     using(conn.prepareStatement(datasetInfoByUserIdQuery)) { stmt =>
       stmt.setString(1, datasetId)
       try {
         extractDatasetInfoFromResultSet(stmt)
       } catch {
-        case e: PSQLException if e.getServerErrorMessage.getSQLState == lockNotAvailableState =>
+        case e: PSQLException if e.getSQLState == lockNotAvailableState =>
           throw new DatasetIdInUseByWriterException(datasetId, e)
       }
     }
@@ -112,14 +112,14 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
   def extractDatasetInfoFromResultSet(stmt: PreparedStatement) =
     using(stmt.executeQuery) { rs =>
       if(rs.next()) {
-        Some(DatasetInfo(new DatasetId(rs.getLong("system_id")), rs.getString("dataset_id"), rs.getString("table_base_base")))
+        Some(DatasetInfo(new DatasetId(rs.getLong("system_id")), rs.getString("dataset_id"), rs.getString("table_base_base"), new RowId(rs.getLong("next_row_id"))))
       } else {
         None
       }
     }
 
-  def datasetInfoBySystemIdQuery          = "SELECT system_id, dataset_id, table_base_base FROM dataset_map WHERE system_id = ?"
-  def datasetInfoBySystemIdForUpdateQuery = "SELECT system_id, dataset_id, table_base_base FROM dataset_map WHERE system_id = ? FOR UPDATE NOWAIT"
+  def datasetInfoBySystemIdQuery          = "SELECT system_id, dataset_id, table_base_base, next_row_id FROM dataset_map WHERE system_id = ?"
+  def datasetInfoBySystemIdForUpdateQuery = "SELECT system_id, dataset_id, table_base_base, next_row_id FROM dataset_map WHERE system_id = ? FOR UPDATE NOWAIT"
   def datasetInfo(datasetId: DatasetId) = {
     val query = if(conn.isReadOnly) datasetInfoBySystemIdQuery else datasetInfoBySystemIdForUpdateQuery
     using(conn.prepareStatement(query)) { stmt =>
@@ -127,19 +127,20 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
       try {
         extractDatasetInfoFromResultSet(stmt)
       } catch {
-        case e: PSQLException if e.getServerErrorMessage.getSQLState == lockNotAvailableState =>
+        case e: PSQLException if e.getSQLState == lockNotAvailableState =>
           throw new DatasetSystemIdInUseByWriterException(datasetId, e)
       }
     }
   }
 
-  def createQuery_tableMap = "INSERT INTO dataset_map (dataset_id, table_base_base) VALUES (?, ?) RETURNING system_id"
+  def createQuery_tableMap = "INSERT INTO dataset_map (dataset_id, table_base_base, next_row_id) VALUES (?, ?, ?) RETURNING system_id"
   def createQuery_versionMap = "INSERT INTO version_map (dataset_system_id, lifecycle_version, lifecycle_stage) VALUES (?, ?, CAST(? AS dataset_lifecycle_stage)) RETURNING system_id"
   def create(datasetId: String, tableBaseBase: String): VersionInfo = {
     val datasetInfo = using(conn.prepareStatement(createQuery_tableMap)) { stmt =>
-      val datasetInfoNoSystemId = DatasetInfo(new DatasetId(-1), datasetId, tableBaseBase)
+      val datasetInfoNoSystemId = DatasetInfo(new DatasetId(-1), datasetId, tableBaseBase, RowId.initial)
       stmt.setString(1, datasetInfoNoSystemId.datasetId)
       stmt.setString(2, datasetInfoNoSystemId.tableBaseBase)
+      stmt.setLong(3, datasetInfoNoSystemId.nextRowId.underlying)
       try {
         using(stmt.executeQuery()) { rs =>
           val foundSomething = rs.next()
@@ -169,7 +170,7 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
   def createQuery_tableMapWithSystemId = "INSERT INTO dataset_map (system_id, dataset_id, table_base_base) VALUES (?, ?, ?)"
   def createQuery_versionMapWithSystemId = "INSERT INTO version_map (system_id, dataset_system_id, lifecycle_version, lifecycle_stage) VALUES (?, ?, ?, CAST(? AS dataset_lifecycle_stage))"
   def createWithId(systemId: DatasetId, datasetId: String, tableBaseBase: String, initialVersionId: VersionId): VersionInfo = {
-    val datasetInfo = DatasetInfo(systemId, datasetId, tableBaseBase)
+    val datasetInfo = DatasetInfo(systemId, datasetId, tableBaseBase, RowId.initial)
     using(conn.prepareStatement(createQuery_tableMapWithSystemId)) { stmt =>
       stmt.setLong(1, datasetInfo.systemId.underlying)
       stmt.setString(2, datasetInfo.datasetId)
@@ -345,6 +346,21 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
     using(conn.prepareStatement(clearUserPrimaryKeyQuery)) { stmt =>
       stmt.setLong(1, versionInfo.systemId.underlying)
       stmt.executeUpdate()
+    }
+  }
+
+  def updateNextRowIdQuery = "UPDATE dataset_map SET next_row_id = ? WHERE system_id = ?"
+  def updateNextRowId(datasetInfo: DatasetInfo, newNextRowId: RowId): DatasetInfo = {
+    assert(newNextRowId.underlying >= datasetInfo.nextRowId.underlying)
+    if(newNextRowId != datasetInfo.nextRowId) {
+      using(conn.prepareStatement(updateNextRowIdQuery)) { stmt =>
+        stmt.setLong(1, newNextRowId.underlying)
+        stmt.setLong(2, datasetInfo.systemId.underlying)
+        stmt.executeUpdate()
+      }
+      datasetInfo.copy(nextRowId = newNextRowId)
+    } else {
+      datasetInfo
     }
   }
 
