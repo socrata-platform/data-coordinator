@@ -12,9 +12,16 @@ trait DatasetMap extends `-impl`.BaseDatasetMap {
 
   /** Ensures that an "unpublished" table exists, creating it if necessary.
     * @note Does not copy the actual tables; this just updates the bookkeeping.
+    * @note Does not copy columns.  Use `copySchemaIntoUnpublishedCopy` for that.
     * @return Either the `VersionInfo` of an existing copy, or a pair of version
     *    infos for the version that was copied and the version it was copied to. */
   def ensureUnpublishedCopy(datasetInfo: DatasetInfo): Either[VersionInfo, CopyPair[VersionInfo]]
+
+  /** Adds all the columns from the "old version" into the "new version".
+    * This exists for replication purposes; on primary, this should be called to populate
+    * the new schema.  On the backup, the logs from the associated `SchemaLoader#addColumn`
+    * calls will be used. */
+  def copySchemaIntoUnpublishedCopy(copyPair: CopyPair[VersionInfo])
 
   /** Promotes the current "published" table record (if it exists) to a "snapshot" one, and promotes the
     * current "unpublished" table record to "published".

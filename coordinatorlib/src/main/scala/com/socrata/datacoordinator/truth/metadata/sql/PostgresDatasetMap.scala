@@ -375,7 +375,6 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
   def ensureUnpublishedCopyQuery_newLifecycleVersion = "SELECT max(lifecycle_version) + 1 FROM version_map WHERE dataset_system_id = ?"
   def ensureUnpublishedCopyQuery_versionMap = "INSERT INTO version_map (dataset_system_id, lifecycle_version, lifecycle_stage) values (?, ?, CAST(? AS dataset_lifecycle_stage)) RETURNING system_id"
   def ensureUnpublishedCopyQueryWithId_versionMap = "INSERT INTO version_map (system_id, dataset_system_id, lifecycle_version, lifecycle_stage) values (?, ?, ?, CAST(? AS dataset_lifecycle_stage))"
-  def ensureUnpublishedCopyQuery_columnMap = "INSERT INTO column_map (version_system_id, system_id, logical_column, type_name, physical_column_base_base, is_user_primary_key) SELECT ?, system_id, logical_column, type_name, physical_column_base_base, is_user_primary_key FROM column_map WHERE version_system_id = ?"
   def ensureUnpublishedCopy(tableInfo: DatasetInfo): Either[VersionInfo, CopyPair[VersionInfo]] =
     ensureUnpublishedCopy(tableInfo, None)
 
@@ -435,19 +434,20 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
                 newVersion
             }
 
-            using(conn.prepareStatement(ensureUnpublishedCopyQuery_columnMap)) { stmt =>
-              stmt.setLong(1, newVersion.systemId.underlying)
-              stmt.setLong(2, publishedCopy.systemId.underlying)
-              stmt.execute()
-            }
-
             Right(CopyPair(publishedCopy, newVersion))
           case None =>
             sys.error("No published copy available?")
         }
     }
 
-
+  def ensureUnpublishedCopyQuery_columnMap = "INSERT INTO column_map (version_system_id, system_id, logical_column, type_name, physical_column_base_base, is_user_primary_key) SELECT ?, system_id, logical_column, type_name, physical_column_base_base, is_user_primary_key FROM column_map WHERE version_system_id = ?"
+  def copySchemaIntoUnpublishedCopy(copyPair: CopyPair[VersionInfo]) {
+    using(conn.prepareStatement(ensureUnpublishedCopyQuery_columnMap)) { stmt =>
+      stmt.setLong(1, copyPair.newVersionInfo.systemId.underlying)
+      stmt.setLong(2, copyPair.oldVersionInfo.systemId.underlying)
+      stmt.execute()
+    }
+  }
 
   def publishQuery = "UPDATE version_map SET lifecycle_stage = CAST(? AS dataset_lifecycle_stage) WHERE system_id = ?"
   def publish(unpublishedCopy: VersionInfo): VersionInfo = {

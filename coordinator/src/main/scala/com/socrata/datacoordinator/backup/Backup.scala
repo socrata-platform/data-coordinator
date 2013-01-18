@@ -12,10 +12,10 @@ import com.socrata.datacoordinator.id.{VersionId, ColumnId, DatasetId}
 import com.socrata.datacoordinator.truth.sql.{SqlColumnRep, DatabasePopulator}
 import com.socrata.datacoordinator.truth.loader.sql.{RepBasedSqlDatasetContentsCopier, RepBasedSqlSchemaLoader}
 import com.socrata.soql.types.SoQLType
-import com.socrata.datacoordinator.common.soql.{SoQLRep, SoQLTypeContext}
+import com.socrata.datacoordinator.common.soql.{SystemColumns, SoQLRep, SoQLTypeContext}
 import com.socrata.datacoordinator.truth.metadata.sql.PostgresDatasetMap
 
-class Backup(conn: Connection, paranoid: Boolean) {
+class Backup(conn: Connection, systemIdColumnName: String, paranoid: Boolean) {
   val typeContext = SoQLTypeContext
   val logger: Logger[Any] = NullLogger
   val datasetMap: BackupDatasetMap = new PostgresDatasetMap(conn)
@@ -71,6 +71,9 @@ class Backup(conn: Connection, paranoid: Boolean) {
     val ci = datasetMap.addColumnWithId(columnInfo.systemId, vi, columnInfo.logicalName, columnInfo.typeName, columnInfo.physicalColumnBaseBase)
     resyncUnless(di.systemId, ci == columnInfo, "Newly created column info differs")
     schemaLoader.addColumn(ci)
+
+    if(ci.logicalName == systemIdColumnName) schemaLoader.makeSystemPrimaryKey(ci)
+
     ci
   }
 
@@ -144,7 +147,7 @@ object Backup extends App {
   using(DriverManager.getConnection("jdbc:postgresql://localhost:5432/robertm", "blist", "blist")) { conn =>
     conn.setAutoCommit(false)
     try {
-      val bkp = new Backup(conn, paranoid = true)
+      val bkp = new Backup(conn, SystemColumns.id, paranoid = true)
       import bkp._
 
       DatabasePopulator.populate(conn)
