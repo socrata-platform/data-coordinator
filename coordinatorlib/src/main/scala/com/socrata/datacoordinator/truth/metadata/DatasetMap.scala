@@ -12,22 +12,15 @@ trait DatasetMap extends `-impl`.BaseDatasetMap {
 
   /** Ensures that an "unpublished" table exists, creating it if necessary.
     * @note Does not copy the actual tables; this just updates the bookkeeping.
-    * @note Does not copy columns.  Use `copySchemaIntoUnpublishedCopy` for that.
+    * @note This also updates the bookkeeping for columns.
     * @return Either the `VersionInfo` of an existing copy, or a pair of version
     *    infos for the version that was copied and the version it was copied to. */
   def ensureUnpublishedCopy(datasetInfo: DatasetInfo): Either[VersionInfo, CopyPair[VersionInfo]]
 
-  /** Adds all the columns from the "old version" into the "new version".
-    * This exists for replication purposes; on primary, this should be called to populate
-    * the new schema.  On the backup, the logs from the associated `SchemaLoader#addColumn`
-    * calls will be used. */
-  def copySchemaIntoUnpublishedCopy(copyPair: CopyPair[VersionInfo])
-
   /** Promotes the current "published" table record (if it exists) to a "snapshot" one, and promotes the
     * current "unpublished" table record to "published".
     * @throws IllegalArgumentException if `versionInfo` does not name an unpublished copy.
-    * @return The version info for the newly-published dataset if there was an unpublished copy,
-    *         or `None` if there wasn't. */
+    * @return The version info for the newly-published dataset. */
   def publish(versionInfo: VersionInfo): VersionInfo
 
   /** Adds a column to this table-version.
@@ -38,9 +31,32 @@ trait DatasetMap extends `-impl`.BaseDatasetMap {
 }
 
 trait BackupDatasetMap extends `-impl`.BaseDatasetMap {
+  /** Creates a new dataset in the truthstore.
+    * @note Does not actually create any tables; this just updates the bookkeeping.
+    * @note `datasetId` needs to be globally unique; if you have namespacing do it yourself.
+    * @throws DatasetAlreadyExistsException if `datasetId` is already in use.
+    * @throws DatasetSystemIdAlreadyInUse if `systemId` is already in use.
+    * @return A `VersionInfo` that refers to an unpublished version with system id `systemId`. */
   def createWithId(systemId: DatasetId, datasetId: String, tableBaseBase: String, initialVersionSystemId: VersionId): VersionInfo
-  def createUnpublishedCopyWithId(datasetInfo: DatasetInfo, systemId: VersionId): Option[CopyPair[VersionInfo]]
+
+  /** Ensures that an "unpublished" table exists, creating it if necessary.
+    * @note Does not copy the actual tables; this just updates the bookkeeping.
+    * @note This does NOT copy the schema, because those updates are sent separately.
+    * @throws VersionSystemIdAlreadyInUse if `systemId` is already in use.
+    * @return A pair of version infos for the version that was copied and the version it was copied to. */
+  def createUnpublishedCopyWithId(datasetInfo: DatasetInfo, systemId: VersionId): CopyPair[VersionInfo]
+
+  /** Promotes the current "published" table record (if it exists) to a "snapshot" one, and promotes the
+    * current "unpublished" table record to "published".
+    * @throws IllegalArgumentException if `versionInfo` does not name an unpublished copy.
+    * @return The version info for the newly-published dataset. */
   def publish(versionInfo: VersionInfo): VersionInfo
+
+  /** Adds a column to this table-version.
+    * @note Does not change the actual table; this just updates the bookkeeping.
+    * @return The new column
+    * @throws ColumnAlreadyExistsException if the column already exists
+    * @throws ColumnSystemIdAlreadyInUse if `systemId` already names a column on this version of the table. */
   def addColumnWithId(systemId: ColumnId, versionInfo: VersionInfo, logicalName: String, typeName: String, physicalColumnBase: String): ColumnInfo
 }
 

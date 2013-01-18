@@ -13,9 +13,6 @@ class WorkingCopyCreator[CT, CV](mutator: DatabaseMutator[CT, CV], systemColumns
           existing
         case Right(copyPair@CopyPair(oldTable, newTable)) =>
           assert(oldTable == tableInfo)
-          // Ok.  We've created the _table_ in the map, but the _schema_ has not yet been copied.
-          // Because we're the primary, first we need to do that.
-          datasetMap.copySchemaIntoUnpublishedCopy(copyPair)
 
           // Great.  Now we can actually do the data loading.
           schemaLoader.create(newTable)

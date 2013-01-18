@@ -378,8 +378,10 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
   def ensureUnpublishedCopy(tableInfo: DatasetInfo): Either[VersionInfo, CopyPair[VersionInfo]] =
     ensureUnpublishedCopy(tableInfo, None)
 
-  def createUnpublishedCopyWithId(tableInfo: DatasetInfo, versionId: VersionId): Option[CopyPair[VersionInfo]] =
-    ensureUnpublishedCopy(tableInfo, Some(versionId)).right.toOption
+  def createUnpublishedCopyWithId(tableInfo: DatasetInfo, versionId: VersionId): CopyPair[VersionInfo] =
+    ensureUnpublishedCopy(tableInfo, Some(versionId)).right.getOrElse {
+      throw new VersionSystemIdAlreadyInUse(versionId)
+    }
 
   def ensureUnpublishedCopy(tableInfo: DatasetInfo, newVersionId: Option[VersionId]): Either[VersionInfo, CopyPair[VersionInfo]] =
     lookup(tableInfo, LifecycleStage.Unpublished) match {
@@ -403,7 +405,7 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
                   lifecycleVersion = newLifecycleVersion,
                   lifecycleStage = LifecycleStage.Unpublished)
 
-                using(conn.prepareStatement(ensureUnpublishedCopyQuery_versionMap)) { stmt =>
+                val newVersion = using(conn.prepareStatement(ensureUnpublishedCopyQuery_versionMap)) { stmt =>
                   stmt.setLong(1, newVersionWithoutSystemId.datasetInfo.systemId.underlying)
                   stmt.setLong(2, newVersionWithoutSystemId.lifecycleVersion)
                   stmt.setString(3, newVersionWithoutSystemId.lifecycleStage.name)
@@ -413,6 +415,10 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
                     newVersionWithoutSystemId.copy(systemId = new VersionId(rs.getLong(1)))
                   }
                 }
+
+                copySchemaIntoUnpublishedCopy(publishedCopy, newVersion)
+
+                newVersion
               case Some(vid) =>
                 val newVersion = publishedCopy.copy(
                   systemId = vid,
@@ -441,10 +447,10 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
     }
 
   def ensureUnpublishedCopyQuery_columnMap = "INSERT INTO column_map (version_system_id, system_id, logical_column, type_name, physical_column_base_base, is_user_primary_key) SELECT ?, system_id, logical_column, type_name, physical_column_base_base, is_user_primary_key FROM column_map WHERE version_system_id = ?"
-  def copySchemaIntoUnpublishedCopy(copyPair: CopyPair[VersionInfo]) {
+  def copySchemaIntoUnpublishedCopy(oldVersion: VersionInfo, newVersion: VersionInfo) {
     using(conn.prepareStatement(ensureUnpublishedCopyQuery_columnMap)) { stmt =>
-      stmt.setLong(1, copyPair.newVersionInfo.systemId.underlying)
-      stmt.setLong(2, copyPair.oldVersionInfo.systemId.underlying)
+      stmt.setLong(1, newVersion.systemId.underlying)
+      stmt.setLong(2, oldVersion.systemId.underlying)
       stmt.execute()
     }
   }

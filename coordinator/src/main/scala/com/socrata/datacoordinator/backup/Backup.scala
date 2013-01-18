@@ -109,13 +109,9 @@ class Backup(conn: Connection, systemIdColumnName: String, paranoid: Boolean) {
 
   def makeWorkingCopy(newVersionInfo: VersionInfo) {
     val di = requireDataset(newVersionInfo.datasetInfo)
-    datasetMap.createUnpublishedCopyWithId(di, newVersionInfo.systemId) match {
-      case None =>
-        resync(di.systemId, "Unpublished copy already exists")
-      case Some(CopyPair(oldVi, newVi)) =>
-        resyncUnless(di.systemId, newVi == newVersionInfo, "New version info differs")
-        schemaLoader.create(newVi)
-    }
+    val CopyPair(_, newVi) = datasetMap.createUnpublishedCopyWithId(di, newVersionInfo.systemId)
+    resyncUnless(di.systemId, newVi == newVersionInfo, "New version info differs")
+    schemaLoader.create(newVi)
   }
 
   def populateWorkingCopy(datasetInfo: DatasetInfo) {

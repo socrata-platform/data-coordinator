@@ -182,10 +182,6 @@ class PostgresDatasetMapTest extends FunSuite with MustMatchers with BeforeAndAf
       val Right(CopyPair(vi1a, vi2)) = tables.ensureUnpublishedCopy(vi1.datasetInfo)
       vi1a must equal (vi1)
 
-      tables.schema(vi2) must be ('empty)
-
-      tables.copySchemaIntoUnpublishedCopy(CopyPair(vi1a, vi2))
-
       val schema1 = tables.schema(vi1)
       val schema2 = tables.schema(vi2)
       schema1.values.toSeq.map(_.copy(versionInfo = vi2)).sortBy(_.logicalName) must equal (schema2.values.toSeq.sortBy(_.logicalName))
@@ -265,9 +261,7 @@ class PostgresDatasetMapTest extends FunSuite with MustMatchers with BeforeAndAf
 
       (1 to 5).foldLeft(vi1) { (vi, _) =>
         val vi2 = tables.publish(vi)
-        val cp = tables.ensureUnpublishedCopy(vi2.datasetInfo).right.get
-        tables.copySchemaIntoUnpublishedCopy(cp)
-        cp.newVersionInfo
+        tables.ensureUnpublishedCopy(vi2.datasetInfo).right.get.newVersionInfo
       }
 
       // ok, there should be six copies now, which means twelve columns....
