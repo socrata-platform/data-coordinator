@@ -45,6 +45,10 @@ class SqlDelogger[CV](connection: Connection,
     val UTF8 = Codec.UTF8.charSet
 
     override def toString() = {
+      // this exists because otherwise Iterator#toString calls hasNext.
+      // Since this hasNext has side-effects, it causes unpredictable
+      // behaviour when tracing through it and IDEA tries to call
+      // toString on "this".
       val state = if(!done) "unfinished" else "finished"
       s"LogIterator($state)"
     }
