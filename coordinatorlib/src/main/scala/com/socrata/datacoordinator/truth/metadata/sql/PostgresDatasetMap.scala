@@ -167,7 +167,7 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
     }
   }
 
-  def createQuery_tableMapWithSystemId = "INSERT INTO dataset_map (system_id, dataset_id, table_base_base) VALUES (?, ?, ?)"
+  def createQuery_tableMapWithSystemId = "INSERT INTO dataset_map (system_id, dataset_id, table_base_base, next_row_id) VALUES (?, ?, ?, ?)"
   def createQuery_versionMapWithSystemId = "INSERT INTO version_map (system_id, dataset_system_id, lifecycle_version, lifecycle_stage) VALUES (?, ?, ?, CAST(? AS dataset_lifecycle_stage))"
   def createWithId(systemId: DatasetId, datasetId: String, tableBaseBase: String, initialVersionId: VersionId): VersionInfo = {
     val datasetInfo = DatasetInfo(systemId, datasetId, tableBaseBase, RowId.initial)
@@ -175,6 +175,7 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
       stmt.setLong(1, datasetInfo.systemId.underlying)
       stmt.setString(2, datasetInfo.datasetId)
       stmt.setString(3, datasetInfo.tableBaseBase)
+      stmt.setLong(4, datasetInfo.nextRowId.underlying)
       try {
         stmt.execute()
       } catch {
