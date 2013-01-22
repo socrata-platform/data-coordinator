@@ -104,6 +104,47 @@ class RWWriter(sharedState: RWSharedState) extends Writer {
     if(closed) throw new IOException("Writer already closed")
   }
 
+  override def append(s: CharSequence): this.type =
+    if(s == null) append("null")
+    else append(s, 0, s.length)
+
+  override def append(s: CharSequence, off: Int, len: Int): this.type = {
+    var ptr = off
+    var remainingData = len
+
+    testOpen()
+
+    while(remainingData > 0) {
+      if(currentBuffer == null) {
+        currentBuffer = new Array[Char](bufferSize)
+        writePtr = 0
+      }
+
+      val remainingSpace = bufferSize - writePtr
+      var toCopy = math.min(remainingSpace, remainingData)
+      val cb = currentBuffer
+      s match {
+        case sb: java.lang.StringBuilder =>
+          sb.getChars(ptr, ptr + toCopy, cb, writePtr)
+        case _ =>
+          var i = 0
+          var wP = writePtr
+          while(i != toCopy) {
+            cb(wP) = s.charAt(ptr + i)
+            wP += 1
+            i += 1
+          }
+      }
+      writePtr += toCopy
+      if(toCopy == remainingSpace) doFlush()
+
+      ptr += toCopy
+      remainingData -= toCopy
+    }
+
+    this
+  }
+
   override def write(s: String, off: Int, len: Int) {
     var ptr = off
     var remainingData = len
@@ -119,13 +160,7 @@ class RWWriter(sharedState: RWSharedState) extends Writer {
       val remainingSpace = bufferSize - writePtr
       var toCopy = math.min(remainingSpace, remainingData)
       val cb = currentBuffer
-      var i = 0
-      var wP = writePtr
-      while(i != toCopy) {
-        cb(wP) = s.charAt(ptr + i)
-        wP += 1
-        i += 1
-      }
+      s.getChars(ptr, ptr + toCopy, cb, writePtr)
       writePtr += toCopy
       if(toCopy == remainingSpace) doFlush()
 
