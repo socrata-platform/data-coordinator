@@ -25,6 +25,7 @@ trait DataSqlizer[CT, CV] {
     def insert(row: Row[CV])
   }
 
+  // TODO: Remove all this delete code in favor of batched system ID deletes
   def prepareSystemIdDeleteStatement: String
 
   def prepareSystemIdDelete(stmt: PreparedStatement, sid: RowId)
