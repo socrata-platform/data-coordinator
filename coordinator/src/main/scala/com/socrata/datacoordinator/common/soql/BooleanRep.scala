@@ -44,23 +44,23 @@ class BooleanRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQL
   val sqlTypes: Array[String] = Array("BOOLEAN")
 
   def csvifyForInsert(sb: StringBuilder, v: Any) {
-    if(v == SoQLNullValue) { /* pass */ }
+    if(SoQLNullValue == v) { /* pass */ }
     else sb.append(v.asInstanceOf[Boolean].toString)
   }
 
   def prepareInsert(stmt: PreparedStatement, v: Any, start: Int): Int = {
-    if(v == SoQLNullValue) stmt.setNull(start, Types.BOOLEAN)
+    if(SoQLNullValue == v) stmt.setNull(start, Types.BOOLEAN)
     else stmt.setBoolean(start, v.asInstanceOf[Boolean])
     start + 1
   }
 
   def estimateInsertSize(v: Any): Int =
-    if(v == SoQLNullValue) standardNullInsertSize
+    if(SoQLNullValue == v) standardNullInsertSize
     else 5
 
   def SETsForUpdate(sb: StringBuilder, v: Any) {
     sb.append(base).append('=')
-    if(v == SoQLNullValue) sb.append("NULL")
+    if(SoQLNullValue == v) sb.append("NULL")
     else sb.append(v.asInstanceOf[Boolean].toString)
   }
 

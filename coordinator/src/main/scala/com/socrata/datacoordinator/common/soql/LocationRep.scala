@@ -14,7 +14,7 @@ class LocationRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType,
   val sqlTypes: Array[String] = Array("DOUBLE PRECISION", "DOUBLE PRECISION")
 
   def csvifyForInsert(sb: StringBuilder, v: Any) {
-    if(v == SoQLNullValue) { sb.append(',') }
+    if(SoQLNullValue == v) { sb.append(',') }
     else {
       val ll = v.asInstanceOf[(Double,Double)]
       sb.append(ll._1).append(',').append(ll._2)
@@ -22,7 +22,7 @@ class LocationRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType,
   }
 
   def prepareInsert(stmt: PreparedStatement, v: Any, start: Int): Int = {
-    if(v == SoQLNullValue) {
+    if(SoQLNullValue == v) {
       stmt.setNull(start, Types.DOUBLE)
       stmt.setNull(start+1, Types.DOUBLE)
     } else {
@@ -34,11 +34,11 @@ class LocationRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType,
   }
 
   def estimateInsertSize(v: Any): Int =
-    if(v == SoQLNullValue) standardNullInsertSize
+    if(SoQLNullValue == v) standardNullInsertSize
     else 40
 
   def SETsForUpdate(sb: StringBuilder, v: Any) {
-    if(v == SoQLNullValue) {
+    if(SoQLNullValue == v) {
       sb.append(physColumns(0)).append("=NULL,").append(physColumns(1)).append("=NULL")
     } else {
       val ll = v.asInstanceOf[(Double, Double)]

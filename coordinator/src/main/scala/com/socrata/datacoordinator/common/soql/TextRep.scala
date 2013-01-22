@@ -45,28 +45,28 @@ class TextRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
   val sqlTypes: Array[String] = Array("TEXT")
 
   def csvifyForInsert(sb: StringBuilder, v: Any) {
-    if(v == SoQLNullValue) { /* pass */ }
+    if(SoQLNullValue == v) { /* pass */ }
     else csvescape(sb, v.asInstanceOf[String])
   }
 
   def prepareInsert(stmt: PreparedStatement, v: Any, start: Int): Int = {
-    if(v == SoQLNullValue) stmt.setNull(start, Types.VARCHAR)
+    if(SoQLNullValue == v) stmt.setNull(start, Types.VARCHAR)
     else stmt.setString(start, v.asInstanceOf[String])
     start + 1
   }
 
   def estimateInsertSize(v: Any): Int =
-    if(v == SoQLNullValue) standardNullInsertSize
+    if(SoQLNullValue == v) standardNullInsertSize
     else v.asInstanceOf[String].length
 
   def SETsForUpdate(sb: StringBuilder, v: Any) {
     sb.append(base).append('=')
-    if(v == SoQLNullValue) sb.append("NULL")
+    if(SoQLNullValue == v) sb.append("NULL")
     else sqlescape(sb, v.asInstanceOf[String])
   }
 
   def estimateUpdateSize(v: Any): Int =
-    base.length + (if(v == SoQLNullValue) 5 else v.asInstanceOf[String].length)
+    base.length + (if(SoQLNullValue == v) 5 else v.asInstanceOf[String].length)
 
   def fromResultSet(rs: ResultSet, start: Int): Any = {
     val s = rs.getString(start)

@@ -46,23 +46,23 @@ class FixedTimestampRep(val base: String) extends RepUtils with SqlPKableColumnR
   val sqlTypes: Array[String] = Array("TIMESTAMP WITH TIME ZONE")
 
   def csvifyForInsert(sb: StringBuilder, v: Any) {
-    if(v == SoQLNullValue) { /* pass */ }
+    if(SoQLNullValue == v) { /* pass */ }
     else sb.append(literalFormatter.print(v.asInstanceOf[DateTime]))
   }
 
   def prepareInsert(stmt: PreparedStatement, v: Any, start: Int): Int = {
-    if(v == SoQLNullValue) stmt.setNull(start, Types.TIMESTAMP)
+    if(SoQLNullValue == v) stmt.setNull(start, Types.TIMESTAMP)
     else stmt.setTimestamp(start, new java.sql.Timestamp(v.asInstanceOf[DateTime].getMillis))
     start + 1
   }
 
   def estimateInsertSize(v: Any): Int =
-    if(v == SoQLNullValue) standardNullInsertSize
+    if(SoQLNullValue == v) standardNullInsertSize
     else 30
 
   def SETsForUpdate(sb: StringBuilder, v: Any) {
     sb.append(base).append('=')
-    if(v == SoQLNullValue) sb.append("NULL")
+    if(SoQLNullValue == v) sb.append("NULL")
     else sb.append(literalize(v.asInstanceOf[DateTime]))
   }
 
