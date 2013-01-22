@@ -60,7 +60,7 @@ class PostgresRepBasedDataSqlizer[CT, CV](tableName: String,
         v.csvifyForInsert(sb, value)
       }
       sb.append('\n')
-      rw.writer.write(sb.toString)
+      rw.writer.append(sb)
     }
 
     def close() {}
