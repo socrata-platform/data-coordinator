@@ -67,7 +67,7 @@ object ChicagoCrimesLoadScript extends App {
   try {
     val typeContext = SoQLTypeContext
 
-    def rowCodecFactory(): RowLogCodec[Any] = new IdCachingRowLogCodec[Any] {
+    def rowCodecFactory(): RowLogCodec[Any] = new SimpleRowLogCodec[Any] {
       def rowDataVersion: Short = 0
 
       // fixme; it'd be much better to do this in a manner simular to how column reps work

@@ -79,32 +79,13 @@ trait RowLogCodec[CV] {
   }
 }
 
-trait IdCachingRowLogCodec[CV] extends RowLogCodec[CV] {
-  private val colNameReadCache = new TIntLongHashMap(Constants.DEFAULT_CAPACITY, Constants.DEFAULT_LOAD_FACTOR, -1, -1)
-  private val colNameWriteCache = new TLongIntHashMap(Constants.DEFAULT_CAPACITY, Constants.DEFAULT_LOAD_FACTOR, -1, -1)
-
-  private def writeKey(target: CodedOutputStream, key: ColumnId) {
-    val cached = colNameWriteCache.get(key.underlying)
-    if(cached == -1) {
-      val id = colNameWriteCache.size()
-      colNameWriteCache.put(key.underlying, id)
-      target.writeInt32NoTag(id)
-      target.writeInt64NoTag(key.underlying)
-    } else {
-      target.writeInt32NoTag(cached)
-    }
+trait SimpleRowLogCodec[CV] extends RowLogCodec[CV] {
+  protected def writeKey(target: CodedOutputStream, key: ColumnId) {
+    target.writeInt64NoTag(key.underlying)
   }
 
-  private def readKey(source: CodedInputStream): ColumnId = {
-    val id = source.readInt32()
-    val cached = colNameReadCache.get(id)
-    if(cached == -1) {
-      val key = source.readInt64()
-      colNameReadCache.put(id, key)
-      new ColumnId(key)
-    } else {
-      new ColumnId(cached)
-    }
+  protected def readKey(source: CodedInputStream): ColumnId = {
+    new ColumnId(source.readInt64())
   }
 
   protected def writeValue(target: CodedOutputStream, cv: CV)
