@@ -3,19 +3,33 @@ package com.socrata.datacoordinator.backup
 import java.sql.{DriverManager, Connection}
 
 import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.Managed
 
-import com.socrata.datacoordinator.truth.loader.{DatasetContentsCopier, SchemaLoader, Logger, NullLogger}
+import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.manifest.TruthManifest
 import com.socrata.datacoordinator.manifest.sql.SqlTruthManifest
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.id.{VersionId, ColumnId, DatasetId}
 import com.socrata.datacoordinator.truth.sql.{SqlColumnRep, DatabasePopulator}
-import com.socrata.datacoordinator.truth.loader.sql.{RepBasedSqlDatasetContentsCopier, RepBasedSqlSchemaLoader}
+import com.socrata.datacoordinator.truth.loader.sql._
 import com.socrata.soql.types.SoQLType
-import com.socrata.datacoordinator.common.soql.{SystemColumns, SoQLRep, SoQLTypeContext}
+import com.socrata.datacoordinator.common.soql.{SoQLRowLogCodec, SystemColumns, SoQLRep, SoQLTypeContext}
 import com.socrata.datacoordinator.truth.metadata.sql.PostgresDatasetMap
+import com.socrata.datacoordinator.truth.RowLogCodec
+import com.socrata.datacoordinator.truth.metadata.CopyPair
+import java.util.concurrent.{Executors, ExecutorService}
+import com.socrata.datacoordinator.common.sql.RepBasedDatasetContextProvider
+import com.socrata.datacoordinator.util.collection.ColumnIdMap
+import com.socrata.datacoordinator.truth.metadata.CopyPair
+import com.socrata.datacoordinator.truth.loader.Delogger._
+import com.socrata.datacoordinator.truth.loader.Delogger.WorkingCopyCreated
+import com.socrata.datacoordinator.truth.loader.Delogger.ColumnCreated
+import scala.Some
+import com.socrata.datacoordinator.truth.loader.Delogger.RowDataUpdated
+import com.socrata.datacoordinator.truth.metadata.CopyPair
+import com.socrata.datacoordinator.truth.loader.Delogger.RowIdentifierChanged
 
-class Backup(conn: Connection, systemIdColumnName: String, paranoid: Boolean) {
+class Backup(conn: Connection, systemIdColumnName: String, executor: ExecutorService, paranoid: Boolean) {
   val typeContext = SoQLTypeContext
   val logger: Logger[Any] = NullLogger
   val datasetMap: BackupDatasetMap = new PostgresDatasetMap(conn)
@@ -26,6 +40,21 @@ class Backup(conn: Connection, systemIdColumnName: String, paranoid: Boolean) {
 
   val schemaLoader: SchemaLoader = new RepBasedSqlSchemaLoader(conn, logger, genericRepFor)
   val contentsCopier: DatasetContentsCopier = new RepBasedSqlDatasetContentsCopier(conn, logger, genericRepFor)
+
+  def dataLoader(version: datasetMap.VersionInfo): Managed[PrevettedLoader[Any]] = {
+    val schemaInfo = datasetMap.schema(version)
+    val schema = schemaInfo.mapValuesStrict(genericRepFor)
+    val idCol = schemaInfo.values.find(_.logicalName == systemIdColumnName).getOrElse(sys.error("No system ID column?")).systemId
+    val systemIds = schemaInfo.filter { (_, ci) => ci.logicalName.startsWith(":") }.keySet
+    val datasetContext = RepBasedDatasetContextProvider(
+      typeContext,
+      schema,
+      schemaInfo.values.find(_.isUserPrimaryKey).map(_.systemId),
+      idCol,
+      systemIds)
+    val sqlizer = new PostgresRepBasedDataSqlizer(version.dataTableName, datasetContext, executor)
+    managed(new SqlPrevettedLoader(conn, sqlizer, logger))
+  }
 
   def resync(datasetSystemId: DatasetId, explanation: String): Nothing =
     throw new Exception(explanation)
@@ -50,7 +79,9 @@ class Backup(conn: Connection, systemIdColumnName: String, paranoid: Boolean) {
     require(versionInfo.lifecycleStage == LifecycleStage.Unpublished, "Bad lifecycle stage")
     require(versionInfo.lifecycleVersion == 1, "Bad lifecycle version")
 
-    val vi = datasetMap.createWithId(versionInfo.datasetInfo.systemId, versionInfo.datasetInfo.datasetId, versionInfo.datasetInfo.tableBase, versionInfo.systemId)
+    val vi = datasetMap.createWithId(versionInfo.datasetInfo.systemId, versionInfo.datasetInfo.datasetId, versionInfo.datasetInfo.tableBaseBase, versionInfo.systemId)
+    println(vi.toString)
+    println(versionInfo.toString)
     assert(vi == versionInfo)
     schemaLoader.create(vi)
     vi
@@ -71,9 +102,6 @@ class Backup(conn: Connection, systemIdColumnName: String, paranoid: Boolean) {
     val ci = datasetMap.addColumnWithId(columnInfo.systemId, vi, columnInfo.logicalName, columnInfo.typeName, columnInfo.physicalColumnBaseBase)
     resyncUnless(di.systemId, ci == columnInfo, "Newly created column info differs")
     schemaLoader.addColumn(ci)
-
-    if(ci.logicalName == systemIdColumnName) schemaLoader.makeSystemPrimaryKey(ci)
-
     ci
   }
 
@@ -95,6 +123,15 @@ class Backup(conn: Connection, systemIdColumnName: String, paranoid: Boolean) {
     resyncUnless(di.systemId, ci == columnInfo, "Column infos differ")
     datasetMap.setUserPrimaryKey(ci)
     schemaLoader.makePrimaryKey(ci)
+  }
+
+  def makeSystemPrimaryKey(columnInfo: ColumnInfo) {
+    val di = requireDataset(columnInfo.versionInfo.datasetInfo)
+    val vi = datasetMap.latest(di)
+    resyncUnless(di.systemId, vi == columnInfo.versionInfo, "Version infos differ")
+    val ci = datasetMap.schema(vi)(columnInfo.systemId)
+    resyncUnless(di.systemId, ci == columnInfo, "Column infos differ")
+    schemaLoader.makeSystemPrimaryKey(ci)
   }
 
   def dropPrimaryKey(columnInfo: ColumnInfo) {
@@ -137,23 +174,83 @@ class Backup(conn: Connection, systemIdColumnName: String, paranoid: Boolean) {
     resyncUnless(di.systemId, vi == versionInfo, "Version infos differ")
     truncate(vi.dataTableName)
   }
+
+  def populateData(datasetInfo: DatasetInfo, ops: Seq[Delogger.Operation[Any]]) {
+    val di = requireDataset(datasetInfo)
+    val vi = datasetMap.latest(di)
+    for(loader <- dataLoader(vi)) {
+      for(op <- ops) {
+        op match {
+          case Delogger.Insert(sid, row) => loader.insert(sid, row)
+          case Delogger.Update(sid, row) => loader.update(sid, row)
+          case Delogger.Delete(sid) => loader.delete(sid)
+        }
+      }
+    }
+  }
 }
 
 object Backup extends App {
-  using(DriverManager.getConnection("jdbc:postgresql://localhost:5432/robertm", "blist", "blist")) { conn =>
-    conn.setAutoCommit(false)
-    try {
-      val bkp = new Backup(conn, SystemColumns.id, paranoid = true)
-      import bkp._
-
-      DatabasePopulator.populate(conn)
-
-      val vi = datasetMap.createWithId(new DatasetId(11001001), "one", "base", new VersionId(5))
-      datasetMap.addColumnWithId(new ColumnId(50), vi, "gnu", "gnu", "gnu")
-      datasetMap.addColumnWithId(new ColumnId(51), vi, "gnat", "gnu", "gnu")
-      println(datasetMap.schema(vi))
-    } finally {
-      conn.rollback()
+  def playback(primaryConn: Connection, backupConn: Connection, backup: Backup, datasetSystemId: DatasetId, version: Long) {
+    val delogger: Delogger[Any] = new SqlDelogger(primaryConn, "t_" + datasetSystemId.underlying + "_log", () => SoQLRowLogCodec)
+    for {
+      it <- managed(delogger.delog(version))
+      event <- it
+    } {
+      event match {
+        case WorkingCopyCreated(versionInfo) =>
+          if(version == 1) backup.createDataset(versionInfo)
+          else backup.makeWorkingCopy(versionInfo)
+        case ColumnCreated(info) =>
+          backup.addColumn(info)
+        case RowIdentifierChanged(Some(info)) =>
+          backup.makePrimaryKey(info)
+        case SystemRowIdentifierChanged(info) =>
+          backup.makeSystemPrimaryKey(info)
+        case RowIdentifierChanged(None) =>
+          val di = backup.datasetMap.datasetInfo(datasetSystemId).getOrElse(sys.error("No such dataset " + datasetSystemId))
+          val vi = backup.datasetMap.latest(di)
+          val schema = backup.datasetMap.schema(vi)
+          val ci = schema.values.find(_.isUserPrimaryKey).getOrElse(sys.error("No primary key on dataset " + datasetSystemId))
+          backup.dropPrimaryKey(ci)
+        case RowDataUpdated(ops) =>
+          val di = backup.datasetMap.datasetInfo(datasetSystemId).getOrElse(sys.error("No such dataset " + datasetSystemId))
+          backup.populateData(di, ops)
+      }
     }
+  }
+
+  val executor = Executors.newCachedThreadPool()
+  try {
+    for {
+      primaryConn <- managed(DriverManager.getConnection("jdbc:postgresql://localhost:5432/robertm", "blist", "blist"))
+      backupConn <- managed(DriverManager.getConnection("jdbc:postgresql://localhost:5432/robertm2", "blist", "blist"))
+    } {
+      primaryConn.setAutoCommit(false)
+      backupConn.setAutoCommit(false)
+      try {
+        DatabasePopulator.populate(backupConn)
+
+        val bkp = new Backup(backupConn, SystemColumns.id, executor, paranoid = true)
+
+        for {
+          globalLogStmt <- managed(primaryConn.prepareStatement("SELECT id, dataset_system_id, version FROM global_log ORDER BY id"))
+          globalLogRS <- managed(globalLogStmt.executeQuery())
+        } {
+          while(globalLogRS.next()) {
+            val datasetSystemId = new DatasetId(globalLogRS.getLong("dataset_system_id"))
+            val version = globalLogRS.getLong("version")
+            playback(primaryConn, backupConn, bkp, datasetSystemId, version)
+          }
+        }
+        backupConn.commit()
+        primaryConn.commit()
+      } finally {
+        backupConn.rollback()
+        primaryConn.rollback()
+      }
+    }
+  } finally {
+    executor.shutdown()
   }
 }

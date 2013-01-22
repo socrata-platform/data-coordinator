@@ -13,7 +13,7 @@ import com.google.protobuf.{CodedOutputStream, CodedInputStream}
 import com.socrata.soql.types._
 import com.socrata.id.numeric.{IdProvider, FibonacciIdProvider, InMemoryBlockIdProvider}
 
-import com.socrata.datacoordinator.common.soql.{SoQLTypeContext, SoQLRep, SoQLNullValue, SystemColumns}
+import com.socrata.datacoordinator.common.soql._
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.util._
@@ -32,6 +32,16 @@ import java.io.Closeable
 import scala.Tuple2
 
 object ChicagoCrimesLoadScript extends App {
+  val url =
+  // "jdbc:postgresql://10.0.5.104:5432/robertm"
+    "jdbc:postgresql://localhost:5432/robertm"
+  val username =
+  // "robertm"
+    "blist"
+  val pwd =
+  // "lof9afw3"
+    "blist"
+
   val executor = Executors.newCachedThreadPool()
 
   def convertNum(x: String) =
@@ -67,59 +77,7 @@ object ChicagoCrimesLoadScript extends App {
   try {
     val typeContext = SoQLTypeContext
 
-    def rowCodecFactory(): RowLogCodec[Any] = new SimpleRowLogCodec[Any] {
-      def rowDataVersion: Short = 0
-
-      // fixme; it'd be much better to do this in a manner simular to how column reps work
-
-      protected def writeValue(target: CodedOutputStream, v: Any) {
-        v match {
-          case l: RowId =>
-            target.writeRawByte(0)
-            target.writeInt64NoTag(l.underlying)
-          case s: String =>
-            target.writeRawByte(1)
-            target.writeStringNoTag(s)
-          case bd: BigDecimal =>
-            target.writeRawByte(2)
-            target.writeStringNoTag(bd.toString)
-          case b: Boolean =>
-            target.writeRawByte(3)
-            target.writeBoolNoTag(b)
-          case ts: DateTime =>
-            target.writeRawByte(4)
-            target.writeStringNoTag(ts.getZone.getID)
-            target.writeInt64NoTag(ts.getMillis)
-          case tt: Tuple2[_,_] =>
-            target.writeRawByte(5)
-            target.writeDoubleNoTag(tt._1.asInstanceOf[Double])
-            target.writeDoubleNoTag(tt._2.asInstanceOf[Double])
-          case SoQLNullValue =>
-            target.writeRawByte(-1)
-        }
-      }
-
-      protected def readValue(source: CodedInputStream): Any =
-        source.readRawByte() match {
-          case 0 =>
-            new RowId(source.readInt64())
-          case 1 =>
-            source.readString()
-          case 2 =>
-            BigDecimal(source.readString())
-          case 3 =>
-            source.readBool()
-          case 4 =>
-            val zone = DateTimeZone.forID(source.readString())
-            new DateTime(source.readInt64(), zone)
-          case 5 =>
-            val lat = source.readDouble()
-            val lon = source.readDouble()
-            (lat, lon)
-          case -1 =>
-            SoQLNullValue
-        }
-    }
+    def rowCodecFactory(): RowLogCodec[Any] = SoQLRowLogCodec
 
     trait RepFactory {
       def base: String
@@ -196,7 +154,7 @@ object ChicagoCrimesLoadScript extends App {
 
       def withTransaction[T]()(f: ProviderOfNecessaryThings => T): T = {
         for {
-          conn <- managed(DriverManager.getConnection("jdbc:postgresql://10.0.5.104:5432/robertm", "robertm", "lof9afw3")) // DriverManager.getConnection("jdbc:postgresql://localhost:5432/robertm", "blist", "blist"))
+          conn <- managed(DriverManager.getConnection(url, username, pwd))
         } yield {
           conn.setAutoCommit(false)
           try {
@@ -276,7 +234,7 @@ object ChicagoCrimesLoadScript extends App {
 
     // Everything above this point can be re-used for every operation
 
-    using(DriverManager.getConnection("jdbc:postgresql://10.0.5.104:5432/robertm", "robertm", "lof9afw3")) { conn => //DriverManager.getConnection("jdbc:postgresql://localhost:5432/robertm", "blist", "blist")) { conn =>
+    using(DriverManager.getConnection(url, username, pwd)) { conn =>
       conn.setAutoCommit(false)
       DatabasePopulator.populate(conn)
       conn.commit()
