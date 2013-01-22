@@ -56,7 +56,7 @@ class PostgresRepBasedDataSqlizer[CT, CV](tableName: String,
         if(didOne) sb.append(',')
         else didOne = true
 
-        val value = row.getOrElse(k, nullValue)
+        val value = row.getOrElseStrict(k, nullValue)
         v.csvifyForInsert(sb, value)
       }
       sb.append('\n')
