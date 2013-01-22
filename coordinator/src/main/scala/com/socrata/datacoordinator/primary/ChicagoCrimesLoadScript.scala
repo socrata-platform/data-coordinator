@@ -63,7 +63,7 @@ object ChicagoCrimesLoadScript extends App {
     if(x.isEmpty) SoQLNullValue
     else {
       val mtch = fmt.findFirstMatchIn(x).get
-      (mtch.group(1).toDouble, mtch.group(2).toDouble)
+      SoQLLocationValue(mtch.group(1).toDouble, mtch.group(2).toDouble)
     }
 
   val converter: Map[SoQLType, String => Any] = Map (

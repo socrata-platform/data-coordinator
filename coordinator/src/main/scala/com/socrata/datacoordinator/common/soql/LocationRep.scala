@@ -16,8 +16,8 @@ class LocationRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType,
   def csvifyForInsert(sb: StringBuilder, v: Any) {
     if(SoQLNullValue == v) { sb.append(',') }
     else {
-      val ll = v.asInstanceOf[(Double,Double)]
-      sb.append(ll._1).append(',').append(ll._2)
+      val ll = v.asInstanceOf[SoQLLocationValue]
+      sb.append(ll.latitude).append(',').append(ll.longitude)
     }
   }
 
@@ -26,9 +26,9 @@ class LocationRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType,
       stmt.setNull(start, Types.DOUBLE)
       stmt.setNull(start+1, Types.DOUBLE)
     } else {
-      val ll = v.asInstanceOf[(Double, Double)]
-      stmt.setDouble(start, ll._1)
-      stmt.setDouble(start + 1, ll. _2)
+      val ll = v.asInstanceOf[SoQLLocationValue]
+      stmt.setDouble(start, ll.latitude)
+      stmt.setDouble(start + 1, ll.longitude)
     }
     start + 2
   }
@@ -41,8 +41,8 @@ class LocationRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType,
     if(SoQLNullValue == v) {
       sb.append(physColumns(0)).append("=NULL,").append(physColumns(1)).append("=NULL")
     } else {
-      val ll = v.asInstanceOf[(Double, Double)]
-      sb.append(physColumns(0)).append('=').append(ll._1).append(',').append(physColumns(1)).append('=').append(ll._2)
+      val ll = v.asInstanceOf[SoQLLocationValue]
+      sb.append(physColumns(0)).append('=').append(ll.latitude).append(',').append(physColumns(1)).append('=').append(ll.longitude)
     }
   }
 
@@ -52,6 +52,6 @@ class LocationRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType,
   def fromResultSet(rs: ResultSet, start: Int): Any = {
     val lat = rs.getDouble(start)
     if(rs.wasNull) SoQLNullValue
-    else (lat, rs.getDouble(start + 1))
+    else SoQLLocationValue(lat, rs.getDouble(start + 1))
   }
 }

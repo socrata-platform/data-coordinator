@@ -28,10 +28,10 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[Any] {
         target.writeRawByte(4)
         target.writeStringNoTag(ts.getZone.getID)
         target.writeInt64NoTag(ts.getMillis)
-      case tt: Tuple2[_,_] =>
+      case loc: SoQLLocationValue =>
         target.writeRawByte(5)
-        target.writeDoubleNoTag(tt._1.asInstanceOf[Double])
-        target.writeDoubleNoTag(tt._2.asInstanceOf[Double])
+        target.writeDoubleNoTag(loc.latitude)
+        target.writeDoubleNoTag(loc.longitude)
       case SoQLNullValue =>
         target.writeRawByte(-1)
     }
@@ -53,7 +53,7 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[Any] {
       case 5 =>
         val lat = source.readDouble()
         val lon = source.readDouble()
-        (lat, lon)
+        SoQLLocationValue(lat, lon)
       case -1 =>
         SoQLNullValue
     }
