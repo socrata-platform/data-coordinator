@@ -80,8 +80,6 @@ class Backup(conn: Connection, systemIdColumnName: String, executor: ExecutorSer
     require(versionInfo.lifecycleVersion == 1, "Bad lifecycle version")
 
     val vi = datasetMap.createWithId(versionInfo.datasetInfo.systemId, versionInfo.datasetInfo.datasetId, versionInfo.datasetInfo.tableBaseBase, versionInfo.systemId)
-    println(vi.toString)
-    println(versionInfo.toString)
     assert(vi == versionInfo)
     schemaLoader.create(vi)
     vi
