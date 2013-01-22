@@ -57,14 +57,14 @@ trait RowLogCodec[CV] {
           case 0 =>
             val sid = source.readInt64()
             val row = decode(source)
-            Insert(sid, row)
+            Insert(new RowId(sid), row)
           case 1 =>
             val sid = source.readInt64()
             val row = decode(source)
-            Update(sid, row)
+            Update(new RowId(sid), row)
           case 2 =>
             val sid = source.readInt64()
-            Delete(sid)
+            Delete(new RowId(sid))
           case other =>
             throw new UnknownRowLogOperationException(other)
         }
@@ -122,7 +122,7 @@ class UnknownDataTypeException(val typeCode: Int) extends CorruptRowLogException
 
 object RowLogCodec {
   sealed abstract class Operation[+CV]
-  case class Insert[CV](systemID: Long, row: Row[CV]) extends Operation[CV]
-  case class Update[CV](systemID: Long, row: Row[CV]) extends Operation[CV]
-  case class Delete(systemID: Long) extends Operation[Nothing]
+  case class Insert[CV](systemID: RowId, row: Row[CV]) extends Operation[CV]
+  case class Update[CV](systemID: RowId, row: Row[CV]) extends Operation[CV]
+  case class Delete(systemID: RowId) extends Operation[Nothing]
 }

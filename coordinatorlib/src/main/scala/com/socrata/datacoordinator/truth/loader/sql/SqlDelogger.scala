@@ -44,6 +44,11 @@ class SqlDelogger[CV](connection: Connection,
     var done = false
     val UTF8 = Codec.UTF8.charSet
 
+    override def toString() = {
+      val state = if(!done) "unfinished" else "finished"
+      s"LogIterator($state)"
+    }
+
     def advance() {
       nextResult = null
       if(rs == null) {
@@ -80,7 +85,7 @@ class SqlDelogger[CV](connection: Connection,
 
     def decode() {
       val subversion = rs.getLong("subversion")
-      assert(subversion == lastSubversion + 1, "subversion skipped?")
+      assert(subversion == lastSubversion + 1, s"subversion skipped?  Got $subversion expected ${lastSubversion + 1}")
       lastSubversion = subversion
 
       val op = rs.getString("what")
@@ -97,6 +102,8 @@ class SqlDelogger[CV](connection: Connection,
           decodeColumnRemoved(aux)
         case SqlLogger.RowIdentifierChanged =>
           decodeRowIdentifierChanged(aux)
+        case SqlLogger.SystemRowIdentifierChanged =>
+          decodeSystemRowIdentifierChanged(aux)
         case SqlLogger.WorkingCopyCreated =>
           decodeWorkingCopyCreated(aux)
         case SqlLogger.WorkingCopyDropped =>
@@ -183,6 +190,13 @@ class SqlDelogger[CV](connection: Connection,
         else Some(JsonCodec.fromJValue[ColumnInfo](json).getOrElse(sys.error("Parameter for `row identifier changed' was not a ColumnInfo")))
 
       Delogger.RowIdentifierChanged(ci)
+    }
+
+    def decodeSystemRowIdentifierChanged(aux: Array[Byte]) = {
+      val ci = JsonCodec.fromJValue[ColumnInfo](fromJson(aux)).getOrElse {
+        sys.error("Parameter for `system row identifier changed' was not an object")
+      }
+      Delogger.SystemRowIdentifierChanged(ci)
     }
 
     def decodeWorkingCopyCreated(aux: Array[Byte]) = {
