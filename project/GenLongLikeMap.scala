@@ -103,6 +103,12 @@ class """ + targetClassName + """[+V] private[""" + lastElemOf(targetPackage) + 
     else result
   }
 
+  @inline def getOrElseStrict[B >: V](k: """ + sourceType + """, v: B): B = {
+    val result = unsafeUnderlying.get(k.underlying)
+    if(result == null) v
+    else result
+  }
+
   def keys: Iterator[""" + sourceType + """] = iterator.map(_._1)
   def values: Iterable[V] = unsafeUnderlying.valueCollection.asScala
 
