@@ -25,44 +25,17 @@ abstract class AbstractSqlLoaderProvider[CT, CV](conn: Connection, idProvider: I
 
     val repSchema = schema.mapValuesStrict(repFor)
 
-    val userPrimaryKeyInfo = schema.values.iterator.find(_.isUserPrimaryKey).map { colInfo =>
-      (colInfo.systemId, repSchema(colInfo.systemId).representedType)
-    }
+    val userPrimaryKeyInfo = schema.values.iterator.find(_.isUserPrimaryKey).map(_.systemId)
 
     val systemPrimaryKey = schema.iterator.find { case (_, colInfo) =>
       colInfo.logicalName == SystemColumns.id
     }.map(_._1).getOrElse { sys.error(s"No ${SystemColumns.id} column?") }
 
-    val datasetContext = makeDatasetContext(versionInfo, repSchema, userPrimaryKeyInfo, systemPrimaryKey, schema.filter { (_, i) => i.logicalName.startsWith(":") }.keySet)
+    val datasetContext = RepBasedDatasetContextProvider(typeContext, repSchema, userPrimaryKeyInfo, systemPrimaryKey, schema.filter { (_, i) => i.logicalName.startsWith(":") }.keySet)
 
     val sqlizer = produce(tableName, datasetContext)
     SqlLoader(conn, rowPreparer, sqlizer, logger, idProvider, executor)
   }
-
-  def makeDatasetContext(versionInfo: VersionInfo, rawSchema: ColumnIdMap[SqlColumnRep[CT, CV]], userPKCol: Option[(ColumnId, CT)], idCol: ColumnId, systemIds: ColumnIdSet) =
-    new RepBasedSqlDatasetContext[CT, CV] {
-      val typeContext: TypeContext[CT, CV] = self.typeContext
-
-      val schema = rawSchema
-
-      val systemColumnIds = systemIds
-
-      val systemIdColumn = idCol
-
-      val userPrimaryKeyColumn: Option[ColumnId] = userPKCol.map(_._1)
-      val userPrimaryKeyType: Option[CT] = userPKCol.map(_._2)
-
-      def userPrimaryKey(row: Row[CV]): Option[CV] =
-        row.get(userPrimaryKeyColumn.get)
-
-      def systemId(row: Row[CV]): Option[RowId] =
-        row.get(systemIdColumn).map(typeContext.makeSystemIdFromValue)
-
-      def systemIdAsValue(row: Row[CV]): Option[CV] =
-        row.get(systemIdColumn)
-
-      def mergeRows(base: Row[CV], overlay: Row[CV]): Row[CV] = base ++ overlay
-    }
 }
 
 trait StandardSqlLoaderProvider[CT, CV] { this: AbstractSqlLoaderProvider[CT, CV] =>
