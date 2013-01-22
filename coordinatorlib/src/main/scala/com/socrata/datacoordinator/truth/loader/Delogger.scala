@@ -4,7 +4,7 @@ package truth.loader
 import java.io.Closeable
 
 import com.socrata.datacoordinator.util.CloseableIterator
-import com.socrata.datacoordinator.truth.metadata.ColumnInfo
+import com.socrata.datacoordinator.truth.metadata.{VersionInfo, ColumnInfo}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 
 trait Delogger[CV] extends Closeable {
@@ -17,7 +17,7 @@ object Delogger {
   case class ColumnCreated(info: ColumnInfo) extends LogEvent[Nothing]
   case class ColumnRemoved(info: ColumnInfo) extends LogEvent[Nothing]
   case class RowIdentifierChanged(info: Option[ColumnInfo]) extends LogEvent[Nothing]
-  case object WorkingCopyCreated extends LogEvent[Nothing]
+  case class WorkingCopyCreated(versionInfo: VersionInfo) extends LogEvent[Nothing]
   case object WorkingCopyDropped extends LogEvent[Nothing]
   case object WorkingCopyPublished extends LogEvent[Nothing]
   case class RowDataUpdated[CV](operations: Seq[Operation[CV]]) extends LogEvent[CV]

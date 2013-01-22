@@ -13,7 +13,7 @@ import com.rojoma.json.ast.{JNull, JString, JObject}
 import com.socrata.datacoordinator.truth.RowLogCodec
 import com.socrata.datacoordinator.truth.loader.Delogger
 import com.socrata.datacoordinator.util.{CloseableIterator, LeakDetect}
-import com.socrata.datacoordinator.truth.metadata.ColumnInfo
+import com.socrata.datacoordinator.truth.metadata.{VersionInfo, ColumnInfo}
 import com.rojoma.json.codec.JsonCodec
 import com.socrata.datacoordinator.util.collection.MutableColumnIdMap
 import com.socrata.datacoordinator.id.ColumnId
@@ -98,7 +98,7 @@ class SqlDelogger[CV](connection: Connection,
         case SqlLogger.RowIdentifierChanged =>
           decodeRowIdentifierChanged(aux)
         case SqlLogger.WorkingCopyCreated =>
-          Delogger.WorkingCopyCreated
+          decodeWorkingCopyCreated(aux)
         case SqlLogger.WorkingCopyDropped =>
           Delogger.WorkingCopyDropped
         case SqlLogger.WorkingCopyPublished =>
@@ -183,6 +183,13 @@ class SqlDelogger[CV](connection: Connection,
         else Some(JsonCodec.fromJValue[ColumnInfo](json).getOrElse(sys.error("Parameter for `row identifier changed' was not a ColumnInfo")))
 
       Delogger.RowIdentifierChanged(ci)
+    }
+
+    def decodeWorkingCopyCreated(aux: Array[Byte]) = {
+      val vi = JsonCodec.fromJValue[VersionInfo](fromJson(aux)).getOrElse {
+        sys.error("Parameter for `working copy created' was not an object")
+      }
+      Delogger.WorkingCopyCreated(vi)
     }
 
     def fromJson(aux: Array[Byte]) = JsonReader.fromString(new String(aux, UTF8))

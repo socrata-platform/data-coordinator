@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator
 package truth.loader
 
-import com.socrata.datacoordinator.truth.metadata.ColumnInfo
+import com.socrata.datacoordinator.truth.metadata.{VersionInfo, ColumnInfo}
 import com.socrata.datacoordinator.id.RowId
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 
@@ -14,7 +14,7 @@ class NullLogger[CV] extends Logger[CV] {
 
   def systemIdColumnSet(info: ColumnInfo) {}
 
-  def workingCopyCreated() {}
+  def workingCopyCreated(info: VersionInfo) {}
 
   def dataCopied() {}
 

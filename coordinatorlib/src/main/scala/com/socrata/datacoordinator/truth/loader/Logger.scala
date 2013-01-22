@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator
 package truth.loader
 
-import com.socrata.datacoordinator.truth.metadata.ColumnInfo
+import com.socrata.datacoordinator.truth.metadata.{VersionInfo, ColumnInfo}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 
 trait Logger[CV] extends DataLogger[CV] {
@@ -10,7 +10,7 @@ trait Logger[CV] extends DataLogger[CV] {
   def columnRemoved(info: ColumnInfo)
   def rowIdentifierChanged(newIdentifier: Option[ColumnInfo])
   def systemIdColumnSet(info: ColumnInfo)
-  def workingCopyCreated() // this signifies that the new table has been created, not the schema nor the data
+  def workingCopyCreated(info: VersionInfo)
   def dataCopied()
   def workingCopyDropped()
   def workingCopyPublished()

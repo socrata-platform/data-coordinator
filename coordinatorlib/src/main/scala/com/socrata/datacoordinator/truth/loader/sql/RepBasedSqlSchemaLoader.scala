@@ -18,7 +18,7 @@ class RepBasedSqlSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV], repF
       stmt.execute("CREATE TABLE " + versionInfo.dataTableName + " ()" + postgresTablespaceSuffix)
       stmt.execute(DatabasePopulator.logTableCreate(versionInfo.datasetInfo.logTableName, SqlLogger.opLength))
     }
-    logger.workingCopyCreated()
+    logger.workingCopyCreated(versionInfo)
   }
 
   def addColumn(columnInfo: ColumnInfo) {

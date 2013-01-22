@@ -12,7 +12,7 @@ import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.util.Counter
 import com.socrata.datacoordinator.truth.RowLogCodec
-import com.socrata.datacoordinator.truth.metadata.ColumnInfo
+import com.socrata.datacoordinator.truth.metadata.{VersionInfo, ColumnInfo}
 import com.rojoma.json.util.JsonUtil
 import com.rojoma.json.codec.JsonCodec
 import com.socrata.datacoordinator.id.RowId
@@ -122,11 +122,11 @@ class SqlLogger[CV](connection: Connection,
     logLine(SqlLogger.SystemRowIdentifierChanged, Codec.toUTF8(CompactJsonWriter.toString(columnJson)))
   }
 
-  def workingCopyCreated() {
+  def workingCopyCreated(info: VersionInfo) {
     checkTxn()
     flushRowData()
-
-    logLine(SqlLogger.WorkingCopyCreated, nullBytes)
+    val versionJson = JsonCodec.toJValue(info)
+    logLine(SqlLogger.WorkingCopyCreated, Codec.toUTF8(CompactJsonWriter.toString(versionJson)))
   }
 
   def dataCopied() {
