@@ -24,9 +24,4 @@ object Delogger {
   case object WorkingCopyPublished extends LogEvent[Nothing]
   case class RowDataUpdated[CV](operations: Seq[Operation[CV]]) extends LogEvent[CV]
   case object EndTransaction extends LogEvent[Nothing]
-
-  sealed abstract class Operation[+CV]
-  case class Insert[CV](systemId: RowId, data: Row[CV]) extends Operation[CV]
-  case class Update[CV](systemId: RowId, data: Row[CV]) extends Operation[CV]
-  case class Delete(systemId: RowId) extends Operation[Nothing]
 }

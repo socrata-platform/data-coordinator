@@ -11,7 +11,7 @@ import com.rojoma.json.io.JsonReader
 import com.rojoma.json.ast.{JNull, JString, JObject}
 
 import com.socrata.datacoordinator.truth.RowLogCodec
-import com.socrata.datacoordinator.truth.loader.Delogger
+import com.socrata.datacoordinator.truth.loader.{Operation, Delogger}
 import com.socrata.datacoordinator.util.{CloseableIterator, LeakDetect}
 import com.socrata.datacoordinator.truth.metadata.{VersionInfo, ColumnInfo}
 import com.rojoma.json.codec.JsonCodec
@@ -128,19 +128,11 @@ class SqlDelogger[CV](connection: Connection,
       // TODO: dispatch on version (right now we have only one)
       codec.skipVersion(cis)
 
-      val results = new VectorBuilder[Delogger.Operation[CV]]
-      def loop(): Vector[Delogger.Operation[CV]] = {
+      val results = new VectorBuilder[Operation[CV]]
+      def loop(): Vector[Operation[CV]] = {
         codec.extract(cis) match {
           case Some(op) =>
-            // Ick.  TODO: merge these two Operation types
-            op match {
-              case RowLogCodec.Insert(sid, row) =>
-                results += Delogger.Insert(sid, row)
-              case RowLogCodec.Update(sid, row) =>
-                results += Delogger.Update(sid, row)
-              case RowLogCodec.Delete(sid) =>
-                results += Delogger.Delete(sid)
-            }
+            results += op
             loop()
           case None =>
             results.result()

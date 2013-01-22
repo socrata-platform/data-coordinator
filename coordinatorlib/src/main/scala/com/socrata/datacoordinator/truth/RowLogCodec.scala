@@ -4,9 +4,9 @@ package truth
 import java.io.{EOFException, IOException}
 
 import com.google.protobuf.{CodedInputStream, CodedOutputStream, InvalidProtocolBufferException}
+
 import com.socrata.datacoordinator.id.{ColumnId, RowId}
-import gnu.trove.map.hash.{TLongIntHashMap, TIntLongHashMap}
-import gnu.trove.impl.Constants
+import com.socrata.datacoordinator.truth.loader.{Operation, Insert, Update, Delete}
 
 // Hm, may want to refactor this somewhat.  In particular, we'll
 // probably want to plug in different decoders depending on
@@ -15,8 +15,6 @@ import gnu.trove.impl.Constants
 // A RowLogCodec is allowed to be stateful (e.g., to cache column names)
 // and so should be re-created for every log row.
 trait RowLogCodec[CV] {
-  import RowLogCodec._
-
   def structureVersion: Short = 0
 
   def rowDataVersion: Short
@@ -119,10 +117,3 @@ abstract class CorruptRowLogException(msg: String, cause: Throwable = null) exte
 class RowLogTruncatedException(cause: IOException) extends CorruptRowLogException("Row log truncated", cause)
 class UnknownRowLogOperationException(val operationCode: Int) extends CorruptRowLogException("Unknown operation " + operationCode)
 class UnknownDataTypeException(val typeCode: Int) extends CorruptRowLogException("Unknown data type " + typeCode)
-
-object RowLogCodec {
-  sealed abstract class Operation[+CV]
-  case class Insert[CV](systemID: RowId, row: Row[CV]) extends Operation[CV]
-  case class Update[CV](systemID: RowId, row: Row[CV]) extends Operation[CV]
-  case class Delete(systemID: RowId) extends Operation[Nothing]
-}

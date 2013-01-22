@@ -11,32 +11,30 @@ import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.id.RowId
 
 class SqlPrevettedLoader[CT, CV](val conn: Connection, sqlizer: DataSqlizer[CT, CV], logger: DataLogger[CV]) extends PrevettedLoader[CV] {
-  import SqlPrevettedLoader._
-
   val typeContext = sqlizer.datasetContext.typeContext
 
-  val insertBatch = new mutable.ArrayBuffer[Upsert[CV]]
-  val updateBatch = new mutable.ArrayBuffer[Upsert[CV]]
-  val deleteBatch = new mutable.ArrayBuffer[RowId]
+  val insertBatch = new mutable.ArrayBuffer[Insert[CV]]
+  val updateBatch = new mutable.ArrayBuffer[Update[CV]]
+  val deleteBatch = new mutable.ArrayBuffer[Delete]
 
   def insert(rowId: RowId, row: Row[CV]) {
     flushUpdates()
     flushDeletes()
-    insertBatch += Upsert(rowId, row)
+    insertBatch += Insert(rowId, row)
     logger.insert(rowId, row)
   }
 
   def update(rowId: RowId, row: Row[CV]) {
     flushInserts()
     flushDeletes()
-    updateBatch += Upsert(rowId, row)
+    updateBatch += Update(rowId, row)
     logger.update(rowId, row)
   }
 
   def delete(rowId: RowId) {
     flushInserts()
     flushUpdates()
-    deleteBatch += rowId
+    deleteBatch += Delete(rowId)
     logger.delete(rowId)
   }
 
@@ -45,7 +43,7 @@ class SqlPrevettedLoader[CT, CV](val conn: Connection, sqlizer: DataSqlizer[CT, 
       try {
         for(stmt <- managed(conn.createStatement())) {
           for(update <- updateBatch) {
-            stmt.addBatch(sqlizer.sqlizeSystemIdUpdate(update.rowId, update.row))
+            stmt.addBatch(sqlizer.sqlizeSystemIdUpdate(update.systemId, update.data))
           }
           checkResults(stmt.executeBatch(), 1)
         }
@@ -67,7 +65,7 @@ class SqlPrevettedLoader[CT, CV](val conn: Connection, sqlizer: DataSqlizer[CT, 
     if(deleteBatch.nonEmpty) {
       try {
         using(conn.prepareStatement(sqlizer.prepareSystemIdDeleteStatement)) { stmt =>
-          for(rowId <- deleteBatch) { sqlizer.prepareSystemIdDelete(stmt, rowId); stmt.addBatch() }
+          for(delete <- deleteBatch) { sqlizer.prepareSystemIdDelete(stmt, delete.systemId); stmt.addBatch() }
           checkResults(stmt.executeBatch(), 1)
         }
       } finally {
@@ -81,7 +79,7 @@ class SqlPrevettedLoader[CT, CV](val conn: Connection, sqlizer: DataSqlizer[CT, 
       try {
         sqlizer.insertBatch(conn) { inserter =>
           for(insert <- insertBatch) {
-            inserter.insert(insert.row)
+            inserter.insert(insert.data)
           }
         }
       } finally {
@@ -95,8 +93,4 @@ class SqlPrevettedLoader[CT, CV](val conn: Connection, sqlizer: DataSqlizer[CT, 
     flushUpdates()
     flushDeletes()
   }
-}
-
-object SqlPrevettedLoader {
-  case class Upsert[CV](rowId: RowId, row: Row[CV])
 }

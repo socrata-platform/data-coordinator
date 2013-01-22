@@ -173,15 +173,15 @@ class Backup(conn: Connection, systemIdColumnName: String, executor: ExecutorSer
     truncate(vi.dataTableName)
   }
 
-  def populateData(datasetInfo: DatasetInfo, ops: Seq[Delogger.Operation[Any]]) {
+  def populateData(datasetInfo: DatasetInfo, ops: Seq[Operation[Any]]) {
     val di = requireDataset(datasetInfo)
     val vi = datasetMap.latest(di)
     for(loader <- dataLoader(vi)) {
       for(op <- ops) {
         op match {
-          case Delogger.Insert(sid, row) => loader.insert(sid, row)
-          case Delogger.Update(sid, row) => loader.update(sid, row)
-          case Delogger.Delete(sid) => loader.delete(sid)
+          case Insert(sid, row) => loader.insert(sid, row)
+          case Update(sid, row) => loader.update(sid, row)
+          case Delete(sid) => loader.delete(sid)
         }
       }
     }
