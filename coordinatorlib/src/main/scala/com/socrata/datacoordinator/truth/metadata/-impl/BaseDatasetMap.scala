@@ -5,11 +5,17 @@ import com.socrata.datacoordinator.id.{RowId, DatasetId}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 
 trait BaseDatasetMap {
-  type DatasetInfo <: com.socrata.datacoordinator.truth.metadata.DatasetInfo
-  type LocalVersion = { def datasetInfo: DatasetInfo }
-  type VersionInfo <: com.socrata.datacoordinator.truth.metadata.VersionInfo with LocalVersion
-  type LocalColumn = { def versionInfo: VersionInfo }
-  type ColumnInfo <: com.socrata.datacoordinator.truth.metadata.ColumnInfo with LocalColumn
+  type DatasetInfo <: IDatasetInfo
+  type VersionInfo <: IVersionInfo
+  type ColumnInfo <: IColumnInfo
+
+  trait IDatasetInfo extends com.socrata.datacoordinator.truth.metadata.DatasetInfo
+  trait IVersionInfo extends com.socrata.datacoordinator.truth.metadata.VersionInfo {
+    val datasetInfo: DatasetInfo
+  }
+  trait IColumnInfo extends com.socrata.datacoordinator.truth.metadata.ColumnInfo {
+    val versionInfo: VersionInfo
+  }
 
   /** Looks up a dataset record by its ID. */
   def datasetInfo(datasetId: String): Option[DatasetInfo]
@@ -77,7 +83,7 @@ trait BaseDatasetMap {
 
   /** Clears the primary key column for this dataset-version.
     * @note Does not change the actual table; this just updates the bookkeeping. */
-  def clearUserPrimaryKey(versionInfo: VersionInfo)
+  def clearUserPrimaryKey(columnInfo: ColumnInfo)
 
   /** Stores the next available row ID for this dataset. */
   def updateNextRowId(datasetInfo: DatasetInfo, newNextRowId: RowId): DatasetInfo

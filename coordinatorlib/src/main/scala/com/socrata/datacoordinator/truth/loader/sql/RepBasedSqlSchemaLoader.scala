@@ -43,7 +43,7 @@ class RepBasedSqlSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV], repF
 
   def makePrimaryKey(columnInfo: ColumnInfo): Boolean = {
     if(makePrimaryKeyWithoutLogging(columnInfo)) {
-      logger.rowIdentifierChanged(Some(columnInfo))
+      logger.rowIdentifierSet(columnInfo)
       true
     } else {
       false
@@ -84,7 +84,7 @@ class RepBasedSqlSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV], repF
             stmt.execute("ALTER TABLE " + table + " ALTER " + col + " DROP NOT NULL")
           }
         }
-        logger.rowIdentifierChanged(None)
+        logger.rowIdentifierCleared(columnInfo)
         true
       case _ =>
         false

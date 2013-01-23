@@ -10,7 +10,9 @@ class NullLogger[CV] extends Logger[CV] {
 
   def columnRemoved(info: ColumnInfo) {}
 
-  def rowIdentifierChanged(name: Option[ColumnInfo]) {}
+  def rowIdentifierSet(info: ColumnInfo) {}
+
+  def rowIdentifierCleared(info: ColumnInfo) {}
 
   def systemIdColumnSet(info: ColumnInfo) {}
 

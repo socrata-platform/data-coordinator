@@ -104,8 +104,10 @@ class SqlDelogger[CV](connection: Connection,
           decodeColumnCreated(aux)
         case SqlLogger.ColumnRemoved =>
           decodeColumnRemoved(aux)
-        case SqlLogger.RowIdentifierChanged =>
-          decodeRowIdentifierChanged(aux)
+        case SqlLogger.RowIdentifierSet =>
+          decodeRowIdentifierSet(aux)
+        case SqlLogger.RowIdentifierCleared =>
+          decodeRowIdentifierCleared(aux)
         case SqlLogger.SystemRowIdentifierChanged =>
           decodeSystemRowIdentifierChanged(aux)
         case SqlLogger.WorkingCopyCreated =>
@@ -179,13 +181,18 @@ class SqlDelogger[CV](connection: Connection,
       Delogger.ColumnRemoved(ci)
     }
 
-    def decodeRowIdentifierChanged(aux: Array[Byte]) = {
-      val json = fromJson(aux)
-      val ci =
-        if(json == JNull) None
-        else Some(JsonCodec.fromJValue[ColumnInfo](json).getOrElse(sys.error("Parameter for `row identifier changed' was not a ColumnInfo")))
+    def decodeRowIdentifierSet(aux: Array[Byte]) = {
+      val ci = JsonCodec.fromJValue[ColumnInfo](fromJson(aux)).getOrElse {
+        sys.error("Parameter for `row identifier set' was not an object")
+      }
+      Delogger.RowIdentifierSet(ci)
+    }
 
-      Delogger.RowIdentifierChanged(ci)
+    def decodeRowIdentifierCleared(aux: Array[Byte]) = {
+      val ci = JsonCodec.fromJValue[ColumnInfo](fromJson(aux)).getOrElse {
+        sys.error("Parameter for `row identifier cleared' was not an object")
+      }
+      Delogger.RowIdentifierCleared(ci)
     }
 
     def decodeSystemRowIdentifierChanged(aux: Array[Byte]) = {

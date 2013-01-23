@@ -15,9 +15,13 @@ import com.socrata.datacoordinator.util.collection.MutableColumnIdMap
 class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDatasetMap {
   def lockNotAvailableState = "55P03"
 
-  type DatasetInfo = com.socrata.datacoordinator.truth.metadata.DatasetInfo
-  type VersionInfo = com.socrata.datacoordinator.truth.metadata.VersionInfo
-  type ColumnInfo = com.socrata.datacoordinator.truth.metadata.ColumnInfo
+  type DatasetInfo = SqlDatasetInfo
+  type VersionInfo = SqlVersionInfo
+  type ColumnInfo = SqlColumnInfo
+
+  case class SqlDatasetInfo(systemId: DatasetId, datasetId: String, tableBaseBase: String, nextRowId: RowId) extends IDatasetInfo
+  case class SqlVersionInfo(datasetInfo: DatasetInfo, systemId: VersionId, lifecycleVersion: Long, lifecycleStage: LifecycleStage) extends IVersionInfo
+  case class SqlColumnInfo(versionInfo: VersionInfo, systemId: ColumnId, logicalName: String, typeName: String, physicalColumnBaseBase: String, isUserPrimaryKey: Boolean) extends IColumnInfo
 
   require(!conn.getAutoCommit, "Connection is in auto-commit mode")
 
@@ -38,7 +42,7 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
       stmt.setLong(1, datasetInfo.systemId.underlying)
       using(stmt.executeQuery()) { rs =>
         if(!rs.next()) sys.error("Looked up a table for " + datasetInfo.datasetId + " but didn't find any version info?")
-        VersionInfo(datasetInfo, new VersionId(rs.getLong("system_id")), rs.getLong("lifecycle_version"), LifecycleStage.valueOf(rs.getString("lifecycle_stage")))
+        SqlVersionInfo(datasetInfo, new VersionId(rs.getLong("system_id")), rs.getLong("lifecycle_version"), LifecycleStage.valueOf(rs.getString("lifecycle_stage")))
       }
     }
 
@@ -50,7 +54,7 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
       stmt.setInt(3, nth)
       using(stmt.executeQuery()) { rs =>
         if(rs.next()) {
-          Some(VersionInfo(datasetInfo, new VersionId(rs.getLong("system_id")), rs.getLong("lifecycle_version"), stage))
+          Some(SqlVersionInfo(datasetInfo, new VersionId(rs.getLong("system_id")), rs.getLong("lifecycle_version"), stage))
         } else {
           None
         }
@@ -65,7 +69,7 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
       stmt.setLong(2, lifecycleVersion)
       using(stmt.executeQuery()) { rs =>
         if(rs.next()) {
-          Some(VersionInfo(datasetInfo, new VersionId(rs.getLong("system_id")), lifecycleVersion, LifecycleStage.valueOf(rs.getString("lifecycle_stage"))))
+          Some(SqlVersionInfo(datasetInfo, new VersionId(rs.getLong("system_id")), lifecycleVersion, LifecycleStage.valueOf(rs.getString("lifecycle_stage"))))
         } else {
           None
         }
@@ -80,7 +84,7 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
         val result = new MutableColumnIdMap[ColumnInfo]
         while(rs.next()) {
           val systemId = new ColumnId(rs.getLong("system_id"))
-          result += systemId -> ColumnInfo(versionInfo, systemId, rs.getString("logical_column"), rs.getString("type_name"), rs.getString("physical_column_base_base"), rs.getBoolean("is_user_primary_key"))
+          result += systemId -> SqlColumnInfo(versionInfo, systemId, rs.getString("logical_column"), rs.getString("type_name"), rs.getString("physical_column_base_base"), rs.getBoolean("is_user_primary_key"))
         }
         result.freeze()
       }
@@ -112,7 +116,7 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
   def extractDatasetInfoFromResultSet(stmt: PreparedStatement) =
     using(stmt.executeQuery) { rs =>
       if(rs.next()) {
-        Some(DatasetInfo(new DatasetId(rs.getLong("system_id")), rs.getString("dataset_id"), rs.getString("table_base_base"), new RowId(rs.getLong("next_row_id"))))
+        Some(SqlDatasetInfo(new DatasetId(rs.getLong("system_id")), rs.getString("dataset_id"), rs.getString("table_base_base"), new RowId(rs.getLong("next_row_id"))))
       } else {
         None
       }
@@ -137,7 +141,7 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
   def createQuery_versionMap = "INSERT INTO version_map (dataset_system_id, lifecycle_version, lifecycle_stage) VALUES (?, ?, CAST(? AS dataset_lifecycle_stage)) RETURNING system_id"
   def create(datasetId: String, tableBaseBase: String): VersionInfo = {
     val datasetInfo = using(conn.prepareStatement(createQuery_tableMap)) { stmt =>
-      val datasetInfoNoSystemId = DatasetInfo(new DatasetId(-1), datasetId, tableBaseBase, RowId.initial)
+      val datasetInfoNoSystemId = SqlDatasetInfo(new DatasetId(-1), datasetId, tableBaseBase, RowId.initial)
       stmt.setString(1, datasetInfoNoSystemId.datasetId)
       stmt.setString(2, datasetInfoNoSystemId.tableBaseBase)
       stmt.setLong(3, datasetInfoNoSystemId.nextRowId.underlying)
@@ -154,7 +158,7 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
     }
 
     using(conn.prepareStatement(createQuery_versionMap)) { stmt =>
-      val versionInfoNoSystemId = VersionInfo(datasetInfo, new VersionId(-1), 1, LifecycleStage.Unpublished)
+      val versionInfoNoSystemId = SqlVersionInfo(datasetInfo, new VersionId(-1), 1, LifecycleStage.Unpublished)
 
       stmt.setLong(1, versionInfoNoSystemId.datasetInfo.systemId.underlying)
       stmt.setLong(2, versionInfoNoSystemId.lifecycleVersion)
@@ -170,7 +174,7 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
   def createQuery_tableMapWithSystemId = "INSERT INTO dataset_map (system_id, dataset_id, table_base_base, next_row_id) VALUES (?, ?, ?, ?)"
   def createQuery_versionMapWithSystemId = "INSERT INTO version_map (system_id, dataset_system_id, lifecycle_version, lifecycle_stage) VALUES (?, ?, ?, CAST(? AS dataset_lifecycle_stage))"
   def createWithId(systemId: DatasetId, datasetId: String, tableBaseBase: String, initialVersionId: VersionId): VersionInfo = {
-    val datasetInfo = DatasetInfo(systemId, datasetId, tableBaseBase, RowId.initial)
+    val datasetInfo = SqlDatasetInfo(systemId, datasetId, tableBaseBase, RowId.initial)
     using(conn.prepareStatement(createQuery_tableMapWithSystemId)) { stmt =>
       stmt.setLong(1, datasetInfo.systemId.underlying)
       stmt.setString(2, datasetInfo.datasetId)
@@ -187,7 +191,7 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
     }
 
     using(conn.prepareStatement(createQuery_versionMapWithSystemId)) { stmt =>
-      val versionInfo = VersionInfo(datasetInfo, initialVersionId, 1, LifecycleStage.Unpublished)
+      val versionInfo = SqlVersionInfo(datasetInfo, initialVersionId, 1, LifecycleStage.Unpublished)
 
       stmt.setLong(1, versionInfo.systemId.underlying)
       stmt.setLong(2, versionInfo.datasetInfo.systemId.underlying)
@@ -279,7 +283,7 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
 
   def addColumnWithId(systemId: ColumnId, versionInfo: VersionInfo, logicalName: String, typeName: String, physicalColumnBaseBase: String): ColumnInfo = {
     using(conn.prepareStatement(addColumnQuery)) { stmt =>
-      val columnInfo = ColumnInfo(versionInfo, systemId, logicalName, typeName, physicalColumnBaseBase, isUserPrimaryKey = false)
+      val columnInfo = SqlColumnInfo(versionInfo, systemId, logicalName, typeName, physicalColumnBaseBase, isUserPrimaryKey = false)
 
       stmt.setLong(1, columnInfo.systemId.underlying)
       stmt.setLong(2, versionInfo.systemId.underlying)
@@ -342,10 +346,12 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
       userPrimaryKey.copy(isUserPrimaryKey = true)
     }
 
-  def clearUserPrimaryKeyQuery = "UPDATE column_map SET is_user_primary_key = NULL WHERE version_system_id = ?"
-  def clearUserPrimaryKey(versionInfo: VersionInfo) {
+  def clearUserPrimaryKeyQuery = "UPDATE column_map SET is_user_primary_key = NULL WHERE version_system_id = ? and system_id = ?"
+  def clearUserPrimaryKey(columnInfo: ColumnInfo) {
+    require(columnInfo.isUserPrimaryKey, "Requested clearing a non-primary key")
     using(conn.prepareStatement(clearUserPrimaryKeyQuery)) { stmt =>
-      stmt.setLong(1, versionInfo.systemId.underlying)
+      stmt.setLong(1, columnInfo.versionInfo.systemId.underlying)
+      stmt.setLong(2, columnInfo.systemId.underlying)
       stmt.executeUpdate()
     }
   }

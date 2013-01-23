@@ -105,14 +105,16 @@ class SqlLogger[CV](connection: Connection,
     logLine(SqlLogger.ColumnRemoved, Codec.toUTF8(JsonUtil.renderJson(info)))
   }
 
-  def rowIdentifierChanged(name: Option[ColumnInfo]) {
+  def rowIdentifierSet(info: ColumnInfo) {
     checkTxn()
     flushRowData()
-    val columnJson = name match {
-      case Some(n) => JsonCodec.toJValue(n)
-      case None => JNull
-    }
-    logLine(SqlLogger.RowIdentifierChanged, Codec.toUTF8(CompactJsonWriter.toString(columnJson)))
+    logLine(SqlLogger.RowIdentifierSet, Codec.toUTF8(CompactJsonWriter.toString(JsonCodec.toJValue(info))))
+  }
+
+  def rowIdentifierCleared(info: ColumnInfo) {
+    checkTxn()
+    flushRowData()
+    logLine(SqlLogger.RowIdentifierCleared, Codec.toUTF8(CompactJsonWriter.toString(JsonCodec.toJValue(info))))
   }
 
   def systemIdColumnSet(info: ColumnInfo) {
@@ -235,7 +237,8 @@ object SqlLogger {
   val Truncated = "TRN"
   val ColumnCreated = "CCR"
   val ColumnRemoved = "CRM"
-  val RowIdentifierChanged = "RID"
+  val RowIdentifierSet = "RID"
+  val RowIdentifierCleared = "CID"
   val SystemRowIdentifierChanged = "SID"
   val WorkingCopyCreated = "CWC"
   val DataCopied = "CPY"
