@@ -6,8 +6,10 @@ import com.socrata.datacoordinator.util.collection.ColumnIdMap
 
 trait BaseDatasetMap {
   type DatasetInfo <: com.socrata.datacoordinator.truth.metadata.DatasetInfo
-  type VersionInfo <: com.socrata.datacoordinator.truth.metadata.VersionInfo
-  type ColumnInfo <: com.socrata.datacoordinator.truth.metadata.ColumnInfo
+  type LocalVersion = { def datasetInfo: DatasetInfo }
+  type VersionInfo <: com.socrata.datacoordinator.truth.metadata.VersionInfo with LocalVersion
+  type LocalColumn = { def versionInfo: VersionInfo }
+  type ColumnInfo <: com.socrata.datacoordinator.truth.metadata.ColumnInfo with LocalColumn
 
   /** Looks up a dataset record by its ID. */
   def datasetInfo(datasetId: String): Option[DatasetInfo]
