@@ -9,22 +9,17 @@ import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.manifest.TruthManifest
 import com.socrata.datacoordinator.manifest.sql.SqlTruthManifest
 import com.socrata.datacoordinator.truth.metadata._
-import com.socrata.datacoordinator.id.{VersionId, ColumnId, DatasetId}
+import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.truth.sql.{SqlColumnRep, DatabasePopulator}
 import com.socrata.datacoordinator.truth.loader.sql._
 import com.socrata.soql.types.SoQLType
 import com.socrata.datacoordinator.common.soql.{SoQLRowLogCodec, SystemColumns, SoQLRep, SoQLTypeContext}
 import com.socrata.datacoordinator.truth.metadata.sql.PostgresDatasetMap
-import com.socrata.datacoordinator.truth.RowLogCodec
-import com.socrata.datacoordinator.truth.metadata.CopyPair
 import java.util.concurrent.{Executors, ExecutorService}
-import com.socrata.datacoordinator.common.sql.RepBasedDatasetContextProvider
-import com.socrata.datacoordinator.util.collection.ColumnIdMap
-import com.socrata.datacoordinator.truth.metadata.CopyPair
+import com.socrata.datacoordinator.common.sql.RepBasedDatasetContext
 import com.socrata.datacoordinator.truth.loader.Delogger._
 import com.socrata.datacoordinator.truth.loader.Delogger.WorkingCopyCreated
 import com.socrata.datacoordinator.truth.loader.Delogger.ColumnCreated
-import scala.Some
 import com.socrata.datacoordinator.truth.loader.Delogger.RowDataUpdated
 import com.socrata.datacoordinator.truth.metadata.CopyPair
 import com.socrata.datacoordinator.truth.loader.Delogger.RowIdentifierChanged
@@ -46,7 +41,7 @@ class Backup(conn: Connection, systemIdColumnName: String, executor: ExecutorSer
     val schema = schemaInfo.mapValuesStrict(genericRepFor)
     val idCol = schemaInfo.values.find(_.logicalName == systemIdColumnName).getOrElse(sys.error("No system ID column?")).systemId
     val systemIds = schemaInfo.filter { (_, ci) => ci.logicalName.startsWith(":") }.keySet
-    val datasetContext = RepBasedDatasetContextProvider(
+    val datasetContext = new RepBasedDatasetContext(
       typeContext,
       schema,
       schemaInfo.values.find(_.isUserPrimaryKey).map(_.systemId),

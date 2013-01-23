@@ -31,7 +31,7 @@ abstract class AbstractSqlLoaderProvider[CT, CV](conn: Connection, idProvider: I
       colInfo.logicalName == SystemColumns.id
     }.map(_._1).getOrElse { sys.error(s"No ${SystemColumns.id} column?") }
 
-    val datasetContext = RepBasedDatasetContextProvider(typeContext, repSchema, userPrimaryKeyInfo, systemPrimaryKey, schema.filter { (_, i) => i.logicalName.startsWith(":") }.keySet)
+    val datasetContext = new RepBasedDatasetContext(typeContext, repSchema, userPrimaryKeyInfo, systemPrimaryKey, schema.filter { (_, i) => i.logicalName.startsWith(":") }.keySet)
 
     val sqlizer = produce(tableName, datasetContext)
     SqlLoader(conn, rowPreparer, sqlizer, logger, idProvider, executor)
