@@ -6,4 +6,5 @@ trait TruthManifest {
   def create(dataset: DatasetInfo)
   def updatePublishedVersion(dataset: DatasetInfo, version: Long)
   def updateLatestVersion(dataset: DatasetInfo, version: Long)
+  def latestVersion(dataset: DatasetInfo): Long
 }

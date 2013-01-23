@@ -33,4 +33,15 @@ class SqlTruthManifest(conn: Connection) extends TruthManifest {
       assert(count == 1, "updateLatestVersion didn't update anything?")
     }
   }
+
+  def latestVersion(dataset: DatasetInfo): Long = {
+    using(conn.prepareStatement("SELECT latest_version FROM truth_manifest WHERE dataset_system_id = ?")) { stmt =>
+      stmt.setLong(1, dataset.systemId.underlying)
+      using(stmt.executeQuery()) { rs =>
+        val foundSomething = rs.next()
+        assert(foundSomething, "No such dataset?")
+        rs.getLong("latest_version")
+      }
+    }
+  }
 }
