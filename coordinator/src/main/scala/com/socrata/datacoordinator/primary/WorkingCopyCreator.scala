@@ -1,18 +1,18 @@
 package com.socrata.datacoordinator.primary
 
-import com.socrata.datacoordinator.truth.metadata.{CopyPair, VersionInfo}
+import com.socrata.datacoordinator.truth.metadata.{CopyPair, CopyInfo}
 
 class WorkingCopyCreator[CT, CV](mutator: DatabaseMutator[CT, CV], systemColumns: Map[String, CT], idColumnName: String) {
-  def copyDataset(datasetId: String, username: String, copyData: Boolean): VersionInfo = {
+  def copyDataset(datasetId: String, username: String, copyData: Boolean): CopyInfo = {
     mutator.withSchemaUpdate(datasetId, username) { providerOfNecessaryThings =>
       import providerOfNecessaryThings._
 
       datasetMap.ensureUnpublishedCopy(datasetInfo) match {
         case Left(existing) =>
-          assert(existing == tableInfo)
+          assert(existing == copyInfo)
           existing
         case Right(copyPair@CopyPair(oldTable, newTable)) =>
-          assert(oldTable == tableInfo)
+          assert(oldTable == copyInfo)
 
           // Great.  Now we can actually do the data loading.
           schemaLoader.create(newTable)

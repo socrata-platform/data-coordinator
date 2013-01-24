@@ -6,7 +6,7 @@ import java.util.concurrent.ExecutorService
 import com.socrata.id.numeric.IdProvider
 
 import com.socrata.datacoordinator.Row
-import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, VersionInfo}
+import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, CopyInfo}
 import com.socrata.datacoordinator.truth.loader.{RowPreparer, Loader, Logger}
 import com.socrata.datacoordinator.truth.loader.sql._
 import com.socrata.datacoordinator.truth.TypeContext
@@ -16,11 +16,11 @@ import com.socrata.datacoordinator.id.{RowId, ColumnId}
 import com.socrata.datacoordinator.common.soql.SystemColumns
 
 abstract class AbstractSqlLoaderProvider[CT, CV](conn: Connection, idProvider: IdProvider, val executor: ExecutorService, typeContext: TypeContext[CT, CV])
-  extends ((VersionInfo, ColumnIdMap[ColumnInfo], RowPreparer[CV], Logger[CV], ColumnInfo => SqlColumnRep[CT, CV]) => Loader[CV])
+  extends ((CopyInfo, ColumnIdMap[ColumnInfo], RowPreparer[CV], Logger[CV], ColumnInfo => SqlColumnRep[CT, CV]) => Loader[CV])
 { self =>
   def produce(tableName: String, datasetContext: RepBasedSqlDatasetContext[CT, CV]): DataSqlizer[CT, CV]
 
-  def apply(versionInfo: VersionInfo, schema: ColumnIdMap[ColumnInfo], rowPreparer: RowPreparer[CV], logger: Logger[CV], repFor: ColumnInfo => SqlColumnRep[CT, CV]) = {
+  def apply(versionInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo], rowPreparer: RowPreparer[CV], logger: Logger[CV], repFor: ColumnInfo => SqlColumnRep[CT, CV]) = {
     val tableName = versionInfo.dataTableName
 
     val repSchema = schema.mapValuesStrict(repFor)

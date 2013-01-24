@@ -19,10 +19,10 @@ abstract class DatabaseMutator[CT, CV] {
     val globalLog: GlobalLog
     val truthManifest: TruthManifest
     def physicalColumnBaseForType(typ: CT): String
-    def schemaLoader(version: VersionInfo, logger: Logger[CV]): SchemaLoader
+    def schemaLoader(version: CopyInfo, logger: Logger[CV]): SchemaLoader
     def nameForType(typ: CT): String
 
-    def dataLoader(table: VersionInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[CV], dataIdProvider: IdProvider): Managed[Loader[CV]]
+    def dataLoader(table: CopyInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[CV], dataIdProvider: IdProvider): Managed[Loader[CV]]
     def rowPreparer(schema: ColumnIdMap[ColumnInfo]): RowPreparer[CV]
   }
 
@@ -30,7 +30,7 @@ abstract class DatabaseMutator[CT, CV] {
     val now: DateTime
     val datasetMap: DatasetMap
     val datasetInfo: datasetMap.DatasetInfo
-    val tableInfo: datasetMap.VersionInfo
+    val copyInfo: datasetMap.CopyInfo
     val datasetLog: Logger[CV]
   }
 

@@ -1,10 +1,10 @@
 package com.socrata.datacoordinator
 package truth.loader
 
-import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, VersionInfo}
+import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, CopyInfo}
 
 trait SchemaLoader {
-  def create(versionInfo: VersionInfo)
+  def create(copyInfo: CopyInfo)
 
   def addColumn(colInfo: ColumnInfo)
   def dropColumn(colInfo: ColumnInfo)

@@ -20,6 +20,7 @@ class DatasetCreator[CT, CV](mutator: DatabaseMutator[CT, CV], systemColumns: Ma
       }
 
       val newVersion = logger.endTransaction().getOrElse(sys.error(s"No record of the `working copy created' or ${systemColumns.size} columns?"))
+      datasetMap.updateDataVersion(table, newVersion)
       truthManifest.updateLatestVersion(table.datasetInfo, newVersion)
       globalLog.log(table.datasetInfo, newVersion, now, username)
     }

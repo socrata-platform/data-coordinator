@@ -1,15 +1,16 @@
 package com.socrata.datacoordinator
 package truth.metadata
 
-import com.socrata.datacoordinator.id.ColumnId
-import com.rojoma.json.util.AutomaticJsonCodecBuilder
 import scala.runtime.ScalaRunTime
+
 import com.rojoma.json.codec.JsonCodec
 import com.rojoma.json.matcher.{PObject, Variable}
 import com.rojoma.json.ast.JValue
 
+import com.socrata.datacoordinator.id.ColumnId
+
 trait ColumnInfo extends Product {
-  val versionInfo: VersionInfo
+  val copyInfo: CopyInfo
   val systemId: ColumnId
   val logicalName: String
   val typeName: String
@@ -29,11 +30,11 @@ trait ColumnInfo extends Product {
   }
 }
 
-case class SimpleColumnInfo(versionInfo: VersionInfo, systemId: ColumnId, logicalName: String, typeName: String, physicalColumnBaseBase: String, isUserPrimaryKey: Boolean) extends ColumnInfo
+case class SimpleColumnInfo(copyInfo: CopyInfo, systemId: ColumnId, logicalName: String, typeName: String, physicalColumnBaseBase: String, isUserPrimaryKey: Boolean) extends ColumnInfo
 
 object ColumnInfo {
   implicit object jCodec extends JsonCodec[ColumnInfo] {
-    val versionInfoVar = Variable[VersionInfo]
+    val copyInfoVar = Variable[CopyInfo]
     val systemIdVar = Variable[ColumnId]
     val logicalNameVar = Variable[String]
     val typeNameVar = Variable[String]
@@ -41,7 +42,7 @@ object ColumnInfo {
     val isUserPrimaryKeyVar = Variable[Boolean]
 
     val PColumnInfo = PObject(
-      "vi" -> versionInfoVar,
+      "copy" -> copyInfoVar,
       "sid" -> systemIdVar,
       "name" -> logicalNameVar,
       "type" -> typeNameVar,
@@ -50,7 +51,7 @@ object ColumnInfo {
     )
 
     def encode(x: ColumnInfo) = PColumnInfo.generate(
-      versionInfoVar := x.versionInfo,
+      copyInfoVar := x.copyInfo,
       systemIdVar := x.systemId,
       logicalNameVar := x.logicalName,
       typeNameVar := x.typeName,
@@ -60,7 +61,7 @@ object ColumnInfo {
 
     def decode(x: JValue) = PColumnInfo.matches(x) map { results =>
       SimpleColumnInfo(
-        versionInfo = versionInfoVar(results),
+        copyInfo = copyInfoVar(results),
         systemId = systemIdVar(results),
         logicalName = logicalNameVar(results),
         typeName = typeNameVar(results),

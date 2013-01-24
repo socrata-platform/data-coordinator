@@ -54,7 +54,7 @@ class PostgresDatasetMapTest extends FunSuite with MustMatchers with BeforeAndAf
       vi.datasetInfo.datasetId must be ("hello")
       vi.datasetInfo.tableBaseBase must be ("world")
       vi.lifecycleStage must be (LifecycleStage.Unpublished)
-      vi.lifecycleVersion must be (1)
+      vi.copyNumber must be (1)
 
       tables.datasetInfo("hello") must equal (Some(vi.datasetInfo))
       tables.unpublished(vi.datasetInfo) must equal (Some(vi))
@@ -67,7 +67,7 @@ class PostgresDatasetMapTest extends FunSuite with MustMatchers with BeforeAndAf
       val vi = tables.create("hello", "world")
       val ci = tables.addColumn(vi, "col1", "typ", "colbase")
 
-      ci.versionInfo must equal (vi)
+      ci.copyInfo must equal (vi)
       ci.logicalName must be ("col1")
       ci.typeName must be ("typ")
       ci.physicalColumnBaseBase must be ("colbase")
@@ -96,7 +96,7 @@ class PostgresDatasetMapTest extends FunSuite with MustMatchers with BeforeAndAf
       val ci1 = tables.addColumn(vi, "col1", "typ", "colbase")
       val ci2 = tables.addColumn(vi, "col2", "typ2", "colbase2")
 
-      ci2.versionInfo must equal (vi)
+      ci2.copyInfo must equal (vi)
       ci2.logicalName must be ("col2")
       ci2.typeName must be ("typ2")
       ci2.physicalColumnBaseBase must be ("colbase2")
@@ -127,8 +127,8 @@ class PostgresDatasetMapTest extends FunSuite with MustMatchers with BeforeAndAf
       val ci1 = tables.addColumn(vi, "col1", "typ", "colbase")
       val ci2 = tables.addColumn(vi, "col2", "typ2", "colbase2")
 
-      tables.setUserPrimaryKey(ci1)
-      tables.clearUserPrimaryKey(vi)
+      val pk = tables.setUserPrimaryKey(ci1)
+      tables.clearUserPrimaryKey(pk)
       tables.setUserPrimaryKey(ci2)
 
       tables.schema(vi) must equal (ColumnIdMap(ci1.systemId -> ci1, ci2.systemId -> ci2.copy(isUserPrimaryKey = true)))
@@ -184,7 +184,7 @@ class PostgresDatasetMapTest extends FunSuite with MustMatchers with BeforeAndAf
 
       val schema1 = tables.schema(vi1)
       val schema2 = tables.schema(vi2)
-      schema1.values.toSeq.map(_.copy(versionInfo = vi2)).sortBy(_.logicalName) must equal (schema2.values.toSeq.sortBy(_.logicalName))
+      schema1.values.toSeq.map(_.copy(copyInfo = vi2)).sortBy(_.logicalName) must equal (schema2.values.toSeq.sortBy(_.logicalName))
     }
   }
 
@@ -261,18 +261,18 @@ class PostgresDatasetMapTest extends FunSuite with MustMatchers with BeforeAndAf
 
       (1 to 5).foldLeft(vi1) { (vi, _) =>
         val vi2 = tables.publish(vi)
-        tables.ensureUnpublishedCopy(vi2.datasetInfo).right.get.newVersionInfo
+        tables.ensureUnpublishedCopy(vi2.datasetInfo).right.get.newCopyInfo
       }
 
       // ok, there should be six copies now, which means twelve columns....
       count(conn, "column_map") must equal (12)
-      count(conn, "version_map") must equal (6)
+      count(conn, "copy_map") must equal (6)
       count(conn, "dataset_map") must equal (1)
 
       tables.delete(vi1.datasetInfo)
 
       count(conn, "column_map") must equal (0)
-      count(conn, "version_map") must equal (0)
+      count(conn, "copy_map") must equal (0)
       count(conn, "dataset_map") must equal (0)
     }
   }

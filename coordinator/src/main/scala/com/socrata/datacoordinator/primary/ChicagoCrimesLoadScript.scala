@@ -113,17 +113,17 @@ object ChicagoCrimesLoadScript extends App {
         def physicalColumnBaseForType(typ: SoQLType): String =
           soqlRepFactory(typ).base
 
-        def schemaLoader(version: VersionInfo, logger: Logger[Any]): SchemaLoader =
+        def schemaLoader(version: CopyInfo, logger: Logger[Any]): SchemaLoader =
           new RepBasedSqlSchemaLoader[SoQLType, Any](conn, logger, genericRepFor)
 
         def nameForType(typ: SoQLType): String = typeContext.nameFromType(typ)
 
-        def rawDataLoader(table: VersionInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[Any], idProvider: IdProvider): Loader[Any] = {
+        def rawDataLoader(table: CopyInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[Any], idProvider: IdProvider): Loader[Any] = {
           val lp = new AbstractSqlLoaderProvider(conn, idProvider, executor, typeContext) with PostgresSqlLoaderProvider[SoQLType, Any]
           lp(table, schema, rowPreparer(schema), logger, genericRepFor)
         }
 
-        def dataLoader(table: VersionInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[Any], idProvider: IdProvider): Managed[Loader[Any]] =
+        def dataLoader(table: CopyInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[Any], idProvider: IdProvider): Managed[Loader[Any]] =
           managed(rawDataLoader(table, schema, logger, idProvider))
 
         def delogger(dataset: DatasetInfo) = new SqlDelogger[Any](conn, dataset.logTableName, rowCodecFactory)
@@ -172,17 +172,18 @@ object ChicagoCrimesLoadScript extends App {
           val pont = pontRaw.asInstanceOf[PoNT]
           object Operations extends SchemaUpdate {
             val now: DateTime = pont.now
-            val datasetMap = pont.datasetMap
+            val datasetMap: pont.datasetMap.type = pont.datasetMap
             val datasetInfo = datasetMap.datasetInfo(datasetId).getOrElse(sys.error("no such dataset")) // TODO: Real error
-            val tableInfo = datasetMap.latest(datasetInfo)
+            val copyInfo = datasetMap.latest(datasetInfo)
             val datasetLog = pont.datasetLog(datasetInfo)
 
-            val schemaLoader: SchemaLoader = pont.schemaLoader(tableInfo, datasetLog)
+            val schemaLoader: SchemaLoader = pont.schemaLoader(copyInfo, datasetLog)
             def datasetContentsCopier = new RepBasedSqlDatasetContentsCopier(pont.conn, datasetLog, genericRepFor)
           }
 
           val result = f(Operations)
           Operations.datasetLog.endTransaction() foreach { version =>
+            pont.datasetMap.updateDataVersion(Operations.copyInfo, version)
             pont.truthManifest.updateLatestVersion(Operations.datasetInfo, version)
             pont.globalLog.log(Operations.datasetInfo, version, pont.now, user)
           }
@@ -196,12 +197,12 @@ object ChicagoCrimesLoadScript extends App {
             val now: DateTime = pont.now
             val datasetMap = pont.datasetMap
             val datasetInfo = datasetMap.datasetInfo(datasetId).getOrElse(sys.error("No such dataset?")) // TODO: better error
-            val tableInfo = datasetMap.latest(datasetInfo)
+            val copyInfo = datasetMap.latest(datasetInfo)
             val datasetLog = pont.datasetLog(datasetInfo)
 
-            val schema = datasetMap.schema(tableInfo)
+            val schema = datasetMap.schema(copyInfo)
             val rowIdProvider = new RowIdProvider(datasetInfo.nextRowId)
-            val dataLoader = pont.rawDataLoader(tableInfo, schema, datasetLog, rowIdProvider)
+            val dataLoader = pont.rawDataLoader(copyInfo, schema, datasetLog, rowIdProvider)
 
             def close() {
               dataLoader.close()
@@ -212,6 +213,7 @@ object ChicagoCrimesLoadScript extends App {
             val result = f(operations)
             operations.datasetMap.updateNextRowId(operations.datasetInfo, operations.rowIdProvider.finish())
             operations.datasetLog.endTransaction() foreach { version =>
+              operations.datasetMap.updateDataVersion(operations.copyInfo, version)
               pont.truthManifest.updateLatestVersion(operations.datasetInfo, version)
               pont.globalLog.log(operations.datasetInfo, version, pont.now, user)
             }

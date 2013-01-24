@@ -18,6 +18,7 @@ class PrimaryKeySetter[CT, CV](mutator: DatabaseMutator[CT, CV]) {
       datasetMap.setUserPrimaryKey(col)
 
       logger.endTransaction().foreach { ver =>
+        datasetMap.updateDataVersion(table, ver)
         truthManifest.updateLatestVersion(ds, ver)
         globalLog.log(ds, ver, now, username)
       }

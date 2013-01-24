@@ -24,11 +24,12 @@ class ColumnAdder[CT, CV](mutator: DatabaseMutator[CT, CV]) {
       for((columnName, columnType) <- columns) {
         val baseName = physicalColumnBaseForType(columnType)
         val col = datasetMap.addColumn(table, columnName, nameForType(columnType), baseName)
-        schemaLoader(col.versionInfo, logger).addColumn(col)
+        schemaLoader(col.copyInfo, logger).addColumn(col)
         result += columnName -> col
       }
 
       logger.endTransaction().foreach { ver =>
+        datasetMap.updateDataVersion(table, ver)
         truthManifest.updateLatestVersion(ds, ver)
         globalLog.log(ds, ver, now, username)
       }

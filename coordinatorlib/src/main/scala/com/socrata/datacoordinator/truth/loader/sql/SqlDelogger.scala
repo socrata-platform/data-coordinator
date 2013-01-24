@@ -13,7 +13,7 @@ import com.rojoma.json.ast.{JNull, JString, JObject}
 import com.socrata.datacoordinator.truth.RowLogCodec
 import com.socrata.datacoordinator.truth.loader.{Operation, Delogger}
 import com.socrata.datacoordinator.util.{CloseableIterator, LeakDetect}
-import com.socrata.datacoordinator.truth.metadata.{VersionInfo, ColumnInfo}
+import com.socrata.datacoordinator.truth.metadata.{CopyInfo, ColumnInfo}
 import com.rojoma.json.codec.JsonCodec
 import com.socrata.datacoordinator.util.collection.MutableColumnIdMap
 import com.socrata.datacoordinator.id.ColumnId
@@ -203,7 +203,7 @@ class SqlDelogger[CV](connection: Connection,
     }
 
     def decodeWorkingCopyCreated(aux: Array[Byte]) = {
-      val vi = JsonCodec.fromJValue[VersionInfo](fromJson(aux)).getOrElse {
+      val vi = JsonCodec.fromJValue[CopyInfo](fromJson(aux)).getOrElse {
         sys.error("Parameter for `working copy created' was not an object")
       }
       Delogger.WorkingCopyCreated(vi)

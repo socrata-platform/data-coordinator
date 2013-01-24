@@ -7,14 +7,14 @@ import scala.io.Codec
 import java.sql.{PreparedStatement, Connection}
 
 import com.rojoma.json.ast._
+import com.rojoma.json.util.JsonUtil
+import com.rojoma.json.codec.JsonCodec
 import com.rojoma.json.io.CompactJsonWriter
 import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.util.Counter
 import com.socrata.datacoordinator.truth.RowLogCodec
-import com.socrata.datacoordinator.truth.metadata.{VersionInfo, ColumnInfo}
-import com.rojoma.json.util.JsonUtil
-import com.rojoma.json.codec.JsonCodec
+import com.socrata.datacoordinator.truth.metadata.{CopyInfo, ColumnInfo}
 import com.socrata.datacoordinator.id.RowId
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 
@@ -124,7 +124,7 @@ class SqlLogger[CV](connection: Connection,
     logLine(SqlLogger.SystemRowIdentifierChanged, Codec.toUTF8(CompactJsonWriter.toString(columnJson)))
   }
 
-  def workingCopyCreated(info: VersionInfo) {
+  def workingCopyCreated(info: CopyInfo) {
     checkTxn()
     flushRowData()
     val versionJson = JsonCodec.toJValue(info)

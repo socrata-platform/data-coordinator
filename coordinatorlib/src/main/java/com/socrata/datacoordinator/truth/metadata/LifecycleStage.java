@@ -9,7 +9,8 @@ import scala.Option;
 public enum LifecycleStage {
     Unpublished,
     Published,
-    Snapshotted;
+    Snapshotted,
+    Discarded;
 
     public static final JsonCodec<LifecycleStage> jCodec = new JsonCodec<LifecycleStage>() {
         @Override
