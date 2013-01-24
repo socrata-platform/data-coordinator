@@ -6,8 +6,6 @@ import com.rojoma.simplearm.util._
 import com.rojoma.simplearm.Managed
 
 import com.socrata.datacoordinator.truth.loader._
-import com.socrata.datacoordinator.manifest.TruthManifest
-import com.socrata.datacoordinator.manifest.sql.SqlTruthManifest
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.truth.sql.{SqlColumnRep, DatabasePopulator}
@@ -27,7 +25,6 @@ class Backup(conn: Connection, systemIdColumnName: String, executor: ExecutorSer
   val typeContext = SoQLTypeContext
   val logger: Logger[Any] = NullLogger
   val datasetMap: BackupDatasetMap = new PostgresDatasetMap(conn)
-  val truthManifest: TruthManifest = new SqlTruthManifest(conn)
 
   def genericRepFor(columnInfo: ColumnInfo): SqlColumnRep[SoQLType, Any] =
     SoQLRep.repFactories(typeContext.typeFromName(columnInfo.typeName))(columnInfo.physicalColumnBase)
@@ -58,10 +55,8 @@ class Backup(conn: Connection, systemIdColumnName: String, executor: ExecutorSer
     }
   }
 
-  def updateVersion(version: datasetMap.CopyInfo, newVersion: Long) {
-    truthManifest.updateLatestVersion(version.datasetInfo, newVersion)
+  def updateVersion(version: datasetMap.CopyInfo, newVersion: Long): datasetMap.CopyInfo =
     datasetMap.updateDataVersion(version, newVersion)
-  }
 
   def createDataset(versionInfo: CopyInfo): datasetMap.CopyInfo = {
     require(versionInfo.lifecycleStage == LifecycleStage.Unpublished, "Bad lifecycle stage")
@@ -70,7 +65,6 @@ class Backup(conn: Connection, systemIdColumnName: String, executor: ExecutorSer
     val vi = datasetMap.createWithId(versionInfo.datasetInfo.systemId, versionInfo.datasetInfo.datasetId, versionInfo.datasetInfo.tableBaseBase, versionInfo.systemId)
     assert(vi == versionInfo)
     schemaLoader.create(vi)
-    truthManifest.create(vi.datasetInfo)
     vi
   }
 
@@ -211,7 +205,7 @@ object Backup extends App {
       Resync(datasetSystemId, "Expected dataset " + datasetSystemId.underlying + " to exist for version " + version)
     }
     val initialVersionInfo = backup.datasetMap.latest(datasetInfo)
-    Resync.unless(datasetSystemId, backup.truthManifest.latestVersion(datasetInfo) == version - 1, "Received a change to version " + version + " but this is only at " + initialVersionInfo.dataVersion)
+    Resync.unless(datasetSystemId, initialVersionInfo.dataVersion == version - 1, "Received a change to version " + version + " but this is only at " + initialVersionInfo.dataVersion)
     val delogger: Delogger[Any] = new SqlDelogger(primaryConn, datasetInfo.logTableName, () => SoQLRowLogCodec)
     using(delogger.delog(version)) { it =>
       continuePlayback(backup)(initialVersionInfo)(it)

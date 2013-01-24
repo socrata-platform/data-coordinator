@@ -17,10 +17,8 @@ import com.socrata.datacoordinator.common.soql._
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.util._
-import com.socrata.datacoordinator.manifest.TruthManifest
 import com.socrata.datacoordinator.truth._
 import com.socrata.datacoordinator.truth.metadata.sql.{PostgresGlobalLog, PostgresDatasetMap}
-import com.socrata.datacoordinator.manifest.sql.SqlTruthManifest
 import com.socrata.datacoordinator.truth.loader.sql._
 import com.socrata.datacoordinator.truth.sql.{DatabasePopulator, SqlColumnRep}
 import com.socrata.datacoordinator.id.RowId
@@ -108,7 +106,6 @@ object ChicagoCrimesLoadScript extends App {
         )
 
         val globalLog: GlobalLog = new PostgresGlobalLog(conn)
-        val truthManifest: TruthManifest = new SqlTruthManifest(conn)
 
         def physicalColumnBaseForType(typ: SoQLType): String =
           soqlRepFactory(typ).base
@@ -184,7 +181,6 @@ object ChicagoCrimesLoadScript extends App {
           val result = f(Operations)
           Operations.datasetLog.endTransaction() foreach { version =>
             pont.datasetMap.updateDataVersion(Operations.copyInfo, version)
-            pont.truthManifest.updateLatestVersion(Operations.datasetInfo, version)
             pont.globalLog.log(Operations.datasetInfo, version, pont.now, user)
           }
           result
@@ -214,7 +210,6 @@ object ChicagoCrimesLoadScript extends App {
             operations.datasetMap.updateNextRowId(operations.datasetInfo, operations.rowIdProvider.finish())
             operations.datasetLog.endTransaction() foreach { version =>
               operations.datasetMap.updateDataVersion(operations.copyInfo, version)
-              pont.truthManifest.updateLatestVersion(operations.datasetInfo, version)
               pont.globalLog.log(operations.datasetInfo, version, pont.now, user)
             }
             result

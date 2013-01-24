@@ -7,7 +7,6 @@ import com.socrata.id.numeric.IdProvider
 
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth.loader._
-import com.socrata.datacoordinator.manifest.TruthManifest
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 
 abstract class DatabaseMutator[CT, CV] {
@@ -17,7 +16,6 @@ abstract class DatabaseMutator[CT, CV] {
     def datasetLog(ds: DatasetInfo): Logger[CV]
     def delogger(ds: DatasetInfo): Delogger[CV]
     val globalLog: GlobalLog
-    val truthManifest: TruthManifest
     def physicalColumnBaseForType(typ: CT): String
     def schemaLoader(version: CopyInfo, logger: Logger[CV]): SchemaLoader
     def nameForType(typ: CT): String
