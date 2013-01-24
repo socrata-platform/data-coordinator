@@ -207,9 +207,17 @@ object ChicagoCrimesLoadScript extends App {
 
           using(new Operations) { operations =>
             val result = f(operations)
-            operations.datasetMap.updateNextRowId(operations.datasetInfo, operations.rowIdProvider.finish())
+            val nextRowId = operations.rowIdProvider.finish()
+
+            val newCI = if(nextRowId != operations.datasetInfo.nextRowId) {
+              operations.datasetLog.rowIdCounterUpdated(nextRowId)
+              operations.datasetMap.updateNextRowId(operations.copyInfo, nextRowId)
+            } else {
+              operations.copyInfo
+            }
+
             operations.datasetLog.endTransaction() foreach { version =>
-              operations.datasetMap.updateDataVersion(operations.copyInfo, version)
+              operations.datasetMap.updateDataVersion(newCI, version)
               pont.globalLog.log(operations.datasetInfo, version, pont.now, user)
             }
             result

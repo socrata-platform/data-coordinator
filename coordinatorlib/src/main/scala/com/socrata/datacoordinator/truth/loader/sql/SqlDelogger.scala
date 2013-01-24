@@ -8,7 +8,7 @@ import java.sql.{ResultSet, PreparedStatement, Connection}
 import java.io.ByteArrayInputStream
 
 import com.rojoma.json.io.JsonReader
-import com.rojoma.json.ast.{JNull, JString, JObject}
+import com.rojoma.json.ast.{JNumber, JNull, JString, JObject}
 
 import com.socrata.datacoordinator.truth.RowLogCodec
 import com.socrata.datacoordinator.truth.loader.{Operation, Delogger}
@@ -16,7 +16,7 @@ import com.socrata.datacoordinator.util.{CloseableIterator, LeakDetect}
 import com.socrata.datacoordinator.truth.metadata.{CopyInfo, ColumnInfo}
 import com.rojoma.json.codec.JsonCodec
 import com.socrata.datacoordinator.util.collection.MutableColumnIdMap
-import com.socrata.datacoordinator.id.ColumnId
+import com.socrata.datacoordinator.id.{RowId, ColumnId}
 
 class SqlDelogger[CV](connection: Connection,
                       logTableName: String,
@@ -98,6 +98,8 @@ class SqlDelogger[CV](connection: Connection,
       nextResult = op match {
         case SqlLogger.RowDataUpdated =>
           decodeRowDataUpdated(aux)
+        case SqlLogger.RowIdCounterUpdated =>
+          decodeRowIdCounterUpdated(aux)
         case SqlLogger.Truncated =>
           decodeTruncated(aux)
         case SqlLogger.ColumnCreated =>
@@ -145,6 +147,13 @@ class SqlDelogger[CV](connection: Connection,
         }
       }
       Delogger.RowDataUpdated(loop())
+    }
+
+    def decodeRowIdCounterUpdated(aux: Array[Byte]) = {
+      val json = fromJson(aux).cast[JNumber].getOrElse {
+        sys.error("Parameter for `row id counter updated' was not a number")
+      }
+      Delogger.RowIdCounterUpdated(new RowId(json.toLong))
     }
 
     def decodeTruncated(aux: Array[Byte]) = {

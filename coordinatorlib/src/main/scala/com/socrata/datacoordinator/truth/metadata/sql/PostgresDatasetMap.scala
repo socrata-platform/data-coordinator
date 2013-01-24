@@ -387,6 +387,9 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
     }
   }
 
+  def updateNextRowId(copyInfo: CopyInfo, newNextRowId: RowId): CopyInfo =
+    copyInfo.copy(datasetInfo = updateNextRowId(copyInfo.datasetInfo, newNextRowId))
+
   def updateDataVersionQuery = "UPDATE copy_map SET data_version = ? WHERE system_id = ?"
   def updateDataVersion(copyInfo: CopyInfo, newDataVersion: Long): CopyInfo = {
     assert(newDataVersion == copyInfo.dataVersion + 1, s"Setting data version to $newDataVersion when it was ${copyInfo.dataVersion}")

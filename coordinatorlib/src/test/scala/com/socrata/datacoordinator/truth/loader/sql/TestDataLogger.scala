@@ -46,6 +46,10 @@ class TestDataLogger(conn: Connection, logTableName: String) extends DataLogger[
     list += JObject(Map("d" -> JNumber(systemID.underlying)))
   }
 
+  def rowIdCounterUpdated(nextRowId: RowId) {
+    sys.error("Shouldn't call this")
+  }
+
   def finish() {
     val ops = list.result()
     if(ops.nonEmpty) {

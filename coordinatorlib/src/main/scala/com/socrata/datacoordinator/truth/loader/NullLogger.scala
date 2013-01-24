@@ -32,6 +32,8 @@ class NullLogger[CV] extends Logger[CV] {
 
   def delete(systemID: RowId) {}
 
+  def rowIdCounterUpdated(nextRowId: RowId) {}
+
   def close() {}
 
   def truncated(schema: ColumnIdMap[ColumnInfo]) {}

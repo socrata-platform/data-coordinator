@@ -7,7 +7,7 @@ import com.rojoma.simplearm.Managed
 
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.metadata._
-import com.socrata.datacoordinator.id.DatasetId
+import com.socrata.datacoordinator.id.{RowId, DatasetId}
 import com.socrata.datacoordinator.truth.sql.{SqlColumnRep, DatabasePopulator}
 import com.socrata.datacoordinator.truth.loader.sql._
 import com.socrata.soql.types.SoQLType
@@ -145,6 +145,11 @@ class Backup(conn: Connection, systemIdColumnName: String, executor: ExecutorSer
       }
     }
   }
+
+  def rowIdCounterUpdated(currentVersionInfo: datasetMap.CopyInfo, rid: RowId): datasetMap.CopyInfo = {
+    logger.rowIdCounterUpdated(rid)
+    datasetMap.updateNextRowId(currentVersionInfo, rid)
+  }
 }
 
 object Backup extends App {
@@ -182,6 +187,8 @@ object Backup extends App {
           backup.dropPrimaryKey(currentVersionInfo, info)
         case RowDataUpdated(ops) =>
           backup.populateData(currentVersionInfo, ops)
+        case RowIdCounterUpdated(rid) =>
+          currentVersionInfo = backup.rowIdCounterUpdated(currentVersionInfo, rid)
       }
     }
     currentVersionInfo

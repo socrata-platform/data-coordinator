@@ -87,5 +87,9 @@ trait BaseDatasetMap {
   /** Stores the next available row ID for this dataset. */
   def updateNextRowId(datasetInfo: DatasetInfo, newNextRowId: RowId): DatasetInfo
 
+  /** Convenience overload which updates the provided `CopyInfo` with the
+    * updated `DatasetInfo`. */
+  def updateNextRowId(copyInfo: CopyInfo, newNextRowId: RowId): CopyInfo
+
   def updateDataVersion(copyInfo: CopyInfo, newDataVersion: Long): CopyInfo
 }

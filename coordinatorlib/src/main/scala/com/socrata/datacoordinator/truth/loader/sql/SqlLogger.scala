@@ -65,6 +65,10 @@ class SqlLogger[CV](connection: Connection,
     batched += 1
   }
 
+  def logLine(what: String, data: String) {
+    logLine(what, Codec.toUTF8(data))
+  }
+
   def maybeFlushBatch() {
     if(totalSize > batchFlushSize) flushBatch()
   }
@@ -87,48 +91,48 @@ class SqlLogger[CV](connection: Connection,
   def truncated(schema: ColumnIdMap[ColumnInfo]) {
     checkTxn()
     flushRowData()
-    logLine(SqlLogger.Truncated, Codec.toUTF8(CompactJsonWriter.toString(JObject(schema.foldLeft(Map.empty[String, JValue]) { (result, sidCol) =>
+    logLine(SqlLogger.Truncated, CompactJsonWriter.toString(JObject(schema.foldLeft(Map.empty[String, JValue]) { (result, sidCol) =>
       val (cid, colSpec) = sidCol
       result + (cid.underlying.toString -> JsonCodec.toJValue(colSpec))
-    }))))
+    })))
   }
 
   def columnCreated(info: ColumnInfo) {
     checkTxn()
     flushRowData()
-    logLine(SqlLogger.ColumnCreated, Codec.toUTF8(JsonUtil.renderJson(info)))
+    logLine(SqlLogger.ColumnCreated, JsonUtil.renderJson(info))
   }
 
   def columnRemoved(info: ColumnInfo) {
     checkTxn()
     flushRowData()
-    logLine(SqlLogger.ColumnRemoved, Codec.toUTF8(JsonUtil.renderJson(info)))
+    logLine(SqlLogger.ColumnRemoved, JsonUtil.renderJson(info))
   }
 
   def rowIdentifierSet(info: ColumnInfo) {
     checkTxn()
     flushRowData()
-    logLine(SqlLogger.RowIdentifierSet, Codec.toUTF8(CompactJsonWriter.toString(JsonCodec.toJValue(info))))
+    logLine(SqlLogger.RowIdentifierSet, CompactJsonWriter.toString(JsonCodec.toJValue(info)))
   }
 
   def rowIdentifierCleared(info: ColumnInfo) {
     checkTxn()
     flushRowData()
-    logLine(SqlLogger.RowIdentifierCleared, Codec.toUTF8(CompactJsonWriter.toString(JsonCodec.toJValue(info))))
+    logLine(SqlLogger.RowIdentifierCleared, CompactJsonWriter.toString(JsonCodec.toJValue(info)))
   }
 
   def systemIdColumnSet(info: ColumnInfo) {
     checkTxn()
     flushRowData()
     val columnJson = JsonCodec.toJValue(info)
-    logLine(SqlLogger.SystemRowIdentifierChanged, Codec.toUTF8(CompactJsonWriter.toString(columnJson)))
+    logLine(SqlLogger.SystemRowIdentifierChanged, CompactJsonWriter.toString(columnJson))
   }
 
   def workingCopyCreated(info: CopyInfo) {
     checkTxn()
     flushRowData()
     val versionJson = JsonCodec.toJValue(info)
-    logLine(SqlLogger.WorkingCopyCreated, Codec.toUTF8(CompactJsonWriter.toString(versionJson)))
+    logLine(SqlLogger.WorkingCopyCreated, CompactJsonWriter.toString(versionJson))
   }
 
   def dataCopied() {
@@ -223,6 +227,12 @@ class SqlLogger[CV](connection: Connection,
     maybeFlushRowData()
   }
 
+  def rowIdCounterUpdated(nextRowId: RowId) {
+    checkTxn()
+    flushRowData()
+    logLine(SqlLogger.RowIdCounterUpdated, nextRowId.underlying.toString)
+  }
+
   def close() {
     if(_insertStmt != null) _insertStmt.close()
   }
@@ -234,6 +244,8 @@ object SqlLogger {
   // all of these must be exactly 3 characters long and consist of
   // nothing but upper-case ASCII letters.
   val RowDataUpdated = "ROW"
+  val RowIdCounterUpdated = "RCU"
+
   val Truncated = "TRN"
   val ColumnCreated = "CCR"
   val ColumnRemoved = "CRM"
