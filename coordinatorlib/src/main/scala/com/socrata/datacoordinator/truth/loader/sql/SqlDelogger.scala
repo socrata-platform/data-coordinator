@@ -114,6 +114,8 @@ class SqlDelogger[CV](connection: Connection,
           decodeSystemRowIdentifierChanged(aux)
         case SqlLogger.WorkingCopyCreated =>
           decodeWorkingCopyCreated(aux)
+        case SqlLogger.DataCopied =>
+          Delogger.DataCopied
         case SqlLogger.WorkingCopyDropped =>
           Delogger.WorkingCopyDropped
         case SqlLogger.WorkingCopyPublished =>

@@ -27,9 +27,12 @@ trait CopyInfo extends Product {
     case _ =>
       false
   }
+
+  def withDatasetInfo(di: DatasetInfo) =
+    SimpleCopyInfo(di, systemId, copyNumber, lifecycleStage, dataVersion)
 }
 
-case class SimpleVersionInfo(datasetInfo: DatasetInfo, systemId: CopyId, copyNumber: Long, lifecycleStage: LifecycleStage, dataVersion: Long) extends CopyInfo
+case class SimpleCopyInfo(datasetInfo: DatasetInfo, systemId: CopyId, copyNumber: Long, lifecycleStage: LifecycleStage, dataVersion: Long) extends CopyInfo
 
 object CopyInfo {
   implicit object jCodec extends JsonCodec[CopyInfo] {
@@ -41,7 +44,7 @@ object CopyInfo {
     val lifecycleStageVar = Variable[LifecycleStage]
     val dataVersionVar = Variable[Long]
 
-    val PVersionInfo = PObject(
+    val PCopyInfo = PObject(
       "di" -> datasetInfoVar,
       "sid" -> systemIdVar,
       "num" -> copyNumberVar,
@@ -49,7 +52,7 @@ object CopyInfo {
       "ver" -> dataVersionVar
     )
 
-    def encode(x: CopyInfo) = PVersionInfo.generate(
+    def encode(x: CopyInfo) = PCopyInfo.generate(
       datasetInfoVar := x.datasetInfo,
       systemIdVar := x.systemId,
       copyNumberVar := x.copyNumber,
@@ -57,8 +60,8 @@ object CopyInfo {
       dataVersionVar := x.dataVersion
     )
 
-    def decode(x: JValue) = PVersionInfo.matches(x) map { results =>
-      SimpleVersionInfo(
+    def decode(x: JValue) = PCopyInfo.matches(x) map { results =>
+      SimpleCopyInfo(
         datasetInfo = datasetInfoVar(results),
         systemId = systemIdVar(results),
         copyNumber = copyNumberVar(results),

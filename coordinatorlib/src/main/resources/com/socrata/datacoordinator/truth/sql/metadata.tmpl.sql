@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS column_map (
   type_name                 VARCHAR(%TYPE_NAME_LEN%)    NOT NULL,
   -- all your physical columns are belong to us
   physical_column_base_base VARCHAR(%PHYSCOL_BASE_LEN%) NOT NULL, -- the true PCB is p_c_b_b + "_" + system_id
+  is_system_primary_key     unit                        NULL, -- evil "unique" hack
   is_user_primary_key       unit                        NULL, -- evil "unique" hack
   -- Making a copy preserves the system_id of columns.  Therefore, we need a two-part primary key
   -- in order to uniquely identify a column.
@@ -73,6 +74,7 @@ CREATE TABLE IF NOT EXISTS column_map (
   -- "give me all the columns of this dataset version".
   PRIMARY KEY (copy_system_id, system_id),
   UNIQUE (copy_system_id, logical_column),
+  UNIQUE (copy_system_id, is_system_primary_key), -- hack hack hack
   UNIQUE (copy_system_id, is_user_primary_key) -- hack hack hack
 );
 

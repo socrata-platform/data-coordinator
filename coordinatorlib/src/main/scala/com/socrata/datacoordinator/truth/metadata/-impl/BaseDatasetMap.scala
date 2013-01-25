@@ -73,14 +73,21 @@ trait BaseDatasetMap {
     * @return The new column info. */
   def convertColumn(columnInfo: ColumnInfo, newType: String, newPhysicalColumnBase: String): ColumnInfo
 
-  /** Changes the primary key column for this dataset-copy.
+  /** Changes the system primary key column for this dataset-copy.
+    * @note Does not change the actual table (or verify it is a valid column to use as a PK); this just updates
+    *       the bookkeeping.
+    * @return The new column info.
+    * @throws If there is a different primary key already defined. */
+  def setSystemPrimaryKey(systemPrimaryKey: ColumnInfo): ColumnInfo
+
+  /** Changes the user primary key column for this dataset-copy.
     * @note Does not change the actual table (or verify it is a valid column to use as a PK); this just updates
     *       the bookkeeping.
     * @return The new column info.
     * @throws If there is a different primary key already defined. */
   def setUserPrimaryKey(userPrimaryKey: ColumnInfo): ColumnInfo
 
-  /** Clears the primary key column for this dataset-copy.
+  /** Clears the user primary key column for this dataset-copy.
     * @note Does not change the actual table; this just updates the bookkeeping. */
   def clearUserPrimaryKey(columnInfo: ColumnInfo)
 

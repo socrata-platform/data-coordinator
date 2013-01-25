@@ -23,7 +23,7 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
 
   case class SqlDatasetInfo(systemId: DatasetId, datasetId: String, tableBaseBase: String, nextRowId: RowId) extends IDatasetInfo
   case class SqlCopyInfo(datasetInfo: DatasetInfo, systemId: CopyId, copyNumber: Long, lifecycleStage: LifecycleStage, dataVersion: Long) extends ICopyInfo
-  case class SqlColumnInfo(copyInfo: CopyInfo, systemId: ColumnId, logicalName: String, typeName: String, physicalColumnBaseBase: String, isUserPrimaryKey: Boolean) extends IColumnInfo
+  case class SqlColumnInfo(copyInfo: CopyInfo, systemId: ColumnId, logicalName: String, typeName: String, physicalColumnBaseBase: String, isSystemPrimaryKey: Boolean, isUserPrimaryKey: Boolean) extends IColumnInfo
 
   require(!conn.getAutoCommit, "Connection is in auto-commit mode")
 
@@ -90,7 +90,7 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
       }
     }
 
-  def schemaQuery = "SELECT system_id, logical_column, type_name, physical_column_base_base, (is_user_primary_key IS NOT NULL) is_user_primary_key FROM column_map WHERE copy_system_id = ?"
+  def schemaQuery = "SELECT system_id, logical_column, type_name, physical_column_base_base, (is_system_primary_key IS NOT NULL) is_system_primary_key, (is_user_primary_key IS NOT NULL) is_user_primary_key FROM column_map WHERE copy_system_id = ?"
   def schema(copyInfo: CopyInfo) = {
     using(conn.prepareStatement(schemaQuery)) { stmt =>
       stmt.setLong(1, copyInfo.systemId.underlying)
@@ -98,7 +98,14 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
         val result = new MutableColumnIdMap[ColumnInfo]
         while(rs.next()) {
           val systemId = new ColumnId(rs.getLong("system_id"))
-          result += systemId -> SqlColumnInfo(copyInfo, systemId, rs.getString("logical_column"), rs.getString("type_name"), rs.getString("physical_column_base_base"), rs.getBoolean("is_user_primary_key"))
+          result += systemId -> SqlColumnInfo(
+            copyInfo,
+            systemId,
+            rs.getString("logical_column"),
+            rs.getString("type_name"),
+            rs.getString("physical_column_base_base"),
+            rs.getBoolean("is_system_primary_key"),
+            rs.getBoolean("is_user_primary_key"))
         }
         result.freeze()
       }
@@ -299,7 +306,7 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
 
   def addColumnWithId(systemId: ColumnId, copyInfo: CopyInfo, logicalName: String, typeName: String, physicalColumnBaseBase: String): ColumnInfo = {
     using(conn.prepareStatement(addColumnQuery)) { stmt =>
-      val columnInfo = SqlColumnInfo(copyInfo, systemId, logicalName, typeName, physicalColumnBaseBase, isUserPrimaryKey = false)
+      val columnInfo = SqlColumnInfo(copyInfo, systemId, logicalName, typeName, physicalColumnBaseBase, isSystemPrimaryKey = false, isUserPrimaryKey = false)
 
       stmt.setLong(1, columnInfo.systemId.underlying)
       stmt.setLong(2, columnInfo.copyInfo.systemId.underlying)
@@ -350,6 +357,16 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
       val count = stmt.executeUpdate()
       assert(count == 1, "Column did not exist to be converted?")
       columnInfo.copy(typeName = newType, physicalColumnBaseBase = newPhysicalColumnBaseBase)
+    }
+
+  def setSystemPrimaryKeyQuery = "UPDATE column_map SET is_system_primary_key = 'Unit' WHERE copy_system_id = ? AND system_id = ?"
+  def setSystemPrimaryKey(systemPrimaryKey: ColumnInfo) =
+    using(conn.prepareStatement(setSystemPrimaryKeyQuery)) { stmt =>
+      stmt.setLong(1, systemPrimaryKey.copyInfo.systemId.underlying)
+      stmt.setLong(2, systemPrimaryKey.systemId.underlying)
+      val count = stmt.executeUpdate()
+      assert(count == 1, "Column did not exist to have it set as primary key?")
+      systemPrimaryKey.copy(isSystemPrimaryKey = true)
     }
 
   def setUserPrimaryKeyQuery = "UPDATE column_map SET is_user_primary_key = 'Unit' WHERE copy_system_id = ? AND system_id = ?"
@@ -473,7 +490,7 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
                   copyNumber = newCopyNumber,
                   lifecycleStage = LifecycleStage.Unpublished)
 
-                using(conn.prepareStatement(ensureUnpublishedCopyQuery_copyMap)) { stmt =>
+                using(conn.prepareStatement(ensureUnpublishedCopyQueryWithId_copyMap)) { stmt =>
                   stmt.setLong(1, newCopy.systemId.underlying)
                   stmt.setLong(2, newCopy.datasetInfo.systemId.underlying)
                   stmt.setLong(3, newCopy.copyNumber)
@@ -495,7 +512,7 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
         }
     }
 
-  def ensureUnpublishedCopyQuery_columnMap = "INSERT INTO column_map (copy_system_id, system_id, logical_column, type_name, physical_column_base_base, is_user_primary_key) SELECT ?, system_id, logical_column, type_name, physical_column_base_base, is_user_primary_key FROM column_map WHERE copy_system_id = ?"
+  def ensureUnpublishedCopyQuery_columnMap = "INSERT INTO column_map (copy_system_id, system_id, logical_column, type_name, physical_column_base_base, is_system_primary_key, is_user_primary_key) SELECT ?, system_id, logical_column, type_name, physical_column_base_base, null, null FROM column_map WHERE copy_system_id = ?"
   def copySchemaIntoUnpublishedCopy(oldCopy: CopyInfo, newCopy: CopyInfo) {
     using(conn.prepareStatement(ensureUnpublishedCopyQuery_columnMap)) { stmt =>
       stmt.setLong(1, newCopy.systemId.underlying)

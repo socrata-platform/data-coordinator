@@ -15,6 +15,7 @@ trait ColumnInfo extends Product {
   val logicalName: String
   val typeName: String
   val physicalColumnBaseBase: String
+  val isSystemPrimaryKey: Boolean
   val isUserPrimaryKey: Boolean
 
   lazy val physicalColumnBase = physicalColumnBaseBase + "_" + systemId.underlying
@@ -28,9 +29,11 @@ trait ColumnInfo extends Product {
     case _ =>
       false
   }
+
+  def withCopyInfo(ci: CopyInfo) = SimpleColumnInfo(ci, systemId, logicalName, typeName, physicalColumnBaseBase, isSystemPrimaryKey, isUserPrimaryKey)
 }
 
-case class SimpleColumnInfo(copyInfo: CopyInfo, systemId: ColumnId, logicalName: String, typeName: String, physicalColumnBaseBase: String, isUserPrimaryKey: Boolean) extends ColumnInfo
+case class SimpleColumnInfo(copyInfo: CopyInfo, systemId: ColumnId, logicalName: String, typeName: String, physicalColumnBaseBase: String, isSystemPrimaryKey: Boolean, isUserPrimaryKey: Boolean) extends ColumnInfo
 
 object ColumnInfo {
   implicit object jCodec extends JsonCodec[ColumnInfo] {
@@ -39,6 +42,7 @@ object ColumnInfo {
     val logicalNameVar = Variable[String]
     val typeNameVar = Variable[String]
     val physicalColumnBaseBaseVar = Variable[String]
+    val isSystemPrimaryKeyVar = Variable[Boolean]
     val isUserPrimaryKeyVar = Variable[Boolean]
 
     val PColumnInfo = PObject(
@@ -47,7 +51,8 @@ object ColumnInfo {
       "name" -> logicalNameVar,
       "type" -> typeNameVar,
       "base" -> physicalColumnBaseBaseVar,
-      "pk" -> isUserPrimaryKeyVar
+      "spk" -> isSystemPrimaryKeyVar,
+      "upk" -> isUserPrimaryKeyVar
     )
 
     def encode(x: ColumnInfo) = PColumnInfo.generate(
@@ -56,6 +61,7 @@ object ColumnInfo {
       logicalNameVar := x.logicalName,
       typeNameVar := x.typeName,
       physicalColumnBaseBaseVar := x.physicalColumnBaseBase,
+      isSystemPrimaryKeyVar := x.isSystemPrimaryKey,
       isUserPrimaryKeyVar := x.isUserPrimaryKey
     )
 
@@ -66,6 +72,7 @@ object ColumnInfo {
         logicalName = logicalNameVar(results),
         typeName = typeNameVar(results),
         physicalColumnBaseBase = physicalColumnBaseBaseVar(results),
+        isSystemPrimaryKey = isSystemPrimaryKeyVar(results),
         isUserPrimaryKey = isUserPrimaryKeyVar(results)
       )
     }

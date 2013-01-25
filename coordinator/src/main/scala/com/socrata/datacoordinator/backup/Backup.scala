@@ -11,7 +11,7 @@ import com.socrata.datacoordinator.id.{RowId, DatasetId}
 import com.socrata.datacoordinator.truth.sql.{SqlColumnRep, DatabasePopulator}
 import com.socrata.datacoordinator.truth.loader.sql._
 import com.socrata.soql.types.SoQLType
-import com.socrata.datacoordinator.common.soql.{SoQLRowLogCodec, SystemColumns, SoQLRep, SoQLTypeContext}
+import com.socrata.datacoordinator.common.soql.{SoQLRowLogCodec, SoQLRep, SoQLTypeContext}
 import com.socrata.datacoordinator.truth.metadata.sql.PostgresDatasetMap
 import java.util.concurrent.{Executors, ExecutorService}
 import com.socrata.datacoordinator.common.sql.RepBasedDatasetContext
@@ -21,7 +21,7 @@ import com.socrata.datacoordinator.truth.loader.Delogger.ColumnCreated
 import com.socrata.datacoordinator.truth.loader.Delogger.RowDataUpdated
 import com.socrata.datacoordinator.truth.metadata.CopyPair
 
-class Backup(conn: Connection, systemIdColumnName: String, executor: ExecutorService, paranoid: Boolean) {
+class Backup(conn: Connection, executor: ExecutorService, paranoid: Boolean) {
   val typeContext = SoQLTypeContext
   val logger: Logger[Any] = NullLogger
   val datasetMap: BackupDatasetMap = new PostgresDatasetMap(conn)
@@ -35,7 +35,7 @@ class Backup(conn: Connection, systemIdColumnName: String, executor: ExecutorSer
   def dataLoader(version: datasetMap.CopyInfo): Managed[PrevettedLoader[Any]] = {
     val schemaInfo = datasetMap.schema(version)
     val schema = schemaInfo.mapValuesStrict(genericRepFor)
-    val idCol = schemaInfo.values.find(_.logicalName == systemIdColumnName).getOrElse(sys.error("No system ID column?")).systemId
+    val idCol = schemaInfo.values.find(_.isSystemPrimaryKey).getOrElse(sys.error("No system ID column?")).systemId
     val systemIds = schemaInfo.filter { (_, ci) => ci.logicalName.startsWith(":") }.keySet
     val datasetContext = new RepBasedDatasetContext(
       typeContext,
@@ -68,31 +68,33 @@ class Backup(conn: Connection, systemIdColumnName: String, executor: ExecutorSer
     vi
   }
 
-  def addColumn(currentVersion: datasetMap.CopyInfo, columnInfo: ColumnInfo): ColumnInfo = {
+  def addColumn(currentVersion: datasetMap.CopyInfo, columnInfo: ColumnInfo): currentVersion.type = {
     Resync.unless(currentVersion, currentVersion == columnInfo.copyInfo, "Copy infos differ")
     val ci = datasetMap.addColumnWithId(columnInfo.systemId, currentVersion, columnInfo.logicalName, columnInfo.typeName, columnInfo.physicalColumnBaseBase)
-    Resync.unless(ci, ci == columnInfo, "Newly created column info differs")
     schemaLoader.addColumn(ci)
-    ci
+    Resync.unless(ci, ci == columnInfo, "Newly created column info differs")
+    currentVersion
   }
 
-  def dropColumn(currentVersion: datasetMap.CopyInfo, columnInfo: ColumnInfo) {
+  def dropColumn(currentVersion: datasetMap.CopyInfo, columnInfo: ColumnInfo): currentVersion.type = {
     Resync.unless(currentVersion, currentVersion == columnInfo.copyInfo, "Version infos differ")
     val ci = datasetMap.schema(currentVersion)(columnInfo.systemId)
     Resync.unless(ci, ci == columnInfo, "Column infos differ")
     datasetMap.dropColumn(ci)
     schemaLoader.dropColumn(ci)
+    currentVersion
   }
 
-  def makePrimaryKey(currentVersionInfo: datasetMap.CopyInfo, columnInfo: ColumnInfo) {
+  def makePrimaryKey(currentVersionInfo: datasetMap.CopyInfo, columnInfo: ColumnInfo): currentVersionInfo.type = {
     Resync.unless(currentVersionInfo, currentVersionInfo == columnInfo.copyInfo, "Version infos differ")
     val ci = datasetMap.schema(currentVersionInfo)(columnInfo.systemId)
     Resync.unless(ci, ci == columnInfo, "Column infos differ")
     datasetMap.setUserPrimaryKey(ci)
     schemaLoader.makePrimaryKey(ci)
+    currentVersionInfo
   }
 
-  def dropPrimaryKey(versionInfo: datasetMap.CopyInfo, columnInfo: ColumnInfo) {
+  def dropPrimaryKey(versionInfo: datasetMap.CopyInfo, columnInfo: ColumnInfo): versionInfo.type = {
     val schema = datasetMap.schema(versionInfo)
     val ci = schema.values.find(_.isUserPrimaryKey).getOrElse {
       Resync(versionInfo, sys.error("No primary key on dataset"))
@@ -100,13 +102,16 @@ class Backup(conn: Connection, systemIdColumnName: String, executor: ExecutorSer
     Resync.unless(ci, ci == columnInfo, "Column infos differ")
     datasetMap.clearUserPrimaryKey(ci)
     schemaLoader.dropPrimaryKey(ci)
+    versionInfo
   }
 
-  def makeSystemPrimaryKey(currentVersionInfo: datasetMap.CopyInfo, columnInfo: ColumnInfo) {
+  def makeSystemPrimaryKey(currentVersionInfo: datasetMap.CopyInfo, columnInfo: ColumnInfo): currentVersionInfo.type = {
     Resync.unless(currentVersionInfo, currentVersionInfo == columnInfo.copyInfo, "Version infos differ")
     val ci = datasetMap.schema(currentVersionInfo)(columnInfo.systemId)
     Resync.unless(ci, ci == columnInfo, "Column infos differ")
+    datasetMap.setSystemPrimaryKey(ci)
     schemaLoader.makeSystemPrimaryKey(ci)
+    currentVersionInfo
   }
 
   def makeWorkingCopy(currentVersionInfo: datasetMap.CopyInfo, newVersionInfo: CopyInfo): datasetMap.CopyInfo = {
@@ -116,7 +121,7 @@ class Backup(conn: Connection, systemIdColumnName: String, executor: ExecutorSer
     newVi
   }
 
-  def populateWorkingCopy(currentVersion: datasetMap.CopyInfo) {
+  def populateWorkingCopy(currentVersion: datasetMap.CopyInfo): currentVersion.type = {
     Resync.unless(currentVersion, currentVersion.lifecycleStage == LifecycleStage.Unpublished, "Latest version is not unpublished")
     val oldVersion = datasetMap.published(currentVersion.datasetInfo).getOrElse {
       Resync(currentVersion, "No published copy")
@@ -125,18 +130,23 @@ class Backup(conn: Connection, systemIdColumnName: String, executor: ExecutorSer
     val newSchema = datasetMap.schema(currentVersion)
     if(paranoid) {
       val oldSchema = datasetMap.schema(oldVersion)
-      Resync.unless(currentVersion, oldSchema == newSchema, "published and unpublished schemas differ")
+      Resync.unless(currentVersion,
+        oldSchema.mapValuesStrict(_.withCopyInfo(null)) == newSchema.mapValuesStrict(_.withCopyInfo(null)),
+        "published and unpublished schemas differ")
     }
 
     contentsCopier.copy(oldVersion, currentVersion, newSchema)
+
+    currentVersion
   }
 
-  def truncate(currentVersion: datasetMap.CopyInfo, versionInfo: CopyInfo) {
+  def truncate(currentVersion: datasetMap.CopyInfo, versionInfo: CopyInfo): currentVersion.type = {
     Resync.unless(currentVersion, currentVersion == versionInfo, "Version infos differ")
     truncate(currentVersion.dataTableName)
+    currentVersion
   }
 
-  def populateData(currentVersionInfo: datasetMap.CopyInfo, ops: Seq[Operation[Any]]) {
+  def populateData(currentVersionInfo: datasetMap.CopyInfo, ops: Seq[Operation[Any]]): currentVersionInfo.type = {
     for(loader <- dataLoader(currentVersionInfo)) {
       ops.foreach {
         case Insert(sid, row) => loader.insert(sid, row)
@@ -144,12 +154,21 @@ class Backup(conn: Connection, systemIdColumnName: String, executor: ExecutorSer
         case Delete(sid) => loader.delete(sid)
       }
     }
+    currentVersionInfo
   }
 
   def rowIdCounterUpdated(currentVersionInfo: datasetMap.CopyInfo, rid: RowId): datasetMap.CopyInfo = {
     logger.rowIdCounterUpdated(rid)
     datasetMap.updateNextRowId(currentVersionInfo, rid)
   }
+
+  def publish(currentVersionInfo: datasetMap.CopyInfo): datasetMap.CopyInfo =
+    try {
+      datasetMap.publish(currentVersionInfo)
+    } catch {
+      case _: IllegalArgumentException =>
+        Resync(currentVersionInfo, "Not a published copy")
+    }
 }
 
 object Backup extends App {
@@ -172,11 +191,10 @@ object Backup extends App {
   }
 
   def continuePlayback(backup: Backup)(initialVersionInfo: backup.datasetMap.CopyInfo)(it: Iterator[Delogger.LogEvent[Any]]) = {
-    var currentVersionInfo = initialVersionInfo
-    for(event <- it) {
+    it.foldLeft(initialVersionInfo) { (currentVersionInfo, event) =>
       event match {
         case WorkingCopyCreated(newVersionInfo) =>
-          currentVersionInfo = backup.makeWorkingCopy(currentVersionInfo, newVersionInfo)
+          backup.makeWorkingCopy(currentVersionInfo, newVersionInfo)
         case ColumnCreated(info) =>
           backup.addColumn(currentVersionInfo, info)
         case RowIdentifierSet(info) =>
@@ -188,10 +206,13 @@ object Backup extends App {
         case RowDataUpdated(ops) =>
           backup.populateData(currentVersionInfo, ops)
         case RowIdCounterUpdated(rid) =>
-          currentVersionInfo = backup.rowIdCounterUpdated(currentVersionInfo, rid)
+          backup.rowIdCounterUpdated(currentVersionInfo, rid)
+        case WorkingCopyPublished =>
+          backup.publish(currentVersionInfo)
+        case DataCopied =>
+          backup.populateWorkingCopy(currentVersionInfo)
       }
     }
-    currentVersionInfo
   }
 
   def playbackNew(primaryConn: Connection, backupConn: Connection, backup: Backup, datasetSystemId: DatasetId) = {
@@ -230,7 +251,7 @@ object Backup extends App {
       try {
         DatabasePopulator.populate(backupConn)
 
-        val bkp = new Backup(backupConn, SystemColumns.id, executor, paranoid = true)
+        val bkp = new Backup(backupConn, executor, paranoid = true)
 
         for {
           globalLogStmt <- managed(primaryConn.prepareStatement("SELECT id, dataset_system_id, version FROM global_log ORDER BY id"))

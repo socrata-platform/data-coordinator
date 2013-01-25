@@ -13,7 +13,7 @@ class Upserter[CT, CV](mutator: DatabaseMutator[CT, CV]) {
       import providerOfNecessaryThings._
 
       for {
-        it <- inputGenerator(schema)
+        it <- inputGenerator(initialSchema)
         op <- it
       } {
         op match {

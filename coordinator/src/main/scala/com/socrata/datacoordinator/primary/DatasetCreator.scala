@@ -15,6 +15,7 @@ class DatasetCreator[CT, CV](mutator: DatabaseMutator[CT, CV], systemColumns: Ma
         loader.addColumn(col)
         if(col.logicalName == idColumnName) {
           loader.makeSystemPrimaryKey(col)
+          datasetMap.setSystemPrimaryKey(col)
         }
       }
 

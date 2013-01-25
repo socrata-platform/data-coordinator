@@ -13,6 +13,7 @@ trait DatasetMap extends `-impl`.BaseDatasetMap {
   /** Ensures that an "unpublished" table exists, creating it if necessary.
     * @note Does not copy the actual tables; this just updates the bookkeeping.
     * @note This also updates the bookkeeping for columns.
+    * @note None of the new columns will be marked as being a primary key.
     * @return Either the `CopyInfo` of an existing copy, or a pair of CopyInfos
     *    for the copy that was duplicated and the new copy it was copied to. */
   def ensureUnpublishedCopy(datasetInfo: DatasetInfo): Either[CopyInfo, CopyPair[CopyInfo]]

@@ -170,18 +170,21 @@ object ChicagoCrimesLoadScript extends App {
           object Operations extends SchemaUpdate {
             val now: DateTime = pont.now
             val datasetMap: pont.datasetMap.type = pont.datasetMap
-            val datasetInfo = datasetMap.datasetInfo(datasetId).getOrElse(sys.error("no such dataset")) // TODO: Real error
-            val copyInfo = datasetMap.latest(datasetInfo)
-            val datasetLog = pont.datasetLog(datasetInfo)
+            val initialDatasetInfo = datasetMap.datasetInfo(datasetId).getOrElse(sys.error("no such dataset")) // TODO: Real error
+            val initialCopyInfo = datasetMap.latest(initialDatasetInfo)
+            val datasetLog = pont.datasetLog(initialDatasetInfo)
 
-            val schemaLoader: SchemaLoader = pont.schemaLoader(copyInfo, datasetLog)
+            val schemaLoader: SchemaLoader = pont.schemaLoader(initialCopyInfo, datasetLog)
             def datasetContentsCopier = new RepBasedSqlDatasetContentsCopier(pont.conn, datasetLog, genericRepFor)
           }
 
           val result = f(Operations)
           Operations.datasetLog.endTransaction() foreach { version =>
-            pont.datasetMap.updateDataVersion(Operations.copyInfo, version)
-            pont.globalLog.log(Operations.datasetInfo, version, pont.now, user)
+            val finalDatasetInfo = Operations.datasetMap.datasetInfo(datasetId).getOrElse(sys.error("No such dataset?")) // TODO: better error
+            val finalCopyInfo = Operations.datasetMap.latest(finalDatasetInfo)
+
+            pont.datasetMap.updateDataVersion(finalCopyInfo, version)
+            pont.globalLog.log(finalDatasetInfo, version, pont.now, user)
           }
           result
         }
@@ -192,13 +195,13 @@ object ChicagoCrimesLoadScript extends App {
           class Operations extends DataUpdate with Closeable {
             val now: DateTime = pont.now
             val datasetMap = pont.datasetMap
-            val datasetInfo = datasetMap.datasetInfo(datasetId).getOrElse(sys.error("No such dataset?")) // TODO: better error
-            val copyInfo = datasetMap.latest(datasetInfo)
-            val datasetLog = pont.datasetLog(datasetInfo)
+            val initialDatasetInfo = datasetMap.datasetInfo(datasetId).getOrElse(sys.error("No such dataset?")) // TODO: better error
+            val initialCopyInfo = datasetMap.latest(initialDatasetInfo)
+            val datasetLog = pont.datasetLog(initialDatasetInfo)
 
-            val schema = datasetMap.schema(copyInfo)
-            val rowIdProvider = new RowIdProvider(datasetInfo.nextRowId)
-            val dataLoader = pont.rawDataLoader(copyInfo, schema, datasetLog, rowIdProvider)
+            val initialSchema = datasetMap.schema(initialCopyInfo)
+            val rowIdProvider = new RowIdProvider(initialDatasetInfo.nextRowId)
+            val dataLoader = pont.rawDataLoader(initialCopyInfo, initialSchema, datasetLog, rowIdProvider)
 
             def close() {
               dataLoader.close()
@@ -207,18 +210,21 @@ object ChicagoCrimesLoadScript extends App {
 
           using(new Operations) { operations =>
             val result = f(operations)
-            val nextRowId = operations.rowIdProvider.finish()
 
-            val newCI = if(nextRowId != operations.datasetInfo.nextRowId) {
+            val finalDatasetInfo = operations.datasetMap.datasetInfo(datasetId).getOrElse(sys.error("No such dataset?")) // TODO: better error
+            val finalCopyInfo = operations.datasetMap.latest(finalDatasetInfo)
+
+            val nextRowId = operations.rowIdProvider.finish()
+            val newCI = if(nextRowId != finalDatasetInfo.nextRowId) {
               operations.datasetLog.rowIdCounterUpdated(nextRowId)
-              operations.datasetMap.updateNextRowId(operations.copyInfo, nextRowId)
+              operations.datasetMap.updateNextRowId(finalCopyInfo, nextRowId)
             } else {
-              operations.copyInfo
+              finalCopyInfo
             }
 
             operations.datasetLog.endTransaction() foreach { version =>
               operations.datasetMap.updateDataVersion(newCI, version)
-              pont.globalLog.log(operations.datasetInfo, version, pont.now, user)
+              pont.globalLog.log(finalDatasetInfo, version, pont.now, user)
             }
             result
           }
@@ -236,6 +242,10 @@ object ChicagoCrimesLoadScript extends App {
     val primaryKeySetter = new PrimaryKeySetter(mutator)
 
     val upserter = new Upserter(mutator)
+
+    val publisher = new Publisher(mutator)
+
+    val workingCopyCreator = new WorkingCopyCreator(mutator, SystemColumns.id)
 
     // Everything above this point can be re-used for every operation
 
@@ -281,10 +291,12 @@ object ChicagoCrimesLoadScript extends App {
       primaryKeySetter.makePrimaryKey("crimes", "ID", user)
       val start = System.nanoTime()
       upserter.upsert("crimes", user) { _ =>
-        noopManagement(it.map(transformToRow(schema, headers, _)).map(Right(_)))
+        noopManagement(it.take(10).map(transformToRow(schema, headers, _)).map(Right(_)))
       }
       val end = System.nanoTime()
       println(s"Upsert took ${(end - start) / 1000000L}ms")
+      publisher.publish("crimes", user)
+      workingCopyCreator.copyDataset("crimes", user, copyData = true)
     }
     // columnAdder.addToSchema("crimes", Map("id" -> SoQLText, "penalty" -> SoQLText), user)
     // primaryKeySetter.makePrimaryKey("crimes", "id", user)

@@ -21,6 +21,7 @@ object Delogger {
   case class RowIdentifierCleared(info: ColumnInfo) extends LogEvent[Nothing]
   case class SystemRowIdentifierChanged(info: ColumnInfo) extends LogEvent[Nothing]
   case class WorkingCopyCreated(copyInfo: CopyInfo) extends LogEvent[Nothing]
+  case object DataCopied extends LogEvent[Nothing]
   case object WorkingCopyDropped extends LogEvent[Nothing]
   case object WorkingCopyPublished extends LogEvent[Nothing]
   case class RowDataUpdated[CV](operations: Seq[Operation[CV]]) extends LogEvent[CV]
