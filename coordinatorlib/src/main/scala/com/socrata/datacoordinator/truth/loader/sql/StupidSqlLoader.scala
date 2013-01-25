@@ -94,18 +94,17 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
     val job = nextJobNum()
     datasetContext.userPrimaryKeyColumn match {
       case Some(pkCol) =>
-        using(connection.prepareStatement(sqlizer.prepareUserIdDeleteStatement)) { stmt =>
-          val sid = findSid(id)
-          sqlizer.prepareUserIdDelete(stmt, id)
-          val result = stmt.executeUpdate()
-          if(result != 1) {
-            assert(!sid.isDefined)
+        findSid(id) match {
+          case Some(sid) =>
+            using(connection.prepareStatement(sqlizer.prepareSystemIdDeleteStatement)) { stmt =>
+              sqlizer.prepareSystemIdDelete(stmt, sid)
+              val result = stmt.executeUpdate()
+              assert(result == 1)
+              deleted.put(job, id)
+              dataLogger.delete(sid)
+            }
+          case None =>
             errors.put(job, NoSuchRowToDelete(id))
-          } else {
-            assert(sid.isDefined)
-            deleted.put(job, id)
-            dataLogger.delete(sid.get)
-          }
         }
       case None =>
         val sid = typeContext.makeSystemIdFromValue(id)

@@ -76,13 +76,6 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
     sb
   }
 
-  val prepareUserIdDeleteStatement =
-    "DELETE FROM " + dataTableName + " WHERE " + pkRep.templateForSingleLookup
-
-  def prepareUserIdDelete(stmt: PreparedStatement, id: CV) {
-    pkRep.prepareSingleLookup(stmt, id, 1)
-  }
-
   def sqlizeUserIdUpdate(row: Row[CV]) =
     updatePrefix(row).append(pkRep sql_== row(logicalPKColumnName)).toString
 
