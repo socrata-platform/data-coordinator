@@ -31,8 +31,6 @@ trait DataSqlizer[CT, CV] {
   def prepareSystemIdDelete(stmt: PreparedStatement, sid: RowId)
   def sqlizeSystemIdUpdate(sid: RowId, row: Row[CV]): String
 
-  def sqlizeUserIdUpdate(row: Row[CV]): String
-
   // THIS MUST ONLY BE CALLED IF THIS DATASET HAS A USER PK COLUMN!
   def findSystemIds(conn: Connection, ids: Iterator[CV]): CloseableIterator[Seq[IdPair[CV]]]
 }

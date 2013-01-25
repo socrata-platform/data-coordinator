@@ -311,12 +311,13 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: Dat
           val op = updates.get(i)
           assert(op.hasUpsertJob, "No upsert job?")
 
-          if(sidSource.contains(op.id)) {
-            op.upsertedRow = rowPreparer.prepareForUpdate(op.upsertedRow)
-            val sql = sqlizer.sqlizeUserIdUpdate(op.upsertedRow)
-            stmt.addBatch(sql)
-          } else {
-            sys.error("Update requested but no system id found?")
+          sidSource.get(op.id) match {
+            case Some(sid) =>
+              op.upsertedRow = rowPreparer.prepareForUpdate(op.upsertedRow)
+              val sql = sqlizer.sqlizeSystemIdUpdate(sidSource(op.id), op.upsertedRow)
+              stmt.addBatch(sql)
+            case None =>
+              sys.error("Update requested but no system id found?")
           }
 
           i += 1
