@@ -5,7 +5,7 @@ import com.socrata.datacoordinator.truth.metadata.{CopyInfo, ColumnInfo}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 
 trait Logger[CV] extends DataLogger[CV] {
-  def truncated(schema: ColumnIdMap[ColumnInfo])
+  def truncated()
   def columnCreated(info: ColumnInfo)
   def columnRemoved(info: ColumnInfo)
   def rowIdentifierSet(newIdentifier: ColumnInfo)

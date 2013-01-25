@@ -14,7 +14,7 @@ trait Delogger[CV] extends Closeable {
 
 object Delogger {
   sealed abstract class LogEvent[+CV]
-  case class Truncated(schema: ColumnIdMap[ColumnInfo]) extends LogEvent[Nothing]
+  case object Truncated extends LogEvent[Nothing]
   case class ColumnCreated(info: ColumnInfo) extends LogEvent[Nothing]
   case class ColumnRemoved(info: ColumnInfo) extends LogEvent[Nothing]
   case class RowIdentifierSet(info: ColumnInfo) extends LogEvent[Nothing]

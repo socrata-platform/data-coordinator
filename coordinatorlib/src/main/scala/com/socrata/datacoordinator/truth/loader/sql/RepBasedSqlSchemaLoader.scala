@@ -21,6 +21,10 @@ class RepBasedSqlSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV], repF
     logger.workingCopyCreated(copyInfo)
   }
 
+  def drop(copyInfo: CopyInfo) {
+    // TODO: queue the table for dropping
+  }
+
   def addColumn(columnInfo: ColumnInfo) {
     val rep = repFor(columnInfo)
     using(conn.createStatement()) { stmt =>

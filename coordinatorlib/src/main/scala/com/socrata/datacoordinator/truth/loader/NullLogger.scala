@@ -36,7 +36,7 @@ class NullLogger[CV] extends Logger[CV] {
 
   def close() {}
 
-  def truncated(schema: ColumnIdMap[ColumnInfo]) {}
+  def truncated() {}
 }
 
 object NullLogger extends NullLogger[Any] {

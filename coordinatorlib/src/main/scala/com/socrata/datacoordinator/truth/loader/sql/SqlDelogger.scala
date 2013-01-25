@@ -100,8 +100,6 @@ class SqlDelogger[CV](connection: Connection,
           decodeRowDataUpdated(aux)
         case SqlLogger.RowIdCounterUpdated =>
           decodeRowIdCounterUpdated(aux)
-        case SqlLogger.Truncated =>
-          decodeTruncated(aux)
         case SqlLogger.ColumnCreated =>
           decodeColumnCreated(aux)
         case SqlLogger.ColumnRemoved =>
@@ -120,6 +118,8 @@ class SqlDelogger[CV](connection: Connection,
           Delogger.WorkingCopyDropped
         case SqlLogger.WorkingCopyPublished =>
           Delogger.WorkingCopyPublished
+        case SqlLogger.Truncated =>
+          Delogger.Truncated
         case SqlLogger.TransactionEnded =>
           assert(!rs.next(), "there was data after TransactionEnded?")
           null
@@ -156,25 +156,6 @@ class SqlDelogger[CV](connection: Connection,
         sys.error("Parameter for `row id counter updated' was not a number")
       }
       Delogger.RowIdCounterUpdated(new RowId(json.toLong))
-    }
-
-    def decodeTruncated(aux: Array[Byte]) = {
-      val json = fromJson(aux).cast[JObject].getOrElse {
-        sys.error("Parameter for `truncated' was not an object")
-      }
-      val schema = new MutableColumnIdMap[ColumnInfo]
-      try {
-        for((k, v) <- json) {
-          val ci = JsonCodec.fromJValue[ColumnInfo](v).getOrElse {
-            sys.error("value in truncated was not a ColumnInfo")
-          }
-          schema(new ColumnId(k.toLong)) -> ci
-        }
-      } catch {
-        case _: NumberFormatException =>
-          sys.error("key in truncated was not a valid column id")
-      }
-      Delogger.Truncated(schema.freeze())
     }
 
     def decodeColumnCreated(aux: Array[Byte]) = {

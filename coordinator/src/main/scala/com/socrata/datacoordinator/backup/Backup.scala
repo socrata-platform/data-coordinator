@@ -16,10 +16,20 @@ import com.socrata.datacoordinator.truth.metadata.sql.PostgresDatasetMap
 import java.util.concurrent.{Executors, ExecutorService}
 import com.socrata.datacoordinator.common.sql.RepBasedDatasetContext
 import com.socrata.datacoordinator.truth.loader.Delogger._
-import com.socrata.datacoordinator.truth.loader.Delogger.WorkingCopyCreated
-import com.socrata.datacoordinator.truth.loader.Delogger.ColumnCreated
-import com.socrata.datacoordinator.truth.loader.Delogger.RowDataUpdated
 import com.socrata.datacoordinator.truth.metadata.CopyPair
+import com.socrata.datacoordinator.truth.loader.Delogger.RowIdentifierCleared
+import com.socrata.datacoordinator.truth.loader.Update
+import com.socrata.datacoordinator.truth.loader.Delogger.RowIdCounterUpdated
+import com.socrata.datacoordinator.truth.loader.Delogger.RowDataUpdated
+import com.socrata.datacoordinator.truth.loader.Delogger.Truncated
+import com.socrata.datacoordinator.truth.loader.Delogger.WorkingCopyCreated
+import com.socrata.datacoordinator.truth.loader.Delogger.RowIdentifierSet
+import com.socrata.datacoordinator.truth.loader.Delogger.ColumnCreated
+import com.socrata.datacoordinator.truth.loader.Delogger.SystemRowIdentifierChanged
+import com.socrata.datacoordinator.truth.loader.Delete
+import com.socrata.datacoordinator.truth.loader.Delogger.ColumnRemoved
+import com.socrata.datacoordinator.truth.metadata.CopyPair
+import com.socrata.datacoordinator.truth.loader.Insert
 
 class Backup(conn: Connection, executor: ExecutorService, paranoid: Boolean) {
   val typeContext = SoQLTypeContext
@@ -47,12 +57,13 @@ class Backup(conn: Connection, executor: ExecutorService, paranoid: Boolean) {
     managed(new SqlPrevettedLoader(conn, sqlizer, logger))
   }
 
-  // TODO: Move this elsewhere, add logging, etc.
+  // TODO: Move this elsewhere, etc.
   def truncate(table: String) {
     using(conn.createStatement()) { stmt =>
       stmt.execute(s"DELETE FROM $table")
       // TODO: schedule table for a VACUUM ANALYZE (since it can't happen in a transaction)
     }
+    logger.truncated()
   }
 
   def updateVersion(version: datasetMap.CopyInfo, newVersion: Long): datasetMap.CopyInfo =
@@ -78,7 +89,7 @@ class Backup(conn: Connection, executor: ExecutorService, paranoid: Boolean) {
 
   def dropColumn(currentVersion: datasetMap.CopyInfo, columnInfo: ColumnInfo): currentVersion.type = {
     Resync.unless(currentVersion, currentVersion == columnInfo.copyInfo, "Version infos differ")
-    val ci = datasetMap.schema(currentVersion)(columnInfo.systemId)
+    val ci = datasetMap.schema(currentVersion).getOrElse(columnInfo.systemId, Resync(currentVersion, "No column with ID " + columnInfo.systemId))
     Resync.unless(ci, ci == columnInfo, "Column infos differ")
     datasetMap.dropColumn(ci)
     schemaLoader.dropColumn(ci)
@@ -140,8 +151,13 @@ class Backup(conn: Connection, executor: ExecutorService, paranoid: Boolean) {
     currentVersion
   }
 
-  def truncate(currentVersion: datasetMap.CopyInfo, versionInfo: CopyInfo): currentVersion.type = {
-    Resync.unless(currentVersion, currentVersion == versionInfo, "Version infos differ")
+  def dropWorkingCopy(currentVersion: datasetMap.CopyInfo): datasetMap.CopyInfo = {
+    schemaLoader.drop(currentVersion)
+    datasetMap.dropCopy(currentVersion)
+    datasetMap.latest(currentVersion.datasetInfo)
+  }
+
+  def truncate(currentVersion: datasetMap.CopyInfo): currentVersion.type = {
     truncate(currentVersion.dataTableName)
     currentVersion
   }
@@ -211,6 +227,14 @@ object Backup extends App {
           backup.publish(currentVersionInfo)
         case DataCopied =>
           backup.populateWorkingCopy(currentVersionInfo)
+        case ColumnRemoved(info) =>
+          backup.dropColumn(currentVersionInfo, info)
+        case Truncated =>
+          backup.truncate(currentVersionInfo)
+        case WorkingCopyDropped =>
+          backup.dropWorkingCopy(currentVersionInfo)
+        case EndTransaction =>
+          sys.error("Shouldn't have seen this")
       }
     }
   }

@@ -88,13 +88,10 @@ class SqlLogger[CV](connection: Connection,
     assert(!transactionEnded, "Operation logged after saying the transaction was over")
   }
 
-  def truncated(schema: ColumnIdMap[ColumnInfo]) {
+  def truncated() {
     checkTxn()
     flushRowData()
-    logLine(SqlLogger.Truncated, CompactJsonWriter.toString(JObject(schema.foldLeft(Map.empty[String, JValue]) { (result, sidCol) =>
-      val (cid, colSpec) = sidCol
-      result + (cid.underlying.toString -> JsonCodec.toJValue(colSpec))
-    })))
+    logLine(SqlLogger.Truncated, nullBytes)
   }
 
   def columnCreated(info: ColumnInfo) {
