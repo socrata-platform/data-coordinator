@@ -1,17 +1,14 @@
 package com.socrata.datacoordinator.primary
 
-import scala.collection.JavaConverters._
-
 import java.sql.{Connection, DriverManager}
 import java.util.concurrent.Executors
 
-import org.joda.time.{DateTimeZone, DateTime}
+import org.joda.time.DateTime
 import com.rojoma.simplearm.{SimpleArm, Managed}
 import com.rojoma.simplearm.util._
-import com.google.protobuf.{CodedOutputStream, CodedInputStream}
 
 import com.socrata.soql.types._
-import com.socrata.id.numeric.{IdProvider, FibonacciIdProvider, InMemoryBlockIdProvider}
+import com.socrata.id.numeric.IdProvider
 
 import com.socrata.datacoordinator.common.soql._
 import com.socrata.datacoordinator.truth.metadata._
@@ -26,8 +23,8 @@ import com.socrata.datacoordinator.{Row, MutableRow}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.common.sql.{PostgresSqlLoaderProvider, AbstractSqlLoaderProvider}
 import org.joda.time.format.DateTimeFormat
-import java.io.Closeable
-import scala.Tuple2
+import java.io.{File, Closeable}
+import com.socrata.csv.CSVIterator
 
 object ChicagoCrimesLoadScript extends App {
   val url =
@@ -259,7 +256,7 @@ object ChicagoCrimesLoadScript extends App {
 
     try { datasetCreator.createDataset("crimes", user) }
     catch { case _: DatasetAlreadyExistsException => /* pass */ }
-    using(loadCSV("/home/robertm/chicagocrime.csv")) { it =>
+    using(new CSVIterator(new File("/home/robertm/chicagocrime.csv"))) { it =>
       val types = Map(
         "ID" -> SoQLNumber,
         "Case Number" -> SoQLText,
@@ -351,29 +348,5 @@ object ChicagoCrimesLoadScript extends App {
                                 catch { case e: Exception => throw new Exception("Problem converting " + header + ": " + value, e) })
     }
     result.freeze()
-  }
-
-  def loadCSV(filename: String, skip: Int = 0): CloseableIterator[IndexedSeq[String]] = new CloseableIterator[IndexedSeq[String]] {
-    import au.com.bytecode.opencsv._
-    import java.io._
-    val reader = new FileReader(filename)
-
-    lazy val it = locally {
-      val r = new CSVReader(reader)
-      def loop(idx: Int = 1): Stream[Array[String]] = {
-        r.readNext() match {
-          case null => Stream.empty
-          case row => row #:: loop(idx + 1)
-        }
-      }
-      loop().iterator
-    }
-
-    def hasNext = it.hasNext
-    def next() = it.next()
-
-    def close() {
-      reader.close()
-    }
   }
 }
