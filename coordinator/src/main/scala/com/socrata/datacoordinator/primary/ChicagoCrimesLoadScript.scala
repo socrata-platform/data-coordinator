@@ -319,26 +319,6 @@ object ChicagoCrimesLoadScript extends App {
       def flatMap[B](f: (T) => B): B = f(t)
     }
 
-  def loadRows(ds: String, upserter: Upserter[SoQLType, Any], user: String) {
-    upserter.upsert(ds, user) { schema =>
-      val byName = RotateSchema(schema)
-      noopManagement(Iterator[Either[Any, Row[Any]]](
-        Right(Row(byName("id").systemId -> "robbery", byName("penalty").systemId -> "short jail term")),
-        Right(Row(byName("id").systemId -> "murder", byName("penalty").systemId -> "long jail term"))
-      ))
-    }
-  }
-
-  def loadRows2(ds: String, upserter: Upserter[SoQLType, Any], user: String) {
-    upserter.upsert(ds, user) { schema =>
-      val byName = RotateSchema(schema)
-      noopManagement(Iterator[Either[Any, Row[Any]]](
-        Right(Row(byName("id").systemId -> "murder", byName("penalty").systemId -> "DEATH")),
-        Left("robbery")
-      ))
-    }
-  }
-
   def transformToRow(schema: Map[String, (ColumnInfo, SoQLType)], headers: IndexedSeq[String], row: IndexedSeq[String]): Row[Any] = {
     assert(headers.length == row.length, "Bad row; different number of columns from the headers")
     val result = new MutableRow[Any]
