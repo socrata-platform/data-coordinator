@@ -81,6 +81,9 @@ class NetworkPackets(socket: SocketChannel, val maxPacketSize: Int) extends Pack
       while(buffer.hasRemaining && socket.write(buffer) != 0) {}
       if(buffer.hasRemaining) {
         await(SelectionKey.OP_READ | SelectionKey.OP_WRITE, deadline)
+
+        // FIXME: This will report the wrong error if it's caused by
+        // the other end closing its socket.
         if(key.isReadable && !key.isWritable) throw new UnexpectedPacket
       }
     } while(buffer.hasRemaining)
