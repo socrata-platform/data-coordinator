@@ -13,8 +13,8 @@ class NetworkPackets(socket: SocketChannel, val maxPacketSize: Int) extends Pack
 
   socket.configureBlocking(false)
 
-  private val buf = ByteBuffer.allocate(8096)
-  private var bufInWriteMode = true
+  private val receiveBuffer = ByteBuffer.allocate(8096)
+  private var receiveBufferInWriteMode = true
   private val packetAccumulator = new PacketAccumulator(maxPacketSize)
 
   private val selector = socket.provider.openSelector()
@@ -25,33 +25,33 @@ class NetworkPackets(socket: SocketChannel, val maxPacketSize: Int) extends Pack
   }
 
   private def bufferToReadMode() {
-    if(bufInWriteMode) { buf.flip(); bufInWriteMode = false }
+    if(receiveBufferInWriteMode) { receiveBuffer.flip(); receiveBufferInWriteMode = false }
   }
 
   private def bufferToWriteMode() {
-    if(!bufInWriteMode) { buf.compact(); bufInWriteMode = true }
+    if(!receiveBufferInWriteMode) { receiveBuffer.compact(); receiveBufferInWriteMode = true }
   }
 
   private def readAvailablePacket(): ReadResult = {
     bufferToReadMode()
-    if(buf.hasRemaining) {
-      val p = packetAccumulator.accumulate(buf)
+    if(receiveBuffer.hasRemaining) {
+      val p = packetAccumulator.accumulate(receiveBuffer)
       if(p.isDefined) return PacketAvailable(p.get)
     }
 
     @tailrec
     def loop(): ReadResult = {
       bufferToWriteMode()
-      socket.read(buf) match {
+      socket.read(receiveBuffer) match {
         case 0 =>
           NoPacket
         case -1 =>
           bufferToReadMode()
-          if(buf.hasRemaining || packetAccumulator.partial) throw new PartialPacket
+          if(receiveBuffer.hasRemaining || packetAccumulator.partial) throw new PartialPacket
           EOF
         case n =>
           bufferToReadMode()
-          val p = packetAccumulator.accumulate(buf)
+          val p = packetAccumulator.accumulate(receiveBuffer)
           if(p.isDefined) return PacketAvailable(p.get)
           loop()
       }
