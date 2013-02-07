@@ -55,7 +55,7 @@ object Transmitter extends App {
   }
 
   val rowCodecFactory = () => SoQLRowLogCodec
-  val protocol = new Protocol(rowCodecFactory)
+  val protocol = new Protocol(new LogDataCodec(rowCodecFactory))
   import protocol._
 
   while(true) {

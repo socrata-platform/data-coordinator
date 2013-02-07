@@ -288,7 +288,7 @@ object ChicagoCrimesLoadScript extends App {
       primaryKeySetter.makePrimaryKey("crimes", "ID", user)
       val start = System.nanoTime()
       upserter.upsert("crimes", user) { _ =>
-        noopManagement(it.take(10).map(transformToRow(schema, headers, _)).map(Right(_)))
+        noopManagement(it/*.take(10)*/.map(transformToRow(schema, headers, _)).map(Right(_)))
       }
       val end = System.nanoTime()
       println(s"Upsert took ${(end - start) / 1000000L}ms")

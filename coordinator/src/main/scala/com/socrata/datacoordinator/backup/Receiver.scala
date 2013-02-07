@@ -36,7 +36,8 @@ object Receiver extends App {
   val executor = java.util.concurrent.Executors.newCachedThreadPool()
   val provider = SelectorProvider.provider
 
-  val protocol = new Protocol(() => SoQLRowLogCodec)
+  val codec = new LogDataCodec(() => SoQLRowLogCodec)
+  val protocol = new Protocol(codec)
   import protocol._
 
   using(openConnection()) { conn =>
