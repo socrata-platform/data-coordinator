@@ -13,6 +13,7 @@ trait Packets extends Closeable {
 
   /** Checks to see if a message is ready.  This is not required to actually check
     * a message source; it is meant to be called after a bulk send to see if anything
-    * was received during the send. */
+    * was received during the send.
+    * @note "None" here does NOT necessarily mean EOF. */
   def poll(): Option[Packet]
 }

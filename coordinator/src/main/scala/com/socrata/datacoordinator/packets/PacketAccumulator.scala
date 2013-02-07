@@ -35,7 +35,8 @@ class PacketAccumulator(val maxPacketSize: Int) {
       writeIntoStream(bb, bytesForSize)
       if(stream.size == 4) {
         expectedSize = decodeBigEndianInt(stream.underlyingByteArray)
-        if(expectedSize < 5 || expectedSize > maxPacketSize) throw new BadPacketSize(expectedSize)
+        if(expectedSize < 5 || expectedSize > maxPacketSize)
+          throw new BadPacketSize(expectedSize)
       }
     }
     if(stream.size >= 4 && bb.hasRemaining) {

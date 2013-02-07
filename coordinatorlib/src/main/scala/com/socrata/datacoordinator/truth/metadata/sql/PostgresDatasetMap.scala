@@ -25,7 +25,7 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
   case class SqlCopyInfo(datasetInfo: DatasetInfo, systemId: CopyId, copyNumber: Long, lifecycleStage: LifecycleStage, dataVersion: Long) extends ICopyInfo
   case class SqlColumnInfo(copyInfo: CopyInfo, systemId: ColumnId, logicalName: String, typeName: String, physicalColumnBaseBase: String, isSystemPrimaryKey: Boolean, isUserPrimaryKey: Boolean) extends IColumnInfo
 
-  require(!conn.getAutoCommit, "Connection is in auto-commit mode")
+  require(conn.isReadOnly || !conn.getAutoCommit, "Connection is read-write and in auto-commit mode")
 
   def snapshotCountQuery = "SELECT count(system_id) FROM copy_map WHERE dataset_system_id = ? AND lifecycle_stage = CAST(? AS dataset_lifecycle_stage)"
   def snapshotCount(dataset: DatasetInfo) =

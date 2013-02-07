@@ -16,6 +16,11 @@ CREATE TABLE IF NOT EXISTS global_log (
   updated_by        VARCHAR(%USER_UID_LEN%)  NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS last_id_sent_to_backup (
+  id                  BIGINT NOT NULL REFERENCES global_log(id),
+  single_row_enforcer unit   NOT NULL DEFAULT 'Unit'
+);
+
 -- This is a separate table from dataset_map so it can continue to exist
 -- even if the dataset_map entry goes away.
 CREATE TABLE IF NOT EXISTS truth_manifest (

@@ -238,7 +238,14 @@ object Backup extends App {
   }
 
   def continuePlayback(backup: Backup)(initialVersionInfo: backup.datasetMap.CopyInfo)(it: Iterator[Delogger.LogEvent[Any]]) = {
-    it.foldLeft(initialVersionInfo)(backup.dispatch)
+    // method with dependent type (versionInfo: backup.datasetMap.CopyInfo, event: com.socrata.datacoordinator.truth.loader.Delogger.LogEvent[Any])backup.datasetMap.CopyInfo cannot be converted to function value
+    // *sigh*
+    // was originally just it.foldLeft(initialVersionInfo)(backup.dispatch)
+    var result = initialVersionInfo
+    while(it.hasNext) {
+      result = backup.dispatch(result, it.next())
+    }
+    result
   }
 
   def playbackNew(primaryConn: Connection, backup: Backup, datasetSystemId: DatasetId) = {

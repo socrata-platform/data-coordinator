@@ -68,12 +68,14 @@ class NetworkPackets(socket: SocketChannel, val maxPacketSize: Int) extends Pack
   }
 
   @tailrec
-  private def queueAvailablePackets() {
-    readAvailablePacket() match {
-      case EOF | NoPacket => // done
-      case PacketAvailable(p) =>
-        mailbox.enqueue(p)
-        queueAvailablePackets()
+  private def queueAvailablePackets(limit: Int = 5) {
+    if(limit > 0) {
+      readAvailablePacket() match {
+        case EOF | NoPacket => // done
+        case PacketAvailable(p) =>
+          mailbox.enqueue(p)
+          queueAvailablePackets(limit - 1)
+      }
     }
   }
 

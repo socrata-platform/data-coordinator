@@ -24,4 +24,10 @@ object CloseableIterator {
 
     def close() {}
   }
+
+  def simple[T](it: Iterator[T]) = new CloseableIterator[T] {
+    def hasNext = it.hasNext
+    def next() = it.next()
+    def close() {}
+  }
 }
