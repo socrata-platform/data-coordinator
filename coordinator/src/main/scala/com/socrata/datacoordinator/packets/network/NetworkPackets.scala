@@ -134,7 +134,6 @@ class NetworkPackets(socket: SocketChannel, val maxPacketSize: Int) extends Pack
 
   private def await(ops: Int, deadline: Deadline) {
     key.interestOps(ops)
-    println(Thread.currentThread.getName + " blocking")
     selector.selectedKeys.remove(key)
     if(deadline == null) selector.select()
     else {
