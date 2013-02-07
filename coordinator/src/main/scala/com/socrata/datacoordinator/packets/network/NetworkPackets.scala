@@ -19,6 +19,8 @@ class NetworkPackets(socket: SocketChannel, val maxPacketSize: Int) extends Pack
 
   private val selector = socket.provider.openSelector()
   private val key = socket.register(selector, 0)
+  private var eofReceived = false
+  private val mailbox = new scala.collection.mutable.Queue[Packet]
 
   def close() {
     selector.close()
@@ -33,30 +35,46 @@ class NetworkPackets(socket: SocketChannel, val maxPacketSize: Int) extends Pack
   }
 
   private def readAvailablePacket(): ReadResult = {
+    if(mailbox.nonEmpty) return PacketAvailable(mailbox.dequeue())
+
     bufferToReadMode()
     if(receiveBuffer.hasRemaining) {
       val p = packetAccumulator.accumulate(receiveBuffer)
       if(p.isDefined) return PacketAvailable(p.get)
     }
 
-    @tailrec
-    def loop(): ReadResult = {
-      bufferToWriteMode()
-      socket.read(receiveBuffer) match {
-        case 0 =>
-          NoPacket
-        case -1 =>
-          bufferToReadMode()
-          if(receiveBuffer.hasRemaining || packetAccumulator.partial) throw new PartialPacket
-          EOF
-        case n =>
-          bufferToReadMode()
-          val p = packetAccumulator.accumulate(receiveBuffer)
-          if(p.isDefined) return PacketAvailable(p.get)
-          loop()
+    if(eofReceived) EOF
+    else {
+      @tailrec
+      def loop(): ReadResult = {
+        bufferToWriteMode()
+        socket.read(receiveBuffer) match {
+          case 0 =>
+            NoPacket
+          case -1 =>
+            bufferToReadMode()
+            if(receiveBuffer.hasRemaining || packetAccumulator.partial) throw new PartialPacket
+            eofReceived = true
+            EOF
+          case n =>
+            bufferToReadMode()
+            val p = packetAccumulator.accumulate(receiveBuffer)
+            if(p.isDefined) return PacketAvailable(p.get)
+            loop()
+        }
       }
+      loop()
     }
-    loop()
+  }
+
+  @tailrec
+  private def queueAvailablePackets() {
+    readAvailablePacket() match {
+      case EOF | NoPacket => // done
+      case PacketAvailable(p) =>
+        mailbox.enqueue(p)
+        queueAvailablePackets()
+    }
   }
 
   private def deadline(timeout: Duration): Deadline =
@@ -72,30 +90,32 @@ class NetworkPackets(socket: SocketChannel, val maxPacketSize: Int) extends Pack
       sendPacketBefore(packet, deadline(timeout))
     } catch {
       case e: IOException =>
-        throw new IOProblem(e)
+        throw new IOProblem(underlying = e)
     }
 
   private def sendPacketBefore(packet: Packet, deadline: Deadline) {
     val buffer = packet.buffer
     do {
+      queueAvailablePackets()
       while(buffer.hasRemaining && socket.write(buffer) != 0) {}
       if(buffer.hasRemaining) {
-        await(SelectionKey.OP_READ | SelectionKey.OP_WRITE, deadline)
-
-        // FIXME: This will report the wrong error if it's caused by
-        // the other end closing its socket.
-        if(key.isReadable && !key.isWritable) throw new UnexpectedPacket
+        await(SelectionKey.OP_WRITE | (if(eofReceived) 0 else SelectionKey.OP_READ), deadline)
       }
     } while(buffer.hasRemaining)
   }
 
   def receive(timeout: Duration): Option[Packet] =
     try {
-      receivePacketBefore(deadline(timeout))
+      if(mailbox.nonEmpty) Some(mailbox.dequeue())
+      else receivePacketBefore(deadline(timeout))
     } catch {
       case e: IOException =>
-        throw new IOProblem(e)
+        throw new IOProblem(underlying = e)
     }
+
+  def poll(): Option[Packet] =
+    if(mailbox.nonEmpty) Some(mailbox.dequeue())
+    else None
 
   @tailrec
   private def receivePacketBefore(deadline: Deadline): Option[Packet] = {
@@ -113,6 +133,7 @@ class NetworkPackets(socket: SocketChannel, val maxPacketSize: Int) extends Pack
   private def await(ops: Int, deadline: Deadline) {
     key.interestOps(ops)
     println(Thread.currentThread.getName + " blocking")
+    selector.selectedKeys.remove(key)
     if(deadline == null) selector.select()
     else {
       val pause = deadline.timeLeft.toMillis

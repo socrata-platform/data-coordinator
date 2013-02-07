@@ -10,4 +10,9 @@ trait Packets extends Closeable {
   /** Transmits a message and waits for the response. */
   def send(packet: Packet, timeout: Duration = Duration.Inf)
   def receive(timeout: Duration = Duration.Inf): Option[Packet]
+
+  /** Checks to see if a message is ready.  This is not required to actually check
+    * a message source; it is meant to be called after a bulk send to see if anything
+    * was received during the send. */
+  def poll(): Option[Packet]
 }

@@ -128,28 +128,8 @@ class SqlDelogger[CV](connection: Connection,
       }
     }
 
-    def decodeRowDataUpdated(aux: Array[Byte]) = {
-      val codec = rowCodecFactory()
-
-      val bais = new ByteArrayInputStream(aux)
-      val sis = new org.xerial.snappy.SnappyInputStream(bais)
-      val cis = com.google.protobuf.CodedInputStream.newInstance(sis)
-
-      // TODO: dispatch on version (right now we have only one)
-      codec.skipVersion(cis)
-
-      val results = new VectorBuilder[Operation[CV]]
-      def loop(): Vector[Operation[CV]] = {
-        codec.extract(cis) match {
-          case Some(op) =>
-            results += op
-            loop()
-          case None =>
-            results.result()
-        }
-      }
-      Delogger.RowDataUpdated(loop())
-    }
+    def decodeRowDataUpdated(aux: Array[Byte]) =
+      Delogger.RowDataUpdated(aux)(rowCodecFactory())
 
     def decodeRowIdCounterUpdated(aux: Array[Byte]) = {
       val json = fromJson(aux).cast[JNumber].getOrElse {

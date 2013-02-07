@@ -185,20 +185,51 @@ class Backup(conn: Connection, executor: ExecutorService, paranoid: Boolean) {
       case _: IllegalArgumentException =>
         Resync(currentVersionInfo, "Not a published copy")
     }
+
+  def dispatch(versionInfo: datasetMap.CopyInfo, event: Delogger.LogEvent[Any]): datasetMap.CopyInfo = {
+    event match {
+      case WorkingCopyCreated(newVersionInfo) =>
+        makeWorkingCopy(versionInfo, newVersionInfo)
+      case ColumnCreated(info) =>
+        addColumn(versionInfo, info)
+      case RowIdentifierSet(info) =>
+        makePrimaryKey(versionInfo, info)
+      case SystemRowIdentifierChanged(info) =>
+        makeSystemPrimaryKey(versionInfo, info)
+      case RowIdentifierCleared(info) =>
+        dropPrimaryKey(versionInfo, info)
+      case r@RowDataUpdated(_) =>
+        populateData(versionInfo, r.operations)
+      case RowIdCounterUpdated(rid) =>
+        rowIdCounterUpdated(versionInfo, rid)
+      case WorkingCopyPublished =>
+        publish(versionInfo)
+      case DataCopied =>
+        populateWorkingCopy(versionInfo)
+      case ColumnRemoved(info) =>
+        dropColumn(versionInfo, info)
+      case Truncated =>
+        truncate(versionInfo)
+      case WorkingCopyDropped =>
+        dropWorkingCopy(versionInfo)
+      case EndTransaction =>
+        sys.error("Shouldn't have seen this")
+    }
+  }
 }
 
 object Backup extends App {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Backup])
 
-  def playback(primaryConn: Connection, backupConn: Connection, backup: Backup, datasetSystemId: DatasetId, version: Long) {
+  def playback(primaryConn: Connection, backup: Backup, datasetSystemId: DatasetId, version: Long) {
     log.info("Playing back logs for version {}", version)
 
     // ok, if "version" is 1, then the dataset doesn't (or rather shouldn't) exist.  If it's not, it should.
     // If either of those assumptions seems violated, then we need to do a full resync...
     val newVersion = if(version == 1L) {
-      playbackNew(primaryConn, backupConn, backup, datasetSystemId)
+      playbackNew(primaryConn, backup, datasetSystemId)
     } else {
-      playbackExisting(primaryConn, backupConn, backup, datasetSystemId, version)
+      playbackExisting(primaryConn, backup, datasetSystemId, version)
     }
 
     backup.updateVersion(newVersion, version)
@@ -207,39 +238,10 @@ object Backup extends App {
   }
 
   def continuePlayback(backup: Backup)(initialVersionInfo: backup.datasetMap.CopyInfo)(it: Iterator[Delogger.LogEvent[Any]]) = {
-    it.foldLeft(initialVersionInfo) { (currentVersionInfo, event) =>
-      event match {
-        case WorkingCopyCreated(newVersionInfo) =>
-          backup.makeWorkingCopy(currentVersionInfo, newVersionInfo)
-        case ColumnCreated(info) =>
-          backup.addColumn(currentVersionInfo, info)
-        case RowIdentifierSet(info) =>
-          backup.makePrimaryKey(currentVersionInfo, info)
-        case SystemRowIdentifierChanged(info) =>
-          backup.makeSystemPrimaryKey(currentVersionInfo, info)
-        case RowIdentifierCleared(info) =>
-          backup.dropPrimaryKey(currentVersionInfo, info)
-        case RowDataUpdated(ops) =>
-          backup.populateData(currentVersionInfo, ops)
-        case RowIdCounterUpdated(rid) =>
-          backup.rowIdCounterUpdated(currentVersionInfo, rid)
-        case WorkingCopyPublished =>
-          backup.publish(currentVersionInfo)
-        case DataCopied =>
-          backup.populateWorkingCopy(currentVersionInfo)
-        case ColumnRemoved(info) =>
-          backup.dropColumn(currentVersionInfo, info)
-        case Truncated =>
-          backup.truncate(currentVersionInfo)
-        case WorkingCopyDropped =>
-          backup.dropWorkingCopy(currentVersionInfo)
-        case EndTransaction =>
-          sys.error("Shouldn't have seen this")
-      }
-    }
+    it.foldLeft(initialVersionInfo)(backup.dispatch)
   }
 
-  def playbackNew(primaryConn: Connection, backupConn: Connection, backup: Backup, datasetSystemId: DatasetId) = {
+  def playbackNew(primaryConn: Connection, backup: Backup, datasetSystemId: DatasetId) = {
     val delogger: Delogger[Any] = new SqlDelogger(primaryConn, "t_" + datasetSystemId.underlying + "_log", () => SoQLRowLogCodec)
     using(delogger.delog(1L)) { it =>
       it.next() match {
@@ -252,7 +254,7 @@ object Backup extends App {
     }
   }
 
-  def playbackExisting(primaryConn: Connection, backupConn: Connection, backup: Backup, datasetSystemId: DatasetId, version: Long) = {
+  def playbackExisting(primaryConn: Connection, backup: Backup, datasetSystemId: DatasetId, version: Long) = {
     val datasetInfo = backup.datasetMap.datasetInfo(datasetSystemId).getOrElse {
       Resync(datasetSystemId, "Expected dataset " + datasetSystemId.underlying + " to exist for version " + version)
     }
@@ -284,7 +286,7 @@ object Backup extends App {
           while(globalLogRS.next()) {
             val datasetSystemId = new DatasetId(globalLogRS.getLong("dataset_system_id"))
             val version = globalLogRS.getLong("version")
-            playback(primaryConn, backupConn, bkp, datasetSystemId, version)
+            playback(primaryConn, bkp, datasetSystemId, version)
             backupConn.commit()
           }
         }

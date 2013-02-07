@@ -2,10 +2,10 @@ package com.socrata.datacoordinator.packets
 
 import java.io.IOException
 
-class PacketException(cause: Throwable = null) extends Exception(cause)
-class TimeoutException extends PacketException
-class IOProblem(val underlying: IOException) extends PacketException(underlying)
-class ProtocolError extends PacketException
-class BadPacketSize(val size: Int) extends ProtocolError
-class UnexpectedPacket extends ProtocolError
-class PartialPacket extends ProtocolError
+class PacketException(msg: String = null, cause: Throwable = null) extends Exception(msg, cause)
+class TimeoutException(msg: String = null, cause: Throwable = null) extends PacketException(msg, cause)
+class IOProblem(msg: String = null, val underlying: IOException) extends PacketException(msg, underlying)
+class ProtocolError(msg: String = null, cause: Throwable = null) extends PacketException(msg, cause)
+class BadPacketSize(val size: Int, msg: String = null, cause: Throwable = null) extends ProtocolError(msg, cause)
+class UnexpectedPacket(msg: String = null, cause: Throwable = null) extends ProtocolError(msg, cause)
+class PartialPacket(msg: String = null, cause: Throwable = null) extends ProtocolError(msg, cause)
