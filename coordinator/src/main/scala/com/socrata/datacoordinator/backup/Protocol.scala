@@ -70,7 +70,7 @@ object Protocol {
   class SimplePacket(s: String) {
     val data = locally {
       val pos = new PacketOutputStream
-      pos.write(s.getBytes)
+      pos.write(s.getBytes("UTF-8"))
       pos.packet()
     }
 
