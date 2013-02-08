@@ -67,15 +67,11 @@ class NetworkPackets(socket: SocketChannel, val maxPacketSize: Int) extends Pack
     }
   }
 
-  @tailrec
-  private def queueAvailablePackets(limit: Int = 5) {
-    if(limit > 0) {
-      readAvailablePacket() match {
-        case EOF | NoPacket => // done
-        case PacketAvailable(p) =>
-          mailbox.enqueue(p)
-          queueAvailablePackets(limit - 1)
-      }
+  private def queueAnAvailablePacket() {
+    readAvailablePacket() match {
+      case EOF | NoPacket => // done
+      case PacketAvailable(p) =>
+        mailbox.enqueue(p)
     }
   }
 
@@ -96,12 +92,13 @@ class NetworkPackets(socket: SocketChannel, val maxPacketSize: Int) extends Pack
     }
 
   private def sendPacketBefore(packet: Packet, deadline: Deadline) {
+    queueAnAvailablePacket()
     val buffer = packet.buffer
     do {
-      queueAvailablePackets()
       while(buffer.hasRemaining && socket.write(buffer) != 0) {}
       if(buffer.hasRemaining) {
         await(SelectionKey.OP_WRITE | (if(eofReceived) 0 else SelectionKey.OP_READ), deadline)
+        if(key.isReadable) queueAnAvailablePacket()
       }
     } while(buffer.hasRemaining)
   }
