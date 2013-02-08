@@ -14,7 +14,7 @@ import com.socrata.datacoordinator.util.collection.MutableColumnIdMap
 import scala.Some
 import com.socrata.datacoordinator.truth.metadata.CopyPair
 
-class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDatasetMap {
+class PostgresDatasetMapReader(val conn: Connection) extends DatasetMapReader {
   def lockNotAvailableState = "55P03"
 
   type DatasetInfo = SqlDatasetInfo
@@ -24,8 +24,6 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
   case class SqlDatasetInfo(systemId: DatasetId, datasetId: String, tableBaseBase: String, nextRowId: RowId) extends IDatasetInfo
   case class SqlCopyInfo(datasetInfo: DatasetInfo, systemId: CopyId, copyNumber: Long, lifecycleStage: LifecycleStage, dataVersion: Long) extends ICopyInfo
   case class SqlColumnInfo(copyInfo: CopyInfo, systemId: ColumnId, logicalName: String, typeName: String, physicalColumnBaseBase: String, isSystemPrimaryKey: Boolean, isUserPrimaryKey: Boolean) extends IColumnInfo
-
-  require(conn.isReadOnly || !conn.getAutoCommit, "Connection is read-write and in auto-commit mode")
 
   def snapshotCountQuery = "SELECT count(system_id) FROM copy_map WHERE dataset_system_id = ? AND lifecycle_stage = CAST(? AS dataset_lifecycle_stage)"
   def snapshotCount(dataset: DatasetInfo) =
@@ -122,7 +120,7 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
   def snapshot(datasetInfo: DatasetInfo, age: Int) =
     lookup(datasetInfo, LifecycleStage.Snapshotted, age)
 
-  def datasetInfoByUserIdQuery = "SELECT system_id, dataset_id, table_base_base, next_row_id FROM dataset_map WHERE dataset_id = ? FOR UPDATE NOWAIT"
+  def datasetInfoByUserIdQuery = "SELECT system_id, dataset_id, table_base_base, next_row_id FROM dataset_map WHERE dataset_id = ?"
   def datasetInfo(datasetId: String) =
     using(conn.prepareStatement(datasetInfoByUserIdQuery)) { stmt =>
       stmt.setString(1, datasetId)
@@ -143,11 +141,9 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
       }
     }
 
-  def datasetInfoBySystemIdQuery          = "SELECT system_id, dataset_id, table_base_base, next_row_id FROM dataset_map WHERE system_id = ?"
-  def datasetInfoBySystemIdForUpdateQuery = "SELECT system_id, dataset_id, table_base_base, next_row_id FROM dataset_map WHERE system_id = ? FOR UPDATE NOWAIT"
+  def datasetInfoBySystemIdQuery = "SELECT system_id, dataset_id, table_base_base, next_row_id FROM dataset_map WHERE system_id = ?"
   def datasetInfo(datasetId: DatasetId) = {
-    val query = if(conn.isReadOnly) datasetInfoBySystemIdQuery else datasetInfoBySystemIdForUpdateQuery
-    using(conn.prepareStatement(query)) { stmt =>
+    using(conn.prepareStatement(datasetInfoBySystemIdQuery)) { stmt =>
       stmt.setLong(1, datasetId.underlying)
       try {
         extractDatasetInfoFromResultSet(stmt)
@@ -157,6 +153,13 @@ class PostgresDatasetMap(conn: Connection) extends DatasetMap with BackupDataset
       }
     }
   }
+}
+
+class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(_c) with DatasetMapWriter with BackupDatasetMap {
+  require(!conn.getAutoCommit, "Connection is in auto-commit mode")
+
+  override def datasetInfoByUserIdQuery = super.datasetInfoByUserIdQuery + " FOR UPDATE NOWAIT"
+  override def datasetInfoBySystemIdQuery = super.datasetInfoBySystemIdQuery + " FOR UPDATE NOWAIT"
 
   def createQuery_tableMap = "INSERT INTO dataset_map (dataset_id, table_base_base, next_row_id) VALUES (?, ?, ?) RETURNING system_id"
   def createQuery_copyMap = "INSERT INTO copy_map (dataset_system_id, copy_number, lifecycle_stage, data_version) VALUES (?, ?, CAST(? AS dataset_lifecycle_stage), ?) RETURNING system_id"

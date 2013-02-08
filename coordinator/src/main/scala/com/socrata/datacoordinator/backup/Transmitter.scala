@@ -11,12 +11,12 @@ import com.socrata.datacoordinator.id.{RowId, DatasetId}
 import java.nio.channels.{SelectionKey, SocketChannel}
 import com.socrata.datacoordinator.truth.loader.Delogger
 import com.socrata.datacoordinator.truth.loader.sql.SqlDelogger
-import com.socrata.datacoordinator.truth.metadata.{CopyPair, DatasetMap, DatasetInfo}
+import com.socrata.datacoordinator.truth.metadata.{GlobalLogPlayback, CopyPair, DatasetMapReader, DatasetInfo}
 import com.socrata.datacoordinator.common.soql.SoQLRowLogCodec
 import com.socrata.datacoordinator.packets.network.{KeepaliveSetup, NetworkPackets}
 import com.socrata.datacoordinator.packets.Packets
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
-import com.socrata.datacoordinator.truth.metadata.sql.PostgresDatasetMap
+import com.socrata.datacoordinator.truth.metadata.sql.{PostgresGlobalLogPlayback, PostgresGlobalLog, PostgresDatasetMapReader}
 import scala.collection.immutable.VectorBuilder
 
 final abstract class Transmitter
@@ -39,55 +39,51 @@ object Transmitter extends App {
   def openConnection(): Connection =
     DriverManager.getConnection(backupConfig.getString("database.url"), backupConfig.getString("database.username"), backupConfig.getString("database.password"))
 
-  case class Job(id: Long, datasetId: DatasetId, version: Long)
-
-  def jobs(conn: Connection): CloseableIterator[Job] = {
-    for {
-      stmt <- managed(conn.createStatement())
-      rs <- managed(stmt.executeQuery("SELECT * FROM global_log WHERE id > (SELECT coalesce(max(id), 0) FROM last_id_sent_to_backup) ORDER BY id"))
-    } yield {
-      val jobs = new VectorBuilder[Job]
-      while(rs.next()) {
-        jobs += Job(rs.getLong("id"), new DatasetId(rs.getLong("dataset_system_id")), rs.getLong("version"))
-      }
-      CloseableIterator.simple(jobs.result().iterator)
-    }
-  }
-
   val rowCodecFactory = () => SoQLRowLogCodec
   val protocol = new Protocol(new LogDataCodec(rowCodecFactory))
   import protocol._
 
-  while(true) {
-    using(openConnection()) { conn =>
-      conn.setReadOnly(true)
-      for {
-        tasks <- managed(jobs(conn))
-        if tasks.nonEmpty
-        socket <- managed(provider.openSocketChannel())
-      } {
-        connect(socket, address, connectTimeout)
-        KeepaliveSetup(socket)
-        val client = new NetworkPackets(socket, maxPacketSize)
-        send(client, conn, tasks)
+  using(provider.openSocketChannel()) { socket =>
+    connect(socket, address, connectTimeout)
+    KeepaliveSetup(socket)
+
+    val client = new NetworkPackets(socket, maxPacketSize)
+
+    while(true) {
+      using(openConnection()) { conn =>
+        val playback = new PostgresGlobalLogPlayback(conn)
+        val tasks = playback.pendingJobs()
+        if(tasks.nonEmpty) {
+          send(client, conn, playback)(tasks)
+        } else {
+          client.send(NothingYet())
+          client.receive() match {
+            case Some(OkStillWaiting()) =>
+              // good, you're still there...
+              Thread.sleep(pollInterval.toMillis)
+            case Some(_) =>
+              ??? // TODO: unexpected packet
+            case None =>
+              ??? // TODO: EOF
+          }
+        }
       }
     }
-    Thread.sleep(pollInterval.toMillis)
   }
 
-  def send(socket: Packets, conn: Connection, tasks: TraversableOnce[Job]) {
-    for(Job(id, datasetId, version) <- tasks) {
-      val datasetMap = new PostgresDatasetMap(conn)
-      log.info("Sending dataset {}'s version {}", datasetId.underlying, version)
-      datasetMap.datasetInfo(datasetId) match {
+  def send(socket: Packets, conn: Connection, playback: GlobalLogPlayback)(tasks: TraversableOnce[playback.Job]) {
+    for(job <- tasks) {
+      val datasetMap = new PostgresDatasetMapReader(conn)
+      log.info("Sending dataset {}'s version {}", job.datasetId.underlying, job.version)
+      datasetMap.datasetInfo(job.datasetId) match {
         case Some(datasetInfo) =>
-          socket.send(DatasetUpdated(datasetId, version))
+          socket.send(DatasetUpdated(job.datasetId, job.version))
           socket.receive(newTaskAcknowledgementTimeout) match {
             case Some(WillingToAccept()) =>
               log.info("Backup is willing to receive it")
               val delogger = new SqlDelogger(conn, datasetInfo.logTableName, rowCodecFactory)
               for {
-                it <- managed(delogger.delog(version))
+                it <- managed(delogger.delog(job.version))
                 event <- it
               } {
                 log.info("Sending LogData({})", event)
@@ -111,12 +107,13 @@ object Transmitter extends App {
                   ??? // TODO: do resync
                 case Some(AcknowledgeReceipt()) =>
                   log.info("Backup has acknowledged receipt and committed to its store.")
-                  // TODO: mark this task's id as complete
+                  playback.finishedJob(job)
                 case None =>
                   ??? // TODO: EOF
               }
             case Some(AlreadyHaveThat()) =>
               log.info("Backup says it already has this version")
+              playback.finishedJob(job)
             case Some(_) =>
               log.error("Received unexpected packet from backup")
               ??? // TODO: unexpected packet
@@ -124,7 +121,7 @@ object Transmitter extends App {
               ??? // TODO: EOF
           }
         case None =>
-          log.warn(s"Dataset ${datasetId.underlying} is in the global log but there is no record of it?")
+          log.warn(s"Dataset ${job.datasetId.underlying} is in the global log but there is no record of it?")
           // TODO: Send "delete this dataset" message...
       }
     }

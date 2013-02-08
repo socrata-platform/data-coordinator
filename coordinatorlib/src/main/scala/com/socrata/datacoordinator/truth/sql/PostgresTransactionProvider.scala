@@ -7,11 +7,11 @@ import javax.sql.DataSource
 import com.rojoma.simplearm.util._
 
 import truth.{DatasetIdInUseByWriterException, DatasetInUseByWriterException}
-import com.socrata.datacoordinator.truth.metadata.DatasetMap
+import com.socrata.datacoordinator.truth.metadata.DatasetMapWriter
 import com.socrata.datacoordinator.util.{LockProvider, LockTimeoutException}
 
 final class PostgresTransactionProvider(lockProvider: LockProvider,
-                                        mapFactory: Connection => DatasetMap,
+                                        mapFactory: Connection => DatasetMapWriter,
                                         lockTimeout: Long, snapshotRetryCount: Int, dataSource: DataSource) extends TransactionProvider {
   def lockNameFor(datasetId: String) = "write-dataset-" + datasetId
 

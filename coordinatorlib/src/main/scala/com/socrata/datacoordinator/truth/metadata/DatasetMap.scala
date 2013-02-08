@@ -2,7 +2,9 @@ package com.socrata.datacoordinator.truth.metadata
 
 import com.socrata.datacoordinator.id.{ColumnId, CopyId, DatasetId}
 
-trait DatasetMap extends `-impl`.BaseDatasetMap {
+trait DatasetMapReader extends `-impl`.BaseDatasetMapReader
+
+trait DatasetMapWriter extends DatasetMapReader with `-impl`.BaseDatasetMapWriter {
   /** Creates a new dataset in the truthstore.
     * @note Does not actually create any tables; this just updates the bookkeeping.
     * @note `datasetId` needs to be globally unique; if you have namespacing do it yourself.
@@ -31,7 +33,7 @@ trait DatasetMap extends `-impl`.BaseDatasetMap {
   def addColumn(copyInfo: CopyInfo, logicalName: String, typeName: String, physicalColumnBase: String): ColumnInfo
 }
 
-trait BackupDatasetMap extends `-impl`.BaseDatasetMap {
+trait BackupDatasetMap extends DatasetMapReader with `-impl`.BaseDatasetMapWriter {
   /** Creates a new dataset in the truthstore.
     * @note Does not actually create any tables; this just updates the bookkeeping.
     * @note `datasetId` needs to be globally unique; if you have namespacing do it yourself.

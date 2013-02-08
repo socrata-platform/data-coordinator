@@ -12,7 +12,7 @@ import com.socrata.datacoordinator.truth.sql.{SqlColumnRep, DatabasePopulator}
 import com.socrata.datacoordinator.truth.loader.sql._
 import com.socrata.soql.types.SoQLType
 import com.socrata.datacoordinator.common.soql.{SoQLRowLogCodec, SoQLRep, SoQLTypeContext}
-import com.socrata.datacoordinator.truth.metadata.sql.PostgresDatasetMap
+import com.socrata.datacoordinator.truth.metadata.sql.PostgresDatasetMapWriter
 import java.util.concurrent.{Executors, ExecutorService}
 import com.socrata.datacoordinator.common.sql.RepBasedDatasetContext
 import com.socrata.datacoordinator.truth.loader.Delogger._
@@ -34,7 +34,7 @@ import com.socrata.datacoordinator.truth.loader.Insert
 class Backup(conn: Connection, executor: ExecutorService, paranoid: Boolean) {
   val typeContext = SoQLTypeContext
   val logger: Logger[Any] = NullLogger
-  val datasetMap: BackupDatasetMap = new PostgresDatasetMap(conn)
+  val datasetMap: BackupDatasetMap = new PostgresDatasetMapWriter(conn)
 
   def genericRepFor(columnInfo: ColumnInfo): SqlColumnRep[SoQLType, Any] =
     SoQLRep.repFactories(typeContext.typeFromName(columnInfo.typeName))(columnInfo.physicalColumnBase)

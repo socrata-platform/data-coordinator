@@ -12,7 +12,7 @@ import com.socrata.datacoordinator.util.collection.ColumnIdMap
 abstract class DatabaseMutator[CT, CV] {
   trait ProviderOfNecessaryThings {
     val now: DateTime
-    val datasetMap: DatasetMap
+    val datasetMap: DatasetMapWriter
     def datasetLog(ds: DatasetInfo): Logger[CV]
     def delogger(ds: DatasetInfo): Delogger[CV]
     val globalLog: GlobalLog
@@ -26,7 +26,7 @@ abstract class DatabaseMutator[CT, CV] {
 
   trait BaseUpdate {
     val now: DateTime
-    val datasetMap: DatasetMap
+    val datasetMap: DatasetMapWriter
     val initialDatasetInfo: datasetMap.DatasetInfo
     val initialCopyInfo: datasetMap.CopyInfo
     val datasetLog: Logger[CV]

@@ -15,7 +15,7 @@ import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.util._
 import com.socrata.datacoordinator.truth._
-import com.socrata.datacoordinator.truth.metadata.sql.{PostgresGlobalLog, PostgresDatasetMap}
+import com.socrata.datacoordinator.truth.metadata.sql.{PostgresGlobalLog, PostgresDatasetMapWriter}
 import com.socrata.datacoordinator.truth.loader.sql._
 import com.socrata.datacoordinator.truth.sql.{DatabasePopulator, SqlColumnRep}
 import com.socrata.datacoordinator.id.RowId
@@ -94,7 +94,7 @@ object ChicagoCrimesLoadScript extends App {
     val mutator: DatabaseMutator[SoQLType, Any] = new DatabaseMutator[SoQLType, Any] {
       class PoNT(val conn: Connection) extends ProviderOfNecessaryThings {
         val now: DateTime = DateTime.now()
-        val datasetMap: DatasetMap = new PostgresDatasetMap(conn)
+        val datasetMap: DatasetMapWriter = new PostgresDatasetMapWriter(conn)
 
         def datasetLog(ds: DatasetInfo): Logger[Any] = new SqlLogger[Any](
           conn,
@@ -288,7 +288,7 @@ object ChicagoCrimesLoadScript extends App {
       primaryKeySetter.makePrimaryKey("crimes", "ID", user)
       val start = System.nanoTime()
       upserter.upsert("crimes", user) { _ =>
-        noopManagement(it/*.take(10)*/.map(transformToRow(schema, headers, _)).map(Right(_)))
+        noopManagement(it.take(10).map(transformToRow(schema, headers, _)).map(Right(_)))
       }
       val end = System.nanoTime()
       println(s"Upsert took ${(end - start) / 1000000L}ms")

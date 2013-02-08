@@ -4,7 +4,7 @@ package `-impl`
 import com.socrata.datacoordinator.id.{RowId, DatasetId}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 
-trait BaseDatasetMap {
+trait BaseDatasetMapReader {
   type DatasetInfo <: IDatasetInfo
   type CopyInfo <: ICopyInfo
   type ColumnInfo <: IColumnInfo
@@ -48,6 +48,16 @@ trait BaseDatasetMap {
     * @param copyNumber The copy number to look up.
     */
   def copyNumber(datasetInfo: DatasetInfo, copyNumber: Long): Option[CopyInfo]
+}
+
+trait BaseDatasetMapWriter extends BaseDatasetMapReader {
+  /** Looks up a dataset record by its ID.
+    * @throws DatasetIdInUseByWriterException if some other writer has been used to look up this dataset. */
+  def datasetInfo(datasetId: String): Option[DatasetInfo]
+
+  /** Looks up a dataset record by its system ID.
+    * @throws DatasetIdInUseByWriterException if some other writer has been used to look up this dataset. */
+  def datasetInfo(datasetId: DatasetId): Option[DatasetInfo]
 
   /** Completely removes a dataset (all its copies) from the truthstore.
     * @note Does not actually drop (or queue for dropping) any tables; this just updates the bookkeeping. */

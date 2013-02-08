@@ -2,7 +2,7 @@ package com.socrata.datacoordinator
 package truth.sql
 
 import java.sql.Connection
-import com.socrata.datacoordinator.truth.metadata.{DatasetInfo, DatasetMap}
+import com.socrata.datacoordinator.truth.metadata.{DatasetInfo, DatasetMapWriter}
 
 trait TransactionProvider {
   def withReadTransaction[T](datasetId: String)(f: ConnectionInfo => T): T
@@ -10,7 +10,7 @@ trait TransactionProvider {
 }
 
 trait ConnectionInfo {
-  val datasetMap: DatasetMap
+  val datasetMap: DatasetMapWriter
   val datasetInfo: Option[DatasetInfo]
   val connection: Connection
 }

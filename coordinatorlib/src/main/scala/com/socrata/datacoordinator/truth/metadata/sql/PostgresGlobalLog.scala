@@ -2,10 +2,13 @@ package com.socrata.datacoordinator
 package truth.metadata
 package sql
 
-import java.sql.{Timestamp, Connection}
+import java.sql.{ResultSet, Statement, Timestamp, Connection}
 
 import org.joda.time.DateTime
 import com.rojoma.simplearm.util._
+import com.socrata.datacoordinator.util.CloseableIterator
+import scala.collection.immutable.VectorBuilder
+import com.socrata.datacoordinator.id.{DatasetId, GlobalLogEntryId}
 
 class PostgresGlobalLog(conn: Connection) extends GlobalLog {
   def log(tableInfo: DatasetInfo, version: Long, updatedAt: DateTime, updatedBy: String) {
@@ -24,6 +27,52 @@ class PostgresGlobalLog(conn: Connection) extends GlobalLog {
       stmt.setString(4, updatedBy)
       val count = stmt.executeUpdate()
       assert(count == 1, "Insert into global_log didn't create a row?")
+    }
+  }
+}
+
+class PostgresGlobalLogPlayback(conn: Connection, blockSize: Int = 500) extends GlobalLogPlayback {
+  def pendingJobs(): Iterator[Job] = {
+    def loop(lastBlock: Vector[Job]): Stream[Vector[Job]] = {
+      if(lastBlock.isEmpty) Stream.empty
+      else {
+        val newBlock = nextBlock(lastBlock.last.id)
+        newBlock #:: loop(newBlock)
+      }
+    }
+    val first = firstBlock()
+    (first #:: loop(first)).iterator.flatten
+  }
+
+  def firstBlock(): Vector[Job] =
+    for {
+      stmt <- managed(conn.createStatement())
+      rs <- managed(stmt.executeQuery("select id, dataset_system_id, version from global_log where id > (select coalesce(max(id), 0) from last_id_sent_to_backup) order by id limit " + blockSize))
+    } yield resultOfQuery(rs)
+
+  def nextBlock(lastId: GlobalLogEntryId) =
+    for {
+      stmt <- managed(conn.createStatement())
+      rs <- managed(stmt.executeQuery("select id, dataset_system_id, version from global_log where id > " + lastId.underlying + " order by id limit " + blockSize))
+    } yield resultOfQuery(rs)
+
+  def resultOfQuery(rs: ResultSet): Vector[Job] = {
+    val result = new VectorBuilder[Job]
+    while(rs.next()) {
+      result += Job(
+        new GlobalLogEntryId(rs.getLong("id")),
+        new DatasetId(rs.getLong("dataset_system_id")),
+        rs.getLong("version")
+      )
+    }
+    result.result()
+  }
+
+  def finishedJob(job: Job) {
+    using(conn.createStatement()) { stmt =>
+      if(stmt.executeUpdate("UPDATE last_id_sent_to_backup SET id = " + job.id.underlying) == 0) {
+        stmt.executeUpdate("INSERT INTO last_id_sent_to_backup (id) VALUES (" + job.id.underlying + ")")
+      }
     }
   }
 }
