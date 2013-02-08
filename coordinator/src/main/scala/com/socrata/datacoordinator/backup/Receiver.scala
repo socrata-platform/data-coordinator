@@ -50,11 +50,14 @@ object Receiver extends App {
     listenSocket.setOption[java.lang.Boolean](StandardSocketOptions.SO_REUSEADDR, reuseAddr)
     listenSocket.bind(address)
 
+    log.info("Listening for connection...")
     for {
       rawClient <- managed(listenSocket.accept())
       client <- managed(new NetworkPackets(rawClient, maxPacketSize))
     } {
       listenSocket.close()
+
+      log.info("Received connection from {}", rawClient.getRemoteAddress)
 
       def loop() {
         client.receive(idleTimeout) match {
@@ -62,6 +65,7 @@ object Receiver extends App {
             client.send(OkStillWaiting())
             loop()
           case Some(DatasetUpdated(id, version)) =>
+            log.info("Dataset {} updated to version {}", id.underlying, version)
             datasetUpdateRequested(id, version, client)
             loop()
           case Some(_) =>
@@ -89,33 +93,35 @@ object Receiver extends App {
       backup.datasetMap.datasetInfo(datasetId) match {
         case Some(datasetInfo) =>
           val initialVersion = backup.datasetMap.latest(datasetInfo)
+          log.info("I have version {} of dataset {}", initialVersion.dataVersion, datasetInfo.systemId.underlying)
           if(initialVersion.dataVersion >= version) {
+            log.info("Telling primary that I already have that version")
             client.send(AlreadyHaveThat())
           } else if(initialVersion.dataVersion < version - 1) {
-            client.send(ResyncRequired())
-            waitForResyncAck(client)
+            log.info("I am farther behind than that.  Resyncing.")
             resync(datasetId, client)
           } else {
+            log.info("I have the previous version; telling primary to go ahead")
             client.send(WillingToAccept())
             acceptItAll(conn, backup)(initialVersion, client, version) match {
               case Ok =>
               // great
               case Resyncing =>
-                waitForResyncAck(client)
                 resync(datasetId, client)
             }
           }
         case None =>
           if(version == 1) {
+            log.info("New dataset.  Telling the primary to go ahead")
             client.send(WillingToAccept())
             client.receive() match {
               case Some(LogData(Delogger.WorkingCopyCreated(ci))) =>
+                log.info("Creating initial copy")
                 val initialCopy = backup.createDataset(ci)
                 acceptItAll(conn, backup)(initialCopy, client, version) match {
                   case Ok =>
                     // great
                   case Resyncing =>
-                    waitForResyncAck(client)
                     resync(datasetId, client)
                 }
               case Some(_) =>
@@ -131,6 +137,8 @@ object Receiver extends App {
   }
 
   def resync(datasetId: DatasetId, client: Packets) {
+    client.send(ResyncRequired())
+    waitForResyncAck(client)
     ??? // TODO
   }
 
@@ -151,9 +159,10 @@ object Receiver extends App {
     def loop(copy: backup.datasetMap.CopyInfo): backup.datasetMap.CopyInfo = {
       client.receive(dataTimeout) match {
         case Some(LogData(d)) =>
-          log.info("Processing " + d)
+          log.info("Processing a record of type {}", d.productPrefix)
           loop(backup.dispatch(copy, d))
         case Some(DataDone()) =>
+          log.info("Version {} completed", version)
           copy
         case None =>
           log.warn("Unexpected EOF")
@@ -164,12 +173,12 @@ object Receiver extends App {
     try {
       backup.updateVersion(loop(initialCopyInfo), version)
       conn.commit()
+      log.info("Committed; informing the primary", version)
       client.send(AcknowledgeReceipt())
       Ok
     } catch {
       case e: /* Resync */Exception =>
         conn.rollback()
-        client.send(ResyncRequired())
         Resyncing
     }
   }
