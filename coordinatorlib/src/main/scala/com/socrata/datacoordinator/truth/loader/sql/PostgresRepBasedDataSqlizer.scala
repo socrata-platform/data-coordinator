@@ -17,7 +17,7 @@ class PostgresRepBasedDataSqlizer[CT, CV](tableName: String,
   extends AbstractRepBasedDataSqlizer(tableName, datasetContext)
 {
   val bulkInsertStatement =
-    "COPY " + dataTableName + " (" + repSchema.values.flatMap(_.physColumnsForInsert).mkString(",") + ") from stdin with csv"
+    "COPY " + dataTableName + " (" + repSchema.values.flatMap(_.physColumns).mkString(",") + ") from stdin with csv"
 
   def insertBatch(conn: Connection)(f: (Inserter) => Unit) = {
     val inserter = new InserterImpl

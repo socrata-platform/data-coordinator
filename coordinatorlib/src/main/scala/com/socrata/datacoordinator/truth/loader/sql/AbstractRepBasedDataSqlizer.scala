@@ -79,7 +79,7 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
   def sqlizeUserIdUpdate(row: Row[CV]) =
     updatePrefix(row).append(pkRep sql_== row(logicalPKColumnName)).toString
 
-  val findSystemIdsPrefix = "SELECT " + sidRep.physColumnsForQuery.mkString(",") + "," + pkRep.physColumnsForQuery.mkString(",") + " FROM " + dataTableName + " WHERE "
+  val findSystemIdsPrefix = "SELECT " + sidRep.physColumns.mkString(",") + "," + pkRep.physColumns.mkString(",") + " FROM " + dataTableName + " WHERE "
 
   def findSystemIds(conn: Connection, ids: Iterator[CV]): CloseableIterator[Seq[IdPair[CV]]] = {
     require(datasetContext.hasUserPrimaryKey, "findSystemIds called without a user primary key")
@@ -110,7 +110,7 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
           val result = new scala.collection.mutable.ArrayBuffer[IdPair[CV]](block.length)
           while(rs.next()) {
             val sid = typeContext.makeSystemIdFromValue(sidRep.fromResultSet(rs, 1))
-            val uid = pkRep.fromResultSet(rs, 1 + sidRep.physColumnsForQuery.length)
+            val uid = pkRep.fromResultSet(rs, 1 + sidRep.physColumns.length)
             result += IdPair(sid, uid)
           }
           result

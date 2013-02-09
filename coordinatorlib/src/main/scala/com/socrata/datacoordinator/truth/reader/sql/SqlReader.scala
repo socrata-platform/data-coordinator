@@ -28,10 +28,10 @@ class SqlReader[CT, CV](connection: Connection,
     val underlying = new FastGroupedIterator(ids, blockSize)
     val selectPrefix = {
       val sb = new StringBuilder("SELECT ")
-      sb.append(sidRep.physColumnsForQuery.mkString(","))
+      sb.append(sidRep.physColumns.mkString(","))
       if(!columns.isEmpty) {
         sb.append(",")
-        sb.append(columns.flatMap(c => repSchema(c).physColumnsForQuery).mkString(","))
+        sb.append(columns.flatMap(c => repSchema(c).physColumns).mkString(","))
       }
       sb.append(" FROM ").append(dataTableName).append(" WHERE ")
       sb.toString
@@ -76,11 +76,11 @@ class SqlReader[CT, CV](connection: Connection,
         while(rs.next()) {
           val sid = typeContext.makeSystemIdFromValue(sidRep.fromResultSet(rs, 1))
           val row = new MutableColumnIdMap[CV]
-          var i = 1 + sidRep.physColumnsForQuery.length
+          var i = 1 + sidRep.physColumns.length
           for(c <- columns) {
             val rep = repSchema(c)
             val v = rep.fromResultSet(rs, i)
-            i += rep.physColumnsForQuery.length
+            i += rep.physColumns.length
             row(c) = v
           }
           result(sid) = row.freeze()
@@ -100,10 +100,10 @@ class SqlReader[CT, CV](connection: Connection,
       val underlying = new FastGroupedIterator(ids, blockSize)
       val selectPrefix = {
         val sb = new StringBuilder("SELECT ")
-        sb.append(uidRep.physColumnsForQuery.mkString(","))
+        sb.append(uidRep.physColumns.mkString(","))
         if(!columns.isEmpty) {
           sb.append(",")
-          sb.append(columns.flatMap(c => repSchema(c).physColumnsForQuery).mkString(","))
+          sb.append(columns.flatMap(c => repSchema(c).physColumns).mkString(","))
         }
         sb.append(" FROM ").append(dataTableName).append(" WHERE ")
         sb.toString
@@ -148,11 +148,11 @@ class SqlReader[CT, CV](connection: Connection,
           while(rs.next()) {
             val uid = uidRep.fromResultSet(rs, 1)
             val row = new MutableColumnIdMap[CV]
-            var i = 1 + uidRep.physColumnsForQuery.length
+            var i = 1 + uidRep.physColumns.length
             for(c <- columns) {
               val rep = repSchema(c)
               val v = rep.fromResultSet(rs, i)
-              i += rep.physColumnsForQuery.length
+              i += rep.physColumns.length
               row += c -> v
             }
             result.put(uid, row.freeze())

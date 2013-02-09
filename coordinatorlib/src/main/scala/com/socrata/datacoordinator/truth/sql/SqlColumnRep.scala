@@ -22,9 +22,6 @@ trait SqlColumnCommonRep[Type] {
 }
 
 trait SqlColumnReadRep[Type, Value] extends SqlColumnCommonRep[Type] {
-  /** Column-names to use in a `SELECT` statement which queries this column. */
-  def physColumnsForQuery: Array[String] = physColumns // may be overridden
-
   /** Extract a value from the result set.  This will "use up" a number of
     * columns equal to `physColumnsForQuery.length`.
     */
@@ -32,9 +29,6 @@ trait SqlColumnReadRep[Type, Value] extends SqlColumnCommonRep[Type] {
 }
 
 trait SqlColumnWriteRep[Type, Value] extends SqlColumnCommonRep[Type] {
-  /** Column-names to use in an `INSERT` or `COPY` statement which inserts this column. */
-  def physColumnsForInsert: Array[String] = physColumns // may be overridden
-
   /** @param sb The `StringBuilder` to which to add the data.
     * @param v The value to add; its type must be compatible with `representedType`.
     */
