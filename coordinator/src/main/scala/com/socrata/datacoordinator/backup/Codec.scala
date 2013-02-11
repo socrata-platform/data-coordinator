@@ -43,54 +43,56 @@ class LogDataCodec[CV](rowLogCodecFactory: () => RowLogCodec[CV]) extends Codec[
   }
 
   def decode(stream: DataInputStream): Delogger.LogEvent[CV] = {
-    val ev = eventType(stream)
+    val ev = Delogger.LogEvent.fromProductName(eventType(stream))
     ev match {
-      case "RowDataUpdated" =>
+      case Delogger.RowDataUpdated =>
         val count = stream.readInt()
         val bytes = new Array[Byte](count)
         stream.readFully(bytes)
         Delogger.RowDataUpdated(bytes)(rowLogCodecFactory())
-      case "RowIdCounterUpdated" =>
+      case Delogger.RowIdCounterUpdated =>
         val rid = new RowId(stream.readLong())
           Delogger.RowIdCounterUpdated(rid)
-      case "WorkingCopyCreated" =>
+      case Delogger.WorkingCopyCreated =>
         val ci = JsonUtil.readJson[CopyInfo](new InputStreamReader(stream, "UTF-8")).getOrElse {
           throw new PacketDecodeException("Unable to decode a copyinfo")
         }
         Delogger.WorkingCopyCreated(ci)
-      case "WorkingCopyPublished" =>
+      case Delogger.WorkingCopyPublished =>
         Delogger.WorkingCopyPublished
-      case "WorkingCopyDropped" =>
+      case Delogger.WorkingCopyDropped =>
         Delogger.WorkingCopyDropped
-      case "DataCopied" =>
+      case Delogger.DataCopied =>
         Delogger.DataCopied
-      case "Truncated" =>
+      case Delogger.Truncated =>
         Delogger.Truncated
-      case "ColumnCreated" =>
+      case Delogger.ColumnCreated =>
         val ci = JsonUtil.readJson[ColumnInfo](new InputStreamReader(stream, "UTF-8")).getOrElse {
           throw new PacketDecodeException("Unable to decode a columnInfo")
         }
         Delogger.ColumnCreated(ci)
-      case "RowIdentifierSet" =>
+      case Delogger.RowIdentifierSet =>
         val ci = JsonUtil.readJson[ColumnInfo](new InputStreamReader(stream, "UTF-8")).getOrElse {
           throw new PacketDecodeException("Unable to decode a columnInfo")
         }
         Delogger.RowIdentifierSet(ci)
-      case "RowIdentifierCleared" =>
+      case Delogger.RowIdentifierCleared =>
         val ci = JsonUtil.readJson[ColumnInfo](new InputStreamReader(stream, "UTF-8")).getOrElse {
           throw new PacketDecodeException("Unable to decode a columnInfo")
         }
         Delogger.RowIdentifierCleared(ci)
-      case "ColumnRemoved" =>
+      case Delogger.ColumnRemoved =>
         val ci = JsonUtil.readJson[ColumnInfo](new InputStreamReader(stream, "UTF-8")).getOrElse {
           throw new PacketDecodeException("Unable to decode a columnInfo")
         }
         Delogger.ColumnRemoved(ci)
-      case "SystemRowIdentifierChanged" =>
+      case Delogger.SystemRowIdentifierChanged =>
         val ci = JsonUtil.readJson[ColumnInfo](new InputStreamReader(stream, "UTF-8")).getOrElse {
           throw new PacketDecodeException("Unable to decode a columnInfo")
         }
         Delogger.SystemRowIdentifierChanged(ci)
+      case Delogger.EndTransaction =>
+        Delogger.EndTransaction
     }
   }
 

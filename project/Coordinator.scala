@@ -7,8 +7,9 @@ import SocrataSbtKeys._
 object Coordinator {
   lazy val settings: Seq[Setting[_]] = BuildSettings.projectSettings() ++ Seq(
     resourceGenerators in Compile <+= (baseDirectory, resourceManaged in Compile, streams) map buildNativeLib,
-    libraryDependencies <++= (slf4jVersion) { slf4jVersion =>
+    libraryDependencies <++= (scalaVersion, slf4jVersion) { (scalaVersion, slf4jVersion) =>
       Seq(
+        "org.scala-lang" % "scala-reflect" % scalaVersion,
         "com.sun.jna" % "jna" % "3.0.9",
         "com.typesafe" % "config" % "1.0.0",
         "com.socrata" %% "soql-types" % "0.0.9",
