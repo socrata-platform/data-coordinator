@@ -4,6 +4,8 @@ import scala.concurrent.duration.Duration
 import scala.collection.mutable
 
 class PacketsReservoir(packets: Packet*) extends Packets {
+  val maxPacketSize = Int.MaxValue
+
   val q = mutable.Queue(packets : _*)
 
   def send(packet: Packet, timeout: Duration) {

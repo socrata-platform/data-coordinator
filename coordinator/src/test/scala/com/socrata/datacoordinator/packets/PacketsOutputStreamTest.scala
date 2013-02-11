@@ -10,8 +10,8 @@ class PacketsOutputStreamTest extends FunSuite with MustMatchers with PropertyCh
   test("Simply closing a PacketsOutputStream produces just an end packet") {
     forAll { packetSize: Int =>
       whenever(packetSize >= PacketsOutputStream.minimumSize) {
-        val sink = new PacketsSink
-        val pos = new PacketsOutputStream(sink, packetSize)
+        val sink = new PacketsSink(packetSize)
+        val pos = new PacketsOutputStream(sink)
         pos.close()
         sink.results must equal (List(PacketsStream.End()))
       }
@@ -35,8 +35,8 @@ class PacketsOutputStreamTest extends FunSuite with MustMatchers with PropertyCh
     val max = 100000
     forAll(Gen.choose(0, max), Arbitrary.arbitrary[List[Array[Byte]]]) { (packetSize: Int, data: List[Array[Byte]]) =>
       whenever(packetSize >= PacketsOutputStream.minimumSize && packetSize <= max) {
-        val sink = new PacketsSink
-        val pos = new PacketsOutputStream(sink, packetSize)
+        val sink = new PacketsSink(packetSize)
+        val pos = new PacketsOutputStream(sink)
         data.foreach(pos.write)
         pos.flush()
         sink.results.dropRight(1).forall(_.buffer.remaining == packetSize)
@@ -48,8 +48,8 @@ class PacketsOutputStreamTest extends FunSuite with MustMatchers with PropertyCh
     val max = 100000
     forAll(Gen.choose(0, max), Arbitrary.arbitrary[List[Array[Byte]]]) { (packetSize: Int, data: List[Array[Byte]]) =>
       whenever(packetSize >= PacketsOutputStream.minimumSize && packetSize <= max) {
-        val sink = new PacketsSink
-        val pos = new PacketsOutputStream(sink, packetSize)
+        val sink = new PacketsSink(packetSize)
+        val pos = new PacketsOutputStream(sink)
         data.foreach(pos.write)
         pos.close()
         readAll(new PacketsInputStream(new PacketsReservoir(sink.results : _*))) must equal (data.toArray.flatten)

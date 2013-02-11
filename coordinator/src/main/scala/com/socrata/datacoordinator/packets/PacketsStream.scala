@@ -57,8 +57,12 @@ object PacketsInputStream {
   }
 }
 
-class PacketsOutputStream(packets: Packets, targetPacketSize: Int, writeTimeout: Duration = Duration.Inf) extends OutputStream {
-  require(targetPacketSize >= PacketsOutputStream.minimumSize, "Target packet size not large enough for the header plus one byte")
+class PacketsOutputStream(packets: Packets,
+                          writeTimeout: Duration = Duration.Inf,
+                          postWrite: () => Unit = PacketsOutputStream.Noop)
+  extends OutputStream
+{
+  require(packets.maxPacketSize >= PacketsOutputStream.minimumSize, "Max packet size not large enough for the header plus one byte")
   private var currentPacket: PacketOutputStream = null
 
   def freshPacket() = Packet.labelledPacketStream(PacketsStream.streamLabel)
@@ -74,7 +78,7 @@ class PacketsOutputStream(packets: Packets, targetPacketSize: Int, writeTimeout:
     var rem = length
     while(rem > 0) {
       if(currentPacket == null) currentPacket = freshPacket()
-      val toWrite = rem.min(targetPacketSize - currentPacket.size)
+      val toWrite = rem.min(packets.maxPacketSize - currentPacket.size)
       currentPacket.write(bs, hd, toWrite)
       maybeFlush()
       hd += toWrite
@@ -83,7 +87,7 @@ class PacketsOutputStream(packets: Packets, targetPacketSize: Int, writeTimeout:
   }
 
   private def maybeFlush() {
-    if(currentPacket.size >= targetPacketSize) flush()
+    if(currentPacket.size >= packets.maxPacketSize) flush()
   }
 
   override def flush() {
@@ -99,9 +103,6 @@ class PacketsOutputStream(packets: Packets, targetPacketSize: Int, writeTimeout:
     packets.send(PacketsStream.End(), writeTimeout)
     postWrite()
   }
-
-  // overridable
-  def postWrite() {}
 }
 
 object PacketsOutputStream {
@@ -110,4 +111,6 @@ object PacketsOutputStream {
     pos.write(1)
     pos.size
   }
+
+  private val Noop = () => ()
 }

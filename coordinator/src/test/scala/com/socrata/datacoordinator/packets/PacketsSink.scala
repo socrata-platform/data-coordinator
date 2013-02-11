@@ -3,7 +3,9 @@ package com.socrata.datacoordinator.packets
 import scala.collection.mutable.ListBuffer
 import scala.concurrent.duration.Duration
 
-class PacketsSink extends Packets {
+class PacketsSink(val maxPacketSize: Int) extends Packets {
+  require(maxPacketSize > 0)
+
   private val buf = new ListBuffer[Packet]
 
   def results = buf.toList
