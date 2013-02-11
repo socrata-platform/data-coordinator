@@ -16,7 +16,7 @@ class RepBasedSqlSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV], repF
   def create(copyInfo: CopyInfo) {
     using(conn.createStatement()) { stmt =>
       stmt.execute("CREATE TABLE " + copyInfo.dataTableName + " ()" + postgresTablespaceSuffix)
-      stmt.execute(DatabasePopulator.logTableCreate(copyInfo.datasetInfo.logTableName, SqlLogger.opLength))
+      stmt.execute(DatabasePopulator.logTableCreate(copyInfo.datasetInfo.logTableName, SqlLogger.maxOpLength))
     }
     logger.workingCopyCreated(copyInfo)
   }

@@ -238,30 +238,30 @@ class SqlLogger[CV](connection: Connection,
 object SqlLogger {
   private val log = org.slf4j.LoggerFactory.getLogger(classOf[SqlLogger[_]])
 
-  // all of these must be exactly 3 characters long and consist of
-  // nothing but upper-case ASCII letters.
-  val RowDataUpdated = "ROW"
-  val RowIdCounterUpdated = "RCU"
+  // all of these must be at most 8 characters long and consist of
+  // nothing but lower-case ASCII letters.
+  val RowDataUpdated = "rowdata"
+  val RowIdCounterUpdated = "rowcnter"
 
-  val Truncated = "TRN"
-  val ColumnCreated = "CCR"
-  val ColumnRemoved = "CRM"
-  val RowIdentifierSet = "RID"
-  val RowIdentifierCleared = "CID"
-  val SystemRowIdentifierChanged = "SID"
-  val WorkingCopyCreated = "CWC"
-  val DataCopied = "CPY"
-  val WorkingCopyDropped = "DWC"
-  val WorkingCopyPublished = "PUB"
-  val TransactionEnded = "END"
+  val Truncated = "truncate"
+  val ColumnCreated = "colcreat"
+  val ColumnRemoved = "coldel"
+  val RowIdentifierSet = "ridcol"
+  val RowIdentifierCleared = "noridcol"
+  val SystemRowIdentifierChanged = "sidcol"
+  val WorkingCopyCreated = "workcopy"
+  val DataCopied = "datacopy"
+  val WorkingCopyDropped = "dropwork"
+  val WorkingCopyPublished = "pubwork"
+  val TransactionEnded = "endtxn"
 
-  val opLength = 3
+  val maxOpLength = 8
 
-  private def good(s: String) = s.length == opLength && s.forall { c => c >= 'A' && c <= 'Z' }
+  private def good(s: String) = s.length <= maxOpLength && s.forall { c => c >= 'a' && c <= 'z' }
 
   for {
     method <- getClass.getDeclaredMethods
     if java.lang.reflect.Modifier.isPublic(method.getModifiers) && method.getParameterTypes.length == 0
     if method.getReturnType == classOf[String]
-  } assert(good(method.invoke(this).asInstanceOf[String]), s"${method.getName} is either not $opLength characters long or contains something which isn't an uppercase letter")
+  } assert(good(method.invoke(this).asInstanceOf[String]), s"${method.getName} is either more than $maxOpLength characters long or contains something which isn't a lowercase letter")
 }
