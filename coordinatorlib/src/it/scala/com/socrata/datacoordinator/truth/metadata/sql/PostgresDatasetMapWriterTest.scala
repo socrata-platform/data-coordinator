@@ -3,7 +3,7 @@ package com.socrata.datacoordinator.truth.metadata.sql
 import org.scalatest.{BeforeAndAfterAll, FunSuite}
 import org.scalatest.matchers.MustMatchers
 import java.sql.{SQLException, Connection, DriverManager}
-import com.socrata.datacoordinator.truth.sql.DatabasePopulator
+import com.socrata.datacoordinator.truth.sql.{DatasetMapLimits, DatabasePopulator}
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.truth.metadata.{CopyPair, ColumnAlreadyExistsException, LifecycleStage}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
@@ -20,7 +20,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
   }
 
   def populateDatabase(conn: Connection) {
-    val sql = DatabasePopulator.metadataTablesCreate(20, 20, 20, 20, 20, 20, 20)
+    val sql = DatabasePopulator.metadataTablesCreate(DatasetMapLimits())
     using(conn.createStatement()) { stmt =>
       stmt.execute(sql)
     }

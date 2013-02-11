@@ -30,6 +30,7 @@ import com.socrata.datacoordinator.truth.loader.Delete
 import com.socrata.datacoordinator.truth.loader.Delogger.ColumnRemoved
 import com.socrata.datacoordinator.truth.metadata.CopyPair
 import com.socrata.datacoordinator.truth.loader.Insert
+import com.socrata.datacoordinator.common.StandardDatasetMapLimits
 
 class Backup(conn: Connection, executor: ExecutorService, paranoid: Boolean) {
   val typeContext = SoQLTypeContext
@@ -273,6 +274,8 @@ object Backup extends App {
     }
   }
 
+  val datasetMapLimits = StandardDatasetMapLimits
+
   val executor = Executors.newCachedThreadPool()
   try {
     for {
@@ -282,7 +285,7 @@ object Backup extends App {
       primaryConn.setAutoCommit(false)
       backupConn.setAutoCommit(false)
       try {
-        DatabasePopulator.populate(backupConn)
+        DatabasePopulator.populate(backupConn, datasetMapLimits)
 
         val bkp = new Backup(backupConn, executor, paranoid = true)
 

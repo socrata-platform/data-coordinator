@@ -18,6 +18,7 @@ import com.socrata.datacoordinator.common.util.ByteBufferInputStream
 import java.io.{OutputStreamWriter, InputStream}
 import com.socrata.datacoordinator.common.soql.SoQLRowLogCodec
 import com.socrata.datacoordinator.truth.sql.DatabasePopulator
+import com.socrata.datacoordinator.common.StandardDatasetMapLimits
 
 final abstract class Receiver
 
@@ -36,13 +37,15 @@ object Receiver extends App {
   val executor = java.util.concurrent.Executors.newCachedThreadPool()
   val provider = SelectorProvider.provider
 
+  val datasetMapLimits = StandardDatasetMapLimits
+
   val codec = new LogDataCodec(() => SoQLRowLogCodec)
   val protocol = new Protocol(codec)
   import protocol._
 
   using(openConnection()) { conn =>
     conn.setAutoCommit(false)
-    DatabasePopulator.populate(conn)
+    DatabasePopulator.populate(conn, datasetMapLimits)
     conn.commit()
   }
 

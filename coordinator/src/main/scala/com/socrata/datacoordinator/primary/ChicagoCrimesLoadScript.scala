@@ -17,7 +17,7 @@ import com.socrata.datacoordinator.util._
 import com.socrata.datacoordinator.truth._
 import com.socrata.datacoordinator.truth.metadata.sql.{PostgresGlobalLog, PostgresDatasetMapWriter}
 import com.socrata.datacoordinator.truth.loader.sql._
-import com.socrata.datacoordinator.truth.sql.{DatabasePopulator, SqlColumnRep}
+import com.socrata.datacoordinator.truth.sql.{DatasetMapLimits, DatabasePopulator, SqlColumnRep}
 import com.socrata.datacoordinator.id.RowId
 import com.socrata.datacoordinator.{Row, MutableRow}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
@@ -25,6 +25,7 @@ import com.socrata.datacoordinator.common.sql.{PostgresSqlLoaderProvider, Abstra
 import org.joda.time.format.DateTimeFormat
 import java.io.{File, Closeable}
 import com.socrata.csv.CSVIterator
+import com.socrata.datacoordinator.common.StandardDatasetMapLimits
 
 object ChicagoCrimesLoadScript extends App {
   val url =
@@ -215,13 +216,15 @@ object ChicagoCrimesLoadScript extends App {
         }
     }
 
+    val datasetMapLimits = StandardDatasetMapLimits
+
     val datasetCreator = new DatasetCreator(mutator, Map(
       SystemColumns.id -> SoQLID,
       SystemColumns.createdAt -> SoQLFixedTimestamp,
       SystemColumns.updatedAt -> SoQLFixedTimestamp
     ), SystemColumns.id)
 
-    val columnAdder = new ColumnAdder(mutator)
+    val columnAdder = new ColumnAdder(mutator, datasetMapLimits.maximumPhysicalColumnBaseLength)
 
     val primaryKeySetter = new PrimaryKeySetter(mutator)
 
@@ -235,7 +238,7 @@ object ChicagoCrimesLoadScript extends App {
 
     using(DriverManager.getConnection(url, username, pwd)) { conn =>
       conn.setAutoCommit(false)
-      DatabasePopulator.populate(conn)
+      DatabasePopulator.populate(conn, datasetMapLimits)
       conn.commit()
     }
 

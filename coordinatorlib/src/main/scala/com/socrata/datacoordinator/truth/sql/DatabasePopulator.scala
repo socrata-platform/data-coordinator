@@ -9,25 +9,21 @@ object DatabasePopulator {
       scala.io.Source.fromInputStream(stream, "UTF-8").getLines().mkString("\n")
     }
 
-  def metadataTablesCreate(datasetIdLen: Int,
-                           userUidLen: Int,
-                           columnNameLen: Int,
-                           physcolBaseLen: Int,
-                           phystabBaseLen: Int,
-                           typeNameLen: Int,
-                           storeIdLen: Int): String =
+  def metadataTablesCreate(datasetMapLimits: DatasetMapLimits): String = {
+    import datasetMapLimits._
     TemplateReplacer(
       load("metadata.tmpl.sql"),
       Map(
-        "dataset_id_len" -> datasetIdLen.toString,
-        "user_uid_len" -> userUidLen.toString,
-        "column_name_len" -> columnNameLen.toString,
-        "physcol_base_len" -> physcolBaseLen.toString,
-        "phystab_base_len" -> phystabBaseLen.toString,
-        "type_name_len" -> typeNameLen.toString,
-        "store_id_len" -> storeIdLen.toString
+        "dataset_id_len" -> maximumDatasetIdLength.toString,
+        "user_uid_len" -> maximumUserIdLength.toString,
+        "column_name_len" -> maximumColumnNameLength.toString,
+        "physcol_base_len" -> maximumPhysicalColumnBaseLength.toString,
+        "phystab_base_len" -> maximumPhysicalTableBaseLength.toString,
+        "type_name_len" -> maximumTypeNameLength.toString,
+        "store_id_len" -> maximumStoreIdLength.toString
       )
     )
+  }
 
   def logTableCreate(tableName: String,
                      operationLen: Int): String =
@@ -38,7 +34,16 @@ object DatabasePopulator {
         "operation_len" -> operationLen.toString
       ))
 
-  def populate(conn: java.sql.Connection) {
-    using(conn.createStatement()) { stmt => stmt.execute(metadataTablesCreate(20, 20, 20, 20, 20, 20, 20)) }
+  def populate(conn: java.sql.Connection,
+               datasetMapLimits: DatasetMapLimits) {
+    using(conn.createStatement()) { stmt => stmt.execute(metadataTablesCreate(datasetMapLimits)) }
   }
 }
+
+case class DatasetMapLimits(maximumDatasetIdLength: Int = 20,
+                            maximumUserIdLength: Int = 20,
+                            maximumColumnNameLength: Int = 20,
+                            maximumPhysicalColumnBaseLength: Int = 20,
+                            maximumPhysicalTableBaseLength: Int = 20,
+                            maximumTypeNameLength: Int = 20,
+                            maximumStoreIdLength: Int = 20)
