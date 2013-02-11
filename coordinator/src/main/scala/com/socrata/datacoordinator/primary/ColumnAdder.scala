@@ -1,6 +1,7 @@
 package com.socrata.datacoordinator.primary
 
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
+import com.socrata.soql.brita.AsciiIdentifierFilter
 
 class ColumnAdder[CT, CV](mutator: DatabaseMutator[CT, CV]) {
   // Glue points we want/need
@@ -22,7 +23,7 @@ class ColumnAdder[CT, CV](mutator: DatabaseMutator[CT, CV]) {
 
       var result = Map.empty[String, ColumnInfo]
       for((columnName, columnType) <- columns) {
-        val baseName = physicalColumnBaseForType(columnType)
+        val baseName = AsciiIdentifierFilter(List("u", columnName)).take(12).replaceAll("_+$","")
         val col = datasetMap.addColumn(table, columnName, nameForType(columnType), baseName)
         schemaLoader(col.copyInfo, logger).addColumn(col)
         result += columnName -> col

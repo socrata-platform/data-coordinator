@@ -16,7 +16,6 @@ abstract class DatabaseMutator[CT, CV] {
     def datasetLog(ds: DatasetInfo): Logger[CV]
     def delogger(ds: DatasetInfo): Delogger[CV]
     val globalLog: GlobalLog
-    def physicalColumnBaseForType(typ: CT): String
     def schemaLoader(version: CopyInfo, logger: Logger[CV]): SchemaLoader
     def nameForType(typ: CT): String
 

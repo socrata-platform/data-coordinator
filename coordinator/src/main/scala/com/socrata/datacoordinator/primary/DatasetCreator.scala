@@ -1,5 +1,7 @@
 package com.socrata.datacoordinator.primary
 
+import com.socrata.soql.brita.AsciiIdentifierFilter
+
 class DatasetCreator[CT, CV](mutator: DatabaseMutator[CT, CV], systemColumns: Map[String, CT], idColumnName: String) {
   def createDataset(datasetId: String, username: String) {
     mutator.withTransaction() { providerOfNecessaryThings =>
@@ -11,7 +13,7 @@ class DatasetCreator[CT, CV](mutator: DatabaseMutator[CT, CV], systemColumns: Ma
       loader.create(table)
 
       for((name, typ) <- systemColumns) {
-        val col = datasetMap.addColumn(table, name, nameForType(typ), physicalColumnBaseForType(typ))
+        val col = datasetMap.addColumn(table, name, nameForType(typ), AsciiIdentifierFilter(List("s", name)))
         loader.addColumn(col)
         if(col.logicalName == idColumnName) {
           loader.makeSystemPrimaryKey(col)

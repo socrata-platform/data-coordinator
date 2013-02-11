@@ -74,22 +74,12 @@ object ChicagoCrimesLoadScript extends App {
 
     def rowCodecFactory(): RowLogCodec[Any] = SoQLRowLogCodec
 
-    trait RepFactory {
-      def base: String
-      def rep(columnBase: String): SqlColumnRep[SoQLType, Any]
-    }
-
-    def rep(typ: SoQLType) = new RepFactory {
-      val base = typ.toString.take(3)
-      def rep(columnBase: String) = SoQLRep.repFactories(typ)(columnBase)
-    }
-
-    val soqlRepFactory = SoQLRep.repFactories.keys.foldLeft(Map.empty[SoQLType, RepFactory]) { (acc, typ) =>
-      acc + (typ -> rep(typ))
+    val soqlRepFactory = SoQLRep.repFactories.keys.foldLeft(Map.empty[SoQLType, String => SqlColumnRep[SoQLType, Any]]) { (acc, typ) =>
+      acc + (typ -> SoQLRep.repFactories(typ))
     }
 
     def genericRepFor(columnInfo: ColumnInfo): SqlColumnRep[SoQLType, Any] =
-      soqlRepFactory(typeContext.typeFromName(columnInfo.typeName)).rep(columnInfo.physicalColumnBase)
+      soqlRepFactory(typeContext.typeFromName(columnInfo.typeName))(columnInfo.physicalColumnBase)
 
     val mutator: DatabaseMutator[SoQLType, Any] = new DatabaseMutator[SoQLType, Any] {
       class PoNT(val conn: Connection) extends ProviderOfNecessaryThings {
@@ -103,9 +93,6 @@ object ChicagoCrimesLoadScript extends App {
         )
 
         val globalLog: GlobalLog = new PostgresGlobalLog(conn)
-
-        def physicalColumnBaseForType(typ: SoQLType): String =
-          soqlRepFactory(typ).base
 
         def schemaLoader(version: CopyInfo, logger: Logger[Any]): SchemaLoader =
           new RepBasedSqlSchemaLoader[SoQLType, Any](conn, logger, genericRepFor)
