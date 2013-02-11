@@ -11,7 +11,7 @@ import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, CopyInfo}
 import scala.Some
 
 class Protocol[LogData](logDataCodec: Codec[LogData]) {
-  import Protocol._
+  import Packet.{SimplePacket, labelledPacketStream, packetLabelled}
 
   // primary -> backup
   object NothingYet extends SimplePacket("nothing yet")
@@ -22,8 +22,7 @@ class Protocol[LogData](logDataCodec: Codec[LogData]) {
     private val label = "dataset updated"
 
     def apply(id: DatasetId, version: Long) = {
-      val pos = new PacketOutputStream
-      labelPacket(pos, label)
+      val pos = labelledPacketStream(label)
       val dos = new DataOutputStream(pos)
       dos.writeLong(id.underlying)
       dos.writeLong(version)
@@ -64,42 +63,6 @@ class Protocol[LogData](logDataCodec: Codec[LogData]) {
   object ResyncRequired extends SimplePacket("resync required")
   object WillingToAccept extends SimplePacket("willing to accept")
   object AcknowledgeReceipt extends SimplePacket("acknowledged")
-}
-
-object Protocol {
-  class SimplePacket(s: String) {
-    val data = locally {
-      val pos = new PacketOutputStream
-      pos.write(s.getBytes("UTF-8"))
-      pos.packet()
-    }
-
-    def apply() = data
-    def unapply(p: Packet): Boolean = p == data
-  }
-
-  def labelSep = '|'
-
-  def packetLabelled(packet: Packet, s: String): Option[ByteBuffer] = {
-    if(packet.dataSize >= s.length + 1) {
-      val data = packet.data
-      var i = 0
-      while(i != s.length && data.get() == s.charAt(i).toByte) { i += 1 }
-      if(i == s.length && data.get() == labelSep) Some(data)
-      else None
-    } else {
-      None
-    }
-  }
-
-  def labelPacket(pos: OutputStream, s: String) {
-    var i = 0
-    while(i != s.length) {
-      pos.write(s.charAt(i).toByte)
-      i += 1
-    }
-    pos.write(labelSep.toByte)
-  }
 }
 
 class PacketDecodeException(msg: String) extends Exception(msg)

@@ -28,5 +28,8 @@ class PacketOutputStream extends OutputStream {
     buffer.write(bs, offset, count)
   }
 
+  /** Size of the resulting packet, including the length header. */
   def size = buffer.size
+
+  def dataSize = size - 4
 }
