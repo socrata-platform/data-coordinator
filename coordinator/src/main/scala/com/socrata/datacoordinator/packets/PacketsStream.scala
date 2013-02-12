@@ -5,11 +5,22 @@ import scala.concurrent.duration.Duration
 import java.nio.ByteBuffer
 
 object PacketsStream {
-  object End extends Packet.SimplePacket("end-stream")
-  object Data extends Packet.SimpleLabelledPacket("stream-data")
+  val defaultDataLabel = "stream-data"
+  val defaultEndLabel = "end-stream"
+
+  class DataPacket(label: String = defaultDataLabel) extends Packet.SimpleLabelledPacket(label)
+  class EndPacket(label: String = defaultEndLabel) extends Packet.SimplePacket(label)
 }
 
-class PacketsInputStream(packets: Packets, readTimeout: Duration = Duration.Inf) extends InputStream {
+class PacketsInputStream(packets: Packets,
+                         dataLabel: String = PacketsStream.defaultDataLabel,
+                         endLabel: String = PacketsStream.defaultEndLabel,
+                         readTimeout: Duration = Duration.Inf)
+  extends InputStream
+{
+  val Data = new PacketsStream.DataPacket(dataLabel)
+  val End = new PacketsStream.EndPacket(endLabel)
+
   private var currentBuffer = receive()
 
   def read(): Int =
@@ -35,9 +46,9 @@ class PacketsInputStream(packets: Packets, readTimeout: Duration = Duration.Inf)
 
   private def receive(): ByteBuffer = {
     packets.receive(readTimeout) match {
-      case Some(PacketsStream.Data(data)) =>
+      case Some(Data(data)) =>
         data
-      case Some(PacketsStream.End()) =>
+      case Some(End()) =>
         null
       case None =>
         sys.error("End of input received?") // TODO: Better error
@@ -53,14 +64,21 @@ object PacketsInputStream {
 }
 
 class PacketsOutputStream(packets: Packets,
+                          dataLabel: String = PacketsStream.defaultDataLabel,
+                          endLabel: String = PacketsStream.defaultEndLabel,
                           writeTimeout: Duration = Duration.Inf,
                           postWrite: () => Unit = PacketsOutputStream.Noop)
   extends OutputStream
 {
-  require(packets.maxPacketSize >= PacketsOutputStream.minimumSize, "Max packet size not large enough for the header plus one byte")
+  require(packets.maxPacketSize >= PacketsOutputStream.minimumSizeFor(dataLabel, endLabel),
+    "Max packet size not large enough for the data stream packets")
+
+  val Data = new PacketsStream.DataPacket(dataLabel)
+  val End = new PacketsStream.EndPacket(endLabel)
+
   private var currentPacket: PacketOutputStream = null
 
-  def freshPacket() = PacketsStream.Data.packetOutputStream()
+  def freshPacket() = Data.packetOutputStream()
 
   def write(b: Int) {
     if(currentPacket == null) currentPacket = freshPacket()
@@ -95,13 +113,14 @@ class PacketsOutputStream(packets: Packets,
 
   override def close() {
     flush()
-    packets.send(PacketsStream.End(), writeTimeout)
+    packets.send(End(), writeTimeout)
     postWrite()
   }
 }
 
 object PacketsOutputStream {
-  val minimumSize = PacketsStream.Data(_.write(1)).buffer.remaining
-
   private val Noop = () => ()
+  def minimumSizeFor(dataLabel: String, endLabel: String): Int =
+    math.max(Packet.SimpleLabelledPacket.minimumSizeFor(dataLabel) + 1,
+      Packet.SimplePacket.minimumSizeFor(endLabel))
 }

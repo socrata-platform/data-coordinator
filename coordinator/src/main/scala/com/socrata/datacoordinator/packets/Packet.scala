@@ -45,6 +45,10 @@ object Packet {
     def unapply(p: Packet): Boolean = p == data
   }
 
+  object SimplePacket {
+    def minimumSizeFor(prefixStr: String) = prefixStr.length
+  }
+
   /** A `LabelledPacket` is a packet which carries a label together with some
     * amount of data. The label must consist entirely of latin-1 characters,
     * excluding NUL. */
@@ -92,5 +96,9 @@ object Packet {
     @inline final def unapply(packet: Packet) = extract(packet)
 
     override def packetOutputStream() = super.packetOutputStream()
+  }
+
+  object SimpleLabelledPacket {
+    def minimumSizeFor(prefixStr: String) = prefixStr.length + 1
   }
 }

@@ -7,13 +7,16 @@ import org.scalacheck.{Arbitrary, Gen}
 import java.io.{ByteArrayOutputStream, InputStream}
 
 class PacketsOutputStreamTest extends FunSuite with MustMatchers with PropertyChecks {
+  val minSize = PacketsOutputStream.minimumSizeFor(PacketsStream.defaultDataLabel, PacketsStream.defaultEndLabel)
+  val maxSize = 100000
+
   test("Simply closing a PacketsOutputStream produces just an end packet") {
-    forAll { packetSize: Int =>
-      whenever(packetSize >= PacketsOutputStream.minimumSize) {
+    forAll(Gen.choose(minSize, Int.MaxValue)) { packetSize: Int =>
+      whenever(packetSize >= minSize) {
         val sink = new PacketsSink(packetSize)
         val pos = new PacketsOutputStream(sink)
         pos.close()
-        sink.results must equal (List(PacketsStream.End()))
+        sink.results must equal (List(new PacketsStream.EndPacket()()))
       }
     }
   }
@@ -32,9 +35,8 @@ class PacketsOutputStreamTest extends FunSuite with MustMatchers with PropertyCh
   }
 
   test("Writing data produces uniformly-sized data") {
-    val max = 100000
-    forAll(Gen.choose(0, max), Arbitrary.arbitrary[List[Array[Byte]]]) { (packetSize: Int, data: List[Array[Byte]]) =>
-      whenever(packetSize >= PacketsOutputStream.minimumSize && packetSize <= max) {
+    forAll(Gen.choose(minSize, maxSize), Arbitrary.arbitrary[List[Array[Byte]]]) { (packetSize: Int, data: List[Array[Byte]]) =>
+      whenever(packetSize >= minSize && packetSize <= maxSize) {
         val sink = new PacketsSink(packetSize)
         val pos = new PacketsOutputStream(sink)
         data.foreach(pos.write)
@@ -45,9 +47,8 @@ class PacketsOutputStreamTest extends FunSuite with MustMatchers with PropertyCh
   }
 
   test("Writing data produces that same data") {
-    val max = 100000
-    forAll(Gen.choose(0, max), Arbitrary.arbitrary[List[Array[Byte]]]) { (packetSize: Int, data: List[Array[Byte]]) =>
-      whenever(packetSize >= PacketsOutputStream.minimumSize && packetSize <= max) {
+    forAll(Gen.choose(minSize, maxSize), Arbitrary.arbitrary[List[Array[Byte]]]) { (packetSize: Int, data: List[Array[Byte]]) =>
+      whenever(packetSize >= minSize && packetSize <= maxSize) {
         val sink = new PacketsSink(packetSize)
         val pos = new PacketsOutputStream(sink)
         data.foreach(pos.write)

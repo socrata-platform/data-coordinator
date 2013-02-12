@@ -6,7 +6,7 @@ import org.scalatest.prop.PropertyChecks
 import java.io.{ByteArrayOutputStream, InputStream}
 
 class PacketsInputStreamTest extends FunSuite with MustMatchers with PropertyChecks {
-  def toDataPacket(xs: Array[Byte]) = PacketsStream.Data(_.write(xs))
+  def toDataPacket(xs: Array[Byte]) = new PacketsStream.DataPacket()(_.write(xs))
 
   def readAll(in: InputStream) = {
     val baos = new ByteArrayOutputStream()
@@ -23,7 +23,7 @@ class PacketsInputStreamTest extends FunSuite with MustMatchers with PropertyChe
 
   test("Can read sent data") {
     forAll { xs: List[Array[Byte]] =>
-      val reservoir = new PacketsReservoir(xs.map(toDataPacket) :+ PacketsStream.End() : _*)
+      val reservoir = new PacketsReservoir(xs.map(toDataPacket) :+ new PacketsStream.EndPacket()() : _*)
       readAll(new PacketsInputStream(reservoir)) must equal (xs.toArray.flatten)
     }
   }
