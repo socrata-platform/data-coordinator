@@ -19,8 +19,6 @@ class Protocol[LogData](logDataCodec: Codec[LogData]) {
   object WillResync extends SimplePacket("will resync")
 
   object DatasetUpdated extends LabelledPacket("dataset updated") {
-    private val label = "dataset updated"
-
     def apply(id: DatasetId, version: Long) =
       create { os =>
         val dos = new DataOutputStream(os)
@@ -58,6 +56,9 @@ class Protocol[LogData](logDataCodec: Codec[LogData]) {
   object ResyncRequired extends SimplePacket("resync required")
   object WillingToAccept extends SimplePacket("willing to accept")
   object AcknowledgeReceipt extends SimplePacket("acknowledged")
+
+  val StreamDataLabel = "d"
+  val StreamEndLabel = "end of stream"
 }
 
 class PacketDecodeException(msg: String) extends Exception(msg)
