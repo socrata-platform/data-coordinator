@@ -1,10 +1,11 @@
 package com.socrata.datacoordinator.packets
 
+import java.io.{ByteArrayOutputStream, InputStream}
+
 import org.scalatest.FunSuite
 import org.scalatest.matchers.MustMatchers
 import org.scalatest.prop.PropertyChecks
 import org.scalacheck.{Arbitrary, Gen}
-import java.io.{ByteArrayOutputStream, InputStream}
 
 class PacketsOutputStreamTest extends FunSuite with MustMatchers with PropertyChecks {
   val minSize = PacketsOutputStream.minimumSizeFor(PacketsStream.defaultDataLabel, PacketsStream.defaultEndLabel)

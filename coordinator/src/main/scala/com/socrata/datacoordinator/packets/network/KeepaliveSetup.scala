@@ -1,12 +1,11 @@
 package com.socrata.datacoordinator.packets.network
 
 import java.nio.channels.SocketChannel
-import java.io._
+import java.io.{File, FileDescriptor, FileOutputStream, FileNotFoundException, IOException}
 import java.lang.reflect.Field
 
 import com.rojoma.simplearm.util._
 import com.sun.jna.{Pointer, Native, Library}
-import scala.Some
 
 final abstract class KeepaliveSetup
 

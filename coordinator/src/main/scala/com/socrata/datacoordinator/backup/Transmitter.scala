@@ -1,23 +1,21 @@
 package com.socrata.datacoordinator.backup
 
 import scala.concurrent.duration._
-import com.typesafe.config.ConfigFactory
+
 import java.net.{SocketAddress, InetAddress, InetSocketAddress}
 import java.nio.channels.spi.SelectorProvider
-import java.sql.{DriverManager, Connection}
-import com.rojoma.simplearm.util._
-import com.socrata.datacoordinator.util.CloseableIterator
-import com.socrata.datacoordinator.id.{RowId, DatasetId}
 import java.nio.channels.{SelectionKey, SocketChannel}
-import com.socrata.datacoordinator.truth.loader.Delogger
+import java.sql.{DriverManager, Connection}
+
+import com.typesafe.config.ConfigFactory
+import com.rojoma.simplearm.util._
+
 import com.socrata.datacoordinator.truth.loader.sql.SqlDelogger
-import com.socrata.datacoordinator.truth.metadata.{GlobalLogPlayback, CopyPair, DatasetMapReader, DatasetInfo}
+import com.socrata.datacoordinator.truth.metadata.GlobalLogPlayback
 import com.socrata.datacoordinator.common.soql.SoQLRowLogCodec
 import com.socrata.datacoordinator.packets.network.{KeepaliveSetup, NetworkPackets}
 import com.socrata.datacoordinator.packets.Packets
-import com.socrata.datacoordinator.util.collection.ColumnIdMap
-import com.socrata.datacoordinator.truth.metadata.sql.{PostgresGlobalLogPlayback, PostgresGlobalLog, PostgresDatasetMapReader}
-import scala.collection.immutable.VectorBuilder
+import com.socrata.datacoordinator.truth.metadata.sql.{PostgresGlobalLogPlayback, PostgresDatasetMapReader}
 
 final abstract class Transmitter
 
@@ -146,5 +144,4 @@ object Transmitter extends App {
       }
     }
   }
-
 }

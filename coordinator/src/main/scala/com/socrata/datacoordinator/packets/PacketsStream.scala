@@ -1,7 +1,8 @@
 package com.socrata.datacoordinator.packets
 
-import java.io.{InputStream, OutputStream}
 import scala.concurrent.duration.Duration
+
+import java.io.{InputStream, OutputStream}
 import java.nio.ByteBuffer
 
 object PacketsStream {

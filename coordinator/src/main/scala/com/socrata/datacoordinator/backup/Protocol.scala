@@ -1,14 +1,10 @@
 package com.socrata.datacoordinator.backup
 
-import com.socrata.datacoordinator.packets.{Packet, PacketOutputStream}
-import java.nio.ByteBuffer
-import com.socrata.datacoordinator.id.{RowId, DatasetId}
-import com.socrata.datacoordinator.truth.loader.Delogger
-import java.io._
+import java.io.{DataInputStream, DataOutputStream}
+
+import com.socrata.datacoordinator.packets.Packet
+import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.common.util.ByteBufferInputStream
-import com.rojoma.json.util.JsonUtil
-import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, CopyInfo}
-import scala.Some
 
 class Protocol[LogData](logDataCodec: Codec[LogData]) {
   import Packet.{SimplePacket, LabelledPacket}

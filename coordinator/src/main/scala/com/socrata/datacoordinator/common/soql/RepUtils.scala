@@ -2,10 +2,6 @@ package com.socrata.datacoordinator.common.soql
 
 import java.lang.StringBuilder
 
-import com.socrata.soql.types.SoQLType
-import com.socrata.datacoordinator.truth.sql.SqlColumnRep
-import com.socrata.datacoordinator.id.ColumnId
-
 abstract class RepUtils {
   def standardNullInsertSize = 8
 

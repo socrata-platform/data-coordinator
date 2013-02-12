@@ -1,9 +1,11 @@
 package com.socrata.datacoordinator.backup
 
 import java.io.{InputStreamReader, InputStream, DataInputStream, DataOutputStream}
+
+import com.rojoma.json.util.JsonUtil
+
 import com.socrata.datacoordinator.truth.loader.Delogger
 import com.socrata.datacoordinator.truth.loader.Delogger.LogEvent
-import com.rojoma.json.util.JsonUtil
 import com.socrata.datacoordinator.truth.metadata.{CopyInfo, ColumnInfo}
 import com.socrata.datacoordinator.id.RowId
 import com.socrata.datacoordinator.truth.RowLogCodec

@@ -5,14 +5,12 @@ import java.util.concurrent.ExecutorService
 
 import com.socrata.id.numeric.IdProvider
 
-import com.socrata.datacoordinator.Row
 import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, CopyInfo}
 import com.socrata.datacoordinator.truth.loader.{RowPreparer, Loader, Logger}
 import com.socrata.datacoordinator.truth.loader.sql._
 import com.socrata.datacoordinator.truth.TypeContext
 import com.socrata.datacoordinator.truth.sql.{RepBasedSqlDatasetContext, SqlColumnRep}
-import com.socrata.datacoordinator.util.collection.{ColumnIdSet, ColumnIdMap}
-import com.socrata.datacoordinator.id.{RowId, ColumnId}
+import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.common.soql.SystemColumns
 
 abstract class AbstractSqlLoaderProvider[CT, CV](conn: Connection, idProvider: IdProvider, val executor: ExecutorService, typeContext: TypeContext[CT, CV])

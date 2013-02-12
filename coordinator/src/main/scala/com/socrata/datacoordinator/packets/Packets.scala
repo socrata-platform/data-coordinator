@@ -1,7 +1,8 @@
 package com.socrata.datacoordinator.packets
 
-import java.io.Closeable
 import scala.concurrent.duration.Duration
+
+import java.io.Closeable
 
 /** A sender writes data to a Receiver.  It is assumed to do so quickly;
   * the receiver will consider getting into a state where its transmit buffer

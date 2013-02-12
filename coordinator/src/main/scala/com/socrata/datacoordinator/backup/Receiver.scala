@@ -1,21 +1,19 @@
 package com.socrata.datacoordinator.backup
 
+import scala.annotation.tailrec
 import scala.concurrent.duration._
-import com.typesafe.config.ConfigFactory
+
 import java.net._
 import java.nio.channels.spi.SelectorProvider
-import com.rojoma.simplearm.util._
-import com.socrata.datacoordinator.packets.network.NetworkPackets
-import com.socrata.datacoordinator.packets.{Packets, ProtocolError, Packet, PacketOutputStream}
-import com.socrata.datacoordinator.truth.metadata.DatasetInfo
-import scala.annotation.tailrec
-import com.socrata.datacoordinator.truth.loader.Delogger
 import java.sql.{DriverManager, Connection}
-import java.nio.ByteBuffer
+
+import com.typesafe.config.ConfigFactory
+import com.rojoma.simplearm.util._
+
+import com.socrata.datacoordinator.packets.network.NetworkPackets
+import com.socrata.datacoordinator.packets.Packets
+import com.socrata.datacoordinator.truth.loader.Delogger
 import com.socrata.datacoordinator.id.DatasetId
-import com.socrata.datacoordinator.truth.loader.sql.SqlLogger
-import com.socrata.datacoordinator.common.util.ByteBufferInputStream
-import java.io.{OutputStreamWriter, InputStream}
 import com.socrata.datacoordinator.common.soql.SoQLRowLogCodec
 import com.socrata.datacoordinator.truth.sql.DatabasePopulator
 import com.socrata.datacoordinator.common.StandardDatasetMapLimits

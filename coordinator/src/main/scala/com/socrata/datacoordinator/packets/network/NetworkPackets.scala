@@ -1,11 +1,12 @@
 package com.socrata.datacoordinator.packets
 package network
 
-import java.nio.channels.{SelectionKey, SocketChannel}
-import java.nio.ByteBuffer
 import scala.annotation.tailrec
 import scala.concurrent.duration.{FiniteDuration, Deadline, Duration}
 import scala.concurrent.duration.Duration.Infinite
+
+import java.nio.channels.{SelectionKey, SocketChannel}
+import java.nio.ByteBuffer
 import java.io.IOException
 
 class NetworkPackets(socket: SocketChannel, val maxPacketSize: Int) extends Packets {

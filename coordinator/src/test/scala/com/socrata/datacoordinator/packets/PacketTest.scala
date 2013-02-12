@@ -1,9 +1,10 @@
 package com.socrata.datacoordinator.packets
 
+import java.nio.ByteBuffer
+
 import org.scalatest.FunSuite
 import org.scalatest.prop.PropertyChecks
 import org.scalatest.matchers.MustMatchers
-import java.nio.ByteBuffer
 
 class PacketTest extends FunSuite with PropertyChecks with MustMatchers {
   test("Packet's constructor rejects a packet with an incorrect length") {

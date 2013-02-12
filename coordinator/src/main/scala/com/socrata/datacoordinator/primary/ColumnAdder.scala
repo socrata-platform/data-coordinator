@@ -1,7 +1,8 @@
 package com.socrata.datacoordinator.primary
 
-import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.soql.brita.AsciiIdentifierFilter
+
+import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 
 class ColumnAdder[CT, CV](mutator: DatabaseMutator[CT, CV], physicalColumnBaseLimit: Int) {
   // Glue points we want/need

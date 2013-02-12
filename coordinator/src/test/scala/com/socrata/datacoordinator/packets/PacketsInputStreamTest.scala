@@ -1,9 +1,10 @@
 package com.socrata.datacoordinator.packets
 
+import java.io.{ByteArrayOutputStream, InputStream}
+
 import org.scalatest.FunSuite
 import org.scalatest.matchers.MustMatchers
 import org.scalatest.prop.PropertyChecks
-import java.io.{ByteArrayOutputStream, InputStream}
 
 class PacketsInputStreamTest extends FunSuite with MustMatchers with PropertyChecks {
   def toDataPacket(xs: Array[Byte]) = new PacketsStream.DataPacket()(_.write(xs))
