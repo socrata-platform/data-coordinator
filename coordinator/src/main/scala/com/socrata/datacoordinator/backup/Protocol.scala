@@ -11,27 +11,26 @@ import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, CopyInfo}
 import scala.Some
 
 class Protocol[LogData](logDataCodec: Codec[LogData]) {
-  import Packet.{SimplePacket, labelledPacketStream, packetLabelled}
+  import Packet.{SimplePacket, LabelledPacket}
 
   // primary -> backup
   object NothingYet extends SimplePacket("nothing yet")
   object DataDone extends SimplePacket("data done")
   object WillResync extends SimplePacket("will resync")
 
-  object DatasetUpdated {
+  object DatasetUpdated extends LabelledPacket("dataset updated") {
     private val label = "dataset updated"
 
-    def apply(id: DatasetId, version: Long) = {
-      val pos = labelledPacketStream(label)
-      val dos = new DataOutputStream(pos)
-      dos.writeLong(id.underlying)
-      dos.writeLong(version)
-      dos.flush()
-      pos.packet()
-    }
+    def apply(id: DatasetId, version: Long) =
+      create { os =>
+        val dos = new DataOutputStream(os)
+        dos.writeLong(id.underlying)
+        dos.writeLong(version)
+        dos.flush()
+      }
 
     def unapply(packet: Packet): Option[(DatasetId, Long)] =
-      for(data <- packetLabelled(packet, label)) yield {
+      extract(packet) map { data =>
         if(data.remaining != 16) throw new PacketDecodeException("DatasetUpdate packet does not contain 16 bytes of payload")
         val id = new DatasetId(data.getLong())
         val version = data.getLong()
@@ -39,21 +38,17 @@ class Protocol[LogData](logDataCodec: Codec[LogData]) {
       }
   }
 
-  object LogData {
-    def apply(event: LogData) = {
-      val pos = new PacketOutputStream
-      val dos = new DataOutputStream(pos)
+  object LogData extends LabelledPacket("log data") {
+    def apply(event: LogData) = create { os =>
+      val dos = new DataOutputStream(os)
       dos.write("log data|".getBytes)
       logDataCodec.encode(dos, event)
       dos.flush()
-      pos.packet()
     }
 
-    def unapply(packet: Packet): Option[LogData] = {
-      for(data <- packetLabelled(packet, "log data")) yield {
-        val stream = new DataInputStream(new ByteBufferInputStream(data))
-        logDataCodec.decode(stream)
-      }
+    def unapply(packet: Packet): Option[LogData] = extract(packet) map { data =>
+      val stream = new DataInputStream(new ByteBufferInputStream(data))
+      logDataCodec.decode(stream)
     }
   }
 

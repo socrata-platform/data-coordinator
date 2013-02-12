@@ -6,7 +6,7 @@ import java.nio.ByteBuffer
 
 object PacketsStream {
   object End extends Packet.SimplePacket("end-stream")
-  val streamLabel = "stream-data"
+  object Data extends Packet.SimpleLabelledPacket("stream-data")
 }
 
 class PacketsInputStream(packets: Packets, readTimeout: Duration = Duration.Inf) extends InputStream {
@@ -35,15 +35,10 @@ class PacketsInputStream(packets: Packets, readTimeout: Duration = Duration.Inf)
 
   private def receive(): ByteBuffer = {
     packets.receive(readTimeout) match {
+      case Some(PacketsStream.Data(data)) =>
+        data
       case Some(PacketsStream.End()) =>
         null
-      case Some(packet) =>
-        Packet.packetLabelled(packet, PacketsStream.streamLabel) match {
-          case Some(data) =>
-            data
-          case None =>
-            sys.error("Not a stream packet?") // TODO: Better error
-        }
       case None =>
         sys.error("End of input received?") // TODO: Better error
     }
@@ -65,7 +60,7 @@ class PacketsOutputStream(packets: Packets,
   require(packets.maxPacketSize >= PacketsOutputStream.minimumSize, "Max packet size not large enough for the header plus one byte")
   private var currentPacket: PacketOutputStream = null
 
-  def freshPacket() = Packet.labelledPacketStream(PacketsStream.streamLabel)
+  def freshPacket() = PacketsStream.Data.packetOutputStream()
 
   def write(b: Int) {
     if(currentPacket == null) currentPacket = freshPacket()
@@ -106,11 +101,7 @@ class PacketsOutputStream(packets: Packets,
 }
 
 object PacketsOutputStream {
-  val minimumSize = locally {
-    val pos = Packet.labelledPacketStream(PacketsStream.streamLabel)
-    pos.write(1)
-    pos.size
-  }
+  val minimumSize = PacketsStream.Data(_.write(1)).buffer.remaining
 
   private val Noop = () => ()
 }

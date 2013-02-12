@@ -6,11 +6,7 @@ import org.scalatest.prop.PropertyChecks
 import java.io.{ByteArrayOutputStream, InputStream}
 
 class PacketsInputStreamTest extends FunSuite with MustMatchers with PropertyChecks {
-  def toDataPacket(xs: Array[Byte]) = {
-    val pos = Packet.labelledPacketStream(PacketsStream.streamLabel)
-    pos.write(xs)
-    pos.packet()
-  }
+  def toDataPacket(xs: Array[Byte]) = PacketsStream.Data(_.write(xs))
 
   def readAll(in: InputStream) = {
     val baos = new ByteArrayOutputStream()
