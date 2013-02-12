@@ -41,7 +41,7 @@ class PacketsOutputStreamTest extends FunSuite with MustMatchers with PropertyCh
         val pos = new PacketsOutputStream(sink)
         data.foreach(pos.write)
         pos.flush()
-        sink.results.dropRight(1) /* The last one might not be full */.forall(_.buffer.remaining == packetSize)
+        sink.results.dropRight(1) /* The last one might not be full */.forall(_.buffer.remaining == packetSize) must be (true)
       }
     }
   }
