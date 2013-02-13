@@ -16,7 +16,9 @@ object PacketsStream {
 class PacketsInputStream(packets: Packets,
                          dataLabel: String = PacketsStream.defaultDataLabel,
                          endLabel: String = PacketsStream.defaultEndLabel,
-                         readTimeout: Duration = Duration.Inf)
+                         readTimeout: Duration = Duration.Inf,
+                         onUnexpectedPacket: Packet => Nothing = PacketsInputStream.onUnexpectedPacket,
+                         onEOF: () => Nothing = PacketsInputStream.onEOF)
   extends InputStream
 {
   val Data = new PacketsStream.DataPacket(dataLabel)
@@ -51,17 +53,17 @@ class PacketsInputStream(packets: Packets,
         data
       case Some(End()) =>
         null
+      case Some(other) =>
+        onUnexpectedPacket(other)
       case None =>
-        sys.error("End of input received?") // TODO: Better error
+        onEOF()
     }
   }
 }
 
 object PacketsInputStream {
-  def isStreamPacket(p: Packet) = p.dataSize > 0 && {
-    val b = p.data
-    b.get(0) == 0 || b.get(0) == 1
-  }
+  def onUnexpectedPacket(packet: Packet) = sys.error("Unexpected packet received")
+  def onEOF() = sys.error("Unexpected EOF received")
 }
 
 class PacketsOutputStream(packets: Packets,
