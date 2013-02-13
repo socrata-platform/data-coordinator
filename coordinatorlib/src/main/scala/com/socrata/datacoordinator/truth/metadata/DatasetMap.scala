@@ -1,6 +1,6 @@
 package com.socrata.datacoordinator.truth.metadata
 
-import com.socrata.datacoordinator.id.{ColumnId, CopyId, DatasetId}
+import com.socrata.datacoordinator.id.{RowId, ColumnId, CopyId, DatasetId}
 
 trait DatasetMapReader extends `-impl`.BaseDatasetMapReader
 
@@ -60,7 +60,32 @@ trait BackupDatasetMap extends DatasetMapReader with `-impl`.BaseDatasetMapWrite
     * @return The new column
     * @throws ColumnAlreadyExistsException if the column already exists
     * @throws ColumnSystemIdAlreadyInUse if `systemId` already names a column on this copy of the table. */
-  def addColumnWithId(systemId: ColumnId, copyInfo: CopyInfo, logicalName: String, typeName: String, physicalColumnBase: String): ColumnInfo
+  def addColumnWithId(systemId: ColumnId, copyInfo: CopyInfo, logicalName: String, typeName: String, physicalColumnBaseBase: String): ColumnInfo
+
+  /** Creates a dataset with the specified attributes
+    * @note Using this carelessly can get you into trouble.  In particular, this
+    *       newly created dataset will have NO copies attached. */
+  def unsafeCreateDataset(systemId: DatasetId,
+                          datasetId: String,
+                          tableBaseBase: String,
+                          nextRowId: RowId): DatasetInfo
+
+  /** Reloads a dataset with the specified attributes, including CLEARING ALL COPIES.
+    * @note Using this carelessly can get you into trouble.  It is intended to be used
+    *       for resyncing only.  The resulting dataset object will have NO copies. */
+  def unsafeReloadDataset(datasetInfo: DatasetInfo,
+                          datasetId: String,
+                          tableBaseBase: String,
+                          nextRowId: RowId): DatasetInfo
+
+  /** Creates a copy with the specified attributes.
+    * @note Using this carelessly can get you into trouble.  It is intended to be used
+    *       for resyncing only. */
+  def unsafeCreateCopy(datasetInfo: DatasetInfo,
+                       systemId: CopyId,
+                       copyNumber: Long,
+                       lifecycleStage: LifecycleStage,
+                       dataVersion: Long): CopyInfo
 }
 
 case class CopyPair[A <: CopyInfo](oldCopyInfo: A, newCopyInfo: A)

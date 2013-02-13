@@ -28,6 +28,8 @@ trait BaseDatasetMapReader {
   /** Gets the newest copy, no matter what the lifecycle stage is. */
   def latest(datasetInfo: DatasetInfo): CopyInfo
 
+  def allCopies(datasetInfo: DatasetInfo): Iterable[CopyInfo]
+
   /** Returns the number of snapshots attached to this dataset. */
   def snapshotCount(datasetInfo: DatasetInfo): Int
 

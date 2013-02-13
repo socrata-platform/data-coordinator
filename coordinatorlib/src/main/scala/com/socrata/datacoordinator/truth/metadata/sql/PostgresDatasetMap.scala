@@ -13,6 +13,7 @@ import com.socrata.datacoordinator.util.PostgresUniqueViolation
 import com.socrata.datacoordinator.util.collection.MutableColumnIdMap
 import scala.Some
 import com.socrata.datacoordinator.truth.metadata.CopyPair
+import scala.collection.immutable.VectorBuilder
 
 class PostgresDatasetMapReader(val conn: Connection) extends DatasetMapReader {
   def lockNotAvailableState = "55P03"
@@ -49,6 +50,25 @@ class PostgresDatasetMapReader(val conn: Connection) extends DatasetMapReader {
           LifecycleStage.valueOf(rs.getString("lifecycle_stage")),
           rs.getLong("data_version")
         )
+      }
+    }
+
+  def allCopiesQuery = "SELECT system_id, copy_number, lifecycle_stage :: TEXT, data_version FROM copy_map WHERE dataset_system_id = ? ORDER BY copy_number"
+  def allCopies(datasetInfo: DatasetInfo): Vector[CopyInfo] =
+    using(conn.prepareStatement(allCopiesQuery)) { stmt =>
+      stmt.setLong(1, datasetInfo.systemId.underlying)
+      using(stmt.executeQuery()) { rs =>
+        val result = new VectorBuilder[CopyInfo]
+        while(rs.next()) {
+          result += SqlCopyInfo(
+            datasetInfo,
+            new CopyId(rs.getLong("system_id")),
+            rs.getLong("copy_number"),
+            LifecycleStage.valueOf(rs.getString("lifecycle_stage")),
+            rs.getLong("data_version")
+          )
+        }
+        result.result()
       }
     }
 
@@ -196,24 +216,9 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
     }
   }
 
-  def createQuery_tableMapWithSystemId = "INSERT INTO dataset_map (system_id, dataset_id, table_base_base, next_row_id) VALUES (?, ?, ?, ?)"
   def createQuery_copyMapWithSystemId = "INSERT INTO copy_map (system_id, dataset_system_id, copy_number, lifecycle_stage, data_version) VALUES (?, ?, ?, CAST(? AS dataset_lifecycle_stage), ?)"
   def createWithId(systemId: DatasetId, datasetId: String, tableBaseBase: String, initialCopyId: CopyId): CopyInfo = {
-    val datasetInfo = SqlDatasetInfo(systemId, datasetId, tableBaseBase, RowId.initial)
-    using(conn.prepareStatement(createQuery_tableMapWithSystemId)) { stmt =>
-      stmt.setLong(1, datasetInfo.systemId.underlying)
-      stmt.setString(2, datasetInfo.datasetId)
-      stmt.setString(3, datasetInfo.tableBaseBase)
-      stmt.setLong(4, datasetInfo.nextRowId.underlying)
-      try {
-        stmt.execute()
-      } catch {
-        case PostgresUniqueViolation("system_id") =>
-          throw new DatasetSystemIdAlreadyInUse(systemId)
-        case PostgresUniqueViolation("table_base_base") =>
-          throw new DatasetAlreadyExistsException(datasetId)
-      }
-    }
+    val datasetInfo = unsafeCreateDataset(systemId, datasetId, tableBaseBase, RowId.initial)
 
     using(conn.prepareStatement(createQuery_copyMapWithSystemId)) { stmt =>
       val copyInfo = SqlCopyInfo(datasetInfo, initialCopyId, 1, LifecycleStage.Unpublished, 0)
@@ -239,18 +244,22 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
   def deleteQuery_copyMap = "DELETE FROM copy_map WHERE dataset_system_id = ?"
   def deleteQuery_tableMap = "DELETE FROM dataset_map WHERE system_id = ?"
   def delete(tableInfo: DatasetInfo) {
-    using(conn.prepareStatement(deleteQuery_columnMap)) { stmt =>
-      stmt.setLong(1, tableInfo.systemId.underlying)
-      stmt.executeUpdate()
-    }
-    using(conn.prepareStatement(deleteQuery_copyMap)) { stmt =>
-      stmt.setLong(1, tableInfo.systemId.underlying)
-      stmt.executeUpdate()
-    }
+    deleteCopiesOf(tableInfo)
     using(conn.prepareStatement(deleteQuery_tableMap)) { stmt =>
       stmt.setLong(1, tableInfo.systemId.underlying)
       val count = stmt.executeUpdate()
       assert(count == 1, "Called delete on a table which is no longer there?")
+    }
+  }
+
+  def deleteCopiesOf(datasetInfo: DatasetInfo) {
+    using(conn.prepareStatement(deleteQuery_columnMap)) { stmt =>
+      stmt.setLong(1, datasetInfo.systemId.underlying)
+      stmt.executeUpdate()
+    }
+    using(conn.prepareStatement(deleteQuery_copyMap)) { stmt =>
+      stmt.setLong(1, datasetInfo.systemId.underlying)
+      stmt.executeUpdate()
     }
   }
 
@@ -327,6 +336,79 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
 
       columnInfo
     }
+  }
+
+  def unsafeCreateDatasetQuery = "INSERT INTO dataset_map (system_id, dataset_id, table_base_base, next_row_id) VALUES (?, ?, ?, ?)"
+  def unsafeCreateDataset(systemId: DatasetId, datasetId: String, tableBaseBase: String, nextRowId: RowId): DatasetInfo = {
+    val datasetInfo = SqlDatasetInfo(systemId, datasetId, tableBaseBase, nextRowId)
+
+    using(conn.prepareStatement(unsafeCreateDatasetQuery)) { stmt =>
+      stmt.setLong(1, datasetInfo.systemId.underlying)
+      stmt.setString(2, datasetInfo.datasetId)
+      stmt.setString(3, datasetInfo.tableBaseBase)
+      stmt.setLong(4, datasetInfo.nextRowId.underlying)
+      try {
+        stmt.execute()
+      } catch {
+        case PostgresUniqueViolation("system_id") =>
+          throw new DatasetSystemIdAlreadyInUse(systemId)
+        case PostgresUniqueViolation("dataset_id") =>
+          throw new DatasetAlreadyExistsException(datasetId)
+      }
+    }
+
+    datasetInfo
+  }
+
+  val unsafeReloadDatasetQuery = "UPDATE dataset_map SET dataset_id = ?, table_base_base = ?, next_row_id = ? WHERE system_id = ?"
+  def unsafeReloadDataset(datasetInfo: DatasetInfo,
+                          datasetId: String,
+                          tableBaseBase: String,
+                          nextRowId: RowId): DatasetInfo = {
+    val newDatasetInfo = SqlDatasetInfo(datasetInfo.systemId, datasetId, tableBaseBase, nextRowId)
+
+    using(conn.prepareStatement(unsafeReloadDatasetQuery)) { stmt =>
+      stmt.setString(1, newDatasetInfo.datasetId)
+      stmt.setString(2, newDatasetInfo.tableBaseBase)
+      stmt.setLong(3, newDatasetInfo.nextRowId.underlying)
+      stmt.setLong(4, newDatasetInfo.systemId.underlying)
+      try {
+        val updated = stmt.executeUpdate()
+        assert(updated == 1, s"Dataset ${datasetInfo.systemId.underlying} does not exist?")
+      } catch {
+        case PostgresUniqueViolation("dataset_id") =>
+          throw new DatasetAlreadyExistsException(datasetId)
+      }
+    }
+
+    deleteCopiesOf(newDatasetInfo)
+
+    newDatasetInfo
+  }
+
+  def unsafeCreateCopyQuery = "INSERT INTO copy_map (system_id, dataset_system_id, copy_number, lifecycle_stage, data_version) values (?, ?, ?, CAST(? AS dataset_lifecycle_stage), ?)"
+  def unsafeCreateCopy(datasetInfo: DatasetInfo,
+                       systemId: CopyId,
+                       copyNumber: Long,
+                       lifecycleStage: LifecycleStage,
+                       dataVersion: Long): CopyInfo = {
+    val newCopy = SqlCopyInfo(datasetInfo, systemId, copyNumber, lifecycleStage, dataVersion)
+
+    using(conn.prepareStatement(unsafeCreateCopyQuery)) { stmt =>
+      stmt.setLong(1, newCopy.systemId.underlying)
+      stmt.setLong(2, newCopy.datasetInfo.systemId.underlying)
+      stmt.setLong(3, newCopy.copyNumber)
+      stmt.setString(4, newCopy.lifecycleStage.name)
+      stmt.setLong(5, newCopy.dataVersion)
+      try {
+        stmt.execute()
+      } catch {
+        case PostgresUniqueViolation("system_id") =>
+          throw new CopySystemIdAlreadyInUse(systemId)
+      }
+    }
+
+    newCopy
   }
 
   def dropColumnQuery = "DELETE FROM column_map WHERE copy_system_id = ? AND system_id = ?"
@@ -441,7 +523,6 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
 
   def ensureUnpublishedCopyQuery_newCopyNumber = "SELECT max(copy_number) + 1 FROM copy_map WHERE dataset_system_id = ?"
   def ensureUnpublishedCopyQuery_copyMap = "INSERT INTO copy_map (dataset_system_id, copy_number, lifecycle_stage, data_version) values (?, ?, CAST(? AS dataset_lifecycle_stage), ?) RETURNING system_id"
-  def ensureUnpublishedCopyQueryWithId_copyMap = "INSERT INTO copy_map (system_id, dataset_system_id, copy_number, lifecycle_stage, data_version) values (?, ?, ?, CAST(? AS dataset_lifecycle_stage), ?)"
   def ensureUnpublishedCopy(tableInfo: DatasetInfo): Either[CopyInfo, CopyPair[CopyInfo]] =
     ensureUnpublishedCopy(tableInfo, None)
 
@@ -488,25 +569,12 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
 
                 newCopy
               case Some(cid) =>
-                val newCopy = publishedCopy.copy(
-                  systemId = cid,
-                  copyNumber = newCopyNumber,
-                  lifecycleStage = LifecycleStage.Unpublished)
-
-                using(conn.prepareStatement(ensureUnpublishedCopyQueryWithId_copyMap)) { stmt =>
-                  stmt.setLong(1, newCopy.systemId.underlying)
-                  stmt.setLong(2, newCopy.datasetInfo.systemId.underlying)
-                  stmt.setLong(3, newCopy.copyNumber)
-                  stmt.setString(4, newCopy.lifecycleStage.name)
-                  stmt.setLong(5, newCopy.dataVersion)
-                  try {
-                    stmt.execute()
-                  } catch {
-                    case PostgresUniqueViolation("system_id") =>
-                      throw new CopySystemIdAlreadyInUse(cid)
-                  }
-                }
-                newCopy
+                unsafeCreateCopy(
+                  publishedCopy.datasetInfo,
+                  cid,
+                  newCopyNumber,
+                  LifecycleStage.Unpublished,
+                  publishedCopy.dataVersion)
             }
 
             Right(CopyPair(publishedCopy, newCopy))
