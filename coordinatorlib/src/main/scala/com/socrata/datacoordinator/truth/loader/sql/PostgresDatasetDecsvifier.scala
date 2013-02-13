@@ -9,7 +9,7 @@ import com.socrata.datacoordinator.truth.sql.{SqlColumnReadRep, RepBasedSqlDatas
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 
 class PostgresDatasetDecsvifier[CT, CV](conn: Connection, extractCopier: Connection => CopyManager, dataTableName: String, schema: ColumnIdMap[SqlColumnReadRep[CT, CV]])
-  extends DatasetDecsvifier[CV]
+  extends DatasetDecsvifier
 {
   def importFromCsv(reader: Reader, columns: Seq[ColumnId]) {
     val physColumns = columns.flatMap(schema(_).physColumns)
