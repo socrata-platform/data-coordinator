@@ -35,7 +35,7 @@ object Packet {
     * The label must consist entirely of latin-1 characters, excluding
     * NUL. */
   class SimplePacket(s: String) {
-    val data = locally {
+    private val data = locally {
       val pos = new PacketOutputStream
       simpleWrite(pos, s)
       pos.packet()
