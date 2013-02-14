@@ -12,11 +12,9 @@ trait BaseDatasetMapReader {
   trait IDatasetInfo extends com.socrata.datacoordinator.truth.metadata.DatasetInfo
   trait ICopyInfo extends com.socrata.datacoordinator.truth.metadata.CopyInfo {
     val datasetInfo: DatasetInfo
-    final def canonicalType = classOf[com.socrata.datacoordinator.truth.metadata.CopyInfo]
   }
   trait IColumnInfo extends com.socrata.datacoordinator.truth.metadata.ColumnInfo {
     val copyInfo: CopyInfo
-    final def canonicalType = classOf[com.socrata.datacoordinator.truth.metadata.ColumnInfo]
   }
 
   /** Looks up a dataset record by its ID. */

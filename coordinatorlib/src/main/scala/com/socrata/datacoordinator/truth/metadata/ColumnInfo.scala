@@ -9,7 +9,7 @@ import com.rojoma.json.ast.JValue
 
 import com.socrata.datacoordinator.id.ColumnId
 
-trait UnanchoredColumnInfo extends Product {
+trait ColumnInfoLike extends Product {
   val systemId: ColumnId
   val logicalName: String
   val typeName: String
@@ -17,15 +17,16 @@ trait UnanchoredColumnInfo extends Product {
   val isSystemPrimaryKey: Boolean
   val isUserPrimaryKey: Boolean
 
-  protected def canonicalType: Class[_ <: UnanchoredColumnInfo]
-
   lazy val physicalColumnBase = physicalColumnBaseBase + "_" + systemId.underlying
 
   override final def hashCode = ScalaRunTime._hashCode(this)
-  override final def productPrefix = "ColumnInfo"
   override final def toString = ScalaRunTime._toString(this)
+}
+
+trait UnanchoredColumnInfo extends ColumnInfoLike {
+  override final def productPrefix = "UnanchoredColumnInfo"
   override final def equals(o: Any) = o match {
-    case that if canonicalType.isInstance(that) =>
+    case that: UnanchoredColumnInfo =>
       ScalaRunTime._equals(this, that)
     case _ =>
       false
@@ -76,14 +77,24 @@ object UnanchoredColumnInfo {
   }
 }
 
-trait ColumnInfo extends UnanchoredColumnInfo {
+trait ColumnInfo extends ColumnInfoLike {
   val copyInfo: CopyInfo
-  def withCopyInfo(ci: CopyInfo) = SimpleColumnInfo(ci, systemId, logicalName, typeName, physicalColumnBaseBase, isSystemPrimaryKey, isUserPrimaryKey)
+
+  override final def productPrefix = "ColumnInfo"
+  override final def equals(o: Any) = o match {
+    case that: ColumnInfo =>
+      ScalaRunTime._equals(this, that)
+    case _ =>
+      false
+  }
+
+  def withCopyInfo(ci: CopyInfo): ColumnInfo =
+    SimpleColumnInfo(ci, systemId, logicalName, typeName, physicalColumnBaseBase, isSystemPrimaryKey, isUserPrimaryKey)
+
+  def unanchored: UnanchoredColumnInfo = SimpleUnanchoredColumnInfo(systemId, logicalName, typeName, physicalColumnBaseBase, isSystemPrimaryKey, isUserPrimaryKey)
 }
 
-case class SimpleColumnInfo(copyInfo: CopyInfo, systemId: ColumnId, logicalName: String, typeName: String, physicalColumnBaseBase: String, isSystemPrimaryKey: Boolean, isUserPrimaryKey: Boolean) extends ColumnInfo {
-  final def canonicalType = classOf[ColumnInfo]
-}
+case class SimpleColumnInfo(copyInfo: CopyInfo, systemId: ColumnId, logicalName: String, typeName: String, physicalColumnBaseBase: String, isSystemPrimaryKey: Boolean, isUserPrimaryKey: Boolean) extends ColumnInfo
 
 object ColumnInfo {
   implicit object jCodec extends JsonCodec[ColumnInfo] {

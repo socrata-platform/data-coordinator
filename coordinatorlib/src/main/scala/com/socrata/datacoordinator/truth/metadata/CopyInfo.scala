@@ -9,28 +9,27 @@ import com.rojoma.json.ast.JValue
 
 import com.socrata.datacoordinator.id.CopyId
 
-trait UnanchoredCopyInfo extends Product {
+trait CopyInfoLike extends Product {
   val systemId: CopyId
   val copyNumber: Long
   val lifecycleStage: LifecycleStage
   val dataVersion: Long
 
-  protected def canonicalType: Class[_ <: UnanchoredCopyInfo]
-
   override final def hashCode = ScalaRunTime._hashCode(this)
-  override final def productPrefix = "CopyInfo"
   override final def toString = ScalaRunTime._toString(this)
+}
+
+trait UnanchoredCopyInfo extends CopyInfoLike {
+  override final def productPrefix = "UnanchoredCopyInfo"
   override final def equals(o: Any) = o match {
-    case that if canonicalType.isInstance(that) =>
+    case that: UnanchoredCopyInfo =>
       ScalaRunTime._equals(this, that)
     case _ =>
       false
   }
 }
 
-case class SimpleUnanchoredCopyInfo(systemId: CopyId, copyNumber: Long, lifecycleStage: LifecycleStage, dataVersion: Long) extends UnanchoredCopyInfo {
-  final def canonicalType = classOf[UnanchoredCopyInfo]
-}
+case class SimpleUnanchoredCopyInfo(systemId: CopyId, copyNumber: Long, lifecycleStage: LifecycleStage, dataVersion: Long) extends UnanchoredCopyInfo
 
 object UnanchoredCopyInfo {
   implicit object jCodec extends JsonCodec[UnanchoredCopyInfo] {
@@ -66,18 +65,25 @@ object UnanchoredCopyInfo {
   }
 }
 
-trait CopyInfo extends UnanchoredCopyInfo {
+trait CopyInfo extends CopyInfoLike {
   val datasetInfo: DatasetInfo
 
   lazy val dataTableName = datasetInfo.tableBase + "_" + copyNumber
 
-  def withDatasetInfo(di: DatasetInfo) =
+  override final def productPrefix = "CopyInfo"
+  override final def equals(o: Any) = o match {
+    case that: CopyInfo =>
+      ScalaRunTime._equals(this, that)
+    case _ =>
+      false
+  }
+
+  def withDatasetInfo(di: DatasetInfo): CopyInfo =
     SimpleCopyInfo(di, systemId, copyNumber, lifecycleStage, dataVersion)
+  def unanchored: UnanchoredCopyInfo = SimpleUnanchoredCopyInfo(systemId, copyNumber,lifecycleStage, dataVersion)
 }
 
-case class SimpleCopyInfo(datasetInfo: DatasetInfo, systemId: CopyId, copyNumber: Long, lifecycleStage: LifecycleStage, dataVersion: Long) extends CopyInfo {
-  final def canonicalType = classOf[CopyInfo]
-}
+case class SimpleCopyInfo(datasetInfo: DatasetInfo, systemId: CopyId, copyNumber: Long, lifecycleStage: LifecycleStage, dataVersion: Long) extends CopyInfo
 
 object CopyInfo {
   implicit object jCodec extends JsonCodec[CopyInfo] {
