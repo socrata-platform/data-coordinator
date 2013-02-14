@@ -88,8 +88,28 @@ class PostgresDatasetMapReader(val conn: Connection) extends DatasetMapReader {
     }
   }
 
+  def previousVersionQuery = "SELECT system_id, copy_number, lifecycle_stage :: TEXT, data_version FROM copy_map WHERE dataset_system_id = ? AND copy_number < ? AND lifecycle_stage <> 'Discarded' ORDER BY copy_number DESC LIMIT 1"
+  def previousVersion(copyInfo: CopyInfo): Option[CopyInfo] = {
+    using(conn.prepareStatement(previousVersionQuery)) { stmt =>
+      stmt.setLong(1, copyInfo.datasetInfo.systemId.underlying)
+      stmt.setLong(2, copyInfo.copyNumber)
+      using(stmt.executeQuery()) { rs =>
+        if(rs.next()) {
+          Some(SqlCopyInfo(
+            copyInfo.datasetInfo,
+            new CopyId(rs.getLong("system_id")),
+            rs.getLong("copy_number"),
+            LifecycleStage.valueOf(rs.getString("lifecycle_stage")),
+            rs.getLong("data_version")))
+        } else {
+          None
+        }
+      }
+    }
+  }
+
   def copyNumberQuery = "SELECT system_id, lifecycle_stage, data_version FROM copy_map WHERE dataset_system_id = ? AND copy_number = ?"
-  def copyNumber(datasetInfo: DatasetInfo, copyNumber: Long) =
+  def copyNumber(datasetInfo: DatasetInfo, copyNumber: Long): Option[CopyInfo] =
     using(conn.prepareStatement(copyNumberQuery)) { stmt =>
       stmt.setLong(1, datasetInfo.systemId.underlying)
       stmt.setLong(2, copyNumber)
@@ -301,15 +321,30 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
       |LIMIT
       |    1
       |""".stripMargin
-  def addColumnQuery = "INSERT INTO column_map (system_id, copy_system_id, logical_column, type_name, physical_column_base_base) VALUES (?, ?, ?, ?, ?)"
-  def addColumn(copyInfo: CopyInfo, logicalName: String, typeName: String, physicalColumnBaseBase: String): ColumnInfo = {
-    val systemId = using(conn.prepareStatement(firstFreeColumnIdQuery)) { stmt =>
+  def findFirstFreeColumnId(copyInfo: CopyInfo) = {
+    using(conn.prepareStatement(firstFreeColumnIdQuery)) { stmt =>
       stmt.setLong(1, copyInfo.systemId.underlying)
       stmt.setLong(2, copyInfo.systemId.underlying)
       using(stmt.executeQuery()) { rs =>
         val foundSomething = rs.next()
         assert(foundSomething, "Finding the last column info didn't return anything?")
         new ColumnId(rs.getLong("next_system_id"))
+      }
+    }
+  }
+
+  def addColumnQuery = "INSERT INTO column_map (system_id, copy_system_id, logical_column, type_name, physical_column_base_base) VALUES (?, ?, ?, ?, ?)"
+  def addColumn(copyInfo: CopyInfo, logicalName: String, typeName: String, physicalColumnBaseBase: String): ColumnInfo = {
+    val systemId = locally {
+      val firstFreeHere = findFirstFreeColumnId(copyInfo)
+      previousVersion(copyInfo) match {
+        case Some(previousCopy) =>
+          // In order to ensure that column IDs can be used to track the logical identity of columns
+          // across publish cycles, we'll choose the first column ID which is not used by either this
+          // one OR the previous copy.
+          new ColumnId(firstFreeHere.underlying max findFirstFreeColumnId(previousCopy).underlying)
+        case None =>
+          firstFreeHere
       }
     }
 
