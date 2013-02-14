@@ -13,7 +13,7 @@ class DatasetCreator[CT, CV](mutator: DatabaseMutator[CT, CV], systemColumns: Ma
       loader.create(table)
 
       for((name, typ) <- systemColumns) {
-        val col = datasetMap.addColumn(table, name, nameForType(typ), AsciiIdentifierFilter(List("s", name)))
+        val col = datasetMap.addColumn(table, name, nameForType(typ), AsciiIdentifierFilter(List("s", name)).toLowerCase)
         loader.addColumn(col)
         if(col.logicalName == idColumnName) {
           loader.makeSystemPrimaryKey(col)

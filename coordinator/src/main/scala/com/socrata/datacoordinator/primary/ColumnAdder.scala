@@ -24,7 +24,7 @@ class ColumnAdder[CT, CV](mutator: DatabaseMutator[CT, CV], physicalColumnBaseLi
 
       var result = Map.empty[String, ColumnInfo]
       for((columnName, columnType) <- columns) {
-        val baseName = AsciiIdentifierFilter(List("u", columnName)).take(physicalColumnBaseLimit).replaceAll("_+$","")
+        val baseName = AsciiIdentifierFilter(List("u", columnName)).take(physicalColumnBaseLimit).replaceAll("_+$","").toLowerCase
         val col = datasetMap.addColumn(table, columnName, nameForType(columnType), baseName)
         schemaLoader(col.copyInfo, logger).addColumn(col)
         result += columnName -> col
