@@ -12,7 +12,7 @@ class PacketsOutputStreamTest extends FunSuite with MustMatchers with PropertyCh
   val maxSize = 100000
 
   test("Simply closing a PacketsOutputStream produces just an end packet") {
-    forAll(Gen.choose(minSize, Int.MaxValue)) { packetSize: Int =>
+    forAll(Gen.choose(minSize, Int.MaxValue)) { packetSize =>
       whenever(packetSize >= minSize) {
         val sink = new PacketsSink(packetSize)
         val pos = new PacketsOutputStream(sink)
@@ -36,7 +36,8 @@ class PacketsOutputStreamTest extends FunSuite with MustMatchers with PropertyCh
   }
 
   test("Writing data produces uniformly-sized data") {
-    forAll(Gen.choose(minSize, maxSize), Arbitrary.arbitrary[List[Array[Byte]]]) { (packetSize: Int, data: List[Array[Byte]]) =>
+    forAll(Gen.choose(minSize, maxSize), Arbitrary.arbitrary[List[List[Byte]]]) { (packetSize, dataSeq) =>
+      val data = dataSeq.map(_.toArray)
       whenever(packetSize >= minSize && packetSize <= maxSize) {
         val sink = new PacketsSink(packetSize)
         val pos = new PacketsOutputStream(sink)
@@ -48,7 +49,8 @@ class PacketsOutputStreamTest extends FunSuite with MustMatchers with PropertyCh
   }
 
   test("Writing data produces that same data") {
-    forAll(Gen.choose(minSize, maxSize), Arbitrary.arbitrary[List[Array[Byte]]]) { (packetSize: Int, data: List[Array[Byte]]) =>
+    forAll(Gen.choose(minSize, maxSize), Arbitrary.arbitrary[List[List[Byte]]]) { (packetSize, dataSeq) =>
+      val data = dataSeq.map(_.toArray)
       whenever(packetSize >= minSize && packetSize <= maxSize) {
         val sink = new PacketsSink(packetSize)
         val pos = new PacketsOutputStream(sink)
