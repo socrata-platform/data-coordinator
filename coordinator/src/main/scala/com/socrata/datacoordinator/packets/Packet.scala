@@ -101,4 +101,18 @@ object Packet {
   object SimpleLabelledPacket {
     def minimumSizeFor(prefixStr: String) = prefixStr.length + 1
   }
+
+  // This will only be guaranteed to work for SimplePackets and LabelledPackets.
+  // If you're throwing around random binary blobs, this will probably not do the
+  // right thing!
+  def labelOf(packet: Packet): String = {
+    val s = new java.lang.StringBuilder
+    val data = packet.data
+    while(data.hasRemaining) {
+      val b = data.get() & 0xff
+      if(b == 0) return s.toString
+      s.append(b.toChar)
+    }
+    s.toString
+  }
 }
