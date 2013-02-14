@@ -10,12 +10,22 @@ import java.sql.{DriverManager, Connection}
 import com.typesafe.config.ConfigFactory
 import com.rojoma.simplearm.util._
 
-import com.socrata.datacoordinator.truth.loader.sql.SqlDelogger
-import com.socrata.datacoordinator.truth.metadata.GlobalLogPlayback
-import com.socrata.datacoordinator.common.soql.SoQLRowLogCodec
+import com.socrata.datacoordinator.truth.loader.sql.{RepBasedDatasetCsvifier, SqlDelogger}
+import com.socrata.datacoordinator.truth.metadata._
+import com.socrata.datacoordinator.common.soql.{SoQLTypeContext, SoQLRep, SoQLRowLogCodec}
 import com.socrata.datacoordinator.packets.network.{KeepaliveSetup, NetworkPackets}
-import com.socrata.datacoordinator.packets.Packets
-import com.socrata.datacoordinator.truth.metadata.sql.{PostgresGlobalLogPlayback, PostgresDatasetMapReader}
+import com.socrata.datacoordinator.packets.{Packet, PacketsOutputStream, Packets}
+import com.socrata.datacoordinator.truth.metadata.sql.{PostgresDatasetMapWriter, PostgresGlobalLogPlayback, PostgresDatasetMapReader}
+import com.socrata.datacoordinator.id.DatasetId
+import annotation.tailrec
+import com.socrata.soql.types.{SoQLType, SoQLNull}
+import org.xerial.snappy.SnappyOutputStream
+import java.io.OutputStreamWriter
+import com.socrata.datacoordinator.truth.sql.SqlColumnRep
+import com.socrata.datacoordinator.util.collection.ColumnIdMap
+import util.control.ControlThrowable
+import scala.Some
+import com.socrata.datacoordinator.common.util.ByteCountingOutputStream
 
 final abstract class Transmitter
 
@@ -40,6 +50,12 @@ object Transmitter extends App {
   val rowCodecFactory = () => SoQLRowLogCodec
   val protocol = new Protocol(new LogDataCodec(rowCodecFactory))
   import protocol._
+
+  val typeContext = SoQLTypeContext
+  def genericRepFor(columnInfo: ColumnInfoLike): SqlColumnRep[SoQLType, Any] =
+    SoQLRep.repFactories(typeContext.typeFromName(columnInfo.typeName))(columnInfo.physicalColumnBase)
+  def repSchema(schema: ColumnIdMap[ColumnInfoLike]): ColumnIdMap[SqlColumnRep[SoQLType, Any]] =
+    schema.mapValuesStrict(genericRepFor)
 
   using(provider.openSocketChannel()) { socket =>
     connect(socket, address, connectTimeout)
@@ -73,57 +89,68 @@ object Transmitter extends App {
     for(job <- tasks) {
       val datasetMap = new PostgresDatasetMapReader(conn)
       log.info("Sending dataset {}'s version {}", job.datasetId.underlying, job.version)
-      datasetMap.datasetInfo(job.datasetId) match {
-        case Some(datasetInfo) =>
-          socket.send(DatasetUpdated(job.datasetId, job.version))
-          socket.receive(newTaskAcknowledgementTimeout) match {
-            case Some(WillingToAccept()) =>
-              log.info("Backup is willing to receive it")
-              val delogger = new SqlDelogger(conn, datasetInfo.logTableName, rowCodecFactory)
-              for {
-                it <- managed(delogger.delog(job.version))
-                event <- it
-              } {
-                log.info("Sending LogData({})", event)
-                socket.send(LogData(event))
-                socket.poll() match {
-                  case Some(ResyncRequired()) =>
-                    log.warn("Backup signalled out-of-sync!")
-                    ??? // TODO: do resync AND BREAK THE ITERATION OVER "it"
-                  case Some(_) =>
-                    log.error("Received unexpected packet from backup")
-                    ??? // TODO: unexpected packet
-                  case None =>
-                    // ok, just keep on sending
+      try {
+        datasetMap.datasetInfo(job.datasetId) match {
+          case Some(datasetInfo) =>
+            socket.send(DatasetUpdated(job.datasetId, job.version))
+            socket.receive(newTaskAcknowledgementTimeout) match {
+              case Some(WillingToAccept()) =>
+                log.info("Backup is willing to receive it")
+                val delogger = new SqlDelogger(conn, datasetInfo.logTableName, rowCodecFactory)
+                for {
+                  it <- managed(delogger.delog(job.version))
+                  event <- it
+                } {
+                  log.info("Sending LogData({})", event)
+                  socket.send(LogData(event))
+                  socket.poll() match {
+                    case Some(ResyncRequired()) =>
+                      log.warn("Backup signalled that it wants a resync; abandoning logdata send")
+                      throw new ResyncRequested
+                    case Some(_) =>
+                      log.error("Received unexpected packet from backup")
+                      ??? // TODO: unexpected packet
+                    case None =>
+                      // ok, just keep on sending
+                  }
                 }
-              }
-              log.info("Sending DataDone")
-              socket.send(DataDone())
-              socket.receive() match {
-                case Some(ResyncRequired()) =>
-                  log.warn("Backup signalled out-of-sync!")
-                  ??? // TODO: do resync
-                case Some(AcknowledgeReceipt()) =>
-                  log.info("Backup has acknowledged receipt and committed to its store.")
-                  playback.finishedJob(job)
-                case None =>
-                  ??? // TODO: EOF
-              }
-            case Some(AlreadyHaveThat()) =>
-              log.info("Backup says it already has this version")
-              playback.finishedJob(job)
-            case Some(_) =>
-              log.error("Received unexpected packet from backup")
-              ??? // TODO: unexpected packet
-            case None =>
-              ??? // TODO: EOF
-          }
-        case None =>
-          log.warn(s"Dataset ${job.datasetId.underlying} is in the global log but there is no record of it?")
-          // TODO: Send "delete this dataset" message...
+                log.info("Sending DataDone")
+                socket.send(DataDone())
+                socket.receive() match {
+                  case Some(ResyncRequired()) =>
+                    log.warn("Backup signalled that it wants a resync")
+                    throw new ResyncRequested
+                  case Some(AcknowledgeReceipt()) =>
+                    log.info("Backup has acknowledged receipt and committed to its store.")
+                    playback.finishedJob(job)
+                  case None =>
+                    ??? // TODO: EOF
+                }
+              case Some(AlreadyHaveThat()) =>
+                log.info("Backup says it already has this version")
+                playback.finishedJob(job)
+              case Some(ResyncRequired()) =>
+                log.info("Backup says it doesn't know about that; doing a resync")
+                throw new ResyncRequested
+              case Some(p) =>
+                log.error("Received unexpected `{}' packet from backup", Packet.labelOf(p))
+                ??? // TODO: unexpected packet
+              case None =>
+                ??? // TODO: EOF
+            }
+          case None =>
+            log.warn(s"Dataset ${job.datasetId.underlying} is in the global log but there is no record of it.  It must have been deleted.")
+            // TODO: Send "delete this dataset" message...
+        }
+      } catch {
+        case _: ResyncRequested =>
+          handleResyncRequest(socket, conn, job.datasetId)
+          playback.finishedJob(job)
       }
     }
   }
+
+  class ResyncRequested extends ControlThrowable
 
   def connect(socket: SocketChannel, address: SocketAddress, timeout: FiniteDuration) {
     socket.configureBlocking(false)
@@ -142,6 +169,78 @@ object Transmitter extends App {
             }
         } while(!key.isConnectable || !socket.finishConnect())
       }
+    }
+  }
+
+  def handleResyncRequest(client: Packets, conn: Connection, datasetId: DatasetId) {
+    conn.setAutoCommit(false) // We'll be taking a lock and so we want transactions too
+    val datasetMap: DatasetMapWriter = new PostgresDatasetMapWriter(conn)
+    datasetMap.datasetInfo(datasetId) match {
+      case Some(info) =>
+        client.send(WillResync(info))
+        for(copy <- datasetMap.allCopies(info)) {
+          awaitReadyForCopy(client)
+          sendCopy(client, conn, datasetMap)(copy)
+        }
+        awaitReadyForCopy(client)
+        client.send(NoMoreCopies())
+        client.receive() match {
+          case Some(ResyncComplete()) =>
+            // ok good
+          case Some(_) =>
+            ??? // TODO: Unexpected packet
+          case None =>
+            ??? // TODO: EOF
+        }
+      case None =>
+        ??? // TODO: it was just there!
+    }
+
+    conn.rollback() // release the lock and switch back to read-only mode
+    conn.setAutoCommit(true)
+  }
+
+  def awaitReadyForCopy(client: Packets) {
+    @tailrec
+    def loop() {
+      client.receive() match {
+        case Some(PreparingDatabaseForResync()) =>
+          loop()
+        case Some(AwaitingNextCopy()) =>
+          // ok good
+        case Some(_) =>
+          ??? // TODO: unexpected packet
+        case None =>
+          ??? // TODO: EOF
+      }
+    }
+    loop()
+  }
+
+  def sendCopy(client: Packets, conn: Connection, datasetMap: DatasetMapReader)(copy: datasetMap.CopyInfo) {
+    log.info("Doing full send of the copy data to the backup")
+    val schema = datasetMap.schema(copy)
+    val columnInfos = schema.values.map(_.unanchored).toSeq
+
+    client.send(NextResyncCopy(copy.unanchored, columnInfos))
+
+    if(copy.lifecycleStage != LifecycleStage.Discarded) {
+      log.info("Sending CSV of the data")
+      val datasetCsvifier = new RepBasedDatasetCsvifier(conn, copy.dataTableName, repSchema(schema), SoQLNull)
+      // This is deliberately un-managed.  None of these streams allocate external resources,
+      // so if an exception occurs, the only effect will be to not send the "end of stream"
+      // packet -- which is exactly what we want to occur, so that the client doesn't believe
+      // that the stream has been completed.
+      val os = new PacketsOutputStream(client, dataLabel = ResyncStreamDataLabel, endLabel = ResyncStreamEndLabel)
+      val postCompressedCounter = new ByteCountingOutputStream(os)
+      val sos = new SnappyOutputStream(postCompressedCounter)
+      val preCompressedCounter = new ByteCountingOutputStream(sos)
+      val w = new OutputStreamWriter(preCompressedCounter, "UTF-8")
+      datasetCsvifier.csvify(w, columnInfos.map(_.systemId))
+      w.close()
+      log.info("Sent {} byte(s) ({} uncompressed)", postCompressedCounter.bytesWritten, preCompressedCounter.bytesWritten)
+    } else {
+      log.info("Copy was discarded; not bothering to send any data")
     }
   }
 }
