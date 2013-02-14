@@ -60,8 +60,8 @@ class NetworkPackets(socket: SocketChannel, val maxPacketSize: Int) extends Pack
           case n =>
             bufferToReadMode()
             val p = packetAccumulator.accumulate(receiveBuffer)
-            if(p.isDefined) return PacketAvailable(p.get)
-            loop()
+            if(p.isDefined) PacketAvailable(p.get)
+            else loop()
         }
       }
       loop()
