@@ -11,7 +11,7 @@ import com.socrata.soql.types.SoQLType
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.id.{RowId, DatasetId}
-import com.socrata.datacoordinator.truth.sql.{SqlColumnRep, DatabasePopulator}
+import com.socrata.datacoordinator.truth.sql.{SqlColumnReadRep, SqlColumnRep, DatabasePopulator}
 import com.socrata.datacoordinator.truth.loader.sql._
 import com.socrata.datacoordinator.common.soql.{SoQLRowLogCodec, SoQLRep, SoQLTypeContext}
 import com.socrata.datacoordinator.truth.metadata.sql.PostgresDatasetMapWriter
@@ -32,6 +32,7 @@ import com.socrata.datacoordinator.truth.metadata.CopyPair
 import com.socrata.datacoordinator.truth.loader.Insert
 import com.socrata.datacoordinator.common.StandardDatasetMapLimits
 import org.postgresql.core.BaseConnection
+import com.socrata.datacoordinator.util.collection.ColumnIdMap
 
 class Backup(conn: Connection, executor: ExecutorService, paranoid: Boolean) {
   val typeContext = SoQLTypeContext
@@ -45,6 +46,8 @@ class Backup(conn: Connection, executor: ExecutorService, paranoid: Boolean) {
 
   val schemaLoader: SchemaLoader = new RepBasedSqlSchemaLoader(conn, logger, genericRepFor)
   val contentsCopier: DatasetContentsCopier = new RepBasedSqlDatasetContentsCopier(conn, logger, genericRepFor)
+  def decsvifier(copyInfo: datasetMap.CopyInfo, schema: ColumnIdMap[datasetMap.ColumnInfo]): DatasetDecsvifier =
+    new PostgresDatasetDecsvifier(conn, extractCopier, copyInfo.dataTableName, schema.mapValuesStrict(genericRepFor))
 
   def dataLoader(version: datasetMap.CopyInfo): Managed[PrevettedLoader[Any]] = {
     val schemaInfo = datasetMap.schema(version)

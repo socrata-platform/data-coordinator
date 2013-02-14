@@ -11,12 +11,17 @@ import com.typesafe.config.ConfigFactory
 import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.packets.network.NetworkPackets
-import com.socrata.datacoordinator.packets.Packets
+import com.socrata.datacoordinator.packets.{PacketsInputStream, Packets}
 import com.socrata.datacoordinator.truth.loader.Delogger
-import com.socrata.datacoordinator.id.DatasetId
+import com.socrata.datacoordinator.id.{ColumnId, DatasetId}
 import com.socrata.datacoordinator.common.soql.SoQLRowLogCodec
 import com.socrata.datacoordinator.truth.sql.DatabasePopulator
 import com.socrata.datacoordinator.common.StandardDatasetMapLimits
+import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, LifecycleStage, DatasetInfo}
+import com.socrata.datacoordinator.util.collection.{MutableColumnIdMap, ColumnIdMap}
+import org.xerial.snappy.SnappyInputStream
+import java.io.InputStreamReader
+import util.control.ControlThrowable
 
 final abstract class Receiver
 
@@ -79,10 +84,6 @@ object Receiver extends App {
     }
   }
 
-  sealed abstract class AcceptResult
-  case object Ok extends AcceptResult
-  case object Resyncing extends AcceptResult
-
   def openConnection(): Connection =
     DriverManager.getConnection(receiverConfig.getString("database.url"), receiverConfig.getString("database.username"), receiverConfig.getString("database.password"))
 
@@ -91,96 +92,174 @@ object Receiver extends App {
       conn.setAutoCommit(false)
       val backup = new Backup(conn, executor, paranoid = true)
 
-      backup.datasetMap.datasetInfo(datasetId) match {
-        case Some(datasetInfo) =>
-          val initialVersion = backup.datasetMap.latest(datasetInfo)
-          log.info("I have version {} of dataset {}", initialVersion.dataVersion, datasetInfo.systemId.underlying)
-          if(initialVersion.dataVersion >= version) {
-            log.info("Telling primary that I already have that version")
-            client.send(AlreadyHaveThat())
-          } else if(initialVersion.dataVersion < version - 1) {
-            log.info("I am farther behind than that.  Resyncing.")
-            resync(datasetId, client)
-          } else {
-            log.info("I have the previous version; telling primary to go ahead")
-            client.send(WillingToAccept())
-            acceptItAll(conn, backup)(initialVersion, client, version) match {
-              case Ok =>
-              // great
-              case Resyncing =>
-                resync(datasetId, client)
+      try {
+        backup.datasetMap.datasetInfo(datasetId) match {
+          case Some(datasetInfo) =>
+            receiveUpdate(conn, backup, client)(datasetInfo, version)
+          case None =>
+            log.info("I do not have dataset {}", datasetId.underlying)
+            if(version == 1) {
+              receiveCreate(conn, backup, client)(datasetId, version)
+            } else {
+              log.info("Can't find the dataset, and it is not version 1 we just received.  Resyncing.")
+              throw new AbortToResync
             }
-          }
-        case None =>
-          if(version == 1) {
-            log.info("New dataset.  Telling the primary to go ahead")
-            client.send(WillingToAccept())
-            client.receive() match {
-              case Some(LogData(Delogger.WorkingCopyCreated(ci))) =>
-                log.info("Creating initial copy")
-                val initialCopy = backup.createDataset(ci)
-                acceptItAll(conn, backup)(initialCopy, client, version) match {
-                  case Ok =>
-                    // great
-                  case Resyncing =>
-                    resync(datasetId, client)
-                }
-              case Some(_) =>
-                ??? // TODO: first message wasn't "working copy created?"
-              case None =>
-                ??? // TODO: EOF
-            }
-          } else {
-            ??? // TODO: can't find the dataset, and we're not creating it?
-          }
+        }
+      } catch {
+        case _: AbortToResync =>
+          conn.rollback()
+          resync(conn, backup, datasetId, client)
+      } finally {
+        conn.rollback() // If we got a full response, we committed it earlier.  This SHOULD be a no-op.  No way to actually tell though.
       }
     }
   }
 
-  def resync(datasetId: DatasetId, client: Packets) {
-    client.send(ResyncRequired())
-    waitForResyncAck(client)
-    ??? // TODO
+  class AbortToResync extends ControlThrowable
+
+  def receiveCreate(conn: Connection, backup: Backup, client: Packets)(datasetId: DatasetId, version: Long) {
+    log.info("New dataset.  Telling the primary to go ahead")
+    client.send(WillingToAccept())
+    client.receive() match {
+      case Some(LogData(Delogger.WorkingCopyCreated(ci))) =>
+        log.info("Creating initial copy")
+        val initialCopy = backup.createDataset(ci)
+        acceptItAll(conn, backup)(initialCopy, client, version)
+      case Some(LogData(_)) | Some(DataDone()) =>
+        log.warn("Got version 1 of dataset {} but the first event was not WorkingCopyCreated?  Resyncing!", datasetId.underlying)
+        throw new AbortToResync
+      case Some(_) =>
+        ??? // TODO: unexpected packet
+      case None =>
+        ??? // TODO: EOF
+    }
   }
 
-  def waitForResyncAck(client: Packets) {
-    def loop() {
+  def receiveUpdate(conn: Connection, backup: Backup, client: Packets)(datasetInfo: backup.datasetMap.DatasetInfo, version: Long) {
+    val initialVersion = backup.datasetMap.latest(datasetInfo)
+    log.info("I have version {} of the dataset {}", initialVersion.dataVersion, datasetInfo.systemId.underlying)
+    if(initialVersion.dataVersion >= version) {
+      log.info("Telling primary that I already have that version")
+      client.send(AlreadyHaveThat())
+    } else if(initialVersion.dataVersion < version - 1) {
+      log.info("I am farther behind than that.  Resyncing.")
+      throw new AbortToResync
+    } else {
+      log.info("I have the previous version; telling primary to go ahead")
+      client.send(WillingToAccept())
+      acceptItAll(conn, backup)(initialVersion, client, version)
+    }
+  }
+
+  def acceptItAll(conn: Connection, backup: Backup)(initialCopyInfo: backup.datasetMap.CopyInfo, client: Packets, version: Long) {
+    try {
+      @tailrec
+      def loop(copy: backup.datasetMap.CopyInfo): backup.datasetMap.CopyInfo = {
+        client.receive(dataTimeout) match {
+          case Some(LogData(d)) =>
+            log.debug("Processing a record of type {}", d.productPrefix)
+            loop(backup.dispatch(copy, d))
+          case Some(DataDone()) =>
+            log.info("Version {} completed", version)
+            copy
+          case Some(_) =>
+            ??? // TODO: Unexpected packet
+          case None =>
+            ??? // TODO: EOF
+        }
+      }
+
+      val finalCopyInfo = loop(initialCopyInfo)
+      backup.updateVersion(finalCopyInfo, version)
+    } catch {
+      case e: /* Resync */Exception =>
+        throw new AbortToResync
+    }
+
+    conn.commit()
+    log.info("Committed; informing the primary", version)
+    client.send(AcknowledgeReceipt())
+  }
+
+  def resync(conn: Connection, backup: Backup, datasetId: DatasetId, client: Packets) {
+    client.send(ResyncRequired())
+    val datasetInfo = waitForResyncAck(client)
+    assert(datasetInfo.systemId == datasetId, "Dataset info received in response to resync request was not the same dataset")
+    receiveResync(conn, backup, client, datasetInfo)
+  }
+
+  def waitForResyncAck(client: Packets): DatasetInfo = {
+    def loop(): DatasetInfo = {
       client.receive(dataTimeout) match {
-        case Some(LogData(_)) => loop()
-        case Some(DataDone()) => loop()
-        case Some(WillResync()) => // done
-        case None =>
+        case Some(WillResync(datasetInfo)) => datasetInfo
+        case Some(LogData(_)) | Some(DataDone()) => loop()
+        case Some(_) => ??? // TODO: unexpected packet
+        case None => ??? // TODO: EOF
       }
     }
     loop()
   }
 
-  def acceptItAll(conn: Connection, backup: Backup)(initialCopyInfo: backup.datasetMap.CopyInfo, client: Packets, version: Long): AcceptResult = {
-    @tailrec
-    def loop(copy: backup.datasetMap.CopyInfo): backup.datasetMap.CopyInfo = {
-      client.receive(dataTimeout) match {
-        case Some(LogData(d)) =>
-          log.info("Processing a record of type {}", d.productPrefix)
-          loop(backup.dispatch(copy, d))
-        case Some(DataDone()) =>
-          log.info("Version {} completed", version)
-          copy
-        case None =>
-          log.warn("Unexpected EOF")
-          ??? // TODO
-      }
+  def receiveResync(conn: Connection, backup: Backup, client: Packets, datasetInfo: DatasetInfo) {
+    val clearedDatasetInfo = backup.datasetMap.datasetInfo(datasetInfo.systemId) match {
+      case Some(originalDatasetInfo) =>
+        using(conn.createStatement()) { stmt =>
+          for(copy <- backup.datasetMap.allCopies(originalDatasetInfo)) {
+            client.send(PreparingDatabaseForResync())
+            stmt.execute("DROP TABLE " + copy.dataTableName + " IF EXISTS")
+          }
+          client.send(PreparingDatabaseForResync())
+          stmt.execute("DROP TABLE " + datasetInfo.logTableName + " IF EXISTS")
+        }
+        backup.datasetMap.unsafeReloadDataset(originalDatasetInfo, datasetInfo.datasetId, datasetInfo.tableBaseBase, datasetInfo.nextRowId)
+      case None =>
+        backup.datasetMap.unsafeCreateDataset(datasetInfo.systemId, datasetInfo.datasetId, datasetInfo.tableBaseBase, datasetInfo.nextRowId)
     }
 
-    try {
-      backup.updateVersion(loop(initialCopyInfo), version)
-      conn.commit()
-      log.info("Committed; informing the primary", version)
-      client.send(AcknowledgeReceipt())
-      Ok
-    } catch {
-      case e: /* Resync */Exception =>
-        conn.rollback()
-        Resyncing
+    @tailrec
+    def loop() {
+      client.send(AwaitingNextCopy())
+      client.receive() match {
+        case Some(NextResyncCopy(copyInfo, columns)) =>
+          val copy = backup.datasetMap.unsafeCreateCopy(clearedDatasetInfo, copyInfo.systemId, copyInfo.copyNumber, copyInfo.lifecycleStage, copyInfo.dataVersion)
+
+          val schema = locally {
+            val createdColumns = new MutableColumnIdMap[backup.datasetMap.ColumnInfo]
+            for(col <- columns) {
+              val colInfo = backup.datasetMap.addColumnWithId(col.systemId, copy, col.logicalName, col.typeName, col.physicalColumnBaseBase)
+              createdColumns(colInfo.systemId) = colInfo
+            }
+            createdColumns.freeze()
+          }
+
+          if(copy.lifecycleStage != LifecycleStage.Discarded) {
+            backup.schemaLoader.create(copy)
+            for(colInfo <- schema.values) backup.schemaLoader.addColumn(colInfo)
+            copyDataForResync(backup, client)(copy, schema, columns.map(_.systemId))
+          }
+          loop()
+        case Some(NoMoreCopies()) =>
+          // done
+        case Some(_) =>
+          ??? // TODO: Unexpected packet
+        case None =>
+          ??? // TODO: EOF
+      }
+    }
+    loop()
+
+    conn.commit()
+    client.send(ResyncComplete())
+  }
+
+  def copyDataForResync(backup: Backup, client: Packets)(copyInfo: backup.datasetMap.CopyInfo, schema: ColumnIdMap[backup.datasetMap.ColumnInfo], columns: Seq[ColumnId]) {
+    val decsvifier = backup.decsvifier(copyInfo, schema)
+    for {
+      is <- managed(new PacketsInputStream(client, ResyncStreamDataLabel, ResyncStreamEndLabel, dataTimeout))
+      decompressed <- managed(new SnappyInputStream(is))
+      reader <- managed(new InputStreamReader(decompressed, "UTF-8"))
+    } {
+      decsvifier.importFromCsv(reader, columns)
     }
   }
 }
