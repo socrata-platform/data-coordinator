@@ -2,7 +2,7 @@ package com.socrata.datacoordinator.packets
 
 import scala.concurrent.duration.Duration
 
-import java.io.{InputStream, OutputStream}
+import java.io.{IOException, InputStream, OutputStream}
 import java.nio.ByteBuffer
 
 object PacketsStream {
@@ -80,16 +80,19 @@ class PacketsOutputStream(packets: Packets,
   val End = new PacketsStream.EndPacket(endLabel)
 
   private var currentPacket: PacketOutputStream = null
+  private var closed = false
 
   def freshPacket() = Data.packetOutputStream()
 
   def write(b: Int) {
+    if(closed) throw new IOException("Already closed")
     if(currentPacket == null) currentPacket = freshPacket()
     currentPacket.write(b)
     maybeFlush()
   }
 
   override def write(bs: Array[Byte], offset: Int, length: Int) {
+    if(closed) throw new IOException("Already closed")
     var hd = offset
     var rem = length
     while(rem > 0) {
@@ -107,6 +110,10 @@ class PacketsOutputStream(packets: Packets,
   }
 
   override def flush() {
+    if(!closed) doFlushEvenIfClosed()
+  }
+
+  private def doFlushEvenIfClosed() {
     if(currentPacket != null) {
       packets.send(currentPacket.packet(), writeTimeout)
       postWrite()
@@ -115,9 +122,12 @@ class PacketsOutputStream(packets: Packets,
   }
 
   override def close() {
-    flush()
-    packets.send(End(), writeTimeout)
-    postWrite()
+    if(!closed) {
+      closed = true
+      doFlushEvenIfClosed()
+      packets.send(End(), writeTimeout)
+      postWrite()
+    }
   }
 }
 
