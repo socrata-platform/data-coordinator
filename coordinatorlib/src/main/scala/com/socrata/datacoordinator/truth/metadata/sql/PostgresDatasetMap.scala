@@ -2,6 +2,8 @@ package com.socrata.datacoordinator
 package truth.metadata
 package sql
 
+import scala.collection.immutable.VectorBuilder
+
 import java.sql.{PreparedStatement, Connection}
 
 import org.postgresql.util.PSQLException
@@ -11,9 +13,7 @@ import com.socrata.datacoordinator.truth.{DatasetSystemIdInUseByWriterException,
 import com.socrata.datacoordinator.id._
 import com.socrata.datacoordinator.util.PostgresUniqueViolation
 import com.socrata.datacoordinator.util.collection.MutableColumnIdMap
-import scala.Some
 import com.socrata.datacoordinator.truth.metadata.CopyPair
-import scala.collection.immutable.VectorBuilder
 
 class PostgresDatasetMapReader(val conn: Connection) extends DatasetMapReader {
   def lockNotAvailableState = "55P03"
@@ -283,15 +283,17 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
     }
   }
 
-  // like file descriptors, new columns always get the smallest available ID
-  def firstFreeColumnIdQuery =
+  // like file descriptors, new columns always get the smallest available ID.  But "smallest available"
+  // means "not used by this version OR THE PREVIOUS VERSION" so we can track column identity across
+  // publication cycles.
+  def findFirstFreeColumnIdQuery =
     """-- Adapted from http://johtopg.blogspot.com/2010/07/smallest-available-id.html
       |-- Use zero if available
       |(SELECT
       |    0 AS next_system_id
       | WHERE
       |    NOT EXISTS
-      |        (SELECT 1 FROM column_map WHERE system_id = 0 AND copy_system_id = ?) )
+      |        (SELECT 1 FROM column_map WHERE system_id = 0 AND (copy_system_id = ? OR copy_system_id = ?)) )
       |
       |    UNION ALL
       |
@@ -306,7 +308,7 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
       |    FROM
       |        column_map
       |    WHERE
-      |        copy_system_id = ?
+      |        (copy_system_id = ? OR copy_system_id = ?)
       | ) ss
       | WHERE
       |    lead - system_id > 1 OR
@@ -321,10 +323,12 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
       |LIMIT
       |    1
       |""".stripMargin
-  def findFirstFreeColumnId(copyInfo: CopyInfo) = {
-    using(conn.prepareStatement(firstFreeColumnIdQuery)) { stmt =>
-      stmt.setLong(1, copyInfo.systemId.underlying)
-      stmt.setLong(2, copyInfo.systemId.underlying)
+  def findFirstFreeColumnId(copyInfoA: CopyInfo, copyInfoB: CopyInfo): ColumnId = {
+    using(conn.prepareStatement(findFirstFreeColumnIdQuery)) { stmt =>
+      stmt.setLong(1, copyInfoA.systemId.underlying)
+      stmt.setLong(2, copyInfoB.systemId.underlying)
+      stmt.setLong(3, copyInfoA.systemId.underlying)
+      stmt.setLong(4, copyInfoB.systemId.underlying)
       using(stmt.executeQuery()) { rs =>
         val foundSomething = rs.next()
         assert(foundSomething, "Finding the last column info didn't return anything?")
@@ -335,18 +339,13 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
 
   def addColumnQuery = "INSERT INTO column_map (system_id, copy_system_id, logical_column, type_name, physical_column_base_base) VALUES (?, ?, ?, ?, ?)"
   def addColumn(copyInfo: CopyInfo, logicalName: String, typeName: String, physicalColumnBaseBase: String): ColumnInfo = {
-    val systemId = locally {
-      val firstFreeHere = findFirstFreeColumnId(copyInfo)
+    val systemId =
       previousVersion(copyInfo) match {
         case Some(previousCopy) =>
-          // In order to ensure that column IDs can be used to track the logical identity of columns
-          // across publish cycles, we'll choose the first column ID which is not used by either this
-          // one OR the previous copy.
-          new ColumnId(firstFreeHere.underlying max findFirstFreeColumnId(previousCopy).underlying)
+          findFirstFreeColumnId(copyInfo, previousCopy)
         case None =>
-          firstFreeHere
+          findFirstFreeColumnId(copyInfo, copyInfo)
       }
-    }
 
     addColumnWithId(systemId, copyInfo, logicalName, typeName, physicalColumnBaseBase)
   }

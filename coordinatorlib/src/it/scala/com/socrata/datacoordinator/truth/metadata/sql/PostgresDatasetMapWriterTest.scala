@@ -252,6 +252,21 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
     }
   }
 
+  test("Adding a column to a table does not use IDs from this table or the previous version") {
+    withDb() { conn =>
+      val tables = new PostgresDatasetMapWriter(conn)
+      val vi0 = tables.create("hello", "world")
+      val ci0 = tables.addColumn(vi0, "col0", "typ0", "base0")
+      val ci1 = tables.addColumn(vi0, "col1", "typ1", "base1")
+      val vi1 = tables.ensureUnpublishedCopy(tables.publish(vi0).datasetInfo).right.get.newCopyInfo
+      val ci2 = tables.addColumn(vi1, "col2", "typ2", "base2")
+      tables.dropColumn(tables.schema(vi1)(new ColumnId(1)))
+      val ci3 = tables.addColumn(vi1, "col3", "typ3", "base3")
+
+      ci3.systemId must be (new ColumnId(3))
+    }
+  }
+
   test("Can delete a table entirely") {
     withDb() { conn =>
       val tables = new PostgresDatasetMapWriter(conn)
