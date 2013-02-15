@@ -91,23 +91,35 @@ trait SimpleRowLogCodec[CV] extends RowLogCodec[CV] {
 
   protected def encode(target: CodedOutputStream, row: Row[CV]) {
     target.writeInt32NoTag(row.size)
-    val it = row.iterator
-    while(it.hasNext) {
-      it.advance()
-      val k = it.key
-      val v = it.value
+
+    // A property we want is that serialize(deserialize(serialize(x)) == serialize(x)
+    // so we need to put the keys in the map in a defined order.
+    val map = row.unsafeUnderlying
+    val keys = map.keys()
+    java.util.Arrays.sort(keys)
+    var keyIdx = 0
+    while(keyIdx < keys.length) {
+      val key = keys(keyIdx)
+
+      val k = new ColumnId(key)
+      val v = map.get(key)
       writeKey(target, k)
       writeValue(target, v)
+
+      keyIdx += 1
     }
   }
 
   protected def decode(source: CodedInputStream) = {
     val count = source.readInt32()
     val result = new MutableRow[CV]
-    for(i <- 0 until count) {
+    var i = 0
+    while(i < count) {
       val k = readKey(source)
       val v = readValue(source)
       result(k) = v
+
+      i += 1
     }
     result.freeze()
   }
