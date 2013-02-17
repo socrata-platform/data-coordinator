@@ -14,17 +14,12 @@ import com.socrata.datacoordinator.id._
 import com.socrata.datacoordinator.util.PostgresUniqueViolation
 import com.socrata.datacoordinator.util.collection.MutableColumnIdMap
 import com.socrata.datacoordinator.truth.metadata.CopyPair
+import com.socrata.datacoordinator.truth.metadata.`-impl`.Tag
 
 class PostgresDatasetMapReader(val conn: Connection) extends DatasetMapReader {
+  implicit def tag: Tag = null
+
   def lockNotAvailableState = "55P03"
-
-  type DatasetInfo = SqlDatasetInfo
-  type CopyInfo = SqlCopyInfo
-  type ColumnInfo = SqlColumnInfo
-
-  case class SqlDatasetInfo(systemId: DatasetId, datasetId: String, tableBaseBase: String, nextRowId: RowId) extends IDatasetInfo
-  case class SqlCopyInfo(datasetInfo: DatasetInfo, systemId: CopyId, copyNumber: Long, lifecycleStage: LifecycleStage, dataVersion: Long) extends ICopyInfo
-  case class SqlColumnInfo(copyInfo: CopyInfo, systemId: ColumnId, logicalName: String, typeName: String, physicalColumnBaseBase: String, isSystemPrimaryKey: Boolean, isUserPrimaryKey: Boolean) extends IColumnInfo
 
   def snapshotCountQuery = "SELECT count(system_id) FROM copy_map WHERE dataset_system_id = ? AND lifecycle_stage = CAST(? AS dataset_lifecycle_stage)"
   def snapshotCount(dataset: DatasetInfo) =
@@ -42,8 +37,8 @@ class PostgresDatasetMapReader(val conn: Connection) extends DatasetMapReader {
     using(conn.prepareStatement(latestQuery)) { stmt =>
       stmt.setLong(1, datasetInfo.systemId.underlying)
       using(stmt.executeQuery()) { rs =>
-        if(!rs.next()) sys.error("Looked up a table for " + datasetInfo.datasetId + " but didn't find any copy info?")
-        SqlCopyInfo(
+        if(!rs.next()) sys.error("Looked up a table for " + datasetInfo.datasetName + " but didn't find any copy info?")
+        CopyInfo(
           datasetInfo,
           new CopyId(rs.getLong("system_id")),
           rs.getLong("copy_number"),
@@ -60,7 +55,7 @@ class PostgresDatasetMapReader(val conn: Connection) extends DatasetMapReader {
       using(stmt.executeQuery()) { rs =>
         val result = new VectorBuilder[CopyInfo]
         while(rs.next()) {
-          result += SqlCopyInfo(
+          result += CopyInfo(
             datasetInfo,
             new CopyId(rs.getLong("system_id")),
             rs.getLong("copy_number"),
@@ -80,7 +75,7 @@ class PostgresDatasetMapReader(val conn: Connection) extends DatasetMapReader {
       stmt.setInt(3, nth)
       using(stmt.executeQuery()) { rs =>
         if(rs.next()) {
-          Some(SqlCopyInfo(datasetInfo, new CopyId(rs.getLong("system_id")), rs.getLong("copy_number"), stage, rs.getLong("data_version")))
+          Some(CopyInfo(datasetInfo, new CopyId(rs.getLong("system_id")), rs.getLong("copy_number"), stage, rs.getLong("data_version")))
         } else {
           None
         }
@@ -95,7 +90,7 @@ class PostgresDatasetMapReader(val conn: Connection) extends DatasetMapReader {
       stmt.setLong(2, copyInfo.copyNumber)
       using(stmt.executeQuery()) { rs =>
         if(rs.next()) {
-          Some(SqlCopyInfo(
+          Some(CopyInfo(
             copyInfo.datasetInfo,
             new CopyId(rs.getLong("system_id")),
             rs.getLong("copy_number"),
@@ -115,7 +110,7 @@ class PostgresDatasetMapReader(val conn: Connection) extends DatasetMapReader {
       stmt.setLong(2, copyNumber)
       using(stmt.executeQuery()) { rs =>
         if(rs.next()) {
-          Some(SqlCopyInfo(
+          Some(CopyInfo(
             datasetInfo,
             new CopyId(rs.getLong("system_id")),
             copyNumber,
@@ -136,7 +131,7 @@ class PostgresDatasetMapReader(val conn: Connection) extends DatasetMapReader {
         val result = new MutableColumnIdMap[ColumnInfo]
         while(rs.next()) {
           val systemId = new ColumnId(rs.getLong("system_id"))
-          result += systemId -> SqlColumnInfo(
+          result += systemId -> ColumnInfo(
             copyInfo,
             systemId,
             rs.getString("logical_column"),
@@ -160,7 +155,7 @@ class PostgresDatasetMapReader(val conn: Connection) extends DatasetMapReader {
   def snapshot(datasetInfo: DatasetInfo, age: Int) =
     lookup(datasetInfo, LifecycleStage.Snapshotted, age)
 
-  def datasetInfoByUserIdQuery = "SELECT system_id, dataset_id, table_base_base, next_row_id FROM dataset_map WHERE dataset_id = ?"
+  def datasetInfoByUserIdQuery = "SELECT system_id, dataset_name, table_base_base, next_row_id FROM dataset_map WHERE dataset_name = ?"
   def datasetInfo(datasetId: String) =
     using(conn.prepareStatement(datasetInfoByUserIdQuery)) { stmt =>
       stmt.setString(1, datasetId)
@@ -175,13 +170,13 @@ class PostgresDatasetMapReader(val conn: Connection) extends DatasetMapReader {
   def extractDatasetInfoFromResultSet(stmt: PreparedStatement) =
     using(stmt.executeQuery) { rs =>
       if(rs.next()) {
-        Some(SqlDatasetInfo(new DatasetId(rs.getLong("system_id")), rs.getString("dataset_id"), rs.getString("table_base_base"), new RowId(rs.getLong("next_row_id"))))
+        Some(DatasetInfo(new DatasetId(rs.getLong("system_id")), rs.getString("dataset_name"), rs.getString("table_base_base"), new RowId(rs.getLong("next_row_id"))))
       } else {
         None
       }
     }
 
-  def datasetInfoBySystemIdQuery = "SELECT system_id, dataset_id, table_base_base, next_row_id FROM dataset_map WHERE system_id = ?"
+  def datasetInfoBySystemIdQuery = "SELECT system_id, dataset_name, table_base_base, next_row_id FROM dataset_map WHERE system_id = ?"
   def datasetInfo(datasetId: DatasetId) = {
     using(conn.prepareStatement(datasetInfoBySystemIdQuery)) { stmt =>
       stmt.setLong(1, datasetId.underlying)
@@ -201,12 +196,12 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
   override def datasetInfoByUserIdQuery = super.datasetInfoByUserIdQuery + " FOR UPDATE NOWAIT"
   override def datasetInfoBySystemIdQuery = super.datasetInfoBySystemIdQuery + " FOR UPDATE NOWAIT"
 
-  def createQuery_tableMap = "INSERT INTO dataset_map (dataset_id, table_base_base, next_row_id) VALUES (?, ?, ?) RETURNING system_id"
+  def createQuery_tableMap = "INSERT INTO dataset_map (dataset_name, table_base_base, next_row_id) VALUES (?, ?, ?) RETURNING system_id"
   def createQuery_copyMap = "INSERT INTO copy_map (dataset_system_id, copy_number, lifecycle_stage, data_version) VALUES (?, ?, CAST(? AS dataset_lifecycle_stage), ?) RETURNING system_id"
   def create(datasetId: String, tableBaseBase: String): CopyInfo = {
     val datasetInfo = using(conn.prepareStatement(createQuery_tableMap)) { stmt =>
-      val datasetInfoNoSystemId = SqlDatasetInfo(new DatasetId(-1), datasetId, tableBaseBase, RowId.initial)
-      stmt.setString(1, datasetInfoNoSystemId.datasetId)
+      val datasetInfoNoSystemId = DatasetInfo(new DatasetId(-1), datasetId, tableBaseBase, RowId.initial)
+      stmt.setString(1, datasetInfoNoSystemId.datasetName)
       stmt.setString(2, datasetInfoNoSystemId.tableBaseBase)
       stmt.setLong(3, datasetInfoNoSystemId.nextRowId.underlying)
       try {
@@ -222,7 +217,7 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
     }
 
     using(conn.prepareStatement(createQuery_copyMap)) { stmt =>
-      val copyInfoNoSystemId = SqlCopyInfo(datasetInfo, new CopyId(-1), 1, LifecycleStage.Unpublished, 0)
+      val copyInfoNoSystemId = CopyInfo(datasetInfo, new CopyId(-1), 1, LifecycleStage.Unpublished, 0)
 
       stmt.setLong(1, copyInfoNoSystemId.datasetInfo.systemId.underlying)
       stmt.setLong(2, copyInfoNoSystemId.copyNumber)
@@ -241,7 +236,7 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
     val datasetInfo = unsafeCreateDataset(systemId, datasetId, tableBaseBase, RowId.initial)
 
     using(conn.prepareStatement(createQuery_copyMapWithSystemId)) { stmt =>
-      val copyInfo = SqlCopyInfo(datasetInfo, initialCopyId, 1, LifecycleStage.Unpublished, 0)
+      val copyInfo = CopyInfo(datasetInfo, initialCopyId, 1, LifecycleStage.Unpublished, 0)
 
       stmt.setLong(1, copyInfo.systemId.underlying)
       stmt.setLong(2, copyInfo.datasetInfo.systemId.underlying)
@@ -352,7 +347,7 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
 
   def addColumnWithId(systemId: ColumnId, copyInfo: CopyInfo, logicalName: String, typeName: String, physicalColumnBaseBase: String): ColumnInfo = {
     using(conn.prepareStatement(addColumnQuery)) { stmt =>
-      val columnInfo = SqlColumnInfo(copyInfo, systemId, logicalName, typeName, physicalColumnBaseBase, isSystemPrimaryKey = false, isUserPrimaryKey = false)
+      val columnInfo = ColumnInfo(copyInfo, systemId, logicalName, typeName, physicalColumnBaseBase, isSystemPrimaryKey = false, isUserPrimaryKey = false)
 
       stmt.setLong(1, columnInfo.systemId.underlying)
       stmt.setLong(2, columnInfo.copyInfo.systemId.underlying)
@@ -372,13 +367,13 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
     }
   }
 
-  def unsafeCreateDatasetQuery = "INSERT INTO dataset_map (system_id, dataset_id, table_base_base, next_row_id) VALUES (?, ?, ?, ?)"
+  def unsafeCreateDatasetQuery = "INSERT INTO dataset_map (system_id, dataset_name, table_base_base, next_row_id) VALUES (?, ?, ?, ?)"
   def unsafeCreateDataset(systemId: DatasetId, datasetId: String, tableBaseBase: String, nextRowId: RowId): DatasetInfo = {
-    val datasetInfo = SqlDatasetInfo(systemId, datasetId, tableBaseBase, nextRowId)
+    val datasetInfo = DatasetInfo(systemId, datasetId, tableBaseBase, nextRowId)
 
     using(conn.prepareStatement(unsafeCreateDatasetQuery)) { stmt =>
       stmt.setLong(1, datasetInfo.systemId.underlying)
-      stmt.setString(2, datasetInfo.datasetId)
+      stmt.setString(2, datasetInfo.datasetName)
       stmt.setString(3, datasetInfo.tableBaseBase)
       stmt.setLong(4, datasetInfo.nextRowId.underlying)
       try {
@@ -386,7 +381,7 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
       } catch {
         case PostgresUniqueViolation("system_id") =>
           throw new DatasetSystemIdAlreadyInUse(systemId)
-        case PostgresUniqueViolation("dataset_id") =>
+        case PostgresUniqueViolation("dataset_name") =>
           throw new DatasetAlreadyExistsException(datasetId)
       }
     }
@@ -394,15 +389,15 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
     datasetInfo
   }
 
-  val unsafeReloadDatasetQuery = "UPDATE dataset_map SET dataset_id = ?, table_base_base = ?, next_row_id = ? WHERE system_id = ?"
+  val unsafeReloadDatasetQuery = "UPDATE dataset_map SET dataset_name = ?, table_base_base = ?, next_row_id = ? WHERE system_id = ?"
   def unsafeReloadDataset(datasetInfo: DatasetInfo,
                           datasetId: String,
                           tableBaseBase: String,
                           nextRowId: RowId): DatasetInfo = {
-    val newDatasetInfo = SqlDatasetInfo(datasetInfo.systemId, datasetId, tableBaseBase, nextRowId)
+    val newDatasetInfo = DatasetInfo(datasetInfo.systemId, datasetId, tableBaseBase, nextRowId)
 
     using(conn.prepareStatement(unsafeReloadDatasetQuery)) { stmt =>
-      stmt.setString(1, newDatasetInfo.datasetId)
+      stmt.setString(1, newDatasetInfo.datasetName)
       stmt.setString(2, newDatasetInfo.tableBaseBase)
       stmt.setLong(3, newDatasetInfo.nextRowId.underlying)
       stmt.setLong(4, newDatasetInfo.systemId.underlying)
@@ -410,7 +405,7 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
         val updated = stmt.executeUpdate()
         assert(updated == 1, s"Dataset ${datasetInfo.systemId.underlying} does not exist?")
       } catch {
-        case PostgresUniqueViolation("dataset_id") =>
+        case PostgresUniqueViolation("dataset_name") =>
           throw new DatasetAlreadyExistsException(datasetId)
       }
     }
@@ -426,7 +421,7 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
                        copyNumber: Long,
                        lifecycleStage: LifecycleStage,
                        dataVersion: Long): CopyInfo = {
-    val newCopy = SqlCopyInfo(datasetInfo, systemId, copyNumber, lifecycleStage, dataVersion)
+    val newCopy = CopyInfo(datasetInfo, systemId, copyNumber, lifecycleStage, dataVersion)
 
     using(conn.prepareStatement(unsafeCreateCopyQuery)) { stmt =>
       stmt.setLong(1, newCopy.systemId.underlying)

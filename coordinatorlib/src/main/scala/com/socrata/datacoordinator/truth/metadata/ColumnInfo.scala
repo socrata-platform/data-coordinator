@@ -8,8 +8,9 @@ import com.rojoma.json.matcher.{PObject, Variable}
 import com.rojoma.json.ast.JValue
 
 import com.socrata.datacoordinator.id.ColumnId
+import com.rojoma.json.util.{AutomaticJsonCodecBuilder, JsonKey}
 
-trait ColumnInfoLike extends Product {
+sealed trait ColumnInfoLike extends Product {
   val systemId: ColumnId
   val logicalName: String
   val typeName: String
@@ -18,124 +19,24 @@ trait ColumnInfoLike extends Product {
   val isUserPrimaryKey: Boolean
 
   lazy val physicalColumnBase = physicalColumnBaseBase + "_" + systemId.underlying
-
-  override final def hashCode = ScalaRunTime._hashCode(this)
-  override final def toString = ScalaRunTime._toString(this)
 }
 
-trait UnanchoredColumnInfo extends ColumnInfoLike {
-  override final def productPrefix = "UnanchoredColumnInfo"
-  override final def equals(o: Any) = o match {
-    case that: UnanchoredColumnInfo =>
-      ScalaRunTime._equals(this, that)
-    case _ =>
-      false
-  }
+case class UnanchoredColumnInfo(@JsonKey("sid") systemId: ColumnId,
+                                @JsonKey("name") logicalName: String,
+                                @JsonKey("type") typeName: String,
+                                @JsonKey("base") physicalColumnBaseBase: String,
+                                @JsonKey("spk") isSystemPrimaryKey: Boolean,
+                                @JsonKey("upk") isUserPrimaryKey: Boolean) extends ColumnInfoLike
+
+object UnanchoredColumnInfo extends ((ColumnId, String, String, String, Boolean, Boolean) => UnanchoredColumnInfo) {
+  override def toString = "UnanchoredColumnInfo"
+  implicit val jCodec = AutomaticJsonCodecBuilder[UnanchoredColumnInfo]
 }
 
-case class SimpleUnanchoredColumnInfo(systemId: ColumnId, logicalName: String, typeName: String, physicalColumnBaseBase: String, isSystemPrimaryKey: Boolean, isUserPrimaryKey: Boolean) extends UnanchoredColumnInfo {
-  final def canonicalType = classOf[UnanchoredColumnInfo]
-}
-
-object UnanchoredColumnInfo {
-  implicit object jCodec extends JsonCodec[UnanchoredColumnInfo] {
-    val systemIdVar = Variable[ColumnId]
-    val logicalNameVar = Variable[String]
-    val typeNameVar = Variable[String]
-    val physicalColumnBaseBaseVar = Variable[String]
-    val isSystemPrimaryKeyVar = Variable[Boolean]
-    val isUserPrimaryKeyVar = Variable[Boolean]
-
-    val PColumnInfo = PObject(
-      "sid" -> systemIdVar,
-      "name" -> logicalNameVar,
-      "type" -> typeNameVar,
-      "base" -> physicalColumnBaseBaseVar,
-      "spk" -> isSystemPrimaryKeyVar,
-      "upk" -> isUserPrimaryKeyVar
-    )
-
-    def encode(x: UnanchoredColumnInfo) = PColumnInfo.generate(
-      systemIdVar := x.systemId,
-      logicalNameVar := x.logicalName,
-      typeNameVar := x.typeName,
-      physicalColumnBaseBaseVar := x.physicalColumnBaseBase,
-      isSystemPrimaryKeyVar := x.isSystemPrimaryKey,
-      isUserPrimaryKeyVar := x.isUserPrimaryKey
-    )
-
-    def decode(x: JValue) = PColumnInfo.matches(x) map { results =>
-      SimpleUnanchoredColumnInfo(
-        systemId = systemIdVar(results),
-        logicalName = logicalNameVar(results),
-        typeName = typeNameVar(results),
-        physicalColumnBaseBase = physicalColumnBaseBaseVar(results),
-        isSystemPrimaryKey = isSystemPrimaryKeyVar(results),
-        isUserPrimaryKey = isUserPrimaryKeyVar(results)
-      )
-    }
-  }
-}
-
-trait ColumnInfo extends ColumnInfoLike {
-  val copyInfo: CopyInfo
-
-  override final def productPrefix = "ColumnInfo"
-  override final def equals(o: Any) = o match {
-    case that: ColumnInfo =>
-      ScalaRunTime._equals(this, that)
-    case _ =>
-      false
-  }
-
-  def withCopyInfo(ci: CopyInfo): ColumnInfo =
-    SimpleColumnInfo(ci, systemId, logicalName, typeName, physicalColumnBaseBase, isSystemPrimaryKey, isUserPrimaryKey)
-
-  def unanchored: UnanchoredColumnInfo = SimpleUnanchoredColumnInfo(systemId, logicalName, typeName, physicalColumnBaseBase, isSystemPrimaryKey, isUserPrimaryKey)
-}
-
-case class SimpleColumnInfo(copyInfo: CopyInfo, systemId: ColumnId, logicalName: String, typeName: String, physicalColumnBaseBase: String, isSystemPrimaryKey: Boolean, isUserPrimaryKey: Boolean) extends ColumnInfo
-
-object ColumnInfo {
-  implicit object jCodec extends JsonCodec[ColumnInfo] {
-    val copyInfoVar = Variable[CopyInfo]
-    val systemIdVar = Variable[ColumnId]
-    val logicalNameVar = Variable[String]
-    val typeNameVar = Variable[String]
-    val physicalColumnBaseBaseVar = Variable[String]
-    val isSystemPrimaryKeyVar = Variable[Boolean]
-    val isUserPrimaryKeyVar = Variable[Boolean]
-
-    val PColumnInfo = PObject(
-      "copy" -> copyInfoVar,
-      "sid" -> systemIdVar,
-      "name" -> logicalNameVar,
-      "type" -> typeNameVar,
-      "base" -> physicalColumnBaseBaseVar,
-      "spk" -> isSystemPrimaryKeyVar,
-      "upk" -> isUserPrimaryKeyVar
-    )
-
-    def encode(x: ColumnInfo) = PColumnInfo.generate(
-      copyInfoVar := x.copyInfo,
-      systemIdVar := x.systemId,
-      logicalNameVar := x.logicalName,
-      typeNameVar := x.typeName,
-      physicalColumnBaseBaseVar := x.physicalColumnBaseBase,
-      isSystemPrimaryKeyVar := x.isSystemPrimaryKey,
-      isUserPrimaryKeyVar := x.isUserPrimaryKey
-    )
-
-    def decode(x: JValue) = PColumnInfo.matches(x) map { results =>
-      SimpleColumnInfo(
-        copyInfo = copyInfoVar(results),
-        systemId = systemIdVar(results),
-        logicalName = logicalNameVar(results),
-        typeName = typeNameVar(results),
-        physicalColumnBaseBase = physicalColumnBaseBaseVar(results),
-        isSystemPrimaryKey = isSystemPrimaryKeyVar(results),
-        isUserPrimaryKey = isUserPrimaryKeyVar(results)
-      )
-    }
-  }
+/** This class should not be instantiated except by a [[com.socrata.datacoordinator.truth.metadata.DatasetMapReader]]
+  * or [[com.socrata.datacoordinator.truth.metadata.DatasetMapWriter]].
+  * @param tag Guard against a non-map accidentially instantiating this.
+  */
+case class ColumnInfo(copyInfo: CopyInfo, systemId: ColumnId, logicalName: String, typeName: String, physicalColumnBaseBase: String, isSystemPrimaryKey: Boolean, isUserPrimaryKey: Boolean)(implicit tag: com.socrata.datacoordinator.truth.metadata.`-impl`.Tag)  extends ColumnInfoLike {
+  def unanchored: UnanchoredColumnInfo = UnanchoredColumnInfo(systemId, logicalName, typeName, physicalColumnBaseBase, isSystemPrimaryKey, isUserPrimaryKey)
 }

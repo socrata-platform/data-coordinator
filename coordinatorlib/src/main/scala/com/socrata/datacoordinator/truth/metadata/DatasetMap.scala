@@ -30,7 +30,7 @@ trait DatasetMapWriter extends DatasetMapReader with `-impl`.BaseDatasetMapWrite
     * @note Does not change the actual table; this just updates the bookkeeping.
     * @return The new column
     * @throws ColumnAlreadyExistsException if the column already exists */
-  def addColumn(copyInfo: CopyInfo, logicalName: String, typeName: String, physicalColumnBase: String): ColumnInfo
+  def addColumn(copyInfo: CopyInfo, logicalName: String, typeName: String, physicalColumnBaseBase: String): ColumnInfo
 }
 
 trait BackupDatasetMap extends DatasetMapReader with `-impl`.BaseDatasetMapWriter {

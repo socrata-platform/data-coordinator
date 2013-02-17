@@ -6,17 +6,13 @@ import scala.io.Codec
 
 import java.sql.{PreparedStatement, Connection}
 
-import com.rojoma.json.ast._
 import com.rojoma.json.util.JsonUtil
-import com.rojoma.json.codec.JsonCodec
-import com.rojoma.json.io.CompactJsonWriter
 import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.util.Counter
 import com.socrata.datacoordinator.truth.RowLogCodec
 import com.socrata.datacoordinator.truth.metadata.{CopyInfo, ColumnInfo}
 import com.socrata.datacoordinator.id.RowId
-import com.socrata.datacoordinator.util.collection.ColumnIdMap
 
 class SqlLogger[CV](connection: Connection,
                     logTableName: String,
@@ -97,39 +93,39 @@ class SqlLogger[CV](connection: Connection,
   def columnCreated(info: ColumnInfo) {
     checkTxn()
     flushRowData()
-    logLine(SqlLogger.ColumnCreated, JsonUtil.renderJson(info))
+    logLine(SqlLogger.ColumnCreated, JsonUtil.renderJson(info.unanchored))
   }
 
   def columnRemoved(info: ColumnInfo) {
     checkTxn()
     flushRowData()
-    logLine(SqlLogger.ColumnRemoved, JsonUtil.renderJson(info))
+    logLine(SqlLogger.ColumnRemoved, JsonUtil.renderJson(info.unanchored))
   }
 
   def rowIdentifierSet(info: ColumnInfo) {
     checkTxn()
     flushRowData()
-    logLine(SqlLogger.RowIdentifierSet, CompactJsonWriter.toString(JsonCodec.toJValue(info)))
+    logLine(SqlLogger.RowIdentifierSet, JsonUtil.renderJson(info.unanchored))
   }
 
   def rowIdentifierCleared(info: ColumnInfo) {
     checkTxn()
     flushRowData()
-    logLine(SqlLogger.RowIdentifierCleared, CompactJsonWriter.toString(JsonCodec.toJValue(info)))
+    logLine(SqlLogger.RowIdentifierCleared, JsonUtil.renderJson(info.unanchored))
   }
 
   def systemIdColumnSet(info: ColumnInfo) {
     checkTxn()
     flushRowData()
-    val columnJson = JsonCodec.toJValue(info)
-    logLine(SqlLogger.SystemRowIdentifierChanged, CompactJsonWriter.toString(columnJson))
+    logLine(SqlLogger.SystemRowIdentifierChanged, JsonUtil.renderJson(info.unanchored))
   }
 
   def workingCopyCreated(info: CopyInfo) {
     checkTxn()
     flushRowData()
-    val versionJson = JsonCodec.toJValue(info)
-    logLine(SqlLogger.WorkingCopyCreated, CompactJsonWriter.toString(versionJson))
+    val datasetJson = JsonUtil.renderJson(info.datasetInfo.unanchored)
+    val versionJson = JsonUtil.renderJson(info.unanchored)
+    logLine(SqlLogger.WorkingCopyCreated, datasetJson + "\n" + versionJson)
   }
 
   def dataCopied() {

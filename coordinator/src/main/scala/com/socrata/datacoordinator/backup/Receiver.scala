@@ -17,11 +17,14 @@ import com.socrata.datacoordinator.id.{ColumnId, DatasetId}
 import com.socrata.datacoordinator.common.soql.SoQLRowLogCodec
 import com.socrata.datacoordinator.truth.sql.DatabasePopulator
 import com.socrata.datacoordinator.common.StandardDatasetMapLimits
-import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, LifecycleStage, DatasetInfo}
+import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.util.collection.{MutableColumnIdMap, ColumnIdMap}
 import org.xerial.snappy.SnappyInputStream
 import java.io.InputStreamReader
 import util.control.ControlThrowable
+import scala.Some
+import com.socrata.datacoordinator.truth.metadata.DatasetInfo
+import com.socrata.datacoordinator.truth.metadata.CopyInfo
 
 final abstract class Receiver
 
@@ -121,9 +124,9 @@ object Receiver extends App {
     log.info("New dataset.  Telling the primary to go ahead")
     client.send(WillingToAccept())
     client.receive() match {
-      case Some(LogData(Delogger.WorkingCopyCreated(ci))) =>
+      case Some(LogData(Delogger.WorkingCopyCreated(di, ci))) =>
         log.info("Creating initial copy")
-        val initialCopy = backup.createDataset(ci)
+        val initialCopy = backup.createDataset(di, ci)
         acceptItAll(conn, backup)(initialCopy, client, version)
       case Some(LogData(_)) | Some(DataDone()) =>
         log.warn("Got version 1 of dataset {} but the first event was not WorkingCopyCreated?  Resyncing!", datasetId.underlying)
@@ -135,7 +138,7 @@ object Receiver extends App {
     }
   }
 
-  def receiveUpdate(conn: Connection, backup: Backup, client: Packets)(datasetInfo: backup.datasetMap.DatasetInfo, version: Long) {
+  def receiveUpdate(conn: Connection, backup: Backup, client: Packets)(datasetInfo: DatasetInfo, version: Long) {
     val initialVersion = backup.datasetMap.latest(datasetInfo)
     log.info("I have version {} of the dataset {}", initialVersion.dataVersion, datasetInfo.systemId.underlying)
     if(initialVersion.dataVersion >= version) {
@@ -151,10 +154,10 @@ object Receiver extends App {
     }
   }
 
-  def acceptItAll(conn: Connection, backup: Backup)(initialCopyInfo: backup.datasetMap.CopyInfo, client: Packets, version: Long) {
+  def acceptItAll(conn: Connection, backup: Backup)(initialCopyInfo: CopyInfo, client: Packets, version: Long) {
     try {
       @tailrec
-      def loop(copy: backup.datasetMap.CopyInfo): backup.datasetMap.CopyInfo = {
+      def loop(copy: CopyInfo): CopyInfo = {
         client.receive(dataTimeout) match {
           case Some(LogData(d)) =>
             log.debug("Processing a record of type {}", d.productPrefix)
@@ -188,8 +191,8 @@ object Receiver extends App {
     receiveResync(conn, backup, client, datasetInfo)
   }
 
-  def waitForResyncAck(client: Packets): DatasetInfo = {
-    def loop(): DatasetInfo = {
+  def waitForResyncAck(client: Packets): UnanchoredDatasetInfo = {
+    def loop(): UnanchoredDatasetInfo = {
       client.receive(dataTimeout) match {
         case Some(WillResync(datasetInfo)) => datasetInfo
         case Some(LogData(_)) | Some(DataDone()) => loop()
@@ -200,7 +203,7 @@ object Receiver extends App {
     loop()
   }
 
-  def receiveResync(conn: Connection, backup: Backup, client: Packets, datasetInfo: DatasetInfo) {
+  def receiveResync(conn: Connection, backup: Backup, client: Packets, datasetInfo: UnanchoredDatasetInfo) {
     val clearedDatasetInfo = backup.datasetMap.datasetInfo(datasetInfo.systemId) match {
       case Some(originalDatasetInfo) =>
         using(conn.createStatement()) { stmt =>
@@ -211,9 +214,9 @@ object Receiver extends App {
           client.send(PreparingDatabaseForResync())
           stmt.execute("DROP TABLE " + datasetInfo.logTableName + " IF EXISTS")
         }
-        backup.datasetMap.unsafeReloadDataset(originalDatasetInfo, datasetInfo.datasetId, datasetInfo.tableBaseBase, datasetInfo.nextRowId)
+        backup.datasetMap.unsafeReloadDataset(originalDatasetInfo, datasetInfo.datasetName, datasetInfo.tableBaseBase, datasetInfo.nextRowId)
       case None =>
-        backup.datasetMap.unsafeCreateDataset(datasetInfo.systemId, datasetInfo.datasetId, datasetInfo.tableBaseBase, datasetInfo.nextRowId)
+        backup.datasetMap.unsafeCreateDataset(datasetInfo.systemId, datasetInfo.datasetName, datasetInfo.tableBaseBase, datasetInfo.nextRowId)
     }
 
     @tailrec
@@ -224,7 +227,7 @@ object Receiver extends App {
           val copy = backup.datasetMap.unsafeCreateCopy(clearedDatasetInfo, copyInfo.systemId, copyInfo.copyNumber, copyInfo.lifecycleStage, copyInfo.dataVersion)
 
           val schema = locally {
-            val createdColumns = new MutableColumnIdMap[backup.datasetMap.ColumnInfo]
+            val createdColumns = new MutableColumnIdMap[ColumnInfo]
             for(col <- columns) {
               val colInfo = backup.datasetMap.addColumnWithId(col.systemId, copy, col.logicalName, col.typeName, col.physicalColumnBaseBase)
               createdColumns(colInfo.systemId) = colInfo
@@ -252,7 +255,7 @@ object Receiver extends App {
     client.send(ResyncComplete())
   }
 
-  def copyDataForResync(backup: Backup, client: Packets)(copyInfo: backup.datasetMap.CopyInfo, schema: ColumnIdMap[backup.datasetMap.ColumnInfo], columns: Seq[ColumnId]) {
+  def copyDataForResync(backup: Backup, client: Packets)(copyInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo], columns: Seq[ColumnId]) {
     val decsvifier = backup.decsvifier(copyInfo, schema)
     for {
       is <- managed(new PacketsInputStream(client, ResyncStreamDataLabel, ResyncStreamEndLabel, dataTimeout))

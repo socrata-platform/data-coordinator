@@ -51,7 +51,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       val tables = new PostgresDatasetMapWriter(conn)
       val vi = tables.create("hello", "world")
 
-      vi.datasetInfo.datasetId must be ("hello")
+      vi.datasetInfo.datasetName must be ("hello")
       vi.datasetInfo.tableBaseBase must be ("world")
       vi.lifecycleStage must be (LifecycleStage.Unpublished)
       vi.copyNumber must be (1)
@@ -85,7 +85,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
       tables.setUserPrimaryKey(ci)
 
-      tables.schema(vi) must equal (ColumnIdMap(ci.systemId -> ci.copy(isUserPrimaryKey = true)))
+      tables.schema(vi) must equal (ColumnIdMap(ci.systemId -> ci.copy(isUserPrimaryKey = true)(null)))
     }
   }
 
@@ -131,7 +131,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       tables.clearUserPrimaryKey(pk)
       tables.setUserPrimaryKey(ci2)
 
-      tables.schema(vi) must equal (ColumnIdMap(ci1.systemId -> ci1, ci2.systemId -> ci2.copy(isUserPrimaryKey = true)))
+      tables.schema(vi) must equal (ColumnIdMap(ci1.systemId -> ci1, ci2.systemId -> ci2.copy(isUserPrimaryKey = true)(null)))
     }
   }
 
@@ -150,7 +150,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       val tables = new PostgresDatasetMapWriter(conn)
       val vi1 = tables.create("hello", "world")
       val vi2 = tables.publish(vi1)
-      vi2 must equal (vi1.copy(lifecycleStage = LifecycleStage.Published))
+      vi2 must equal (vi1.copy(lifecycleStage = LifecycleStage.Published)(null))
 
       tables.published(vi2.datasetInfo) must equal (Some(vi2))
       tables.unpublished(vi1.datasetInfo) must be (None)
@@ -184,7 +184,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
       val schema1 = tables.schema(vi1)
       val schema2 = tables.schema(vi2)
-      schema1.values.toSeq.map(_.copy(copyInfo = vi2)).sortBy(_.logicalName) must equal (schema2.values.toSeq.sortBy(_.logicalName))
+      schema1.values.toSeq.map(_.unanchored).sortBy(_.logicalName) must equal (schema2.values.toSeq.map(_.unanchored).sortBy(_.logicalName))
     }
   }
 

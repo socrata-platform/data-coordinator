@@ -7,5 +7,5 @@ class DatasetAlreadyExistsException(val datasetId: String) extends Exception(s"D
 
 class CopySystemIdAlreadyInUse(val copyId: CopyId) extends Exception(s"Copy system id ${copyId.underlying} already in use")
 
-class ColumnSystemIdAlreadyInUse(val copy: CopyInfo, val columnId: ColumnId) extends Exception(s"Column system id ${columnId.underlying} already in use on dataset ${copy.datasetInfo.datasetId}")
-class ColumnAlreadyExistsException(val copy: CopyInfo, columnName: String) extends Exception(s"Column `$columnName' already exists on dataset ${copy.datasetInfo.datasetId}")
+class ColumnSystemIdAlreadyInUse(val copy: CopyInfo, val columnId: ColumnId) extends Exception(s"Column system id ${columnId.underlying} already in use on dataset ${copy.datasetInfo.datasetName}")
+class ColumnAlreadyExistsException(val copy: CopyInfo, columnName: String) extends Exception(s"Column `$columnName' already exists on dataset ${copy.datasetInfo.datasetName}")

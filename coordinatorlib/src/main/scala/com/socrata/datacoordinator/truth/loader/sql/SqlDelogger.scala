@@ -2,21 +2,18 @@ package com.socrata.datacoordinator
 package truth.loader.sql
 
 import scala.io.Codec
-import scala.collection.immutable.VectorBuilder
 
+import java.io.StringReader
 import java.sql.{ResultSet, PreparedStatement, Connection}
-import java.io.ByteArrayInputStream
 
-import com.rojoma.json.io.JsonReader
-import com.rojoma.json.ast.{JNumber, JNull, JString, JObject}
+import com.rojoma.json.util.JsonUtil
+import com.rojoma.json.codec.JsonCodec
 
 import com.socrata.datacoordinator.truth.RowLogCodec
-import com.socrata.datacoordinator.truth.loader.{Operation, Delogger}
+import com.socrata.datacoordinator.truth.loader.Delogger
 import com.socrata.datacoordinator.util.{CloseableIterator, LeakDetect}
-import com.socrata.datacoordinator.truth.metadata.{CopyInfo, ColumnInfo}
-import com.rojoma.json.codec.JsonCodec
-import com.socrata.datacoordinator.util.collection.MutableColumnIdMap
-import com.socrata.datacoordinator.id.{RowId, ColumnId}
+import com.socrata.datacoordinator.truth.metadata.{UnanchoredDatasetInfo, UnanchoredCopyInfo, UnanchoredColumnInfo}
+import com.socrata.datacoordinator.id.RowId
 
 class SqlDelogger[CV](connection: Connection,
                       logTableName: String,
@@ -132,14 +129,14 @@ class SqlDelogger[CV](connection: Connection,
       Delogger.RowDataUpdated(aux)(rowCodecFactory())
 
     def decodeRowIdCounterUpdated(aux: Array[Byte]) = {
-      val json = fromJson(aux).cast[JNumber].getOrElse {
+      val rid = fromJson[RowId](aux).getOrElse {
         sys.error("Parameter for `row id counter updated' was not a number")
       }
-      Delogger.RowIdCounterUpdated(new RowId(json.toLong))
+      Delogger.RowIdCounterUpdated(rid)
     }
 
     def decodeColumnCreated(aux: Array[Byte]) = {
-      val ci = JsonCodec.fromJValue[ColumnInfo](fromJson(aux)).getOrElse {
+      val ci = fromJson[UnanchoredColumnInfo](aux).getOrElse {
         sys.error("Parameter for `column created' was not a ColumnInfo")
       }
 
@@ -147,46 +144,45 @@ class SqlDelogger[CV](connection: Connection,
     }
 
     def decodeColumnRemoved(aux: Array[Byte]) = {
-      val ci = JsonCodec.fromJValue[ColumnInfo](fromJson(aux)).getOrElse {
+      val ci = fromJson[UnanchoredColumnInfo](aux).getOrElse {
         sys.error("Parameter for `column created' was not an object")
       }
       Delogger.ColumnRemoved(ci)
     }
 
     def decodeRowIdentifierSet(aux: Array[Byte]) = {
-      val ci = JsonCodec.fromJValue[ColumnInfo](fromJson(aux)).getOrElse {
+      val ci = fromJson[UnanchoredColumnInfo](aux).getOrElse {
         sys.error("Parameter for `row identifier set' was not an object")
       }
       Delogger.RowIdentifierSet(ci)
     }
 
     def decodeRowIdentifierCleared(aux: Array[Byte]) = {
-      val ci = JsonCodec.fromJValue[ColumnInfo](fromJson(aux)).getOrElse {
+      val ci = fromJson[UnanchoredColumnInfo](aux).getOrElse {
         sys.error("Parameter for `row identifier cleared' was not an object")
       }
       Delogger.RowIdentifierCleared(ci)
     }
 
     def decodeSystemRowIdentifierChanged(aux: Array[Byte]) = {
-      val ci = JsonCodec.fromJValue[ColumnInfo](fromJson(aux)).getOrElse {
+      val ci = fromJson[UnanchoredColumnInfo](aux).getOrElse {
         sys.error("Parameter for `system row identifier changed' was not an object")
       }
       Delogger.SystemRowIdentifierChanged(ci)
     }
 
     def decodeWorkingCopyCreated(aux: Array[Byte]) = {
-      val vi = JsonCodec.fromJValue[CopyInfo](fromJson(aux)).getOrElse {
-        sys.error("Parameter for `working copy created' was not an object")
+      val json = new StringReader(new String(aux, UTF8))
+      val di = JsonUtil.readJson[UnanchoredDatasetInfo](json).getOrElse {
+        sys.error("First parameter for `working copy created' was not an object")
       }
-      Delogger.WorkingCopyCreated(vi)
+      val vi = JsonUtil.readJson[UnanchoredCopyInfo](json).getOrElse {
+        sys.error("Second parameter for `working copy created' was not an object")
+      }
+      Delogger.WorkingCopyCreated(di, vi)
     }
 
-    def fromJson(aux: Array[Byte]) = JsonReader.fromString(new String(aux, UTF8))
-
-    def getString(param: String, o: JObject): String =
-      o.getOrElse(param, sys.error("Parameter `" + param + "' did not exist")).cast[JString].getOrElse {
-        sys.error("Parameter `" + param + "' was not a string")
-      }.string
+    def fromJson[T : JsonCodec](aux: Array[Byte]): Option[T] = JsonUtil.parseJson[T](new String(aux, UTF8))
   }
 
   def close() {

@@ -4,7 +4,7 @@ package truth.loader
 import java.io.{ByteArrayInputStream, OutputStream, Closeable}
 
 import com.socrata.datacoordinator.util.CloseableIterator
-import com.socrata.datacoordinator.truth.metadata.{CopyInfo, ColumnInfo}
+import com.socrata.datacoordinator.truth.metadata.{UnanchoredDatasetInfo, UnanchoredColumnInfo, UnanchoredCopyInfo}
 import com.socrata.datacoordinator.id.RowId
 import com.socrata.datacoordinator.truth.RowLogCodec
 import scala.collection.immutable.VectorBuilder
@@ -23,22 +23,22 @@ object Delogger {
 
   case object Truncated extends LogEvent[Nothing] with LogEventCompanion
 
-  case class ColumnCreated(info: ColumnInfo) extends LogEvent[Nothing]
+  case class ColumnCreated(info: UnanchoredColumnInfo) extends LogEvent[Nothing]
   object ColumnCreated extends LogEventCompanion
 
-  case class ColumnRemoved(info: ColumnInfo) extends LogEvent[Nothing]
+  case class ColumnRemoved(info: UnanchoredColumnInfo) extends LogEvent[Nothing]
   object ColumnRemoved extends LogEventCompanion
 
-  case class RowIdentifierSet(info: ColumnInfo) extends LogEvent[Nothing]
+  case class RowIdentifierSet(info: UnanchoredColumnInfo) extends LogEvent[Nothing]
   object RowIdentifierSet extends LogEventCompanion
 
-  case class RowIdentifierCleared(info: ColumnInfo) extends LogEvent[Nothing]
+  case class RowIdentifierCleared(info: UnanchoredColumnInfo) extends LogEvent[Nothing]
   object RowIdentifierCleared extends LogEventCompanion
 
-  case class SystemRowIdentifierChanged(info: ColumnInfo) extends LogEvent[Nothing]
+  case class SystemRowIdentifierChanged(info: UnanchoredColumnInfo) extends LogEvent[Nothing]
   object SystemRowIdentifierChanged extends LogEventCompanion
 
-  case class WorkingCopyCreated(copyInfo: CopyInfo) extends LogEvent[Nothing]
+  case class WorkingCopyCreated(datasetInfo: UnanchoredDatasetInfo, copyInfo: UnanchoredCopyInfo) extends LogEvent[Nothing]
   object WorkingCopyCreated extends LogEventCompanion
 
   case object DataCopied extends LogEvent[Nothing] with LogEventCompanion

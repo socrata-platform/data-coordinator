@@ -7,7 +7,7 @@ import com.rojoma.json.util.JsonUtil
 import com.socrata.datacoordinator.packets.Packet
 import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.common.util.ByteBufferInputStream
-import com.socrata.datacoordinator.truth.metadata.{UnanchoredColumnInfo, UnanchoredCopyInfo, DatasetInfo}
+import com.socrata.datacoordinator.truth.metadata.{UnanchoredDatasetInfo, UnanchoredColumnInfo, UnanchoredCopyInfo, DatasetInfo}
 
 class Protocol[LogData](logDataCodec: Codec[LogData]) {
   import Packet.{SimplePacket, LabelledPacket}
@@ -66,16 +66,16 @@ class Protocol[LogData](logDataCodec: Codec[LogData]) {
   //    Backup commits and sends "resync complete"
   // Resyncing; primary -> backup
   object WillResync extends LabelledPacket("resync/dataset") {
-    def apply(id: DatasetInfo) =
+    def apply(id: UnanchoredDatasetInfo) =
       create { os =>
         val w = new OutputStreamWriter(os, "UTF-8")
         JsonUtil.writeJson(w, id)
         w.flush()
       }
-    def unapply(packet: Packet): Option[DatasetInfo] =
+    def unapply(packet: Packet): Option[UnanchoredDatasetInfo] =
       extract(packet) map { data =>
         val r = new InputStreamReader(new ByteBufferInputStream(data), "UTF-8")
-        JsonUtil.readJson[DatasetInfo](r).getOrElse {
+        JsonUtil.readJson[UnanchoredDatasetInfo](r).getOrElse {
           throw new PacketDecodeException("resyncing dataset packet does not contain a datasetinfo object")
         }
       }

@@ -177,7 +177,7 @@ object Transmitter extends App {
     val datasetMap: DatasetMapWriter = new PostgresDatasetMapWriter(conn)
     datasetMap.datasetInfo(datasetId) match {
       case Some(info) =>
-        client.send(WillResync(info))
+        client.send(WillResync(info.unanchored))
         for(copy <- datasetMap.allCopies(info)) {
           awaitReadyForCopy(client)
           sendCopy(client, conn, datasetMap)(copy)
@@ -217,7 +217,7 @@ object Transmitter extends App {
     loop()
   }
 
-  def sendCopy(client: Packets, conn: Connection, datasetMap: DatasetMapReader)(copy: datasetMap.CopyInfo) {
+  def sendCopy(client: Packets, conn: Connection, datasetMap: DatasetMapReader)(copy: CopyInfo) {
     log.info("Doing full send of the copy data to the backup")
     val schema = datasetMap.schema(copy)
     val columnInfos = schema.values.map(_.unanchored).toSeq

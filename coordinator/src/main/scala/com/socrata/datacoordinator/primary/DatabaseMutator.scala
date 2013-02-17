@@ -26,8 +26,8 @@ abstract class DatabaseMutator[CT, CV] {
   trait BaseUpdate {
     val now: DateTime
     val datasetMap: DatasetMapWriter
-    val initialDatasetInfo: datasetMap.DatasetInfo
-    val initialCopyInfo: datasetMap.CopyInfo
+    val initialDatasetInfo: DatasetInfo
+    val initialCopyInfo: CopyInfo
     val datasetLog: Logger[CV]
   }
 
@@ -37,7 +37,7 @@ abstract class DatabaseMutator[CT, CV] {
   }
 
   trait DataUpdate extends BaseUpdate {
-    val initialSchema: ColumnIdMap[datasetMap.ColumnInfo]
+    val initialSchema: ColumnIdMap[ColumnInfo]
     val dataLoader: Loader[CV]
   }
 

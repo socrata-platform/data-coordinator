@@ -5,18 +5,6 @@ import com.socrata.datacoordinator.id.{RowId, DatasetId}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 
 trait BaseDatasetMapReader {
-  type DatasetInfo <: IDatasetInfo
-  type CopyInfo <: ICopyInfo
-  type ColumnInfo <: IColumnInfo
-
-  trait IDatasetInfo extends com.socrata.datacoordinator.truth.metadata.DatasetInfo
-  trait ICopyInfo extends com.socrata.datacoordinator.truth.metadata.CopyInfo {
-    val datasetInfo: DatasetInfo
-  }
-  trait IColumnInfo extends com.socrata.datacoordinator.truth.metadata.ColumnInfo {
-    val copyInfo: CopyInfo
-  }
-
   /** Looks up a dataset record by its ID. */
   def datasetInfo(datasetId: String): Option[DatasetInfo]
 
@@ -83,7 +71,7 @@ trait BaseDatasetMapWriter extends BaseDatasetMapReader {
     * @note Does not change the actual table, or (if this column was a primary key) ensure that the new type is still
     *       a valid PK type; this just updates the bookkeeping.
     * @return The new column info. */
-  def convertColumn(columnInfo: ColumnInfo, newType: String, newPhysicalColumnBase: String): ColumnInfo
+  def convertColumn(columnInfo: ColumnInfo, newType: String, newPhysicalColumnBaseBase: String): ColumnInfo
 
   /** Changes the system primary key column for this dataset-copy.
     * @note Does not change the actual table (or verify it is a valid column to use as a PK); this just updates
