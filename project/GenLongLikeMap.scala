@@ -97,6 +97,18 @@ class """ + targetClassName + """[+V] private[""" + lastElemOf(targetPackage) + 
     new """ + targetClassName + """[V2](tmp)
   }
 
+  def +[V2 >: V](kv: (""" + sourceType + """, V2)) = {
+    val tmp = new TLongObjectHashMap[V2](this.unsafeUnderlying)
+    tmp.put(kv._1.underlying, kv._2)
+    new """ + targetClassName + """[V2](tmp)
+  }
+
+  def -(k: """ + sourceType + """) = {
+    val tmp = new TLongObjectHashMap[V](this.unsafeUnderlying)
+    tmp.remove(k.underlying)
+    new """ + targetClassName + """[V](tmp)
+  }
+
   @inline def getOrElse[B >: V](k: """ + sourceType + """, v: => B): B = {
     val result = unsafeUnderlying.get(k.underlying)
     if(result == null) v
