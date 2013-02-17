@@ -10,7 +10,7 @@ object CoordinatorLib {
       Seq(
         "com.socrata" %% "socrata-id" % "[2.1.1,3.0.0)",
         "com.socrata" %% "soql-brita" % "[1.2.0,2.0.0)",
-        "com.rojoma" %% "rojoma-json" % "2.2.0",
+        "com.rojoma" %% "rojoma-json" % "[2.3.0,3.0.0)",
         "com.rojoma" %% "simple-arm" % "1.1.10",
         "joda-time" % "joda-time" % "2.1",
         "org.joda" % "joda-convert" % "1.2",

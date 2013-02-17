@@ -8,8 +8,6 @@ import com.socrata.datacoordinator.packets.Packet
 import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.common.util.ByteBufferInputStream
 import com.socrata.datacoordinator.truth.metadata.{UnanchoredColumnInfo, UnanchoredCopyInfo, DatasetInfo}
-import com.rojoma.json.io.{JsonReader, JsonEventIterator}
-import com.rojoma.json.codec.JsonCodec
 
 class Protocol[LogData](logDataCodec: Codec[LogData]) {
   import Packet.{SimplePacket, LabelledPacket}
@@ -97,11 +95,11 @@ class Protocol[LogData](logDataCodec: Codec[LogData]) {
       }
     def unapply(packet: Packet): Option[(UnanchoredCopyInfo, Seq[UnanchoredColumnInfo])] =
       extract(packet) map { data =>
-        val r = new JsonEventIterator(new InputStreamReader(new ByteBufferInputStream(data), "UTF-8"))
-        val copyInfo = JsonCodec[UnanchoredCopyInfo].decode(JsonReader.fromEvents(r)).getOrElse {
+        val r = new InputStreamReader(new ByteBufferInputStream(data), "UTF-8")
+        val copyInfo = JsonUtil.readJson[UnanchoredCopyInfo](r).getOrElse {
           throw new PacketDecodeException("resyncing copy packet does not contain a copyinfo object")
         }
-        val columns = JsonCodec[Vector[UnanchoredColumnInfo]].decode(JsonReader.fromEvents(r)).getOrElse {
+        val columns = JsonUtil.readJson[Vector[UnanchoredColumnInfo]](r).getOrElse {
           throw new PacketDecodeException("resyncing copy packet does not contain a list of columns")
         }
         (copyInfo, columns)
