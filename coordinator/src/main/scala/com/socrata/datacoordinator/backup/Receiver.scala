@@ -209,10 +209,10 @@ object Receiver extends App {
         using(conn.createStatement()) { stmt =>
           for(copy <- backup.datasetMap.allCopies(originalDatasetInfo)) {
             client.send(PreparingDatabaseForResync())
-            stmt.execute("DROP TABLE " + copy.dataTableName + " IF EXISTS")
+            stmt.execute("DROP TABLE IF EXISTS " + copy.dataTableName)
           }
           client.send(PreparingDatabaseForResync())
-          stmt.execute("DROP TABLE " + datasetInfo.logTableName + " IF EXISTS")
+          stmt.execute("DROP TABLE IF EXISTS " + datasetInfo.logTableName)
         }
         backup.datasetMap.unsafeReloadDataset(originalDatasetInfo, datasetInfo.datasetName, datasetInfo.tableBaseBase, datasetInfo.nextRowId)
       case None =>
