@@ -189,6 +189,9 @@ class MonadicDatabaseMutatorImpl[CV](val databaseMutator: LowLevelMonadicDatabas
     _ <- put(s.copy(currentSchema = s.currentSchema + (ci.systemId -> newCi)))
   } yield newCi
 
+  // FIXME: only permit this to be called at the start of a transaction.
+  // The system pretty much assumes that a single dataVersion will not be
+  // shared amongst multiple copies.
   def makeWorkingCopy(copyData: Boolean): DatasetM[CopyInfo] = for {
     map <- datasetMap
     dataCopier <- if(copyData) datasetContentsCopier.map(Some(_)) else None.pure[DatasetM]
@@ -325,7 +328,8 @@ object Test extends App {
   }
 
   import highlevel._
-  val report = creatingDataset(System.currentTimeMillis().toString, "m", "robertm") {
+  val name = System.currentTimeMillis().toString
+  val report1 = creatingDataset(name, "m", "robertm") {
     for {
       id <- addColumn(":id", "row_identifier", "id")
       _ <- makeSystemPrimaryKey(id)
@@ -342,10 +346,27 @@ object Test extends App {
         }
       }
       _ <- publish
-      _ <- makeWorkingCopy(true)
     } yield report
   }.unsafePerformIO()
-  println(report)
+  println(report1)
+
+  val report2 = withDataset(name, "robertm") {
+    for {
+      _ <- makeWorkingCopy(true)
+      col1 <- schema.map(_.values.find(_.logicalName == "col1").get)
+      col2 <- schema.map(_.values.find(_.logicalName == "col2").get)
+      report <- upsert { _ =>
+        managed {
+          CloseableIterator.simple(Iterator(
+            Right(Row(col1.systemId -> BigDecimal(7), col2.systemId -> "goodbye")),
+            Right(Row(col1.systemId -> BigDecimal(8), col2.systemId -> "world"))
+          ))
+        }
+      }
+      _ <- publish
+    } yield report
+  }.unsafePerformIO()
+  println(report2)
 
   executor.shutdown()
 }
