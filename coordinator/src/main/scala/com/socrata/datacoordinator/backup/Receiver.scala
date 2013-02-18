@@ -176,6 +176,7 @@ object Receiver extends App {
       backup.updateVersion(finalCopyInfo, version)
     } catch {
       case e: /* Resync */Exception =>
+        log.error("Caught exception; resyncing", e)
         throw new AbortToResync
     }
 
