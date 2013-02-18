@@ -1,8 +1,6 @@
 package com.socrata.datacoordinator.primary
 package sql
 
-import scala.language.higherKinds
-
 import java.sql.Connection
 import javax.sql.DataSource
 
@@ -10,73 +8,71 @@ import org.joda.time.DateTime
 import scalaz._
 import scalaz.effect._
 import Scalaz._
+import com.rojoma.simplearm.util._
 
-import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, CopyInfo, DatasetMapWriter}
-import com.socrata.datacoordinator.util.collection.ColumnIdMap
-import com.socrata.datacoordinator.truth.metadata.sql.PostgresDatasetMapWriter
-import com.socrata.datacoordinator.truth.loader.SchemaLoader
+import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, GlobalLog, DatasetMapWriter, DatasetInfo}
+import com.socrata.datacoordinator.truth.metadata.sql.{PostgresGlobalLog, PostgresDatasetMapWriter}
+import com.socrata.datacoordinator.truth.loader.{Logger, SchemaLoader}
+import com.socrata.datacoordinator.truth.loader.sql.{RepBasedSqlSchemaLoader, SqlLogger}
+import com.socrata.datacoordinator.truth.sql.SqlColumnRep
+import com.socrata.datacoordinator.truth.RowLogCodec
 
-case class S(now: DateTime, datasetMap: DatasetMapWriter, schemaLoader: SchemaLoader, currentVersion: CopyInfo, currentSchema: ColumnIdMap[ColumnInfo])
+class PostgresMonadicDatabaseMutator[CT, CV](dataSource: DataSource,
+                                             repForColumn: ColumnInfo => SqlColumnRep[CT, CV],
+                                             rowCodecFactory: () => RowLogCodec[CV],
+                                             rowFlushSize: Int = 128000,
+                                             batchFlushSize: Int = 2000000)
+  extends LowLevelMonadicDatabaseMutator[CV]
+{
+  import StateT_Helper._
 
-class PostgresMonadicDatabaseMutator(dataSource: DataSource) extends MonadicDatabaseMutator {
+  case class S(conn: Connection, now: DateTime, datasetMap: DatasetMapWriter, globalLog: GlobalLog)
   type MutationContext = S
 
   def openConnection: IO[Connection] = IO(dataSource.getConnection())
-  def closeConnection(conn: Connection): IO[Unit] = IO(conn.close())
+  def closeConnection(conn: Connection): IO[Unit] = IO(conn.rollback()).ensuring(IO(conn.close()))
   def withConnection[A](f: Connection => IO[A]): IO[A] =
     openConnection.bracket(closeConnection)(f)
 
-  def createInitialState(conn: Connection, datasetName: String): IO[Option[S]] = IO {
+  def createInitialState(conn: Connection): IO[S] = IO {
     val datasetMap = new PostgresDatasetMapWriter(conn)
-    datasetMap.datasetInfo(datasetName) map { info =>
-      val initialVersion = datasetMap.latest(info)
-      val initialSchema = datasetMap.schema(initialVersion)
-      val schemaLoader = ???
-      S(DateTime.now(), datasetMap, schemaLoader, initialVersion, initialSchema)
+    val globalLog = new PostgresGlobalLog(conn)
+    val now = for {
+      stmt <- managed(conn.createStatement())
+      rs <- managed(stmt.executeQuery("SELECT current_timestamp"))
+    } yield {
+      rs.next()
+      new DateTime(rs.getTimestamp(1).getTime)
     }
+    S(conn, now, datasetMap, globalLog)
   }
 
-  def runTransaction[A](datasetName: String)(action: DatasetM[A]): IO[Option[A]] =
+  def runTransaction[A](action: DatabaseM[A]): IO[A] =
     withConnection { conn =>
       for {
         _ <- IO(conn.setAutoCommit(false))
-        initialStateOpt <- createInitialState(conn, datasetName)
-        result <- initialStateOpt.map(action.eval(_).map(Some(_))).getOrElse(IO(None))
+        initialState <- createInitialState(conn)
+        (finalState, result) <- action.run(initialState)
         _ <- IO(conn.commit())
       } yield result
     }
 
-  val get: DatasetM[S] = initT
-  def set(s: S): DatasetM[Unit] = putT(s)
-  val now: DatasetM[DateTime] = getsT(_.now)
-  val copyInfo: DatasetM[CopyInfo] = getsT(_.currentVersion)
-  val schema: DatasetM[ColumnIdMap[ColumnInfo]] = getsT(_.currentSchema)
+  val get: DatabaseM[S] = initT
+  def set(s: S): DatabaseM[Unit] = putT(s)
   def io[A](f: => A) = liftM(IO(f))
 
-  def addColumn(logicalName: String, typeName: String, physicalColumnBaseBase: String): DatasetM[ColumnInfo] = for {
-    s <- get
-    ci <- io {
-      val newColumn = s.datasetMap.addColumn(s.currentVersion, logicalName, typeName, physicalColumnBaseBase)
-      s.schemaLoader.addColumn(newColumn)
-      newColumn
-    }
-    _ <- set(s.copy(currentSchema = s.currentSchema + (ci.systemId -> ci)))
-  } yield ci
+  val rawNow: DatabaseM[DateTime] = getsT(_.now)
+  val rawConn: DatabaseM[Connection] = getsT(_.conn)
 
-  def dropColumn(ci: ColumnInfo): DatasetM[Unit] = for {
-    s <- get
-    _ <- io {
-      s.datasetMap.dropColumn(ci)
-      s.schemaLoader.dropColumn(ci)
-    }
-    _ <- set(s.copy(currentSchema = s.currentSchema - ci.systemId))
-  } yield ()
+  val datasetMap: DatabaseM[DatasetMapWriter] = getsT(_.datasetMap)
 
-  // Some combinators and lifted operations for StateT
-  def lift[M[+_]: Monad, S, A](f: State[S, A]) = StateT[M, S, A](f(_).pure[M])
-  def liftM[M[+_]: Functor, S, A](f: M[A]) = StateT[M, S, A](s => f.map((s, _)))
-  def initT[M[+_]: Monad, S] = lift[M, S, S](init[S])
-  def modifyT[M[+_]: Monad, S](f: S => S) = lift[M, S, Unit](modify[S](f))
-  def putT[M[+_]: Monad, S](s: S) = lift[M, S, Unit](put(s))
-  def getsT[M[+_]: Monad, S, A](f: S => A) = lift[M, S, A](gets(f))
+  def schemaLoader(logger: Logger[CV]): DatabaseM[SchemaLoader] =
+    rawConn.map(new RepBasedSqlSchemaLoader(_, logger, repForColumn))
+
+  def logger(datasetInfo: DatasetInfo): DatabaseM[Logger[CV]] =
+    rawConn.map(new SqlLogger(_, datasetInfo.logTableName, rowCodecFactory, rowFlushSize, batchFlushSize))
+
+  val globalLog: DatabaseM[GlobalLog] = getsT(_.globalLog)
+
+  val now: DatabaseM[DateTime] = getsT(_.now)
 }
