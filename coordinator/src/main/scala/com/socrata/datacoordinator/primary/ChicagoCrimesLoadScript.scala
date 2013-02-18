@@ -101,8 +101,8 @@ object ChicagoCrimesLoadScript extends App {
         def nameForType(typ: SoQLType): String = typeContext.nameFromType(typ)
 
         def rawDataLoader(table: CopyInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[Any], idProvider: IdProvider): Loader[Any] = {
-          val lp = new AbstractSqlLoaderProvider(conn, idProvider, executor, typeContext) with PostgresSqlLoaderProvider[SoQLType, Any]
-          lp(table, schema, rowPreparer(schema), logger, genericRepFor)
+          val lp = new AbstractSqlLoaderProvider(conn, executor, typeContext) with PostgresSqlLoaderProvider[SoQLType, Any]
+          lp(table, schema, rowPreparer(schema), idProvider, logger, genericRepFor)
         }
 
         def dataLoader(table: CopyInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[Any], idProvider: IdProvider): Managed[Loader[Any]] =

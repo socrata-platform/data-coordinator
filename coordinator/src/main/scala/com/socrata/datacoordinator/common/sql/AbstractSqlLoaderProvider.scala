@@ -13,12 +13,12 @@ import com.socrata.datacoordinator.truth.sql.{RepBasedSqlDatasetContext, SqlColu
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.common.soql.SystemColumns
 
-abstract class AbstractSqlLoaderProvider[CT, CV](conn: Connection, idProvider: IdProvider, val executor: ExecutorService, typeContext: TypeContext[CT, CV])
-  extends ((CopyInfo, ColumnIdMap[ColumnInfo], RowPreparer[CV], Logger[CV], ColumnInfo => SqlColumnRep[CT, CV]) => Loader[CV])
+abstract class AbstractSqlLoaderProvider[CT, CV](conn: Connection, val executor: ExecutorService, typeContext: TypeContext[CT, CV])
+  extends ((CopyInfo, ColumnIdMap[ColumnInfo], RowPreparer[CV], IdProvider, Logger[CV], ColumnInfo => SqlColumnRep[CT, CV]) => Loader[CV])
 { self =>
   def produce(tableName: String, datasetContext: RepBasedSqlDatasetContext[CT, CV]): DataSqlizer[CT, CV]
 
-  def apply(versionInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo], rowPreparer: RowPreparer[CV], logger: Logger[CV], repFor: ColumnInfo => SqlColumnRep[CT, CV]) = {
+  def apply(versionInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo], rowPreparer: RowPreparer[CV], idProvider: IdProvider, logger: Logger[CV], repFor: ColumnInfo => SqlColumnRep[CT, CV]) = {
     val tableName = versionInfo.dataTableName
 
     val repSchema = schema.mapValuesStrict(repFor)
