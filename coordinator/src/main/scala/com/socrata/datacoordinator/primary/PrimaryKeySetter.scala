@@ -14,8 +14,8 @@ class PrimaryKeySetter[CT, CV](mutator: DatabaseMutator[CT, CV]) {
 
       val logger = datasetLog(ds)
 
-      schemaLoader(table, logger).makePrimaryKey(col)
-      datasetMap.setUserPrimaryKey(col)
+      val newCol = datasetMap.setUserPrimaryKey(col)
+      schemaLoader(table, logger).makePrimaryKey(newCol)
 
       logger.endTransaction().foreach { ver =>
         datasetMap.updateDataVersion(table, ver)

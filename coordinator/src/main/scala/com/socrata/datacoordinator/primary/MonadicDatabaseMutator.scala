@@ -35,14 +35,14 @@ trait LowLevelMonadicDatabaseMutator[CV] {
 
   def runTransaction[A](action: DatabaseM[A]): IO[A]
 
-  val now: DatabaseM[DateTime]
-  val datasetMap: DatabaseM[DatasetMapWriter]
+  def now: DatabaseM[DateTime]
+  def datasetMap: DatabaseM[DatasetMapWriter]
   def logger(info: DatasetInfo): DatabaseM[Logger[CV]]
   def schemaLoader(logger: Logger[CV]): DatabaseM[SchemaLoader]
   def datasetContentsCopier(logger: Logger[CV]): DatabaseM[DatasetContentsCopier]
   def withDataLoader[A](table: CopyInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[CV])(f: Loader[CV] => IO[A]): DatabaseM[(Report[CV], RowId, A)]
 
-  val globalLog: DatabaseM[GlobalLog]
+  def globalLog: DatabaseM[GlobalLog]
   def io[A](op: => A): DatabaseM[A]
 
   def finishDatasetTransaction[A](username: String, copyInfo: CopyInfo, logger: Logger[CV]): DatabaseM[Unit] = for {
@@ -80,12 +80,14 @@ trait MonadicDatasetMutator[CV] {
 
   def io[A](op: => A): DatasetM[A]
 
-  val copyInfo: DatasetM[CopyInfo]
-  val schema: DatasetM[ColumnIdMap[ColumnInfo]]
+  def copyInfo: DatasetM[CopyInfo]
+  def schema: DatasetM[ColumnIdMap[ColumnInfo]]
 
   def addColumn(logicalName: String, typeName: String, physicalColumnBaseBase: String): DatasetM[ColumnInfo]
   def makeSystemPrimaryKey(ci: ColumnInfo): DatasetM[ColumnInfo]
   def dropColumn(ci: ColumnInfo): DatasetM[Unit]
+  def makeWorkingCopy(copyData: Boolean): DatasetM[CopyInfo]
+  def publish: DatasetM[CopyInfo]
   def upsert(inputGenerator: ColumnIdMap[ColumnInfo] => Managed[Iterator[Either[CV, Row[CV]]]]): DatasetM[Report[CV]]
 }
 
@@ -168,7 +170,7 @@ class MonadicDatabaseMutatorImpl[CV](val databaseMutator: LowLevelMonadicDatabas
     s <- get
     newCi <- io {
       val result = map.setSystemPrimaryKey(ci)
-      val ok = s.schemaLoader.makeSystemPrimaryKey(ci)
+      val ok = s.schemaLoader.makeSystemPrimaryKey(result)
       require(ok, "Column cannot be made a system primary key")
       result
     }
@@ -233,6 +235,17 @@ class MonadicDatabaseMutatorImpl[CV](val databaseMutator: LowLevelMonadicDatabas
     }
     _ <- put(s.copy(currentVersion = newCi, currentSchema = newSchema))
   } yield newCi
+
+  val publish: DatasetM[CopyInfo] = for {
+    s <- get
+    map <- datasetMap
+    (ci, newSchema) <- io {
+      val newCi = map.publish(s.currentVersion)
+      s.logger.workingCopyPublished()
+      (newCi, map.schema(newCi))
+    }
+    _ <- put(s.copy(currentVersion = ci, currentSchema = newSchema))
+  } yield ci
 
   def upsert(inputGenerator: ColumnIdMap[ColumnInfo] => Managed[Iterator[Either[CV, Row[CV]]]]): DatasetM[Report[CV]] = for {
     s <- get
@@ -328,6 +341,8 @@ object Test extends App {
           ))
         }
       }
+      _ <- publish
+      _ <- makeWorkingCopy(true)
     } yield report
   }.unsafePerformIO()
   println(report)

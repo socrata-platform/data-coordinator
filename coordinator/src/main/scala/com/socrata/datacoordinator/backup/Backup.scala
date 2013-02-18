@@ -110,9 +110,9 @@ class Backup(conn: Connection, executor: ExecutorService, paranoid: Boolean) {
     // TODO: Re-paranoid this
     // Resync.unless(currentVersionInfo, currentVersionInfo == columnInfo.copyInfo, "Version infos differ")
     val ci = datasetMap.schema(currentVersionInfo)(columnInfo.systemId)
-    Resync.unless(ci, ci.unanchored == columnInfo, "Column infos differ")
-    datasetMap.setUserPrimaryKey(ci)
-    schemaLoader.makePrimaryKey(ci)
+    val ci2 = datasetMap.setUserPrimaryKey(ci)
+    Resync.unless(ci2, ci2.unanchored == columnInfo, "Column infos differ:\n" + ci2.unanchored + "\n" + columnInfo)
+    schemaLoader.makePrimaryKey(ci2)
     currentVersionInfo
   }
 
@@ -121,7 +121,7 @@ class Backup(conn: Connection, executor: ExecutorService, paranoid: Boolean) {
     val ci = schema.values.find(_.isUserPrimaryKey).getOrElse {
       Resync(versionInfo, sys.error("No primary key on dataset"))
     }
-    Resync.unless(ci, ci.unanchored == columnInfo, "Column infos differ")
+    Resync.unless(ci, ci.unanchored == columnInfo, "Column infos differ: " + ci.unanchored + "\n" + columnInfo)
     datasetMap.clearUserPrimaryKey(ci)
     schemaLoader.dropPrimaryKey(ci)
     versionInfo
@@ -131,9 +131,9 @@ class Backup(conn: Connection, executor: ExecutorService, paranoid: Boolean) {
     // TODO: Re-paranoid this
     // Resync.unless(currentVersionInfo, currentVersionInfo == columnInfo.copyInfo, "Version infos differ")
     val ci = datasetMap.schema(currentVersionInfo)(columnInfo.systemId)
-    Resync.unless(ci, ci.unanchored == columnInfo, "Column infos differ")
-    datasetMap.setSystemPrimaryKey(ci)
-    schemaLoader.makeSystemPrimaryKey(ci)
+    val ci2 = datasetMap.setSystemPrimaryKey(ci)
+    Resync.unless(ci2, ci2.unanchored == columnInfo, "Column infos differ:\n" + ci2.unanchored + "\n" + columnInfo)
+    schemaLoader.makeSystemPrimaryKey(ci2)
     currentVersionInfo
   }
 
@@ -154,8 +154,8 @@ class Backup(conn: Connection, executor: ExecutorService, paranoid: Boolean) {
     if(paranoid) {
       val oldSchema = datasetMap.schema(oldVersion)
       Resync.unless(currentVersion,
-        oldSchema.mapValuesStrict(_.unanchored) == newSchema.mapValuesStrict(_.unanchored),
-        "published and unpublished schemas differ")
+        oldSchema.mapValuesStrict(_.unanchored.copy(isSystemPrimaryKey = false, isUserPrimaryKey = false)) == newSchema.mapValuesStrict(_.unanchored),
+        "published and unpublished schemas differ:\n" + oldSchema.mapValuesStrict(_.unanchored) + "\n" + newSchema.mapValuesStrict(_.unanchored))
     }
 
     contentsCopier.copy(oldVersion, currentVersion, newSchema)
