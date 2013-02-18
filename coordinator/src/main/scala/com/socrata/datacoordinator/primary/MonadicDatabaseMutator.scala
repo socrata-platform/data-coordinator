@@ -96,7 +96,7 @@ class MonadicDatabaseMutatorImpl[CV](val databaseMutator: LowLevelMonadicDatabas
   type MutationContext = S
 
   val get: DatasetM[S] = initT
-  def set(s: S): DatasetM[Unit] = putT(s)
+  def put(s: S): DatasetM[Unit] = putT(s)
   def modify(f: S => S): DatasetM[Unit] = modifyT(f)
   def io[A](op: => A) = liftM(databaseMutator.io(op))
 
@@ -150,7 +150,7 @@ class MonadicDatabaseMutatorImpl[CV](val databaseMutator: LowLevelMonadicDatabas
       s.schemaLoader.addColumn(newColumn)
       newColumn
     }
-    _ <- set(s.copy(currentSchema = s.currentSchema + (ci.systemId -> ci)))
+    _ <- put(s.copy(currentSchema = s.currentSchema + (ci.systemId -> ci)))
   } yield ci
 
   def dropColumn(ci: ColumnInfo): DatasetM[Unit] = for {
@@ -160,7 +160,7 @@ class MonadicDatabaseMutatorImpl[CV](val databaseMutator: LowLevelMonadicDatabas
       map.dropColumn(ci)
       s.schemaLoader.dropColumn(ci)
     }
-    _ <- set(s.copy(currentSchema = s.currentSchema - ci.systemId))
+    _ <- put(s.copy(currentSchema = s.currentSchema - ci.systemId))
   } yield ()
 
   def makeSystemPrimaryKey(ci: ColumnInfo): DatasetM[ColumnInfo] = for {
@@ -172,7 +172,7 @@ class MonadicDatabaseMutatorImpl[CV](val databaseMutator: LowLevelMonadicDatabas
       require(ok, "Column cannot be made a system primary key")
       result
     }
-    _ <- set(s.copy(currentSchema = s.currentSchema + (ci.systemId -> newCi)))
+    _ <- put(s.copy(currentSchema = s.currentSchema + (ci.systemId -> newCi)))
   } yield newCi
 
   def makeUserPrimaryKey(ci: ColumnInfo): DatasetM[ColumnInfo] = for {
@@ -184,7 +184,7 @@ class MonadicDatabaseMutatorImpl[CV](val databaseMutator: LowLevelMonadicDatabas
       require(ok, "Column cannot be made a primary key")
       result
     }
-    _ <- set(s.copy(currentSchema = s.currentSchema + (ci.systemId -> newCi)))
+    _ <- put(s.copy(currentSchema = s.currentSchema + (ci.systemId -> newCi)))
   } yield newCi
 
   def makeWorkingCopy(copyData: Boolean): DatasetM[CopyInfo] = for {
@@ -231,7 +231,7 @@ class MonadicDatabaseMutatorImpl[CV](val databaseMutator: LowLevelMonadicDatabas
           (newCopy, finalSchema.freeze())
       }
     }
-    _ <- set(s.copy(currentVersion = newCi, currentSchema = newSchema))
+    _ <- put(s.copy(currentVersion = newCi, currentSchema = newSchema))
   } yield newCi
 
   def upsert(inputGenerator: ColumnIdMap[ColumnInfo] => Managed[Iterator[Either[CV, Row[CV]]]]): DatasetM[Report[CV]] = for {
@@ -251,7 +251,7 @@ class MonadicDatabaseMutatorImpl[CV](val databaseMutator: LowLevelMonadicDatabas
     }) : DatasetM[(Report[CV], RowId, Unit)])
     map <- datasetMap
     newCv <- io { map.updateNextRowId(s.currentVersion, nextRowId) }
-    _ <- set(s.copy(currentVersion = newCv))
+    _ <- put(s.copy(currentVersion = newCv))
   } yield report
 }
 
