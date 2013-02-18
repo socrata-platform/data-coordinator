@@ -31,7 +31,7 @@ object StateT_Helper {
 
 trait LowLevelMonadicDatabaseMutator[CV] {
   type MutationContext
-  type DatabaseM[+T] = StateT[IO, MutationContext, T]
+  type DatabaseM[+T] = Kleisli[IO, MutationContext, T]
 
   def runTransaction[A](action: DatabaseM[A]): IO[A]
 

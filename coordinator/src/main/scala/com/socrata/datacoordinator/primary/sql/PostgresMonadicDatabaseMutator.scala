@@ -31,7 +31,7 @@ class PostgresMonadicDatabaseMutator[CT, CV](openConnection: IO[Connection],
                                              batchFlushSize: Int = 2000000)
   extends LowLevelMonadicDatabaseMutator[CV]
 {
-  import StateT_Helper._
+  import Kleisli.ask
 
   type LoaderProvider = (CopyInfo, ColumnIdMap[ColumnInfo], RowPreparer[CV], IdProvider, Logger[CV], ColumnInfo => SqlColumnRep[CT, CV]) => Loader[CV]
 
@@ -61,20 +61,20 @@ class PostgresMonadicDatabaseMutator[CT, CV](openConnection: IO[Connection],
       for {
         _ <- IO(conn.setAutoCommit(false))
         initialState <- createInitialState(conn)
-        (finalState, result) <- action.run(initialState)
+        result <- action.run(initialState)
         _ <- IO(conn.commit())
       } yield result
     }
 
-  val get: DatabaseM[S] = initT
-  def set(s: S): DatabaseM[Unit] = putT(s)
-  def io[A](f: => A) = liftM(IO(f))
+  val get: DatabaseM[S] = ask
+  import scala.language.higherKinds
+  def io[A](f: => A) = IO(f).liftKleisli[S]
 
-  val rawNow: DatabaseM[DateTime] = getsT(_.now)
-  val rawConn: DatabaseM[Connection] = getsT(_.conn)
-  def loaderProvider: DatabaseM[LoaderProvider] = getsT(_.loaderProvider)
+  val rawNow: DatabaseM[DateTime] = get.map(_.now)
+  val rawConn: DatabaseM[Connection] = get.map(_.conn)
+  def loaderProvider: DatabaseM[LoaderProvider] = get.map(_.loaderProvider)
 
-  val datasetMap: DatabaseM[DatasetMapWriter] = getsT(_.datasetMap)
+  val datasetMap: DatabaseM[DatasetMapWriter] = get.map(_.datasetMap)
 
   def schemaLoader(logger: Logger[CV]): DatabaseM[SchemaLoader] =
     rawConn.map(new RepBasedSqlSchemaLoader(_, logger, repForColumn))
@@ -99,7 +99,7 @@ class PostgresMonadicDatabaseMutator[CT, CV](openConnection: IO[Connection],
     }
   } yield res
 
-  val globalLog: DatabaseM[GlobalLog] = getsT(_.globalLog)
+  val globalLog: DatabaseM[GlobalLog] = get.map(_.globalLog)
 
-  val now: DatabaseM[DateTime] = getsT(_.now)
+  val now: DatabaseM[DateTime] = get.map(_.now)
 }
