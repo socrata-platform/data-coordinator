@@ -512,6 +512,8 @@ class """ + targetClassName + """(val unsafeUnderlying: TLongSet) extends (""" +
     case that: """ + targetClassName + """ => this.unsafeUnderlying == that.unsafeUnderlying
     case _ => false
   }
+
+  override def toString = unsafeUnderlying.toString
 }
 """
   }
