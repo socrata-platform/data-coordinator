@@ -211,7 +211,7 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
           datasetInfoNoSystemId.copy(systemId = new DatasetId(rs.getLong(1)))
         }
       } catch {
-        case PostgresUniqueViolation("table_base_base") =>
+        case PostgresUniqueViolation("dataset_name") =>
           throw new DatasetAlreadyExistsException(datasetId)
       }
     }
