@@ -15,10 +15,14 @@ class ColumnAdder[CT, CV](mutator: MonadicDatasetMutator[CV], nameForType: CT =>
     val columnCreations = columns.iterator.map { case (columnName, columnType) =>
       val baseName = AsciiIdentifierFilter(List("u", columnName)).take(physicalColumnBaseLimit).replaceAll("_+$","").toLowerCase
       addColumn(columnName, nameForType(columnType), baseName)
-    }.toStream
+    }.toList.sequence
 
     mutator.withDataset(as = username)(dataset) {
-      columnCreations.sequence.map { _.foldLeft(Map.empty[String, ColumnInfo]) { (acc, ci) => acc + (ci.logicalName -> ci) } }
+      for {
+        newColumns <- columnCreations
+      } yield newColumns.foldLeft(Map.empty[String, ColumnInfo]) {
+        (acc, ci) => acc + (ci.logicalName -> ci)
+      }
     }.flatMap(finish(dataset))
   }
 }
