@@ -1,26 +1,23 @@
 package com.socrata.datacoordinator.primary
 
-class PrimaryKeySetter[CT, CV](mutator: DatabaseMutator[CT, CV]) {
-  def makePrimaryKey(dataset: String, column: String, username: String) {
-    mutator.withTransaction() { providerOfNecessaryThings =>
-      import providerOfNecessaryThings._
-      val ds = datasetMap.datasetInfo(dataset).getOrElse(sys.error("Augh no such dataset"))
-      val table = datasetMap.latest(ds)
-      val schema = datasetMap.schema(table)
+import scalaz._
+import scalaz.effect._
+import Scalaz._
 
-      val col = schema.values.iterator.find(_.logicalName == column).getOrElse {
-        sys.error("No such column")
-      }
+import com.socrata.datacoordinator.truth.MonadicDatasetMutator
 
-      val logger = datasetLog(ds)
-
-      val newCol = datasetMap.setUserPrimaryKey(col)
-      schemaLoader(table, logger).makePrimaryKey(newCol)
-
-      logger.endTransaction().foreach { ver =>
-        datasetMap.updateDataVersion(table, ver)
-        globalLog.log(ds, ver, now, username)
-      }
-    }
+class PrimaryKeySetter[CV](mutator: MonadicDatasetMutator[CV]) extends ExistingDatasetMutator {
+  import mutator._
+  def makePrimaryKey(dataset: String, column: String, username: String): IO[Unit] = {
+    withDataset(as = username)(dataset) {
+      for {
+        s <- schema
+        col <- s.values.find(_.logicalName == column) match {
+          case Some(c) => c.pure[DatasetM]
+          case None => io(sys.error("No such column")) // TODO: better error
+        }
+        _ <- makeUserPrimaryKey(col)
+      } yield ()
+    }.flatMap(finish(dataset))
   }
 }

@@ -1,29 +1,24 @@
 package com.socrata.datacoordinator.primary
 
+import scalaz._
+import scalaz.effect._
+import Scalaz._
+
 import com.socrata.soql.brita.AsciiIdentifierFilter
+import com.socrata.datacoordinator.truth.MonadicDatasetMutator
 
-class DatasetCreator[CT, CV](mutator: DatabaseMutator[CT, CV], systemColumns: Map[String, CT], idColumnName: String) {
-  def createDataset(datasetId: String, username: String) {
-    mutator.withTransaction() { providerOfNecessaryThings =>
-      import providerOfNecessaryThings._
-      val table = datasetMap.create(datasetId, "t")
-      val logger = datasetLog(table.datasetInfo)
-      val loader = schemaLoader(table, logger)
+class DatasetCreator[CT, CV](mutator: MonadicDatasetMutator[CV], nameForType: CT => String, systemColumns: Map[String, CT], idColumnName: String) {
+  import mutator._
 
-      loader.create(table)
-
-      for((name, typ) <- systemColumns) {
-        val col = datasetMap.addColumn(table, name, nameForType(typ), AsciiIdentifierFilter(List("s", name)).toLowerCase)
-        loader.addColumn(col)
-        if(col.logicalName == idColumnName) {
-          val newCol = datasetMap.setSystemPrimaryKey(col)
-          loader.makeSystemPrimaryKey(newCol)
-        }
+  def createDataset(datasetId: String, username: String): IO[Unit] = {
+    val systemColumnAdds = systemColumns.iterator.map { case (name, typ) =>
+      addColumn(name, nameForType(typ), AsciiIdentifierFilter(List("s", name)).toLowerCase).flatMap { col =>
+        if(col.logicalName == idColumnName) makeSystemPrimaryKey(col)
+        else col.pure[DatasetM]
       }
-
-      val newVersion = logger.endTransaction().getOrElse(sys.error(s"No record of the `working copy created' or ${systemColumns.size} columns?"))
-      datasetMap.updateDataVersion(table, newVersion)
-      globalLog.log(table.datasetInfo, newVersion, now, username)
+    }.toStream
+    creatingDataset(as = username)(datasetId, "t") {
+      systemColumnAdds.sequenceU.map(_ => ())
     }
   }
 }

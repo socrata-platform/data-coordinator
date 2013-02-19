@@ -13,19 +13,21 @@ import com.socrata.soql.types._
 import com.socrata.id.numeric.IdProvider
 import com.socrata.csv.CSVIterator
 
+import org.postgresql.ds._
+import com.socrata.soql.types.SoQLType
+import com.rojoma.simplearm.util._
+
 import com.socrata.datacoordinator.common.soql._
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth.loader._
-import com.socrata.datacoordinator.util._
 import com.socrata.datacoordinator.truth._
-import com.socrata.datacoordinator.truth.metadata.sql.{PostgresGlobalLog, PostgresDatasetMapWriter}
-import com.socrata.datacoordinator.truth.loader.sql._
-import com.socrata.datacoordinator.truth.sql.{DatabasePopulator, SqlColumnRep}
+import com.socrata.datacoordinator.truth.sql.{PostgresMonadicDatabaseMutator, SqlColumnRep}
 import com.socrata.datacoordinator.id.RowId
 import com.socrata.datacoordinator.{Row, MutableRow}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.loader.sql.{PostgresSqlLoaderProvider, AbstractSqlLoaderProvider}
 import com.socrata.datacoordinator.common.StandardDatasetMapLimits
+import scalaz.effect.IO
 
 object ChicagoCrimesLoadScript extends App {
   val url =
@@ -38,7 +40,12 @@ object ChicagoCrimesLoadScript extends App {
   // "lof9afw3"
     "blist"
 
-  val executor = Executors.newCachedThreadPool()
+  val ds = new PGSimpleDataSource
+  ds.setServerName("localhost")
+  ds.setPortNumber(5432)
+  ds.setUser("blist")
+  ds.setPassword("blist")
+  ds.setDatabaseName("robertm")
 
   def convertNum(x: String) =
     if(x.isEmpty) SoQLNullValue
@@ -70,181 +77,74 @@ object ChicagoCrimesLoadScript extends App {
     SoQLLocation -> convertLoc
   )
 
+  val executor = java.util.concurrent.Executors.newCachedThreadPool()
   try {
+
     val typeContext = SoQLTypeContext
-
-    def rowCodecFactory(): RowLogCodec[Any] = SoQLRowLogCodec
-
     val soqlRepFactory = SoQLRep.repFactories.keys.foldLeft(Map.empty[SoQLType, String => SqlColumnRep[SoQLType, Any]]) { (acc, typ) =>
       acc + (typ -> SoQLRep.repFactories(typ))
     }
-
     def genericRepFor(columnInfo: ColumnInfo): SqlColumnRep[SoQLType, Any] =
       soqlRepFactory(typeContext.typeFromName(columnInfo.typeName))(columnInfo.physicalColumnBase)
 
-    val mutator: DatabaseMutator[SoQLType, Any] = new DatabaseMutator[SoQLType, Any] {
-      class PoNT(val conn: Connection) extends ProviderOfNecessaryThings {
-        val now: DateTime = DateTime.now()
-        val datasetMap: DatasetMapWriter = new PostgresDatasetMapWriter(conn)
+    def rowPreparer(now: DateTime, schema: ColumnIdMap[ColumnInfo]): RowPreparer[Any] =
+      new RowPreparer[Any] {
+        def findCol(name: String) =
+          schema.values.iterator.find(_.logicalName == name).getOrElse(sys.error(s"No $name column?")).systemId
+        val idColumn = findCol(SystemColumns.id)
+        val createdAtColumn = findCol(SystemColumns.createdAt)
+        val updatedAtColumn = findCol(SystemColumns.updatedAt)
 
-        def datasetLog(ds: DatasetInfo): Logger[Any] = new SqlLogger[Any](
-          conn,
-          ds.logTableName,
-          rowCodecFactory
-        )
-
-        val globalLog: GlobalLog = new PostgresGlobalLog(conn)
-
-        def schemaLoader(version: CopyInfo, logger: Logger[Any]): SchemaLoader =
-          new RepBasedSqlSchemaLoader[SoQLType, Any](conn, logger, genericRepFor)
-
-        def nameForType(typ: SoQLType): String = typeContext.nameFromType(typ)
-
-        val lp = new AbstractSqlLoaderProvider(executor, typeContext, genericRepFor, _.logicalName.startsWith(":")) with PostgresSqlLoaderProvider[SoQLType, Any]
-        def rawDataLoader(table: CopyInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[Any], idProvider: IdProvider): Loader[Any] = {
-          lp(conn, table, schema, rowPreparer(schema), idProvider, logger)
+        def prepareForInsert(row: Row[Any], sid: RowId): Row[Any] = {
+          val tmp = new MutableRow[Any](row)
+          tmp(idColumn) = sid
+          tmp(createdAtColumn) = now
+          tmp(updatedAtColumn) = now
+          tmp.freeze()
         }
 
-        def dataLoader(table: CopyInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[Any], idProvider: IdProvider): Managed[Loader[Any]] =
-          managed(rawDataLoader(table, schema, logger, idProvider))
-
-        def delogger(dataset: DatasetInfo) = new SqlDelogger[Any](conn, dataset.logTableName, rowCodecFactory)
-
-        def rowPreparer(schema: ColumnIdMap[ColumnInfo]) =
-          new RowPreparer[Any] {
-            def findCol(name: String) =
-              schema.values.iterator.find(_.logicalName == name).getOrElse(sys.error(s"No $name column?")).systemId
-            val idColumn = findCol(SystemColumns.id)
-            val createdAtColumn = findCol(SystemColumns.createdAt)
-            val updatedAtColumn = findCol(SystemColumns.updatedAt)
-
-            def prepareForInsert(row: Row[Any], sid: RowId): Row[Any] = {
-              val tmp = new MutableRow[Any](row)
-              tmp(idColumn) = sid
-              tmp(createdAtColumn) = now
-              tmp(updatedAtColumn) = now
-              tmp.freeze()
-            }
-
-            def prepareForUpdate(row: Row[Any]): Row[Any] = {
-              val tmp = new MutableRow[Any](row)
-              tmp(updatedAtColumn) = now
-              tmp.freeze()
-            }
-          }
-      }
-
-      def withTransaction[T]()(f: ProviderOfNecessaryThings => T): T = {
-        for {
-          conn <- managed(DriverManager.getConnection(url, username, pwd))
-        } yield {
-          conn.setAutoCommit(false)
-          try {
-            val result = f(new PoNT(conn))
-            conn.commit()
-            result
-          } finally {
-            conn.rollback()
-          }
+        def prepareForUpdate(row: Row[Any]): Row[Any] = {
+          val tmp = new MutableRow[Any](row)
+          tmp(updatedAtColumn) = now
+          tmp.freeze()
         }
       }
 
-      def withSchemaUpdate[T](datasetId: String, user: String)(f: SchemaUpdate => T): T =
-        withTransaction() { pontRaw =>
-          val pont = pontRaw.asInstanceOf[PoNT]
-          object Operations extends SchemaUpdate {
-            val now: DateTime = pont.now
-            val datasetMap: pont.datasetMap.type = pont.datasetMap
-            val initialDatasetInfo = datasetMap.datasetInfo(datasetId).getOrElse(sys.error("no such dataset")) // TODO: Real error
-            val initialCopyInfo = datasetMap.latest(initialDatasetInfo)
-            val datasetLog = pont.datasetLog(initialDatasetInfo)
+    val loaderProvider = new AbstractSqlLoaderProvider(executor, typeContext, genericRepFor, _.logicalName.startsWith(":")) with PostgresSqlLoaderProvider[SoQLType, Any]
 
-            val schemaLoader: SchemaLoader = pont.schemaLoader(initialCopyInfo, datasetLog)
-            def datasetContentsCopier = new RepBasedSqlDatasetContentsCopier(pont.conn, datasetLog, genericRepFor)
-          }
-
-          val result = f(Operations)
-          Operations.datasetLog.endTransaction() foreach { version =>
-            val finalDatasetInfo = Operations.datasetMap.datasetInfo(datasetId).getOrElse(sys.error("No such dataset?")) // TODO: better error
-            val finalCopyInfo = Operations.datasetMap.latest(finalDatasetInfo)
-
-            pont.datasetMap.updateDataVersion(finalCopyInfo, version)
-            pont.globalLog.log(finalDatasetInfo, version, pont.now, user)
-          }
-          result
-        }
-
-      def withDataUpdate[T](datasetId: String, user: String)(f: DataUpdate => T): T =
-        withTransaction() { pontRaw =>
-          val pont = pontRaw.asInstanceOf[PoNT]
-          class Operations extends DataUpdate with Closeable {
-            val now: DateTime = pont.now
-            val datasetMap = pont.datasetMap
-            val initialDatasetInfo = datasetMap.datasetInfo(datasetId).getOrElse(sys.error("No such dataset?")) // TODO: better error
-            val initialCopyInfo = datasetMap.latest(initialDatasetInfo)
-            val datasetLog = pont.datasetLog(initialDatasetInfo)
-
-            val initialSchema = datasetMap.schema(initialCopyInfo)
-            val rowIdProvider = new RowIdProvider(initialDatasetInfo.nextRowId)
-            val dataLoader = pont.rawDataLoader(initialCopyInfo, initialSchema, datasetLog, rowIdProvider)
-
-            def close() {
-              dataLoader.close()
-            }
-          }
-
-          using(new Operations) { operations =>
-            val result = f(operations)
-
-            val finalDatasetInfo = operations.datasetMap.datasetInfo(datasetId).getOrElse(sys.error("No such dataset?")) // TODO: better error
-            val finalCopyInfo = operations.datasetMap.latest(finalDatasetInfo)
-
-            val nextRowId = operations.rowIdProvider.finish()
-            val newCI = if(nextRowId != finalDatasetInfo.nextRowId) {
-              operations.datasetLog.rowIdCounterUpdated(nextRowId)
-              operations.datasetMap.updateNextRowId(finalCopyInfo, nextRowId)
-            } else {
-              finalCopyInfo
-            }
-
-            operations.datasetLog.endTransaction() foreach { version =>
-              operations.datasetMap.updateDataVersion(newCI, version)
-              pont.globalLog.log(finalDatasetInfo, version, pont.now, user)
-            }
-            result
-          }
-        }
+    def loaderFactory(conn: Connection, now: DateTime, copy: CopyInfo, schema: ColumnIdMap[ColumnInfo], idProvider: IdProvider, logger: Logger[Any]): Loader[Any] = {
+      loaderProvider(conn, copy, schema, rowPreparer(now, schema), idProvider, logger)
     }
 
-    val datasetMapLimits = StandardDatasetMapLimits
+    val openConnection = IO(ds.getConnection())
+    val ll = new PostgresMonadicDatabaseMutator(openConnection, genericRepFor, () => SoQLRowLogCodec, loaderFactory)
+    val highlevel = MonadicDatasetMutator(ll)
 
-    val datasetCreator = new DatasetCreator(mutator, Map(
+    com.rojoma.simplearm.util.using(openConnection.unsafePerformIO()) { conn =>
+      com.socrata.datacoordinator.truth.sql.DatabasePopulator.populate(conn, StandardDatasetMapLimits)
+    }
+
+    val datasetCreator = new DatasetCreator(highlevel, typeContext.nameFromType, Map(
       SystemColumns.id -> SoQLID,
       SystemColumns.createdAt -> SoQLFixedTimestamp,
       SystemColumns.updatedAt -> SoQLFixedTimestamp
     ), SystemColumns.id)
 
-    val columnAdder = new ColumnAdder(mutator, datasetMapLimits.maximumPhysicalColumnBaseLength)
+    val columnAdder = new ColumnAdder(highlevel, typeContext.nameFromType, StandardDatasetMapLimits.maximumPhysicalColumnBaseLength)
 
-    val primaryKeySetter = new PrimaryKeySetter(mutator)
+    val primaryKeySetter = new PrimaryKeySetter(highlevel)
 
-    val upserter = new Upserter(mutator)
+    val upserter = new Upserter(highlevel)
 
-    val publisher = new Publisher(mutator)
+    val publisher = new Publisher(highlevel)
 
-    val workingCopyCreator = new WorkingCopyCreator(mutator, SystemColumns.id)
+    val workingCopyCreator = new WorkingCopyCreator(highlevel)
 
-    // Everything above this point can be re-used for every operation
-
-    using(DriverManager.getConnection(url, username, pwd)) { conn =>
-      conn.setAutoCommit(false)
-      DatabasePopulator.populate(conn, datasetMapLimits)
-      conn.commit()
-    }
+    // Above this can be re-used for every query
 
     val user = "robertm"
 
-    try { datasetCreator.createDataset("crimes", user) }
+    try { datasetCreator.createDataset("crimes", user).unsafePerformIO() }
     catch { case _: DatasetAlreadyExistsException => /* pass */ }
     using(new CSVIterator(new File("/home/robertm/chicagocrime.csv"))) { it =>
       val types = Map(
@@ -272,34 +172,19 @@ object ChicagoCrimesLoadScript extends App {
         "Location" -> SoQLLocation
       )
       val headers = it.next()
-      val schema = columnAdder.addToSchema("crimes", headers.map { x => x -> types(x) }.toMap, user).mapValues { ci =>
+      val schema = columnAdder.addToSchema("crimes", headers.map { x => x -> types(x) }.toMap, user).unsafePerformIO().mapValues { ci =>
         (ci, typeContext.typeFromName(ci.typeName))
       }.toMap
-      primaryKeySetter.makePrimaryKey("crimes", "ID", user)
+      primaryKeySetter.makePrimaryKey("crimes", "ID", user).unsafePerformIO()
       val start = System.nanoTime()
       upserter.upsert("crimes", user) { _ =>
         noopManagement(it.take(10).map(transformToRow(schema, headers, _)).map(Right(_)))
-      }
+      }.unsafePerformIO()
       val end = System.nanoTime()
       println(s"Upsert took ${(end - start) / 1000000L}ms")
-      publisher.publish("crimes", user)
-      workingCopyCreator.copyDataset("crimes", user, copyData = true)
+      publisher.publish("crimes", user).unsafePerformIO()
+      workingCopyCreator.copyDataset("crimes", user, copyData = true).unsafePerformIO()
     }
-    // columnAdder.addToSchema("crimes", Map("id" -> SoQLText, "penalty" -> SoQLText), user)
-    // primaryKeySetter.makePrimaryKey("crimes", "id", user)
-    // loadRows("crimes", upserter, user)
-    // loadRows2("crimes", upserter, user)
-
-//    mutator.withTransaction() { mutator =>
-//      val t = mutator.datasetMapReader.datasetInfo("crimes").getOrElse(sys.error("No crimes db?"))
-//      val delogger = mutator.delogger(t)
-//
-//      def pt(n: Long) = using(delogger.delog(n)) { it =>
-//        it/*.filterNot(_.isInstanceOf[Delogger.RowDataUpdated[_]])*/.foreach { ev => println(n + " : " + ev) }
-//      }
-//
-//      (1L to 6) foreach (pt)
-//    }
   } finally {
     executor.shutdown()
   }
