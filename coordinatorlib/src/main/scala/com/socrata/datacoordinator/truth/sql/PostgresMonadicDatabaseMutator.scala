@@ -1,4 +1,4 @@
-package com.socrata.datacoordinator.primary
+package com.socrata.datacoordinator.truth
 package sql
 
 import java.sql.Connection
@@ -14,7 +14,6 @@ import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, CopyInfo, GlobalL
 import com.socrata.datacoordinator.truth.metadata.sql.{PostgresGlobalLog, PostgresDatasetMapWriter}
 import com.socrata.datacoordinator.truth.loader.{DatasetContentsCopier, Logger, SchemaLoader, Loader, Report, RowPreparer}
 import com.socrata.datacoordinator.truth.loader.sql.{RepBasedSqlSchemaLoader, RepBasedSqlDatasetContentsCopier, SqlLogger}
-import com.socrata.datacoordinator.truth.sql.SqlColumnRep
 import com.socrata.datacoordinator.truth.{TypeContext, RowLogCodec}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.id.RowId
@@ -24,9 +23,7 @@ import java.util.concurrent.ExecutorService
 class PostgresMonadicDatabaseMutator[CT, CV](openConnection: IO[Connection],
                                              repForColumn: ColumnInfo => SqlColumnRep[CT, CV],
                                              rowCodecFactory: () => RowLogCodec[CV],
-                                             typeContext: TypeContext[CT, CV],
-                                             rowPreparer: (DateTime, ColumnIdMap[ColumnInfo]) => RowPreparer[CV],
-                                             executor: ExecutorService,
+                                             loaderFactory: (Connection, DateTime, CopyInfo, ColumnIdMap[ColumnInfo], IdProvider, Logger[CV]) => Loader[CV],
                                              rowFlushSize: Int = 128000,
                                              batchFlushSize: Int = 2000000)
   extends LowLevelMonadicDatabaseMutator[CV]
@@ -35,7 +32,7 @@ class PostgresMonadicDatabaseMutator[CT, CV](openConnection: IO[Connection],
 
   type LoaderProvider = (CopyInfo, ColumnIdMap[ColumnInfo], RowPreparer[CV], IdProvider, Logger[CV], ColumnInfo => SqlColumnRep[CT, CV]) => Loader[CV]
 
-  case class S(conn: Connection, now: DateTime, datasetMap: DatasetMapWriter, globalLog: GlobalLog, loaderProvider: LoaderProvider)
+  case class S(conn: Connection, now: DateTime, datasetMap: DatasetMapWriter, globalLog: GlobalLog)
   type MutationContext = S
 
   def closeConnection(conn: Connection): IO[Unit] = IO(conn.rollback()).ensuring(IO(conn.close()))
@@ -52,8 +49,7 @@ class PostgresMonadicDatabaseMutator[CT, CV](openConnection: IO[Connection],
       rs.next()
       new DateTime(rs.getTimestamp(1).getTime)
     }
-    val lp = new com.socrata.datacoordinator.common.sql.AbstractSqlLoaderProvider(conn, executor, typeContext) with com.socrata.datacoordinator.common.sql.PostgresSqlLoaderProvider[CT, CV]
-    S(conn, now, datasetMap, globalLog, lp)
+    S(conn, now, datasetMap, globalLog)
   }
 
   def runTransaction[A](action: DatabaseM[A]): IO[A] =
@@ -72,7 +68,6 @@ class PostgresMonadicDatabaseMutator[CT, CV](openConnection: IO[Connection],
 
   val rawNow: DatabaseM[DateTime] = get.map(_.now)
   val rawConn: DatabaseM[Connection] = get.map(_.conn)
-  def loaderProvider: DatabaseM[LoaderProvider] = get.map(_.loaderProvider)
 
   val datasetMap: DatabaseM[DatasetMapWriter] = get.map(_.datasetMap)
 
@@ -85,13 +80,11 @@ class PostgresMonadicDatabaseMutator[CT, CV](openConnection: IO[Connection],
   def datasetContentsCopier(logger: Logger[CV]): DatabaseM[DatasetContentsCopier] =
     rawConn.map(new RepBasedSqlDatasetContentsCopier(_, logger, repForColumn))
 
-  def dataLoader(logger: Logger[CV]): DatabaseM[Loader[CV]] = ???
-
   def withDataLoader[A](table: CopyInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[CV])(f: Loader[CV] => IO[A]): DatabaseM[(Report[CV], RowId, A)] = for {
     s <- get
     res <- io {
       val rowIdProvider = new com.socrata.datacoordinator.util.RowIdProvider(table.datasetInfo.nextRowId)
-      using(s.loaderProvider(table, schema, rowPreparer(s.now, schema), rowIdProvider, logger, repForColumn)) { loader =>
+      using(loaderFactory(s.conn, s.now, table, schema, rowIdProvider, logger)) { loader =>
         val result = f(loader).unsafePerformIO()
         val report = loader.report
         (report, rowIdProvider.finish(), result)

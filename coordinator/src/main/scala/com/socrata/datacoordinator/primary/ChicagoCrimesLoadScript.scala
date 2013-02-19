@@ -24,7 +24,7 @@ import com.socrata.datacoordinator.truth.sql.{DatabasePopulator, SqlColumnRep}
 import com.socrata.datacoordinator.id.RowId
 import com.socrata.datacoordinator.{Row, MutableRow}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
-import com.socrata.datacoordinator.common.sql.{PostgresSqlLoaderProvider, AbstractSqlLoaderProvider}
+import com.socrata.datacoordinator.truth.loader.sql.{PostgresSqlLoaderProvider, AbstractSqlLoaderProvider}
 import com.socrata.datacoordinator.common.StandardDatasetMapLimits
 
 object ChicagoCrimesLoadScript extends App {
@@ -100,9 +100,9 @@ object ChicagoCrimesLoadScript extends App {
 
         def nameForType(typ: SoQLType): String = typeContext.nameFromType(typ)
 
+        val lp = new AbstractSqlLoaderProvider(executor, typeContext, genericRepFor, _.logicalName.startsWith(":")) with PostgresSqlLoaderProvider[SoQLType, Any]
         def rawDataLoader(table: CopyInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[Any], idProvider: IdProvider): Loader[Any] = {
-          val lp = new AbstractSqlLoaderProvider(conn, executor, typeContext) with PostgresSqlLoaderProvider[SoQLType, Any]
-          lp(table, schema, rowPreparer(schema), idProvider, logger, genericRepFor)
+          lp(conn, table, schema, rowPreparer(schema), idProvider, logger)
         }
 
         def dataLoader(table: CopyInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[Any], idProvider: IdProvider): Managed[Loader[Any]] =

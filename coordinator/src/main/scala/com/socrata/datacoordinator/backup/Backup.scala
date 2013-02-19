@@ -11,11 +11,10 @@ import com.socrata.soql.types.SoQLType
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.id.{RowId, DatasetId}
-import com.socrata.datacoordinator.truth.sql.{SqlColumnReadRep, SqlColumnRep, DatabasePopulator}
+import com.socrata.datacoordinator.truth.sql.{RepBasedSqlDatasetContext, SqlColumnRep, DatabasePopulator}
 import com.socrata.datacoordinator.truth.loader.sql._
 import com.socrata.datacoordinator.common.soql.{SoQLRowLogCodec, SoQLRep, SoQLTypeContext}
 import com.socrata.datacoordinator.truth.metadata.sql.PostgresDatasetMapWriter
-import com.socrata.datacoordinator.common.sql.RepBasedDatasetContext
 import com.socrata.datacoordinator.truth.loader.Delogger._
 import com.socrata.datacoordinator.truth.loader.Delogger.RowIdentifierCleared
 import com.socrata.datacoordinator.truth.loader.Update
@@ -54,7 +53,7 @@ class Backup(conn: Connection, executor: ExecutorService, paranoid: Boolean) {
     val schema = schemaInfo.mapValuesStrict(genericRepFor)
     val idCol = schemaInfo.values.find(_.isSystemPrimaryKey).getOrElse(sys.error("No system ID column?")).systemId
     val systemIds = schemaInfo.filter { (_, ci) => ci.logicalName.startsWith(":") }.keySet
-    val datasetContext = new RepBasedDatasetContext(
+    val datasetContext = RepBasedSqlDatasetContext(
       typeContext,
       schema,
       schemaInfo.values.find(_.isUserPrimaryKey).map(_.systemId),
