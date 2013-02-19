@@ -69,11 +69,10 @@ object Test extends App {
     loaderProvider(conn, copy, schema, rowPreparer(now, schema), idProvider, logger)
   }
 
-  val openConnection = IO(ds.getConnection())
-  val ll = new PostgresMonadicDatabaseMutator(openConnection, genericRepFor, () => SoQLRowLogCodec, loaderFactory)
+  val ll = new PostgresMonadicDatabaseMutator(ds, genericRepFor, () => SoQLRowLogCodec, loaderFactory)
   val highlevel = MonadicDatasetMutator(ll)
 
-  com.rojoma.simplearm.util.using(openConnection.unsafePerformIO()) { conn =>
+  com.rojoma.simplearm.util.using(ds.getConnection()) { conn =>
     com.socrata.datacoordinator.truth.sql.DatabasePopulator.populate(conn, StandardDatasetMapLimits)
   }
 

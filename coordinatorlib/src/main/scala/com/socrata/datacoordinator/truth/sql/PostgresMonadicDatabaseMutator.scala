@@ -20,7 +20,7 @@ import com.socrata.datacoordinator.id.RowId
 import com.socrata.id.numeric.IdProvider
 import java.util.concurrent.ExecutorService
 
-class PostgresMonadicDatabaseMutator[CT, CV](openConnection: IO[Connection],
+class PostgresMonadicDatabaseMutator[CT, CV](dataSource: DataSource,
                                              repForColumn: ColumnInfo => SqlColumnRep[CT, CV],
                                              rowCodecFactory: () => RowLogCodec[CV],
                                              loaderFactory: (Connection, DateTime, CopyInfo, ColumnIdMap[ColumnInfo], IdProvider, Logger[CV]) => Loader[CV],
@@ -35,6 +35,7 @@ class PostgresMonadicDatabaseMutator[CT, CV](openConnection: IO[Connection],
   case class S(conn: Connection, now: DateTime, datasetMap: DatasetMapWriter, globalLog: GlobalLog)
   type MutationContext = S
 
+  val openConnection = IO(dataSource.getConnection())
   def closeConnection(conn: Connection): IO[Unit] = IO(conn.rollback()).ensuring(IO(conn.close()))
   def withConnection[A](f: Connection => IO[A]): IO[A] =
     openConnection.bracket(closeConnection)(f)
