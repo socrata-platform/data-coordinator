@@ -75,8 +75,9 @@ trait MonadicDatasetMutator[CV] {
   type MutationContext
   type DatasetM[+T] = StateT[databaseMutator.DatabaseM, MutationContext, T]
 
-  def withDataset[A](datasetName: String, username: String)(action: DatasetM[A]): IO[Option[A]]
-  def creatingDataset[A](datasetName: String, tableBaseBase: String, username: String)(action: DatasetM[A]): IO[A]
+  def creatingDataset[A](as: String)(datasetName: String, tableBaseBase: String)(action: DatasetM[A]): IO[A]
+  def withDataset[A](as: String)(datasetName: String)(action: DatasetM[A]): IO[Option[A]]
+  def creatingCopy[A](as: String)(datasetName: String, copyData: Boolean)(action: DatasetM[A]): IO[Option[A]]
 
   def io[A](op: => A): DatasetM[A]
 
@@ -85,8 +86,8 @@ trait MonadicDatasetMutator[CV] {
 
   def addColumn(logicalName: String, typeName: String, physicalColumnBaseBase: String): DatasetM[ColumnInfo]
   def makeSystemPrimaryKey(ci: ColumnInfo): DatasetM[ColumnInfo]
+  def makeUserPrimaryKey(ci: ColumnInfo): DatasetM[ColumnInfo]
   def dropColumn(ci: ColumnInfo): DatasetM[Unit]
-  def makeWorkingCopy(copyData: Boolean): DatasetM[CopyInfo]
   def publish: DatasetM[CopyInfo]
   def upsert(inputGenerator: ColumnIdMap[ColumnInfo] => Managed[Iterator[Either[CV, Row[CV]]]]): DatasetM[Report[CV]]
 }
@@ -114,7 +115,7 @@ class MonadicDatabaseMutatorImpl[CV](val databaseMutator: LowLevelMonadicDatabas
   val copyInfo: DatasetM[CopyInfo] = getsT(_.currentVersion)
   val schema: DatasetM[ColumnIdMap[ColumnInfo]] = getsT(_.currentSchema)
 
-  def withDataset[A](datasetName: String, username: String)(action: DatasetM[A]): IO[Option[A]] =
+  def withDataset[A](username: String)(datasetName: String)(action: DatasetM[A]): IO[Option[A]] =
     databaseMutator.runTransaction {
       for {
         initialStateOpt <- databaseMutator.loadLatestVersionOfDataset(datasetName)
@@ -130,7 +131,7 @@ class MonadicDatabaseMutatorImpl[CV](val databaseMutator: LowLevelMonadicDatabas
       } yield result
     }
 
-  def creatingDataset[A](datasetName: String, tableBaseBase: String, username: String)(action: DatasetM[A]): IO[A] =
+  def creatingDataset[A](username: String)(datasetName: String, tableBaseBase: String)(action: DatasetM[A]): IO[A] =
     databaseMutator.runTransaction {
       for {
         m <- databaseMutator.datasetMap
@@ -142,6 +143,11 @@ class MonadicDatabaseMutatorImpl[CV](val databaseMutator: LowLevelMonadicDatabas
         (finalState, result) <- action(initialState)
         _ <- databaseMutator.finishDatasetTransaction(username, finalState.currentVersion, logger)
       } yield result
+    }
+
+  def creatingCopy[A](username: String)(datasetName: String, copyData: Boolean)(action: DatasetM[A]): IO[Option[A]] =
+    withDataset(username)(datasetName) {
+      makeWorkingCopy(copyData).flatMap(_ => action)
     }
 
   def addColumn(logicalName: String, typeName: String, physicalColumnBaseBase: String): DatasetM[ColumnInfo] = for {
@@ -189,9 +195,6 @@ class MonadicDatabaseMutatorImpl[CV](val databaseMutator: LowLevelMonadicDatabas
     _ <- put(s.copy(currentSchema = s.currentSchema + (ci.systemId -> newCi)))
   } yield newCi
 
-  // FIXME: only permit this to be called at the start of a transaction.
-  // The system pretty much assumes that a single dataVersion will not be
-  // shared amongst multiple copies.
   def makeWorkingCopy(copyData: Boolean): DatasetM[CopyInfo] = for {
     map <- datasetMap
     dataCopier <- if(copyData) datasetContentsCopier.map(Some(_)) else None.pure[DatasetM]
@@ -329,13 +332,12 @@ object Test extends App {
 
   import highlevel._
   val name = System.currentTimeMillis().toString
-  val report1 = creatingDataset(name, "m", "robertm") {
+  val (col1Id, col2Id) = creatingDataset(as = "robertm")(name, "m") {
     for {
-      id <- addColumn(":id", "row_identifier", "id")
-      _ <- makeSystemPrimaryKey(id)
+      id <- addColumn(":id", "row_identifier", "id").flatMap(makeSystemPrimaryKey)
       created_at <- addColumn(":created_at", "fixed_timestamp", "created")
       updated_at <- addColumn(":updated_at", "fixed_timestamp", "updated")
-      col1 <- addColumn("col1", "number", "first")
+      col1 <- addColumn("col1", "number", "first").flatMap(makeUserPrimaryKey)
       col2 <- addColumn("col2", "text", "second")
       report <- upsert { _ =>
         managed {
@@ -346,20 +348,18 @@ object Test extends App {
         }
       }
       _ <- publish
-    } yield report
+    } yield (col1.systemId, col2.systemId)
   }.unsafePerformIO()
-  println(report1)
 
-  val report2 = withDataset(name, "robertm") {
+  val report2 = creatingCopy(as = "robertm")(name, copyData = false) {
     for {
-      _ <- makeWorkingCopy(true)
-      col1 <- schema.map(_.values.find(_.logicalName == "col1").get)
-      col2 <- schema.map(_.values.find(_.logicalName == "col2").get)
+      col1 <- schema.map(_(col1Id))
+      col2 <- schema.map(_(col2Id))
       report <- upsert { _ =>
         managed {
           CloseableIterator.simple(Iterator(
-            Right(Row(col1.systemId -> BigDecimal(7), col2.systemId -> "goodbye")),
-            Right(Row(col1.systemId -> BigDecimal(8), col2.systemId -> "world"))
+            Right(Row(col1.systemId -> BigDecimal(6), col2.systemId -> "goodbye")),
+            Right(Row(col1.systemId -> BigDecimal(7), col2.systemId -> "world"))
           ))
         }
       }
