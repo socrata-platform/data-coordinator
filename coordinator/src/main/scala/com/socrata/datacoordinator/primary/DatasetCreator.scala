@@ -10,15 +10,16 @@ import com.socrata.datacoordinator.truth.MonadicDatasetMutator
 class DatasetCreator[CT, CV](mutator: MonadicDatasetMutator[CV], nameForType: CT => String, systemColumns: Map[String, CT], idColumnName: String) {
   import mutator._
 
+  private val addSystemColumns = systemColumns.map { case (name, typ) =>
+    addColumn(name, nameForType(typ), AsciiIdentifierFilter(List("s", name)).toLowerCase).flatMap { col =>
+      if(col.logicalName == idColumnName) makeSystemPrimaryKey(col)
+      else col.pure[DatasetM]
+    }
+  }.toList.sequenceU.map(_ => ())
+
   def createDataset(datasetId: String, username: String): IO[Unit] = {
-    val systemColumnAdds = systemColumns.iterator.map { case (name, typ) =>
-      addColumn(name, nameForType(typ), AsciiIdentifierFilter(List("s", name)).toLowerCase).flatMap { col =>
-        if(col.logicalName == idColumnName) makeSystemPrimaryKey(col)
-        else col.pure[DatasetM]
-      }
-    }.toStream
     creatingDataset(as = username)(datasetId, "t") {
-      systemColumnAdds.sequenceU.map(_ => ())
+      addSystemColumns
     }
   }
 }
