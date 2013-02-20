@@ -135,10 +135,10 @@ class SqlLogger[CV](connection: Connection,
     logLine(SqlLogger.DataCopied, nullBytes)
   }
 
-  def workingCopyDropped() {
+  def copyDropped(info: CopyInfo) {
     checkTxn()
     flushRowData()
-    logLine(SqlLogger.WorkingCopyDropped, nullBytes)
+    logLine(SqlLogger.CopyDropped, JsonUtil.renderJson(info.unanchored))
   }
 
   def workingCopyPublished() {
@@ -247,7 +247,7 @@ object SqlLogger {
   val SystemRowIdentifierChanged = "sidcol"
   val WorkingCopyCreated = "workcopy"
   val DataCopied = "datacopy"
-  val WorkingCopyDropped = "dropwork"
+  val CopyDropped = "dropcopy"
   val WorkingCopyPublished = "pubwork"
   val TransactionEnded = "endtxn"
 

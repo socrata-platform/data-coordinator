@@ -8,6 +8,7 @@ import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.truth.sql.{DatabasePopulator, SqlPKableColumnRep, SqlColumnRep}
 import com.socrata.datacoordinator.truth.metadata.{CopyInfo, ColumnInfo}
+import org.joda.time.DateTime
 
 class RepBasedSqlSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV], repFor: ColumnInfo => SqlColumnRep[CT, CV]) extends SchemaLoader {
   // overriddeden when things need to go in tablespaces
@@ -22,7 +23,11 @@ class RepBasedSqlSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV], repF
   }
 
   def drop(copyInfo: CopyInfo) {
-    // TODO: queue the table for dropping
+    using(conn.prepareStatement("INSERT INTO pending_table_drops (table_name, queued_at) VALUES (?, current_timestamp)")) { stmt =>
+      stmt.setString(1, copyInfo.dataTableName)
+      stmt.execute()
+    }
+    logger.copyDropped(copyInfo)
   }
 
   def addColumn(columnInfo: ColumnInfo) {

@@ -13,7 +13,7 @@ trait Logger[CV] extends DataLogger[CV] {
   def systemIdColumnSet(info: ColumnInfo)
   def workingCopyCreated(info: CopyInfo)
   def dataCopied()
-  def workingCopyDropped()
+  def copyDropped(info: CopyInfo)
   def workingCopyPublished()
 
   /** Logs the end of the transaction and returns its version number.

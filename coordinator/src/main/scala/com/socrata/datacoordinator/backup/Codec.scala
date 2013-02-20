@@ -29,8 +29,10 @@ class LogDataCodec[CV](rowLogCodecFactory: () => RowLogCodec[CV]) extends Codec[
         dos.write(JsonUtil.renderJson(di).getBytes("UTF-8"))
         dos.write('\n')
         dos.write(JsonUtil.renderJson(ci).getBytes("UTF-8"))
-      case Delogger.WorkingCopyPublished | Delogger.WorkingCopyDropped | Delogger.DataCopied | Delogger.Truncated =>
+      case Delogger.WorkingCopyPublished | Delogger.DataCopied | Delogger.Truncated =>
         /* pass */
+      case Delogger.CopyDropped(ci) =>
+        dos.write(JsonUtil.renderJson(ci).getBytes("UTF-8"))
       case Delogger.ColumnCreated(col) =>
         dos.write(JsonUtil.renderJson(col).getBytes("UTF-8"))
       case Delogger.RowIdentifierSet(col) =>
@@ -68,8 +70,11 @@ class LogDataCodec[CV](rowLogCodecFactory: () => RowLogCodec[CV]) extends Codec[
         Delogger.WorkingCopyCreated(di, ci)
       case Delogger.WorkingCopyPublished =>
         Delogger.WorkingCopyPublished
-      case Delogger.WorkingCopyDropped =>
-        Delogger.WorkingCopyDropped
+      case Delogger.CopyDropped =>
+        val ci = JsonUtil.readJson[UnanchoredCopyInfo](new InputStreamReader(stream, "UTF-8")).getOrElse {
+          throw new PacketDecodeException("Unable to decode a columnInfo")
+        }
+        Delogger.CopyDropped(ci)
       case Delogger.DataCopied =>
         Delogger.DataCopied
       case Delogger.Truncated =>

@@ -523,7 +523,8 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
 
   def updateDataVersionQuery = "UPDATE copy_map SET data_version = ? WHERE system_id = ?"
   def updateDataVersion(copyInfo: CopyInfo, newDataVersion: Long): CopyInfo = {
-    assert(newDataVersion == copyInfo.dataVersion + 1, s"Setting data version to $newDataVersion when it was ${copyInfo.dataVersion}")
+    // Not "== copyInfo.dataVersion + 1" because if a working copy was dropped
+    assert(newDataVersion > copyInfo.dataVersion, s"Setting data version to $newDataVersion when it was ${copyInfo.dataVersion}")
     using(conn.prepareStatement(updateDataVersionQuery)) { stmt =>
       stmt.setLong(1, newDataVersion)
       stmt.setLong(2, copyInfo.systemId.underlying)

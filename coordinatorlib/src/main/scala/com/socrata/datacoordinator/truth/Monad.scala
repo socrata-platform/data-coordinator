@@ -90,6 +90,7 @@ trait MonadicDatasetMutator[CV] {
   def dropColumn(ci: ColumnInfo): DatasetM[Unit]
   def publish: DatasetM[CopyInfo]
   def upsert(inputGenerator: ColumnIdMap[ColumnInfo] => Managed[Iterator[Either[CV, Row[CV]]]]): DatasetM[Report[CV]]
+  def drop: DatasetM[Unit]
 }
 
 object MonadicDatasetMutator {
@@ -273,6 +274,18 @@ object MonadicDatasetMutator {
       newCv <- io { map.updateNextRowId(s.currentVersion, nextRowId) }
       _ <- put(s.copy(currentVersion = newCv))
     } yield report
+
+    val drop: DatasetM[Unit] = for {
+      map <- datasetMap
+      s <- get
+      (newCurrentVersion, newCurrentSchema) <- io {
+        map.dropCopy(s.currentVersion)
+        s.schemaLoader.drop(s.currentVersion)
+        val ci = map.latest(s.currentVersion.datasetInfo)
+        (ci, map.schema(ci))
+      }
+      _ <- put(s.copy(currentVersion = newCurrentVersion, currentSchema = newCurrentSchema))
+    } yield ()
   }
 
   def apply[CV](lowLevelMutator: LowLevelMonadicDatabaseMutator[CV]): MonadicDatasetMutator[CV] = new Impl(lowLevelMutator)

@@ -20,7 +20,8 @@ object DatabasePopulator {
         "physcol_base_len" -> maximumPhysicalColumnBaseLength.toString,
         "phystab_base_len" -> maximumPhysicalTableBaseLength.toString,
         "type_name_len" -> maximumTypeNameLength.toString,
-        "store_id_len" -> maximumStoreIdLength.toString
+        "store_id_len" -> maximumStoreIdLength.toString,
+        "table_name_len" -> maximumPhysicalTableNameLength.toString
       )
     )
   }
@@ -46,4 +47,5 @@ case class DatasetMapLimits(maximumDatasetIdLength: Int = 20,
                             maximumPhysicalColumnBaseLength: Int = 20,
                             maximumPhysicalTableBaseLength: Int = 20,
                             maximumTypeNameLength: Int = 20,
-                            maximumStoreIdLength: Int = 20)
+                            maximumStoreIdLength: Int = 20,
+                            maximumPhysicalTableNameLength: Int = 60)

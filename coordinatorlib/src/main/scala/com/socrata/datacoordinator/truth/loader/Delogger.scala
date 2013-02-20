@@ -43,7 +43,8 @@ object Delogger {
 
   case object DataCopied extends LogEvent[Nothing] with LogEventCompanion
 
-  case object WorkingCopyDropped extends LogEvent[Nothing] with LogEventCompanion
+  case class CopyDropped(info: UnanchoredCopyInfo) extends LogEvent[Nothing]
+  object CopyDropped extends LogEventCompanion
 
   case object WorkingCopyPublished extends LogEvent[Nothing] with LogEventCompanion
 
@@ -94,7 +95,7 @@ object Delogger {
   private val allLogEventCompanions: Set[LogEventCompanion] =
     Set(Truncated, ColumnCreated, ColumnRemoved, RowIdentifierSet, RowIdentifierCleared,
       SystemRowIdentifierChanged, WorkingCopyCreated, DataCopied, WorkingCopyPublished,
-      WorkingCopyDropped, RowDataUpdated, RowIdCounterUpdated, EndTransaction)
+      CopyDropped, RowDataUpdated, RowIdCounterUpdated, EndTransaction)
   assert(allLogEventCompanions.size == eventTypeCount,
     "An entry is missing from the allLogEventCompanions set")
 
@@ -110,7 +111,7 @@ object Delogger {
         case WorkingCopyCreated => "WorkingCopyCreated"
         case DataCopied => "DataCopied"
         case WorkingCopyPublished => "WorkingCopyPublished"
-        case WorkingCopyDropped => "WorkingCopyDropped"
+        case CopyDropped => "CopyDropped"
         case RowDataUpdated => "RowDataUpdated"
         case RowIdCounterUpdated => "RowIdCounterUpdated"
         case EndTransaction => "EndTransaction"

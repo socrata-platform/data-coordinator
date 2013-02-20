@@ -162,10 +162,22 @@ class Backup(conn: Connection, executor: ExecutorService, paranoid: Boolean) {
     currentVersion
   }
 
-  def dropWorkingCopy(currentVersion: CopyInfo): CopyInfo = {
-    schemaLoader.drop(currentVersion)
-    datasetMap.dropCopy(currentVersion)
-    datasetMap.latest(currentVersion.datasetInfo)
+  def dropCopy(currentVersion: CopyInfo, droppedCopy: UnanchoredCopyInfo): CopyInfo = {
+    if(currentVersion.systemId == droppedCopy.systemId) {
+      Resync.unless(currentVersion, currentVersion.unanchored == droppedCopy, "Told to drop the current copy, but it doesn't match")
+      datasetMap.dropCopy(currentVersion)
+      schemaLoader.drop(currentVersion)
+      datasetMap.latest(currentVersion.datasetInfo)
+    } else {
+      datasetMap.copyNumber(currentVersion.datasetInfo, droppedCopy.copyNumber) match {
+        case Some(toDrop) =>
+          datasetMap.dropCopy(toDrop)
+          schemaLoader.drop(toDrop)
+          currentVersion
+        case None =>
+          Resync(currentVersion.datasetInfo, "Told to drop a copy that didn't exist")
+      }
+    }
   }
 
   def truncate(currentVersion: CopyInfo): currentVersion.type = {
@@ -221,8 +233,8 @@ class Backup(conn: Connection, executor: ExecutorService, paranoid: Boolean) {
         dropColumn(versionInfo, info)
       case Truncated =>
         truncate(versionInfo)
-      case WorkingCopyDropped =>
-        dropWorkingCopy(versionInfo)
+      case CopyDropped(info) =>
+        dropCopy(versionInfo, info)
       case EndTransaction =>
         sys.error("Shouldn't have seen this")
     }

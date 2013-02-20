@@ -83,4 +83,10 @@ CREATE TABLE IF NOT EXISTS column_map (
   UNIQUE (copy_system_id, is_user_primary_key) -- hack hack hack
 );
 
+CREATE TABLE IF NOT EXISTS pending_table_drops (
+  id         BIGSERIAL                 NOT NULL PRIMARY KEY,
+  table_name VARCHAR(%TABLE_NAME_LEN%) NOT NULL,
+  queued_at  TIMESTAMP WITH TIME ZONE  NOT NULL
+);
+
 END$$;

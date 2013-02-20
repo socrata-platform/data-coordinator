@@ -111,8 +111,8 @@ class SqlDelogger[CV](connection: Connection,
           decodeWorkingCopyCreated(aux)
         case SqlLogger.DataCopied =>
           Delogger.DataCopied
-        case SqlLogger.WorkingCopyDropped =>
-          Delogger.WorkingCopyDropped
+        case SqlLogger.CopyDropped =>
+          decodeCopyDropped(aux)
         case SqlLogger.WorkingCopyPublished =>
           Delogger.WorkingCopyPublished
         case SqlLogger.Truncated =>
@@ -180,6 +180,14 @@ class SqlDelogger[CV](connection: Connection,
         sys.error("Second parameter for `working copy created' was not an object")
       }
       Delogger.WorkingCopyCreated(di, vi)
+    }
+
+    def decodeCopyDropped(aux: Array[Byte]) = {
+      val json = new StringReader(new String(aux, UTF8))
+      val vi = JsonUtil.readJson[UnanchoredCopyInfo](json).getOrElse {
+        sys.error("Parameter for `working copy dropped' was not an object")
+      }
+      Delogger.CopyDropped(vi)
     }
 
     def fromJson[T : JsonCodec](aux: Array[Byte]): Option[T] = JsonUtil.parseJson[T](new String(aux, UTF8))

@@ -183,6 +183,11 @@ object ChicagoCrimesLoadScript extends App {
       println(s"Upsert took ${(end - start) / 1000000L}ms")
       publisher.publish("crimes", user).unsafePerformIO()
       workingCopyCreator.copyDataset("crimes", user, copyData = true).unsafePerformIO()
+      val ci = highlevel.withDataset(user)("crimes") {
+        highlevel.drop.map(_ => highlevel.copyInfo)
+      }.unsafePerformIO()
+      workingCopyCreator.copyDataset("crimes", user, copyData = true).unsafePerformIO()
+      println(ci)
     }
   } finally {
     executor.shutdown()
