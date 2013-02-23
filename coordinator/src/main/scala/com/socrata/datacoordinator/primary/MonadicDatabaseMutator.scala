@@ -13,6 +13,8 @@ import com.socrata.datacoordinator.truth.sql.PostgresMonadicDatabaseMutator
 import java.sql.Connection
 import com.socrata.id.numeric.IdProvider
 import com.socrata.datacoordinator.truth.loader.sql.{PostgresSqlLoaderProvider, AbstractSqlLoaderProvider}
+import org.postgresql.core.BaseConnection
+import java.io.Reader
 
 object Test extends App {
   import org.postgresql.ds._
@@ -63,13 +65,16 @@ object Test extends App {
 
   val executor = java.util.concurrent.Executors.newCachedThreadPool()
 
-  val loaderProvider = new AbstractSqlLoaderProvider(executor, typeContext, genericRepFor, _.logicalName.startsWith(":")) with PostgresSqlLoaderProvider[SoQLType, Any]
+  val loaderProvider = new AbstractSqlLoaderProvider(executor, typeContext, genericRepFor, _.logicalName.startsWith(":")) with PostgresSqlLoaderProvider[SoQLType, Any] {
+    def copyIn(conn: Connection, sql: String, reader: Reader): Long =
+      conn.asInstanceOf[BaseConnection].getCopyAPI.copyIn(sql, reader)
+  }
 
   def loaderFactory(conn: Connection, now: DateTime, copy: CopyInfo, schema: ColumnIdMap[ColumnInfo], idProvider: IdProvider, logger: Logger[Any]): Loader[Any] = {
     loaderProvider(conn, copy, schema, rowPreparer(now, schema), idProvider, logger)
   }
 
-  val ll = new PostgresMonadicDatabaseMutator(ds, genericRepFor, () => SoQLRowLogCodec, loaderFactory)
+  val ll = new PostgresMonadicDatabaseMutator(ds, genericRepFor, () => SoQLRowLogCodec, loaderFactory, Function.const(None))
   val highlevel = MonadicDatasetMutator(ll)
 
   com.rojoma.simplearm.util.using(ds.getConnection()) { conn =>
@@ -85,14 +90,10 @@ object Test extends App {
       updated_at <- addColumn(":updated_at", "fixed_timestamp", "updated")
       col1 <- addColumn("col1", "number", "first").flatMap(makeUserPrimaryKey)
       col2 <- addColumn("col2", "text", "second")
-      report <- upsert { _ =>
-        managed {
-          CloseableIterator.simple(Iterator(
-            Right(Row(col1.systemId -> BigDecimal(5), col2.systemId -> "hello")),
-            Right(Row(col1.systemId -> BigDecimal(6), col2.systemId -> "hello"))
-          ))
-        }
-      }
+      report <- upsert(IO(Iterator(
+        Right(Row(col1.systemId -> BigDecimal(5), col2.systemId -> "hello")),
+        Right(Row(col1.systemId -> BigDecimal(6), col2.systemId -> "hello"))
+      )))
       _ <- publish
     } yield (col1.systemId, col2.systemId)
   }.unsafePerformIO()
@@ -101,14 +102,10 @@ object Test extends App {
     for {
       col1 <- schema.map(_(col1Id))
       col2 <- schema.map(_(col2Id))
-      report <- upsert { _ =>
-        managed {
-          CloseableIterator.simple(Iterator(
-            Right(Row(col1.systemId -> BigDecimal(6), col2.systemId -> "goodbye")),
-            Right(Row(col1.systemId -> BigDecimal(7), col2.systemId -> "world"))
-          ))
-        }
-      }
+      report <- upsert(IO(Iterator(
+        Right(Row(col1.systemId -> BigDecimal(6), col2.systemId -> "goodbye")),
+        Right(Row(col1.systemId -> BigDecimal(7), col2.systemId -> "world"))
+      )))
       _ <- publish
     } yield report
   }.unsafePerformIO()

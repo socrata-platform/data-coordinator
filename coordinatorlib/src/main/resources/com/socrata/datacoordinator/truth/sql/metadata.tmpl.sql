@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS copy_map (
 CREATE TABLE IF NOT EXISTS column_map (
   system_id                 BIGINT                      NOT NULL,
   copy_system_id            BIGINT                      NOT NULL REFERENCES copy_map(system_id),
-  logical_column            VARCHAR(%COLUMN_NAME_LEN%)  NOT NULL, -- "logical column" is roughly "user-visible SoQL name"
+  logical_column            VARCHAR(%LOGICAL_NAME_LEN%) NOT NULL, -- "logical column" is roughly "user-visible SoQL name"
   type_name                 VARCHAR(%TYPE_NAME_LEN%)    NOT NULL,
   -- all your physical columns are belong to us
   physical_column_base_base VARCHAR(%PHYSCOL_BASE_LEN%) NOT NULL, -- the true PCB is p_c_b_b + "_" + system_id

@@ -16,7 +16,7 @@ object DatabasePopulator {
       Map(
         "dataset_id_len" -> maximumDatasetIdLength.toString,
         "user_uid_len" -> maximumUserIdLength.toString,
-        "column_name_len" -> maximumColumnNameLength.toString,
+        "logical_name_len" -> maximumLogicalColumnNameLength.toString,
         "physcol_base_len" -> maximumPhysicalColumnBaseLength.toString,
         "phystab_base_len" -> maximumPhysicalTableBaseLength.toString,
         "type_name_len" -> maximumTypeNameLength.toString,
@@ -43,7 +43,7 @@ object DatabasePopulator {
 
 case class DatasetMapLimits(maximumDatasetIdLength: Int = 20,
                             maximumUserIdLength: Int = 20,
-                            maximumColumnNameLength: Int = 20,
+                            maximumLogicalColumnNameLength: Int = 20,
                             maximumPhysicalColumnBaseLength: Int = 20,
                             maximumPhysicalTableBaseLength: Int = 20,
                             maximumTypeNameLength: Int = 20,

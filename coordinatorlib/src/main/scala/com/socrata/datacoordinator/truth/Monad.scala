@@ -89,7 +89,7 @@ trait MonadicDatasetMutator[CV] {
   def makeUserPrimaryKey(ci: ColumnInfo): DatasetM[ColumnInfo]
   def dropColumn(ci: ColumnInfo): DatasetM[Unit]
   def publish: DatasetM[CopyInfo]
-  def upsert(inputGenerator: ColumnIdMap[ColumnInfo] => Managed[Iterator[Either[CV, Row[CV]]]]): DatasetM[Report[CV]]
+  def upsert(inputGenerator: IO[Iterator[Either[CV, Row[CV]]]]): DatasetM[Report[CV]]
   def drop: DatasetM[Unit]
 }
 
@@ -255,14 +255,11 @@ object MonadicDatasetMutator {
       _ <- put(s.copy(currentVersion = ci, currentSchema = newSchema))
     } yield ci
 
-    def upsert(inputGenerator: ColumnIdMap[ColumnInfo] => Managed[Iterator[Either[CV, Row[CV]]]]): DatasetM[Report[CV]] = for {
+    def upsert(inputGenerator: IO[Iterator[Either[CV, Row[CV]]]]): DatasetM[Report[CV]] = for {
       s <- get
       (report, nextRowId, _) <- (liftM(databaseMutator.withDataLoader(s.currentVersion, s.currentSchema, s.logger) { loader =>
         IO {
-          for {
-            it <- inputGenerator(s.currentSchema)
-            op <- it
-          } {
+          for(op <- inputGenerator.unsafePerformIO()) {
             op match {
               case Right(row) => loader.upsert(row)
               case Left(id) => loader.delete(id)

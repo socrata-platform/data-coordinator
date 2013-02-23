@@ -18,7 +18,7 @@ object SoQLTypeContext extends TypeContext[SoQLType, Any] {
   private val typesByStringName = SoQLType.typesByName.values.foldLeft(Map.empty[String, SoQLType]) { (acc, typ) =>
     acc + (typ.toString -> typ)
   }
-  def typeFromName(name: String): SoQLType = typesByStringName(name)
+  def typeFromNameOpt(name: String) = typesByStringName.get(name)
 
   def nameFromType(typ: SoQLType): String = typ.toString
 

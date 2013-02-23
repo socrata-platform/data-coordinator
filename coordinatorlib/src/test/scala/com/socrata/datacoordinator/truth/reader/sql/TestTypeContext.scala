@@ -12,7 +12,7 @@ object TestTypeContext extends TypeContext[TestColumnType, TestColumnValue] {
 
   def nullValue = NullValue
 
-  def typeFromName(name: String) = sys.error("shouldn't call this")
+  def typeFromNameOpt(name: String) = sys.error("shouldn't call this")
 
   def nameFromType(typ: TestColumnType) = sys.error("shouldn't call this")
 

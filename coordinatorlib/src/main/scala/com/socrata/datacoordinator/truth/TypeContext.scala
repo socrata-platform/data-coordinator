@@ -9,7 +9,12 @@ trait TypeContext[CT, CV] {
   def makeValueFromSystemId(id: RowId): CV
   def makeSystemIdFromValue(id: CV): RowId
   def nullValue: CV
-  def typeFromName(name: String): CT
+  def typeFromNameOpt(name: String): Option[CT]
   def nameFromType(typ: CT): String
   def makeIdMap[T](idColumnType: CT): RowUserIdMap[CV, T]
+
+  def typeFromName(name: String): CT = typeFromNameOpt(name) match {
+    case Some(t) => t
+    case None => throw new IllegalArgumentException("Unknown type " + name)
+  }
 }

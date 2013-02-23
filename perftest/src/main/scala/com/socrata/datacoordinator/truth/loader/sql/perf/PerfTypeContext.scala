@@ -20,10 +20,11 @@ object PerfTypeContext extends TypeContext[PerfType, PerfValue] {
 
   val nullValue = PVNull
 
-  def typeFromName(name: String) = name match {
-    case "id" => PTId
-    case "number" => PTNumber
-    case "text" => PTText
+  def typeFromNameOpt(name: String) = name match {
+    case "id" => Some(PTId)
+    case "number" => Some(PTNumber)
+    case "text" => Some(PTText)
+    case _ => None
   }
 
   def nameFromType(typ: PerfType) = typ match {

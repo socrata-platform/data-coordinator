@@ -10,13 +10,18 @@ import com.socrata.datacoordinator.truth.sql.{DatabasePopulator, SqlPKableColumn
 import com.socrata.datacoordinator.truth.metadata.{CopyInfo, ColumnInfo}
 import org.joda.time.DateTime
 
-class RepBasedSqlSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV], repFor: ColumnInfo => SqlColumnRep[CT, CV]) extends SchemaLoader {
-  // overriddeden when things need to go in tablespaces
-  def postgresTablespaceSuffix: String = ""
+class RepBasedSqlSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV], repFor: ColumnInfo => SqlColumnRep[CT, CV], tablespace: String => Option[String]) extends SchemaLoader {
+  private def postgresTablespaceSuffixFor(s: String): String =
+    tablespace(s) match {
+      case Some(ts) =>
+        " IN TABLESPACE " + ts
+      case None =>
+        ""
+    }
 
   def create(copyInfo: CopyInfo) {
     using(conn.createStatement()) { stmt =>
-      stmt.execute("CREATE TABLE " + copyInfo.dataTableName + " ()" + postgresTablespaceSuffix)
+      stmt.execute("CREATE TABLE " + copyInfo.dataTableName + " ()" + postgresTablespaceSuffixFor(copyInfo.dataTableName))
       stmt.execute(DatabasePopulator.logTableCreate(copyInfo.datasetInfo.logTableName, SqlLogger.maxOpLength))
     }
     logger.workingCopyCreated(copyInfo)
@@ -75,7 +80,8 @@ class RepBasedSqlSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV], repF
           for(col <- rep.physColumns) {
             stmt.execute("ALTER TABLE " + table + " ALTER " + col + " SET NOT NULL")
           }
-          stmt.execute("CREATE UNIQUE INDEX uniq_" + table + "_" + rep.base + " ON " + table + "(" + rep.equalityIndexExpression + ")" + postgresTablespaceSuffix)
+          val indexName = "uniq_" + table + "_" + rep.base
+          stmt.execute("CREATE UNIQUE INDEX " + indexName + " ON " + table + "(" + rep.equalityIndexExpression + ")" + postgresTablespaceSuffixFor(indexName))
         }
         true
       case _ =>

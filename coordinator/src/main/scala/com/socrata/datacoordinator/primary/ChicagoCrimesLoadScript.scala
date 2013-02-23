@@ -2,7 +2,7 @@ package com.socrata.datacoordinator.primary
 
 import java.sql.{Connection, DriverManager}
 import java.util.concurrent.Executors
-import java.io.{File, Closeable}
+import java.io.{Reader, File, Closeable}
 
 import org.joda.time.DateTime
 import org.joda.time.format.DateTimeFormat
@@ -28,6 +28,7 @@ import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.loader.sql.{PostgresSqlLoaderProvider, AbstractSqlLoaderProvider}
 import com.socrata.datacoordinator.common.StandardDatasetMapLimits
 import scalaz.effect.IO
+import org.postgresql.core.BaseConnection
 
 object ChicagoCrimesLoadScript extends App {
   val url =
@@ -110,13 +111,18 @@ object ChicagoCrimesLoadScript extends App {
         }
       }
 
-    val loaderProvider = new AbstractSqlLoaderProvider(executor, typeContext, genericRepFor, _.logicalName.startsWith(":")) with PostgresSqlLoaderProvider[SoQLType, Any]
+    val loaderProvider = new AbstractSqlLoaderProvider(executor, typeContext, genericRepFor, _.logicalName.startsWith(":")) with PostgresSqlLoaderProvider[SoQLType, Any] {
+      def copyIn(conn: Connection, sql: String, input: Reader): Long =
+        conn.asInstanceOf[BaseConnection].getCopyAPI.copyIn(sql, input)
+    }
 
     def loaderFactory(conn: Connection, now: DateTime, copy: CopyInfo, schema: ColumnIdMap[ColumnInfo], idProvider: IdProvider, logger: Logger[Any]): Loader[Any] = {
       loaderProvider(conn, copy, schema, rowPreparer(now, schema), idProvider, logger)
     }
 
-    val ll = new PostgresMonadicDatabaseMutator(ds, genericRepFor, () => SoQLRowLogCodec, loaderFactory)
+    def tablespace(s: String) = None
+
+    val ll = new PostgresMonadicDatabaseMutator(ds, genericRepFor, () => SoQLRowLogCodec, loaderFactory, tablespace)
     val highlevel = MonadicDatasetMutator(ll)
 
     com.rojoma.simplearm.util.using(ds.getConnection()) { conn =>
@@ -177,7 +183,7 @@ object ChicagoCrimesLoadScript extends App {
       primaryKeySetter.makePrimaryKey("crimes", "ID", user).unsafePerformIO()
       val start = System.nanoTime()
       upserter.upsert("crimes", user) { _ =>
-        noopManagement(it.take(10).map(transformToRow(schema, headers, _)).map(Right(_)))
+        IO(it.take(10).map(transformToRow(schema, headers, _)).map(Right(_)))
       }.unsafePerformIO()
       val end = System.nanoTime()
       println(s"Upsert took ${(end - start) / 1000000L}ms")
@@ -193,7 +199,7 @@ object ChicagoCrimesLoadScript extends App {
     executor.shutdown()
   }
 
-  def noopManagement[T](t: T): Managed[T] =
+  def noopManagement[T](t: T): SimpleArm[T] =
     new SimpleArm[T] {
       def flatMap[B](f: (T) => B): B = f(t)
     }

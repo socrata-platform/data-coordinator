@@ -3,17 +3,17 @@ package truth.loader.sql
 
 import java.sql.Connection
 
-import org.postgresql.copy.CopyManager
 import org.postgresql.core.BaseConnection
 
 import com.socrata.datacoordinator.truth.sql.RepBasedSqlDatasetContext
 import com.socrata.datacoordinator.util.{ReaderWriterPair, StringBuilderReader}
 import java.util.concurrent.{Callable, ExecutorService, Executor}
+import java.io.Reader
 
 class PostgresRepBasedDataSqlizer[CT, CV](tableName: String,
                                           datasetContext: RepBasedSqlDatasetContext[CT, CV],
                                           executor: ExecutorService,
-                                          extractCopier: Connection => CopyManager = PostgresRepBasedDataSqlizer.pgCopyManager)
+                                          copyIn: (Connection, String, Reader) => Long = PostgresRepBasedDataSqlizer.pgCopyManager)
   extends AbstractRepBasedDataSqlizer(tableName, datasetContext)
 {
   val bulkInsertStatement =
@@ -22,10 +22,7 @@ class PostgresRepBasedDataSqlizer[CT, CV](tableName: String,
   def insertBatch(conn: Connection)(f: (Inserter) => Unit) = {
     val inserter = new InserterImpl
     val result = executor.submit(new Callable[Long] {
-      def call() = {
-        val copyManager = extractCopier(conn)
-        copyManager.copyIn(bulkInsertStatement, inserter.rw.reader)
-      }
+      def call() = copyIn(conn, bulkInsertStatement, inserter.rw.reader)
     })
     try {
       try {
@@ -68,5 +65,6 @@ class PostgresRepBasedDataSqlizer[CT, CV](tableName: String,
 }
 
 object PostgresRepBasedDataSqlizer {
-  def pgCopyManager(conn: Connection) = conn.asInstanceOf[BaseConnection].getCopyAPI
+  def pgCopyManager(conn: Connection, sql: String, input: Reader): Long =
+    conn.asInstanceOf[BaseConnection].getCopyAPI.copyIn(sql, input)
 }

@@ -9,6 +9,7 @@ import com.socrata.datacoordinator.truth.sql.{RepBasedSqlDatasetContext, SqlColu
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.loader.{Loader, Logger, RowPreparer}
 import com.socrata.id.numeric.IdProvider
+import java.io.Reader
 
 abstract class AbstractSqlLoaderProvider[CT, CV](val executor: ExecutorService, typeContext: TypeContext[CT, CV], repFor: ColumnInfo => SqlColumnRep[CT, CV], isSystemColumn: ColumnInfo => Boolean)
   extends ((Connection, CopyInfo, ColumnIdMap[ColumnInfo], RowPreparer[CV], IdProvider, Logger[CV]) => Loader[CV])
@@ -39,6 +40,8 @@ trait StandardSqlLoaderProvider[CT, CV] { this: AbstractSqlLoaderProvider[CT, CV
 }
 
 trait PostgresSqlLoaderProvider[CT, CV] { this: AbstractSqlLoaderProvider[CT, CV] =>
+  def copyIn(conn: Connection, sql: String, reader: Reader): Long
+
   def produce(tableName: String, datasetContext: RepBasedSqlDatasetContext[CT, CV]) =
-    new PostgresRepBasedDataSqlizer(tableName, datasetContext, executor)
+    new PostgresRepBasedDataSqlizer(tableName, datasetContext, executor, copyIn)
 }

@@ -22,7 +22,7 @@ object TestTypeContext extends TypeContext[TestColumnType, TestColumnValue] {
     "string" -> StringColumn
   )
 
-  def typeFromName(name: String) = types(name)
+  def typeFromNameOpt(name: String) = types.get(name)
   def nameFromType(typ: TestColumnType) = typ match {
     case LongColumn => "long"
     case StringColumn => "string"

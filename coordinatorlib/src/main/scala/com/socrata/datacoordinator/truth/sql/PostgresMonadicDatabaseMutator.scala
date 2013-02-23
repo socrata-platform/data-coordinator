@@ -24,6 +24,7 @@ class PostgresMonadicDatabaseMutator[CT, CV](dataSource: DataSource,
                                              repForColumn: ColumnInfo => SqlColumnRep[CT, CV],
                                              rowCodecFactory: () => RowLogCodec[CV],
                                              loaderFactory: (Connection, DateTime, CopyInfo, ColumnIdMap[ColumnInfo], IdProvider, Logger[CV]) => Loader[CV],
+                                             tablespace: String => Option[String],
                                              rowFlushSize: Int = 128000,
                                              batchFlushSize: Int = 2000000)
   extends LowLevelMonadicDatabaseMutator[CV]
@@ -73,7 +74,7 @@ class PostgresMonadicDatabaseMutator[CT, CV](dataSource: DataSource,
   val datasetMap: DatabaseM[DatasetMapWriter] = get.map(_.datasetMap)
 
   def schemaLoader(logger: Logger[CV]): DatabaseM[SchemaLoader] =
-    rawConn.map(new RepBasedSqlSchemaLoader(_, logger, repForColumn))
+    rawConn.map(new RepBasedSqlSchemaLoader(_, logger, repForColumn, tablespace))
 
   def logger(datasetInfo: DatasetInfo): DatabaseM[Logger[CV]] =
     rawConn.map(new SqlLogger(_, datasetInfo.logTableName, rowCodecFactory, rowFlushSize, batchFlushSize))
