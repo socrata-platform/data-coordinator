@@ -151,7 +151,7 @@ object ChicagoCrimesLoadScript extends App {
 
     try { datasetCreator.createDataset("crimes", user).unsafePerformIO() }
     catch { case _: DatasetAlreadyExistsException => /* pass */ }
-    using(new CSVIterator(new File("/home/robertm/chicagocrime.csv"))) { it =>
+    using(CSVIterator.fromFile(new File("/home/robertm/chicagocrime.csv"))) { it =>
       val types = Map(
         "ID" -> SoQLNumber,
         "Case Number" -> SoQLText,
