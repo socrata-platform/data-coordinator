@@ -1,4 +1,5 @@
 package com.socrata.datacoordinator.common.soql
+package sqlreps
 
 import java.lang.StringBuilder
 import java.sql.{ResultSet, Types, PreparedStatement}

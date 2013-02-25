@@ -48,40 +48,10 @@ object ChicagoCrimesLoadScript extends App {
   ds.setPassword("blist")
   ds.setDatabaseName("robertm")
 
-  def convertNum(x: String) =
-    if(x.isEmpty) SoQLNullValue
-    else BigDecimal(x)
-
-  def convertBool(x: String) =
-    if(x.isEmpty) SoQLNullValue
-    else java.lang.Boolean.parseBoolean(x)
-
-  val tsParser = DateTimeFormat.forPattern("MM/dd/yyyy hh:mm aa").withZoneUTC
-
-  def convertTS(x: String) =
-    if(x.isEmpty) SoQLNullValue
-    else tsParser.parseDateTime(x)
-
-  val fmt = """^\(([0-9.-]+), ([0-9.-]+)\)$""".r
-  def convertLoc(x: String) =
-    if(x.isEmpty) SoQLNullValue
-    else {
-      val mtch = fmt.findFirstMatchIn(x).get
-      SoQLLocationValue(mtch.group(1).toDouble, mtch.group(2).toDouble)
-    }
-
-  val converter: Map[SoQLType, String => Any] = Map (
-    SoQLText -> identity[String],
-    SoQLNumber -> convertNum,
-    SoQLBoolean -> convertBool,
-    SoQLFixedTimestamp -> convertTS,
-    SoQLLocation -> convertLoc
-  )
-
   val executor = java.util.concurrent.Executors.newCachedThreadPool()
   try {
 
-    val dataContext: DataWritingContext[SoQLType, Any] = new PostgresSoQLDataContext {
+    val dataContextRaw = new PostgresSoQLDataContext with CsvSoQLDataContext {
       val dataSource = ds
       val executorService = executor
       def copyIn(conn: Connection, sql: String, input: Reader): Long =
@@ -94,9 +64,11 @@ object ChicagoCrimesLoadScript extends App {
       com.socrata.datacoordinator.truth.sql.DatabasePopulator.populate(conn, StandardDatasetMapLimits)
     }
 
+    val dataContext: DataWritingContext with CsvDataContext = dataContextRaw
+
     val datasetCreator = new DatasetCreator(dataContext)
 
-    val columnAdder = new ColumnAdder(dataContext)
+    val columnAdder = ColumnAdder[dataContext.CT](dataContext)
 
     val primaryKeySetter = new PrimaryKeySetter(dataContext.datasetMutator)
 
@@ -113,29 +85,34 @@ object ChicagoCrimesLoadScript extends App {
     try { datasetCreator.createDataset("crimes", user).unsafePerformIO() }
     catch { case _: DatasetAlreadyExistsException => /* pass */ }
     using(CSVIterator.fromFile(new File("/home/robertm/chicagocrime.csv"))) { it =>
+      val NumberT = dataContext.typeContext.typeFromName("number")
+      val TextT = dataContext.typeContext.typeFromName("text")
+      val BooleanT = dataContext.typeContext.typeFromName("boolean")
+      val FixedTimestampT = dataContext.typeContext.typeFromName("fixed_timestamp")
+      val LocationT = dataContext.typeContext.typeFromName("location")
       val types = Map(
-        "ID" -> SoQLNumber,
-        "Case Number" -> SoQLText,
-        "Date" -> SoQLFixedTimestamp,
-        "Block" -> SoQLText,
-        "IUCR" -> SoQLText,
-        "Primary Type" -> SoQLText,
-        "Description" -> SoQLText,
-        "Location Description" -> SoQLText,
-        "Arrest" -> SoQLBoolean,
-        "Domestic" -> SoQLBoolean,
-        "Beat" -> SoQLText,
-        "District" -> SoQLText,
-        "Ward" -> SoQLText,
-        "Community Area" -> SoQLText,
-        "FBI Code" -> SoQLText,
-        "X Coordinate" -> SoQLNumber,
-        "Y Coordinate" -> SoQLNumber,
-        "Year" -> SoQLText,
-        "Updated On" -> SoQLFixedTimestamp,
-        "Latitude" -> SoQLNumber,
-        "Longitude" -> SoQLNumber,
-        "Location" -> SoQLLocation
+        "ID" -> NumberT,
+        "Case Number" -> TextT,
+        "Date" -> FixedTimestampT,
+        "Block" -> TextT,
+        "IUCR" -> TextT,
+        "Primary Type" -> TextT,
+        "Description" -> TextT,
+        "Location Description" -> TextT,
+        "Arrest" -> BooleanT,
+        "Domestic" -> BooleanT,
+        "Beat" -> TextT,
+        "District" -> TextT,
+        "Ward" -> TextT,
+        "Community Area" -> TextT,
+        "FBI Code" -> TextT,
+        "X Coordinate" -> NumberT,
+        "Y Coordinate" -> NumberT,
+        "Year" -> TextT,
+        "Updated On" -> FixedTimestampT,
+        "Latitude" -> NumberT,
+        "Longitude" -> NumberT,
+        "Location" -> LocationT
       )
       val headers = it.next()
       val schema = columnAdder.addToSchema("crimes", headers.map { x => x -> types(x) }.toMap, user).unsafePerformIO().mapValues { ci =>
@@ -144,7 +121,12 @@ object ChicagoCrimesLoadScript extends App {
       primaryKeySetter.makePrimaryKey("crimes", "ID", user).unsafePerformIO()
       val start = System.nanoTime()
       upserter.upsert("crimes", user) { _ =>
-        IO(it.take(10).map(transformToRow(schema, headers, _)).map(Right(_)))
+        val plan = rowDecodePlan(dataContext)(schema, headers)
+        IO(it.take(10).map { row =>
+          val result = plan(row)
+          if(result._1.nonEmpty) throw new Exception("Error decoding row; unable to decode columns: " + result._1.mkString(", "))
+          result._2
+        }.map(Right(_)))
       }.unsafePerformIO()
       val end = System.nanoTime()
       println(s"Upsert took ${(end - start) / 1000000L}ms")
@@ -160,19 +142,20 @@ object ChicagoCrimesLoadScript extends App {
     executor.shutdown()
   }
 
-  def noopManagement[T](t: T): SimpleArm[T] =
-    new SimpleArm[T] {
-      def flatMap[B](f: (T) => B): B = f(t)
+  def rowDecodePlan(ctx: CsvDataContext)(schema: Map[String, (ColumnInfo, ctx.CT)], headers: IndexedSeq[String]): IndexedSeq[String] => (Seq[String], Row[ctx.CV]) = {
+    val colInfo = headers.zipWithIndex.map { case (header, idx) =>
+      val (ci, typ) = schema(header)
+      (header, ci.systemId, ctx.csvRepForColumn(typ), Array(idx) : IndexedSeq[Int])
     }
-
-  def transformToRow(schema: Map[String, (ColumnInfo, SoQLType)], headers: IndexedSeq[String], row: IndexedSeq[String]): Row[Any] = {
-    assert(headers.length == row.length, "Bad row; different number of columns from the headers")
-    val result = new MutableRow[Any]
-    (headers, row).zipped.foreach { (header, value) =>
-      val (ci,typ) = schema(header)
-      result += ci.systemId -> (try { converter(typ)(value) }
-                                catch { case e: Exception => throw new Exception("Problem converting " + header + ": " + value, e) })
+    (row: IndexedSeq[String]) => {
+      val result = new MutableRow[ctx.CV]
+      val bads = colInfo.flatMap { case (header, systemId, rep, indices) =>
+        try {
+          result += systemId -> rep.decode(row, indices).get
+          Nil
+        } catch { case e: Exception => List(header) }
+      }
+      (bads, result.freeze())
     }
-    result.freeze()
   }
 }

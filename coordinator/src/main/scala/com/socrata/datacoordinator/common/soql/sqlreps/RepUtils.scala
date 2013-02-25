@@ -1,4 +1,4 @@
-package com.socrata.datacoordinator.common.soql
+package com.socrata.datacoordinator.common.soql.sqlreps
 
 import java.lang.StringBuilder
 

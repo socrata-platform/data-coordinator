@@ -23,15 +23,15 @@ import com.socrata.datacoordinator.id.RowId
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.sql.DatasetMapLimits
 
-trait SoQLDataContext
-  extends DataWritingContext[SoQLDataContext.ColumnType, SoQLDataContext.ColumnValue]
-  with DataReadingContext[SoQLDataContext.ColumnType, SoQLDataContext.ColumnValue]
-{
+trait SoQLDataContext extends DataSchemaContext with DataWritingContext with DataReadingContext {
+  type CT = SoQLType
+  type CV = Any
+
   val columnNames = SoQLDataContext.ColumnNames
   import columnNames._
 
   val typeContext = SoQLTypeContext
-  val systemColumns = Map[String, ColumnType](
+  val systemColumns = Map[String, CT](
     systemId -> SoQLID,
     createdAt -> SoQLFixedTimestamp,
     updatedAt -> SoQLFixedTimestamp
@@ -49,7 +49,7 @@ trait SoQLDataContext
     IdentifierFilter(name) == name && name.length <= datasetMapLimits.maximumLogicalColumnNameLength
 
   def rowPreparer(transactionStart: DateTime, schema: ColumnIdMap[ColumnInfo]) =
-    new RowPreparer[ColumnValue] {
+    new RowPreparer[CV] {
       def findCol(name: String) =
         schema.values.find(_.logicalName == name).getOrElse(sys.error(s"No $name column?")).systemId
       val idColumn = findCol(systemId)
@@ -83,9 +83,6 @@ trait SoQLDataContext
 }
 
 object SoQLDataContext {
-  type ColumnType = SoQLType
-  type ColumnValue = Any
-
   object ColumnNames {
     val systemId = ":id"
     val createdAt = ":created_at"
@@ -93,11 +90,12 @@ object SoQLDataContext {
   }
 }
 
-trait PostgresSoQLDataContext
-  extends PostgresDataContext[SoQLDataContext.ColumnType, SoQLDataContext.ColumnValue]
-  with SoQLDataContext
-  with ExecutionContext
-{
-  def sqlRepForColumn(physicalColumnBase: String, typ: ColumnType) =
-    SoQLRep.repFactories(typ)(physicalColumnBase)
+trait PostgresSoQLDataContext extends PostgresDataContext with SoQLDataContext with ExecutionContext {
+  def sqlRepForColumn(physicalColumnBase: String, typ: CT) =
+    SoQLRep.sqlRepFactories(typ)(physicalColumnBase)
+}
+
+trait CsvSoQLDataContext extends CsvDataContext with SoQLDataContext {
+  def csvRepForColumn(typ: CT) =
+    SoQLRep.csvRepFactories(typ)
 }

@@ -42,7 +42,7 @@ class Backup(conn: Connection, executor: ExecutorService, paranoid: Boolean) {
   def tablespace(s: String) = None
 
   def genericRepFor(columnInfo: ColumnInfo): SqlColumnRep[SoQLType, Any] =
-    SoQLRep.repFactories(typeContext.typeFromName(columnInfo.typeName))(columnInfo.physicalColumnBase)
+    SoQLRep.sqlRepFactories(typeContext.typeFromName(columnInfo.typeName))(columnInfo.physicalColumnBase)
 
   def extractCopier(conn: Connection, sql: String, input: Reader): Long = conn.asInstanceOf[BaseConnection].getCopyAPI.copyIn(sql, input)
 

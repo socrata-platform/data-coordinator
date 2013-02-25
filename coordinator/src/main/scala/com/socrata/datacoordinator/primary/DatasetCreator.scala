@@ -7,7 +7,7 @@ import Scalaz._
 import com.socrata.soql.brita.AsciiIdentifierFilter
 import com.socrata.datacoordinator.truth.{DataWritingContext, MonadicDatasetMutator}
 
-class DatasetCreator(dataWritingContext: DataWritingContext[_, _]) {
+class DatasetCreator[T](dataWritingContext: DataWritingContext) {
   import dataWritingContext.datasetMutator._
 
   def createDataset(datasetId: String, username: String): IO[Unit] = {

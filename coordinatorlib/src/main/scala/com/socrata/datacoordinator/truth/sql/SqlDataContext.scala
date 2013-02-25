@@ -13,7 +13,7 @@ import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.loader.{Loader, Logger}
 import java.io.Reader
 
-trait SqlDataContext[CT, CV] extends DataContext[CT, CV] {
+trait SqlDataTypeContext extends DataTypeContext {
   val dataSource: DataSource
 
   type SqlRepType <: SqlColumnCommonRep[CT]
@@ -21,7 +21,7 @@ trait SqlDataContext[CT, CV] extends DataContext[CT, CV] {
   final def sqlRepForColumn(ci: ColumnInfo): SqlRepType = sqlRepForColumn(ci.physicalColumnBase, typeContext.typeFromName(ci.typeName))
 }
 
-trait SqlDataWritingContext[CT, CV] extends SqlDataContext[CT, CV] with DataWritingContext[CT, CV] {
+trait SqlDataWritingContext extends SqlDataTypeContext with DataWritingContext {
   type SqlRepType <: SqlColumnWriteRep[CT, CV]
 
   protected val loaderProvider: AbstractSqlLoaderProvider[CT, CV]
@@ -35,11 +35,11 @@ trait SqlDataWritingContext[CT, CV] extends SqlDataContext[CT, CV] with DataWrit
   final lazy val datasetMutator = MonadicDatasetMutator(databaseMutator)
 }
 
-trait SqlDataReadingContext[CT, CV] extends SqlDataContext[CT, CV] with DataReadingContext[CT, CV] {
+trait SqlDataReadingContext extends SqlDataTypeContext with DataReadingContext {
   type SqlRepType <: SqlColumnReadRep[CT, CV]
 }
 
-trait PostgresDataContext[CT, CV] extends SqlDataWritingContext[CT, CV] with SqlDataReadingContext[CT, CV] { this: ExecutionContext =>
+trait PostgresDataContext extends SqlDataWritingContext with SqlDataReadingContext { this: DataSchemaContext with ExecutionContext =>
   type SqlRepType = SqlColumnRep[CT, CV]
 
   protected def tablespace(s: String): Option[String]

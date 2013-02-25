@@ -7,10 +7,11 @@ import com.socrata.datacoordinator.truth.loader.RowPreparer
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.sql.DatasetMapLimits
 import java.util.concurrent.ExecutorService
+import com.socrata.datacoordinator.truth.csv.{CsvColumnRep, CsvColumnReadRep}
 
-trait DataTypeContext[CT, CV] {
-  type ColumnType = CT
-  type ColumnValue = CV
+trait DataTypeContext {
+  type CT
+  type CV
 
   /** The type of values which represent rows. */
   type Row = com.socrata.datacoordinator.Row[CV]
@@ -26,7 +27,7 @@ trait ExecutionContext {
   val executorService: ExecutorService
 }
 
-trait DataContext[CT, CV] extends DataTypeContext[CT, CV] {
+trait DataSchemaContext extends DataTypeContext {
   /** The set of all system columns, along with their types. */
   val systemColumns: Map[String, CT]
 
@@ -45,7 +46,7 @@ trait DataContext[CT, CV] extends DataTypeContext[CT, CV] {
   def isSystemColumn(ci: ColumnInfoLike): Boolean = isSystemColumn(ci.logicalName)
 }
 
-trait DataWritingContext[CT, CV] extends DataContext[CT, CV] {
+trait DataWritingContext extends DataTypeContext {
   /** Creates a row preparer object for use within a series of insert or update events. */
   def rowPreparer(transactionStart: DateTime, schema: ColumnIdMap[ColumnInfo]): RowPreparer[CV]
 
@@ -69,13 +70,11 @@ trait DataWritingContext[CT, CV] extends DataContext[CT, CV] {
   val datasetMapLimits: DatasetMapLimits
 }
 
-trait DataReadingContext[CT, CV] extends DataContext[CT, CV] {
+trait DataReadingContext extends DataTypeContext {
 }
 
-trait CsvDataContext[CT, CV] extends DataContext[CT, CV] {
-  type CsvRepType
+trait CsvDataContext extends DataTypeContext {
+  type CsvRepType = CsvColumnRep[CT, CV]
 
-  def csvRepForColumn(physicalColumnBase: String, typ: CT): CsvRepType
-  def csvRepForColumn(ci: ColumnInfo): CsvRepType = csvRepForColumn(ci.physicalColumnBase, typeContext.typeFromName(ci.typeName))
+  def csvRepForColumn(typ: CT): CsvRepType
 }
-

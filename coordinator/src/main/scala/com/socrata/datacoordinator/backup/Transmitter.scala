@@ -53,7 +53,7 @@ object Transmitter extends App {
 
   val typeContext = SoQLTypeContext
   def genericRepFor(columnInfo: ColumnInfoLike): SqlColumnRep[SoQLType, Any] =
-    SoQLRep.repFactories(typeContext.typeFromName(columnInfo.typeName))(columnInfo.physicalColumnBase)
+    SoQLRep.sqlRepFactories(typeContext.typeFromName(columnInfo.typeName))(columnInfo.physicalColumnBase)
   def repSchema(schema: ColumnIdMap[ColumnInfoLike]): ColumnIdMap[SqlColumnRep[SoQLType, Any]] =
     schema.mapValuesStrict(genericRepFor)
 

@@ -34,8 +34,8 @@ object Test extends App {
   ds.setDatabaseName("robertm")
 
   val typeContext = SoQLTypeContext
-  val soqlRepFactory = SoQLRep.repFactories.keys.foldLeft(Map.empty[SoQLType, String => SqlColumnRep[SoQLType, Any]]) { (acc, typ) =>
-    acc + (typ -> SoQLRep.repFactories(typ))
+  val soqlRepFactory = SoQLRep.sqlRepFactories.keys.foldLeft(Map.empty[SoQLType, String => SqlColumnRep[SoQLType, Any]]) { (acc, typ) =>
+    acc + (typ -> SoQLRep.sqlRepFactories(typ))
   }
   def genericRepFor(columnInfo: ColumnInfo): SqlColumnRep[SoQLType, Any] =
     soqlRepFactory(typeContext.typeFromName(columnInfo.typeName))(columnInfo.physicalColumnBase)
