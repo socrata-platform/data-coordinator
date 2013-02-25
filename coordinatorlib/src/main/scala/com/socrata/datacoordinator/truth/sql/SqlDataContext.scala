@@ -3,7 +3,6 @@ package sql
 
 import javax.sql.DataSource
 import java.sql.Connection
-import java.util.concurrent.ExecutorService
 
 import org.joda.time.DateTime
 import com.socrata.id.numeric.IdProvider
@@ -14,29 +13,43 @@ import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.loader.{Loader, Logger}
 import java.io.Reader
 
-trait SqlDataContext extends DataContext {
+trait SqlDataContext[CT, CV] extends DataContext[CT, CV] {
   val dataSource: DataSource
-  def repForColumn(physicalColumnBase: String, typ: CT): SqlColumnRep[CT, CV]
-  def repForColumn(ci: ColumnInfo): SqlColumnRep[CT, CV] = repForColumn(ci.physicalColumnBase, typeContext.typeFromName(ci.typeName))
 
-  val loaderProvider: AbstractSqlLoaderProvider[CT, CV]
-
-  def loaderFactory(conn: Connection, now: DateTime, copy: CopyInfo, schema: ColumnIdMap[ColumnInfo], idProvider: IdProvider, logger: Logger[CV]): Loader[CV] = {
-    loaderProvider(conn, copy, schema, rowPreparer(now, schema), idProvider, logger)
-  }
+  type SqlRepType <: SqlColumnCommonRep[CT]
+  def sqlRepForColumn(physicalColumnBase: String, typ: CT): SqlRepType
+  final def sqlRepForColumn(ci: ColumnInfo): SqlRepType = sqlRepForColumn(ci.physicalColumnBase, typeContext.typeFromName(ci.typeName))
 }
 
-trait PostgresDataContext extends SqlDataContext {
-  val executorService: ExecutorService
+trait SqlDataWritingContext[CT, CV] extends SqlDataContext[CT, CV] with DataWritingContext[CT, CV] {
+  type SqlRepType <: SqlColumnWriteRep[CT, CV]
 
-  def tablespace(s: String): Option[String]
+  protected val loaderProvider: AbstractSqlLoaderProvider[CT, CV]
 
-  def copyIn(conn: Connection, sql: String, input: Reader): Long
+  protected final def loaderFactory(conn: Connection, now: DateTime, copy: CopyInfo, schema: ColumnIdMap[ColumnInfo], idProvider: IdProvider, logger: Logger[CV]): Loader[CV] = {
+    loaderProvider(conn, copy, schema, rowPreparer(now, schema), idProvider, logger)
+  }
 
-  val loaderProvider = new AbstractSqlLoaderProvider(executorService, typeContext, repForColumn, isSystemColumn) with PostgresSqlLoaderProvider[CT, CV] {
+  val databaseMutator: LowLevelMonadicDatabaseMutator[CV]
+
+  final lazy val datasetMutator = MonadicDatasetMutator(databaseMutator)
+}
+
+trait SqlDataReadingContext[CT, CV] extends SqlDataContext[CT, CV] with DataReadingContext[CT, CV] {
+  type SqlRepType <: SqlColumnReadRep[CT, CV]
+}
+
+trait PostgresDataContext[CT, CV] extends SqlDataWritingContext[CT, CV] with SqlDataReadingContext[CT, CV] { this: ExecutionContext =>
+  type SqlRepType = SqlColumnRep[CT, CV]
+
+  protected def tablespace(s: String): Option[String]
+
+  protected def copyIn(conn: Connection, sql: String, input: Reader): Long
+
+  protected final lazy val loaderProvider = new AbstractSqlLoaderProvider(executorService, typeContext, sqlRepForColumn, isSystemColumn) with PostgresSqlLoaderProvider[CT, CV] {
     def copyIn(conn: Connection, sql: String, input: Reader) = PostgresDataContext.this.copyIn(conn, sql, input)
   }
 
-  val databaseMutator: LowLevelMonadicDatabaseMutator[CV] =
-    new PostgresMonadicDatabaseMutator[CT, CV](dataSource, repForColumn, newRowLogCodec, loaderFactory, tablespace)
+  final lazy val databaseMutator: LowLevelMonadicDatabaseMutator[CV] =
+    new PostgresMonadicDatabaseMutator[CT, CV](dataSource, sqlRepForColumn, newRowLogCodec, loaderFactory, tablespace)
 }

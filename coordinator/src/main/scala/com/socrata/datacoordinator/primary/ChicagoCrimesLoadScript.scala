@@ -21,7 +21,7 @@ import com.socrata.datacoordinator.common.soql._
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth._
-import com.socrata.datacoordinator.truth.sql.{PostgresMonadicDatabaseMutator, SqlColumnRep}
+import com.socrata.datacoordinator.truth.sql.{DatasetMapLimits, PostgresMonadicDatabaseMutator, SqlColumnRep}
 import com.socrata.datacoordinator.id.RowId
 import com.socrata.datacoordinator.{Row, MutableRow}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
@@ -81,69 +81,30 @@ object ChicagoCrimesLoadScript extends App {
   val executor = java.util.concurrent.Executors.newCachedThreadPool()
   try {
 
-    val typeContext = SoQLTypeContext
-    val soqlRepFactory = SoQLRep.repFactories.keys.foldLeft(Map.empty[SoQLType, String => SqlColumnRep[SoQLType, Any]]) { (acc, typ) =>
-      acc + (typ -> SoQLRep.repFactories(typ))
-    }
-    def genericRepFor(columnInfo: ColumnInfo): SqlColumnRep[SoQLType, Any] =
-      soqlRepFactory(typeContext.typeFromName(columnInfo.typeName))(columnInfo.physicalColumnBase)
-
-    def rowPreparer(now: DateTime, schema: ColumnIdMap[ColumnInfo]): RowPreparer[Any] =
-      new RowPreparer[Any] {
-        def findCol(name: String) =
-          schema.values.iterator.find(_.logicalName == name).getOrElse(sys.error(s"No $name column?")).systemId
-        val idColumn = findCol(SystemColumns.id)
-        val createdAtColumn = findCol(SystemColumns.createdAt)
-        val updatedAtColumn = findCol(SystemColumns.updatedAt)
-
-        def prepareForInsert(row: Row[Any], sid: RowId): Row[Any] = {
-          val tmp = new MutableRow[Any](row)
-          tmp(idColumn) = sid
-          tmp(createdAtColumn) = now
-          tmp(updatedAtColumn) = now
-          tmp.freeze()
-        }
-
-        def prepareForUpdate(row: Row[Any]): Row[Any] = {
-          val tmp = new MutableRow[Any](row)
-          tmp(updatedAtColumn) = now
-          tmp.freeze()
-        }
-      }
-
-    val loaderProvider = new AbstractSqlLoaderProvider(executor, typeContext, genericRepFor, _.logicalName.startsWith(":")) with PostgresSqlLoaderProvider[SoQLType, Any] {
+    val dataContext: DataWritingContext[SoQLType, Any] = new PostgresSoQLDataContext {
+      val dataSource = ds
+      val executorService = executor
       def copyIn(conn: Connection, sql: String, input: Reader): Long =
         conn.asInstanceOf[BaseConnection].getCopyAPI.copyIn(sql, input)
+      def tablespace(s: String) = None
+      val datasetMapLimits = StandardDatasetMapLimits
     }
-
-    def loaderFactory(conn: Connection, now: DateTime, copy: CopyInfo, schema: ColumnIdMap[ColumnInfo], idProvider: IdProvider, logger: Logger[Any]): Loader[Any] = {
-      loaderProvider(conn, copy, schema, rowPreparer(now, schema), idProvider, logger)
-    }
-
-    def tablespace(s: String) = None
-
-    val ll = new PostgresMonadicDatabaseMutator(ds, genericRepFor, () => SoQLRowLogCodec, loaderFactory, tablespace)
-    val highlevel = MonadicDatasetMutator(ll)
 
     com.rojoma.simplearm.util.using(ds.getConnection()) { conn =>
       com.socrata.datacoordinator.truth.sql.DatabasePopulator.populate(conn, StandardDatasetMapLimits)
     }
 
-    val datasetCreator = new DatasetCreator(highlevel, typeContext.nameFromType, Map(
-      SystemColumns.id -> SoQLID,
-      SystemColumns.createdAt -> SoQLFixedTimestamp,
-      SystemColumns.updatedAt -> SoQLFixedTimestamp
-    ), SystemColumns.id)
+    val datasetCreator = new DatasetCreator(dataContext)
 
-    val columnAdder = new ColumnAdder(highlevel, typeContext.nameFromType, StandardDatasetMapLimits.maximumPhysicalColumnBaseLength)
+    val columnAdder = new ColumnAdder(dataContext)
 
-    val primaryKeySetter = new PrimaryKeySetter(highlevel)
+    val primaryKeySetter = new PrimaryKeySetter(dataContext.datasetMutator)
 
-    val upserter = new Upserter(highlevel)
+    val upserter = new Upserter(dataContext.datasetMutator)
 
-    val publisher = new Publisher(highlevel)
+    val publisher = new Publisher(dataContext.datasetMutator)
 
-    val workingCopyCreator = new WorkingCopyCreator(highlevel)
+    val workingCopyCreator = new WorkingCopyCreator(dataContext.datasetMutator)
 
     // Above this can be re-used for every query
 
@@ -178,7 +139,7 @@ object ChicagoCrimesLoadScript extends App {
       )
       val headers = it.next()
       val schema = columnAdder.addToSchema("crimes", headers.map { x => x -> types(x) }.toMap, user).unsafePerformIO().mapValues { ci =>
-        (ci, typeContext.typeFromName(ci.typeName))
+        (ci, dataContext.typeContext.typeFromName(ci.typeName))
       }.toMap
       primaryKeySetter.makePrimaryKey("crimes", "ID", user).unsafePerformIO()
       val start = System.nanoTime()
@@ -189,8 +150,8 @@ object ChicagoCrimesLoadScript extends App {
       println(s"Upsert took ${(end - start) / 1000000L}ms")
       publisher.publish("crimes", user).unsafePerformIO()
       workingCopyCreator.copyDataset("crimes", user, copyData = true).unsafePerformIO()
-      val ci = highlevel.withDataset(user)("crimes") {
-        highlevel.drop.map(_ => highlevel.copyInfo)
+      val ci = dataContext.datasetMutator.withDataset(user)("crimes") {
+        dataContext.datasetMutator.drop.map(_ => dataContext.datasetMutator.copyInfo)
       }.unsafePerformIO()
       workingCopyCreator.copyDataset("crimes", user, copyData = true).unsafePerformIO()
       println(ci)

@@ -13,23 +13,25 @@ import org.joda.time.DateTime
 
 import com.socrata.soql.brita.{IdentifierFilter, AsciiIdentifierFilter}
 import com.socrata.soql.types.{SoQLFixedTimestamp, SoQLID, SoQLType}
-import com.socrata.datacoordinator.truth.{DataContext, MonadicDatasetMutator}
+import com.socrata.datacoordinator.truth._
 import com.socrata.datacoordinator.truth.sql.PostgresDataContext
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.loader.RowPreparer
 import com.socrata.datacoordinator.truth.sql.DatasetMapLimits
 import com.socrata.datacoordinator.id.RowId
+import com.socrata.datacoordinator.truth.metadata.ColumnInfo
+import com.socrata.datacoordinator.truth.sql.DatasetMapLimits
 
-trait SoQLDataContext extends DataContext {
-  type CT = SoQLType
-  type CV = Any
-
+trait SoQLDataContext
+  extends DataWritingContext[SoQLDataContext.ColumnType, SoQLDataContext.ColumnValue]
+  with DataReadingContext[SoQLDataContext.ColumnType, SoQLDataContext.ColumnValue]
+{
   val columnNames = SoQLDataContext.ColumnNames
   import columnNames._
 
   val typeContext = SoQLTypeContext
-  val systemColumns = Map[String, CT](
+  val systemColumns = Map[String, ColumnType](
     systemId -> SoQLID,
     createdAt -> SoQLFixedTimestamp,
     updatedAt -> SoQLFixedTimestamp
@@ -47,7 +49,7 @@ trait SoQLDataContext extends DataContext {
     IdentifierFilter(name) == name && name.length <= datasetMapLimits.maximumLogicalColumnNameLength
 
   def rowPreparer(transactionStart: DateTime, schema: ColumnIdMap[ColumnInfo]) =
-    new RowPreparer[CV] {
+    new RowPreparer[ColumnValue] {
       def findCol(name: String) =
         schema.values.find(_.logicalName == name).getOrElse(sys.error(s"No $name column?")).systemId
       val idColumn = findCol(systemId)
@@ -81,6 +83,9 @@ trait SoQLDataContext extends DataContext {
 }
 
 object SoQLDataContext {
+  type ColumnType = SoQLType
+  type ColumnValue = Any
+
   object ColumnNames {
     val systemId = ":id"
     val createdAt = ":created_at"
@@ -88,13 +93,11 @@ object SoQLDataContext {
   }
 }
 
-class PostgresSoQLDataContext(val dataSource: DataSource, val executorService: ExecutorService, val datasetMapLimits: DatasetMapLimits, tablespaceSharder: Option[String => String], doCopyIn: (Connection, String, Reader) => Long) extends SoQLDataContext with PostgresDataContext {
-  def repForColumn(physicalColumnBase: String, typ: CT) =
+trait PostgresSoQLDataContext
+  extends PostgresDataContext[SoQLDataContext.ColumnType, SoQLDataContext.ColumnValue]
+  with SoQLDataContext
+  with ExecutionContext
+{
+  def sqlRepForColumn(physicalColumnBase: String, typ: ColumnType) =
     SoQLRep.repFactories(typ)(physicalColumnBase)
-
-  def tablespace(s: String) = tablespaceSharder.map(_(s))
-
-  def copyIn(conn: Connection, sql: String, input: Reader) = doCopyIn(conn, sql, input)
-
-  val datasetMutator = MonadicDatasetMutator(databaseMutator)
 }

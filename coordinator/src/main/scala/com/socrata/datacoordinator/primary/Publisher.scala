@@ -7,7 +7,7 @@ import Scalaz._
 import com.socrata.datacoordinator.truth.MonadicDatasetMutator
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
 
-class Publisher[CT](mutator: MonadicDatasetMutator[CT]) extends ExistingDatasetMutator {
+class Publisher(mutator: MonadicDatasetMutator[_]) extends ExistingDatasetMutator {
   import mutator.{publish => pblsh, _}
 
   def publish(dataset: String, username: String): IO[CopyInfo] = {

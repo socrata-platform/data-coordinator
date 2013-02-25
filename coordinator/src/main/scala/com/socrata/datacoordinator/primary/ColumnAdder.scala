@@ -6,18 +6,18 @@ import Scalaz._
 import com.socrata.soql.brita.AsciiIdentifierFilter
 
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
-import com.socrata.datacoordinator.truth.MonadicDatasetMutator
+import com.socrata.datacoordinator.truth.{DataWritingContext, MonadicDatasetMutator}
 
-class ColumnAdder[CT, CV](mutator: MonadicDatasetMutator[CV], nameForType: CT => String, physicalColumnBaseLimit: Int) extends ExistingDatasetMutator {
-  import mutator._
+class ColumnAdder[CT](val dataContext: DataWritingContext[CT, _]) extends ExistingDatasetMutator {
+  import dataContext.datasetMutator._
 
   def addToSchema(dataset: String, columns: Map[String, CT], username: String): IO[Map[String, ColumnInfo]] = {
     val columnCreations = columns.iterator.map { case (columnName, columnType) =>
-      val baseName = AsciiIdentifierFilter(List("u", columnName)).take(physicalColumnBaseLimit).replaceAll("_+$","").toLowerCase
-      addColumn(columnName, nameForType(columnType), baseName)
+      val baseName = dataContext.physicalColumnBaseBase(columnName)
+      addColumn(columnName, dataContext.typeContext.nameFromType(columnType), baseName)
     }.toList.sequence
 
-    mutator.withDataset(as = username)(dataset) {
+    withDataset(as = username)(dataset) {
       for {
         newColumns <- columnCreations
       } yield newColumns.foldLeft(Map.empty[String, ColumnInfo]) {

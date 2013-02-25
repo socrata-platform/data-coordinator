@@ -7,20 +7,19 @@ import Scalaz._
 import java.io.{FileNotFoundException, InputStream}
 
 import com.rojoma.simplearm.util._
-import com.socrata.datacoordinator.truth.MonadicDatasetMutator
+import com.socrata.datacoordinator.truth.{DataWritingContext, MonadicDatasetMutator, DataContext}
 import com.socrata.datacoordinator.primary.DatasetCreator
 import scala.collection.mutable
 import com.socrata.csv.CSVIterator
-import com.socrata.datacoordinator.truth.DataContext
 
 class BadSchemaException(msg: String) extends Exception(msg)
 
-class FileImporter(openFile: String => InputStream,
-                   val dataContext: DataContext) {
+class FileImporter[CT, CV](openFile: String => InputStream,
+                           val dataContext: DataWritingContext[CT, CV]) {
   import dataContext.datasetMutator._
 
   private def analyseSchema(in: Seq[Field]) = {
-    val result = new mutable.LinkedHashMap[String, dataContext.CT] // want to preserve the order
+    val result = new mutable.LinkedHashMap[String, CT] // want to preserve the order
     for(field <- in) {
       val name = field.name.toLowerCase
       if(result.contains(name)) throw new BadSchemaException("Field " + field.name + " defined more than once")

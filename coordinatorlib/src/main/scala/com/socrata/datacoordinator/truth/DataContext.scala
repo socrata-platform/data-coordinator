@@ -6,13 +6,11 @@ import com.socrata.datacoordinator.truth.metadata.{ColumnInfoLike, ColumnInfo}
 import com.socrata.datacoordinator.truth.loader.RowPreparer
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.sql.DatasetMapLimits
+import java.util.concurrent.ExecutorService
 
-trait DataContext {
-  /** The type of values which represent column types. */
-  type CT
-
-  /** The type of values which represent column values. */
-  type CV
+trait DataTypeContext[CT, CV] {
+  type ColumnType = CT
+  type ColumnValue = CV
 
   /** The type of values which represent rows. */
   type Row = com.socrata.datacoordinator.Row[CV]
@@ -22,7 +20,13 @@ trait DataContext {
 
   /** Methods to introspect type-related info. */
   val typeContext: TypeContext[CT, CV]
+}
 
+trait ExecutionContext {
+  val executorService: ExecutorService
+}
+
+trait DataContext[CT, CV] extends DataTypeContext[CT, CV] {
   /** The set of all system columns, along with their types. */
   val systemColumns: Map[String, CT]
 
@@ -39,9 +43,9 @@ trait DataContext {
     * and [[com.socrata.datacoordinator.truth.metadata.UnanchoredColumnInfo]] values.
     */
   def isSystemColumn(ci: ColumnInfoLike): Boolean = isSystemColumn(ci.logicalName)
+}
 
-  val datasetMapLimits: DatasetMapLimits
-
+trait DataWritingContext[CT, CV] extends DataContext[CT, CV] {
   /** Creates a row preparer object for use within a series of insert or update events. */
   def rowPreparer(transactionStart: DateTime, schema: ColumnIdMap[ColumnInfo]): RowPreparer[CV]
 
@@ -60,5 +64,18 @@ trait DataContext {
 
   /** Predicate that tests whether the given identifier may be used as the `logical name` parameter
     * of `datasetMutator.addColumn`. */
-  def isLegalLogicalName(identifier: String): Boolean
+  def isLegalLogicalName(identifier: String): Boolean // should this live in DataContext?
+
+  val datasetMapLimits: DatasetMapLimits
 }
+
+trait DataReadingContext[CT, CV] extends DataContext[CT, CV] {
+}
+
+trait CsvDataContext[CT, CV] extends DataContext[CT, CV] {
+  type CsvRepType
+
+  def csvRepForColumn(physicalColumnBase: String, typ: CT): CsvRepType
+  def csvRepForColumn(ci: ColumnInfo): CsvRepType = csvRepForColumn(ci.physicalColumnBase, typeContext.typeFromName(ci.typeName))
+}
+

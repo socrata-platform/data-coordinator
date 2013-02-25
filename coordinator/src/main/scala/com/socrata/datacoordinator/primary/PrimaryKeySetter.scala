@@ -6,7 +6,7 @@ import Scalaz._
 
 import com.socrata.datacoordinator.truth.MonadicDatasetMutator
 
-class PrimaryKeySetter[CV](mutator: MonadicDatasetMutator[CV]) extends ExistingDatasetMutator {
+class PrimaryKeySetter(mutator: MonadicDatasetMutator[_]) extends ExistingDatasetMutator {
   import mutator._
   def makePrimaryKey(dataset: String, column: String, username: String): IO[Unit] = {
     withDataset(as = username)(dataset) {

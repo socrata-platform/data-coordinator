@@ -1,6 +1,6 @@
 package com.socrata.datacoordinator.service
 
-import java.io.{IOException, InputStream, FileNotFoundException, File}
+import java.io._
 import javax.servlet.http.HttpServletRequest
 
 import com.socrata.http.server.implicits._
@@ -10,19 +10,22 @@ import com.socrata.http.routing.{ExtractingRouter, RouterSet}
 import com.rojoma.json.util.{AutomaticJsonCodecBuilder, JsonKey, JsonUtil}
 import com.rojoma.json.io.JsonReaderException
 import com.ibm.icu.text.Normalizer
-import com.socrata.datacoordinator.common.soql.PostgresSoQLDataContext
+import com.socrata.datacoordinator.common.soql.{SoQLDataContext, PostgresSoQLDataContext}
 import java.util.concurrent.{TimeUnit, Executors}
 import org.postgresql.ds.PGSimpleDataSource
-import com.socrata.datacoordinator.truth.DataContext
+import com.socrata.datacoordinator.truth.{ExecutionContext, DataWritingContext, DataContext}
 import com.typesafe.config.ConfigFactory
 import com.socrata.datacoordinator.common.StandardDatasetMapLimits
+import java.sql.Connection
+import scala.Some
+import com.socrata.soql.types.SoQLType
 
 case class Field(name: String, @JsonKey("type") typ: String)
 object Field {
   implicit val jCodec = AutomaticJsonCodecBuilder[Field]
 }
 
-class Service(dataContext: DataContext, storeFile: InputStream => String, importFile: (String, String, Seq[Field]) => Unit) {
+class Service(storeFile: InputStream => String, importFile: (String, String, Seq[Field]) => Unit) {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
 
   def norm(s: String) = Normalizer.normalize(s, Normalizer.NFC)
@@ -87,7 +90,7 @@ class Service(dataContext: DataContext, storeFile: InputStream => String, import
   }
 }
 
-object Service extends App {
+object Service extends App { self =>
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
   val config = ConfigFactory.load()
   val serviceConfig = config.getConfig("com.socrata.coordinator-service")
@@ -104,16 +107,16 @@ object Service extends App {
 
   val executorService = Executors.newCachedThreadPool()
   try {
-    val dataContext: DataContext = new PostgresSoQLDataContext(
-      dataSource,
-      executorService,
-      StandardDatasetMapLimits,
-      None,
-      _.asInstanceOf[org.postgresql.core.BaseConnection].getCopyAPI.copyIn(_, _)
-    )
+    val dataContext: DataWritingContext[_, _] = new PostgresSoQLDataContext {
+      val dataSource = self.dataSource
+      val executorService = self.executorService
+      def copyIn(conn: Connection, sql: String, input: Reader): Long = conn.asInstanceOf[org.postgresql.core.BaseConnection].getCopyAPI.copyIn(sql, input)
+      def tablespace(s: String) = None
+      val datasetMapLimits = StandardDatasetMapLimits
+    }
     val fileStore = new FileStore(new File("/tmp/filestore"))
     val importer = new FileImporter(fileStore.open, dataContext)
-    val serv = new Service(dataContext, fileStore.store, importer.importFile)
+    val serv = new Service(fileStore.store, importer.importFile)
     serv.run(port)
   } finally {
     executorService.shutdown()
