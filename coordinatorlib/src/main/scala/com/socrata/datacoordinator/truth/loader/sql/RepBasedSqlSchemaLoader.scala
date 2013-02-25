@@ -14,7 +14,7 @@ class RepBasedSqlSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV], repF
   private def postgresTablespaceSuffixFor(s: String): String =
     tablespace(s) match {
       case Some(ts) =>
-        " IN TABLESPACE " + ts
+        " TABLESPACE " + ts
       case None =>
         ""
     }
