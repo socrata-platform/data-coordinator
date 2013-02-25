@@ -10,21 +10,20 @@ import com.socrata.http.routing.{ExtractingRouter, RouterSet}
 import com.rojoma.json.util.{AutomaticJsonCodecBuilder, JsonKey, JsonUtil}
 import com.rojoma.json.io.JsonReaderException
 import com.ibm.icu.text.Normalizer
-import com.socrata.datacoordinator.common.soql.PostgresSoQLDataContext
+import com.socrata.datacoordinator.common.soql.{CsvSoQLDataContext, PostgresSoQLDataContext}
 import java.util.concurrent.{TimeUnit, Executors}
 import org.postgresql.ds.PGSimpleDataSource
-import com.socrata.datacoordinator.truth.DataWritingContext
+import com.socrata.datacoordinator.truth.{CsvDataContext, DataWritingContext}
 import com.typesafe.config.ConfigFactory
 import com.socrata.datacoordinator.common.StandardDatasetMapLimits
 import java.sql.Connection
-import scala.Some
 
 case class Field(name: String, @JsonKey("type") typ: String)
 object Field {
   implicit val jCodec = AutomaticJsonCodecBuilder[Field]
 }
 
-class Service(storeFile: InputStream => String, importFile: (String, String, Seq[Field]) => Unit) {
+class Service(storeFile: InputStream => String, importFile: (String, String, Seq[Field], Option[String]) => Unit) {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
 
   def norm(s: String) = Normalizer.normalize(s, Normalizer.NFC)
@@ -57,11 +56,12 @@ class Service(storeFile: InputStream => String, importFile: (String, String, Seq
     }
 
     try {
-      importFile(norm(id), file, schema)
+      importFile(norm(id), file, schema, primaryKey)
     } catch {
       case _: FileNotFoundException =>
         return NotFound
-      case _: Exception =>
+      case e: Exception =>
+        log.error("Unexpected exception while importing", e)
         return InternalServerError
     }
 
@@ -106,11 +106,12 @@ object Service extends App { self =>
 
   val executorService = Executors.newCachedThreadPool()
   try {
-    val dataContext: DataWritingContext = new PostgresSoQLDataContext {
+    val dataContext: DataWritingContext with CsvDataContext = new PostgresSoQLDataContext with CsvSoQLDataContext {
       val dataSource = self.dataSource
       val executorService = self.executorService
-      def copyIn(conn: Connection, sql: String, input: Reader): Long = conn.asInstanceOf[org.postgresql.core.BaseConnection].getCopyAPI.copyIn(sql, input)
-      def tablespace(s: String) = None
+      def copyIn(conn: Connection, sql: String, input: Reader): Long =
+        conn.asInstanceOf[org.postgresql.core.BaseConnection].getCopyAPI.copyIn(sql, input)
+      def tablespace(s: String) = Some("pg_default")
       val datasetMapLimits = StandardDatasetMapLimits
     }
     val fileStore = new FileStore(new File("/tmp/filestore"))

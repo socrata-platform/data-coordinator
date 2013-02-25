@@ -48,7 +48,7 @@ class FileStore(fileArchive: File) {
   }
 
   def open(name: String): InputStream = {
-    if(!name.matches("\\x+")) throw new FileNotFoundException
+    if(!name.matches("\\p{XDigit}+")) throw new FileNotFoundException
     val file = new File(fileArchive, name)
     new FileInputStream(file)
   }

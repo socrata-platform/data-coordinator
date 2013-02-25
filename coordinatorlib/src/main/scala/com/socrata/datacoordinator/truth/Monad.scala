@@ -83,6 +83,12 @@ trait MonadicDatasetMutator[CV] {
 
   def copyInfo: DatasetM[CopyInfo]
   def schema: DatasetM[ColumnIdMap[ColumnInfo]]
+  final def schemaByLogicalName: DatasetM[Map[String, ColumnInfo]] =
+    schema.map { s =>
+      s.values.foldLeft(Map.empty[String, ColumnInfo]) { (acc, ci) =>
+        acc + (ci.logicalName -> ci)
+      }
+    }
 
   def addColumn(logicalName: String, typeName: String, physicalColumnBaseBase: String): DatasetM[ColumnInfo]
   def makeSystemPrimaryKey(ci: ColumnInfo): DatasetM[ColumnInfo]
