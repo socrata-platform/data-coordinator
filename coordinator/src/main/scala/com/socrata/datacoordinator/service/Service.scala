@@ -76,7 +76,7 @@ class Service(storeFile: InputStream => String,
     val found = datasetContents(norm(id)) { rows =>
       resp.setContentType("application/json")
       resp.setCharacterEncoding("utf-8")
-      val out = resp.getWriter
+      val out = new BufferedWriter(resp.getWriter)
       out.write('[')
       val jsonWriter = new CompactJsonWriter(out)
       var didOne = false
@@ -86,6 +86,7 @@ class Service(storeFile: InputStream => String,
         jsonWriter.write(rows.next())
       }
       out.write(']')
+      out.flush()
     }
     if(!found)
       NotFound(resp)
