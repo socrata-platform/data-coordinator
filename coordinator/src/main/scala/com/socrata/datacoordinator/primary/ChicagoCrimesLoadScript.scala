@@ -28,7 +28,7 @@ import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.loader.sql.{PostgresSqlLoaderProvider, AbstractSqlLoaderProvider}
 import com.socrata.datacoordinator.common.StandardDatasetMapLimits
 import scalaz.effect.IO
-import org.postgresql.core.BaseConnection
+import org.postgresql.PGConnection
 
 object ChicagoCrimesLoadScript extends App {
   val url =
@@ -55,7 +55,7 @@ object ChicagoCrimesLoadScript extends App {
       val dataSource = ds
       val executorService = executor
       def copyIn(conn: Connection, sql: String, input: Reader): Long =
-        conn.asInstanceOf[BaseConnection].getCopyAPI.copyIn(sql, input)
+        conn.asInstanceOf[PGConnection].getCopyAPI.copyIn(sql, input)
       def tablespace(s: String) = None
       val datasetMapLimits = StandardDatasetMapLimits
     }

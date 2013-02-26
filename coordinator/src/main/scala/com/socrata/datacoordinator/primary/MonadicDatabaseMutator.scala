@@ -13,7 +13,7 @@ import com.socrata.datacoordinator.truth.sql.PostgresMonadicDatabaseMutator
 import java.sql.Connection
 import com.socrata.id.numeric.IdProvider
 import com.socrata.datacoordinator.truth.loader.sql.{PostgresSqlLoaderProvider, AbstractSqlLoaderProvider}
-import org.postgresql.core.BaseConnection
+import org.postgresql.PGConnection
 import java.io.Reader
 
 object Test extends App {
@@ -67,7 +67,7 @@ object Test extends App {
 
   val loaderProvider = new AbstractSqlLoaderProvider(executor, typeContext, genericRepFor, _.logicalName.startsWith(":")) with PostgresSqlLoaderProvider[SoQLType, Any] {
     def copyIn(conn: Connection, sql: String, reader: Reader): Long =
-      conn.asInstanceOf[BaseConnection].getCopyAPI.copyIn(sql, reader)
+      conn.asInstanceOf[PGConnection].getCopyAPI.copyIn(sql, reader)
   }
 
   def loaderFactory(conn: Connection, now: DateTime, copy: CopyInfo, schema: ColumnIdMap[ColumnInfo], idProvider: IdProvider, logger: Logger[Any]): Loader[Any] = {

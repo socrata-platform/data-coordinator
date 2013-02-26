@@ -3,11 +3,11 @@ package truth.loader.sql
 
 import java.sql.Connection
 
-import org.postgresql.core.BaseConnection
+import org.postgresql.PGConnection
 
 import com.socrata.datacoordinator.truth.sql.RepBasedSqlDatasetContext
-import com.socrata.datacoordinator.util.{ReaderWriterPair, StringBuilderReader}
-import java.util.concurrent.{Callable, ExecutorService, Executor}
+import com.socrata.datacoordinator.util.ReaderWriterPair
+import java.util.concurrent.{Callable, ExecutorService}
 import java.io.Reader
 
 class PostgresRepBasedDataSqlizer[CT, CV](tableName: String,
@@ -66,5 +66,5 @@ class PostgresRepBasedDataSqlizer[CT, CV](tableName: String,
 
 object PostgresRepBasedDataSqlizer {
   def pgCopyManager(conn: Connection, sql: String, input: Reader): Long =
-    conn.asInstanceOf[BaseConnection].getCopyAPI.copyIn(sql, input)
+    conn.asInstanceOf[PGConnection].getCopyAPI.copyIn(sql, input)
 }

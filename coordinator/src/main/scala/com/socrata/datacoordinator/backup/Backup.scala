@@ -30,9 +30,8 @@ import com.socrata.datacoordinator.truth.loader.Delogger.ColumnRemoved
 import com.socrata.datacoordinator.truth.metadata.CopyPair
 import com.socrata.datacoordinator.truth.loader.Insert
 import com.socrata.datacoordinator.common.StandardDatasetMapLimits
-import org.postgresql.core.BaseConnection
+import org.postgresql.PGConnection
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
-import org.postgresql.copy.CopyManager
 import java.io.Reader
 
 class Backup(conn: Connection, executor: ExecutorService, paranoid: Boolean) {
@@ -44,7 +43,7 @@ class Backup(conn: Connection, executor: ExecutorService, paranoid: Boolean) {
   def genericRepFor(columnInfo: ColumnInfo): SqlColumnRep[SoQLType, Any] =
     SoQLRep.sqlRepFactories(typeContext.typeFromName(columnInfo.typeName))(columnInfo.physicalColumnBase)
 
-  def extractCopier(conn: Connection, sql: String, input: Reader): Long = conn.asInstanceOf[BaseConnection].getCopyAPI.copyIn(sql, input)
+  def extractCopier(conn: Connection, sql: String, input: Reader): Long = conn.asInstanceOf[PGConnection].getCopyAPI.copyIn(sql, input)
 
   val schemaLoader: SchemaLoader = new RepBasedSqlSchemaLoader(conn, logger, genericRepFor, tablespace)
   val contentsCopier: DatasetContentsCopier = new RepBasedSqlDatasetContentsCopier(conn, logger, genericRepFor)

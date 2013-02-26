@@ -133,7 +133,7 @@ object Service extends App { self =>
       val dataSource = self.dataSource
       val executorService = self.executorService
       def copyIn(conn: Connection, sql: String, input: Reader): Long =
-        conn.asInstanceOf[org.postgresql.core.BaseConnection].getCopyAPI.copyIn(sql, input)
+        conn.asInstanceOf[org.postgresql.PGConnection].getCopyAPI.copyIn(sql, input)
       def tablespace(s: String) = Some("pg_default")
       val datasetMapLimits = StandardDatasetMapLimits
     }

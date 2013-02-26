@@ -101,11 +101,8 @@ object ExecutePlan {
           }
 
           time("Prepopulating") {
-            import org.postgresql.copy.CopyManager
-            import org.postgresql.core.BaseConnection
-
             for(idProvider <- idProviderPool.borrow()) {
-              val copier = new CopyManager(conn.asInstanceOf[BaseConnection])
+              val copier = conn.asInstanceOf[org.postgresql.PGConnection].getCopyAPI
               val reader = new java.io.Reader {
                 var line = ""
                 var offset = 0
