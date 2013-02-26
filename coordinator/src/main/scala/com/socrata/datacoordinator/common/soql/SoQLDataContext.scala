@@ -142,32 +142,9 @@ trait CsvSoQLDataContext extends CsvDataContext with SoQLDataContext {
     SoQLRep.csvRepFactories(typ)
 }
 
-trait JsonSoQLDataContext extends JsonDataContext with SoQLDataContext { this: PostgresDataContext =>
+trait JsonSoQLDataContext extends JsonDataContext with SoQLDataContext {
   import com.rojoma.json._
 
   def jsonRepForColumn(name: String, typ: CT) =
     SoQLRep.jsonRepFactories(typ)(name)
-
-  def jsonSchema(datasetId: String) = {
-    val conn = dataSource.getConnection()
-    try {
-      conn.setReadOnly(true)
-      conn.setAutoCommit(false)
-      val datasetMap = new com.socrata.datacoordinator.truth.metadata.sql.PostgresDatasetMapReader(conn)
-      datasetMap.datasetInfo(datasetId).map { di =>
-        val copy = datasetMap.latest(di)
-        val schema = datasetMap.schema(copy)
-        schema.mapValuesStrict(jsonRepForColumn)
-      }
-    }
-  }
-
-  def toJObject(schema: ColumnIdMap[json.JsonColumnWriteRep[CT, CV]], row: Row): ast.JObject = {
-    val m = new scala.collection.mutable.HashMap[String, ast.JValue]
-    row.foreach { case (columnId, cv) =>
-      val rep = schema(columnId)
-      m(rep.name) = rep.toJValue(cv)
-    }
-    ast.JObject(m)
-  }
 }

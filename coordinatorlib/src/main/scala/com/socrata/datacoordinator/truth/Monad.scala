@@ -29,6 +29,29 @@ object StateT_Helper {
   def getsT[M[+_]: Monad, S, A](f: S => A) = lift[M, S, A](gets(f))
 }
 
+trait LowLevelMonadicDatabaseReader[CV] {
+  type ReadContext
+  type DatabaseM[+T] = Kleisli[IO, ReadContext, T]
+
+  def runTransaction[A](action: DatabaseM[A]): IO[A]
+
+  def datasetMap: DatabaseM[DatasetMapReader]
+
+  def io[A](op: => A): DatabaseM[A]
+
+  def loadDataset(datasetName: String, latest: Boolean): DatabaseM[Option[(CopyInfo, ColumnIdMap[ColumnInfo])]] =
+    datasetMap.flatMap { map =>
+      io {
+        for {
+          datasetInfo <- map.datasetInfo(datasetName)
+          copyInfo <- if(latest) Some(map.latest(datasetInfo)) else map.published(datasetInfo)
+        } yield (copyInfo, map.schema(copyInfo))
+      }
+    }
+
+  def withRows[A](ci: CopyInfo, schema: ColumnIdMap[ColumnInfo], f: Iterator[ColumnIdMap[CV]] => IO[A]): DatabaseM[A]
+}
+
 trait LowLevelMonadicDatabaseMutator[CV] {
   type MutationContext
   type DatabaseM[+T] = Kleisli[IO, MutationContext, T]
@@ -67,6 +90,52 @@ trait LowLevelMonadicDatabaseMutator[CV] {
         }
       }
     }
+}
+
+trait MonadicDatasetReader[CV] {
+  val databaseReader: LowLevelMonadicDatabaseReader[CV]
+
+  type ReadContext
+  type DatasetM[+T] = Kleisli[databaseReader.DatabaseM, ReadContext, T]
+
+  /**
+   * @param latest If false, this action operates on the published version even if there
+   *               is a newer working copy.
+   */
+  def withDataset[A](datasetName: String, latest: Boolean)(action: DatasetM[A]): IO[Option[A]]
+
+  val copyInfo: DatasetM[CopyInfo]
+  val schema: DatasetM[ColumnIdMap[ColumnInfo]]
+
+  def withRows[A](f: Iterator[ColumnIdMap[CV]] => IO[A]): DatasetM[A]
+}
+
+object MonadicDatasetReader {
+  private class Impl[CV](val databaseReader: LowLevelMonadicDatabaseReader[CV]) extends MonadicDatasetReader[CV] {
+    import Kleisli.ask
+    case class S(currentVersion: CopyInfo, currentSchema: ColumnIdMap[ColumnInfo])
+    type ReadContext = S
+
+    def withDataset[A](datasetName: String, latest: Boolean)(action: DatasetM[A]): IO[Option[A]] =
+      databaseReader.runTransaction {
+        for {
+          initialStateOpt <- databaseReader.loadDataset(datasetName, latest)
+          result <- initialStateOpt.map { case (initialCopy, initialSchema) =>
+            action(S(initialCopy, initialSchema)).map(Some(_))
+          }.getOrElse(None.pure[databaseReader.DatabaseM])
+        } yield result
+      }
+
+    val get: DatasetM[S] = ask
+
+    val copyInfo = get.map(_.currentVersion)
+    val schema = get.map(_.currentSchema)
+
+    def withRows[A](f: Iterator[ColumnIdMap[CV]] => IO[A]): DatasetM[A] =
+      Kleisli(s => databaseReader.withRows(s.currentVersion, s.currentSchema, f))
+  }
+
+  def apply[CV](lowLevelReader: LowLevelMonadicDatabaseReader[CV]): MonadicDatasetReader[CV] = new Impl(lowLevelReader)
 }
 
 trait MonadicDatasetMutator[CV] {

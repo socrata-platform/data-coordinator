@@ -12,6 +12,7 @@ import com.socrata.datacoordinator.truth.loader.sql.{PostgresSqlLoaderProvider, 
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.loader.{Loader, Logger}
 import java.io.Reader
+import com.socrata.datacoordinator.truth.metadata.sql.{PostgresDatasetMapReader, PostgresGlobalLog, PostgresDatasetMapWriter}
 
 trait SqlDataTypeContext extends DataTypeContext {
   val dataSource: DataSource
@@ -37,6 +38,9 @@ trait SqlDataWritingContext extends SqlDataTypeContext with DataWritingContext {
 
 trait SqlDataReadingContext extends SqlDataTypeContext with DataReadingContext {
   type SqlRepType <: SqlColumnReadRep[CT, CV]
+
+  val databaseReader: LowLevelMonadicDatabaseReader[CV]
+  final lazy val datasetReader = MonadicDatasetReader(databaseReader)
 }
 
 trait PostgresDataContext extends SqlDataWritingContext with SqlDataReadingContext { this: DataSchemaContext with ExecutionContext =>
@@ -50,6 +54,13 @@ trait PostgresDataContext extends SqlDataWritingContext with SqlDataReadingConte
     def copyIn(conn: Connection, sql: String, input: Reader) = PostgresDataContext.this.copyIn(conn, sql, input)
   }
 
+  private def mapReaderFactory(conn: Connection) = new PostgresDatasetMapReader(conn)
+  private def mapWriterFactory(conn: Connection) = new PostgresDatasetMapWriter(conn)
+  private def globalLogFactory(conn: Connection) = new PostgresGlobalLog(conn)
+
+  final lazy val databaseReader: LowLevelMonadicDatabaseReader[CV] =
+    new PostgresMonadicDatabaseReader[CT, CV](dataSource, mapReaderFactory, sqlRepForColumn)
+
   final lazy val databaseMutator: LowLevelMonadicDatabaseMutator[CV] =
-    new PostgresMonadicDatabaseMutator[CT, CV](dataSource, sqlRepForColumn, newRowLogCodec, loaderFactory, tablespace)
+    new PostgresMonadicDatabaseMutator(dataSource, sqlRepForColumn, newRowLogCodec, mapWriterFactory, globalLogFactory, loaderFactory, tablespace)
 }

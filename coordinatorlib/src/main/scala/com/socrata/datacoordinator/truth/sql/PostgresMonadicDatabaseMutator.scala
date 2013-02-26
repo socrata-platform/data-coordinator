@@ -20,14 +20,17 @@ import com.socrata.datacoordinator.id.RowId
 import com.socrata.id.numeric.IdProvider
 import java.util.concurrent.ExecutorService
 
+// Does this need to be *Postgres*, or is all postgres-specific stuff encapsulated in its paramters?
 class PostgresMonadicDatabaseMutator[CT, CV](dataSource: DataSource,
                                              repForColumn: ColumnInfo => SqlColumnRep[CT, CV],
                                              rowCodecFactory: () => RowLogCodec[CV],
+                                             mapWriterFactory: Connection => DatasetMapWriter,
+                                             globalLogFactory: Connection => GlobalLog,
                                              loaderFactory: (Connection, DateTime, CopyInfo, ColumnIdMap[ColumnInfo], IdProvider, Logger[CV]) => Loader[CV],
                                              tablespace: String => Option[String],
                                              rowFlushSize: Int = 128000,
                                              batchFlushSize: Int = 2000000)
-  extends LowLevelMonadicDatabaseMutator[CV]
+  extends DatabaseIO(dataSource) with LowLevelMonadicDatabaseMutator[CV]
 {
   import Kleisli.ask
 
@@ -36,14 +39,9 @@ class PostgresMonadicDatabaseMutator[CT, CV](dataSource: DataSource,
   case class S(conn: Connection, now: DateTime, datasetMap: DatasetMapWriter, globalLog: GlobalLog)
   type MutationContext = S
 
-  val openConnection = IO(dataSource.getConnection())
-  def closeConnection(conn: Connection): IO[Unit] = IO(conn.rollback()).ensuring(IO(conn.close()))
-  def withConnection[A](f: Connection => IO[A]): IO[A] =
-    openConnection.bracket(closeConnection)(f)
-
   def createInitialState(conn: Connection): IO[S] = IO {
-    val datasetMap = new PostgresDatasetMapWriter(conn)
-    val globalLog = new PostgresGlobalLog(conn)
+    val datasetMap = mapWriterFactory(conn)
+    val globalLog = globalLogFactory(conn)
     val now = for {
       stmt <- managed(conn.createStatement())
       rs <- managed(stmt.executeQuery("SELECT current_timestamp"))

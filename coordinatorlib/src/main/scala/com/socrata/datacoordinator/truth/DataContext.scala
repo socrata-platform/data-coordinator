@@ -71,7 +71,7 @@ trait DataWritingContext extends DataTypeContext {
 }
 
 trait DataReadingContext extends DataTypeContext {
-  def withRows[T](id: String)(f: Iterator[Row] => T): Option[T]
+  val datasetReader: MonadicDatasetReader[CV]
 }
 
 trait CsvDataContext extends DataTypeContext {
@@ -92,11 +92,6 @@ trait JsonDataReadingContext extends JsonDataTypeContext {
 
 trait JsonDataWritingContext extends JsonDataTypeContext {
   type JsonRepType <: json.JsonColumnWriteRep[CT, CV]
-
-  // DO NOT USE THESE FUNCTIONS.
-  // They're for the quick-hack export only.
-  def jsonSchema(id: String): Option[ColumnIdMap[JsonRepType]]
-  def toJObject(schema: ColumnIdMap[json.JsonColumnWriteRep[CT, CV]], row: Row): com.rojoma.json.ast.JObject
 }
 
 trait JsonDataContext extends JsonDataReadingContext with JsonDataWritingContext {
