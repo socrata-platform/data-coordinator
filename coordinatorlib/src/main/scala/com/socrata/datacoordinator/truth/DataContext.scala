@@ -71,10 +71,34 @@ trait DataWritingContext extends DataTypeContext {
 }
 
 trait DataReadingContext extends DataTypeContext {
+  def withRows[T](id: String)(f: Iterator[Row] => T): Option[T]
 }
 
 trait CsvDataContext extends DataTypeContext {
   type CsvRepType = CsvColumnRep[CT, CV]
 
   def csvRepForColumn(typ: CT): CsvRepType
+}
+
+trait JsonDataTypeContext extends DataTypeContext {
+  type JsonRepType <: json.JsonColumnCommonRep[CT, CV]
+  def jsonRepForColumn(name: String, typ: CT): JsonRepType
+  final def jsonRepForColumn(ci: ColumnInfo): JsonRepType = jsonRepForColumn(ci.logicalName, typeContext.typeFromName(ci.typeName))
+}
+
+trait JsonDataReadingContext extends JsonDataTypeContext {
+  type JsonRepType <: json.JsonColumnReadRep[CT, CV]
+}
+
+trait JsonDataWritingContext extends JsonDataTypeContext {
+  type JsonRepType <: json.JsonColumnWriteRep[CT, CV]
+
+  // DO NOT USE THESE FUNCTIONS.
+  // They're for the quick-hack export only.
+  def jsonSchema(id: String): Option[ColumnIdMap[JsonRepType]]
+  def toJObject(schema: ColumnIdMap[json.JsonColumnWriteRep[CT, CV]], row: Row): com.rojoma.json.ast.JObject
+}
+
+trait JsonDataContext extends JsonDataReadingContext with JsonDataWritingContext {
+  type JsonRepType = json.JsonColumnRep[CT, CV]
 }

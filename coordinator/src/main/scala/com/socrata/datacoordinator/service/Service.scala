@@ -8,12 +8,13 @@ import com.socrata.http.server.{HttpResponse, SocrataServerJetty, HttpService}
 import com.socrata.http.server.responses._
 import com.socrata.http.routing.{ExtractingRouter, RouterSet}
 import com.rojoma.json.util.{AutomaticJsonCodecBuilder, JsonKey, JsonUtil}
-import com.rojoma.json.io.JsonReaderException
+import com.rojoma.json.io.{JsonReaderException, CompactJsonWriter}
+import com.rojoma.json.ast.JObject
 import com.ibm.icu.text.Normalizer
-import com.socrata.datacoordinator.common.soql.{CsvSoQLDataContext, PostgresSoQLDataContext}
+import com.socrata.datacoordinator.common.soql.{JsonSoQLDataContext, PostgresSoQLDataContext}
 import java.util.concurrent.{TimeUnit, Executors}
 import org.postgresql.ds.PGSimpleDataSource
-import com.socrata.datacoordinator.truth.{CsvDataContext, DataWritingContext}
+import com.socrata.datacoordinator.truth.{JsonDataContext, DataReadingContext, DataWritingContext}
 import com.typesafe.config.ConfigFactory
 import com.socrata.datacoordinator.common.StandardDatasetMapLimits
 import java.sql.Connection
@@ -23,7 +24,10 @@ object Field {
   implicit val jCodec = AutomaticJsonCodecBuilder[Field]
 }
 
-class Service(storeFile: InputStream => String, importFile: (String, String, Seq[Field], Option[String]) => Unit) {
+class Service(storeFile: InputStream => String,
+              importFile: (String, String, Seq[Field], Option[String]) => Unit,
+              datasetContents: String => (Iterator[JObject] => Unit) => Boolean)
+{
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
 
   def norm(s: String) = Normalizer.normalize(s, Normalizer.NFC)
@@ -68,10 +72,29 @@ class Service(storeFile: InputStream => String, importFile: (String, String, Seq
     OK
   }
 
+  def doExportFile(id: String)(req: HttpServletRequest): HttpResponse = { resp =>
+    val found = datasetContents(norm(id)) { rows =>
+      resp.setContentType("application/json")
+      resp.setCharacterEncoding("utf-8")
+      val out = resp.getWriter
+      out.write('[')
+      val jsonWriter = new CompactJsonWriter(out)
+      var didOne = false
+      while(rows.hasNext) {
+        if(didOne) out.write(',')
+        else didOne = true
+        jsonWriter.write(rows.next())
+      }
+      out.write(']')
+    }
+    if(!found)
+      NotFound(resp)
+  }
+
   val router = RouterSet(
     ExtractingRouter[HttpService]("POST", "/upload")(doUploadFile _),
     ExtractingRouter[HttpService]("POST", "/import/?")(doImportFile _),
-    ExtractingRouter[HttpService]("POST", "/replace/?")(doImportFile _)
+    ExtractingRouter[HttpService]("GET", "/export/?")(doExportFile _)
   )
 
   private def handler(req: HttpServletRequest): HttpResponse = {
@@ -106,7 +129,7 @@ object Service extends App { self =>
 
   val executorService = Executors.newCachedThreadPool()
   try {
-    val dataContext: DataWritingContext with CsvDataContext = new PostgresSoQLDataContext with CsvSoQLDataContext {
+    val dataContext: DataReadingContext with DataWritingContext with JsonDataContext = new PostgresSoQLDataContext with JsonSoQLDataContext {
       val dataSource = self.dataSource
       val executorService = self.executorService
       def copyIn(conn: Connection, sql: String, input: Reader): Long =
@@ -116,7 +139,8 @@ object Service extends App { self =>
     }
     val fileStore = new FileStore(new File("/tmp/filestore"))
     val importer = new FileImporter(fileStore.open, dataContext)
-    val serv = new Service(fileStore.store, importer.importFile)
+    val exporter = new Exporter(dataContext)
+    val serv = new Service(fileStore.store, importer.importFile, exporter.export)
     serv.run(port)
   } finally {
     executorService.shutdown()

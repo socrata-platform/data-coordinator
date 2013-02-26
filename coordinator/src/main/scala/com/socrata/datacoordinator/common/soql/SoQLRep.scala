@@ -3,6 +3,7 @@ package com.socrata.datacoordinator.common.soql
 import com.socrata.soql.types._
 import com.socrata.datacoordinator.truth.sql.SqlColumnRep
 import com.socrata.datacoordinator.truth.csv.CsvColumnRep
+import com.socrata.datacoordinator.truth.json.JsonColumnRep
 
 object SoQLRep {
   val sqlRepFactories = Map[SoQLType, String => SqlColumnRep[SoQLType, Any]](
@@ -29,5 +30,15 @@ object SoQLRep {
     SoQLMoney -> new csvreps.NumberLikeRep(SoQLMoney),
     SoQLFixedTimestamp -> csvreps.FixedTimestampRep,
     SoQLLocation -> csvreps.LocationRep
+  )
+
+  val jsonRepFactories = Map[SoQLType, String => JsonColumnRep[SoQLType, Any]](
+    SoQLID -> (name => new jsonreps.IDRep(name)),
+    SoQLText -> (name => new jsonreps.TextRep(name)),
+    SoQLBoolean -> (name => new jsonreps.BooleanRep(name)),
+    SoQLNumber -> (name => new jsonreps.NumberLikeRep(name, SoQLNumber)),
+    SoQLMoney -> (name => new jsonreps.NumberLikeRep(name, SoQLMoney)),
+    SoQLFixedTimestamp -> (name => new jsonreps.FixedTimestampRep(name)),
+    SoQLLocation -> (name => new jsonreps.LocationRep(name))
   )
 }

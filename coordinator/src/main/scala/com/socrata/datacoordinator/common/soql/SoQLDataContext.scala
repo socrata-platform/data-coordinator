@@ -93,9 +93,81 @@ object SoQLDataContext {
 trait PostgresSoQLDataContext extends PostgresDataContext with SoQLDataContext with ExecutionContext {
   def sqlRepForColumn(physicalColumnBase: String, typ: CT) =
     SoQLRep.sqlRepFactories(typ)(physicalColumnBase)
+
+  def withRows[T](datasetId: String)(f: Iterator[Row] => T): Option[T] = {
+    val conn = dataSource.getConnection()
+    try {
+      conn.setReadOnly(true)
+      conn.setAutoCommit(false)
+      val datasetMap = new com.socrata.datacoordinator.truth.metadata.sql.PostgresDatasetMapReader(conn)
+      datasetMap.datasetInfo(datasetId).map { di =>
+        val copy = datasetMap.latest(di)
+        val schema = datasetMap.schema(copy)
+        val reps = schema.mapValuesStrict(sqlRepForColumn)
+        val stmt = conn.createStatement()
+        try {
+          stmt.setFetchSize(1000)
+          val rs = stmt.executeQuery("SELECT " + reps.values.flatMap(_.physColumns).mkString(",") + " FROM " + copy.dataTableName)
+          try {
+            def loop(): Stream[Row] = {
+              if(rs.next()) {
+                var i = 1
+                val result = new MutableRow
+                reps.foreach { case (systemId, rep) =>
+                  val v = rep.fromResultSet(rs, i)
+                  i += rep.physColumns.length
+                  result(systemId) = v
+                }
+                result.freeze() #:: loop()
+              } else {
+                Stream.empty
+              }
+            }
+            f(loop().iterator)
+          } finally {
+            rs.close()
+          }
+        } finally {
+          stmt.close()
+        }
+      }
+    } finally {
+      conn.close()
+    }
+  }
 }
 
 trait CsvSoQLDataContext extends CsvDataContext with SoQLDataContext {
   def csvRepForColumn(typ: CT) =
     SoQLRep.csvRepFactories(typ)
+}
+
+trait JsonSoQLDataContext extends JsonDataContext with SoQLDataContext { this: PostgresDataContext =>
+  import com.rojoma.json._
+
+  def jsonRepForColumn(name: String, typ: CT) =
+    SoQLRep.jsonRepFactories(typ)(name)
+
+  def jsonSchema(datasetId: String) = {
+    val conn = dataSource.getConnection()
+    try {
+      conn.setReadOnly(true)
+      conn.setAutoCommit(false)
+      val datasetMap = new com.socrata.datacoordinator.truth.metadata.sql.PostgresDatasetMapReader(conn)
+      datasetMap.datasetInfo(datasetId).map { di =>
+        val copy = datasetMap.latest(di)
+        val schema = datasetMap.schema(copy)
+        schema.mapValuesStrict(jsonRepForColumn)
+      }
+    }
+  }
+
+  def toJObject(schema: ColumnIdMap[json.JsonColumnWriteRep[CT, CV]], row: Row): ast.JObject = {
+    val m = new scala.collection.mutable.HashMap[String, ast.JValue]
+    row.foreach { case (columnId, cv) =>
+      val rep = schema(columnId)
+      m(rep.name) = rep.toJValue(cv)
+    }
+    ast.JObject(m)
+  }
 }
