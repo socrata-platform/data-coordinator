@@ -29,6 +29,7 @@ import com.socrata.datacoordinator.truth.loader.sql.{PostgresSqlLoaderProvider, 
 import com.socrata.datacoordinator.common.StandardDatasetMapLimits
 import scalaz.effect.IO
 import org.postgresql.PGConnection
+import com.socrata.soql.brita.IdentifierFilter
 
 object ChicagoCrimesLoadScript extends App {
   val url =
@@ -91,38 +92,38 @@ object ChicagoCrimesLoadScript extends App {
       val FixedTimestampT = dataContext.typeContext.typeFromName("fixed_timestamp")
       val LocationT = dataContext.typeContext.typeFromName("location")
       val types = Map(
-        "ID" -> NumberT,
-        "Case Number" -> TextT,
-        "Date" -> FixedTimestampT,
-        "Block" -> TextT,
-        "IUCR" -> TextT,
-        "Primary Type" -> TextT,
-        "Description" -> TextT,
-        "Location Description" -> TextT,
-        "Arrest" -> BooleanT,
-        "Domestic" -> BooleanT,
-        "Beat" -> TextT,
-        "District" -> TextT,
-        "Ward" -> TextT,
-        "Community Area" -> TextT,
-        "FBI Code" -> TextT,
-        "X Coordinate" -> NumberT,
-        "Y Coordinate" -> NumberT,
-        "Year" -> TextT,
-        "Updated On" -> FixedTimestampT,
-        "Latitude" -> NumberT,
-        "Longitude" -> NumberT,
-        "Location" -> LocationT
+        "id" -> NumberT,
+        "case_number" -> TextT,
+        "date" -> FixedTimestampT,
+        "block" -> TextT,
+        "iucr" -> TextT,
+        "primary_type" -> TextT,
+        "description" -> TextT,
+        "location_description" -> TextT,
+        "arrest" -> BooleanT,
+        "domestic" -> BooleanT,
+        "beat" -> TextT,
+        "district" -> TextT,
+        "ward" -> TextT,
+        "community_area" -> TextT,
+        "fbi_code" -> TextT,
+        "x_coordinate" -> NumberT,
+        "y_coordinate" -> NumberT,
+        "year" -> TextT,
+        "updated_on" -> FixedTimestampT,
+        "latitude" -> NumberT,
+        "longitude" -> NumberT,
+        "location" -> LocationT
       )
-      val headers = it.next()
+      val headers = it.next().map(IdentifierFilter(_).toLowerCase)
       val schema = columnAdder.addToSchema("crimes", headers.map { x => x -> types(x) }.toMap, user).unsafePerformIO().mapValues { ci =>
         (ci, dataContext.typeContext.typeFromName(ci.typeName))
       }.toMap
-      primaryKeySetter.makePrimaryKey("crimes", "ID", user).unsafePerformIO()
+      primaryKeySetter.makePrimaryKey("crimes", "id", user).unsafePerformIO()
       val start = System.nanoTime()
       upserter.upsert("crimes", user) { _ =>
         val plan = rowDecodePlan(dataContext)(schema, headers)
-        IO(it.take(10).map { row =>
+        IO(it.map { row =>
           val result = plan(row)
           if(result._1.nonEmpty) throw new Exception("Error decoding row; unable to decode columns: " + result._1.mkString(", "))
           result._2
