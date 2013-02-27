@@ -53,6 +53,9 @@ object Delogger {
 
   case object EndTransaction extends LogEvent[Nothing] with LogEventCompanion
 
+  case class ColumnLogicalNameChanged(info: UnanchoredColumnInfo) extends LogEvent[Nothing]
+  object ColumnLogicalNameChanged extends LogEventCompanion
+
   case class RowDataUpdated[CV](bytes: Array[Byte])(codec: RowLogCodec[CV]) extends LogEvent[CV] {
     lazy val operations: Vector[Operation[CV]] = { // TODO: A standard decode exception
       val bais = new ByteArrayInputStream(bytes)
@@ -95,7 +98,7 @@ object Delogger {
   private val allLogEventCompanions: Set[LogEventCompanion] =
     Set(Truncated, ColumnCreated, ColumnRemoved, RowIdentifierSet, RowIdentifierCleared,
       SystemRowIdentifierChanged, WorkingCopyCreated, DataCopied, WorkingCopyPublished,
-      CopyDropped, RowDataUpdated, RowIdCounterUpdated, EndTransaction)
+      CopyDropped, ColumnLogicalNameChanged, RowDataUpdated, RowIdCounterUpdated, EndTransaction)
   assert(allLogEventCompanions.size == eventTypeCount,
     "An entry is missing from the allLogEventCompanions set")
 
@@ -112,6 +115,7 @@ object Delogger {
         case DataCopied => "DataCopied"
         case WorkingCopyPublished => "WorkingCopyPublished"
         case CopyDropped => "CopyDropped"
+        case ColumnLogicalNameChanged => "ColumnLogicalNameChanged"
         case RowDataUpdated => "RowDataUpdated"
         case RowIdCounterUpdated => "RowIdCounterUpdated"
         case EndTransaction => "EndTransaction"

@@ -37,6 +37,8 @@ class NullLogger[CV] extends Logger[CV] {
   def close() {}
 
   def truncated() {}
+
+  def logicalNameChanged(info: ColumnInfo) {}
 }
 
 object NullLogger extends NullLogger[Any] {

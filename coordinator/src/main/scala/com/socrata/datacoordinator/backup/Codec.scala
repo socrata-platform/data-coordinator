@@ -43,6 +43,8 @@ class LogDataCodec[CV](rowLogCodecFactory: () => RowLogCodec[CV]) extends Codec[
         dos.write(JsonUtil.renderJson(col).getBytes("UTF-8"))
       case Delogger.SystemRowIdentifierChanged(col) =>
         dos.write(JsonUtil.renderJson(col).getBytes("UTF-8"))
+      case Delogger.ColumnLogicalNameChanged(col) =>
+        dos.write(JsonUtil.renderJson(col).getBytes("UTF-8"))
       case Delogger.EndTransaction =>
         sys.error("Shouldn't have seen EndTransaction")
     }
@@ -104,6 +106,11 @@ class LogDataCodec[CV](rowLogCodecFactory: () => RowLogCodec[CV]) extends Codec[
           throw new PacketDecodeException("Unable to decode a columnInfo")
         }
         Delogger.SystemRowIdentifierChanged(ci)
+      case Delogger.ColumnLogicalNameChanged =>
+        val ci = JsonUtil.readJson[UnanchoredColumnInfo](new InputStreamReader(stream, "UTF-8")).getOrElse {
+          throw new PacketDecodeException("Unable to decode a columnInfo")
+        }
+        Delogger.ColumnLogicalNameChanged(ci)
       case Delogger.EndTransaction =>
         Delogger.EndTransaction
     }

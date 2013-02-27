@@ -85,12 +85,12 @@ object Test extends App {
   val name = System.currentTimeMillis().toString
   val (col1Id, col2Id) = for(ctx <- createDataset(as = "robertm")(name, "m")) yield {
     import ctx._
-    val id = makeSystemPrimaryKey(addColumn(":id", "row_identifier", "id"))
-    val created_at = addColumn(":created_at", "fixed_timestamp", "created")
-    val updated_at = addColumn(":updated_at", "fixed_timestamp", "updated")
+    makeSystemPrimaryKey(addColumn(":id", "row_identifier", "id"))
+    addColumn(":created_at", "fixed_timestamp", "created")
+    addColumn(":updated_at", "fixed_timestamp", "updated")
     val col1 = makeUserPrimaryKey(addColumn("col1", "number", "first"))
     val col2 = addColumn("col2", "text", "second")
-    val report = upsert(Iterator(
+    upsert(Iterator(
       Right(Row(col1.systemId -> BigDecimal(5), col2.systemId -> "hello")),
       Right(Row(col1.systemId -> BigDecimal(6), col2.systemId -> "hello"))
     ))

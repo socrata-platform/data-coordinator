@@ -182,6 +182,15 @@ class Backup(conn: Connection, executor: ExecutorService, paranoid: Boolean) {
     }
   }
 
+  def columnLogicalNameChanged(currentVersion: CopyInfo, newColumn: UnanchoredColumnInfo): currentVersion.type = {
+    val s = datasetMap.schema(currentVersion)
+    val oldCi = s.get(newColumn.systemId).getOrElse {
+      Resync(currentVersion, "Unknown column renamed")
+    }
+    logger.logicalNameChanged(datasetMap.renameColumn(oldCi, newColumn.logicalName))
+    currentVersion
+  }
+
   def truncate(currentVersion: CopyInfo): currentVersion.type = {
     truncate(currentVersion.dataTableName)
     currentVersion
@@ -237,6 +246,8 @@ class Backup(conn: Connection, executor: ExecutorService, paranoid: Boolean) {
         truncate(versionInfo)
       case CopyDropped(info) =>
         dropCopy(versionInfo, info)
+      case ColumnLogicalNameChanged(info) =>
+        columnLogicalNameChanged(versionInfo, info)
       case EndTransaction =>
         sys.error("Shouldn't have seen this")
     }

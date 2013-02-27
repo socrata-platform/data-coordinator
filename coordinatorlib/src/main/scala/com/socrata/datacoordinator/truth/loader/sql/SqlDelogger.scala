@@ -115,6 +115,8 @@ class SqlDelogger[CV](connection: Connection,
           decodeCopyDropped(aux)
         case SqlLogger.WorkingCopyPublished =>
           Delogger.WorkingCopyPublished
+        case SqlLogger.ColumnLogicalNameChanged =>
+          decodeColumnLogicalNameChanged(aux)
         case SqlLogger.Truncated =>
           Delogger.Truncated
         case SqlLogger.TransactionEnded =>
@@ -188,6 +190,14 @@ class SqlDelogger[CV](connection: Connection,
         sys.error("Parameter for `working copy dropped' was not an object")
       }
       Delogger.CopyDropped(vi)
+    }
+
+    def decodeColumnLogicalNameChanged(aux: Array[Byte]) = {
+      val json = new StringReader(new String(aux, UTF8))
+      val ci = JsonUtil.readJson[UnanchoredColumnInfo](json).getOrElse {
+        sys.error("Parameter for `column logical name changed' was not an object")
+      }
+      Delogger.ColumnLogicalNameChanged(ci)
     }
 
     def fromJson[T : JsonCodec](aux: Array[Byte]): Option[T] = JsonUtil.parseJson[T](new String(aux, UTF8))

@@ -12,6 +12,7 @@ trait Logger[CV] extends DataLogger[CV] {
   def rowIdentifierCleared(oldIdentifier: ColumnInfo)
   def systemIdColumnSet(info: ColumnInfo)
   def workingCopyCreated(info: CopyInfo)
+  def logicalNameChanged(info: ColumnInfo)
   def dataCopied()
   def copyDropped(info: CopyInfo)
   def workingCopyPublished()

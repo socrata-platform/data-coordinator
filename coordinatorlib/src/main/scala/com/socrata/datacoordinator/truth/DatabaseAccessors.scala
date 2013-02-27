@@ -114,6 +114,7 @@ trait DatasetMutator[CV] {
       }
 
     def addColumn(logicalName: String, typeName: String, physicalColumnBaseBase: String): ColumnInfo
+    def renameColumn(col: ColumnInfo, newName: String): ColumnInfo
     def makeSystemPrimaryKey(ci: ColumnInfo): ColumnInfo
     def makeUserPrimaryKey(ci: ColumnInfo): ColumnInfo
     def dropColumn(ci: ColumnInfo): Unit
@@ -139,6 +140,13 @@ object MonadicDatasetMutator {
         schemaLoader.addColumn(newColumn)
         schema += newColumn.systemId -> newColumn
         newColumn
+      }
+
+      def renameColumn(ci: ColumnInfo, newName: String): ColumnInfo = {
+        val newCi = datasetMap.renameColumn(ci, newName)
+        logger.logicalNameChanged(newCi)
+        schema += newCi.systemId -> newCi
+        newCi
       }
 
       def dropColumn(ci: ColumnInfo) {

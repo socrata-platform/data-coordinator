@@ -120,6 +120,12 @@ class SqlLogger[CV](connection: Connection,
     logLine(SqlLogger.SystemRowIdentifierChanged, JsonUtil.renderJson(info.unanchored))
   }
 
+  def logicalNameChanged(info: ColumnInfo) {
+    checkTxn()
+    flushRowData()
+    logLine(SqlLogger.ColumnLogicalNameChanged, JsonUtil.renderJson(info.unanchored))
+  }
+
   def workingCopyCreated(info: CopyInfo) {
     checkTxn()
     flushRowData()
@@ -245,6 +251,7 @@ object SqlLogger {
   val RowIdentifierSet = "ridcol"
   val RowIdentifierCleared = "noridcol"
   val SystemRowIdentifierChanged = "sidcol"
+  val ColumnLogicalNameChanged = "colname"
   val WorkingCopyCreated = "workcopy"
   val DataCopied = "datacopy"
   val CopyDropped = "dropcopy"
