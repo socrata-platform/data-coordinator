@@ -1,8 +1,8 @@
 package com.socrata.datacoordinator.primary
 
-import com.socrata.datacoordinator.truth.MonadicDatasetMutator
+import com.socrata.datacoordinator.truth.DatasetMutator
 
-class PrimaryKeySetter(mutator: MonadicDatasetMutator[_]) extends ExistingDatasetMutator {
+class PrimaryKeySetter(mutator: DatasetMutator[_]) extends ExistingDatasetMutator {
   import mutator._
   def makePrimaryKey(dataset: String, column: String, username: String) {
     finish(dataset) {

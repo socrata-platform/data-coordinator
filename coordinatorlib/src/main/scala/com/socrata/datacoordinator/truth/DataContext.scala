@@ -7,7 +7,7 @@ import com.socrata.datacoordinator.truth.loader.RowPreparer
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.sql.DatasetMapLimits
 import java.util.concurrent.ExecutorService
-import com.socrata.datacoordinator.truth.csv.{CsvColumnRep, CsvColumnReadRep}
+import com.socrata.datacoordinator.truth.csv.CsvColumnRep
 
 trait DataTypeContext {
   type CT
@@ -51,7 +51,7 @@ trait DataWritingContext extends DataTypeContext {
   def rowPreparer(transactionStart: DateTime, schema: ColumnIdMap[ColumnInfo]): RowPreparer[CV]
 
   /** Monad in which actions to update the database may occur. */
-  val datasetMutator: MonadicDatasetMutator[CV]
+  val datasetMutator: DatasetMutator[CV]
 
   /** An action that adds system columns to a dataset's schema. */
   def addSystemColumns(ctx: datasetMutator.MutationContext)
@@ -71,7 +71,7 @@ trait DataWritingContext extends DataTypeContext {
 }
 
 trait DataReadingContext extends DataTypeContext {
-  val datasetReader: MonadicDatasetReader[CV]
+  val datasetReader: DatasetReader[CV]
 }
 
 trait CsvDataContext extends DataTypeContext {

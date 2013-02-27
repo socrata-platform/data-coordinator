@@ -31,7 +31,7 @@ trait SqlDataWritingContext extends SqlDataTypeContext with DataWritingContext {
     loaderProvider(conn, copy, schema, rowPreparer(now, schema), idProvider, logger)
   }
 
-  val databaseMutator: LowLevelMonadicDatabaseMutator[CV]
+  val databaseMutator: LowLevelDatabaseMutator[CV]
 
   final lazy val datasetMutator = MonadicDatasetMutator(databaseMutator)
 }
@@ -39,8 +39,8 @@ trait SqlDataWritingContext extends SqlDataTypeContext with DataWritingContext {
 trait SqlDataReadingContext extends SqlDataTypeContext with DataReadingContext {
   type SqlRepType <: SqlColumnReadRep[CT, CV]
 
-  val databaseReader: LowLevelMonadicDatabaseReader[CV]
-  final lazy val datasetReader = MonadicDatasetReader(databaseReader)
+  val databaseReader: LowLevelDatabaseReader[CV]
+  final lazy val datasetReader = DatasetReader(databaseReader)
 }
 
 trait PostgresDataContext extends SqlDataWritingContext with SqlDataReadingContext { this: DataSchemaContext with ExecutionContext =>
@@ -58,9 +58,9 @@ trait PostgresDataContext extends SqlDataWritingContext with SqlDataReadingConte
   private def mapWriterFactory(conn: Connection) = new PostgresDatasetMapWriter(conn)
   private def globalLogFactory(conn: Connection) = new PostgresGlobalLog(conn)
 
-  final lazy val databaseReader: LowLevelMonadicDatabaseReader[CV] =
-    new PostgresMonadicDatabaseReader[CT, CV](dataSource, mapReaderFactory, sqlRepForColumn)
+  final lazy val databaseReader: LowLevelDatabaseReader[CV] =
+    new PostgresDatabaseReader[CT, CV](dataSource, mapReaderFactory, sqlRepForColumn)
 
-  final lazy val databaseMutator: LowLevelMonadicDatabaseMutator[CV] =
-    new PostgresMonadicDatabaseMutator(dataSource, sqlRepForColumn, newRowLogCodec, mapWriterFactory, globalLogFactory, loaderFactory, tablespace)
+  final lazy val databaseMutator: LowLevelDatabaseMutator[CV] =
+    new PostgresDatabaseMutator(dataSource, sqlRepForColumn, newRowLogCodec, mapWriterFactory, globalLogFactory, loaderFactory, tablespace)
 }

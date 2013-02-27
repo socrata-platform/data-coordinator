@@ -19,16 +19,16 @@ import com.socrata.id.numeric.IdProvider
 import com.rojoma.simplearm.SimpleArm
 
 // Does this need to be *Postgres*, or is all postgres-specific stuff encapsulated in its paramters?
-class PostgresMonadicDatabaseMutator[CT, CV](dataSource: DataSource,
-                                             repForColumn: ColumnInfo => SqlColumnRep[CT, CV],
-                                             rowCodecFactory: () => RowLogCodec[CV],
-                                             mapWriterFactory: Connection => DatasetMapWriter,
-                                             globalLogFactory: Connection => GlobalLog,
-                                             loaderFactory: (Connection, DateTime, CopyInfo, ColumnIdMap[ColumnInfo], IdProvider, Logger[CV]) => Loader[CV],
-                                             tablespace: String => Option[String],
-                                             rowFlushSize: Int = 128000,
-                                             batchFlushSize: Int = 2000000)
-  extends LowLevelMonadicDatabaseMutator[CV]
+class PostgresDatabaseMutator[CT, CV](dataSource: DataSource,
+                                      repForColumn: ColumnInfo => SqlColumnRep[CT, CV],
+                                      rowCodecFactory: () => RowLogCodec[CV],
+                                      mapWriterFactory: Connection => DatasetMapWriter,
+                                      globalLogFactory: Connection => GlobalLog,
+                                      loaderFactory: (Connection, DateTime, CopyInfo, ColumnIdMap[ColumnInfo], IdProvider, Logger[CV]) => Loader[CV],
+                                      tablespace: String => Option[String],
+                                      rowFlushSize: Int = 128000,
+                                      batchFlushSize: Int = 2000000)
+  extends LowLevelDatabaseMutator[CV]
 {
   type LoaderProvider = (CopyInfo, ColumnIdMap[ColumnInfo], RowPreparer[CV], IdProvider, Logger[CV], ColumnInfo => SqlColumnRep[CT, CV]) => Loader[CV]
 

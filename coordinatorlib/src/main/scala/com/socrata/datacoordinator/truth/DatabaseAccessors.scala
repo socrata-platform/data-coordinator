@@ -13,7 +13,7 @@ import com.socrata.datacoordinator.truth.metadata.CopyPair
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
 import com.socrata.datacoordinator.id.RowId
 
-trait LowLevelMonadicDatabaseReader[CV] {
+trait LowLevelDatabaseReader[CV] {
   trait ReadContext {
     def datasetMap: DatasetMapReader
 
@@ -31,7 +31,7 @@ trait LowLevelMonadicDatabaseReader[CV] {
   def openDatabase: Managed[ReadContext]
 }
 
-trait LowLevelMonadicDatabaseMutator[CV] {
+trait LowLevelDatabaseMutator[CV] {
   trait MutationContext {
     def now: DateTime
     def datasetMap: DatasetMapWriter
@@ -62,8 +62,8 @@ trait LowLevelMonadicDatabaseMutator[CV] {
   def openDatabase: Managed[MutationContext]
 }
 
-trait MonadicDatasetReader[CV] {
-  val databaseReader: LowLevelMonadicDatabaseReader[CV]
+trait DatasetReader[CV] {
+  val databaseReader: LowLevelDatabaseReader[CV]
 
   trait ReadContext {
     val copyInfo: CopyInfo
@@ -78,8 +78,8 @@ trait MonadicDatasetReader[CV] {
   def openDataset(datasetName: String, latest: Boolean): Managed[Option[ReadContext]]
 }
 
-object MonadicDatasetReader {
-  private class Impl[CV](val databaseReader: LowLevelMonadicDatabaseReader[CV]) extends MonadicDatasetReader[CV] {
+object DatasetReader {
+  private class Impl[CV](val databaseReader: LowLevelDatabaseReader[CV]) extends DatasetReader[CV] {
     class S(val copyInfo: CopyInfo, val schema: ColumnIdMap[ColumnInfo], llCtx: databaseReader.ReadContext) extends ReadContext {
       def withRows[A](f: Iterator[ColumnIdMap[CV]] => A): A =
         llCtx.withRows(copyInfo, schema, f)
@@ -98,11 +98,11 @@ object MonadicDatasetReader {
       }
   }
 
-  def apply[CV](lowLevelReader: LowLevelMonadicDatabaseReader[CV]): MonadicDatasetReader[CV] = new Impl(lowLevelReader)
+  def apply[CV](lowLevelReader: LowLevelDatabaseReader[CV]): DatasetReader[CV] = new Impl(lowLevelReader)
 }
 
-trait MonadicDatasetMutator[CV] {
-  val databaseMutator: LowLevelMonadicDatabaseMutator[CV]
+trait DatasetMutator[CV] {
+  val databaseMutator: LowLevelDatabaseMutator[CV]
 
   trait MutationContext {
     def copyInfo: CopyInfo
@@ -128,7 +128,7 @@ trait MonadicDatasetMutator[CV] {
 }
 
 object MonadicDatasetMutator {
-  private class Impl[CV](val databaseMutator: LowLevelMonadicDatabaseMutator[CV]) extends MonadicDatasetMutator[CV] {
+  private class Impl[CV](val databaseMutator: LowLevelDatabaseMutator[CV]) extends DatasetMutator[CV] {
     class S(var copyInfo: CopyInfo, var schema: ColumnIdMap[ColumnInfo], val schemaLoader: SchemaLoader, val logger: Logger[CV], llCtx: databaseMutator.MutationContext) extends MutationContext {
       def now = llCtx.now
       def datasetMap = llCtx.datasetMap
@@ -280,5 +280,5 @@ object MonadicDatasetMutator {
     }
   }
 
-  def apply[CV](lowLevelMutator: LowLevelMonadicDatabaseMutator[CV]): MonadicDatasetMutator[CV] = new Impl(lowLevelMutator)
+  def apply[CV](lowLevelMutator: LowLevelDatabaseMutator[CV]): DatasetMutator[CV] = new Impl(lowLevelMutator)
 }

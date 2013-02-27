@@ -8,7 +8,7 @@ import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
 import com.socrata.datacoordinator.truth.MonadicDatasetMutator
-import com.socrata.datacoordinator.truth.sql.PostgresMonadicDatabaseMutator
+import com.socrata.datacoordinator.truth.sql.PostgresDatabaseMutator
 import java.sql.Connection
 import com.socrata.id.numeric.IdProvider
 import com.socrata.datacoordinator.truth.loader.sql.{PostgresSqlLoaderProvider, AbstractSqlLoaderProvider}
@@ -74,7 +74,7 @@ object Test extends App {
     loaderProvider(conn, copy, schema, rowPreparer(now, schema), idProvider, logger)
   }
 
-  val ll = new PostgresMonadicDatabaseMutator(ds, genericRepFor, () => SoQLRowLogCodec, new PostgresDatasetMapWriter(_), new PostgresGlobalLog(_), loaderFactory, Function.const(None))
+  val ll = new PostgresDatabaseMutator(ds, genericRepFor, () => SoQLRowLogCodec, new PostgresDatasetMapWriter(_), new PostgresGlobalLog(_), loaderFactory, Function.const(None))
   val highlevel = MonadicDatasetMutator(ll)
 
   com.rojoma.simplearm.util.using(ds.getConnection()) { conn =>

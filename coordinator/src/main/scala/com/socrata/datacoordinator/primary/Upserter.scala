@@ -4,9 +4,9 @@ import com.socrata.datacoordinator.Row
 import com.socrata.datacoordinator.truth.loader.Report
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
-import com.socrata.datacoordinator.truth.MonadicDatasetMutator
+import com.socrata.datacoordinator.truth.DatasetMutator
 
-class Upserter[CV](mutator: MonadicDatasetMutator[CV]) extends ExistingDatasetMutator {
+class Upserter[CV](mutator: DatasetMutator[CV]) extends ExistingDatasetMutator {
   def upsert(dataset: String, username: String)(inputGenerator: ColumnIdMap[ColumnInfo] => Iterator[Either[CV, Row[CV]]]): Report[CV] =
     finish(dataset) {
       for {

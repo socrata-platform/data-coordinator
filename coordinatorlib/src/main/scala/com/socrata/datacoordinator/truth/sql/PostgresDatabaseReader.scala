@@ -12,10 +12,10 @@ import java.sql.{ResultSet, Connection}
 import com.rojoma.simplearm.SimpleArm
 
 // Does this need to be *Postgres*, or is all postgres-specific stuff encapsulated in its paramters?
-class PostgresMonadicDatabaseReader[CT, CV](dataSource: DataSource,
+class PostgresDatabaseReader[CT, CV](dataSource: DataSource,
                                             mapReaderFactory: Connection => DatasetMapReader,
                                             repFor: ColumnInfo => SqlColumnReadRep[CT, CV])
-  extends LowLevelMonadicDatabaseReader[CV]
+  extends LowLevelDatabaseReader[CV]
 {
   private class S(conn: Connection) extends ReadContext {
     val datasetMap: DatasetMapReader = mapReaderFactory(conn)

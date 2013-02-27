@@ -1,31 +1,17 @@
 package com.socrata.datacoordinator.primary
 
-import java.sql.{Connection, DriverManager}
-import java.util.concurrent.Executors
-import java.io.{Reader, File, Closeable}
+import java.sql.Connection
+import java.io.{Reader, File}
 
-import org.joda.time.DateTime
-import org.joda.time.format.DateTimeFormat
-import com.rojoma.simplearm.{SimpleArm, Managed}
-import com.rojoma.simplearm.util._
-
-import com.socrata.soql.types._
-import com.socrata.id.numeric.IdProvider
 import com.socrata.csv.CSVIterator
 
 import org.postgresql.ds._
-import com.socrata.soql.types.SoQLType
 import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.common.soql._
 import com.socrata.datacoordinator.truth.metadata._
-import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth._
-import com.socrata.datacoordinator.truth.sql.{DatasetMapLimits, PostgresMonadicDatabaseMutator, SqlColumnRep}
-import com.socrata.datacoordinator.id.RowId
 import com.socrata.datacoordinator.{Row, MutableRow}
-import com.socrata.datacoordinator.util.collection.ColumnIdMap
-import com.socrata.datacoordinator.truth.loader.sql.{PostgresSqlLoaderProvider, AbstractSqlLoaderProvider}
 import com.socrata.datacoordinator.common.StandardDatasetMapLimits
 import org.postgresql.PGConnection
 import com.socrata.soql.brita.IdentifierFilter
