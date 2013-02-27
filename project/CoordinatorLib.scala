@@ -12,8 +12,6 @@ object CoordinatorLib {
         "com.socrata" %% "soql-brita" % "[1.2.0,2.0.0)",
         "com.rojoma" %% "rojoma-json" % "[2.3.0,3.0.0)",
         "com.rojoma" %% "simple-arm" % "1.1.10",
-        "org.scalaz" %% "scalaz-core" % "7.0.0-M7",
-        "org.scalaz" %% "scalaz-effect" % "7.0.0-M7",
         "joda-time" % "joda-time" % "2.1",
         "org.joda" % "joda-convert" % "1.2",
         "net.sf.trove4j" % "trove4j" % "3.0.3",

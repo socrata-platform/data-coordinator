@@ -27,7 +27,6 @@ import com.socrata.datacoordinator.{Row, MutableRow}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.loader.sql.{PostgresSqlLoaderProvider, AbstractSqlLoaderProvider}
 import com.socrata.datacoordinator.common.StandardDatasetMapLimits
-import scalaz.effect.IO
 import org.postgresql.PGConnection
 import com.socrata.soql.brita.IdentifierFilter
 
@@ -83,7 +82,7 @@ object ChicagoCrimesLoadScript extends App {
 
     val user = "robertm"
 
-    try { datasetCreator.createDataset("crimes", user).unsafePerformIO() }
+    try { datasetCreator.createDataset("crimes", user) }
     catch { case _: DatasetAlreadyExistsException => /* pass */ }
     using(CSVIterator.fromFile(new File("/home/robertm/chicagocrime.csv"))) { it =>
       val NumberT = dataContext.typeContext.typeFromName("number")
@@ -116,27 +115,28 @@ object ChicagoCrimesLoadScript extends App {
         "location" -> LocationT
       )
       val headers = it.next().map(IdentifierFilter(_).toLowerCase)
-      val schema = columnAdder.addToSchema("crimes", headers.map { x => x -> types(x) }.toMap, user).unsafePerformIO().mapValues { ci =>
+      val schema = columnAdder.addToSchema("crimes", headers.map { x => x -> types(x) }.toMap, user).mapValues { ci =>
         (ci, dataContext.typeContext.typeFromName(ci.typeName))
       }.toMap
-      primaryKeySetter.makePrimaryKey("crimes", "id", user).unsafePerformIO()
+      primaryKeySetter.makePrimaryKey("crimes", "id", user)
       val start = System.nanoTime()
       upserter.upsert("crimes", user) { _ =>
         val plan = rowDecodePlan(dataContext)(schema, headers)
-        IO(it.map { row =>
+        it.map { row =>
           val result = plan(row)
           if(result._1.nonEmpty) throw new Exception("Error decoding row; unable to decode columns: " + result._1.mkString(", "))
           result._2
-        }.map(Right(_)))
-      }.unsafePerformIO()
+        }.map(Right(_))
+      }
       val end = System.nanoTime()
       println(s"Upsert took ${(end - start) / 1000000L}ms")
-      publisher.publish("crimes", user).unsafePerformIO()
-      workingCopyCreator.copyDataset("crimes", user, copyData = true).unsafePerformIO()
-      val ci = dataContext.datasetMutator.withDataset(user)("crimes") {
-        dataContext.datasetMutator.drop.map(_ => dataContext.datasetMutator.copyInfo)
-      }.unsafePerformIO()
-      workingCopyCreator.copyDataset("crimes", user, copyData = true).unsafePerformIO()
+      publisher.publish("crimes", user)
+      workingCopyCreator.copyDataset("crimes", user, copyData = true)
+      val ci = dataContext.datasetMutator.withDataset(user)("crimes") { ctx =>
+        ctx.drop()
+        ctx.copyInfo.unanchored
+      }
+      workingCopyCreator.copyDataset("crimes", user, copyData = true)
       println(ci)
     }
   } finally {

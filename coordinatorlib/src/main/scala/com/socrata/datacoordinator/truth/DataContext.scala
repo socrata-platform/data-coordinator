@@ -54,7 +54,7 @@ trait DataWritingContext extends DataTypeContext {
   val datasetMutator: MonadicDatasetMutator[CV]
 
   /** An action that adds system columns to a dataset's schema. */
-  val addSystemColumns: datasetMutator.DatasetM[Unit]
+  def addSystemColumns(ctx: datasetMutator.MutationContext)
 
   /** Creates a codec for serializing or deserializing row data in the log table. */
   def newRowLogCodec(): RowLogCodec[CV]

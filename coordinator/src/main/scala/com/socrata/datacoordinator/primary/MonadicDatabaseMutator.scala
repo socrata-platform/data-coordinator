@@ -1,7 +1,6 @@
 package com.socrata.datacoordinator
 package primary
 
-import scalaz.effect.IO
 import org.joda.time.DateTime
 
 import com.socrata.datacoordinator.truth.loader._
@@ -84,32 +83,32 @@ object Test extends App {
 
   import highlevel._
   val name = System.currentTimeMillis().toString
-  val (col1Id, col2Id) = creatingDataset(as = "robertm")(name, "m") {
-    for {
-      id <- addColumn(":id", "row_identifier", "id").flatMap(makeSystemPrimaryKey)
-      created_at <- addColumn(":created_at", "fixed_timestamp", "created")
-      updated_at <- addColumn(":updated_at", "fixed_timestamp", "updated")
-      col1 <- addColumn("col1", "number", "first").flatMap(makeUserPrimaryKey)
-      col2 <- addColumn("col2", "text", "second")
-      report <- upsert(IO(Iterator(
-        Right(Row(col1.systemId -> BigDecimal(5), col2.systemId -> "hello")),
-        Right(Row(col1.systemId -> BigDecimal(6), col2.systemId -> "hello"))
-      )))
-      _ <- publish
-    } yield (col1.systemId, col2.systemId)
-  }.unsafePerformIO()
+  val (col1Id, col2Id) = creatingDataset(as = "robertm")(name, "m") { ctx =>
+    import ctx._
+    val id = makeSystemPrimaryKey(addColumn(":id", "row_identifier", "id"))
+    val created_at = addColumn(":created_at", "fixed_timestamp", "created")
+    val updated_at = addColumn(":updated_at", "fixed_timestamp", "updated")
+    val col1 = makeUserPrimaryKey(addColumn("col1", "number", "first"))
+    val col2 = addColumn("col2", "text", "second")
+    val report = upsert(Iterator(
+      Right(Row(col1.systemId -> BigDecimal(5), col2.systemId -> "hello")),
+      Right(Row(col1.systemId -> BigDecimal(6), col2.systemId -> "hello"))
+    ))
+    publish()
+    (col1.systemId, col2.systemId)
+  }
 
-  val report2 = creatingCopy(as = "robertm")(name, copyData = false) {
-    for {
-      col1 <- schema.map(_(col1Id))
-      col2 <- schema.map(_(col2Id))
-      report <- upsert(IO(Iterator(
-        Right(Row(col1.systemId -> BigDecimal(6), col2.systemId -> "goodbye")),
-        Right(Row(col1.systemId -> BigDecimal(7), col2.systemId -> "world"))
-      )))
-      _ <- publish
-    } yield report
-  }.unsafePerformIO()
+  val report2 = creatingCopy(as = "robertm")(name, copyData = false) { ctx =>
+    import ctx._
+    val col1 = schema(col1Id)
+    val col2 = schema(col2Id)
+    val report = upsert(Iterator(
+      Right(Row(col1.systemId -> BigDecimal(6), col2.systemId -> "goodbye")),
+      Right(Row(col1.systemId -> BigDecimal(7), col2.systemId -> "world"))
+    ))
+    publish()
+    report
+  }
   println(report2)
 
   executor.shutdown()

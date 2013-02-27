@@ -1,9 +1,6 @@
 package com.socrata.datacoordinator
 package truth
 
-import scalaz._
-import scalaz.effect._
-import Scalaz._
 import org.joda.time.DateTime
 import com.rojoma.simplearm.Managed
 
@@ -18,121 +15,84 @@ import com.socrata.datacoordinator.truth.metadata.CopyPair
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
 import com.socrata.datacoordinator.id.RowId
 
-object StateT_Helper {
-  import scala.language.higherKinds
-  // Some combinators and lifted operations for StateT
-  def lift[M[+_]: Monad, S, A](f: State[S, A]) = StateT[M, S, A](f(_).pure[M])
-  def liftM[M[+_]: Functor, S, A](f: M[A]) = StateT[M, S, A](s => f.map((s, _)))
-  def initT[M[+_]: Monad, S] = lift[M, S, S](init[S])
-  def modifyT[M[+_]: Monad, S](f: S => S) = lift[M, S, Unit](modify[S](f))
-  def putT[M[+_]: Monad, S](s: S) = lift[M, S, Unit](put(s))
-  def getsT[M[+_]: Monad, S, A](f: S => A) = lift[M, S, A](gets(f))
-}
-
 trait LowLevelMonadicDatabaseReader[CV] {
-  type ReadContext
-  type DatabaseM[+T] = Kleisli[IO, ReadContext, T]
+  trait ReadContext {
+    def datasetMap: DatasetMapReader
 
-  def runTransaction[A](action: DatabaseM[A]): IO[A]
-
-  def datasetMap: DatabaseM[DatasetMapReader]
-
-  def io[A](op: => A): DatabaseM[A]
-
-  def loadDataset(datasetName: String, latest: Boolean): DatabaseM[Option[(CopyInfo, ColumnIdMap[ColumnInfo])]] =
-    datasetMap.flatMap { map =>
-      io {
-        for {
-          datasetInfo <- map.datasetInfo(datasetName)
-          copyInfo <- if(latest) Some(map.latest(datasetInfo)) else map.published(datasetInfo)
-        } yield (copyInfo, map.schema(copyInfo))
-      }
+    final def loadDataset(datasetName: String, latest: Boolean): Option[(CopyInfo, ColumnIdMap[ColumnInfo])] = {
+      val map = datasetMap
+      for {
+        datasetInfo <- map.datasetInfo(datasetName)
+        copyInfo <- if(latest) Some(map.latest(datasetInfo)) else map.published(datasetInfo)
+      } yield (copyInfo, map.schema(copyInfo))
     }
 
-  def withRows[A](ci: CopyInfo, schema: ColumnIdMap[ColumnInfo], f: Iterator[ColumnIdMap[CV]] => IO[A]): DatabaseM[A]
+    def withRows[A](ci: CopyInfo, schema: ColumnIdMap[ColumnInfo], f: Iterator[ColumnIdMap[CV]] => A): A
+  }
+
+  def runTransaction[A](action: ReadContext => A): A
 }
 
 trait LowLevelMonadicDatabaseMutator[CV] {
-  type MutationContext
-  type DatabaseM[+T] = Kleisli[IO, MutationContext, T]
+  trait MutationContext {
+    def now: DateTime
+    def datasetMap: DatasetMapWriter
+    def logger(info: DatasetInfo): Logger[CV]
+    def schemaLoader(logger: Logger[CV]): SchemaLoader
+    def datasetContentsCopier(logger: Logger[CV]): DatasetContentsCopier
+    def withDataLoader[A](table: CopyInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[CV])(f: Loader[CV] => A): (Report[CV], RowId, A)
 
-  def runTransaction[A](action: DatabaseM[A]): IO[A]
+    def globalLog: GlobalLog
 
-  def now: DatabaseM[DateTime]
-  def datasetMap: DatabaseM[DatasetMapWriter]
-  def logger(info: DatasetInfo): DatabaseM[Logger[CV]]
-  def schemaLoader(logger: Logger[CV]): DatabaseM[SchemaLoader]
-  def datasetContentsCopier(logger: Logger[CV]): DatabaseM[DatasetContentsCopier]
-  def withDataLoader[A](table: CopyInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[CV])(f: Loader[CV] => IO[A]): DatabaseM[(Report[CV], RowId, A)]
-
-  def globalLog: DatabaseM[GlobalLog]
-  def io[A](op: => A): DatabaseM[A]
-
-  def finishDatasetTransaction[A](username: String, copyInfo: CopyInfo, logger: Logger[CV]): DatabaseM[Unit] = for {
-    globLog <- globalLog
-    map <- datasetMap
-    now <- now
-    _ <- io {
+    final def finishDatasetTransaction(username: String, copyInfo: CopyInfo, logger: Logger[CV]) {
       logger.endTransaction() foreach { ver =>
-        map.updateDataVersion(copyInfo, ver)
-        globLog.log(copyInfo.datasetInfo, ver, now, username)
+        datasetMap.updateDataVersion(copyInfo, ver)
+        globalLog.log(copyInfo.datasetInfo, ver, now, username)
       }
     }
-  } yield ()
 
-  def loadLatestVersionOfDataset(datasetName: String): DatabaseM[Option[(CopyInfo, ColumnIdMap[ColumnInfo])]] =
-    datasetMap.flatMap { map =>
-      io {
-        map.datasetInfo(datasetName) map { datasetInfo =>
-          val latest = map.latest(datasetInfo)
-          val schema = map.schema(latest)
-          (latest, schema)
-        }
+    final def loadLatestVersionOfDataset(datasetName: String): Option[(CopyInfo, ColumnIdMap[ColumnInfo])] = {
+      val map = datasetMap
+      map.datasetInfo(datasetName) map { datasetInfo =>
+        val latest = map.latest(datasetInfo)
+        val schema = map.schema(latest)
+        (latest, schema)
       }
     }
+  }
+
+  def runTransaction[A](action: MutationContext => A): A
 }
 
 trait MonadicDatasetReader[CV] {
   val databaseReader: LowLevelMonadicDatabaseReader[CV]
 
-  type ReadContext
-  type DatasetM[+T] = Kleisli[databaseReader.DatabaseM, ReadContext, T]
+  trait ReadContext {
+    val copyInfo: CopyInfo
+    val schema: ColumnIdMap[ColumnInfo]
+    def withRows[A](f: Iterator[ColumnIdMap[CV]] => A): A // TODO: I think this should return a Managed[Iterator...]
+  }
 
   /**
    * @param latest If false, this action operates on the published version even if there
    *               is a newer working copy.
    */
-  def withDataset[A](datasetName: String, latest: Boolean)(action: DatasetM[A]): IO[Option[A]]
-
-  val copyInfo: DatasetM[CopyInfo]
-  val schema: DatasetM[ColumnIdMap[ColumnInfo]]
-
-  def withRows[A](f: Iterator[ColumnIdMap[CV]] => IO[A]): DatasetM[A]
+  def withDataset[A](datasetName: String, latest: Boolean)(action: ReadContext => A): Option[A]
 }
 
 object MonadicDatasetReader {
   private class Impl[CV](val databaseReader: LowLevelMonadicDatabaseReader[CV]) extends MonadicDatasetReader[CV] {
-    import Kleisli.ask
-    case class S(currentVersion: CopyInfo, currentSchema: ColumnIdMap[ColumnInfo])
-    type ReadContext = S
+    class S(val copyInfo: CopyInfo, val schema: ColumnIdMap[ColumnInfo], llCtx: databaseReader.ReadContext) extends ReadContext {
+      def withRows[A](f: Iterator[ColumnIdMap[CV]] => A): A =
+        llCtx.withRows(copyInfo, schema, f)
+    }
 
-    def withDataset[A](datasetName: String, latest: Boolean)(action: DatasetM[A]): IO[Option[A]] =
-      databaseReader.runTransaction {
-        for {
-          initialStateOpt <- databaseReader.loadDataset(datasetName, latest)
-          result <- initialStateOpt.map { case (initialCopy, initialSchema) =>
-            action(S(initialCopy, initialSchema)).map(Some(_))
-          }.getOrElse(None.pure[databaseReader.DatabaseM])
-        } yield result
+    def withDataset[A](datasetName: String, latest: Boolean)(action: ReadContext => A): Option[A] =
+      databaseReader.runTransaction { llCtx =>
+        llCtx.loadDataset(datasetName, latest) map { case (initialCopy, initialSchema) =>
+          action(new S(initialCopy, initialSchema, llCtx))
+        }
       }
-
-    val get: DatasetM[S] = ask
-
-    val copyInfo = get.map(_.currentVersion)
-    val schema = get.map(_.currentSchema)
-
-    def withRows[A](f: Iterator[ColumnIdMap[CV]] => IO[A]): DatasetM[A] =
-      Kleisli(s => databaseReader.withRows(s.currentVersion, s.currentSchema, f))
   }
 
   def apply[CV](lowLevelReader: LowLevelMonadicDatabaseReader[CV]): MonadicDatasetReader[CV] = new Impl(lowLevelReader)
@@ -141,171 +101,97 @@ object MonadicDatasetReader {
 trait MonadicDatasetMutator[CV] {
   val databaseMutator: LowLevelMonadicDatabaseMutator[CV]
 
-  type MutationContext
-  type DatasetM[+T] = StateT[databaseMutator.DatabaseM, MutationContext, T]
+  trait MutationContext {
+    def copyInfo: CopyInfo
+    def schema: ColumnIdMap[ColumnInfo]
 
-  def creatingDataset[A](as: String)(datasetName: String, tableBaseBase: String)(action: DatasetM[A]): IO[A]
-  def withDataset[A](as: String)(datasetName: String)(action: DatasetM[A]): IO[Option[A]]
-  def creatingCopy[A](as: String)(datasetName: String, copyData: Boolean)(action: DatasetM[A]): IO[Option[A]]
-
-  def io[A](op: => A): DatasetM[A]
-
-  def copyInfo: DatasetM[CopyInfo]
-  def schema: DatasetM[ColumnIdMap[ColumnInfo]]
-  final def schemaByLogicalName: DatasetM[Map[String, ColumnInfo]] =
-    schema.map { s =>
-      s.values.foldLeft(Map.empty[String, ColumnInfo]) { (acc, ci) =>
+    final def schemaByLogicalName: Map[String, ColumnInfo] =
+      schema.values.foldLeft(Map.empty[String, ColumnInfo]) { (acc, ci) =>
         acc + (ci.logicalName -> ci)
       }
-    }
 
-  def addColumn(logicalName: String, typeName: String, physicalColumnBaseBase: String): DatasetM[ColumnInfo]
-  def makeSystemPrimaryKey(ci: ColumnInfo): DatasetM[ColumnInfo]
-  def makeUserPrimaryKey(ci: ColumnInfo): DatasetM[ColumnInfo]
-  def dropColumn(ci: ColumnInfo): DatasetM[Unit]
-  def publish: DatasetM[CopyInfo]
-  def upsert(inputGenerator: IO[Iterator[Either[CV, Row[CV]]]]): DatasetM[Report[CV]]
-  def drop: DatasetM[Unit]
+    def addColumn(logicalName: String, typeName: String, physicalColumnBaseBase: String): ColumnInfo
+    def makeSystemPrimaryKey(ci: ColumnInfo): ColumnInfo
+    def makeUserPrimaryKey(ci: ColumnInfo): ColumnInfo
+    def dropColumn(ci: ColumnInfo): Unit
+    def publish(): CopyInfo
+    def upsert(inputGenerator: Iterator[Either[CV, Row[CV]]]): Report[CV]
+    def drop() // TODO: this should be a top-level thing
+  }
+
+  def creatingDataset[A](as: String)(datasetName: String, tableBaseBase: String)(action: MutationContext => A): A
+  def withDataset[A](as: String)(datasetName: String)(action: MutationContext => A): Option[A]
+  def creatingCopy[A](as: String)(datasetName: String, copyData: Boolean)(action: MutationContext => A): Option[A]
 }
 
 object MonadicDatasetMutator {
   private class Impl[CV](val databaseMutator: LowLevelMonadicDatabaseMutator[CV]) extends MonadicDatasetMutator[CV] {
-    import StateT_Helper._
+    class S(var copyInfo: CopyInfo, var schema: ColumnIdMap[ColumnInfo], val schemaLoader: SchemaLoader, val logger: Logger[CV], llCtx: databaseMutator.MutationContext) extends MutationContext {
+      def now = llCtx.now
+      def datasetMap = llCtx.datasetMap
+      def datasetContetsCopier = llCtx.datasetContentsCopier(logger)
 
-    case class S(currentVersion: CopyInfo, currentSchema: ColumnIdMap[ColumnInfo], schemaLoader: SchemaLoader, logger: Logger[CV])
-    type MutationContext = S
-
-    val get: DatasetM[S] = initT
-    def put(s: S): DatasetM[Unit] = putT(s)
-    def modify(f: S => S): DatasetM[Unit] = modifyT(f)
-    def io[A](op: => A) = liftM(databaseMutator.io(op))
-
-    val now: DatasetM[DateTime] = liftM(databaseMutator.now)
-    val datasetMap: DatasetM[DatasetMapWriter] = liftM(databaseMutator.datasetMap)
-    val schemaLoader: DatasetM[SchemaLoader] = getsT(_.schemaLoader)
-    val logger: DatasetM[Logger[CV]] = getsT(_.logger)
-    val datasetContentsCopier: DatasetM[DatasetContentsCopier] = for {
-      l <- logger
-      res <- liftM(databaseMutator.datasetContentsCopier(l))
-    } yield res
-
-    val copyInfo: DatasetM[CopyInfo] = getsT(_.currentVersion)
-    val schema: DatasetM[ColumnIdMap[ColumnInfo]] = getsT(_.currentSchema)
-
-    def withDataset[A](username: String)(datasetName: String)(action: DatasetM[A]): IO[Option[A]] =
-      databaseMutator.runTransaction {
-        for {
-          initialStateOpt <- databaseMutator.loadLatestVersionOfDataset(datasetName)
-          result <- initialStateOpt.map { case (initialCopy, initialSchema) =>
-            for {
-              logger <- databaseMutator.logger(initialCopy.datasetInfo)
-              schemaLoader <- databaseMutator.schemaLoader(logger)
-              initialState = S(initialCopy, initialSchema, schemaLoader, logger)
-              (finalState, result) <- action(initialState)
-              _ <- databaseMutator.finishDatasetTransaction(username, finalState.currentVersion, logger)
-            } yield Some(result)
-          }.getOrElse(None.pure[databaseMutator.DatabaseM])
-        } yield result
-      }
-
-    def creatingDataset[A](username: String)(datasetName: String, tableBaseBase: String)(action: DatasetM[A]): IO[A] =
-      databaseMutator.runTransaction {
-        for {
-          m <- databaseMutator.datasetMap
-          firstVersion <- databaseMutator.io(m.create(datasetName, tableBaseBase))
-          logger <- databaseMutator.logger(firstVersion.datasetInfo)
-          schemaLoader <- databaseMutator.schemaLoader(logger)
-          _ <- databaseMutator.io { schemaLoader.create(firstVersion) }
-          initialState = S(firstVersion, ColumnIdMap.empty, schemaLoader, logger)
-          (finalState, result) <- action(initialState)
-          _ <- databaseMutator.finishDatasetTransaction(username, finalState.currentVersion, logger)
-        } yield result
-      }
-
-    def creatingCopy[A](username: String)(datasetName: String, copyData: Boolean)(action: DatasetM[A]): IO[Option[A]] =
-      withDataset(username)(datasetName) {
-        makeWorkingCopy(copyData).flatMap(_ => action)
-      }
-
-    def addColumn(logicalName: String, typeName: String, physicalColumnBaseBase: String): DatasetM[ColumnInfo] = for {
-      map <- datasetMap
-      s <- get
-      ci <- io {
-        val newColumn = map.addColumn(s.currentVersion, logicalName, typeName, physicalColumnBaseBase)
-        s.schemaLoader.addColumn(newColumn)
+      def addColumn(logicalName: String, typeName: String, physicalColumnBaseBase: String): ColumnInfo = {
+        val newColumn = datasetMap.addColumn(copyInfo, logicalName, typeName, physicalColumnBaseBase)
+        schemaLoader.addColumn(newColumn)
+        schema += newColumn.systemId -> newColumn
         newColumn
       }
-      _ <- put(s.copy(currentSchema = s.currentSchema + (ci.systemId -> ci)))
-    } yield ci
 
-    def dropColumn(ci: ColumnInfo): DatasetM[Unit] = for {
-      map <- datasetMap
-      s <- get
-      _ <- io {
-        map.dropColumn(ci)
-        s.schemaLoader.dropColumn(ci)
+      def dropColumn(ci: ColumnInfo) {
+        datasetMap.dropColumn(ci)
+        schemaLoader.dropColumn(ci)
+        schema -= ci.systemId
       }
-      _ <- put(s.copy(currentSchema = s.currentSchema - ci.systemId))
-    } yield ()
 
-    def makeSystemPrimaryKey(ci: ColumnInfo): DatasetM[ColumnInfo] = for {
-      map <- datasetMap
-      s <- get
-      newCi <- io {
-        val result = map.setSystemPrimaryKey(ci)
-        val ok = s.schemaLoader.makeSystemPrimaryKey(result)
+      def makeSystemPrimaryKey(ci: ColumnInfo): ColumnInfo = {
+        val result = datasetMap.setSystemPrimaryKey(ci)
+        val ok = schemaLoader.makeSystemPrimaryKey(result)
         require(ok, "Column cannot be made a system primary key")
+        schema += result.systemId -> result
         result
       }
-      _ <- put(s.copy(currentSchema = s.currentSchema + (ci.systemId -> newCi)))
-    } yield newCi
 
-    def makeUserPrimaryKey(ci: ColumnInfo): DatasetM[ColumnInfo] = for {
-      map <- datasetMap
-      s <- get
-      newCi <- io {
-        val result = map.setUserPrimaryKey(ci)
-        val ok = s.schemaLoader.makePrimaryKey(result)
+      def makeUserPrimaryKey(ci: ColumnInfo): ColumnInfo = {
+        val result = datasetMap.setUserPrimaryKey(ci)
+        val ok = schemaLoader.makePrimaryKey(result)
         require(ok, "Column cannot be made a primary key")
+        schema += result.systemId -> result
         result
       }
-      _ <- put(s.copy(currentSchema = s.currentSchema + (ci.systemId -> newCi)))
-    } yield newCi
 
-    def makeWorkingCopy(copyData: Boolean): DatasetM[CopyInfo] = for {
-      map <- datasetMap
-      dataCopier <- if(copyData) datasetContentsCopier.map(Some(_)) else None.pure[DatasetM]
-      s <- get
-      (newCi, newSchema) <- io {
-        map.ensureUnpublishedCopy(s.currentVersion.datasetInfo) match {
+      def datasetContentsCopier = llCtx.datasetContentsCopier(logger)
+
+      def makeWorkingCopy(copyData: Boolean): CopyInfo = {
+        val dataCopier = if(copyData) Some(datasetContentsCopier) else None
+        datasetMap.ensureUnpublishedCopy(copyInfo.datasetInfo) match {
           case Left(_) =>
             sys.error("Already a working copy") // TODO: Better error
           case Right(CopyPair(oldCopy, newCopy)) =>
-            assert(oldCopy == s.currentVersion)
+            assert(oldCopy == copyInfo)
 
             // Great.  Now we can actually do the data loading.
-            s.schemaLoader.create(newCopy)
-            val schema = map.schema(newCopy)
-            for(ci <- schema.values) {
-              s.schemaLoader.addColumn(ci)
+            schemaLoader.create(newCopy)
+            val newSchema = datasetMap.schema(newCopy)
+            for(ci <- newSchema.values) {
+              schemaLoader.addColumn(ci)
             }
 
             dataCopier.foreach(_.copy(oldCopy, newCopy, schema))
 
-            val oldSchema = s.currentSchema
             val finalSchema = new MutableColumnIdMap[ColumnInfo]
-            for(ci <- schema.values) {
-              val ci2 = if(oldSchema(ci.systemId).isSystemPrimaryKey) {
-                val pkified = map.setSystemPrimaryKey(ci)
-                s.schemaLoader.makeSystemPrimaryKey(pkified)
+            for(ci <- newSchema.values) {
+              val ci2 = if(schema(ci.systemId).isSystemPrimaryKey) {
+                val pkified = datasetMap.setSystemPrimaryKey(ci)
+                schemaLoader.makeSystemPrimaryKey(pkified)
                 pkified
               } else {
                 ci
               }
 
-              val ci3 = if(oldSchema(ci2.systemId).isUserPrimaryKey) {
-                val pkified = map.setUserPrimaryKey(ci2)
-                s.schemaLoader.makePrimaryKey(pkified)
+              val ci3 = if(schema(ci2.systemId).isUserPrimaryKey) {
+                val pkified = datasetMap.setUserPrimaryKey(ci2)
+                schemaLoader.makePrimaryKey(pkified)
                 pkified
               } else {
                 ci2
@@ -313,51 +199,73 @@ object MonadicDatasetMutator {
               finalSchema(ci3.systemId) = ci3
             }
 
-            (newCopy, finalSchema.freeze())
+            copyInfo = newCopy
+            schema = finalSchema.freeze()
+            newCopy
         }
       }
-      _ <- put(s.copy(currentVersion = newCi, currentSchema = newSchema))
-    } yield newCi
 
-    val publish: DatasetM[CopyInfo] = for {
-      s <- get
-      map <- datasetMap
-      (ci, newSchema) <- io {
-        val newCi = map.publish(s.currentVersion)
-        s.logger.workingCopyPublished()
-        (newCi, map.schema(newCi))
+      def publish(): CopyInfo = {
+        val newCi = datasetMap.publish(copyInfo)
+        logger.workingCopyPublished()
+        copyInfo = newCi
+        schema = datasetMap.schema(newCi)
+        copyInfo
       }
-      _ <- put(s.copy(currentVersion = ci, currentSchema = newSchema))
-    } yield ci
 
-    def upsert(inputGenerator: IO[Iterator[Either[CV, Row[CV]]]]): DatasetM[Report[CV]] = for {
-      s <- get
-      (report, nextRowId, _) <- (liftM(databaseMutator.withDataLoader(s.currentVersion, s.currentSchema, s.logger) { loader =>
-        IO {
-          for(op <- inputGenerator.unsafePerformIO()) {
-            op match {
-              case Right(row) => loader.upsert(row)
-              case Left(id) => loader.delete(id)
-            }
+      def upsert(inputGenerator: Iterator[Either[CV, Row[CV]]]): Report[CV] = {
+        val (report, nextRowId, _) = llCtx.withDataLoader(copyInfo, schema, logger) { loader =>
+          inputGenerator.foreach {
+            case Right(row) => loader.upsert(row)
+            case Left(id) => loader.delete(id)
           }
         }
-      }) : DatasetM[(Report[CV], RowId, Unit)])
-      map <- datasetMap
-      newCv <- io { map.updateNextRowId(s.currentVersion, nextRowId) }
-      _ <- put(s.copy(currentVersion = newCv))
-    } yield report
-
-    val drop: DatasetM[Unit] = for {
-      map <- datasetMap
-      s <- get
-      (newCurrentVersion, newCurrentSchema) <- io {
-        map.dropCopy(s.currentVersion)
-        s.schemaLoader.drop(s.currentVersion)
-        val ci = map.latest(s.currentVersion.datasetInfo)
-        (ci, map.schema(ci))
+        copyInfo = datasetMap.updateNextRowId(copyInfo, nextRowId)
+        report
       }
-      _ <- put(s.copy(currentVersion = newCurrentVersion, currentSchema = newCurrentSchema))
-    } yield ()
+
+      def drop() {
+        datasetMap.dropCopy(copyInfo)
+        schemaLoader.drop(copyInfo)
+        copyInfo = datasetMap.latest(copyInfo.datasetInfo)
+        schema = datasetMap.schema(copyInfo)
+      }
+    }
+
+    private def go[A](username: String, datasetName: String, action: S => A): Option[A] = {
+      databaseMutator.runTransaction { llCtx =>
+        llCtx.loadLatestVersionOfDataset(datasetName) map { case (initialCopy, initialSchema) =>
+          val logger = llCtx.logger(initialCopy.datasetInfo)
+          val schemaLoader = llCtx.schemaLoader(logger)
+          val state = new S(initialCopy, initialSchema, schemaLoader, logger, llCtx)
+          val result = action(state)
+          llCtx.finishDatasetTransaction(username, state.copyInfo, logger)
+          result
+        }
+      }
+    }
+
+    def withDataset[A](username: String)(datasetName: String)(action: MutationContext => A): Option[A] =
+      go(username, datasetName, action)
+
+    def creatingDataset[A](username: String)(datasetName: String, tableBaseBase: String)(action: MutationContext => A): A =
+      databaseMutator.runTransaction { llCtx =>
+        val m = llCtx.datasetMap
+        val firstVersion = m.create(datasetName, tableBaseBase)
+        val logger = llCtx.logger(firstVersion.datasetInfo)
+        val schemaLoader = llCtx.schemaLoader(logger)
+        schemaLoader.create(firstVersion)
+        val state = new S(firstVersion, ColumnIdMap.empty, schemaLoader, logger, llCtx)
+        val result = action(state)
+        llCtx.finishDatasetTransaction(username, state.copyInfo, logger)
+        result
+      }
+
+    def creatingCopy[A](username: String)(datasetName: String, copyData: Boolean)(action: MutationContext => A): Option[A] =
+      go(username, datasetName, { ctx =>
+        ctx.makeWorkingCopy(copyData)
+        action(ctx)
+      })
   }
 
   def apply[CV](lowLevelMutator: LowLevelMonadicDatabaseMutator[CV]): MonadicDatasetMutator[CV] = new Impl(lowLevelMutator)

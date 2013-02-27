@@ -6,9 +6,6 @@ import java.sql.Connection
 import javax.sql.DataSource
 import java.io.Reader
 
-import scalaz._
-import Scalaz._
-
 import org.joda.time.DateTime
 
 import com.socrata.soql.brita.{IdentifierFilter, AsciiIdentifierFilter}
@@ -73,13 +70,13 @@ trait SoQLDataContext extends DataSchemaContext with DataWritingContext with Dat
       }
     }
 
-  lazy val addSystemColumns: datasetMutator.DatasetM[Unit] = systemColumns.map { case (name, typ) =>
-    import datasetMutator._
-    addColumn(name, typeContext.nameFromType(typ), physicalColumnBaseBase(name, systemColumn = true)).flatMap { col =>
+  def addSystemColumns(ctx: datasetMutator.MutationContext) {
+    for((name, typ) <- systemColumns) {
+      import ctx._
+      val col = addColumn(name, typeContext.nameFromType(typ), physicalColumnBaseBase(name, systemColumn = true))
       if(col.logicalName == systemId) makeSystemPrimaryKey(col)
-      else col.pure[DatasetM]
     }
-  }.toList.sequenceU.map(_ => ())
+  }
 }
 
 object SoQLDataContext {
@@ -143,8 +140,6 @@ trait CsvSoQLDataContext extends CsvDataContext with SoQLDataContext {
 }
 
 trait JsonSoQLDataContext extends JsonDataContext with SoQLDataContext {
-  import com.rojoma.json._
-
   def jsonRepForColumn(name: String, typ: CT) =
     SoQLRep.jsonRepFactories(typ)(name)
 }

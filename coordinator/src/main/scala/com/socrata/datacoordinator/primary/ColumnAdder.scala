@@ -1,29 +1,24 @@
 package com.socrata.datacoordinator.primary
 
-import scalaz._
-import scalaz.effect._
-import Scalaz._
-import com.socrata.soql.brita.AsciiIdentifierFilter
-
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
-import com.socrata.datacoordinator.truth.{DataWritingContext, MonadicDatasetMutator}
+import com.socrata.datacoordinator.truth.DataWritingContext
 
 class ColumnAdder[CT] private (val dataContext: DataWritingContext) extends ExistingDatasetMutator {
   import dataContext.datasetMutator._
 
-  def addToSchema(dataset: String, columns: Map[String, CT], username: String): IO[Map[String, ColumnInfo]] = {
-    val columnCreations = columns.iterator.map { case (columnName, columnType) =>
+  def addToSchema(dataset: String, columns: Map[String, CT], username: String): Map[String, ColumnInfo] = {
+    def columnCreations(ctx: MutationContext) = columns.iterator.map { case (columnName, columnType) =>
       val baseName = dataContext.physicalColumnBaseBase(columnName)
-      addColumn(columnName, dataContext.typeContext.nameFromType(columnType.asInstanceOf[dataContext.CT] /* SI-5712, see below */), baseName)
-    }.toList.sequence
+      ctx.addColumn(columnName, dataContext.typeContext.nameFromType(columnType.asInstanceOf[dataContext.CT] /* SI-5712, see below */), baseName)
+    }.toList
 
-    withDataset(as = username)(dataset) {
-      for {
-        newColumns <- columnCreations
-      } yield newColumns.foldLeft(Map.empty[String, ColumnInfo]) {
-        (acc, ci) => acc + (ci.logicalName -> ci)
+    finish(dataset) {
+      withDataset(as = username)(dataset) { ctx =>
+        columnCreations(ctx).foldLeft(Map.empty[String, ColumnInfo]) { (acc, ci) =>
+          acc + (ci.logicalName -> ci)
+        }
       }
-    }.flatMap(finish(dataset))
+    }
   }
 }
 

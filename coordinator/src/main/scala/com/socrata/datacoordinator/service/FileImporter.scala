@@ -6,10 +6,6 @@ import scala.io.Codec
 import java.io.{FileNotFoundException, InputStream, BufferedReader, InputStreamReader}
 import java.util.zip.GZIPInputStream
 
-import scalaz._
-import scalaz.effect._
-import Scalaz._
-
 import com.rojoma.simplearm.util._
 import com.rojoma.json.ast._
 import com.rojoma.json.io.{JsonEventIterator, JsonReaderException}
@@ -23,8 +19,6 @@ import com.socrata.datacoordinator.util.collection.{ColumnIdSet, ColumnIdMap}
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.loader.NoSuchRowToDelete
-import scala.Some
-import com.rojoma.json.ast.JString
 import com.socrata.datacoordinator.truth.loader.NoSuchRowToUpdate
 import com.socrata.datacoordinator.truth.loader.SystemColumnsSet
 
@@ -103,11 +97,11 @@ class FileImporter(openFile: String => InputStream,
     val cookedSchema = analyseSchema(rawSchema)
     val primaryKeyXForm = primaryKey match {
       case Some(pk) =>
-        (ci: ColumnInfo) =>
-          if(ci.logicalName == pk) makeUserPrimaryKey(ci)
-          else ci.pure[DatasetM]
+        (ci: ColumnInfo, ctx: dataContext.datasetMutator.MutationContext) =>
+          if(ci.logicalName == pk) ctx.makeUserPrimaryKey(ci)
+          else ci
       case None =>
-        (ci: ColumnInfo) => ci.pure[DatasetM]
+        (ci: ColumnInfo, ctx: dataContext.datasetMutator.MutationContext) => ci
     }
     try {
       for {
@@ -115,19 +109,18 @@ class FileImporter(openFile: String => InputStream,
         // stream <- managed(new GZIPInputStream(f))
         reader <- managed(new BufferedReader(new InputStreamReader(f, Codec.UTF8.charSet)))
       } yield {
-        creatingDataset(as = "unknown")(id, "t") {
-          for {
-            _ <- dataContext.addSystemColumns
-            _ <- cookedSchema.toList.map { case (name, typ) =>
-              addColumn(name, dataContext.typeContext.nameFromType(typ), dataContext.physicalColumnBaseBase(name).toLowerCase).flatMap(primaryKeyXForm)
-            }.sequenceU.map(_ => ())
-            plan <- schema.map(rowDecodePlan)
-            report <- upsert(IO {
-              val rowIterator = JsonArrayIterator[JObject](new JsonEventIterator(reader))
-              rowIterator.map(plan)
-            })
-          } yield report
-        }.unsafePerformIO()
+        creatingDataset(as = "unknown")(id, "t") { ctx =>
+          import ctx._
+          dataContext.addSystemColumns(ctx)
+          cookedSchema.toList.foreach { case (name, typ) =>
+            primaryKeyXForm(addColumn(name, dataContext.typeContext.nameFromType(typ), dataContext.physicalColumnBaseBase(name).toLowerCase), ctx)
+          }
+          val plan = rowDecodePlan(schema)
+          upsert {
+            val rowIterator = JsonArrayIterator[JObject](new JsonEventIterator(reader))
+            rowIterator.map(plan)
+          }
+        }
       }
     } catch {
       case e: JsonReaderException =>
@@ -143,35 +136,32 @@ class FileImporter(openFile: String => InputStream,
         // stream <- managed(new GZIPInputStream(inputStream))
         reader <- managed(new BufferedReader(new InputStreamReader(inputStream, Codec.UTF8.charSet)))
       } yield {
-        withDataset(as = "unknown")(id) {
-          for {
-            s <- schema
-            report <- upsert(IO {
-              val rowIterator = JsonArrayIterator[JObject](new JsonEventIterator(reader))
-              rowIterator.map(rowDecodePlan(s))
-            })
-          } yield {
-            val idEncoder = dataContext.jsonRepForColumn(s.values.find(_.isUserPrimaryKey).orElse(s.values.find(_.isSystemPrimaryKey)).getOrElse {
-              sys.error("No system PK defined?")
-            })
-            val inserted = report.inserted.valuesIterator.map(idEncoder.toJValue).toStream
-            val updated = report.updated.valuesIterator.map(idEncoder.toJValue).toStream
-            val deleted = report.deleted.valuesIterator.map(idEncoder.toJValue).toStream
-            val errors = report.errors.valuesIterator.map {
-              case NullPrimaryKey => JString("NullPrimaryKey")
-              case SystemColumnsSet(names: ColumnIdSet) => JObject(Map("System columns set" -> JArray(names.iterator.map { cid => JString(s(cid).logicalName) }.toSeq)))
-              case NoSuchRowToDelete(id) => JObject(Map("NoSuchRowToDelete" -> idEncoder.toJValue(id)))
-              case NoSuchRowToUpdate(id) => JObject(Map("NoSuchRowToUpdate" -> idEncoder.toJValue(id)))
-              case NoPrimaryKey => JString("NoPrimaryKey")
-            }.toStream
-            JObject(Map(
-              "inserted" -> JArray(inserted),
-              "updated" -> JArray(updated),
-              "deleted" -> JArray(deleted),
-              "errors" -> JArray(errors)
-            ))
+        withDataset(as = "unknown")(id) { ctx =>
+          import ctx._
+          val report = upsert {
+            val rowIterator = JsonArrayIterator[JObject](new JsonEventIterator(reader))
+            rowIterator.map(rowDecodePlan(schema))
           }
-        }.unsafePerformIO()
+          val idEncoder = dataContext.jsonRepForColumn(schema.values.find(_.isUserPrimaryKey).orElse(schema.values.find(_.isSystemPrimaryKey)).getOrElse {
+            sys.error("No system PK defined?")
+          })
+          val inserted = report.inserted.valuesIterator.map(idEncoder.toJValue).toStream
+          val updated = report.updated.valuesIterator.map(idEncoder.toJValue).toStream
+          val deleted = report.deleted.valuesIterator.map(idEncoder.toJValue).toStream
+          val errors = report.errors.valuesIterator.map {
+            case NullPrimaryKey => JString("NullPrimaryKey")
+            case SystemColumnsSet(names: ColumnIdSet) => JObject(Map("System columns set" -> JArray(names.iterator.map { cid => JString(schema(cid).logicalName) }.toSeq)))
+            case NoSuchRowToDelete(id) => JObject(Map("NoSuchRowToDelete" -> idEncoder.toJValue(id)))
+            case NoSuchRowToUpdate(id) => JObject(Map("NoSuchRowToUpdate" -> idEncoder.toJValue(id)))
+            case NoPrimaryKey => JString("NoPrimaryKey")
+          }.toStream
+          JObject(Map(
+            "inserted" -> JArray(inserted),
+            "updated" -> JArray(updated),
+            "deleted" -> JArray(deleted),
+            "errors" -> JArray(errors)
+            ))
+        }
       }
     } catch {
       case e: JsonReaderException =>
