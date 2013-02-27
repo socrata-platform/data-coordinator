@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator.service
 
 import scalaz.effect._
-import com.rojoma.json.ast.{JValue, JObject}
+import com.rojoma.json.ast.{JNull, JValue, JObject}
 
 import com.socrata.datacoordinator.truth.{JsonDataWritingContext, DataReadingContext}
 
@@ -18,7 +18,8 @@ class Exporter(val dataContext: DataReadingContext with JsonDataWritingContext) 
               val res = new scala.collection.mutable.HashMap[String, JValue]
               row.foreach { case (cid, value) =>
                 val rep = jsonSchema(cid)
-                res(rep.name) = rep.toJValue(value)
+                val v = rep.toJValue(value)
+                if(JNull != v) res(rep.name) = v
               }
               JObject(res)
             }

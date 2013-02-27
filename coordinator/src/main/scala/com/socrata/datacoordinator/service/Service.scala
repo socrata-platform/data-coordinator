@@ -9,7 +9,7 @@ import com.socrata.http.server.responses._
 import com.socrata.http.routing.{ExtractingRouter, RouterSet}
 import com.rojoma.json.util.{AutomaticJsonCodecBuilder, JsonKey, JsonUtil}
 import com.rojoma.json.io.{JsonReaderException, CompactJsonWriter}
-import com.rojoma.json.ast.JObject
+import com.rojoma.json.ast.{JNumber, JObject}
 import com.ibm.icu.text.Normalizer
 import com.socrata.datacoordinator.common.soql.{JsonSoQLDataContext, PostgresSoQLDataContext}
 import java.util.concurrent.{TimeUnit, Executors}
@@ -18,6 +18,7 @@ import com.socrata.datacoordinator.truth.{JsonDataContext, DataReadingContext, D
 import com.typesafe.config.ConfigFactory
 import com.socrata.datacoordinator.common.StandardDatasetMapLimits
 import java.sql.Connection
+import com.socrata.datacoordinator.truth.loader.Report
 
 case class Field(name: String, @JsonKey("type") typ: String)
 object Field {
@@ -26,6 +27,7 @@ object Field {
 
 class Service(storeFile: InputStream => String,
               importFile: (String, String, Seq[Field], Option[String]) => Unit,
+              updateFile: (String, InputStream) => Option[JObject],
               datasetContents: String => (Iterator[JObject] => Unit) => Boolean)
 {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
@@ -72,6 +74,15 @@ class Service(storeFile: InputStream => String,
     OK
   }
 
+  def doUpdateFile(id: String)(req: HttpServletRequest): HttpResponse = {
+    updateFile(norm(id), req.getInputStream) match {
+      case Some(report) =>
+        OK ~> ContentType("application/json; charset=utf-8") ~> Content(report.toString)
+      case None =>
+        NotFound
+    }
+  }
+
   def doExportFile(id: String)(req: HttpServletRequest): HttpResponse = { resp =>
     val found = datasetContents(norm(id)) { rows =>
       resp.setContentType("application/json")
@@ -95,6 +106,7 @@ class Service(storeFile: InputStream => String,
   val router = RouterSet(
     ExtractingRouter[HttpService]("POST", "/upload")(doUploadFile _),
     ExtractingRouter[HttpService]("POST", "/import/?")(doImportFile _),
+    ExtractingRouter[HttpService]("POST", "/update/?")(doUpdateFile _),
     ExtractingRouter[HttpService]("GET", "/export/?")(doExportFile _)
   )
 
@@ -139,9 +151,9 @@ object Service extends App { self =>
       val datasetMapLimits = StandardDatasetMapLimits
     }
     val fileStore = new FileStore(new File("/tmp/filestore"))
-    val importer = new FileImporter(fileStore.open, dataContext)
+    val importer = new FileImporter(fileStore.open, ":deleted", dataContext)
     val exporter = new Exporter(dataContext)
-    val serv = new Service(fileStore.store, importer.importFile, exporter.export)
+    val serv = new Service(fileStore.store, importer.importFile, importer.updateFile, exporter.export)
     serv.run(port)
   } finally {
     executorService.shutdown()

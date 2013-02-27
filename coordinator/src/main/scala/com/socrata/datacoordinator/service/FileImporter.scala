@@ -14,18 +14,27 @@ import com.rojoma.simplearm.util._
 import com.rojoma.json.ast._
 import com.rojoma.json.io.{JsonEventIterator, JsonReaderException}
 import com.rojoma.json.util.JsonArrayIterator
-import com.socrata.datacoordinator.truth.{JsonDataReadingContext, DataWritingContext}
+import com.socrata.datacoordinator.truth.{JsonDataContext, JsonDataReadingContext, DataWritingContext}
 import com.socrata.datacoordinator.truth.json.JsonColumnReadRep
 import com.socrata.datacoordinator.primary.DatasetCreator
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.id.ColumnId
-import com.socrata.datacoordinator.util.collection.ColumnIdMap
+import com.socrata.datacoordinator.util.collection.{ColumnIdSet, ColumnIdMap}
+import com.socrata.datacoordinator.truth.loader._
+import com.socrata.datacoordinator.truth.metadata.ColumnInfo
+import com.socrata.datacoordinator.truth.loader.NoSuchRowToDelete
+import scala.Some
+import com.rojoma.json.ast.JString
+import com.socrata.datacoordinator.truth.loader.NoSuchRowToUpdate
+import com.socrata.datacoordinator.truth.loader.SystemColumnsSet
 
 class BadSchemaException(msg: String) extends Exception(msg)
 class BadDataException(msg: String, cause: Throwable = null) extends Exception(msg, cause)
 
+// TODO: This needs to normalize combining characters!
 class FileImporter(openFile: String => InputStream,
-                   val dataContext: DataWritingContext with JsonDataReadingContext) {
+                   magicDeleteKey: String, // should this come from the context?
+                   val dataContext: DataWritingContext with JsonDataContext) {
   import dataContext.datasetMutator._
 
   import dataContext.{CT, CV, Row, MutableRow}
@@ -40,28 +49,46 @@ class FileImporter(openFile: String => InputStream,
     }
   }
 
-  private def rowDecodePlan(schema: ColumnIdMap[ColumnInfo]): JObject => (Seq[String], Row) = {
+  private def rowDecodePlan(schema: ColumnIdMap[ColumnInfo]): JObject => Either[CV, Row] = {
+    val pkCol = schema.values.find(_.isUserPrimaryKey).orElse(schema.values.find(_.isSystemPrimaryKey)).getOrElse {
+      sys.error("No system primary key in the schema?")
+    }
+    val pkId = pkCol.logicalName
+    val pkRep = dataContext.jsonRepForColumn(pkCol)
     val cookedSchema: Map[String, (ColumnId, JsonColumnReadRep[CT, CV])] =
       schema.iterator.map { case (systemId, ci) =>
         ci.logicalName -> (systemId, dataContext.jsonRepForColumn(ci))
       }.toMap
     (row: JObject) => {
-      val result = new MutableRow
-      val bads = cookedSchema.iterator.flatMap { case (field, (systemId, rep)) =>
-        row.get(field) match {
+      if(row.contains(magicDeleteKey) && row(magicDeleteKey) == JBoolean.canonicalTrue) {
+        row.get(pkId) match {
           case Some(value) =>
-            rep.fromJValue(value) match {
+            pkRep.fromJValue(value) match {
               case Some(trueValue) =>
-                result += systemId -> trueValue
-                Nil
+                Left(trueValue)
               case None =>
-                List(field)
+                throw new BadDataException("Unable to interpret field " + pkId)
             }
           case None =>
-            Nil
+            throw new BadDataException("Delete command without associated ID value")
         }
+      } else {
+        val result = new MutableRow
+        cookedSchema.iterator.foreach { case (field, (systemId, rep)) =>
+          row.get(field) match {
+            case Some(value) =>
+              rep.fromJValue(value) match {
+                case Some(trueValue) =>
+                  result += systemId -> trueValue
+                case None =>
+                  throw new BadDataException("Unable to interpret field " + field)
+              }
+            case None =>
+              /* pass */
+          }
+        }
+        Right(result.freeze())
       }
-      (bads.toList, result.freeze())
     }
   }
 
@@ -85,8 +112,8 @@ class FileImporter(openFile: String => InputStream,
     try {
       for {
         f <- managed(openFile(fileId))
-        stream <- managed(new GZIPInputStream(f))
-        reader <- managed(new BufferedReader(new InputStreamReader(stream, Codec.UTF8.charSet)))
+        // stream <- managed(new GZIPInputStream(f))
+        reader <- managed(new BufferedReader(new InputStreamReader(f, Codec.UTF8.charSet)))
       } yield {
         creatingDataset(as = "unknown")(id, "t") {
           for {
@@ -97,12 +124,53 @@ class FileImporter(openFile: String => InputStream,
             plan <- schema.map(rowDecodePlan)
             report <- upsert(IO {
               val rowIterator = JsonArrayIterator[JObject](new JsonEventIterator(reader))
-              rowIterator.map(plan).map { r =>
-                if(r._1.nonEmpty) throw new BadDataException("Unable to interpret fields " + r._1.mkString(", "))
-                Right(r._2)
-              }
+              rowIterator.map(plan)
             })
           } yield report
+        }.unsafePerformIO()
+      }
+    } catch {
+      case e: JsonReaderException =>
+        throw new BadDataException(s"Unable to parse data as JSON at ${e.position.row}:${e.position.column}", e)
+      case e: JsonArrayIterator.ElementDecodeException =>
+        throw new BadDataException(s"An element was not a JSON object at ${e.position.row}:${e.position.column}", e)
+    }
+  }
+
+  def updateFile(id: String, inputStream: InputStream): Option[JObject] = { // TODO: Real report
+    try {
+      for {
+        // stream <- managed(new GZIPInputStream(inputStream))
+        reader <- managed(new BufferedReader(new InputStreamReader(inputStream, Codec.UTF8.charSet)))
+      } yield {
+        withDataset(as = "unknown")(id) {
+          for {
+            s <- schema
+            report <- upsert(IO {
+              val rowIterator = JsonArrayIterator[JObject](new JsonEventIterator(reader))
+              rowIterator.map(rowDecodePlan(s))
+            })
+          } yield {
+            val idEncoder = dataContext.jsonRepForColumn(s.values.find(_.isUserPrimaryKey).orElse(s.values.find(_.isSystemPrimaryKey)).getOrElse {
+              sys.error("No system PK defined?")
+            })
+            val inserted = report.inserted.valuesIterator.map(idEncoder.toJValue).toStream
+            val updated = report.updated.valuesIterator.map(idEncoder.toJValue).toStream
+            val deleted = report.deleted.valuesIterator.map(idEncoder.toJValue).toStream
+            val errors = report.errors.valuesIterator.map {
+              case NullPrimaryKey => JString("NullPrimaryKey")
+              case SystemColumnsSet(names: ColumnIdSet) => JObject(Map("System columns set" -> JArray(names.iterator.map { cid => JString(s(cid).logicalName) }.toSeq)))
+              case NoSuchRowToDelete(id) => JObject(Map("NoSuchRowToDelete" -> idEncoder.toJValue(id)))
+              case NoSuchRowToUpdate(id) => JObject(Map("NoSuchRowToUpdate" -> idEncoder.toJValue(id)))
+              case NoPrimaryKey => JString("NoPrimaryKey")
+            }.toStream
+            JObject(Map(
+              "inserted" -> JArray(inserted),
+              "updated" -> JArray(updated),
+              "deleted" -> JArray(deleted),
+              "errors" -> JArray(errors)
+            ))
+          }
         }.unsafePerformIO()
       }
     } catch {

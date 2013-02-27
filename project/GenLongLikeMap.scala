@@ -435,6 +435,12 @@ class """ + targetClassName + """(val unsafeUnderlying: TLongSet) extends (""" +
 
   def contains(x: """ + sourceType + """) = unsafeUnderlying.contains(x.underlying)
 
+  def iterator: Iterator[""" + sourceType + """] = new Iterator[""" + sourceType + """] {
+    val it = unsafeUnderlying.iterator
+    def hasNext = it.hasNext
+    def next() = new """ + sourceType + """(it.next())
+  }
+
   def intersect(that: """ + targetClassName + """): """ + targetClassName + """ = {
     if(this.unsafeUnderlying.size <= that.unsafeUnderlying.size) {
       val filter = that.unsafeUnderlying
