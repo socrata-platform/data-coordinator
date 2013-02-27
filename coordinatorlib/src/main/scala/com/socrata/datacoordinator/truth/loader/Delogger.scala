@@ -16,7 +16,9 @@ trait Delogger[CV] extends Closeable {
 object Delogger {
   sealed trait LogEventCompanion
 
-  sealed abstract class LogEvent[+CV] extends Product
+  sealed abstract class LogEvent[+CV] extends Product {
+    def companion = companionFromProductName(productPrefix)
+  }
   object LogEvent {
     def fromProductName(s: String): LogEventCompanion = companionFromProductName(s)
   }
@@ -95,7 +97,7 @@ object Delogger {
   }
   assert(allLogEventNames == allLogEventCompanionNames, "A companion object is not tagged with LogEventCompanion")
 
-  private val allLogEventCompanions: Set[LogEventCompanion] =
+  val allLogEventCompanions: Set[LogEventCompanion] =
     Set(Truncated, ColumnCreated, ColumnRemoved, RowIdentifierSet, RowIdentifierCleared,
       SystemRowIdentifierChanged, WorkingCopyCreated, DataCopied, WorkingCopyPublished,
       CopyDropped, ColumnLogicalNameChanged, RowDataUpdated, RowIdCounterUpdated, EndTransaction)
