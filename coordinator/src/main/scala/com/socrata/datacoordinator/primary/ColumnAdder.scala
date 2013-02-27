@@ -13,7 +13,10 @@ class ColumnAdder[CT] private (val dataContext: DataWritingContext) extends Exis
     }.toList
 
     finish(dataset) {
-      withDataset(as = username)(dataset) { ctx =>
+      for {
+        ctxOpt <- openDataset(as = username)(dataset)
+        ctx <- ctxOpt
+      } yield {
         columnCreations(ctx).foldLeft(Map.empty[String, ColumnInfo]) { (acc, ci) =>
           acc + (ci.logicalName -> ci)
         }

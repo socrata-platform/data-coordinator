@@ -3,11 +3,10 @@ package com.socrata.datacoordinator.primary
 import com.socrata.datacoordinator.truth.DataWritingContext
 
 class DatasetCreator[T](dataWritingContext: DataWritingContext) {
-  import dataWritingContext.datasetMutator._
+  import dataWritingContext.datasetMutator
 
   def createDataset(datasetId: String, username: String) {
-    creatingDataset(as = username)(datasetId, "t") { ctx =>
+    for(ctx <- datasetMutator.createDataset(as = username)(datasetId, "t"))
       dataWritingContext.addSystemColumns(ctx)
-    }
   }
 }

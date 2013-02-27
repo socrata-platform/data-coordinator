@@ -6,7 +6,10 @@ class PrimaryKeySetter(mutator: MonadicDatasetMutator[_]) extends ExistingDatase
   import mutator._
   def makePrimaryKey(dataset: String, column: String, username: String) {
     finish(dataset) {
-      withDataset(as = username)(dataset) { ctx =>
+      for {
+        ctxOpt <- openDataset(as = username)(dataset)
+        ctx <- ctxOpt
+      } yield {
         import ctx._
         schema.values.find(_.logicalName == column) match {
           case Some(c) =>

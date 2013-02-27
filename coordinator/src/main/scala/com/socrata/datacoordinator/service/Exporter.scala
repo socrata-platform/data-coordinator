@@ -6,7 +6,10 @@ import com.socrata.datacoordinator.truth.{JsonDataWritingContext, DataReadingCon
 
 class Exporter(val dataContext: DataReadingContext with JsonDataWritingContext) {
   def export(id: String)(f: Iterator[JObject] => Unit): Boolean = {
-    val res = dataContext.datasetReader.withDataset(id, latest = true) { ctx =>
+    val res = for {
+      ctxOpt <- dataContext.datasetReader.openDataset(id, latest = true)
+      ctx <- ctxOpt
+    } yield {
       import ctx._
       val jsonSchema = schema.mapValuesStrict(dataContext.jsonRepForColumn)
       withRows { it =>

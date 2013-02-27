@@ -109,7 +109,7 @@ class FileImporter(openFile: String => InputStream,
         // stream <- managed(new GZIPInputStream(f))
         reader <- managed(new BufferedReader(new InputStreamReader(f, Codec.UTF8.charSet)))
       } yield {
-        creatingDataset(as = "unknown")(id, "t") { ctx =>
+        for(ctx <- createDataset(as = "unknown")(id, "t")) {
           import ctx._
           dataContext.addSystemColumns(ctx)
           cookedSchema.toList.foreach { case (name, typ) =>
@@ -136,7 +136,10 @@ class FileImporter(openFile: String => InputStream,
         // stream <- managed(new GZIPInputStream(inputStream))
         reader <- managed(new BufferedReader(new InputStreamReader(inputStream, Codec.UTF8.charSet)))
       } yield {
-        withDataset(as = "unknown")(id) { ctx =>
+        for {
+          ctxOpt <- openDataset(as = "unknown")(id)
+          ctx <- ctxOpt
+        } yield {
           import ctx._
           val report = upsert {
             val rowIterator = JsonArrayIterator[JObject](new JsonEventIterator(reader))
@@ -160,7 +163,7 @@ class FileImporter(openFile: String => InputStream,
             "updated" -> JArray(updated),
             "deleted" -> JArray(deleted),
             "errors" -> JArray(errors)
-            ))
+          ))
         }
       }
     } catch {

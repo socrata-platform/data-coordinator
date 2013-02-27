@@ -9,7 +9,10 @@ import com.socrata.datacoordinator.truth.MonadicDatasetMutator
 class Upserter[CV](mutator: MonadicDatasetMutator[CV]) extends ExistingDatasetMutator {
   def upsert(dataset: String, username: String)(inputGenerator: ColumnIdMap[ColumnInfo] => Iterator[Either[CV, Row[CV]]]): Report[CV] =
     finish(dataset) {
-      mutator.withDataset(as = username)(dataset) { ctx =>
+      for {
+        ctxOpt <- mutator.openDataset(as = username)(dataset)
+        ctx <- ctxOpt
+      } yield {
         ctx.upsert(inputGenerator(ctx.schema))
       }
     }

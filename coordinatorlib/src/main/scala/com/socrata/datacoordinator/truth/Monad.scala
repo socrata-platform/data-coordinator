@@ -2,13 +2,11 @@ package com.socrata.datacoordinator
 package truth
 
 import org.joda.time.DateTime
-import com.rojoma.simplearm.Managed
+import com.rojoma.simplearm.{SimpleArm, Managed}
 
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.util.collection.{MutableColumnIdMap, ColumnIdMap}
-import com.socrata.datacoordinator.truth.metadata.ColumnInfo
-import com.socrata.datacoordinator.truth.metadata.CopyInfo
 import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.metadata.CopyPair
@@ -30,7 +28,7 @@ trait LowLevelMonadicDatabaseReader[CV] {
     def withRows[A](ci: CopyInfo, schema: ColumnIdMap[ColumnInfo], f: Iterator[ColumnIdMap[CV]] => A): A
   }
 
-  def runTransaction[A](action: ReadContext => A): A
+  def openDatabase: Managed[ReadContext]
 }
 
 trait LowLevelMonadicDatabaseMutator[CV] {
@@ -61,7 +59,7 @@ trait LowLevelMonadicDatabaseMutator[CV] {
     }
   }
 
-  def runTransaction[A](action: MutationContext => A): A
+  def openDatabase: Managed[MutationContext]
 }
 
 trait MonadicDatasetReader[CV] {
@@ -77,7 +75,7 @@ trait MonadicDatasetReader[CV] {
    * @param latest If false, this action operates on the published version even if there
    *               is a newer working copy.
    */
-  def withDataset[A](datasetName: String, latest: Boolean)(action: ReadContext => A): Option[A]
+  def openDataset(datasetName: String, latest: Boolean): Managed[Option[ReadContext]]
 }
 
 object MonadicDatasetReader {
@@ -87,10 +85,15 @@ object MonadicDatasetReader {
         llCtx.withRows(copyInfo, schema, f)
     }
 
-    def withDataset[A](datasetName: String, latest: Boolean)(action: ReadContext => A): Option[A] =
-      databaseReader.runTransaction { llCtx =>
-        llCtx.loadDataset(datasetName, latest) map { case (initialCopy, initialSchema) =>
-          action(new S(initialCopy, initialSchema, llCtx))
+    def openDataset(datasetName: String, latest: Boolean): Managed[Option[ReadContext]] =
+      new SimpleArm[Option[ReadContext]] {
+        def flatMap[A](f: Option[ReadContext] => A): A = for {
+          llCtx <- databaseReader.openDatabase
+        } yield {
+          val ctx = llCtx.loadDataset(datasetName, latest) map { case (initialCopy, initialSchema) =>
+            new S(initialCopy, initialSchema, llCtx)
+          }
+          f(ctx)
         }
       }
   }
@@ -119,9 +122,9 @@ trait MonadicDatasetMutator[CV] {
     def drop() // TODO: this should be a top-level thing
   }
 
-  def creatingDataset[A](as: String)(datasetName: String, tableBaseBase: String)(action: MutationContext => A): A
-  def withDataset[A](as: String)(datasetName: String)(action: MutationContext => A): Option[A]
-  def creatingCopy[A](as: String)(datasetName: String, copyData: Boolean)(action: MutationContext => A): Option[A]
+  def createDataset(as: String)(datasetName: String, tableBaseBase: String): Managed[MutationContext]
+  def openDataset(as: String)(datasetName: String): Managed[Option[MutationContext]]
+  def createCopy(as: String)(datasetName: String, copyData: Boolean): Managed[Option[MutationContext]]
 }
 
 object MonadicDatasetMutator {
@@ -232,40 +235,49 @@ object MonadicDatasetMutator {
       }
     }
 
-    private def go[A](username: String, datasetName: String, action: S => A): Option[A] = {
-      databaseMutator.runTransaction { llCtx =>
-        llCtx.loadLatestVersionOfDataset(datasetName) map { case (initialCopy, initialSchema) =>
+    private def go[A](username: String, datasetName: String, action: Option[S] => A): A =
+      for {
+        llCtx <- databaseMutator.openDatabase
+      } yield {
+        val ctx = llCtx.loadLatestVersionOfDataset(datasetName) map { case (initialCopy, initialSchema) =>
           val logger = llCtx.logger(initialCopy.datasetInfo)
           val schemaLoader = llCtx.schemaLoader(logger)
-          val state = new S(initialCopy, initialSchema, schemaLoader, logger, llCtx)
-          val result = action(state)
-          llCtx.finishDatasetTransaction(username, state.copyInfo, logger)
-          result
+          new S(initialCopy, initialSchema, schemaLoader, logger, llCtx)
         }
-      }
-    }
-
-    def withDataset[A](username: String)(datasetName: String)(action: MutationContext => A): Option[A] =
-      go(username, datasetName, action)
-
-    def creatingDataset[A](username: String)(datasetName: String, tableBaseBase: String)(action: MutationContext => A): A =
-      databaseMutator.runTransaction { llCtx =>
-        val m = llCtx.datasetMap
-        val firstVersion = m.create(datasetName, tableBaseBase)
-        val logger = llCtx.logger(firstVersion.datasetInfo)
-        val schemaLoader = llCtx.schemaLoader(logger)
-        schemaLoader.create(firstVersion)
-        val state = new S(firstVersion, ColumnIdMap.empty, schemaLoader, logger, llCtx)
-        val result = action(state)
-        llCtx.finishDatasetTransaction(username, state.copyInfo, logger)
+        val result = action(ctx)
+        ctx.foreach { state =>
+          llCtx.finishDatasetTransaction(username, state.copyInfo, state.logger)
+        }
         result
       }
 
-    def creatingCopy[A](username: String)(datasetName: String, copyData: Boolean)(action: MutationContext => A): Option[A] =
-      go(username, datasetName, { ctx =>
-        ctx.makeWorkingCopy(copyData)
-        action(ctx)
-      })
+    def openDataset(as: String)(datasetName: String): Managed[Option[MutationContext]] = new SimpleArm[Option[MutationContext]] {
+      def flatMap[A](f: Option[MutationContext] => A): A =
+        go(as, datasetName, f)
+    }
+
+    def createDataset(as: String)(datasetName: String, tableBaseBase: String): Managed[MutationContext] = new SimpleArm[MutationContext] {
+      def flatMap[A](f: MutationContext => A): A =
+        for { llCtx <- databaseMutator.openDatabase } yield {
+          val m = llCtx.datasetMap
+          val firstVersion = m.create(datasetName, tableBaseBase)
+          val logger = llCtx.logger(firstVersion.datasetInfo)
+          val schemaLoader = llCtx.schemaLoader(logger)
+          schemaLoader.create(firstVersion)
+          val state = new S(firstVersion, ColumnIdMap.empty, schemaLoader, logger, llCtx)
+          val result = f(state)
+          llCtx.finishDatasetTransaction(as, state.copyInfo, logger)
+          result
+        }
+    }
+
+    def createCopy(as: String)(datasetName: String, copyData: Boolean): Managed[Option[MutationContext]] = new SimpleArm[Option[MutationContext]] {
+      def flatMap[A](f: Option[MutationContext] => A): A =
+        go(as,datasetName, { ctxOpt =>
+          ctxOpt.foreach(_.makeWorkingCopy(copyData))
+          f(ctxOpt)
+        })
+    }
   }
 
   def apply[CV](lowLevelMutator: LowLevelMonadicDatabaseMutator[CV]): MonadicDatasetMutator[CV] = new Impl(lowLevelMutator)

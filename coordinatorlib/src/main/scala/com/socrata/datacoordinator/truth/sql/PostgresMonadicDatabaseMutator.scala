@@ -6,6 +6,7 @@ import javax.sql.DataSource
 
 import org.joda.time.DateTime
 import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.Managed
 
 import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, CopyInfo, GlobalLog, DatasetMapWriter, DatasetInfo}
 import com.socrata.datacoordinator.truth.metadata.sql.{PostgresGlobalLog, PostgresDatasetMapWriter}
@@ -15,6 +16,7 @@ import com.socrata.datacoordinator.truth.{TypeContext, RowLogCodec}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.id.RowId
 import com.socrata.id.numeric.IdProvider
+import com.rojoma.simplearm.SimpleArm
 
 // Does this need to be *Postgres*, or is all postgres-specific stuff encapsulated in its paramters?
 class PostgresMonadicDatabaseMutator[CT, CV](dataSource: DataSource,
@@ -64,11 +66,13 @@ class PostgresMonadicDatabaseMutator[CT, CV](dataSource: DataSource,
     new S(conn, datasetMap, globalLog)
   }
 
-  def runTransaction[A](action: MutationContext => A): A =
-    using(dataSource.getConnection()) { conn =>
-      conn.setAutoCommit(false)
-      val result = action(createInitialState(conn))
-      conn.commit()
-      result
-    }
+  def openDatabase: Managed[MutationContext] = new SimpleArm[MutationContext] {
+    def flatMap[A](f: MutationContext => A): A =
+      using(dataSource.getConnection()) { conn =>
+        conn.setAutoCommit(false)
+        val result = f(createInitialState(conn))
+        conn.commit()
+        result
+      }
+  }
 }

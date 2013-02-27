@@ -1,6 +1,7 @@
 package com.socrata.datacoordinator.truth
 package sql
 
+import com.rojoma.simplearm.Managed
 import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.truth.metadata.{DatasetMapReader, CopyInfo, ColumnInfo}
@@ -8,6 +9,7 @@ import com.socrata.datacoordinator.util.collection.{MutableColumnIdMap, ColumnId
 import com.socrata.datacoordinator.id.ColumnId
 import javax.sql.DataSource
 import java.sql.{ResultSet, Connection}
+import com.rojoma.simplearm.SimpleArm
 
 // Does this need to be *Postgres*, or is all postgres-specific stuff encapsulated in its paramters?
 class PostgresMonadicDatabaseReader[CT, CV](dataSource: DataSource,
@@ -54,10 +56,12 @@ class PostgresMonadicDatabaseReader[CT, CV](dataSource: DataSource,
     }
   }
 
-  def runTransaction[A](f: ReadContext => A): A =
-    using(dataSource.getConnection()) { conn =>
-      conn.setAutoCommit(false)
-      conn.setReadOnly(true)
-      f(new S(conn))
-    }
+  def openDatabase: Managed[ReadContext] = new SimpleArm[ReadContext] {
+    def flatMap[A](f: ReadContext => A): A =
+      using(dataSource.getConnection()) { conn =>
+        conn.setAutoCommit(false)
+        conn.setReadOnly(true)
+        f(new S(conn))
+      }
+  }
 }

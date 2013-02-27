@@ -83,7 +83,7 @@ object Test extends App {
 
   import highlevel._
   val name = System.currentTimeMillis().toString
-  val (col1Id, col2Id) = creatingDataset(as = "robertm")(name, "m") { ctx =>
+  val (col1Id, col2Id) = for(ctx <- createDataset(as = "robertm")(name, "m")) yield {
     import ctx._
     val id = makeSystemPrimaryKey(addColumn(":id", "row_identifier", "id"))
     val created_at = addColumn(":created_at", "fixed_timestamp", "created")
@@ -98,7 +98,10 @@ object Test extends App {
     (col1.systemId, col2.systemId)
   }
 
-  val report2 = creatingCopy(as = "robertm")(name, copyData = false) { ctx =>
+  val report2 = for {
+    ctxOpt <- createCopy(as = "robertm")(name, copyData = false)
+    ctx <- ctxOpt
+  } yield {
     import ctx._
     val col1 = schema(col1Id)
     val col2 = schema(col2Id)

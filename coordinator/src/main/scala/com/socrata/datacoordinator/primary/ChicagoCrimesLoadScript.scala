@@ -132,7 +132,10 @@ object ChicagoCrimesLoadScript extends App {
       println(s"Upsert took ${(end - start) / 1000000L}ms")
       publisher.publish("crimes", user)
       workingCopyCreator.copyDataset("crimes", user, copyData = true)
-      val ci = dataContext.datasetMutator.withDataset(user)("crimes") { ctx =>
+      val ci = for {
+        ctxOpt <- dataContext.datasetMutator.openDataset(user)("crimes")
+        ctx <- ctxOpt
+      } yield {
         ctx.drop()
         ctx.copyInfo.unanchored
       }

@@ -7,7 +7,10 @@ class WorkingCopyCreator(mutator: MonadicDatasetMutator[_]) extends ExistingData
   import mutator._
   def copyDataset(dataset: String, username: String, copyData: Boolean): UnanchoredCopyInfo = {
     finish(dataset) {
-      creatingCopy(as = username)(dataset, copyData) { ctx =>
+      for {
+        ctxOpt <- createCopy(as = username)(dataset, copyData)
+        ctx <- ctxOpt
+      } yield {
         ctx.copyInfo.unanchored
       }
     }
