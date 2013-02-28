@@ -27,6 +27,9 @@ object ChicagoCrimesLoadScript extends App {
   // "lof9afw3"
     "blist"
 
+  val datasetName =  args.lift(1).getOrElse("crimes")
+  val inputFile = args.lift(2).getOrElse("/home/robertm/chicagocrime.csv")
+
   val ds = new PGSimpleDataSource
   ds.setServerName("localhost")
   ds.setPortNumber(5432)
@@ -68,9 +71,9 @@ object ChicagoCrimesLoadScript extends App {
 
     val user = "robertm"
 
-    try { datasetCreator.createDataset("crimes", user) }
+    try { datasetCreator.createDataset(datasetName, user) }
     catch { case _: DatasetAlreadyExistsException => /* pass */ }
-    using(CSVIterator.fromFile(new File("/home/robertm/chicagocrime.csv"))) { it =>
+    using(CSVIterator.fromFile(new File(inputFile))) { it =>
       val NumberT = dataContext.typeContext.typeFromName("number")
       val TextT = dataContext.typeContext.typeFromName("text")
       val BooleanT = dataContext.typeContext.typeFromName("boolean")
@@ -101,12 +104,12 @@ object ChicagoCrimesLoadScript extends App {
         "location" -> LocationT
       )
       val headers = it.next().map(IdentifierFilter(_).toLowerCase)
-      val schema = columnAdder.addToSchema("crimes", headers.map { x => x -> types(x) }.toMap, user).mapValues { ci =>
+      val schema = columnAdder.addToSchema(datasetName, headers.map { x => x -> types(x) }.toMap, user).mapValues { ci =>
         (ci, dataContext.typeContext.typeFromName(ci.typeName))
       }.toMap
-      primaryKeySetter.makePrimaryKey("crimes", "id", user)
+      primaryKeySetter.makePrimaryKey(datasetName, "id", user)
       val start = System.nanoTime()
-      upserter.upsert("crimes", user) { _ =>
+      upserter.upsert(datasetName, user) { _ =>
         val plan = rowDecodePlan(dataContext)(schema, headers)
         it.map { row =>
           val result = plan(row)
@@ -116,15 +119,15 @@ object ChicagoCrimesLoadScript extends App {
       }
       val end = System.nanoTime()
       println(s"Upsert took ${(end - start) / 1000000L}ms")
-      publisher.publish("crimes", user)
-      workingCopyCreator.copyDataset("crimes", user, copyData = true)
+      publisher.publish(datasetName, user)
+      workingCopyCreator.copyDataset(datasetName, user, copyData = true)
       val ci = for {
-        ctxOpt <- dataContext.datasetMutator.dropCopy(user)("crimes")
+        ctxOpt <- dataContext.datasetMutator.dropCopy(user)(datasetName)
         ctx <- ctxOpt
       } yield {
         ctx.copyInfo.unanchored
       }
-      workingCopyCreator.copyDataset("crimes", user, copyData = true)
+      workingCopyCreator.copyDataset(datasetName, user, copyData = true)
       println(ci)
     }
   } finally {
