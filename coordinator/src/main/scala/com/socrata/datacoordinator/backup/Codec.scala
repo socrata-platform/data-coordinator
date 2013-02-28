@@ -61,7 +61,8 @@ object LogDataCodec {
     Delogger.WorkingCopyPublished -> WorkingCopyPublishedCodec,
     Delogger.DataCopied -> DataCopiedCodec,
     Delogger.Truncated -> TruncatedCodec,
-    Delogger.CopyDropped -> CopyDroppedCodec,
+    Delogger.WorkingCopyDropped -> WorkingCopyDroppedCodec,
+    Delogger.SnapshotDropped -> SnapshotDroppedCodec,
     Delogger.ColumnCreated -> ColumnCreatedCodec,
     Delogger.RowIdentifierSet -> RowIdentifierSetCodec,
     Delogger.RowIdentifierCleared -> RowIdentifierClearedCodec,
@@ -145,16 +146,24 @@ object LogDataCodec {
       Delogger.Truncated
   }
 
-  private object CopyDroppedCodec extends EventCodec {
+  private object WorkingCopyDroppedCodec extends EventCodec {
     def encode(stream: DataOutputStream, event: Delogger.LogEvent[Any]) {
-      val Delogger.CopyDropped(ci) = event
+      val Delogger.WorkingCopyDropped = event
+    }
+    def decode[CV](stream: DataInputStream, rowCodecFactory: () => RowLogCodec[CV]) =
+      Delogger.WorkingCopyDropped
+  }
+
+  private object SnapshotDroppedCodec extends EventCodec {
+    def encode(stream: DataOutputStream, event: Delogger.LogEvent[Any]) {
+      val Delogger.SnapshotDropped(ci) = event
       stream.write(JsonUtil.renderJson(ci).getBytes("UTF-8"))
     }
     def decode[CV](stream: DataInputStream, rowLogCodecFactory: () => RowLogCodec[CV]) = {
       val ci = JsonUtil.readJson[UnanchoredCopyInfo](new InputStreamReader(stream, "UTF-8")).getOrElse {
         throw new PacketDecodeException("Unable to decode a columnInfo")
       }
-      Delogger.CopyDropped(ci)
+      Delogger.SnapshotDropped(ci)
     }
   }
 

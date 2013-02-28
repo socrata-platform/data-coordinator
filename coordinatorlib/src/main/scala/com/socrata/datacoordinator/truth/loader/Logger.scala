@@ -14,7 +14,8 @@ trait Logger[CV] extends DataLogger[CV] {
   def workingCopyCreated(info: CopyInfo)
   def logicalNameChanged(info: ColumnInfo)
   def dataCopied()
-  def copyDropped(info: CopyInfo)
+  def workingCopyDropped()
+  def snapshotDropped(info: CopyInfo)
   def workingCopyPublished()
 
   /** Logs the end of the transaction and returns its version number.

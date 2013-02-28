@@ -111,8 +111,10 @@ class SqlDelogger[CV](connection: Connection,
           decodeWorkingCopyCreated(aux)
         case SqlLogger.DataCopied =>
           Delogger.DataCopied
-        case SqlLogger.CopyDropped =>
-          decodeCopyDropped(aux)
+        case SqlLogger.WorkingCopyDropped =>
+          Delogger.WorkingCopyDropped
+        case SqlLogger.SnapshotDropped =>
+          decodeSnapshotDropped(aux)
         case SqlLogger.WorkingCopyPublished =>
           Delogger.WorkingCopyPublished
         case SqlLogger.ColumnLogicalNameChanged =>
@@ -184,12 +186,12 @@ class SqlDelogger[CV](connection: Connection,
       Delogger.WorkingCopyCreated(di, vi)
     }
 
-    def decodeCopyDropped(aux: Array[Byte]) = {
+    def decodeSnapshotDropped(aux: Array[Byte]) = {
       val json = new StringReader(new String(aux, UTF8))
       val vi = JsonUtil.readJson[UnanchoredCopyInfo](json).getOrElse {
         sys.error("Parameter for `working copy dropped' was not an object")
       }
-      Delogger.CopyDropped(vi)
+      Delogger.SnapshotDropped(vi)
     }
 
     def decodeColumnLogicalNameChanged(aux: Array[Byte]) = {

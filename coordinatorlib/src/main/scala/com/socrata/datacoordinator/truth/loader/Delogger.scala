@@ -43,10 +43,12 @@ object Delogger {
   case class WorkingCopyCreated(datasetInfo: UnanchoredDatasetInfo, copyInfo: UnanchoredCopyInfo) extends LogEvent[Nothing]
   object WorkingCopyCreated extends LogEventCompanion
 
+  case object WorkingCopyDropped extends LogEvent[Nothing] with LogEventCompanion
+
   case object DataCopied extends LogEvent[Nothing] with LogEventCompanion
 
-  case class CopyDropped(info: UnanchoredCopyInfo) extends LogEvent[Nothing]
-  object CopyDropped extends LogEventCompanion
+  case class SnapshotDropped(info: UnanchoredCopyInfo) extends LogEvent[Nothing]
+  object SnapshotDropped extends LogEventCompanion
 
   case object WorkingCopyPublished extends LogEvent[Nothing] with LogEventCompanion
 
@@ -100,7 +102,7 @@ object Delogger {
   val allLogEventCompanions: Set[LogEventCompanion] =
     Set(Truncated, ColumnCreated, ColumnRemoved, RowIdentifierSet, RowIdentifierCleared,
       SystemRowIdentifierChanged, WorkingCopyCreated, DataCopied, WorkingCopyPublished,
-      CopyDropped, ColumnLogicalNameChanged, RowDataUpdated, RowIdCounterUpdated, EndTransaction)
+      WorkingCopyDropped, SnapshotDropped, ColumnLogicalNameChanged, RowDataUpdated, RowIdCounterUpdated, EndTransaction)
   assert(allLogEventCompanions.size == eventTypeCount,
     "An entry is missing from the allLogEventCompanions set")
 
@@ -116,7 +118,8 @@ object Delogger {
         case WorkingCopyCreated => "WorkingCopyCreated"
         case DataCopied => "DataCopied"
         case WorkingCopyPublished => "WorkingCopyPublished"
-        case CopyDropped => "CopyDropped"
+        case WorkingCopyDropped => "WorkingCopyDropped"
+        case SnapshotDropped => "SnapshotDropped"
         case ColumnLogicalNameChanged => "ColumnLogicalNameChanged"
         case RowDataUpdated => "RowDataUpdated"
         case RowIdCounterUpdated => "RowIdCounterUpdated"

@@ -94,8 +94,11 @@ object Test extends App {
       Right(Row(col1.systemId -> BigDecimal(5), col2.systemId -> "hello")),
       Right(Row(col1.systemId -> BigDecimal(6), col2.systemId -> "hello"))
     ))
-    publish()
     (col1.systemId, col2.systemId)
+  }
+
+  for(ctxOpt <- publishCopy(as = "robertm")(name)) {
+    assert(ctxOpt.isDefined)
   }
 
   val report2 = for {
@@ -105,12 +108,13 @@ object Test extends App {
     import ctx._
     val col1 = schema(col1Id)
     val col2 = schema(col2Id)
-    val report = upsert(Iterator(
+    upsert(Iterator(
       Right(Row(col1.systemId -> BigDecimal(6), col2.systemId -> "goodbye")),
       Right(Row(col1.systemId -> BigDecimal(7), col2.systemId -> "world"))
     ))
-    publish()
-    report
+  }
+  for(ctxOpt <- publishCopy(as = "robertm")(name)) {
+    assert(ctxOpt.isDefined)
   }
   println(report2)
 

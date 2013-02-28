@@ -7,10 +7,10 @@ class Publisher(mutator: DatasetMutator[_]) extends ExistingDatasetMutator {
   def publish(dataset: String, username: String): UnanchoredCopyInfo = {
     finish(dataset) {
       for {
-        ctxOpt <- mutator.openDataset(as = username)(dataset)
+        ctxOpt <- mutator.publishCopy(as = username)(dataset)
         ctx <- ctxOpt
       } yield {
-        ctx.publish().unanchored
+        ctx.copyInfo.unanchored
       }
     }
   }

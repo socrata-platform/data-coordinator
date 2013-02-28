@@ -118,14 +118,18 @@ trait DatasetMutator[CV] {
     def makeSystemPrimaryKey(ci: ColumnInfo): ColumnInfo
     def makeUserPrimaryKey(ci: ColumnInfo): ColumnInfo
     def dropColumn(ci: ColumnInfo): Unit
-    def publish(): CopyInfo
     def upsert(inputGenerator: Iterator[Either[CV, Row[CV]]]): Report[CV]
-    def drop() // TODO: this should be a top-level thing
   }
 
   def createDataset(as: String)(datasetName: String, tableBaseBase: String): Managed[MutationContext]
   def openDataset(as: String)(datasetName: String): Managed[Option[MutationContext]]
+
+  // FIXME: There is no way to tell whether the dataset is in the right state for these before calling them.
+  // So its return type should include all three of "this dataset did not exist", "it was in the wrong state",
+  // and "ok, here's your MutationContext for more work."
   def createCopy(as: String)(datasetName: String, copyData: Boolean): Managed[Option[MutationContext]]
+  def publishCopy(as: String)(datasetName: String): Managed[Option[MutationContext]]
+  def dropCopy(as: String)(datasetName: String): Managed[Option[MutationContext]]
 }
 
 object MonadicDatasetMutator {
@@ -279,13 +283,22 @@ object MonadicDatasetMutator {
         }
     }
 
-    def createCopy(as: String)(datasetName: String, copyData: Boolean): Managed[Option[MutationContext]] = new SimpleArm[Option[MutationContext]] {
+    def firstOp[U](as: String, datasetName: String, op: S => U) = new SimpleArm[Option[MutationContext]] {
       def flatMap[A](f: Option[MutationContext] => A): A =
         go(as,datasetName, { ctxOpt =>
-          ctxOpt.foreach(_.makeWorkingCopy(copyData))
+          ctxOpt.foreach(op)
           f(ctxOpt)
         })
     }
+
+    def createCopy(as: String)(datasetName: String, copyData: Boolean): Managed[Option[MutationContext]] =
+      firstOp(as, datasetName, _.makeWorkingCopy(copyData))
+
+    def publishCopy(as: String)(datasetName: String): Managed[Option[MutationContext]] =
+      firstOp(as, datasetName, _.publish())
+
+    def dropCopy(as: String)(datasetName: String): Managed[Option[MutationContext]] =
+      firstOp(as, datasetName, _.drop())
   }
 
   def apply[CV](lowLevelMutator: LowLevelDatabaseMutator[CV]): DatasetMutator[CV] = new Impl(lowLevelMutator)

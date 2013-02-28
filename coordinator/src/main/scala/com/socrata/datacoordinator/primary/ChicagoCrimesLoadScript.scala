@@ -119,10 +119,9 @@ object ChicagoCrimesLoadScript extends App {
       publisher.publish("crimes", user)
       workingCopyCreator.copyDataset("crimes", user, copyData = true)
       val ci = for {
-        ctxOpt <- dataContext.datasetMutator.openDataset(user)("crimes")
+        ctxOpt <- dataContext.datasetMutator.dropCopy(user)("crimes")
         ctx <- ctxOpt
       } yield {
-        ctx.drop()
         ctx.copyInfo.unanchored
       }
       workingCopyCreator.copyDataset("crimes", user, copyData = true)

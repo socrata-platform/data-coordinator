@@ -16,23 +16,21 @@ import com.socrata.datacoordinator.truth.loader.sql._
 import com.socrata.datacoordinator.common.soql.{SoQLRowLogCodec, SoQLRep, SoQLTypeContext}
 import com.socrata.datacoordinator.truth.metadata.sql.PostgresDatasetMapWriter
 import com.socrata.datacoordinator.truth.loader.Delogger._
-import com.socrata.datacoordinator.truth.loader.Delogger.RowIdentifierCleared
 import com.socrata.datacoordinator.truth.loader.Update
-import com.socrata.datacoordinator.truth.loader.Delogger.RowIdCounterUpdated
-import com.socrata.datacoordinator.truth.loader.Delogger.RowDataUpdated
-import com.socrata.datacoordinator.truth.loader.Delogger.Truncated
-import com.socrata.datacoordinator.truth.loader.Delogger.WorkingCopyCreated
-import com.socrata.datacoordinator.truth.loader.Delogger.RowIdentifierSet
-import com.socrata.datacoordinator.truth.loader.Delogger.ColumnCreated
-import com.socrata.datacoordinator.truth.loader.Delogger.SystemRowIdentifierChanged
 import com.socrata.datacoordinator.truth.loader.Delete
-import com.socrata.datacoordinator.truth.loader.Delogger.ColumnRemoved
 import com.socrata.datacoordinator.truth.metadata.CopyPair
 import com.socrata.datacoordinator.truth.loader.Insert
 import com.socrata.datacoordinator.common.StandardDatasetMapLimits
 import org.postgresql.PGConnection
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import java.io.Reader
+import com.socrata.datacoordinator.truth.loader.Update
+import scala.Some
+import com.socrata.datacoordinator.truth.metadata.ColumnInfo
+import com.socrata.datacoordinator.truth.loader.Delete
+import com.socrata.datacoordinator.truth.metadata.CopyPair
+import com.socrata.datacoordinator.truth.metadata.CopyInfo
+import com.socrata.datacoordinator.truth.loader.Insert
 
 class Backup(conn: Connection, executor: ExecutorService, paranoid: Boolean) {
   val typeContext = SoQLTypeContext
@@ -164,21 +162,22 @@ class Backup(conn: Connection, executor: ExecutorService, paranoid: Boolean) {
     currentVersion
   }
 
-  def dropCopy(currentVersion: CopyInfo, droppedCopy: UnanchoredCopyInfo): CopyInfo = {
-    if(currentVersion.systemId == droppedCopy.systemId) {
-      Resync.unless(currentVersion, currentVersion.unanchored == droppedCopy, "Told to drop the current copy, but it doesn't match")
-      datasetMap.dropCopy(currentVersion)
-      schemaLoader.drop(currentVersion)
-      datasetMap.latest(currentVersion.datasetInfo)
-    } else {
-      datasetMap.copyNumber(currentVersion.datasetInfo, droppedCopy.copyNumber) match {
-        case Some(toDrop) =>
-          datasetMap.dropCopy(toDrop)
-          schemaLoader.drop(toDrop)
-          currentVersion
-        case None =>
-          Resync(currentVersion.datasetInfo, "Told to drop a copy that didn't exist")
-      }
+  def dropWorkingCopy(currentVersion: CopyInfo): CopyInfo = {
+    Resync.unless(currentVersion, currentVersion.lifecycleStage == LifecycleStage.Unpublished, "Told to drop the current copy, but it isn't an unpublished copy")
+    datasetMap.dropCopy(currentVersion)
+    schemaLoader.drop(currentVersion)
+    datasetMap.latest(currentVersion.datasetInfo)
+  }
+
+  def dropSnapshot(currentVersion: CopyInfo, droppedCopy: UnanchoredCopyInfo): currentVersion.type = {
+    datasetMap.copyNumber(currentVersion.datasetInfo, droppedCopy.copyNumber) match {
+      case Some(toDrop) =>
+        Resync.unless(currentVersion, toDrop == droppedCopy, "Dropped copy didn't match")
+        datasetMap.dropCopy(toDrop)
+        schemaLoader.drop(toDrop)
+        currentVersion
+      case None =>
+        Resync(currentVersion.datasetInfo, "Told to drop a copy that didn't exist")
     }
   }
 
@@ -244,8 +243,10 @@ class Backup(conn: Connection, executor: ExecutorService, paranoid: Boolean) {
         dropColumn(versionInfo, info)
       case Truncated =>
         truncate(versionInfo)
-      case CopyDropped(info) =>
-        dropCopy(versionInfo, info)
+      case WorkingCopyDropped =>
+        dropWorkingCopy(versionInfo)
+      case SnapshotDropped(info) =>
+        dropSnapshot(versionInfo, info)
       case ColumnLogicalNameChanged(info) =>
         columnLogicalNameChanged(versionInfo, info)
       case EndTransaction =>

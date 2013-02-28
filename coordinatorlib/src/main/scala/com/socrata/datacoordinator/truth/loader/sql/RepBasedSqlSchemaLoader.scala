@@ -7,7 +7,7 @@ import java.sql.Connection
 import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.truth.sql.{DatabasePopulator, SqlPKableColumnRep, SqlColumnRep}
-import com.socrata.datacoordinator.truth.metadata.{CopyInfo, ColumnInfo}
+import com.socrata.datacoordinator.truth.metadata.{LifecycleStage, CopyInfo, ColumnInfo}
 import org.joda.time.DateTime
 
 class RepBasedSqlSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV], repFor: ColumnInfo => SqlColumnRep[CT, CV], tablespace: String => Option[String]) extends SchemaLoader {
@@ -32,7 +32,12 @@ class RepBasedSqlSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV], repF
       stmt.setString(1, copyInfo.dataTableName)
       stmt.execute()
     }
-    logger.copyDropped(copyInfo)
+    if(copyInfo.lifecycleStage == LifecycleStage.Snapshotted)
+      logger.snapshotDropped(copyInfo)
+    else if(copyInfo.lifecycleStage == LifecycleStage.Unpublished)
+      logger.workingCopyDropped()
+    else
+      sys.error("Dropped a non-snapshot/working copy")
   }
 
   def addColumn(columnInfo: ColumnInfo) {

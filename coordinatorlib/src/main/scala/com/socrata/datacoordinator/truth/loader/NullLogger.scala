@@ -20,7 +20,9 @@ class NullLogger[CV] extends Logger[CV] {
 
   def dataCopied() {}
 
-  def copyDropped(info: CopyInfo) {}
+  def snapshotDropped(info: CopyInfo) {}
+
+  def workingCopyDropped() {}
 
   def workingCopyPublished() {}
 
