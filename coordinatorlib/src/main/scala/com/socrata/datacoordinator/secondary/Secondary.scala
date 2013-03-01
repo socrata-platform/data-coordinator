@@ -1,15 +1,36 @@
 package com.socrata.datacoordinator
 package secondary
 
+import com.rojoma.simplearm.Managed
+
 import com.socrata.datacoordinator.truth.loader.Delogger
 import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, CopyInfo}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.id.DatasetId
 
 trait Secondary[CV] {
-  def wantsSnapshots: Boolean
+  def wantsWorkingCopies: Boolean
 
-  def currentVersion(datasetInfo: DatasetId): Long
-  def version(copyInfo: CopyInfo, events: Iterator[Delogger.LogEvent[CV]])
-  def resync(copyInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo], rows: Iterator[Row[CV]])
+  /**
+   * @return The `dataVersion` of the latest copy this secondary has.
+   */
+  def currentVersion(datasetI: DatasetId): Long
+
+  /**
+   * @return The `copyNumber`s of all snapshot copies in this secondary.
+   */
+  def snapshots(datasetId: DatasetId): Set[Long]
+
+  /**
+   * Order this secondary to drop a snapshot.  This should ignore the request
+   * if the snapshot is already gone (but it should signal an error if the
+   * copyNumber does not name a snapshot).
+   */
+  def dropSnapshot(datasetId: DatasetId, copyNumber: Long)
+
+  /** Provide the current copy an update.  The secondary should ignore it if it
+    * already has this dataVersion. */
+  def version(datasetId: DatasetId, dataVersion: Long, events: Iterator[Delogger.LogEvent[CV]])
+
+  def resync(copyInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo], rows: Managed[Iterator[Row[CV]]])
 }

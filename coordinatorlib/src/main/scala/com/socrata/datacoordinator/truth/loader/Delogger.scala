@@ -11,6 +11,7 @@ import scala.collection.immutable.VectorBuilder
 
 trait Delogger[CV] extends Closeable {
   def delog(version: Long): CloseableIterator[Delogger.LogEvent[CV]]
+  def findEndOfWorkingCopy(fromVersion: Long): Option[Long]
 }
 
 object Delogger {

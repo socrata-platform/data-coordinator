@@ -8,6 +8,7 @@ import java.sql.{ResultSet, PreparedStatement, Connection}
 
 import com.rojoma.json.util.JsonUtil
 import com.rojoma.json.codec.JsonCodec
+import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.truth.RowLogCodec
 import com.socrata.datacoordinator.truth.loader.Delogger
@@ -28,6 +29,21 @@ class SqlDelogger[CV](connection: Connection,
       stmt.setFetchSize(1)
     }
     stmt
+  }
+
+  def findEndOfWorkingCopy(fromVersion: Long): Option[Long] = {
+    using(connection.prepareStatement("select version from " + logTableName + " where version >= ? and subversion = 1 and what in (?, ?) order by version limit 1")) { stmt =>
+      stmt.setLong(1, fromVersion)
+      stmt.setString(2, SqlLogger.WorkingCopyPublished)
+      stmt.setString(3, SqlLogger.WorkingCopyDropped)
+      using(stmt.executeQuery()) { rs =>
+        if(rs.next()) {
+          Some(rs.getLong("version"))
+        } else {
+          None
+        }
+      }
+    }
   }
 
   def delog(version: Long) = {
