@@ -12,14 +12,6 @@ import com.socrata.datacoordinator.util.collection.{ColumnIdSet, MutableColumnId
 import com.socrata.datacoordinator.id.{RowId, ColumnId}
 
 class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
-  override def beforeAll() {
-    // In Java 6 (sun and open) driver registration is not thread-safe!
-    // So since SBT will run these tests in parallel, sometimes one of the
-    // first tests to run will randomly fail.  By forcing the driver to
-    // be loaded up front we can avoid this.
-    Class.forName("org.h2.Driver")
-  }
-
   def datasetContext(s: ColumnIdMap[SqlColumnReadRep[TestColumnType, TestColumnValue]]) = new ReadOnlyRepBasedSqlDatasetContext[TestColumnType, TestColumnValue] {
     val schema = s
     val typeContext = TestTypeContext

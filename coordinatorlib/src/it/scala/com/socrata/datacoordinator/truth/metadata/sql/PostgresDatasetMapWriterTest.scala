@@ -11,14 +11,6 @@ import com.socrata.id.numeric.{FixedSizeIdProvider, InMemoryBlockIdProvider, IdP
 import com.socrata.datacoordinator.id.ColumnId
 
 class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
-  override def beforeAll() {
-    // In Java 6 (sun and open) driver registration is not thread-safe!
-    // So since SBT will run these tests in parallel, sometimes one of the
-    // first tests to run will randomly fail.  By forcing the driver to
-    // be loaded up front we can avoid this.
-    Class.forName("org.postgresql.Driver")
-  }
-
   def populateDatabase(conn: Connection) {
     val sql = DatabasePopulator.metadataTablesCreate(DatasetMapLimits())
     using(conn.createStatement()) { stmt =>

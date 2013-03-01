@@ -20,14 +20,6 @@ import com.socrata.datacoordinator.util.collection.{ColumnIdSet, MutableColumnId
 class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with BeforeAndAfterAll {
   val executor = java.util.concurrent.Executors.newCachedThreadPool()
 
-  override def beforeAll() {
-    // In Java 6 (sun and open) driver registration is not thread-safe!
-    // So since SBT will run these tests in parallel, sometimes one of the
-    // first tests to run will randomly fail.  By forcing the driver to
-    // be loaded up front we can avoid this.
-    Class.forName("org.h2.Driver")
-  }
-
   override def afterAll() {
     executor.shutdownNow()
   }
