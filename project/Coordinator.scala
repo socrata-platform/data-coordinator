@@ -12,7 +12,6 @@ object Coordinator {
         "org.scala-lang" % "scala-reflect" % scalaVersion,
         "com.sun.jna" % "jna" % "3.0.9",
         "com.typesafe" % "config" % "1.0.0",
-        "com.socrata" %% "soql-types" % "[0.0.9,0.0.15)",
         "com.socrata" %% "socrata-csv" % "[1.1.0,2.0.0)",
         "com.socrata" %% "socrata-http" % "[1.1.0,2.0.0)",
         "org.slf4j" % "slf4j-simple" % slf4jVersion,

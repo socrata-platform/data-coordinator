@@ -19,9 +19,12 @@ object DataCoordinator extends Build {
 
   lazy val coordinatorLib = p("coordinatorlib", CoordinatorLib)
 
+  lazy val coordinatorLibSoql = p("coordinatorlib-soql", CoordinatorLibSoql,
+    coordinatorLib)
+
   lazy val perfTest = p("perftest", PerfTest,
     coordinatorLib)
 
   lazy val coordinator = p("coordinator", Coordinator,
-    coordinatorLib)
+    coordinatorLib, coordinatorLibSoql)
 }
