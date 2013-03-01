@@ -56,7 +56,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       vi.lifecycleStage must be (LifecycleStage.Unpublished)
       vi.copyNumber must be (1)
 
-      tables.datasetInfo("hello") must equal (Some(vi.datasetInfo))
+      tables.datasetInfo(tables.datasetId("hello").get) must equal (Some(vi.datasetInfo))
       tables.unpublished(vi.datasetInfo) must equal (Some(vi))
     }
   }

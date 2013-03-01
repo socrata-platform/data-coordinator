@@ -11,10 +11,14 @@ import com.socrata.datacoordinator.id.DatasetId
 trait Secondary[CV] {
   def wantsWorkingCopies: Boolean
 
+  /** The dataset has been deleted. */
+  def dropDataset(datasetId: DatasetId)
+
   /**
-   * @return The `dataVersion` of the latest copy this secondary has.
+   * @return The `dataVersion` of the latest copy this secondary has.  Should
+   *         return 0 if this ID does not name a known dataset.
    */
-  def currentVersion(datasetI: DatasetId): Long
+  def currentVersion(datasetId: DatasetId): Long
 
   /**
    * @return The `copyNumber`s of all snapshot copies in this secondary.
@@ -26,7 +30,7 @@ trait Secondary[CV] {
    * if the snapshot is already gone (but it should signal an error if the
    * copyNumber does not name a snapshot).
    */
-  def dropSnapshot(datasetId: DatasetId, copyNumber: Long)
+  def dropCopy(datasetId: DatasetId, copyNumber: Long)
 
   /** Provide the current copy an update.  The secondary should ignore it if it
     * already has this dataVersion. */

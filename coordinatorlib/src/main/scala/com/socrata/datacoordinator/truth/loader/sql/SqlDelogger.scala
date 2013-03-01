@@ -31,11 +31,11 @@ class SqlDelogger[CV](connection: Connection,
     stmt
   }
 
-  def findEndOfWorkingCopy(fromVersion: Long): Option[Long] = {
-    using(connection.prepareStatement("select version from " + logTableName + " where version >= ? and subversion = 1 and what in (?, ?) order by version limit 1")) { stmt =>
+  def findPublishEvent(fromVersion: Long, toVersion: Long): Option[Long] = {
+    using(connection.prepareStatement("select version from " + logTableName + " where version >= ? and version <= ? and subversion = 1 and what = ? order by version limit 1")) { stmt =>
       stmt.setLong(1, fromVersion)
-      stmt.setString(2, SqlLogger.WorkingCopyPublished)
-      stmt.setString(3, SqlLogger.WorkingCopyDropped)
+      stmt.setLong(2, toVersion)
+      stmt.setString(3, SqlLogger.WorkingCopyPublished)
       using(stmt.executeQuery()) { rs =>
         if(rs.next()) {
           Some(rs.getLong("version"))
