@@ -6,7 +6,7 @@ import com.socrata.datacoordinator.util.collection.ColumnIdMap
 
 trait BaseDatasetMapReader {
   /** Looks up a dataset record by its ID. */
-  def datasetInfo(datasetId: String): Option[DatasetInfo]
+  def datasetId(datasetId: String): Option[DatasetId]
 
   /** Looks up a dataset record by its system ID. */
   def datasetInfo(datasetId: DatasetId): Option[DatasetInfo]
@@ -41,10 +41,6 @@ trait BaseDatasetMapReader {
 }
 
 trait BaseDatasetMapWriter extends BaseDatasetMapReader {
-  /** Looks up a dataset record by its ID.
-    * @throws DatasetIdInUseByWriterException if some other writer has been used to look up this dataset. */
-  def datasetInfo(datasetId: String): Option[DatasetInfo]
-
   /** Looks up a dataset record by its system ID.
     * @throws DatasetIdInUseByWriterException if some other writer has been used to look up this dataset. */
   def datasetInfo(datasetId: DatasetId): Option[DatasetInfo]

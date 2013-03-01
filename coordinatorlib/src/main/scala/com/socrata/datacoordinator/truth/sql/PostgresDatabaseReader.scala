@@ -13,12 +13,21 @@ import com.rojoma.simplearm.SimpleArm
 
 // Does this need to be *Postgres*, or is all postgres-specific stuff encapsulated in its paramters?
 class PostgresDatabaseReader[CT, CV](dataSource: DataSource,
-                                            mapReaderFactory: Connection => DatasetMapReader,
-                                            repFor: ColumnInfo => SqlColumnReadRep[CT, CV])
+                                     mapReaderFactory: Connection => DatasetMapReader,
+                                     repFor: ColumnInfo => SqlColumnReadRep[CT, CV])
   extends LowLevelDatabaseReader[CV]
 {
   private class S(conn: Connection) extends ReadContext {
     val datasetMap: DatasetMapReader = mapReaderFactory(conn)
+
+    def loadDataset(datasetName: String, latest: Boolean): Option[(CopyInfo, ColumnIdMap[ColumnInfo])] = {
+      val map = datasetMap
+      for {
+        datasetId <- map.datasetId(datasetName)
+        datasetInfo <- map.datasetInfo(datasetId)
+        copyInfo <- if(latest) Some(map.latest(datasetInfo)) else map.published(datasetInfo)
+      } yield (copyInfo, map.schema(copyInfo))
+    }
 
     def withRows[A](ci: CopyInfo, schema: ColumnIdMap[ColumnInfo], f: (Iterator[ColumnIdMap[CV]]) => A): A = {
       val reps = schema.values.map(repFor).toArray

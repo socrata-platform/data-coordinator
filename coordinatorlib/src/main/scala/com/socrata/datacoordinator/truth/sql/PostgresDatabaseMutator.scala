@@ -14,9 +14,10 @@ import com.socrata.datacoordinator.truth.loader.{DatasetContentsCopier, Logger, 
 import com.socrata.datacoordinator.truth.loader.sql.{RepBasedSqlSchemaLoader, RepBasedSqlDatasetContentsCopier, SqlLogger}
 import com.socrata.datacoordinator.truth.{TypeContext, RowLogCodec}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
-import com.socrata.datacoordinator.id.RowId
+import com.socrata.datacoordinator.id.{DatasetId, RowId}
 import com.socrata.id.numeric.IdProvider
 import com.rojoma.simplearm.SimpleArm
+import scala.concurrent.duration.Duration
 
 // Does this need to be *Postgres*, or is all postgres-specific stuff encapsulated in its paramters?
 class PostgresDatabaseMutator[CT, CV](dataSource: DataSource,
@@ -39,6 +40,15 @@ class PostgresDatabaseMutator[CT, CV](dataSource: DataSource,
     } yield {
       rs.next()
       new DateTime(rs.getTimestamp(1).getTime)
+    }
+
+    final def loadLatestVersionOfDataset(datasetId: DatasetId): Option[(CopyInfo, ColumnIdMap[ColumnInfo])] = {
+      val map = datasetMap
+      map.datasetInfo(datasetId) map { datasetInfo =>
+        val latest = map.latest(datasetInfo)
+        val schema = map.schema(latest)
+        (latest, schema)
+      }
     }
 
     def logger(datasetInfo: DatasetInfo): Logger[CV] =

@@ -155,15 +155,13 @@ class PostgresDatasetMapReader(val conn: Connection) extends DatasetMapReader {
   def snapshot(datasetInfo: DatasetInfo, age: Int) =
     lookup(datasetInfo, LifecycleStage.Snapshotted, age)
 
-  def datasetInfoByUserIdQuery = "SELECT system_id, dataset_name, table_base_base, next_row_id FROM dataset_map WHERE dataset_name = ?"
-  def datasetInfo(datasetId: String) =
+  def datasetInfoByUserIdQuery = "SELECT system_id FROM dataset_map WHERE dataset_name = ?"
+  def datasetId(datasetId: String) =
     using(conn.prepareStatement(datasetInfoByUserIdQuery)) { stmt =>
       stmt.setString(1, datasetId)
-      try {
-        extractDatasetInfoFromResultSet(stmt)
-      } catch {
-        case e: PSQLException if e.getSQLState == lockNotAvailableState =>
-          throw new DatasetIdInUseByWriterException(datasetId, e)
+      using(stmt.executeQuery()) { rs =>
+        if(rs.next()) Some(new DatasetId(rs.getLong(1)))
+        else None
       }
     }
 
@@ -193,7 +191,6 @@ class PostgresDatasetMapReader(val conn: Connection) extends DatasetMapReader {
 class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(_c) with DatasetMapWriter with BackupDatasetMap {
   require(!conn.getAutoCommit, "Connection is in auto-commit mode")
 
-  override def datasetInfoByUserIdQuery = super.datasetInfoByUserIdQuery + " FOR UPDATE NOWAIT"
   override def datasetInfoBySystemIdQuery = super.datasetInfoBySystemIdQuery + " FOR UPDATE NOWAIT"
 
   def createQuery_tableMap = "INSERT INTO dataset_map (dataset_name, table_base_base, next_row_id) VALUES (?, ?, ?) RETURNING system_id"

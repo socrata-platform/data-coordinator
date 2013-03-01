@@ -14,11 +14,14 @@ import com.ibm.icu.text.Normalizer
 import com.socrata.datacoordinator.common.soql.{JsonSoQLDataContext, PostgresSoQLDataContext}
 import java.util.concurrent.{TimeUnit, Executors}
 import org.postgresql.ds.PGSimpleDataSource
-import com.socrata.datacoordinator.truth.{JsonDataContext, DataReadingContext, DataWritingContext}
+import com.socrata.datacoordinator.truth._
 import com.typesafe.config.ConfigFactory
 import com.socrata.datacoordinator.common.StandardDatasetMapLimits
 import java.sql.Connection
 import com.socrata.datacoordinator.truth.loader.Report
+import com.socrata.datacoordinator.truth.sql.DatasetLockContext
+import scala.concurrent.duration.Duration
+import scala.Some
 
 case class Field(name: String, @JsonKey("type") typ: String)
 object Field {
@@ -142,13 +145,15 @@ object Service extends App { self =>
 
   val executorService = Executors.newCachedThreadPool()
   try {
-    val dataContext: DataReadingContext with DataWritingContext with JsonDataContext = new PostgresSoQLDataContext with JsonSoQLDataContext {
+    val dataContext: DataReadingContext with DataWritingContext with JsonDataContext = new PostgresSoQLDataContext with JsonSoQLDataContext with DatasetLockContext {
       val dataSource = self.dataSource
       val executorService = self.executorService
       def copyIn(conn: Connection, sql: String, input: Reader): Long =
         conn.asInstanceOf[org.postgresql.PGConnection].getCopyAPI.copyIn(sql, input)
       def tablespace(s: String) = Some("pg_default")
       val datasetMapLimits = StandardDatasetMapLimits
+      val datasetLock: DatasetLock = NoopDatasetLock
+      val datasetLockTimeout: Duration = Duration.Inf
     }
     val fileStore = new FileStore(new File("/tmp/filestore"))
     val importer = new FileImporter(fileStore.open, ":deleted", dataContext)

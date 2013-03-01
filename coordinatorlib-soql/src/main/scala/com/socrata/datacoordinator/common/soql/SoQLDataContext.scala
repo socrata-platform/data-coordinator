@@ -11,14 +11,12 @@ import org.joda.time.DateTime
 import com.socrata.soql.brita.{IdentifierFilter, AsciiIdentifierFilter}
 import com.socrata.soql.types.{SoQLFixedTimestamp, SoQLID, SoQLType}
 import com.socrata.datacoordinator.truth._
-import com.socrata.datacoordinator.truth.sql.PostgresDataContext
+import com.socrata.datacoordinator.truth.sql.{DatasetLockContext, PostgresDataContext, DatasetMapLimits}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.loader.RowPreparer
-import com.socrata.datacoordinator.truth.sql.DatasetMapLimits
 import com.socrata.datacoordinator.id.RowId
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
-import com.socrata.datacoordinator.truth.sql.DatasetMapLimits
 
 trait SoQLDataContext extends DataSchemaContext with DataWritingContext with DataReadingContext {
   type CT = SoQLType
@@ -87,17 +85,20 @@ object SoQLDataContext {
   }
 }
 
-trait PostgresSoQLDataContext extends PostgresDataContext with SoQLDataContext with ExecutionContext {
+trait PostgresSoQLDataContext extends PostgresDataContext with SoQLDataContext with ExecutionContext { this: DatasetLockContext =>
   def sqlRepForColumn(physicalColumnBase: String, typ: CT) =
     SoQLRep.sqlRepFactories(typ)(physicalColumnBase)
 
-  def withRows[T](datasetId: String)(f: Iterator[Row] => T): Option[T] = {
+  def withRows[T](datasetName: String)(f: Iterator[Row] => T): Option[T] = {
     val conn = dataSource.getConnection()
     try {
       conn.setReadOnly(true)
       conn.setAutoCommit(false)
       val datasetMap = new com.socrata.datacoordinator.truth.metadata.sql.PostgresDatasetMapReader(conn)
-      datasetMap.datasetInfo(datasetId).map { di =>
+      for {
+        datasetId <- datasetMap.datasetId(datasetName)
+        di <- datasetMap.datasetInfo(datasetId)
+      } yield {
         val copy = datasetMap.latest(di)
         val schema = datasetMap.schema(copy)
         val reps = schema.mapValuesStrict(sqlRepForColumn)

@@ -11,19 +11,14 @@ import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.metadata.CopyPair
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
-import com.socrata.datacoordinator.id.RowId
+import com.socrata.datacoordinator.id.{DatasetId, RowId}
+import scala.concurrent.duration.Duration
 
 trait LowLevelDatabaseReader[CV] {
   trait ReadContext {
     def datasetMap: DatasetMapReader
 
-    final def loadDataset(datasetName: String, latest: Boolean): Option[(CopyInfo, ColumnIdMap[ColumnInfo])] = {
-      val map = datasetMap
-      for {
-        datasetInfo <- map.datasetInfo(datasetName)
-        copyInfo <- if(latest) Some(map.latest(datasetInfo)) else map.published(datasetInfo)
-      } yield (copyInfo, map.schema(copyInfo))
-    }
+    def loadDataset(datasetName: String, latest: Boolean): Option[(CopyInfo, ColumnIdMap[ColumnInfo])]
 
     def withRows[A](ci: CopyInfo, schema: ColumnIdMap[ColumnInfo], f: Iterator[ColumnIdMap[CV]] => A): A
   }
@@ -49,14 +44,7 @@ trait LowLevelDatabaseMutator[CV] {
       }
     }
 
-    final def loadLatestVersionOfDataset(datasetName: String): Option[(CopyInfo, ColumnIdMap[ColumnInfo])] = {
-      val map = datasetMap
-      map.datasetInfo(datasetName) map { datasetInfo =>
-        val latest = map.latest(datasetInfo)
-        val schema = map.schema(latest)
-        (latest, schema)
-      }
-    }
+    def loadLatestVersionOfDataset(datasetId: DatasetId): Option[(CopyInfo, ColumnIdMap[ColumnInfo])]
   }
 
   def openDatabase: Managed[MutationContext]
@@ -133,7 +121,7 @@ trait DatasetMutator[CV] {
 }
 
 object MonadicDatasetMutator {
-  private class Impl[CV](val databaseMutator: LowLevelDatabaseMutator[CV]) extends DatasetMutator[CV] {
+  private class Impl[CV](val databaseMutator: LowLevelDatabaseMutator[CV], lock: DatasetLock, lockTimeout: Duration) extends DatasetMutator[CV] {
     class S(var copyInfo: CopyInfo, var schema: ColumnIdMap[ColumnInfo], val schemaLoader: SchemaLoader, val logger: Logger[CV], llCtx: databaseMutator.MutationContext) extends MutationContext {
       def now = llCtx.now
       def datasetMap = llCtx.datasetMap
@@ -251,16 +239,23 @@ object MonadicDatasetMutator {
       for {
         llCtx <- databaseMutator.openDatabase
       } yield {
-        val ctx = llCtx.loadLatestVersionOfDataset(datasetName) map { case (initialCopy, initialSchema) =>
-          val logger = llCtx.logger(initialCopy.datasetInfo)
-          val schemaLoader = llCtx.schemaLoader(logger)
-          new S(initialCopy, initialSchema, schemaLoader, logger, llCtx)
+        llCtx.datasetMap.datasetId(datasetName) match {
+          case Some(datasetId) =>
+            lock.withDatasetLock(datasetId, lockTimeout) {
+              val ctx = llCtx.loadLatestVersionOfDataset(datasetId) map { case (initialCopy, initialSchema) =>
+                val logger = llCtx.logger(initialCopy.datasetInfo)
+                val schemaLoader = llCtx.schemaLoader(logger)
+                new S(initialCopy, initialSchema, schemaLoader, logger, llCtx)
+              }
+              val result = action(ctx)
+              ctx.foreach { state =>
+                llCtx.finishDatasetTransaction(username, state.copyInfo, state.logger)
+              }
+              result
+            }
+          case None =>
+            action(None)
         }
-        val result = action(ctx)
-        ctx.foreach { state =>
-          llCtx.finishDatasetTransaction(username, state.copyInfo, state.logger)
-        }
-        result
       }
 
     def openDataset(as: String)(datasetName: String): Managed[Option[MutationContext]] = new SimpleArm[Option[MutationContext]] {
@@ -301,5 +296,6 @@ object MonadicDatasetMutator {
       firstOp(as, datasetName, _.drop())
   }
 
-  def apply[CV](lowLevelMutator: LowLevelDatabaseMutator[CV]): DatasetMutator[CV] = new Impl(lowLevelMutator)
+  def apply[CV](lowLevelMutator: LowLevelDatabaseMutator[CV], lock: DatasetLock, lockTimeout: Duration): DatasetMutator[CV] =
+    new Impl(lowLevelMutator, lock, lockTimeout)
 }
