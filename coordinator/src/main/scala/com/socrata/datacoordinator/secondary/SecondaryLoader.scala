@@ -6,15 +6,16 @@ import java.io.{InputStreamReader, FilenameFilter, File}
 import java.net.URLClassLoader
 import com.rojoma.json.util.{JsonUtil, AutomaticJsonCodecBuilder, JsonKey}
 import com.rojoma.json.io.JsonReaderException
-import scala.collection.immutable.VectorBuilder
 import scala.util.control.ControlThrowable
+import com.typesafe.config.{ConfigParseOptions, ConfigFactory, ConfigException, Config}
+import scala.io.{Codec, Source}
 
 case class SecondaryDescription(@JsonKey("class") className: String, name: String)
 object SecondaryDescription {
   implicit val jCodec = AutomaticJsonCodecBuilder[SecondaryDescription]
 }
 
-class SecondaryLoader(parentClassLoader: ClassLoader) {
+class SecondaryLoader(parentClassLoader: ClassLoader, secondaryConfigRoot: Config) {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[SecondaryLoader])
 
   def loadSecondaries(dir: File): Map[String, Secondary[_]] = {
@@ -36,15 +37,20 @@ class SecondaryLoader(parentClassLoader: ClassLoader) {
               case e: JsonReaderException =>
                 throw Nope("Unable to parse " + jar.getAbsolutePath + " as JSON", e)
           }
+          val secondaryConfig =
+            try { secondaryConfigRoot.getConfig(desc.name) }
+            catch { case e: ConfigException => ConfigFactory.empty }
+          val mergedConfig = secondaryConfig.withFallback(loadBaseConfig(cl))
           if(acc.contains(desc.name)) throw Nope("A secondary named " + desc.name + " already exists")
           val cls =
             try { cl.loadClass(desc.className) }
             catch { case e: Exception => throw Nope("Unable to load class " + desc.className + " from " + jar.getAbsolutePath, e) }
+          if(!classOf[Secondary[_]].isAssignableFrom(cls)) throw Nope(desc.className + " is not a subclass of Secondary")
           val ctor =
-            try { cls.getConstructor() }
+            try { cls.getConstructor(classOf[Config]) }
             catch { case e: Exception => throw Nope("Unable to find constructor for " + desc.className + " from " + jar.getAbsolutePath, e) }
           val instance =
-            try { ctor.newInstance().asInstanceOf[Secondary[_]] }
+            try { ctor.newInstance(mergedConfig).asInstanceOf[Secondary[_]] }
             catch { case e: Exception => throw Nope("Unable to create a new instance of " + desc.className, e) }
           acc + (desc.name -> instance)
         } finally {
@@ -57,7 +63,16 @@ class SecondaryLoader(parentClassLoader: ClassLoader) {
     }
   }
 
+  private def loadBaseConfig(cl: ClassLoader): Config = {
+    val stream = cl.getResourceAsStream("secondary.conf")
+    if(stream == null) ConfigFactory.empty
+    else try {
+      val text = Source.fromInputStream(stream)(Codec.UTF8).getLines().mkString("\n")
+      ConfigFactory.parseString(text, ConfigParseOptions.defaults().setOriginDescription("secondary.conf"))
+    } finally {
+      stream.close()
+    }
+  }
+
   private case class Nope(message: String, cause: Throwable = null) extends Throwable(message, cause) with ControlThrowable
 }
-
-case class LoadedSecondary(instance: Secondary[_])
