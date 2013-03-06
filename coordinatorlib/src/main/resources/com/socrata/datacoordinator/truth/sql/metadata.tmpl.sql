@@ -36,10 +36,11 @@ CREATE TABLE IF NOT EXISTS secondary_stores (
 );
 
 CREATE TABLE IF NOT EXISTS secondary_manifest (
-  store_system_id   BIGINT NOT NULL REFERENCES secondary_stores(system_id),
+  store_id          VARCHAR(64) NOT NULL,
   dataset_system_id BIGINT NOT NULL REFERENCES truth_manifest(dataset_system_id),
   version           BIGINT NOT NULL, -- data log version.  0 if never fed anything in
-  PRIMARY KEY (store_system_id, dataset_system_id)
+  cookie            TEXT NULL,
+  PRIMARY KEY (store_id, dataset_system_id)
 );
 
 CREATE TABLE IF NOT EXISTS dataset_map (

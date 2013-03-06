@@ -31,20 +31,35 @@ class SqlDelogger[CV](connection: Connection,
     stmt
   }
 
-  def findPublishEvent(fromVersion: Long, toVersion: Long): Option[Long] = {
+  def findPublishEvent(fromVersion: Long, toVersion: Long): Option[Long] =
     using(connection.prepareStatement("select version from " + logTableName + " where version >= ? and version <= ? and subversion = 1 and what = ? order by version limit 1")) { stmt =>
       stmt.setLong(1, fromVersion)
       stmt.setLong(2, toVersion)
       stmt.setString(3, SqlLogger.WorkingCopyPublished)
-      using(stmt.executeQuery()) { rs =>
-        if(rs.next()) {
-          Some(rs.getLong("version"))
-        } else {
-          None
-        }
-      }
+      using(stmt.executeQuery())(versionFromResultSet)
     }
-  }
+
+  def versionFromResultSet(rs: ResultSet) =
+    if(rs.next()) Some(rs.getLong("version"))
+    else None
+
+  def lastWorkingCopyCreatedVersion: Option[Long] =
+    using(connection.prepareStatement("select version from " + logTableName + " where subversion = 1 and what = ? order by version desc limit 1")) { stmt =>
+      stmt.setString(1, SqlLogger.WorkingCopyCreated)
+      using(stmt.executeQuery())(versionFromResultSet)
+    }
+
+  def lastWorkingCopyDroppedOrPublishedVersion: Option[Long] =
+    using(connection.prepareStatement("select version from " + logTableName + " where subversion = 1 and what = ? or what = ? order by version desc limit 1")) { stmt =>
+      stmt.setString(1, SqlLogger.WorkingCopyPublished)
+      stmt.setString(2, SqlLogger.WorkingCopyDropped)
+      using(stmt.executeQuery())(versionFromResultSet)
+    }
+
+  def lastVersion: Option[Long] =
+    using(connection.prepareStatement("select max(version) AS version from " + logTableName)) { stmt =>
+      using(stmt.executeQuery())(versionFromResultSet)
+    }
 
   def delog(version: Long) = {
     new LogIterator(version) with LeakDetect

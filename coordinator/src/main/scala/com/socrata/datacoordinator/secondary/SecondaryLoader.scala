@@ -9,7 +9,7 @@ import com.rojoma.json.io.JsonReaderException
 import scala.collection.immutable.VectorBuilder
 import scala.util.control.ControlThrowable
 
-case class SecondaryDescription(@JsonKey("class") className: String)
+case class SecondaryDescription(@JsonKey("class") className: String, name: String)
 object SecondaryDescription {
   implicit val jCodec = AutomaticJsonCodecBuilder[SecondaryDescription]
 }
@@ -17,12 +17,11 @@ object SecondaryDescription {
 class SecondaryLoader(parentClassLoader: ClassLoader) {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[SecondaryLoader])
 
-  def loadSecondaries(dir: File): Seq[Secondary[_]] = {
+  def loadSecondaries(dir: File): Map[String, Secondary[_]] = {
     val jars = Option(dir.listFiles(new FilenameFilter {
       def accept(dir: File, name: String): Boolean = name.endsWith(".jar")
     })).getOrElse(Array.empty).toSeq
-    val result = new VectorBuilder[Secondary[_]]
-    for(jar <- jars) {
+    jars.foldLeft(Map.empty[String, Secondary[_]]) { (acc, jar) =>
       log.info("Loading secondary from " + jar.getAbsolutePath)
       try {
         val cl = new URLClassLoader(Array(jar.toURI.toURL), parentClassLoader)
@@ -37,6 +36,7 @@ class SecondaryLoader(parentClassLoader: ClassLoader) {
               case e: JsonReaderException =>
                 throw Nope("Unable to parse " + jar.getAbsolutePath + " as JSON", e)
           }
+          if(acc.contains(desc.name)) throw Nope("A secondary named " + desc.name + " already exists")
           val cls =
             try { cl.loadClass(desc.className) }
             catch { case e: Exception => throw Nope("Unable to load class " + desc.className + " from " + jar.getAbsolutePath, e) }
@@ -46,16 +46,15 @@ class SecondaryLoader(parentClassLoader: ClassLoader) {
           val instance =
             try { ctor.newInstance().asInstanceOf[Secondary[_]] }
             catch { case e: Exception => throw Nope("Unable to create a new instance of " + desc.className, e) }
-          result += instance
+          acc + (desc.name -> instance)
         } finally {
           stream.close()
         }
       } catch {
-        case Nope(msg, null) => log.warn(msg)
-        case Nope(msg, ex) => log.warn(msg, ex)
+        case Nope(msg, null) => log.warn(msg); acc
+        case Nope(msg, ex) => log.warn(msg, ex); acc
       }
     }
-    result.result()
   }
 
   private case class Nope(message: String, cause: Throwable = null) extends Throwable(message, cause) with ControlThrowable

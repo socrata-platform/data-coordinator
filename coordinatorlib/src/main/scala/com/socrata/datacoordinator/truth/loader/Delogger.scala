@@ -12,6 +12,9 @@ import scala.collection.immutable.VectorBuilder
 trait Delogger[CV] extends Closeable {
   def delog(version: Long): CloseableIterator[Delogger.LogEvent[CV]]
   def findPublishEvent(fromVersion: Long, toVersion: Long): Option[Long]
+  def lastWorkingCopyCreatedVersion: Option[Long]
+  def lastWorkingCopyDroppedOrPublishedVersion: Option[Long]
+  def lastVersion: Option[Long]
 }
 
 object Delogger {
