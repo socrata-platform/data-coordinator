@@ -40,7 +40,7 @@ class SecondaryLoader(parentClassLoader: ClassLoader, secondaryConfigRoot: Confi
           val secondaryConfig =
             try { secondaryConfigRoot.getConfig(desc.name) }
             catch { case e: ConfigException => ConfigFactory.empty }
-          val mergedConfig = secondaryConfig.withFallback(loadBaseConfig(cl))
+          val mergedConfig = secondaryConfig.withFallback(loadBaseConfig(cl, jar))
           if(acc.contains(desc.name)) throw Nope("A secondary named " + desc.name + " already exists")
           val cls =
             try { cl.loadClass(desc.className) }
@@ -63,12 +63,14 @@ class SecondaryLoader(parentClassLoader: ClassLoader, secondaryConfigRoot: Confi
     }
   }
 
-  private def loadBaseConfig(cl: ClassLoader): Config = {
+  private def loadBaseConfig(cl: ClassLoader, jar: File): Config = {
     val stream = cl.getResourceAsStream("secondary.conf")
     if(stream == null) ConfigFactory.empty
     else try {
       val text = Source.fromInputStream(stream)(Codec.UTF8).getLines().mkString("\n")
       ConfigFactory.parseString(text, ConfigParseOptions.defaults().setOriginDescription("secondary.conf"))
+    } catch {
+      case e: Exception => throw Nope("Unable to parse base config in " + jar.getAbsolutePath, e)
     } finally {
       stream.close()
     }
