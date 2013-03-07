@@ -51,7 +51,6 @@ class Protocol[LogData](logDataCodec: Codec[LogData]) {
   object OkStillWaiting extends SimplePacket("ok still waiting")
   object AlreadyHaveThat extends SimplePacket("already have that")
   object ResyncRequired extends SimplePacket("resync required")
-  object WillingToAccept extends SimplePacket("willing to accept")
   object AcknowledgeReceipt extends SimplePacket("acknowledged")
 
   // Resync flow:

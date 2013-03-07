@@ -93,50 +93,47 @@ object Transmitter extends App {
         datasetMap.datasetInfo(job.datasetId) match {
           case Some(datasetInfo) =>
             socket.send(DatasetUpdated(job.datasetId, job.version))
-            socket.receive(newTaskAcknowledgementTimeout) match {
-              case Some(WillingToAccept()) =>
-                log.info("Backup is willing to receive it")
-                val delogger = new SqlDelogger(conn, datasetInfo.logTableName, rowCodecFactory)
-                for {
-                  it <- managed(delogger.delog(job.version))
-                  event <- it
-                } {
-                  log.info("Sending LogData({})", event)
-                  socket.send(LogData(event))
-                  socket.poll() match {
-                    case Some(ResyncRequired()) =>
-                      log.warn("Backup signalled that it wants a resync; abandoning logdata send")
-                      throw new ResyncRequested
-                    case Some(_) =>
-                      log.error("Received unexpected packet from backup")
-                      ??? // TODO: unexpected packet
-                    case None =>
-                      // ok, just keep on sending
-                  }
-                }
-                log.info("Sending DataDone")
-                socket.send(DataDone())
-                socket.receive() match {
-                  case Some(ResyncRequired()) =>
-                    log.warn("Backup signalled that it wants a resync")
-                    throw new ResyncRequested
-                  case Some(AcknowledgeReceipt()) =>
-                    log.info("Backup has acknowledged receipt and committed to its store.")
+            val delogger = new SqlDelogger(conn, datasetInfo.logTableName, rowCodecFactory)
+            try {
+              for {
+                it <- managed(delogger.delog(job.version))
+                event <- it
+              } {
+                log.info("Sending LogData({})", event)
+                socket.send(LogData(event))
+                socket.poll() match {
+                  case Some(AlreadyHaveThat()) =>
+                    log.info("Backup says it already has this version.  Abandoning the send.")
+                    socket.send(DataDone())
                     playback.finishedJob(job)
+                    throw new AbortJobButDontResync
+                  case Some(ResyncRequired()) =>
+                    log.warn("Backup signalled that it wants a resync; abandoning logdata send")
+                    throw new ResyncRequested
+                  case Some(_) =>
+                    log.error("Received unexpected packet from backup")
+                    ??? // TODO: unexpected packet
                   case None =>
-                    ??? // TODO: EOF
+                  // ok, just keep on sending
                 }
-              case Some(AlreadyHaveThat()) =>
-                log.info("Backup says it already has this version")
-                playback.finishedJob(job)
-              case Some(ResyncRequired()) =>
-                log.info("Backup says it doesn't know about that; doing a resync")
-                throw new ResyncRequested
-              case Some(p) =>
-                log.error("Received unexpected `{}' packet from backup", Packet.labelOf(p))
-                ??? // TODO: unexpected packet
-              case None =>
-                ??? // TODO: EOF
+              }
+              log.info("Sending DataDone")
+              socket.send(DataDone())
+              socket.receive() match {
+                case Some(AcknowledgeReceipt()) =>
+                  log.info("Backup has acknowledged receipt and committed to its store.")
+                  playback.finishedJob(job)
+                case Some(AlreadyHaveThat()) =>
+                  log.info("Backup says it already has this version.  Oh well, sent it unnecessarily.")
+                  playback.finishedJob(job)
+                case Some(ResyncRequired()) =>
+                  log.warn("Backup signalled that it wants a resync")
+                  throw new ResyncRequested
+                case None =>
+                  ??? // TODO: EOF
+              }
+            } catch {
+              case _: AbortJobButDontResync => // ok
             }
           case None =>
             log.warn(s"Dataset ${job.datasetId.underlying} is in the global log but there is no record of it.  It must have been deleted.")
@@ -151,6 +148,7 @@ object Transmitter extends App {
   }
 
   class ResyncRequested extends ControlThrowable
+  class AbortJobButDontResync extends ControlThrowable
 
   def connect(socket: SocketChannel, address: SocketAddress, timeout: FiniteDuration) {
     socket.configureBlocking(false)

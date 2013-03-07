@@ -121,8 +121,7 @@ object Receiver extends App {
   class AbortToResync extends ControlThrowable
 
   def receiveCreate(conn: Connection, backup: Backup, client: Packets)(datasetId: DatasetId, version: Long) {
-    log.info("New dataset.  Telling the primary to go ahead")
-    client.send(WillingToAccept())
+    log.info("New dataset.  Accepting data from the primary.")
     client.receive() match {
       case Some(LogData(Delogger.WorkingCopyCreated(di, ci))) =>
         log.info("Creating initial copy")
@@ -142,16 +141,33 @@ object Receiver extends App {
     val initialVersion = backup.datasetMap.latest(datasetInfo)
     log.info("I have version {} of the dataset {}", initialVersion.dataVersion, datasetInfo.systemId.underlying)
     if(initialVersion.dataVersion >= version) {
-      log.info("Telling primary that I already have that version")
+      log.info("Telling primary that I already have that version and waiting for it to say it's done.")
       client.send(AlreadyHaveThat())
+      awaitDataDone(client)
     } else if(initialVersion.dataVersion < version - 1) {
       log.info("I am farther behind than that.  Resyncing.")
       throw new AbortToResync
     } else {
-      log.info("I have the previous version; telling primary to go ahead")
-      client.send(WillingToAccept())
+      log.info("I have the previous version.  Accepting data from the primary.")
       acceptItAll(conn, backup)(initialVersion, client, version)
     }
+  }
+
+  def awaitDataDone(client: Packets) {
+    @tailrec
+    def loop() {
+      client.receive(dataTimeout) match {
+        case Some(LogData(_)) => // ignore
+          loop()
+        case Some(DataDone()) =>
+          log.info("Got data done")
+        case Some(_) =>
+          ??? // TODO: Unexpected packet
+        case None =>
+          ??? // TODO: EOF
+      }
+    }
+    loop()
   }
 
   def acceptItAll(conn: Connection, backup: Backup)(initialCopyInfo: CopyInfo, client: Packets, version: Long) {
