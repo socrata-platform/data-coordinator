@@ -9,21 +9,26 @@ import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.util.collection.{MutableDatasetIdMap, DatasetIdMap}
 
 class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
-  def lastDataInfo(storeId: String, datasetId: DatasetId): (Long, Option[String]) =
+  def readLastDatasetInfo(storeId: String, datasetId: DatasetId): Option[(Long, Option[String])] =
     using(conn.prepareStatement("SELECT version, cookie FROM secondary_manfiest WHERE store_id = ? AND dataset_id = ?")) { stmt =>
       stmt.setString(1, storeId)
       stmt.setLong(2, datasetId.underlying)
       using(stmt.executeQuery()) { rs =>
         if(rs.next()) {
-          (rs.getLong("version"), Option(rs.getString("cookie")))
+          Some((rs.getLong("version"), Option(rs.getString("cookie"))))
         } else {
-          using(conn.prepareStatement("INSERT INTO secondary_manifest (store_id, dataset_id, version, cookie) VALUES (?, ?, 0, NULL)")) { stmt2 =>
-            stmt2.setString(1, storeId)
-            stmt2.setLong(2, datasetId.underlying)
-            stmt.execute()
-            (0L, None)
-          }
+          None
         }
+      }
+    }
+
+  def lastDataInfo(storeId: String, datasetId: DatasetId): (Long, Option[String]) =
+    readLastDatasetInfo(storeId, datasetId).getOrElse {
+      using(conn.prepareStatement("INSERT INTO secondary_manifest (store_id, dataset_id, version, cookie) VALUES (?, ?, 0, NULL)")) { stmt =>
+        stmt.setString(1, storeId)
+        stmt.setLong(2, datasetId.underlying)
+        stmt.execute()
+        (0L, None)
       }
     }
 

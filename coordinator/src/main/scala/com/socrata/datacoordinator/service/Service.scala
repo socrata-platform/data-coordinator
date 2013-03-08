@@ -18,11 +18,14 @@ import com.socrata.datacoordinator.truth._
 import com.typesafe.config.ConfigFactory
 import com.socrata.datacoordinator.common.StandardDatasetMapLimits
 import java.sql.Connection
-import com.socrata.datacoordinator.truth.loader.Report
+import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.truth.sql.DatasetLockContext
 import scala.concurrent.duration.Duration
 import scala.Some
 import com.socrata.datacoordinator.secondary.SecondaryLoader
+import com.socrata.datacoordinator.util.collection.DatasetIdMap
+import com.socrata.datacoordinator.id.DatasetId
+import com.socrata.datacoordinator.secondary.sql.SqlSecondaryManifest
 
 case class Field(name: String, @JsonKey("type") typ: String)
 object Field {
@@ -32,7 +35,11 @@ object Field {
 class Service(storeFile: InputStream => String,
               importFile: (String, String, Seq[Field], Option[String]) => Unit,
               updateFile: (String, InputStream) => Option[JObject],
-              datasetContents: String => (Iterator[JObject] => Unit) => Boolean)
+              datasetContents: String => (Iterator[JObject] => Unit) => Boolean,
+              secondaries: Set[String],
+              datasetsInStore: (String) => DatasetIdMap[Long],
+              versionInStore: (String, DatasetId) => Option[Long],
+              updateVersionInStore: (String, DatasetId) => Option[Long])
 {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
 
@@ -107,11 +114,53 @@ class Service(storeFile: InputStream => String,
       NotFound(resp)
   }
 
+  def doGetSecondaries()(req: HttpServletRequest): HttpResponse =
+    OK ~> ContentType("application/json; charset=utf-8") ~> Write(JsonUtil.writeJson(_, secondaries.toSeq, buffer = true))
+
+  def doGetSecondaryManifest(storeId: String)(req: HttpServletRequest): HttpResponse = {
+    if(!secondaries(storeId)) return NotFound
+    val ds = datasetsInStore(storeId)
+    val dsConverted = ds.foldLeft(Map.empty[String, Long]) { (acc, kv) =>
+      acc + (kv._1.toString -> kv._2)
+    }
+    OK ~> ContentType("application/json; charset=utf-8") ~> Write(JsonUtil.writeJson(_, dsConverted, buffer = true))
+  }
+
+  def doGetDataVersionInSecondary(storeId: String, datasetIdRaw: String)(req: HttpServletRequest): HttpResponse = {
+    if(!secondaries(storeId)) return NotFound
+    val datasetId =
+      try { new DatasetId(datasetIdRaw.toLong) }
+      catch { case _: NumberFormatException => return NotFound }
+    versionInStore(storeId, datasetId) match {
+      case Some(v) =>
+        OK ~> ContentType("application/json; charset=utf-8") ~> Write(JsonUtil.writeJson(_, Map("version" -> v), buffer = true))
+      case None =>
+        NotFound
+    }
+  }
+
+  def doUpdateVersionInSecondary(storeId: String, datasetIdRaw: String)(req: HttpServletRequest): HttpResponse = {
+    if(!secondaries(storeId)) return NotFound
+    val datasetId =
+      try { new DatasetId(datasetIdRaw.toLong) }
+      catch { case _: NumberFormatException => return NotFound }
+    updateVersionInStore(storeId, datasetId) match {
+      case Some(v) =>
+        OK ~> ContentType("application/json; charset=utf-8") ~> Write(JsonUtil.writeJson(_, Map("version" -> v), buffer = true))
+      case None =>
+        NotFound
+    }
+  }
+
   val router = RouterSet(
     ExtractingRouter[HttpService]("POST", "/upload")(doUploadFile _),
     ExtractingRouter[HttpService]("POST", "/import/?")(doImportFile _),
     ExtractingRouter[HttpService]("POST", "/update/?")(doUpdateFile _),
-    ExtractingRouter[HttpService]("GET", "/export/?")(doExportFile _)
+    ExtractingRouter[HttpService]("GET", "/export/?")(doExportFile _),
+    ExtractingRouter[HttpService]("GET", "/secondary-manifest")(doGetSecondaries _),
+    ExtractingRouter[HttpService]("GET", "/secondary-manifest/?")(doGetSecondaryManifest _),
+    ExtractingRouter[HttpService]("GET", "/secondary-manifest/?/?")(doGetDataVersionInSecondary _),
+    ExtractingRouter[HttpService]("POST", "/secondary-manifest/?/?")(doUpdateVersionInSecondary _)
   )
 
   private def handler(req: HttpServletRequest): HttpResponse = {
@@ -161,7 +210,20 @@ object Service extends App { self =>
     val fileStore = new FileStore(new File("/tmp/filestore"))
     val importer = new FileImporter(fileStore.open, ":deleted", dataContext)
     val exporter = new Exporter(dataContext)
-    val serv = new Service(fileStore.store, importer.importFile, importer.updateFile, exporter.export)
+
+    def datasetsInStore(storeId: String): DatasetIdMap[Long] =
+      using(dataSource.getConnection()) { conn =>
+        val secondary = new SqlSecondaryManifest(conn)
+        secondary.datasets(storeId)
+      }
+    def versionInStore(storeId: String, datasetId: DatasetId): Option[Long] =
+      using(dataSource.getConnection()) { conn =>
+        val secondary = new SqlSecondaryManifest(conn)
+        secondary.readLastDatasetInfo(storeId, datasetId).map(_._1)
+      }
+    def updateVersionInStore(storeId: String, datasetId: DatasetId): Option[Long] = ???
+
+    val serv = new Service(fileStore.store, importer.importFile, importer.updateFile, exporter.export, secondaries.keySet, datasetsInStore, versionInStore, updateVersionInStore)
     serv.run(port)
   } finally {
     executorService.shutdown()
