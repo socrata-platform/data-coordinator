@@ -22,6 +22,7 @@ import com.socrata.datacoordinator.truth.loader.Report
 import com.socrata.datacoordinator.truth.sql.DatasetLockContext
 import scala.concurrent.duration.Duration
 import scala.Some
+import com.socrata.datacoordinator.secondary.SecondaryLoader
 
 case class Field(name: String, @JsonKey("type") typ: String)
 object Field {
@@ -132,7 +133,9 @@ object Service extends App { self =>
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
   val config = ConfigFactory.load()
   val serviceConfig = config.getConfig("com.socrata.coordinator-service")
-  println(serviceConfig.root.render)
+  println(config.root.render)
+
+  val secondaries = SecondaryLoader.load(serviceConfig.getConfig("secondary.configs"), new File(serviceConfig.getString("secondary.path")))
 
   val dataSource = new PGSimpleDataSource
   dataSource.setServerName(serviceConfig.getString("database.host"))
