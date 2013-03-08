@@ -18,7 +18,7 @@ import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.rojoma.simplearm.SimpleArm
 import com.socrata.datacoordinator.truth.sql.SqlColumnReadRep
 
-class PlaybackToSecondary[CT, CV](conn: Connection, repFor: ColumnInfo => SqlColumnReadRep[CT, CV]) {
+class PlaybackToSecondary[CT, CV](conn: Connection, secondaryManifest: SecondaryManifest, repFor: ColumnInfo => SqlColumnReadRep[CT, CV]) {
   val datasetMapReader = new PostgresDatasetMapReader(conn)
 
   val datasetLock = NoopDatasetLock
@@ -111,14 +111,14 @@ class PlaybackToSecondary[CT, CV](conn: Connection, repFor: ColumnInfo => SqlCol
   }
 
   def getCookie(secondary: NamedSecondary[CV], datasetId: DatasetId): Secondary.Cookie =
-    secondary.manifest.lastDataInfo(datasetId)._2
+    secondaryManifest.lastDataInfo(secondary.storeId, datasetId)._2
 
   def updateSecondaryMap(secondary: NamedSecondary[CV], datasetId: DatasetId, newLastDataVersion: Long, newCookie: Secondary.Cookie) {
-    secondary.manifest.updateDataInfo(datasetId, newLastDataVersion, newCookie)
+    secondaryManifest.updateDataInfo(secondary.storeId, datasetId, newLastDataVersion, newCookie)
   }
 
   def dropFromSecondaryMap(secondary: NamedSecondary[CV], datasetId: DatasetId) {
-    secondary.manifest.dropDataset(datasetId)
+    secondaryManifest.dropDataset(secondary.storeId, datasetId)
   }
 
   def playbackPublished(datasetInfo: DatasetInfo, secondary: NamedSecondary[CV], datasetMapReader: DatasetMapReader, delogger: Delogger[CV]) {
