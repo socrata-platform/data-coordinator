@@ -8,7 +8,8 @@ object GenLongLikeMap {
       writeFile(targetPackageDir, sourceClass + "Map.scala", genImmutableMap(targetPackage, sourcePackage, sourceClass)),
       writeFile(targetPackageDir, sourceClass + "MapIterator.scala", genMapIterator(targetPackage, sourcePackage, sourceClass)),
       writeFile(targetPackageDir, "Mutable" + sourceClass + "Map.scala", genMutableMap(targetPackage, sourcePackage, sourceClass)),
-      writeFile(targetPackageDir, sourceClass + "Set.scala", genSet(targetPackage, sourcePackage, sourceClass))
+      writeFile(targetPackageDir, sourceClass + "Set.scala", genSet(targetPackage, sourcePackage, sourceClass)),
+      writeFile(targetPackageDir, sourceClass + "MutableSet.scala", genMutableSet(targetPackage, sourcePackage, sourceClass))
     )
   }
 
@@ -520,6 +521,81 @@ class """ + targetClassName + """(val unsafeUnderlying: TLongSet) extends (""" +
   }
 
   override def toString = unsafeUnderlying.toString
+}
+"""
+  }
+
+  def genMutableSet(targetPackage: String, sourcePackage: String, sourceClass: String): String = {
+    val targetClassName = "Mutable" + sourceClass + "Set"
+    val sourceType = sourcePackage + "." + sourceClass
+    """
+package """ + targetPackage + """
+
+import gnu.trove.set.TLongSet
+import gnu.trove.set.hash.TLongHashSet
+import gnu.trove.procedure.TLongProcedure
+
+object """ + targetClassName + """ {
+  def apply(xs: """ + sourceType + """*): """ + targetClassName + """ = {
+    val tmp = new TLongHashSet
+    xs.foreach { x => tmp.add(x.underlying) }
+    new """ + targetClassName + """(tmp)
+  }
+
+  val empty = apply()
+}
+
+class """ + targetClassName + """(private var _underlying: TLongSet) extends (""" + sourceType + """ => Boolean) {
+  def underlying = _underlying
+
+  def apply(x: """ + sourceType + """) = underlying.contains(x.underlying)
+
+  def contains(x: """ + sourceType + """) = underlying.contains(x.underlying)
+
+  def iterator: Iterator[""" + sourceType + """] = new Iterator[""" + sourceType + """] {
+    val it = underlying.iterator
+    def hasNext = it.hasNext
+    def next() = new """ + sourceType + """(it.next())
+  }
+
+  def freeze() = {
+    if(underlying == null) throw new NullPointerException
+    val result = new """ + sourceClass + """Set(underlying)
+    _underlying = null
+    result
+  }
+
+  def +=(x: """ + sourceType + """) {
+    underlying.add(x.underlying)
+  }
+
+  def -=(x: """ + sourceType + """) {
+    underlying.remove(x.underlying)
+  }
+
+  def size = underlying.size
+
+  def isEmpty = underlying.isEmpty
+  def nonEmpty = !underlying.isEmpty
+
+  def toSet = {
+    val b = Set.newBuilder[""" + sourceType + """]
+    underlying.forEach(new TLongProcedure {
+      def execute(l: Long) = {
+        b += new """ + sourceType + """(l)
+        true
+      }
+    })
+    b.result()
+  }
+
+  override def hashCode = underlying.hashCode
+  override def equals(o: Any) = o match {
+    case that: """ + targetClassName + """ => this.underlying == that.underlying
+    case _ => false
+  }
+
+  override def toString = underlying.toString
 }
 """
   }
