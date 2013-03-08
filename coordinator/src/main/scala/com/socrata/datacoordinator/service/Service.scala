@@ -20,12 +20,14 @@ import com.socrata.datacoordinator.common.StandardDatasetMapLimits
 import java.sql.Connection
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.truth.sql.DatasetLockContext
+import metadata.UnanchoredCopyInfo
 import scala.concurrent.duration.Duration
 import scala.Some
 import com.socrata.datacoordinator.secondary.SecondaryLoader
 import com.socrata.datacoordinator.util.collection.DatasetIdMap
 import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.secondary.sql.SqlSecondaryManifest
+import com.socrata.datacoordinator.primary.{WorkingCopyCreator, Publisher}
 
 case class Field(name: String, @JsonKey("type") typ: String)
 object Field {
@@ -36,6 +38,8 @@ class Service(storeFile: InputStream => String,
               importFile: (String, String, Seq[Field], Option[String]) => Unit,
               updateFile: (String, InputStream) => Option[JObject],
               datasetContents: String => (Iterator[JObject] => Unit) => Boolean,
+              publish: (String, String) => UnanchoredCopyInfo,
+              copy: (String, String, Boolean) => UnanchoredCopyInfo,
               secondaries: Set[String],
               datasetsInStore: (String) => DatasetIdMap[Long],
               versionInStore: (String, DatasetId) => Option[Long],
@@ -152,11 +156,21 @@ class Service(storeFile: InputStream => String,
     }
   }
 
+  def doPublish(id: String)(req: HttpServletRequest): HttpResponse = { resp =>
+    publish(norm(id), "blist")
+  }
+
+  def doCopy(id: String)(req: HttpServletRequest): HttpResponse = { resp =>
+    copy(norm(id), "blist", true)
+  }
+
   val router = RouterSet(
     ExtractingRouter[HttpService]("POST", "/upload")(doUploadFile _),
     ExtractingRouter[HttpService]("POST", "/import/?")(doImportFile _),
     ExtractingRouter[HttpService]("POST", "/update/?")(doUpdateFile _),
     ExtractingRouter[HttpService]("GET", "/export/?")(doExportFile _),
+    ExtractingRouter[HttpService]("POST", "/publish/?")(doPublish _),
+    ExtractingRouter[HttpService]("POST", "/copy/?")(doCopy _),
     ExtractingRouter[HttpService]("GET", "/secondary-manifest")(doGetSecondaries _),
     ExtractingRouter[HttpService]("GET", "/secondary-manifest/?")(doGetSecondaryManifest _),
     ExtractingRouter[HttpService]("GET", "/secondary-manifest/?/?")(doGetDataVersionInSecondary _),
@@ -207,9 +221,12 @@ object Service extends App { self =>
       val datasetLock: DatasetLock = NoopDatasetLock
       val datasetLockTimeout: Duration = Duration.Inf
     }
+
     val fileStore = new FileStore(new File("/tmp/filestore"))
     val importer = new FileImporter(fileStore.open, ":deleted", dataContext)
     val exporter = new Exporter(dataContext)
+    val publisher = new Publisher(dataContext.datasetMutator)
+    val workingCopyCreator = new WorkingCopyCreator(dataContext.datasetMutator)
 
     def datasetsInStore(storeId: String): DatasetIdMap[Long] =
       using(dataSource.getConnection()) { conn =>
@@ -223,7 +240,9 @@ object Service extends App { self =>
       }
     def updateVersionInStore(storeId: String, datasetId: DatasetId): Option[Long] = ???
 
-    val serv = new Service(fileStore.store, importer.importFile, importer.updateFile, exporter.export, secondaries.keySet, datasetsInStore, versionInStore, updateVersionInStore)
+    val serv = new Service(fileStore.store, importer.importFile, importer.updateFile, exporter.export,
+      publisher.publish, workingCopyCreator.copyDataset,
+      secondaries.keySet, datasetsInStore, versionInStore, updateVersionInStore)
     serv.run(port)
   } finally {
     executorService.shutdown()
