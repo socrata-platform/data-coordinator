@@ -11,7 +11,7 @@ import com.rojoma.json.util.{AutomaticJsonCodecBuilder, JsonKey, JsonUtil}
 import com.rojoma.json.io.{JsonReaderException, CompactJsonWriter}
 import com.rojoma.json.ast.{JNumber, JObject}
 import com.ibm.icu.text.Normalizer
-import com.socrata.datacoordinator.common.soql.{JsonSoQLDataContext, PostgresSoQLDataContext}
+import com.socrata.datacoordinator.common.soql.{SoQLRowLogCodec, JsonSoQLDataContext, PostgresSoQLDataContext}
 import java.util.concurrent.{TimeUnit, Executors}
 import org.postgresql.ds.PGSimpleDataSource
 import com.socrata.datacoordinator.truth._
@@ -19,14 +19,16 @@ import com.typesafe.config.ConfigFactory
 import com.socrata.datacoordinator.common.StandardDatasetMapLimits
 import java.sql.Connection
 import com.rojoma.simplearm.util._
-import com.socrata.datacoordinator.truth.sql.DatasetLockContext
+import com.socrata.datacoordinator.truth.sql.{SqlDataReadingContext, DatasetLockContext}
 import metadata.UnanchoredCopyInfo
 import scala.concurrent.duration.Duration
 import scala.Some
-import com.socrata.datacoordinator.secondary.SecondaryLoader
+import com.socrata.datacoordinator.secondary.{Secondary, NamedSecondary, PlaybackToSecondary, SecondaryLoader}
 import com.socrata.datacoordinator.util.collection.DatasetIdMap
 import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.secondary.sql.SqlSecondaryManifest
+import com.socrata.datacoordinator.truth.metadata.sql.PostgresDatasetMapReader
+import com.socrata.datacoordinator.truth.loader.sql.SqlDelogger
 import com.socrata.datacoordinator.primary.{WorkingCopyCreator, Publisher}
 
 case class Field(name: String, @JsonKey("type") typ: String)
@@ -43,7 +45,7 @@ class Service(storeFile: InputStream => String,
               secondaries: Set[String],
               datasetsInStore: (String) => DatasetIdMap[Long],
               versionInStore: (String, DatasetId) => Option[Long],
-              updateVersionInStore: (String, DatasetId) => Option[Long])
+              updateVersionInStore: (String, DatasetId) => Unit)
 {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
 
@@ -148,12 +150,8 @@ class Service(storeFile: InputStream => String,
     val datasetId =
       try { new DatasetId(datasetIdRaw.toLong) }
       catch { case _: NumberFormatException => return NotFound }
-    updateVersionInStore(storeId, datasetId) match {
-      case Some(v) =>
-        OK ~> ContentType("application/json; charset=utf-8") ~> Write(JsonUtil.writeJson(_, Map("version" -> v), buffer = true))
-      case None =>
-        NotFound
-    }
+    updateVersionInStore(storeId, datasetId)
+    OK
   }
 
   def doPublish(id: String)(req: HttpServletRequest): HttpResponse = { resp =>
@@ -211,7 +209,7 @@ object Service extends App { self =>
 
   val executorService = Executors.newCachedThreadPool()
   try {
-    val dataContext: DataReadingContext with DataWritingContext with JsonDataContext = new PostgresSoQLDataContext with JsonSoQLDataContext with DatasetLockContext {
+    val dataContext: DataReadingContext with DataWritingContext with JsonDataContext with SqlDataReadingContext = new PostgresSoQLDataContext with JsonSoQLDataContext with DatasetLockContext {
       val dataSource = self.dataSource
       val executorService = self.executorService
       def copyIn(conn: Connection, sql: String, input: Reader): Long =
@@ -230,15 +228,27 @@ object Service extends App { self =>
 
     def datasetsInStore(storeId: String): DatasetIdMap[Long] =
       using(dataSource.getConnection()) { conn =>
-        val secondary = new SqlSecondaryManifest(conn)
-        secondary.datasets(storeId)
+        val secondaryManifest = new SqlSecondaryManifest(conn)
+        secondaryManifest.datasets(storeId)
       }
     def versionInStore(storeId: String, datasetId: DatasetId): Option[Long] =
       using(dataSource.getConnection()) { conn =>
-        val secondary = new SqlSecondaryManifest(conn)
-        secondary.readLastDatasetInfo(storeId, datasetId).map(_._1)
+        val secondaryManifest = new SqlSecondaryManifest(conn)
+        secondaryManifest.readLastDatasetInfo(storeId, datasetId).map(_._1)
       }
-    def updateVersionInStore(storeId: String, datasetId: DatasetId): Option[Long] = ???
+    def updateVersionInStore(storeId: String, datasetId: DatasetId): Unit =
+      using(dataSource.getConnection()) { conn =>
+        conn.setAutoCommit(false)
+        val secondaryManifest = new SqlSecondaryManifest(conn)
+        val secondary = secondaries(storeId).asInstanceOf[Secondary[dataContext.CV]]
+        val pb = new PlaybackToSecondary[dataContext.CT, dataContext.CV](conn, secondaryManifest, dataContext.sqlRepForColumn)
+        val mapReader = new PostgresDatasetMapReader(conn)
+        val datasetInfo = mapReader.datasetInfo(datasetId).map { di =>
+          val delogger = new SqlDelogger(conn, di.logTableName, dataContext.newRowLogCodec)
+          pb(datasetId, NamedSecondary(storeId, secondary), mapReader, delogger)
+        }
+        conn.commit()
+      }
 
     val serv = new Service(fileStore.store, importer.importFile, importer.updateFile, exporter.export,
       publisher.publish, workingCopyCreator.copyDataset,
