@@ -30,6 +30,7 @@ import com.socrata.datacoordinator.secondary.sql.SqlSecondaryManifest
 import com.socrata.datacoordinator.truth.metadata.sql.PostgresDatasetMapReader
 import com.socrata.datacoordinator.truth.loader.sql.SqlDelogger
 import com.socrata.datacoordinator.primary.{WorkingCopyCreator, Publisher}
+import java.net.URLDecoder
 
 case class Field(name: String, @JsonKey("type") typ: String)
 object Field {
@@ -44,8 +45,8 @@ class Service(storeFile: InputStream => String,
               copy: (String, String, Boolean) => UnanchoredCopyInfo,
               secondaries: Set[String],
               datasetsInStore: (String) => DatasetIdMap[Long],
-              versionInStore: (String, DatasetId) => Option[Long],
-              updateVersionInStore: (String, DatasetId) => Unit)
+              versionInStore: (String, String) => Option[Long],
+              updateVersionInStore: (String, String) => Unit)
 {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
 
@@ -135,8 +136,8 @@ class Service(storeFile: InputStream => String,
   def doGetDataVersionInSecondary(storeId: String, datasetIdRaw: String)(req: HttpServletRequest): HttpResponse = {
     if(!secondaries(storeId)) return NotFound
     val datasetId =
-      try { new DatasetId(datasetIdRaw.toLong) }
-      catch { case _: NumberFormatException => return NotFound }
+      try { URLDecoder.decode(datasetIdRaw, "UTF-8") }
+      catch { case _: IllegalArgumentException => return BadRequest }
     versionInStore(storeId, datasetId) match {
       case Some(v) =>
         OK ~> ContentType("application/json; charset=utf-8") ~> Write(JsonUtil.writeJson(_, Map("version" -> v), buffer = true))
@@ -148,8 +149,8 @@ class Service(storeFile: InputStream => String,
   def doUpdateVersionInSecondary(storeId: String, datasetIdRaw: String)(req: HttpServletRequest): HttpResponse = {
     if(!secondaries(storeId)) return NotFound
     val datasetId =
-      try { new DatasetId(datasetIdRaw.toLong) }
-      catch { case _: NumberFormatException => return NotFound }
+      try { URLDecoder.decode(datasetIdRaw, "UTF-8") }
+      catch { case _: IllegalArgumentException => return BadRequest }
     updateVersionInStore(storeId, datasetId)
     OK
   }
@@ -231,21 +232,28 @@ object Service extends App { self =>
         val secondaryManifest = new SqlSecondaryManifest(conn)
         secondaryManifest.datasets(storeId)
       }
-    def versionInStore(storeId: String, datasetId: DatasetId): Option[Long] =
+    def versionInStore(storeId: String, datasetId: String): Option[Long] =
       using(dataSource.getConnection()) { conn =>
         val secondaryManifest = new SqlSecondaryManifest(conn)
-        secondaryManifest.readLastDatasetInfo(storeId, datasetId).map(_._1)
+        val mapReader = new PostgresDatasetMapReader(conn)
+        for {
+          systemId <- mapReader.datasetId(datasetId)
+          result <- secondaryManifest.readLastDatasetInfo(storeId, systemId)
+        } yield result._1
       }
-    def updateVersionInStore(storeId: String, datasetId: DatasetId): Unit =
+    def updateVersionInStore(storeId: String, datasetId: String): Unit =
       using(dataSource.getConnection()) { conn =>
         conn.setAutoCommit(false)
         val secondaryManifest = new SqlSecondaryManifest(conn)
         val secondary = secondaries(storeId).asInstanceOf[Secondary[dataContext.CV]]
         val pb = new PlaybackToSecondary[dataContext.CT, dataContext.CV](conn, secondaryManifest, dataContext.sqlRepForColumn)
         val mapReader = new PostgresDatasetMapReader(conn)
-        val datasetInfo = mapReader.datasetInfo(datasetId).map { di =>
-          val delogger = new SqlDelogger(conn, di.logTableName, dataContext.newRowLogCodec)
-          pb(datasetId, NamedSecondary(storeId, secondary), mapReader, delogger)
+        for {
+          systemId <- mapReader.datasetId(datasetId)
+          datasetInfo <- mapReader.datasetInfo(systemId)
+        } yield {
+          val delogger = new SqlDelogger(conn, datasetInfo.logTableName, dataContext.newRowLogCodec)
+          pb(systemId, NamedSecondary(storeId, secondary), mapReader, delogger)
         }
         conn.commit()
       }
