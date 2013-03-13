@@ -10,7 +10,7 @@ import com.socrata.datacoordinator.util.collection.{MutableDatasetIdMap, Dataset
 
 class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
   def readLastDatasetInfo(storeId: String, datasetId: DatasetId): Option[(Long, Option[String])] =
-    using(conn.prepareStatement("SELECT version, cookie FROM secondary_manfiest WHERE store_id = ? AND dataset_id = ?")) { stmt =>
+    using(conn.prepareStatement("SELECT version, cookie FROM secondary_manfiest WHERE store_id = ? AND dataset_system_id = ?")) { stmt =>
       stmt.setString(1, storeId)
       stmt.setLong(2, datasetId.underlying)
       using(stmt.executeQuery()) { rs =>
@@ -24,7 +24,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
 
   def lastDataInfo(storeId: String, datasetId: DatasetId): (Long, Option[String]) =
     readLastDatasetInfo(storeId, datasetId).getOrElse {
-      using(conn.prepareStatement("INSERT INTO secondary_manifest (store_id, dataset_id, version, cookie) VALUES (?, ?, 0, NULL)")) { stmt =>
+      using(conn.prepareStatement("INSERT INTO secondary_manifest (store_id, dataset_system_id, version, cookie) VALUES (?, ?, 0, NULL)")) { stmt =>
         stmt.setString(1, storeId)
         stmt.setLong(2, datasetId.underlying)
         stmt.execute()
@@ -33,7 +33,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
     }
 
   def updateDataInfo(storeId: String, datasetId: DatasetId, dataVersion: Long, cookie: Option[String]) {
-    using(conn.prepareStatement("UPDATE secondary_manifest SET version = ?, cookie = ? WHERE store_id = ? AND dataset_id = ?")) { stmt =>
+    using(conn.prepareStatement("UPDATE secondary_manifest SET version = ?, cookie = ? WHERE store_id = ? AND dataset_system_id = ?")) { stmt =>
       stmt.setLong(1, dataVersion)
       cookie match {
         case Some(c) => stmt.setString(2, c)
@@ -46,7 +46,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
   }
 
   def dropDataset(storeId: String, datasetId: DatasetId) {
-    using(conn.prepareStatement("DELETE FROM secondary_manifest WHERE store_id = ? AND dataset_id = ?")) { stmt =>
+    using(conn.prepareStatement("DELETE FROM secondary_manifest WHERE store_id = ? AND dataset_system_id = ?")) { stmt =>
       stmt.setString(1, storeId)
       stmt.setLong(2, datasetId.underlying)
       stmt.execute()
@@ -54,7 +54,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
   }
 
   def statusOf(storeId: String, datasetId: DatasetId): Map[String, Long] = {
-    using(conn.prepareStatement("SELECT store_id, version FROM secondary_manifest WHERE dataset_id = ?")) { stmt =>
+    using(conn.prepareStatement("SELECT store_id, version FROM secondary_manifest WHERE dataset_system_id = ?")) { stmt =>
       stmt.setLong(1, datasetId.underlying)
       using(stmt.executeQuery()) { rs =>
         val result = Map.newBuilder[String, Long]
@@ -67,12 +67,12 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
   }
 
   def datasets(storeId: String): DatasetIdMap[Long] = {
-    using(conn.prepareStatement("SELECT dataset_id, version FROM secondary_manifest WHERE store_id = ?")) { stmt =>
+    using(conn.prepareStatement("SELECT dataset_system_id, version FROM secondary_manifest WHERE store_id = ?")) { stmt =>
       stmt.setString(1, storeId)
       using(stmt.executeQuery()) { rs =>
         val result = new MutableDatasetIdMap[Long]
         while(rs.next()) {
-          result(new DatasetId(rs.getLong("dataset_id"))) = rs.getLong("version")
+          result(new DatasetId(rs.getLong("dataset_system_id"))) = rs.getLong("version")
         }
         result.freeze()
       }
@@ -80,7 +80,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
   }
 
   def stores(datasetId: DatasetId): Map[String, Long] = {
-    using(conn.prepareStatement("SELECT store_id, version FROM secondary_manifest WHERE dataset_id = ?")) { stmt =>
+    using(conn.prepareStatement("SELECT store_id, version FROM secondary_manifest WHERE dataset_system_id = ?")) { stmt =>
       stmt.setLong(1, datasetId.underlying)
       using(stmt.executeQuery()) { rs =>
         val result = Map.newBuilder[String, Long]
