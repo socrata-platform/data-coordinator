@@ -10,7 +10,7 @@ import com.socrata.datacoordinator.util.collection.{MutableDatasetIdMap, Dataset
 
 class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
   def readLastDatasetInfo(storeId: String, datasetId: DatasetId): Option[(Long, Option[String])] =
-    using(conn.prepareStatement("SELECT version, cookie FROM secondary_manfiest WHERE store_id = ? AND dataset_system_id = ?")) { stmt =>
+    using(conn.prepareStatement("SELECT version, cookie FROM secondary_manifest WHERE store_id = ? AND dataset_system_id = ?")) { stmt =>
       stmt.setString(1, storeId)
       stmt.setLong(2, datasetId.underlying)
       using(stmt.executeQuery()) { rs =>
