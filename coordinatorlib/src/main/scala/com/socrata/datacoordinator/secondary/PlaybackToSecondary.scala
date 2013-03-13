@@ -17,8 +17,10 @@ import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.rojoma.simplearm.SimpleArm
 import com.socrata.datacoordinator.truth.sql.SqlColumnReadRep
+import org.slf4j.LoggerFactory
 
 class PlaybackToSecondary[CT, CV](conn: Connection, secondaryManifest: SecondaryManifest, repFor: ColumnInfo => SqlColumnReadRep[CT, CV]) {
+  val log = LoggerFactory.getLogger(classOf[PlaybackToSecondary[_,_]])
   val datasetMapReader = new PostgresDatasetMapReader(conn)
 
   val datasetLock = NoopDatasetLock
@@ -27,17 +29,22 @@ class PlaybackToSecondary[CT, CV](conn: Connection, secondaryManifest: Secondary
   def apply(datasetId: DatasetId, secondary: NamedSecondary[CV], datasetMapReader: DatasetMapReader, delogger: Delogger[CV]) {
     datasetMapReader.datasetInfo(datasetId) match {
       case Some(datasetInfo) =>
+        log.info("Found dataset " + datasetInfo.datasetName + " in truth")
         try {
           if(secondary.store.wantsWorkingCopies) {
+            log.info("Secondary store wants working copies")
             playbackAll(datasetInfo, secondary, datasetMapReader, delogger)
           } else {
+            log.info("Secondary store wants doesn't want working copies")
             playbackPublished(datasetInfo, secondary, datasetMapReader, delogger)
           }
         } catch {
           case _: ResyncException =>
+            log.info("Incremental update requested full resync")
             resync(datasetId, secondary, delogger)
         }
       case None =>
+        log.info("Didn't find the dataset in truth")
         drop(secondary, datasetId)
     }
   }
@@ -124,11 +131,17 @@ class PlaybackToSecondary[CT, CV](conn: Connection, secondaryManifest: Secondary
   def playbackPublished(datasetInfo: DatasetInfo, secondary: NamedSecondary[CV], datasetMapReader: DatasetMapReader, delogger: Delogger[CV]) {
     var currentCookie = getCookie(secondary, datasetInfo.systemId)
     val currentVersion = secondary.store.currentVersion(datasetInfo.systemId, currentCookie)
+    log.info("Secondary store currently has {}", currentVersion)
     datasetMapReader.published(datasetInfo) match {
       case Some(publishedVersion) =>
+        log.info("Copy number {} is currently published.  It has data version {}", publishedVersion.copyNumber, publishedVersion.dataVersion)
         if(publishedVersion.dataVersion > currentVersion) {
-          if(delogger.findPublishEvent(currentVersion + 1, publishedVersion.dataVersion).nonEmpty)
+          log.info("Truth is newer than the secondary")
+
+          if(delogger.findPublishEvent(currentVersion + 1, publishedVersion.dataVersion).nonEmpty) {
+            log.info("Found a publish event in between the store's version and truth's; resyncing")
             throw new ResyncException
+          }
 
           var inWorkingCopy = false
           for(v <- (currentVersion + 1) to publishedVersion.dataVersion) {
@@ -156,10 +169,13 @@ class PlaybackToSecondary[CT, CV](conn: Connection, secondaryManifest: Secondary
           }
           assert(!inWorkingCopy)
         } else if(publishedVersion.dataVersion < currentVersion) {
+          log.info("Truth is older than the secondary?")
           throw new ResyncException
+        } else {
+          log.info("Truth and secondary are at the same version")
         }
       case None =>
-        // ok.  Hasn't been published yet for the first time...
+        log.info("No published version exists")
     }
   }
 
