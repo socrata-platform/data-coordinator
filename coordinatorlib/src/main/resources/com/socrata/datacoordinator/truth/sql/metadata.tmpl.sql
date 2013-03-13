@@ -35,14 +35,6 @@ CREATE TABLE IF NOT EXISTS secondary_stores (
   wants_unpublished BOOLEAN                 NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS secondary_manifest (
-  store_id          VARCHAR(64) NOT NULL,
-  dataset_system_id BIGINT NOT NULL REFERENCES truth_manifest(dataset_system_id),
-  version           BIGINT NOT NULL, -- data log version.  0 if never fed anything in
-  cookie            TEXT NULL,
-  PRIMARY KEY (store_id, dataset_system_id)
-);
-
 CREATE TABLE IF NOT EXISTS dataset_map (
   -- Note that IT IS ASSUMED THAT dataset_id WILL NEVER CHANGE.  In other words, dataset_id should
   -- not have anything in particular to do with SoQL resource names.  It is NOT assumed that they will
@@ -88,6 +80,14 @@ CREATE TABLE IF NOT EXISTS pending_table_drops (
   id         BIGSERIAL                 NOT NULL PRIMARY KEY,
   table_name VARCHAR(%TABLE_NAME_LEN%) NOT NULL,
   queued_at  TIMESTAMP WITH TIME ZONE  NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS secondary_manifest (
+  store_id          VARCHAR(64) NOT NULL,
+  dataset_system_id BIGINT NOT NULL REFERENCES dataset_map(system_id),
+  version           BIGINT NOT NULL, -- data log version.  0 if never fed anything in
+  cookie            TEXT NULL,
+  PRIMARY KEY (store_id, dataset_system_id)
 );
 
 END$$;
