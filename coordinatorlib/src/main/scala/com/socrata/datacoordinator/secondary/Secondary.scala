@@ -23,6 +23,12 @@ trait Secondary[CV] {
   def currentVersion(datasetId: DatasetId, cookie: Cookie): Long
 
   /**
+   * @return The `copyNumber` of the latest copy this secondary has.  Should
+   *         return 0 if this ID does not name a known dataset.
+   */
+  def currentCopyNumber(datasetId: DatasetId, cookie: Cookie): Long
+
+  /**
    * @return The `copyNumber`s of all snapshot copies in this secondary.
    */
   def snapshots(datasetId: DatasetId, cookie: Cookie): Set[Long]
