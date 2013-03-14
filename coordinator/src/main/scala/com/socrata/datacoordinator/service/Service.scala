@@ -16,7 +16,7 @@ import java.util.concurrent.{TimeUnit, Executors}
 import org.postgresql.ds.PGSimpleDataSource
 import com.socrata.datacoordinator.truth._
 import com.typesafe.config.ConfigFactory
-import com.socrata.datacoordinator.common.StandardDatasetMapLimits
+import com.socrata.datacoordinator.common.{DataSourceFromConfig, StandardDatasetMapLimits}
 import java.sql.Connection
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.truth.sql.{SqlDataReadingContext, DatasetLockContext}
@@ -200,12 +200,7 @@ object Service extends App { self =>
 
   val secondaries = SecondaryLoader.load(serviceConfig.getConfig("secondary.configs"), new File(serviceConfig.getString("secondary.path")))
 
-  val dataSource = new PGSimpleDataSource
-  dataSource.setServerName(serviceConfig.getString("database.host"))
-  dataSource.setPortNumber(serviceConfig.getInt("database.port"))
-  dataSource.setDatabaseName(serviceConfig.getString("database.database"))
-  dataSource.setUser(serviceConfig.getString("database.username"))
-  dataSource.setPassword(serviceConfig.getString("database.password"))
+  val (dataSource, copyInForDataSource) = DataSourceFromConfig(serviceConfig)
 
   val port = serviceConfig.getInt("network.port")
 
@@ -215,7 +210,7 @@ object Service extends App { self =>
       val dataSource = self.dataSource
       val executorService = self.executorService
       def copyIn(conn: Connection, sql: String, input: Reader): Long =
-        conn.asInstanceOf[org.postgresql.PGConnection].getCopyAPI.copyIn(sql, input)
+        copyInForDataSource(conn, sql, input)
       def tablespace(s: String) = Some("pg_default")
       val datasetMapLimits = StandardDatasetMapLimits
       val datasetLock: DatasetLock = NoopDatasetLock
@@ -263,6 +258,8 @@ object Service extends App { self =>
       publisher.publish, workingCopyCreator.copyDataset,
       secondaries.keySet, datasetsInStore, versionInStore, updateVersionInStore)
     serv.run(port)
+
+    secondaries.values.foreach(_.shutdown())
   } finally {
     executorService.shutdown()
   }

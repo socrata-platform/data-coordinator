@@ -31,7 +31,8 @@ class PostgresGlobalLog(conn: Connection) extends GlobalLog {
   }
 }
 
-class PostgresGlobalLogPlayback(conn: Connection, blockSize: Int = 500) extends GlobalLogPlayback {
+class PostgresGlobalLogPlayback(conn: Connection, blockSize: Int = 500, forBackup: Boolean = true) extends GlobalLogPlayback {
+  private val table = if(forBackup) "last_id_sent_to_backup" else "last_id_processed_for_secondaries"
   def pendingJobs(): Iterator[Job] = {
     def loop(lastBlock: Vector[Job]): Stream[Vector[Job]] = {
       if(lastBlock.isEmpty) Stream.empty
@@ -47,7 +48,7 @@ class PostgresGlobalLogPlayback(conn: Connection, blockSize: Int = 500) extends 
   def firstBlock(): Vector[Job] =
     for {
       stmt <- managed(conn.createStatement())
-      rs <- managed(stmt.executeQuery("select id, dataset_system_id, version from global_log where id > (select coalesce(max(id), 0) from last_id_sent_to_backup) order by id limit " + blockSize))
+      rs <- managed(stmt.executeQuery(s"select id, dataset_system_id, version from global_log where id > (select coalesce(max(id), 0) from $table}) order by id limit " + blockSize))
     } yield resultOfQuery(rs)
 
   def nextBlock(lastId: GlobalLogEntryId) =
@@ -70,8 +71,8 @@ class PostgresGlobalLogPlayback(conn: Connection, blockSize: Int = 500) extends 
 
   def finishedJob(job: Job) {
     using(conn.createStatement()) { stmt =>
-      if(stmt.executeUpdate("UPDATE last_id_sent_to_backup SET id = " + job.id.underlying) == 0) {
-        stmt.executeUpdate("INSERT INTO last_id_sent_to_backup (id) VALUES (" + job.id.underlying + ")")
+      if(stmt.executeUpdate(s"UPDATE $table SET id = " + job.id.underlying) == 0) {
+        stmt.executeUpdate(s"INSERT INTO $table (id) VALUES (" + job.id.underlying + ")")
       }
     }
   }

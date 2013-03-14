@@ -11,6 +11,8 @@ import com.socrata.datacoordinator.id.DatasetId
 trait Secondary[CV] {
   import Secondary.Cookie
 
+  def shutdown()
+
   def wantsWorkingCopies: Boolean
 
   /** The dataset has been deleted. */
