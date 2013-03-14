@@ -25,7 +25,7 @@ import scala.concurrent.duration.Duration
 import scala.Some
 import com.socrata.datacoordinator.secondary.{Secondary, NamedSecondary, PlaybackToSecondary, SecondaryLoader}
 import com.socrata.datacoordinator.util.collection.DatasetIdMap
-import com.socrata.datacoordinator.id.DatasetId
+import com.socrata.datacoordinator.id.{ColumnId, DatasetId}
 import com.socrata.datacoordinator.secondary.sql.SqlSecondaryManifest
 import com.socrata.datacoordinator.truth.metadata.sql.PostgresDatasetMapReader
 import com.socrata.datacoordinator.truth.loader.sql.SqlDelogger
@@ -40,7 +40,7 @@ object Field {
 class Service(storeFile: InputStream => String,
               importFile: (String, String, Seq[Field], Option[String]) => Unit,
               updateFile: (String, InputStream) => Option[JObject],
-              datasetContents: String => (Iterator[JObject] => Unit) => Boolean,
+              datasetContents: (String, Option[Set[String]]) => (Iterator[JObject] => Unit) => Boolean,
               publish: (String, String) => UnanchoredCopyInfo,
               copy: (String, String, Boolean) => UnanchoredCopyInfo,
               secondaries: Set[String],
@@ -102,7 +102,8 @@ class Service(storeFile: InputStream => String,
   }
 
   def doExportFile(id: String)(req: HttpServletRequest): HttpResponse = { resp =>
-    val found = datasetContents(norm(id)) { rows =>
+    val onlyColumns = Option(req.getParameterValues("c")).map(_.flatMap { c => norm(c).toLowerCase /* FIXME: This needs to happen in the dataset context */.split(',') }.toSet)
+    val found = datasetContents(norm(id), onlyColumns) { rows =>
       resp.setContentType("application/json")
       resp.setCharacterEncoding("utf-8")
       val out = new BufferedWriter(resp.getWriter)
