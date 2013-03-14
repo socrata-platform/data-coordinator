@@ -17,10 +17,13 @@ import java.io.File
 import com.socrata.datacoordinator.common.soql.{SoQLRowLogCodec, SoQLRep}
 import com.socrata.soql.types.SoQLType
 import com.socrata.soql.environment.TypeName
+import org.slf4j.LoggerFactory
 
-class SecondaryWatcher[CT, CV](ds: DataSource, secondary: NamedSecondary[CV], repFor: ColumnInfo => SqlColumnReadRep[CT, CV], codecFactory: () => RowLogCodec[CV], pause: Duration) {
+class SecondaryWatcher[CT, CV](ds: DataSource, secondaries: Map[String, Secondary[CV]], repFor: ColumnInfo => SqlColumnReadRep[CT, CV], codecFactory: () => RowLogCodec[CV], pause: Duration) {
+  val log = LoggerFactory.getLogger(classOf[SecondaryWatcher[CT,CV]])
   def run() {
     while(true) {
+      log.trace("Tick")
       using(ds.getConnection()) { conn =>
         conn.setAutoCommit(false)
         val globalLog = new PostgresGlobalLogPlayback(conn, forBackup = false)
@@ -30,10 +33,18 @@ class SecondaryWatcher[CT, CV](ds: DataSource, secondary: NamedSecondary[CV], re
         for(job <- globalLog.pendingJobs()) {
           dsmr.datasetInfo(job.datasetId) match {
             case Some(datasetInfo) =>
-              val delogger = new SqlDelogger(conn, datasetInfo.logTableName, codecFactory)
-              pb(job.datasetId, secondary, dsmr, delogger)
+              for {
+                store <- secondaryManifest.stores(job.datasetId).keys
+                secondary <- secondaries.get(store)
+              } {
+                val delogger = new SqlDelogger(conn, datasetInfo.logTableName, codecFactory)
+                pb(job.datasetId, NamedSecondary(store, secondary), dsmr, delogger)
+              }
             case None =>
-              pb.drop(secondary, job.datasetId)
+              for {
+                store <- secondaryManifest.stores(job.datasetId).keys
+                secondary <- secondaries.get(store)
+              } pb.drop(NamedSecondary(store, secondary), job.datasetId)
           }
           globalLog.finishedJob(job)
           conn.commit()
@@ -47,9 +58,11 @@ class SecondaryWatcher[CT, CV](ds: DataSource, secondary: NamedSecondary[CV], re
 object SecondaryWatcher extends App {
   val config = ConfigFactory.load().getConfig("com.socrata.secondary-watcher")
   val (dataSource, _) = DataSourceFromConfig(config)
-  val secondaries = SecondaryLoader.load(config.getConfig("secondary.configs"), new File(config.getString("secondary.path")))
+  val secondaries = SecondaryLoader.load(config.getConfig("secondary.configs"), new File(config.getString("secondary.path"))).asInstanceOf[Map[String, Secondary[Any]]]
   def repFor(ci: ColumnInfo) =
     SoQLRep.sqlRepFactories(SoQLType.typesByName(TypeName(ci.typeName)))(ci.physicalColumnBaseBase)
 
-  val w = new SecondaryWatcher[SoQLType, Any](dataSource, NamedSecondary(secondaries.head._1, secondaries.head._2.asInstanceOf[Secondary[Any]]), repFor, () => SoQLRowLogCodec, 1.second)
+  val w = new SecondaryWatcher[SoQLType, Any](dataSource, secondaries, repFor, () => SoQLRowLogCodec, 1.second)
+
+  w.run()
 }

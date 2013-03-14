@@ -48,7 +48,7 @@ class PostgresGlobalLogPlayback(conn: Connection, blockSize: Int = 500, forBacku
   def firstBlock(): Vector[Job] =
     for {
       stmt <- managed(conn.createStatement())
-      rs <- managed(stmt.executeQuery(s"select id, dataset_system_id, version from global_log where id > (select coalesce(max(id), 0) from $table}) order by id limit " + blockSize))
+      rs <- managed(stmt.executeQuery(s"select id, dataset_system_id, version from global_log where id > (select coalesce(max(id), 0) from $table) order by id limit " + blockSize))
     } yield resultOfQuery(rs)
 
   def nextBlock(lastId: GlobalLogEntryId) =
