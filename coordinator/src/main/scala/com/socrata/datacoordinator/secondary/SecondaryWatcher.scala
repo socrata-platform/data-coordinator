@@ -37,6 +37,7 @@ class SecondaryWatcher[CT, CV](ds: DataSource, secondaries: Map[String, Secondar
                 store <- secondaryManifest.stores(job.datasetId).keys
                 secondary <- secondaries.get(store)
               } {
+                log.info("Syncing {} (#{}) into {}", Array[AnyRef](datasetInfo.datasetName, job.datasetId.underlying.asInstanceOf[AnyRef], store))
                 val delogger = new SqlDelogger(conn, datasetInfo.logTableName, codecFactory)
                 pb(job.datasetId, NamedSecondary(store, secondary), dsmr, delogger)
               }
@@ -44,7 +45,10 @@ class SecondaryWatcher[CT, CV](ds: DataSource, secondaries: Map[String, Secondar
               for {
                 store <- secondaryManifest.stores(job.datasetId).keys
                 secondary <- secondaries.get(store)
-              } pb.drop(NamedSecondary(store, secondary), job.datasetId)
+              } {
+                log.info("Dropping dataset #{} from {}", job.datasetId.underlying, store)
+                pb.drop(NamedSecondary(store, secondary), job.datasetId)
+              }
           }
           globalLog.finishedJob(job)
           conn.commit()
