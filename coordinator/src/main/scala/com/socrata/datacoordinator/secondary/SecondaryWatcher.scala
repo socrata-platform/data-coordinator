@@ -61,7 +61,9 @@ class SecondaryWatcher[CT, CV](ds: DataSource, secondaries: Map[String, Secondar
 object SecondaryWatcher extends App {
   val log = LoggerFactory.getLogger(classOf[SecondaryWatcher[_,_]])
 
-  val config = ConfigFactory.load().getConfig("com.socrata.secondary-watcher")
+  val rootConfig = ConfigFactory.load()
+  val config = rootConfig.getConfig("com.socrata.secondary-watcher")
+  println(config.root.render())
   val (dataSource, _) = DataSourceFromConfig(config)
   val secondaries = SecondaryLoader.load(config.getConfig("secondary.configs"), new File(config.getString("secondary.path"))).asInstanceOf[Map[String, Secondary[Any]]]
   def repFor(ci: ColumnInfo) =
