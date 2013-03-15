@@ -1,11 +1,13 @@
 import sbt._
 import Keys._
 
+import sbtassembly.Plugin.AssemblyKeys._
+
 import com.socrata.socratasbt.SocrataSbt._
 import SocrataSbtKeys._
 
 object Coordinator {
-  lazy val settings: Seq[Setting[_]] = BuildSettings.projectSettings() ++ Seq(
+  lazy val settings: Seq[Setting[_]] = BuildSettings.projectSettings(assembly = true) ++ Seq(
     resourceGenerators in Compile <+= (baseDirectory, resourceManaged in Compile, streams) map buildNativeLib,
     libraryDependencies <++= (scalaVersion, slf4jVersion) { (scalaVersion, slf4jVersion) =>
       Seq(
@@ -17,7 +19,8 @@ object Coordinator {
         "org.slf4j" % "slf4j-simple" % slf4jVersion,
         "org.scalacheck" %% "scalacheck" % "1.10.0" % "test"
       )
-    }
+    },
+    mainClass in assembly := Some("com.socrata.datacoordinator.Launch")
   )
 
   lazy val configs: Seq[Configuration] = BuildSettings.projectConfigs
