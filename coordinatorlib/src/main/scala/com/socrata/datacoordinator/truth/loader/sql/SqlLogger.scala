@@ -185,6 +185,7 @@ class SqlLogger[CV](connection: Connection,
 
   def reset() {
     baos = new java.io.ByteArrayOutputStream
+    baos.write(0) // "we're using Snappy"
     sos = new org.xerial.snappy.SnappyOutputStream(baos)
     out = com.google.protobuf.CodedOutputStream.newInstance(sos)
     didOne = false

@@ -67,6 +67,11 @@ object Delogger {
   case class RowDataUpdated[CV](bytes: Array[Byte])(codec: RowLogCodec[CV]) extends LogEvent[CV] {
     lazy val operations: Vector[Operation[CV]] = { // TODO: A standard decode exception
       val bais = new ByteArrayInputStream(bytes)
+      bais.read() match {
+        case 0 => // ok, we're using Snappy
+        case -1 => sys.error("Empty row data")
+        case other => sys.error("Using an unknown compressiong format " + other)
+      }
       val sis = new org.xerial.snappy.SnappyInputStream(bais)
       val cis = com.google.protobuf.CodedInputStream.newInstance(sis)
 
