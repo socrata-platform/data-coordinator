@@ -15,8 +15,8 @@ import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.common.soql.{SoQLTypeContext, SoQLRep, SoQLRowLogCodec}
 import com.socrata.datacoordinator.packets.network.{KeepaliveSetup, NetworkPackets}
 import com.socrata.datacoordinator.packets.{Packet, PacketsOutputStream, Packets}
-import com.socrata.datacoordinator.truth.metadata.sql.{PostgresDatasetMapWriter, PostgresGlobalLogPlayback, PostgresDatasetMapReader}
-import com.socrata.datacoordinator.id.DatasetId
+import com.socrata.datacoordinator.truth.metadata.sql.{PostgresBackupManifest, PostgresDatasetMapWriter, PostgresGlobalLogPlayback, PostgresDatasetMapReader}
+import com.socrata.datacoordinator.id.{GlobalLogEntryId, DatasetId}
 import annotation.tailrec
 import com.socrata.soql.types.{SoQLType, SoQLNull}
 import org.xerial.snappy.SnappyOutputStream
@@ -66,9 +66,11 @@ object Transmitter extends App {
     while(true) {
       using(openConnection()) { conn =>
         val playback = new PostgresGlobalLogPlayback(conn)
-        val tasks = playback.pendingJobs()
+        val backupMfst = new PostgresBackupManifest(conn)
+        val lastJob = backupMfst.lastJob()
+        val tasks = playback.pendingJobs(lastJob).buffered
         if(tasks.nonEmpty) {
-          send(client, conn, playback)(tasks)
+          send(client, conn, lastJob, backupMfst, tasks)
         } else {
           client.send(NothingYet())
           client.receive() match {
@@ -85,8 +87,12 @@ object Transmitter extends App {
     }
   }
 
-  def send(socket: Packets, conn: Connection, playback: GlobalLogPlayback)(tasks: TraversableOnce[playback.Job]) {
+  def send(socket: Packets, conn: Connection, initialLastJobId: GlobalLogEntryId, backupMfst: BackupManifest, tasks: TraversableOnce[GlobalLogPlayback#Job]) {
+    var lastJobId = initialLastJobId
     for(job <- tasks) {
+      assert(job.id.underlying == lastJobId.underlying + 1, "MISSING JOBS IN GLOBAL QUEUE!!!!")
+      lastJobId = job.id
+
       val datasetMap = new PostgresDatasetMapReader(conn)
       log.info("Sending dataset {}'s version {}", job.datasetId.underlying, job.version)
       try {
@@ -105,7 +111,7 @@ object Transmitter extends App {
                   case Some(AlreadyHaveThat()) =>
                     log.info("Backup says it already has this version.  Abandoning the send.")
                     socket.send(DataDone())
-                    playback.finishedJob(job)
+                    backupMfst.finishedJob(job.id)
                     throw new AbortJobButDontResync
                   case Some(ResyncRequired()) =>
                     log.warn("Backup signalled that it wants a resync; abandoning logdata send")
@@ -122,10 +128,10 @@ object Transmitter extends App {
               socket.receive() match {
                 case Some(AcknowledgeReceipt()) =>
                   log.info("Backup has acknowledged receipt and committed to its store.")
-                  playback.finishedJob(job)
+                  backupMfst.finishedJob(job.id)
                 case Some(AlreadyHaveThat()) =>
                   log.info("Backup says it already has this version.  Oh well, sent it unnecessarily.")
-                  playback.finishedJob(job)
+                  backupMfst.finishedJob(job.id)
                 case Some(ResyncRequired()) =>
                   log.warn("Backup signalled that it wants a resync")
                   throw new ResyncRequested
@@ -142,7 +148,7 @@ object Transmitter extends App {
       } catch {
         case _: ResyncRequested =>
           handleResyncRequest(socket, conn, job.datasetId)
-          playback.finishedJob(job)
+          backupMfst.finishedJob(job.id)
       }
     }
   }

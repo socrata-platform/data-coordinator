@@ -21,13 +21,14 @@ import org.slf4j.LoggerFactory
 import sun.misc.{Signal, SignalHandler}
 import java.util.concurrent.atomic.AtomicBoolean
 
-class SecondaryWatcher[CT, CV](ds: DataSource, secondaries: Map[String, Secondary[CV]], repFor: ColumnInfo => SqlColumnReadRep[CT, CV], codecFactory: () => RowLogCodec[CV]) {
+class SecondaryWatcher[CT, CV](ds: DataSource, repFor: ColumnInfo => SqlColumnReadRep[CT, CV], codecFactory: () => RowLogCodec[CV]) {
   import SecondaryWatcher.log
 
-  def run() {
+  def run(secondaries: Map[String, Secondary[CV]]) {
     using(ds.getConnection()) { conn =>
+      /*
       conn.setAutoCommit(false)
-      val globalLog = new PostgresGlobalLogPlayback(conn, forBackup = false)
+      val globalLog = new PostgresGlobalLogPlayback(conn, forSecondaries = secondaries.keySet)
       val secondaryManifest = new SqlSecondaryManifest(conn)
       val pb = new PlaybackToSecondary(conn, secondaryManifest, repFor)
       val dsmr = new PostgresDatasetMapReader(conn)
@@ -54,6 +55,12 @@ class SecondaryWatcher[CT, CV](ds: DataSource, secondaries: Map[String, Secondar
         globalLog.finishedJob(job)
         conn.commit()
       }
+    */
+    }
+  }
+
+  def updateSecondaries(secondaries: Set[String]) {
+    using(ds.getConnection()) { conn =>
     }
   }
 }
@@ -71,7 +78,7 @@ object SecondaryWatcher extends App {
 
   val pause = config.getMilliseconds("sleep-time").longValue.millis
 
-  val w = new SecondaryWatcher[SoQLType, Any](dataSource, secondaries, repFor, () => SoQLRowLogCodec)
+  val w = new SecondaryWatcher[SoQLType, Any](dataSource, repFor, () => SoQLRowLogCodec)
 
   val SIGTERM = new Signal("TERM")
   val SIGINT = new Signal("INT")
@@ -95,7 +102,7 @@ object SecondaryWatcher extends App {
 
     while(!signalled.get()) {
       log.trace("Tick")
-      w.run()
+      w.run(secondaries)
       Thread.sleep(pause.toMillis)
     }
   } finally {

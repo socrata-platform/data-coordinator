@@ -2,13 +2,14 @@ package com.socrata.datacoordinator
 package truth.metadata
 package sql
 
-import java.sql.{ResultSet, Statement, Timestamp, Connection}
+import java.sql._
 
 import org.joda.time.DateTime
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.util.CloseableIterator
 import scala.collection.immutable.VectorBuilder
 import com.socrata.datacoordinator.id.{DatasetId, GlobalLogEntryId}
+import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 
 class PostgresGlobalLog(conn: Connection) extends GlobalLog {
   def log(tableInfo: DatasetInfo, version: Long, updatedAt: DateTime, updatedBy: String) {
@@ -30,10 +31,35 @@ class PostgresGlobalLog(conn: Connection) extends GlobalLog {
     }
   }
 }
+class PostgresBackupManifest(conn: Connection) extends BackupManifest {
+  private val table = "last_id_sent_to_backup"
 
-class PostgresGlobalLogPlayback(conn: Connection, blockSize: Int = 500, forBackup: Boolean = true) extends GlobalLogPlayback {
-  private val table = if(forBackup) "last_id_sent_to_backup" else "last_id_processed_for_secondaries"
-  def pendingJobs(): Iterator[Job] = {
+  def lastJob(): GlobalLogEntryId = {
+    for {
+      stmt <- managed(conn.createStatement())
+      rs <- managed(stmt.executeQuery(s"SELECT MAX(id) from $table"))
+    } yield {
+      rs.next()
+      new GlobalLogEntryId(rs.getLong(1)) // max returns null if there are no values, getLong returns 0 on null.
+    }
+  }
+
+  def finishedJob(job: GlobalLogEntryId) {
+    val updateCount = using(conn.prepareStatement(s"UPDATE $table SET id = ?")) { stmt =>
+      stmt.setLong(1, job.underlying)
+      stmt.executeUpdate()
+    }
+    if(updateCount == 0) {
+      using(conn.prepareStatement(s"INSERT INTO $table (id) VALUES (?)")) { stmt =>
+        stmt.setLong(1, job.underlying)
+        stmt.execute()
+      }
+    }
+  }
+}
+
+class PostgresGlobalLogPlayback(conn: Connection, blockSize: Int = 500, forSecondaries: Set[String] = null) extends GlobalLogPlayback {
+  def pendingJobs(aboveJob: GlobalLogEntryId): Iterator[Job] = {
     def loop(lastBlock: Vector[Job]): Stream[Vector[Job]] = {
       if(lastBlock.isEmpty) Stream.empty
       else {
@@ -41,15 +67,9 @@ class PostgresGlobalLogPlayback(conn: Connection, blockSize: Int = 500, forBacku
         newBlock #:: loop(newBlock)
       }
     }
-    val first = firstBlock()
+    val first = nextBlock(aboveJob)
     (first #:: loop(first)).iterator.flatten
   }
-
-  def firstBlock(): Vector[Job] =
-    for {
-      stmt <- managed(conn.createStatement())
-      rs <- managed(stmt.executeQuery(s"select id, dataset_system_id, version from global_log where id > (select coalesce(max(id), 0) from $table) order by id limit " + blockSize))
-    } yield resultOfQuery(rs)
 
   def nextBlock(lastId: GlobalLogEntryId) =
     for {
@@ -67,13 +87,5 @@ class PostgresGlobalLogPlayback(conn: Connection, blockSize: Int = 500, forBacku
       )
     }
     result.result()
-  }
-
-  def finishedJob(job: Job) {
-    using(conn.createStatement()) { stmt =>
-      if(stmt.executeUpdate(s"UPDATE $table SET id = " + job.id.underlying) == 0) {
-        stmt.executeUpdate(s"INSERT INTO $table (id) VALUES (" + job.id.underlying + ")")
-      }
-    }
   }
 }

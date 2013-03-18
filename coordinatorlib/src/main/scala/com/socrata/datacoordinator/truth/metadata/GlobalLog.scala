@@ -13,7 +13,11 @@ trait GlobalLog {
 
 trait GlobalLogPlayback {
   case class Job(id: GlobalLogEntryId, datasetId: DatasetId, version: Long)
-
-  def pendingJobs(): Iterator[Job]
-  def finishedJob(job: Job)
+  def pendingJobs(aboveJob: GlobalLogEntryId): Iterator[Job]
 }
+
+trait BackupManifest {
+  def lastJob(): GlobalLogEntryId
+  def finishedJob(job: GlobalLogEntryId)
+}
+

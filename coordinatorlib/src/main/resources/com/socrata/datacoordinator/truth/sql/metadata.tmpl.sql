@@ -22,8 +22,10 @@ CREATE TABLE IF NOT EXISTS last_id_sent_to_backup (
 );
 
 CREATE TABLE IF NOT EXISTS last_id_processed_for_secondaries (
-  id                  BIGINT NOT NULL REFERENCES global_log(id),
-  single_row_enforcer unit   NOT NULL DEFAULT 'Unit'
+  secondary_id        VARCHAR(64)              NOT NULL,
+  global_log_id       BIGINT                   NOT NULL REFERENCES global_log(id),
+  next_run_time       TIMESTAMP WITH TIME ZONE NOT NULL,
+  interval_in_seconds INT                      NOT NULL
 );
 
 -- This is a separate table from dataset_map so it can continue to exist
