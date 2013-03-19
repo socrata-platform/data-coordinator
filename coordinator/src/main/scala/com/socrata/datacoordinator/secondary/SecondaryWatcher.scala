@@ -21,8 +21,9 @@ import sun.misc.{Signal, SignalHandler}
 import java.util.concurrent.{TimeUnit, CountDownLatch}
 import org.joda.time.{DateTime, Seconds}
 import com.socrata.datacoordinator.id.DatasetId
+import com.socrata.datacoordinator.util.{StackedTimingReport, LoggedTimingReport, TimingReport}
 
-class SecondaryWatcher[CT, CV](ds: DataSource, repFor: ColumnInfo => SqlColumnReadRep[CT, CV], codecFactory: () => RowLogCodec[CV]) {
+class SecondaryWatcher[CT, CV](ds: DataSource, repFor: ColumnInfo => SqlColumnReadRep[CT, CV], codecFactory: () => RowLogCodec[CV], timingReport: TimingReport) {
   import SecondaryWatcher.log
 
   def run(secondary: NamedSecondary[CV]) {
@@ -31,7 +32,7 @@ class SecondaryWatcher[CT, CV](ds: DataSource, repFor: ColumnInfo => SqlColumnRe
       val globalLog = new PostgresGlobalLogPlayback(conn)
       val playbackMfst = new PostgresSecondaryPlaybackManifest(conn, secondary.storeId)
       val secondaryManifest = new SqlSecondaryManifest(conn)
-      val pb = new PlaybackToSecondary(conn, secondaryManifest, repFor)
+      val pb = new PlaybackToSecondary(conn, secondaryManifest, repFor, timingReport)
       val dsmr = new PostgresDatasetMapReader(conn)
       var lastJobId = playbackMfst.lastJobId()
       val datasetsInStore = secondaryManifest.datasets(secondary.storeId)
@@ -95,6 +96,8 @@ class SecondaryWatcher[CT, CV](ds: DataSource, repFor: ColumnInfo => SqlColumnRe
 object SecondaryWatcher extends App {
   val log = LoggerFactory.getLogger(classOf[SecondaryWatcher[_,_]])
 
+  val timingReport = new LoggedTimingReport(log) with StackedTimingReport
+
   val rootConfig = ConfigFactory.load()
   val config = rootConfig.getConfig("com.socrata.secondary-watcher")
   println(config.root.render())
@@ -105,7 +108,7 @@ object SecondaryWatcher extends App {
 
   val pause = config.getMilliseconds("sleep-time").longValue.millis
 
-  val w = new SecondaryWatcher[SoQLType, Any](dataSource, repFor, () => SoQLRowLogCodec)
+  val w = new SecondaryWatcher[SoQLType, Any](dataSource, repFor, () => SoQLRowLogCodec, timingReport)
 
   val SIGTERM = new Signal("TERM")
   val SIGINT = new Signal("INT")

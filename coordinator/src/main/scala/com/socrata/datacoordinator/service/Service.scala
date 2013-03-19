@@ -31,6 +31,7 @@ import com.socrata.datacoordinator.truth.metadata.sql.PostgresDatasetMapReader
 import com.socrata.datacoordinator.truth.loader.sql.SqlDelogger
 import com.socrata.datacoordinator.primary.{WorkingCopyCreator, Publisher}
 import java.net.URLDecoder
+import com.socrata.datacoordinator.util.{StackedTimingReport, LoggedTimingReport}
 
 case class Field(name: String, @JsonKey("type") typ: String)
 object Field {
@@ -194,6 +195,9 @@ class Service(storeFile: InputStream => String,
 
 object Service extends App { self =>
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
+
+  val timingReport = new LoggedTimingReport(org.slf4j.LoggerFactory.getLogger("timing-report")) with StackedTimingReport
+
   val config = ConfigFactory.load()
   val serviceConfig = config.getConfig("com.socrata.coordinator-service")
   println(config.root.render)
@@ -215,6 +219,7 @@ object Service extends App { self =>
       val datasetMapLimits = StandardDatasetMapLimits
       val datasetLock: DatasetLock = NoopDatasetLock
       val datasetLockTimeout: Duration = Duration.Inf
+      val timingReport = self.timingReport
     }
 
     val fileStore = new FileStore(new File("/tmp/filestore"))
@@ -242,7 +247,7 @@ object Service extends App { self =>
         conn.setAutoCommit(false)
         val secondaryManifest = new SqlSecondaryManifest(conn)
         val secondary = secondaries(storeId).asInstanceOf[Secondary[dataContext.CV]]
-        val pb = new PlaybackToSecondary[dataContext.CT, dataContext.CV](conn, secondaryManifest, dataContext.sqlRepForColumn)
+        val pb = new PlaybackToSecondary[dataContext.CT, dataContext.CV](conn, secondaryManifest, dataContext.sqlRepForColumn, timingReport)
         val mapReader = new PostgresDatasetMapReader(conn)
         for {
           systemId <- mapReader.datasetId(datasetId)

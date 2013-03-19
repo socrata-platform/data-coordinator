@@ -11,7 +11,7 @@ import gnu.trove.map.hash.TIntObjectHashMap
 
 import com.socrata.id.numeric.IdProvider
 
-import com.socrata.datacoordinator.util.{TIntObjectHashMapWrapper, Counter}
+import com.socrata.datacoordinator.util.{TimingReport, TIntObjectHashMapWrapper, Counter}
 
 /**
  * @note After passing the `dataLogger` to this constructor, the created `SqlLoader`
@@ -23,7 +23,8 @@ abstract class SqlLoader[CT, CV](val connection: Connection,
                                  val sqlizer: DataSqlizer[CT, CV],
                                  val dataLogger: DataLogger[CV],
                                  val idProvider: IdProvider,
-                                 val executor: Executor)
+                                 val executor: Executor,
+                                 val timingReport: TimingReport)
   extends Loader[CV]
 {
   require(!connection.getAutoCommit, "Connection is in auto-commit mode")
@@ -65,11 +66,11 @@ abstract class SqlLoader[CT, CV](val connection: Connection,
 }
 
 object SqlLoader {
-  def apply[CT, CV](connection: Connection, preparer: RowPreparer[CV], sqlizer: DataSqlizer[CT, CV], dataLogger: DataLogger[CV], idProvider: IdProvider, executor: Executor): SqlLoader[CT,CV] = {
+  def apply[CT, CV](connection: Connection, preparer: RowPreparer[CV], sqlizer: DataSqlizer[CT, CV], dataLogger: DataLogger[CV], idProvider: IdProvider, executor: Executor, timingReport: TimingReport): SqlLoader[CT,CV] = {
     if(sqlizer.datasetContext.hasUserPrimaryKey)
-      new UserPKSqlLoader(connection, preparer, sqlizer, dataLogger, idProvider, executor)
+      new UserPKSqlLoader(connection, preparer, sqlizer, dataLogger, idProvider, executor, timingReport)
     else
-      new SystemPKSqlLoader(connection, preparer, sqlizer, dataLogger, idProvider, executor)
+      new SystemPKSqlLoader(connection, preparer, sqlizer, dataLogger, idProvider, executor, timingReport)
   }
 
   case class JobReport[CV](inserted: sc.Map[Int, CV], updated: sc.Map[Int, CV], deleted: sc.Map[Int, CV], elided: sc.Map[Int, (CV, Int)], errors: sc.Map[Int, Failure[CV]]) extends Report[CV]

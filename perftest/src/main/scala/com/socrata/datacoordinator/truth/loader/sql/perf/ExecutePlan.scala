@@ -15,7 +15,7 @@ import com.rojoma.json.ast.{JValue, JNull, JNumber, JString}
 import java.util.zip.GZIPInputStream
 import com.socrata.id.numeric.{InMemoryBlockIdProvider, FixedSizeIdProvider}
 import com.socrata.datacoordinator.truth.loader.sql.SqlLoader
-import com.socrata.datacoordinator.util.{Counter, IdProviderPoolImpl}
+import com.socrata.datacoordinator.util.{NoopTimingReport, Counter, IdProviderPoolImpl}
 import com.socrata.datacoordinator.id.{RowId, ColumnId}
 import com.socrata.datacoordinator.util.collection.{MutableColumnIdMap, ColumnIdMap}
 
@@ -187,7 +187,7 @@ object ExecutePlan {
           val report = for {
             dataLogger <- managed(new SqlLogger(conn, logTableName, () => new PerfRowCodec))
             idProvider <- idProviderPool.borrow()
-            txn <- managed(SqlLoader(conn, rowPreparer, sqlizer, dataLogger, idProvider, executor))
+            txn <- managed(SqlLoader(conn, rowPreparer, sqlizer, dataLogger, idProvider, executor, NoopTimingReport))
           } yield {
             def loop() {
               val line = plan.read()

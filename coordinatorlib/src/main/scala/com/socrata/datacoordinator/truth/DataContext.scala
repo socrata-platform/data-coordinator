@@ -8,6 +8,7 @@ import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.sql.DatasetMapLimits
 import java.util.concurrent.ExecutorService
 import com.socrata.datacoordinator.truth.csv.CsvColumnRep
+import com.socrata.datacoordinator.util.TimingReport
 
 trait DataTypeContext {
   type CT
@@ -25,6 +26,7 @@ trait DataTypeContext {
 
 trait ExecutionContext {
   val executorService: ExecutorService
+  val timingReport: TimingReport
 }
 
 trait DataSchemaContext extends DataTypeContext {

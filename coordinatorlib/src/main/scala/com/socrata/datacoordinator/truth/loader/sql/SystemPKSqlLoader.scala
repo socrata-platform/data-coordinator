@@ -12,8 +12,9 @@ import com.socrata.id.numeric.IdProvider
 
 import com.socrata.datacoordinator.util.collection.MutableRowIdMap
 import com.socrata.datacoordinator.id.RowId
+import com.socrata.datacoordinator.util.TimingReport
 
-final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: DataSqlizer[CT, CV], _l: DataLogger[CV], _i: IdProvider, _e: Executor)
+final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: DataSqlizer[CT, CV], _l: DataLogger[CV], _i: IdProvider, _e: Executor, _tr: TimingReport)
   extends
 {
   // all these are early because they are all potential sources of exceptions, and I want all
@@ -22,7 +23,7 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
   // so that if an OOM exception occurs the initializations in the base class are rolled back.
   private val log = SystemPKSqlLoader.log
   var jobs = new MutableRowIdMap[SystemPKSqlLoader.Operation[CV]]() // map from sid to operation
-} with SqlLoader(_c, _p, _s, _l, _i, _e)
+} with SqlLoader(_c, _p, _s, _l, _i, _e, _tr)
 {
   import SystemPKSqlLoader._
 
@@ -159,86 +160,90 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
   override def flush() {
     if(jobs.isEmpty) return
 
-    val started = new java.util.concurrent.Semaphore(0)
+    timingReport("flush") {
+      val started = new java.util.concurrent.Semaphore(0)
 
-    connectionMutex.synchronized {
-      checkAsyncJob()
+      connectionMutex.synchronized {
+        checkAsyncJob()
 
-      val currentJobs = jobs
-      val currentInsertSize = insertSize
-      val currentUpdateSize = updateSize
-      val currentDeleteSize = deleteSize
+        val currentJobs = jobs
+        val currentInsertSize = insertSize
+        val currentUpdateSize = updateSize
+        val currentDeleteSize = deleteSize
 
-      executor.execute(new Runnable() {
-        def run() {
-          connectionMutex.synchronized {
-            try {
-              started.release()
+        executor.execute(new Runnable() {
+          def run() {
+            connectionMutex.synchronized {
+              try {
+                started.release()
 
-              val deletes = new java.util.ArrayList[Delete]
-              val inserts = new java.util.ArrayList[Insert[CV]]
-              val updates = new java.util.ArrayList[Update[CV]]
+                val deletes = new java.util.ArrayList[Delete]
+                val inserts = new java.util.ArrayList[Insert[CV]]
+                val updates = new java.util.ArrayList[Update[CV]]
 
-              val it = currentJobs.iterator
-              while(it.hasNext) {
-                it.advance()
-                it.value match {
-                  case i@Insert(_,_,_, _) => inserts.add(i)
-                  case u@Update(_,_,_, _) => updates.add(u)
-                  case d@Delete(_,_) => deletes.add(d)
+                val it = currentJobs.iterator
+                while(it.hasNext) {
+                  it.advance()
+                  it.value match {
+                    case i@Insert(_,_,_, _) => inserts.add(i)
+                    case u@Update(_,_,_, _) => updates.add(u)
+                    case d@Delete(_,_) => deletes.add(d)
+                  }
                 }
-              }
 
-              val errors = new TIntObjectHashMap[Failure[CV]]
-              pendingDeleteResults = processDeletes(currentDeleteSize, deletes, errors)
-              pendingUpdateResults = processUpdates(currentUpdateSize, updates, errors)
-              pendingInsertResults = processInserts(currentInsertSize, inserts)
-              if(!errors.isEmpty) pendingErrors = errors
-            } catch {
-                case e: Throwable =>
-                  pendingException = e
+                val errors = new TIntObjectHashMap[Failure[CV]]
+                pendingDeleteResults = processDeletes(currentDeleteSize, deletes, errors)
+                pendingUpdateResults = processUpdates(currentUpdateSize, updates, errors)
+                pendingInsertResults = processInserts(currentInsertSize, inserts)
+                if(!errors.isEmpty) pendingErrors = errors
+              } catch {
+                  case e: Throwable =>
+                    pendingException = e
+              }
             }
           }
-        }
-      })
+        })
+      }
+
+      started.acquire()
+
+      jobs = new MutableRowIdMap[Operation[CV]]
+      insertSize = 0
+      updateSize = 0
+      deleteSize = 0
     }
-
-    started.acquire()
-
-    jobs = new MutableRowIdMap[Operation[CV]]
-    insertSize = 0
-    updateSize = 0
-    deleteSize = 0
   }
 
   def processDeletes(deleteSizeX: Int, deletes: java.util.ArrayList[Delete], errors: TIntObjectHashMap[Failure[CV]]): TIntObjectHashMap[CV] = {
     var deleteSize = deleteSizeX
     var resultMap: TIntObjectHashMap[CV] = null
     if(!deletes.isEmpty) {
-      using(connection.prepareStatement(sqlizer.prepareSystemIdDeleteStatement)) { stmt =>
-        val it = deletes.iterator()
-        while(it.hasNext) {
-          val op = it.next()
-          sqlizer.prepareSystemIdDelete(stmt, op.id)
-          stmt.addBatch()
-          deleteSize -= sqlizer.sizeofDelete
+      timingReport("process-deletes", "jobs" -> deletes.size) {
+        using(connection.prepareStatement(sqlizer.prepareSystemIdDeleteStatement)) { stmt =>
+          val it = deletes.iterator()
+          while(it.hasNext) {
+            val op = it.next()
+            sqlizer.prepareSystemIdDelete(stmt, op.id)
+            stmt.addBatch()
+            deleteSize -= sqlizer.sizeofDelete
+          }
+
+          val results = stmt.executeBatch()
+          assert(results.length == deletes.size, "Expected " + deletes.size + " results for deletes; got " + results.length)
+
+          var i = 0
+          resultMap = new TIntObjectHashMap[CV]
+          do {
+            val op = deletes.get(i)
+            val idValue = typeContext.makeValueFromSystemId(op.id)
+            if(results(i) == 1) {
+              dataLogger.delete(op.id)
+              resultMap.put(op.job, idValue)
+            } else if(results(i) == 0) errors.put(op.job, NoSuchRowToDelete(idValue))
+            else sys.error("Unexpected result code from delete: " + results(i))
+            i += 1
+          } while(i != results.length)
         }
-
-        val results = stmt.executeBatch()
-        assert(results.length == deletes.size, "Expected " + deletes.size + " results for deletes; got " + results.length)
-
-        var i = 0
-        resultMap = new TIntObjectHashMap[CV]
-        do {
-          val op = deletes.get(i)
-          val idValue = typeContext.makeValueFromSystemId(op.id)
-          if(results(i) == 1) {
-            dataLogger.delete(op.id)
-            resultMap.put(op.job, idValue)
-          } else if(results(i) == 0) errors.put(op.job, NoSuchRowToDelete(idValue))
-          else sys.error("Unexpected result code from delete: " + results(i))
-          i += 1
-        } while(i != results.length)
       }
     }
     assert(deleteSize == 0, "No deletes, but delete size is not 0?")
@@ -249,32 +254,34 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
     var updateSize = updateSizeX
     var resultMap: TIntObjectHashMap[CV] = null
     if(!updates.isEmpty) {
-      using(connection.createStatement()) { stmt =>
-        val it = updates.iterator()
-        while(it.hasNext) {
-          val op = it.next()
-          val sql = sqlizer.sqlizeSystemIdUpdate(op.id, op.row)
-          stmt.addBatch(sql)
-          updateSize -= op.size
+      timingReport("process-updates", "jobs" -> updates.size) {
+        using(connection.createStatement()) { stmt =>
+          val it = updates.iterator()
+          while(it.hasNext) {
+            val op = it.next()
+            val sql = sqlizer.sqlizeSystemIdUpdate(op.id, op.row)
+            stmt.addBatch(sql)
+            updateSize -= op.size
+          }
+
+          val results = stmt.executeBatch()
+          assert(results.length == updates.size, "Expected " + updates.size + " results for updates; got " + results.length)
+
+          var i = 0
+          resultMap = new TIntObjectHashMap[CV]
+          do {
+            val op = updates.get(i)
+            val idValue = typeContext.makeValueFromSystemId(op.id)
+            if(results(i) == 1) {
+              dataLogger.update(op.id, op.row)
+              resultMap.put(op.job, idValue)
+            } else if(results(i) == 0) {
+              errors.put(op.job, NoSuchRowToUpdate(idValue))
+            } else sys.error("Unexpected result code from update: " + results(i))
+
+            i += 1
+          } while(i != results.length)
         }
-
-        val results = stmt.executeBatch()
-        assert(results.length == updates.size, "Expected " + updates.size + " results for updates; got " + results.length)
-
-        var i = 0
-        resultMap = new TIntObjectHashMap[CV]
-        do {
-          val op = updates.get(i)
-          val idValue = typeContext.makeValueFromSystemId(op.id)
-          if(results(i) == 1) {
-            dataLogger.update(op.id, op.row)
-            resultMap.put(op.job, idValue)
-          } else if(results(i) == 0) {
-            errors.put(op.job, NoSuchRowToUpdate(idValue))
-          } else sys.error("Unexpected result code from update: " + results(i))
-
-          i += 1
-        } while(i != results.length)
       }
     }
     assert(updateSize == 0, updates.size + " updates, but update size is not 0?")
@@ -285,27 +292,29 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
     var insertSize = insertSizeX
     var resultMap: TIntObjectHashMap[CV] = null
     if(!inserts.isEmpty) {
-      val insertCount = sqlizer.insertBatch(connection) { inserter =>
+      timingReport("process-inserts", "jobs" -> inserts.size) {
+        val insertCount = sqlizer.insertBatch(connection) { inserter =>
+          var i = 0
+          do {
+            val op = inserts.get(i)
+            inserter.insert(op.row)
+            insertSize -= op.size
+            i += 1
+          } while(i != inserts.size)
+        }
+
+        assert(insertCount == inserts.size, "Expected " + inserts.size + " results for inserts; got " + insertCount)
+
         var i = 0
+        resultMap = new TIntObjectHashMap[CV]
         do {
           val op = inserts.get(i)
-          inserter.insert(op.row)
-          insertSize -= op.size
+          val idValue = typeContext.makeValueFromSystemId(op.id)
+          dataLogger.insert(op.id, op.row)
+          resultMap.put(op.job, idValue)
           i += 1
-        } while(i != inserts.size)
+        } while(i != insertCount)
       }
-
-      assert(insertCount == inserts.size, "Expected " + inserts.size + " results for inserts; got " + insertCount)
-
-      var i = 0
-      resultMap = new TIntObjectHashMap[CV]
-      do {
-        val op = inserts.get(i)
-        val idValue = typeContext.makeValueFromSystemId(op.id)
-        dataLogger.insert(op.id, op.row)
-        resultMap.put(op.job, idValue)
-        i += 1
-      } while(i != insertCount)
     }
     assert(insertSize == 0, "No inserts, but insert size is not 0?")
     resultMap

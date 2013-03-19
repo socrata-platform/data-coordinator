@@ -17,6 +17,8 @@ import org.postgresql.PGConnection
 import com.socrata.soql.brita.IdentifierFilter
 import com.socrata.datacoordinator.truth.sql.DatasetLockContext
 import scala.concurrent.duration.Duration
+import com.socrata.datacoordinator.util.{StackedTimingReport, LoggedTimingReport}
+import org.slf4j.LoggerFactory
 
 object ChicagoCrimesLoadScript extends App {
   val url =
@@ -51,6 +53,7 @@ object ChicagoCrimesLoadScript extends App {
       val datasetMapLimits = StandardDatasetMapLimits
       val datasetLock: DatasetLock = NoopDatasetLock
       val datasetLockTimeout: Duration = Duration.Inf
+      val timingReport = new LoggedTimingReport(LoggerFactory.getLogger("timing-report")) with StackedTimingReport
     }
 
     com.rojoma.simplearm.util.using(ds.getConnection()) { conn =>

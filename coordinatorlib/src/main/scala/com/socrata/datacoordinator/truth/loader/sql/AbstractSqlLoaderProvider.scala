@@ -10,8 +10,9 @@ import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.loader.{Loader, Logger, RowPreparer}
 import com.socrata.id.numeric.IdProvider
 import java.io.Reader
+import com.socrata.datacoordinator.util.TimingReport
 
-abstract class AbstractSqlLoaderProvider[CT, CV](val executor: ExecutorService, typeContext: TypeContext[CT, CV], repFor: ColumnInfo => SqlColumnRep[CT, CV], isSystemColumn: ColumnInfo => Boolean)
+abstract class AbstractSqlLoaderProvider[CT, CV](val executor: ExecutorService, typeContext: TypeContext[CT, CV], repFor: ColumnInfo => SqlColumnRep[CT, CV], isSystemColumn: ColumnInfo => Boolean, timingReport: TimingReport)
   extends ((Connection, CopyInfo, ColumnIdMap[ColumnInfo], RowPreparer[CV], IdProvider, Logger[CV]) => Loader[CV])
 {
   def produce(tableName: String, datasetContext: RepBasedSqlDatasetContext[CT, CV]): DataSqlizer[CT, CV]
@@ -30,7 +31,7 @@ abstract class AbstractSqlLoaderProvider[CT, CV](val executor: ExecutorService, 
     val datasetContext = RepBasedSqlDatasetContext(typeContext, repSchema, userPrimaryKeyInfo, systemPrimaryKey, schema.filter { case (_, ci) => isSystemColumn(ci) }.keySet)
 
     val sqlizer = produce(tableName, datasetContext)
-    SqlLoader(conn, rowPreparer, sqlizer, logger, idProvider, executor)
+    SqlLoader(conn, rowPreparer, sqlizer, logger, idProvider, executor, timingReport)
   }
 }
 

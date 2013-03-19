@@ -56,7 +56,7 @@ trait PostgresDataContext extends SqlDataWritingContext with SqlDataReadingConte
 
   protected def copyIn(conn: Connection, sql: String, input: Reader): Long
 
-  protected final lazy val loaderProvider = new AbstractSqlLoaderProvider(executorService, typeContext, sqlRepForColumn, isSystemColumn) with PostgresSqlLoaderProvider[CT, CV] {
+  protected final lazy val loaderProvider = new AbstractSqlLoaderProvider(executorService, typeContext, sqlRepForColumn, isSystemColumn, timingReport) with PostgresSqlLoaderProvider[CT, CV] {
     def copyIn(conn: Connection, sql: String, input: Reader) = PostgresDataContext.this.copyIn(conn, sql, input)
   }
 
