@@ -21,13 +21,6 @@ CREATE TABLE IF NOT EXISTS last_id_sent_to_backup (
   single_row_enforcer unit   NOT NULL DEFAULT 'Unit'
 );
 
-CREATE TABLE IF NOT EXISTS last_id_processed_for_secondaries (
-  secondary_id        VARCHAR(64)              NOT NULL,
-  global_log_id       BIGINT                   NOT NULL REFERENCES global_log(id),
-  next_run_time       TIMESTAMP WITH TIME ZONE NOT NULL,
-  interval_in_seconds INT                      NOT NULL
-);
-
 -- This is a separate table from dataset_map so it can continue to exist
 -- even if the dataset_map entry goes away.
 CREATE TABLE IF NOT EXISTS truth_manifest (
@@ -36,10 +29,15 @@ CREATE TABLE IF NOT EXISTS truth_manifest (
   latest_version       BIGINT NOT NULL  -- The last (data log) version
 );
 
-CREATE TABLE IF NOT EXISTS secondary_stores (
-  system_id         BIGINT                  NOT NULL PRIMARY KEY,
-  store_id          VARCHAR(%STORE_ID_LEN%) NOT NULL UNIQUE,
-  wants_unpublished BOOLEAN                 NOT NULL
+CREATE TABLE IF NOT EXISTS secondary_stores_config (
+  store_id            VARCHAR(%STORE_ID_LEN%)  NOT NULL PRIMARY KEY,
+  next_run_time       TIMESTAMP WITH TIME ZONE NOT NULL,
+  interval_in_seconds INT                      NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS last_id_processed_for_secondaries (
+  secondary_id        VARCHAR(%STORE_ID_LEN%)  NOT NULL PRIMARY KEY REFERENCES secondary_stores_config(store_id),
+  global_log_id       BIGINT                   NOT NULL REFERENCES global_log(id)
 );
 
 CREATE TABLE IF NOT EXISTS dataset_map (

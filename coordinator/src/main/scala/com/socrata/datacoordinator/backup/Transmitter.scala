@@ -15,7 +15,7 @@ import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.common.soql.{SoQLTypeContext, SoQLRep, SoQLRowLogCodec}
 import com.socrata.datacoordinator.packets.network.{KeepaliveSetup, NetworkPackets}
 import com.socrata.datacoordinator.packets.{Packet, PacketsOutputStream, Packets}
-import com.socrata.datacoordinator.truth.metadata.sql.{PostgresBackupManifest, PostgresDatasetMapWriter, PostgresGlobalLogPlayback, PostgresDatasetMapReader}
+import com.socrata.datacoordinator.truth.metadata.sql._
 import com.socrata.datacoordinator.id.{GlobalLogEntryId, DatasetId}
 import annotation.tailrec
 import com.socrata.soql.types.{SoQLType, SoQLNull}
@@ -26,6 +26,8 @@ import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import util.control.ControlThrowable
 import scala.Some
 import com.socrata.datacoordinator.common.util.ByteCountingOutputStream
+import scala.Some
+import com.socrata.datacoordinator.truth.metadata.CopyInfo
 
 final abstract class Transmitter
 
@@ -66,8 +68,8 @@ object Transmitter extends App {
     while(true) {
       using(openConnection()) { conn =>
         val playback = new PostgresGlobalLogPlayback(conn)
-        val backupMfst = new PostgresBackupManifest(conn)
-        val lastJob = backupMfst.lastJob()
+        val backupMfst = new PostgresBackupPlaybackManifest(conn)
+        val lastJob = backupMfst.lastJobId()
         val tasks = playback.pendingJobs(lastJob).buffered
         if(tasks.nonEmpty) {
           send(client, conn, lastJob, backupMfst, tasks)
@@ -87,7 +89,7 @@ object Transmitter extends App {
     }
   }
 
-  def send(socket: Packets, conn: Connection, initialLastJobId: GlobalLogEntryId, backupMfst: BackupManifest, tasks: TraversableOnce[GlobalLogPlayback#Job]) {
+  def send(socket: Packets, conn: Connection, initialLastJobId: GlobalLogEntryId, backupMfst: PlaybackManifest, tasks: TraversableOnce[GlobalLogPlayback#Job]) {
     var lastJobId = initialLastJobId
     for(job <- tasks) {
       assert(job.id.underlying == lastJobId.underlying + 1, "MISSING JOBS IN GLOBAL QUEUE!!!!")

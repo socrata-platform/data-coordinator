@@ -16,8 +16,8 @@ trait GlobalLogPlayback {
   def pendingJobs(aboveJob: GlobalLogEntryId): Iterator[Job]
 }
 
-trait BackupManifest {
-  def lastJob(): GlobalLogEntryId
+trait PlaybackManifest {
+  def lastJobId(): GlobalLogEntryId
   def finishedJob(job: GlobalLogEntryId)
 }
 

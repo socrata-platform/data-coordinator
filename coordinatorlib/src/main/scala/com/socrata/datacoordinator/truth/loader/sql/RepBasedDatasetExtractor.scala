@@ -13,6 +13,8 @@ import com.socrata.datacoordinator.id.ColumnId
 class RepBasedDatasetExtractor[CT, CV](conn: Connection, dataTableName: String, schema: ColumnIdMap[SqlColumnReadRep[CT, CV]])
   extends DatasetExtractor[CV]
 {
+  require(!conn.getAutoCommit, "Connection must not be in auto-commit mode")
+
   val cids = schema.keys.map(_.underlying).toArray
   val reps = cids.map { cid => schema(new ColumnId(cid)) }
 

@@ -31,10 +31,10 @@ class PostgresGlobalLog(conn: Connection) extends GlobalLog {
     }
   }
 }
-class PostgresBackupManifest(conn: Connection) extends BackupManifest {
+class PostgresBackupPlaybackManifest(conn: Connection) extends PlaybackManifest {
   private val table = "last_id_sent_to_backup"
 
-  def lastJob(): GlobalLogEntryId = {
+  def lastJobId(): GlobalLogEntryId = {
     for {
       stmt <- managed(conn.createStatement())
       rs <- managed(stmt.executeQuery(s"SELECT MAX(id) from $table"))
@@ -58,7 +58,36 @@ class PostgresBackupManifest(conn: Connection) extends BackupManifest {
   }
 }
 
-class PostgresGlobalLogPlayback(conn: Connection, blockSize: Int = 500, forSecondaries: Set[String] = null) extends GlobalLogPlayback {
+class PostgresSecondaryPlaybackManifest(conn: Connection, secondaryId: String) extends PlaybackManifest {
+  private val table = "last_id_processed_for_secondaries"
+
+  def lastJobId(): GlobalLogEntryId = {
+    using(conn.prepareStatement(s"SELECT MAX(global_log_id) from $table WHERE secondary_id = ?")) { stmt =>
+      stmt.setString(1, secondaryId)
+      using(stmt.executeQuery()) { rs =>
+        rs.next()
+        new GlobalLogEntryId(rs.getLong(1))
+      }
+    }
+  }
+
+  def finishedJob(job: GlobalLogEntryId) {
+    val updateCount = using(conn.prepareStatement(s"UPDATE $table SET global_log_id = ? WHERE secondary_id = ?")) { stmt =>
+      stmt.setLong(1, job.underlying)
+      stmt.setString(2, secondaryId)
+      stmt.executeUpdate()
+    }
+    if(updateCount == 0) {
+      using(conn.prepareStatement(s"INSERT INTO $table (secondary_id, global_log_id) VALUES (?,?)")) { stmt =>
+        stmt.setString(1, secondaryId)
+        stmt.setLong(2, job.underlying)
+        stmt.execute()
+      }
+    }
+  }
+}
+
+class PostgresGlobalLogPlayback(conn: Connection, blockSize: Int = 500) extends GlobalLogPlayback {
   def pendingJobs(aboveJob: GlobalLogEntryId): Iterator[Job] = {
     def loop(lastBlock: Vector[Job]): Stream[Vector[Job]] = {
       if(lastBlock.isEmpty) Stream.empty

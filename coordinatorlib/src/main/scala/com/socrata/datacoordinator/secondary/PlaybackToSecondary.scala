@@ -20,6 +20,8 @@ import com.socrata.datacoordinator.truth.sql.SqlColumnReadRep
 import org.slf4j.LoggerFactory
 
 class PlaybackToSecondary[CT, CV](conn: Connection, secondaryManifest: SecondaryManifest, repFor: ColumnInfo => SqlColumnReadRep[CT, CV]) {
+  require(!conn.getAutoCommit, "Connection must not be in auto-commit mode")
+
   val log = LoggerFactory.getLogger(classOf[PlaybackToSecondary[_,_]])
   val datasetMapReader = new PostgresDatasetMapReader(conn)
 
@@ -162,7 +164,7 @@ class PlaybackToSecondary[CT, CV](conn: Connection, secondaryManifest: Secondary
                   inWorkingCopy = true
                   playback(secondary, datasetInfo, v, Iterator.empty, currentCookie)
                 } else {
-                  playback(secondary, datasetInfo, v, Iterator.empty, currentCookie)
+                  playback(secondary, datasetInfo, v, it, currentCookie)
                 }
               }
             }

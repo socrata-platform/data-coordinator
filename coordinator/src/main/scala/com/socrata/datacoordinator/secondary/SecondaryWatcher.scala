@@ -4,13 +4,12 @@ import scala.concurrent.duration._
 import javax.sql.DataSource
 
 import com.rojoma.simplearm.util._
-import com.socrata.datacoordinator.truth.metadata.sql.{PostgresDatasetMapReader, PostgresGlobalLogPlayback}
-import com.socrata.datacoordinator.secondary.sql.SqlSecondaryManifest
+import com.socrata.datacoordinator.truth.metadata.sql.{PostgresSecondaryPlaybackManifest, PostgresDatasetMapReader, PostgresGlobalLogPlayback}
+import com.socrata.datacoordinator.secondary.sql.{SqlSecondaryConfig, SqlSecondaryManifest}
 import com.socrata.datacoordinator.truth.sql.SqlColumnReadRep
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.loader.sql.SqlDelogger
 import com.socrata.datacoordinator.truth.RowLogCodec
-import scala.concurrent.duration.Duration
 import com.typesafe.config.ConfigFactory
 import com.socrata.datacoordinator.common.DataSourceFromConfig
 import java.io.File
@@ -19,48 +18,76 @@ import com.socrata.soql.types.SoQLType
 import com.socrata.soql.environment.TypeName
 import org.slf4j.LoggerFactory
 import sun.misc.{Signal, SignalHandler}
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.{TimeUnit, CountDownLatch}
+import org.joda.time.{DateTime, Seconds}
+import com.socrata.datacoordinator.id.DatasetId
 
 class SecondaryWatcher[CT, CV](ds: DataSource, repFor: ColumnInfo => SqlColumnReadRep[CT, CV], codecFactory: () => RowLogCodec[CV]) {
   import SecondaryWatcher.log
 
-  def run(secondaries: Map[String, Secondary[CV]]) {
+  def run(secondary: NamedSecondary[CV]) {
     using(ds.getConnection()) { conn =>
-      /*
       conn.setAutoCommit(false)
-      val globalLog = new PostgresGlobalLogPlayback(conn, forSecondaries = secondaries.keySet)
+      val globalLog = new PostgresGlobalLogPlayback(conn)
+      val playbackMfst = new PostgresSecondaryPlaybackManifest(conn, secondary.storeId)
       val secondaryManifest = new SqlSecondaryManifest(conn)
       val pb = new PlaybackToSecondary(conn, secondaryManifest, repFor)
       val dsmr = new PostgresDatasetMapReader(conn)
-      for(job <- globalLog.pendingJobs()) {
-        dsmr.datasetInfo(job.datasetId) match {
-          case Some(datasetInfo) =>
-            for {
-              store <- secondaryManifest.stores(job.datasetId).keys
-              secondary <- secondaries.get(store)
-            } {
-              log.info("Syncing {} (#{}) into {}", Array[AnyRef](datasetInfo.datasetName, job.datasetId.underlying.asInstanceOf[AnyRef], store))
+      var lastJobId = playbackMfst.lastJobId()
+      val datasetsInStore = secondaryManifest.datasets(secondary.storeId)
+      for(job <- globalLog.pendingJobs(lastJobId)) {
+        assert(lastJobId.underlying + 1 == job.id.underlying, "Missing backup ID in global log??")
+        lastJobId = job.id
+
+        if(datasetsInStore.contains(job.datasetId)) {
+          dsmr.datasetInfo(job.datasetId) match {
+            case Some(datasetInfo) =>
+              log.info("Syncing {} (#{}) into {}", datasetInfo.datasetName, job.datasetId.underlying.asInstanceOf[AnyRef], secondary.storeId)
               val delogger = new SqlDelogger(conn, datasetInfo.logTableName, codecFactory)
-              pb(job.datasetId, NamedSecondary(store, secondary), dsmr, delogger)
-            }
-          case None =>
-            for {
-              store <- secondaryManifest.stores(job.datasetId).keys
-              secondary <- secondaries.get(store)
-            } {
-              log.info("Dropping dataset #{} from {}", job.datasetId.underlying, store)
-              pb.drop(NamedSecondary(store, secondary), job.datasetId)
-            }
+              pb(job.datasetId, secondary, dsmr, delogger)
+            case None =>
+              log.info("Dropping dataset #{} from {}", job.datasetId.underlying, secondary.storeId)
+              pb.drop(secondary, job.datasetId)
+              secondaryManifest.dropDataset(secondary.storeId, job.datasetId)
+          }
         }
-        globalLog.finishedJob(job)
+        playbackMfst.finishedJob(job.id)
         conn.commit()
       }
-    */
     }
   }
 
-  def updateSecondaries(secondaries: Set[String]) {
-    using(ds.getConnection()) { conn =>
+  private def maybeSleep(storeId: String, nextRunTime: DateTime, finished: CountDownLatch): Boolean = {
+    val remainingTime = nextRunTime.getMillis - System.currentTimeMillis()
+    if(remainingTime <= 0) log.warn("{} is behind schedule {}ms", storeId, remainingTime.abs)
+    finished.await(remainingTime, TimeUnit.MILLISECONDS)
+  }
+
+  def mainloop(secondaryConfigInfo: SecondaryConfigInfo, secondary: Secondary[CV], finished: CountDownLatch) {
+    var lastWrote = new DateTime(0L)
+    var nextRunTime = secondaryConfigInfo.nextRunTime
+    if(nextRunTime.compareTo(DateTime.now()) < 0) nextRunTime = DateTime.now()
+
+    var done = maybeSleep(secondaryConfigInfo.storeId, nextRunTime, finished)
+    while(!done) {
+      run(new NamedSecondary(secondaryConfigInfo.storeId, secondary))
+
+      nextRunTime = nextRunTime.plus(Seconds.seconds(secondaryConfigInfo.runIntervalSeconds))
+
+      // we only actually write at most once every 15 minutes...
+      val now = DateTime.now()
+      if(now.getMillis - lastWrote.getMillis >= 15 * 60 * 1000) {
+        log.info("Writing new next-runtime")
+        using(ds.getConnection()) { conn =>
+          conn.setAutoCommit(false)
+          val cfg = new SqlSecondaryConfig(conn)
+          cfg.updateNextRunTime(secondaryConfigInfo.storeId, nextRunTime)
+          conn.commit()
+        }
+        lastWrote = now
+      }
+
+      done = maybeSleep(secondaryConfigInfo.storeId, nextRunTime, finished)
     }
   }
 }
@@ -83,13 +110,13 @@ object SecondaryWatcher extends App {
   val SIGTERM = new Signal("TERM")
   val SIGINT = new Signal("INT")
 
-  val signalled = new AtomicBoolean(false)
+  val finished = new CountDownLatch(1)
 
   val signalHandler = new SignalHandler {
     val firstSignal = new java.util.concurrent.atomic.AtomicBoolean(true)
     def handle(signal: Signal) {
-      if(signalled.getAndSet(true)) log.info("Shutdown already in progress")
-      else log.info("Signalling main thread to shut down")
+      log.info("Signalling shutdown")
+      finished.countDown()
     }
   }
 
@@ -100,11 +127,33 @@ object SecondaryWatcher extends App {
     oldSIGTERM = Signal.handle(SIGTERM, signalHandler)
     oldSIGINT = Signal.handle(SIGINT, signalHandler)
 
-    while(!signalled.get()) {
-      log.trace("Tick")
-      w.run(secondaries)
-      Thread.sleep(pause.toMillis)
-    }
+    val threads =
+      using(dataSource.getConnection()) { conn =>
+        val cfg = new SqlSecondaryConfig(conn)
+
+        secondaries.iterator.flatMap { case (name, secondary) =>
+          cfg.lookup(name).map { info =>
+            new Thread {
+              setName("Worker for secondary " + name)
+
+              override def run() {
+                w.mainloop(info, secondary, finished)
+              }
+            }
+          }.orElse {
+            log.warn("Secondary {} is defined, but there is no record in the secondary config table", name)
+            None
+          }
+        }.toList
+      }
+
+    threads.foreach(_.start())
+
+    log.info("Going to sleep...")
+    finished.await()
+
+    log.info("Waiting for threads to stop...")
+    threads.foreach(_.join())
   } finally {
     log.info("Un-hooking SIGTERM and SIGINT")
     if(oldSIGTERM != null) Signal.handle(SIGTERM, oldSIGTERM)
