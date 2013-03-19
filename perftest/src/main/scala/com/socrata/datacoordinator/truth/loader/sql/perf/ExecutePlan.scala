@@ -185,7 +185,7 @@ object ExecutePlan {
 
           val start = System.nanoTime()
           val report = for {
-            dataLogger <- managed(new SqlLogger(conn, logTableName, () => new PerfRowCodec))
+            dataLogger <- managed(new SqlLogger(conn, logTableName, () => new PerfRowCodec, NoopTimingReport))
             idProvider <- idProviderPool.borrow()
             txn <- managed(SqlLoader(conn, rowPreparer, sqlizer, dataLogger, idProvider, executor, NoopTimingReport))
           } yield {

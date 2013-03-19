@@ -68,5 +68,5 @@ trait PostgresDataContext extends SqlDataWritingContext with SqlDataReadingConte
     new PostgresDatabaseReader[CT, CV](dataSource, mapReaderFactory, sqlRepForColumn)
 
   final lazy val databaseMutator: LowLevelDatabaseMutator[CV] =
-    new PostgresDatabaseMutator(dataSource, sqlRepForColumn, newRowLogCodec, mapWriterFactory, globalLogFactory, loaderFactory, tablespace)
+    new PostgresDatabaseMutator(dataSource, sqlRepForColumn, newRowLogCodec, mapWriterFactory, globalLogFactory, loaderFactory, tablespace, timingReport)
 }

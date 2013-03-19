@@ -9,7 +9,7 @@ import java.sql.{PreparedStatement, Connection}
 import com.rojoma.json.util.JsonUtil
 import com.rojoma.simplearm.util._
 
-import com.socrata.datacoordinator.util.Counter
+import com.socrata.datacoordinator.util.{TimingReport, Counter}
 import com.socrata.datacoordinator.truth.RowLogCodec
 import com.socrata.datacoordinator.truth.metadata.{CopyInfo, ColumnInfo}
 import com.socrata.datacoordinator.id.RowId
@@ -17,21 +17,24 @@ import com.socrata.datacoordinator.id.RowId
 class SqlLogger[CV](connection: Connection,
                     logTableName: String,
                     rowCodecFactory: () => RowLogCodec[CV],
+                    timingReport: TimingReport,
                     rowFlushSize: Int = 128000,
                     batchFlushSize: Int = 2000000)
   extends Logger[CV]
 {
   import SqlLogger.log
 
-  lazy val versionNum = for {
-    stmt <- managed(connection.createStatement())
-    rs <- managed(stmt.executeQuery("SELECT MAX(version) FROM " + logTableName))
-  } yield {
-    val hasNext = rs.next()
-    assert(hasNext, "next version query didn't return anything?")
-    // MAX(version) will be null if there is no data in the log table;
-    // ResultSet#getLong returns 0 if the value was null.
-    rs.getLong(1) + 1
+  lazy val versionNum = timingReport("version-num", "log-table" -> logTableName) {
+    for {
+      stmt <- managed(connection.createStatement())
+      rs <- managed(stmt.executeQuery("SELECT MAX(version) FROM " + logTableName))
+    } yield {
+      val hasNext = rs.next()
+      assert(hasNext, "next version query didn't return anything?")
+      // MAX(version) will be null if there is no data in the log table;
+      // ResultSet#getLong returns 0 if the value was null.
+      rs.getLong(1) + 1
+    }
   }
 
   val nullBytes = Codec.toUTF8("null")
@@ -71,12 +74,14 @@ class SqlLogger[CV](connection: Connection,
 
   def flushBatch() {
     if(batched != 0) {
-      log.debug("Flushing {} log rows", batched)
+      timingReport("flush-log-batch", "count" -> batched) {
+        log.debug("Flushing {} log rows", batched)
 
-      batched = 0
-      totalSize = 0
+        batched = 0
+        totalSize = 0
 
-      insertStmt.executeBatch()
+        insertStmt.executeBatch()
+      }
     }
   }
 

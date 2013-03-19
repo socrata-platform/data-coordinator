@@ -12,13 +12,18 @@ object NoopTimingReport extends TimingReport {
 }
 
 trait StackedTimingReport extends TimingReport {
-  private val stackLocal = new DynamicVariable[List[String]](Nil)
+  private val stackLocal = new ThreadLocal[List[String]] {
+    override def initialValue = Nil
+  }
 
-  def stack = stackLocal.value
+  def stack = stackLocal.get
 
   abstract override def apply[T](name: String, kv: (String, Any)*)(f: => T): T = {
-    stackLocal.withValue(name :: stack) {
+    stackLocal.set(name :: stack)
+    try {
       super.apply(stack.reverse.mkString("/"), kv: _*)(f)
+    } finally {
+      stackLocal.set(stack.tail)
     }
   }
 }

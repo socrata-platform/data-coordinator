@@ -18,6 +18,7 @@ import com.socrata.datacoordinator.id.{DatasetId, RowId}
 import com.socrata.id.numeric.IdProvider
 import com.rojoma.simplearm.SimpleArm
 import scala.concurrent.duration.Duration
+import com.socrata.datacoordinator.util.TimingReport
 
 // Does this need to be *Postgres*, or is all postgres-specific stuff encapsulated in its paramters?
 class PostgresDatabaseMutator[CT, CV](dataSource: DataSource,
@@ -27,6 +28,7 @@ class PostgresDatabaseMutator[CT, CV](dataSource: DataSource,
                                       globalLogFactory: Connection => GlobalLog,
                                       loaderFactory: (Connection, DateTime, CopyInfo, ColumnIdMap[ColumnInfo], IdProvider, Logger[CV]) => Loader[CV],
                                       tablespace: String => Option[String],
+                                      timingReport: TimingReport,
                                       rowFlushSize: Int = 128000,
                                       batchFlushSize: Int = 2000000)
   extends LowLevelDatabaseMutator[CV]
@@ -52,7 +54,7 @@ class PostgresDatabaseMutator[CT, CV](dataSource: DataSource,
     }
 
     def logger(datasetInfo: DatasetInfo): Logger[CV] =
-      new SqlLogger(conn, datasetInfo.logTableName, rowCodecFactory, rowFlushSize, batchFlushSize)
+      new SqlLogger(conn, datasetInfo.logTableName, rowCodecFactory, timingReport, rowFlushSize, batchFlushSize)
 
     def schemaLoader(logger: Logger[CV]): SchemaLoader =
       new RepBasedSqlSchemaLoader(conn, logger, repForColumn, tablespace)
