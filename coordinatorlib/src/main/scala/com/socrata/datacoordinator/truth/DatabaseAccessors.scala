@@ -120,7 +120,7 @@ trait DatasetMutator[CV] {
   def dropCopy(as: String)(datasetName: String): Managed[Option[MutationContext]]
 }
 
-object MonadicDatasetMutator {
+object DatasetMutator {
   private class Impl[CV](val databaseMutator: LowLevelDatabaseMutator[CV], lock: DatasetLock, lockTimeout: Duration) extends DatasetMutator[CV] {
     class S(var copyInfo: CopyInfo, var schema: ColumnIdMap[ColumnInfo], val schemaLoader: SchemaLoader, val logger: Logger[CV], llCtx: databaseMutator.MutationContext) extends MutationContext {
       def now = llCtx.now

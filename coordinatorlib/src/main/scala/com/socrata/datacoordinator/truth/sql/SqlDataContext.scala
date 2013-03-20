@@ -39,7 +39,7 @@ trait SqlDataWritingContext extends SqlDataTypeContext with DataWritingContext {
 
   val databaseMutator: LowLevelDatabaseMutator[CV]
 
-  final lazy val datasetMutator = MonadicDatasetMutator(databaseMutator, datasetLock, datasetLockTimeout)
+  final lazy val datasetMutator = DatasetMutator(databaseMutator, datasetLock, datasetLockTimeout)
 }
 
 trait SqlDataReadingContext extends SqlDataTypeContext with DataReadingContext {
