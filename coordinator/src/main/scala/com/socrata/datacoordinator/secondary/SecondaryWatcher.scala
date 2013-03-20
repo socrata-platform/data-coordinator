@@ -104,7 +104,7 @@ object SecondaryWatcher extends App { self =>
 
   object SoQLTypeInfo extends TypeInfo[SoQLType, Any] {
     def repFor(ci: ColumnInfo) =
-      SoQLRep.sqlRepFactories(SoQLType.typesByName(TypeName(ci.typeName)))(ci.physicalColumnBaseBase)
+      SoQLRep.sqlRepFactories(SoQLType.typesByName(TypeName(ci.typeName)))(ci.physicalColumnBase)
 
     def newRowCodec() = SoQLRowLogCodec
   }
