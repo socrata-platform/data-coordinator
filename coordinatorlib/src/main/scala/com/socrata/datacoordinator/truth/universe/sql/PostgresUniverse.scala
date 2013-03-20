@@ -3,8 +3,6 @@ package sql
 
 import java.sql.Connection
 
-import com.rojoma.simplearm.util._
-
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth.sql.SqlColumnRep
 import com.socrata.datacoordinator.truth.RowLogCodec

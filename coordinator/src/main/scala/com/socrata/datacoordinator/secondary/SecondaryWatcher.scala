@@ -21,7 +21,7 @@ import com.socrata.datacoordinator.truth.universe._
 import java.sql.Connection
 import com.socrata.datacoordinator.truth.universe.sql.{TypeInfo, PostgresUniverse}
 
-class SecondaryWatcher[CT, CV](universe: => Managed[Universe[CT, CV] with DatasetMapReaderProvider with GlobalLogPlaybackProvider with SecondaryManifestProvider with SecondaryPlaybackManifestProvider with PlaybackToSecondaryProvider with DeloggerProvider with SecondaryConfigProvider]) {
+class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseType[CT, CV]]) {
   import SecondaryWatcher.log
 
   def run(u: Universe[CT, CV] with DatasetMapReaderProvider with GlobalLogPlaybackProvider with SecondaryManifestProvider with SecondaryPlaybackManifestProvider with PlaybackToSecondaryProvider with DeloggerProvider, secondary: NamedSecondary[CV]) {
@@ -89,6 +89,8 @@ class SecondaryWatcher[CT, CV](universe: => Managed[Universe[CT, CV] with Datase
 
 object SecondaryWatcher extends App { self =>
   val log = LoggerFactory.getLogger(classOf[SecondaryWatcher[_,_]])
+
+  type UniverseType[CT, CV] = Universe[CT, CV] with DatasetMapReaderProvider with GlobalLogPlaybackProvider with SecondaryManifestProvider with SecondaryPlaybackManifestProvider with PlaybackToSecondaryProvider with DeloggerProvider with SecondaryConfigProvider
 
   val timingReport = new LoggedTimingReport(log) with StackedTimingReport
 
