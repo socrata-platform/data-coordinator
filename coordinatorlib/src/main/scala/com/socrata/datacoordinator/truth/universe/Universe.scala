@@ -1,0 +1,115 @@
+package com.socrata.datacoordinator.truth.universe
+
+import com.rojoma.simplearm.Managed
+
+import com.socrata.datacoordinator.truth.loader._
+import com.socrata.datacoordinator.truth.metadata.{PlaybackManifest, GlobalLogPlayback, DatasetMapWriter, DatasetMapReader}
+import com.socrata.datacoordinator.truth._
+import com.socrata.datacoordinator.util.TimingReport
+import com.socrata.datacoordinator.secondary.{SecondaryConfig, PlaybackToSecondary, SecondaryManifest}
+
+// Not sure I'll need all of these!  Certainly not all of them are implemented.
+// The idea behind these traits is that they encapsulate "things which need a Connection".
+// In order to hide the Connection from user code, they will all live in a single joined-up
+// object.  In order to allow fine-grained access, client code can specify exactly which
+// bits they want.  In theory there will be only one concrete implementing class at runtime,
+// so hotspot ought to be able to resolve all these calls to non-virtual direct calls...
+
+trait TypeUniverse {
+  type CT
+  type CV
+}
+
+/**
+ * This both provides generic utility stuff and acts as a anchor-point
+ * for the type system to match up `CT`/`CV` with other systems' `CT`/`CV`.
+ * The general pattern will be to take a `Managed[Universe[A,B] with This with That with TheOther]`
+ * and then access it like
+ *     for { u <- universe } yield {
+ *       import u._
+ *       // ...use the various methods of the individual traits...
+ *     }
+ * Possibly some sub-calls would be passed `u` directly.
+ */
+trait Universe[ColumnType, ColumnValue] extends TypeUniverse {
+  type CT = ColumnType
+  type CV = ColumnValue
+  def commit() // may be a no-op if the universe is non-transactional
+  val timingReport: TimingReport
+}
+
+trait LoggerProvider { this: TypeUniverse =>
+  val logger: Logger[CV]
+}
+
+trait DeloggerProvider { this: TypeUniverse =>
+  def delogger(logTableName: String): Delogger[CV]
+}
+
+trait PrevettedLoaderProvider { this: TypeUniverse =>
+  def prevettedLoader: Managed[PrevettedLoader[CV]]
+}
+
+trait LoaderProvider { this: TypeUniverse =>
+  def loader: Managed[Loader[CV]]
+}
+
+trait SchemaLoaderProvider {
+  val schemaLoaderProvider: SchemaLoader
+}
+
+trait DatasetMapReaderProvider {
+  val datasetMapReader: DatasetMapReader
+}
+
+trait DatasetMapWriterProvider {
+  val datasetMapWriter: DatasetMapWriter
+}
+
+trait RowLogCodecProvider { this: TypeUniverse =>
+  def newRowLogCodec(): RowLogCodec[CV]
+}
+
+trait RowPreparerProvider { this: TypeUniverse =>
+  val rowPreparer: RowPreparer[CV]
+}
+
+trait DatasetMutatorProvider { this: TypeUniverse =>
+  val datasetMutator: DatasetMutator[CV]
+}
+
+trait DatasetReaderProvider { this: TypeUniverse =>
+  val datasetReaderProvider: DatasetReader[CV]
+}
+
+trait LowLevelDatabaseReaderProvider { this: TypeUniverse =>
+  val lowLevelDatabaseReader: LowLevelDatabaseReader[CV]
+}
+
+trait DatasetLockProvider {
+  val datasetLock: DatasetLock
+}
+
+trait TypeContextProvider { this: TypeUniverse =>
+  val typeContext: TypeContext[CT, CV]
+}
+
+trait GlobalLogPlaybackProvider {
+  val globalLogPlayback: GlobalLogPlayback
+}
+
+trait SecondaryManifestProvider {
+  val secondaryManifest: SecondaryManifest
+}
+
+trait SecondaryPlaybackManifestProvider {
+  def secondaryPlaybackManifest(storeId: String): PlaybackManifest
+}
+
+trait PlaybackToSecondaryProvider { this: TypeUniverse =>
+  val playbackToSecondary: PlaybackToSecondary[CT, CV]
+}
+
+trait SecondaryConfigProvider {
+  val secondaryConfig: SecondaryConfig
+}
