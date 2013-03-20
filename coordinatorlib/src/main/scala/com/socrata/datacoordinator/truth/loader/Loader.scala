@@ -5,6 +5,7 @@ import scala.{collection => sc}
 
 import java.io.Closeable
 import com.socrata.datacoordinator.util.collection.ColumnIdSet
+import com.socrata.datacoordinator.util.RowIdProvider
 
 trait Loader[CV] extends Closeable {
   def upsert(row: Row[CV])
@@ -20,6 +21,8 @@ trait Loader[CV] extends Closeable {
     *       transaction MUST be rolled back.
     */
   def report: Report[CV]
+
+  val idProvider: RowIdProvider
 }
 
 /** A report is a collection of maps that inform the caller what

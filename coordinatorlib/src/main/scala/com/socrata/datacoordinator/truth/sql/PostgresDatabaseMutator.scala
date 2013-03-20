@@ -19,30 +19,20 @@ import com.socrata.id.numeric.IdProvider
 import com.rojoma.simplearm.SimpleArm
 import scala.concurrent.duration.Duration
 import com.socrata.datacoordinator.util.TimingReport
+import com.socrata.datacoordinator.truth.universe._
+import com.socrata.datacoordinator.truth.metadata.ColumnInfo
+import com.socrata.datacoordinator.truth.metadata.DatasetInfo
+import com.socrata.datacoordinator.truth.metadata.CopyInfo
 
 // Does this need to be *Postgres*, or is all postgres-specific stuff encapsulated in its paramters?
-class PostgresDatabaseMutator[CT, CV](dataSource: DataSource,
-                                      repForColumn: ColumnInfo => SqlColumnRep[CT, CV],
-                                      rowCodecFactory: () => RowLogCodec[CV],
-                                      mapWriterFactory: Connection => DatasetMapWriter,
-                                      globalLogFactory: Connection => GlobalLog,
-                                      loaderFactory: (Connection, DateTime, CopyInfo, ColumnIdMap[ColumnInfo], IdProvider, Logger[CV]) => Loader[CV],
-                                      tablespace: String => Option[String],
-                                      timingReport: TimingReport,
-                                      rowFlushSize: Int = 128000,
-                                      batchFlushSize: Int = 2000000)
+// Actually does this need to be in the sql package at all now that Universe exists?
+class PostgresDatabaseMutator[CT, CV](universe: Managed[Universe[CT, CV] with LoggerProvider with SchemaLoaderProvider with LoaderProvider with DatasetContentsCopierProvider with DatasetMapWriterProvider with GlobalLogProvider])
   extends LowLevelDatabaseMutator[CV]
 {
-  type LoaderProvider = (CopyInfo, ColumnIdMap[ColumnInfo], RowPreparer[CV], IdProvider, Logger[CV], ColumnInfo => SqlColumnRep[CT, CV]) => Loader[CV]
+  // type LoaderProvider = (CopyInfo, ColumnIdMap[ColumnInfo], RowPreparer[CV], IdProvider, Logger[CV], ColumnInfo => SqlColumnRep[CT, CV]) => Loader[CV]
 
-  private class S(val conn: Connection, val datasetMap: DatasetMapWriter, val globalLog: GlobalLog) extends MutationContext {
-    lazy val now = for {
-      stmt <- managed(conn.createStatement())
-      rs <- managed(stmt.executeQuery("SELECT current_timestamp"))
-    } yield {
-      rs.next()
-      new DateTime(rs.getTimestamp(1).getTime)
-    }
+  private class S(universe: Universe[CT, CV] with LoggerProvider with SchemaLoaderProvider with LoaderProvider with DatasetContentsCopierProvider with DatasetMapWriterProvider with GlobalLogProvider) extends MutationContext {
+    lazy val now = universe.transactionStart
 
     final def loadLatestVersionOfDataset(datasetId: DatasetId): Option[(CopyInfo, ColumnIdMap[ColumnInfo])] = {
       val map = datasetMap
@@ -54,37 +44,36 @@ class PostgresDatabaseMutator[CT, CV](dataSource: DataSource,
     }
 
     def logger(datasetInfo: DatasetInfo): Logger[CV] =
-      new SqlLogger(conn, datasetInfo.logTableName, rowCodecFactory, timingReport, rowFlushSize, batchFlushSize)
+      universe.logger(datasetInfo)
 
-    def schemaLoader(logger: Logger[CV]): SchemaLoader =
-      new RepBasedSqlSchemaLoader(conn, logger, repForColumn, tablespace)
+    def schemaLoader(datasetInfo: DatasetInfo): SchemaLoader =
+      universe.schemaLoader(datasetInfo)
 
-    def datasetContentsCopier(logger: Logger[CV]): DatasetContentsCopier =
-      new RepBasedSqlDatasetContentsCopier(conn, logger, repForColumn)
+    def datasetContentsCopier(datasetInfo: DatasetInfo): DatasetContentsCopier =
+      universe.datasetContentsCopier(datasetInfo)
 
-    def withDataLoader[A](table: CopyInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[CV])(f: (Loader[CV]) => A): (Report[CV], RowId, A) = {
-      val rowIdProvider = new com.socrata.datacoordinator.util.RowIdProvider(table.datasetInfo.nextRowId)
-      using(loaderFactory(conn, now, table, schema, rowIdProvider, logger)) { loader =>
+    def globalLog = universe.globalLog
+
+    def finishDatasetTransaction(username: String, copyInfo: CopyInfo) {
+      logger(copyInfo.datasetInfo).endTransaction() foreach { ver =>
+        datasetMap.updateDataVersion(copyInfo, ver)
+        globalLog.log(copyInfo.datasetInfo, ver, now, username)
+      }
+    }
+
+    def datasetMap = universe.datasetMapWriter
+
+    def withDataLoader[A](table: CopyInfo, schema: ColumnIdMap[ColumnInfo])(f: (Loader[CV]) => A): (Report[CV], RowId, A) = {
+      for(loader <- universe.loader(table, schema)) yield {
         val result = f(loader)
         val report = loader.report
-        (report, rowIdProvider.finish(), result)
+        (report, loader.idProvider.finish(), result)
       }
     }
   }
 
-  private def createInitialState(conn: Connection): S = {
-    val datasetMap = mapWriterFactory(conn)
-    val globalLog = globalLogFactory(conn)
-    new S(conn, datasetMap, globalLog)
-  }
-
   def openDatabase: Managed[MutationContext] = new SimpleArm[MutationContext] {
     def flatMap[A](f: MutationContext => A): A =
-      using(dataSource.getConnection()) { conn =>
-        conn.setAutoCommit(false)
-        val result = f(createInitialState(conn))
-        conn.commit()
-        result
-      }
+      for { u <- universe } yield f(new S(u))
   }
 }

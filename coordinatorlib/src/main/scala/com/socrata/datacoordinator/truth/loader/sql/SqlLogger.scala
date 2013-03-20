@@ -245,7 +245,10 @@ class SqlLogger[CV](connection: Connection,
   }
 
   def close() {
-    if(_insertStmt != null) _insertStmt.close()
+    if(_insertStmt != null) {
+      _insertStmt.close()
+      _insertStmt = null
+    }
   }
 }
 

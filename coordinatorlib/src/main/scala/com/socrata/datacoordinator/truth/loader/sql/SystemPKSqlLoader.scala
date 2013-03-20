@@ -12,9 +12,9 @@ import com.socrata.id.numeric.IdProvider
 
 import com.socrata.datacoordinator.util.collection.MutableRowIdMap
 import com.socrata.datacoordinator.id.RowId
-import com.socrata.datacoordinator.util.TimingReport
+import com.socrata.datacoordinator.util.{RowIdProvider, TimingReport}
 
-final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: DataSqlizer[CT, CV], _l: DataLogger[CV], _i: IdProvider, _e: Executor, _tr: TimingReport)
+final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: DataSqlizer[CT, CV], _l: DataLogger[CV], _i: RowIdProvider, _e: Executor, _tr: TimingReport)
   extends
 {
   // all these are early because they are all potential sources of exceptions, and I want all
@@ -82,7 +82,7 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
       case None => // insert
         checkNoSystemColumnsExceptId(row) match {
           case None =>
-            val systemId = new RowId(idProvider.allocate())
+            val systemId = idProvider.allocate()
             val insert = Insert(systemId, rowPreparer.prepareForInsert(row, systemId), job, sqlizer.sizeofInsert(row))
             jobs.get(systemId) match {
               case None =>

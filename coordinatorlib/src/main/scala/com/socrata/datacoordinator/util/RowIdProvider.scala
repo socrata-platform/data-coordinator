@@ -1,9 +1,8 @@
 package com.socrata.datacoordinator.util
 
-import com.socrata.id.numeric.IdProvider
 import com.socrata.datacoordinator.id.RowId
 
-class RowIdProvider(initial: RowId) extends IdProvider {
+class RowIdProvider(initial: RowId) {
   private var next = initial.underlying
   private var finished = false
 
@@ -11,7 +10,7 @@ class RowIdProvider(initial: RowId) extends IdProvider {
     if(finished) throw new IllegalStateException("Already finished")
     val result = next
     next += 1
-    result
+    new RowId(result)
   }
 
   def finish(): RowId = synchronized {

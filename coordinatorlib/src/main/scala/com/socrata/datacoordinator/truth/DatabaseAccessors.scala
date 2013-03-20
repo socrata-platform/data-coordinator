@@ -31,18 +31,13 @@ trait LowLevelDatabaseMutator[CV] {
     def now: DateTime
     def datasetMap: DatasetMapWriter
     def logger(info: DatasetInfo): Logger[CV]
-    def schemaLoader(logger: Logger[CV]): SchemaLoader
-    def datasetContentsCopier(logger: Logger[CV]): DatasetContentsCopier
-    def withDataLoader[A](table: CopyInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[CV])(f: Loader[CV] => A): (Report[CV], RowId, A)
+    def schemaLoader(info: DatasetInfo): SchemaLoader
+    def datasetContentsCopier(info: DatasetInfo): DatasetContentsCopier
+    def withDataLoader[A](table: CopyInfo, schema: ColumnIdMap[ColumnInfo])(f: Loader[CV] => A): (Report[CV], RowId, A)
 
     def globalLog: GlobalLog
 
-    final def finishDatasetTransaction(username: String, copyInfo: CopyInfo, logger: Logger[CV]) {
-      logger.endTransaction() foreach { ver =>
-        datasetMap.updateDataVersion(copyInfo, ver)
-        globalLog.log(copyInfo.datasetInfo, ver, now, username)
-      }
-    }
+    def finishDatasetTransaction(username: String, copyInfo: CopyInfo)
 
     def loadLatestVersionOfDataset(datasetId: DatasetId): Option[(CopyInfo, ColumnIdMap[ColumnInfo])]
   }
@@ -125,7 +120,7 @@ object DatasetMutator {
     class S(var copyInfo: CopyInfo, var schema: ColumnIdMap[ColumnInfo], val schemaLoader: SchemaLoader, val logger: Logger[CV], llCtx: databaseMutator.MutationContext) extends MutationContext {
       def now = llCtx.now
       def datasetMap = llCtx.datasetMap
-      def datasetContetsCopier = llCtx.datasetContentsCopier(logger)
+      def datasetContetsCopier = llCtx.datasetContentsCopier(copyInfo.datasetInfo)
 
       def addColumn(logicalName: String, typeName: String, physicalColumnBaseBase: String): ColumnInfo = {
         val newColumn = datasetMap.addColumn(copyInfo, logicalName, typeName, physicalColumnBaseBase)
@@ -163,7 +158,7 @@ object DatasetMutator {
         result
       }
 
-      def datasetContentsCopier = llCtx.datasetContentsCopier(logger)
+      def datasetContentsCopier = llCtx.datasetContentsCopier(copyInfo.datasetInfo)
 
       def makeWorkingCopy(copyData: Boolean): CopyInfo = {
         val dataCopier = if(copyData) Some(datasetContentsCopier) else None
@@ -217,7 +212,7 @@ object DatasetMutator {
       }
 
       def upsert(inputGenerator: Iterator[Either[CV, Row[CV]]]): Report[CV] = {
-        val (report, nextRowId, _) = llCtx.withDataLoader(copyInfo, schema, logger) { loader =>
+        val (report, nextRowId, _) = llCtx.withDataLoader(copyInfo, schema) { loader =>
           inputGenerator.foreach {
             case Right(row) => loader.upsert(row)
             case Left(id) => loader.delete(id)
@@ -244,12 +239,12 @@ object DatasetMutator {
             lock.withDatasetLock(datasetId, lockTimeout) {
               val ctx = llCtx.loadLatestVersionOfDataset(datasetId) map { case (initialCopy, initialSchema) =>
                 val logger = llCtx.logger(initialCopy.datasetInfo)
-                val schemaLoader = llCtx.schemaLoader(logger)
+                val schemaLoader = llCtx.schemaLoader(initialCopy.datasetInfo)
                 new S(initialCopy, initialSchema, schemaLoader, logger, llCtx)
               }
               val result = action(ctx)
               ctx.foreach { state =>
-                llCtx.finishDatasetTransaction(username, state.copyInfo, state.logger)
+                llCtx.finishDatasetTransaction(username, state.copyInfo)
               }
               result
             }
@@ -269,11 +264,11 @@ object DatasetMutator {
           val m = llCtx.datasetMap
           val firstVersion = m.create(datasetName, tableBaseBase)
           val logger = llCtx.logger(firstVersion.datasetInfo)
-          val schemaLoader = llCtx.schemaLoader(logger)
+          val schemaLoader = llCtx.schemaLoader(firstVersion.datasetInfo)
           schemaLoader.create(firstVersion)
           val state = new S(firstVersion, ColumnIdMap.empty, schemaLoader, logger, llCtx)
           val result = f(state)
-          llCtx.finishDatasetTransaction(as, state.copyInfo, logger)
+          llCtx.finishDatasetTransaction(as, state.copyInfo)
           result
         }
     }

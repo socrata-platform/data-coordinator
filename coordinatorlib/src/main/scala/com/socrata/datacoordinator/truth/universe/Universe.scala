@@ -3,10 +3,12 @@ package com.socrata.datacoordinator.truth.universe
 import com.rojoma.simplearm.Managed
 
 import com.socrata.datacoordinator.truth.loader._
-import com.socrata.datacoordinator.truth.metadata.{PlaybackManifest, GlobalLogPlayback, DatasetMapWriter, DatasetMapReader}
+import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth._
 import com.socrata.datacoordinator.util.TimingReport
 import com.socrata.datacoordinator.secondary.{SecondaryConfig, PlaybackToSecondary, SecondaryManifest}
+import com.socrata.datacoordinator.util.collection.ColumnIdMap
+import org.joda.time.DateTime
 
 // Not sure I'll need all of these!  Certainly not all of them are implemented.
 // The idea behind these traits is that they encapsulate "things which need a Connection".
@@ -45,14 +47,16 @@ trait Universe[ColumnType, ColumnValue] extends TypeUniverse {
   def commit()
 
   val timingReport: TimingReport
+
+  def transactionStart: DateTime
 }
 
 trait LoggerProvider { this: TypeUniverse =>
-  val logger: Logger[CV]
+  def logger(datasetInfo: DatasetInfo): Logger[CV]
 }
 
 trait DeloggerProvider { this: TypeUniverse =>
-  def delogger(logTableName: String): Delogger[CV]
+  def delogger(datasetInfo: DatasetInfo): Delogger[CV]
 }
 
 trait PrevettedLoaderProvider { this: TypeUniverse =>
@@ -60,11 +64,11 @@ trait PrevettedLoaderProvider { this: TypeUniverse =>
 }
 
 trait LoaderProvider { this: TypeUniverse =>
-  def loader: Managed[Loader[CV]]
+  def loader(copy: CopyInfo, schema: ColumnIdMap[ColumnInfo]): Managed[Loader[CV]]
 }
 
 trait SchemaLoaderProvider {
-  val schemaLoaderProvider: SchemaLoader
+  def schemaLoader(datasetInfo: DatasetInfo): SchemaLoader
 }
 
 trait DatasetMapReaderProvider {
@@ -121,4 +125,12 @@ trait PlaybackToSecondaryProvider { this: TypeUniverse =>
 
 trait SecondaryConfigProvider {
   val secondaryConfig: SecondaryConfig
+}
+
+trait DatasetContentsCopierProvider {
+  def datasetContentsCopier(datasetInfo: DatasetInfo): DatasetContentsCopier
+}
+
+trait GlobalLogProvider {
+  val globalLog: GlobalLog
 }

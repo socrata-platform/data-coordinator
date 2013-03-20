@@ -13,9 +13,9 @@ import com.socrata.id.numeric.IdProvider
 import com.socrata.datacoordinator.truth.RowUserIdMap
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.id.RowId
-import com.socrata.datacoordinator.util.TimingReport
+import com.socrata.datacoordinator.util.{RowIdProvider, TimingReport}
 
-final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: DataSqlizer[CT, CV], _l: DataLogger[CV], _i: IdProvider, _e: Executor, _tr: TimingReport)
+final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: DataSqlizer[CT, CV], _l: DataLogger[CV], _i: RowIdProvider, _e: Executor, _tr: TimingReport)
   extends
 {
   // all these are early because they are all potential sources of exceptions, and I want all
@@ -286,7 +286,7 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: Dat
           do {
             val op = inserts.get(i)
             assert(op.hasUpsertJob, "No upsert job?")
-            val sid = new RowId(idProvider.allocate())
+            val sid = idProvider.allocate()
             sids(i) = sid
             op.upsertedRow = rowPreparer.prepareForInsert(op.upsertedRow, sid)
             inserter.insert(op.upsertedRow)

@@ -41,7 +41,7 @@ class SecondaryWatcher[CT, CV](universe: => Managed[Universe[CT, CV] with Datase
         dsmr.datasetInfo(job.datasetId) match {
           case Some(datasetInfo) =>
             log.info("Syncing {} (#{}) into {}", datasetInfo.datasetName, job.datasetId.underlying.asInstanceOf[AnyRef], secondary.storeId)
-            pb(job.datasetId, secondary, dsmr, delogger(datasetInfo.logTableName))
+            pb(job.datasetId, secondary, dsmr, delogger(datasetInfo))
           case None =>
             log.info("Dropping dataset #{} from {}", job.datasetId.underlying, secondary.storeId)
             pb.drop(secondary, job.datasetId)
