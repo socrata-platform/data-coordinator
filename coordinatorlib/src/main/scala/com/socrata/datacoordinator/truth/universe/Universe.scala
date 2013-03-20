@@ -34,7 +34,16 @@ trait TypeUniverse {
 trait Universe[ColumnType, ColumnValue] extends TypeUniverse {
   type CT = ColumnType
   type CV = ColumnValue
-  def commit() // may be a no-op if the universe is non-transactional
+
+  /** Commit the current transaction, if this `Universe` is transactional.
+    * Otherwise, does nothing.
+    * @note If this `Universe` was received via the resource-management system,
+    *       that system is responsible for committing on normal completion of
+    *       the management block.  As a result, most code should not need to
+    *       explicitly call this method.
+    */
+  def commit()
+
   val timingReport: TimingReport
 }
 
