@@ -4,12 +4,8 @@ import scala.concurrent.duration._
 import com.rojoma.simplearm.{SimpleArm, Managed}
 
 import com.rojoma.simplearm.util._
-import com.socrata.datacoordinator.truth.metadata.sql.{PostgresSecondaryPlaybackManifest, PostgresDatasetMapReader, PostgresGlobalLogPlayback}
-import com.socrata.datacoordinator.secondary.sql.{SqlSecondaryConfig, SqlSecondaryManifest}
-import com.socrata.datacoordinator.truth.sql.{SqlColumnRep, SqlColumnReadRep}
-import com.socrata.datacoordinator.truth.metadata.{PlaybackManifest, DatasetMapReader, GlobalLogPlayback, ColumnInfo}
-import com.socrata.datacoordinator.truth.loader.sql.SqlDelogger
-import com.socrata.datacoordinator.truth.RowLogCodec
+import com.socrata.datacoordinator.secondary.sql.SqlSecondaryConfig
+import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.typesafe.config.ConfigFactory
 import com.socrata.datacoordinator.common.DataSourceFromConfig
 import java.io.File
@@ -22,8 +18,8 @@ import java.util.concurrent.{TimeUnit, CountDownLatch}
 import org.joda.time.{DateTime, Seconds}
 import com.socrata.datacoordinator.util.{StackedTimingReport, LoggedTimingReport, TimingReport}
 import com.socrata.datacoordinator.truth.universe._
-import com.socrata.datacoordinator.truth.loader.Delogger
 import java.sql.Connection
+import com.socrata.datacoordinator.truth.universe.sql.{TypeInfo, PostgresUniverse}
 
 class SecondaryWatcher[CT, CV](universe: => Managed[Universe[CT, CV] with DatasetMapReaderProvider with GlobalLogPlaybackProvider with SecondaryManifestProvider with SecondaryPlaybackManifestProvider with PlaybackToSecondaryProvider with DeloggerProvider with SecondaryConfigProvider]) {
   import SecondaryWatcher.log
@@ -104,50 +100,21 @@ object SecondaryWatcher extends App { self =>
 
   val pause = config.getMilliseconds("sleep-time").longValue.millis
 
-  trait TypeInfo { this: TypeUniverse =>
-    def repFor(ci: ColumnInfo): SqlColumnRep[CT, CV]
-    def newRowCodec(): RowLogCodec[CV]
-  }
-
-  abstract class LocalUniverse[ColumnType, ColumnValue](conn: Connection) extends Universe[ColumnType, ColumnValue] with TypeInfo with DatasetMapReaderProvider with GlobalLogPlaybackProvider with SecondaryManifestProvider with SecondaryPlaybackManifestProvider with PlaybackToSecondaryProvider with DeloggerProvider with SecondaryConfigProvider {
-    def commit() { conn.commit() }
-
-    def secondaryPlaybackManifest(storeId: String): PlaybackManifest =
-      new PostgresSecondaryPlaybackManifest(conn, storeId)
-
-    lazy val playbackToSecondary: PlaybackToSecondary[CT, CV] =
-      new PlaybackToSecondary(conn, secondaryManifest, repFor, timingReport)
-
-    def delogger(logTableName: String): Delogger[CV] =
-      new SqlDelogger(conn, logTableName, newRowCodec _)
-
-    lazy val secondaryManifest: SecondaryManifest =
-      new SqlSecondaryManifest(conn)
-
-    lazy val datasetMapReader: DatasetMapReader =
-      new PostgresDatasetMapReader(conn)
-
-    lazy val globalLogPlayback: GlobalLogPlayback =
-      new PostgresGlobalLogPlayback(conn)
-
-    lazy val timingReport: TimingReport =
-      self.timingReport
-
-    lazy val secondaryConfig =
-      new SqlSecondaryConfig(conn)
-  }
-
-  class SoQLUniverse(conn: Connection) extends LocalUniverse[SoQLType, Any](conn) with TypeInfo {
+  object SoQLTypeInfo extends TypeInfo[SoQLType, Any] {
     def repFor(ci: ColumnInfo) =
       SoQLRep.sqlRepFactories(SoQLType.typesByName(TypeName(ci.typeName)))(ci.physicalColumnBaseBase)
+
     def newRowCodec() = SoQLRowLogCodec
   }
+
+  type SoQLUniverse = PostgresUniverse[SoQLType, Any]
+  def soqlUniverse(conn: Connection, timingReport: TimingReport) = new SoQLUniverse(conn, SoQLTypeInfo, timingReport)
 
   val universe = new SimpleArm[SoQLUniverse] {
     def flatMap[B](f: SoQLUniverse => B): B = {
       using(dataSource.getConnection()) { conn =>
         conn.setAutoCommit(false)
-        val result = f(new SoQLUniverse(conn))
+        val result = f(soqlUniverse(conn, timingReport))
         conn.commit()
         result
       }
