@@ -4,7 +4,7 @@ import com.rojoma.json.codec.JsonCodec
 import com.rojoma.json.ast.{JValue, JNumber}
 
 class CopyId(val underlying: Long) extends AnyVal {
-  override def toString = s"VersionId($underlying)"
+  override def toString = s"CopyId($underlying)"
 }
 
 object CopyId {
