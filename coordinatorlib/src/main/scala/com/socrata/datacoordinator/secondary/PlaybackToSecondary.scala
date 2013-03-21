@@ -24,7 +24,7 @@ class PlaybackToSecondary[CT, CV](conn: Connection, secondaryManifest: Secondary
   require(!conn.getAutoCommit, "Connection must not be in auto-commit mode")
 
   val log = LoggerFactory.getLogger(classOf[PlaybackToSecondary[_,_]])
-  val datasetMapReader = new PostgresDatasetMapReader(conn)
+  val datasetMapReader = new PostgresDatasetMapReader(conn, timingReport)
 
   val datasetLock = NoopDatasetLock
   val datasetLockTimeout = Duration.Inf
@@ -62,7 +62,7 @@ class PlaybackToSecondary[CT, CV](conn: Connection, secondaryManifest: Secondary
   def resync(datasetId: DatasetId, secondary: NamedSecondary[CV], delogger: Delogger[CV]) {
     timingReport("resync", "dataset" -> datasetId) {
       datasetLock.withDatasetLock(datasetId, datasetLockTimeout) {
-        val w = new PostgresDatasetMapWriter(conn)
+        val w = new PostgresDatasetMapWriter(conn, timingReport)
         w.datasetInfo(datasetId) match {
           case Some(datasetInfo) =>
             val allCopies = w.allCopies(datasetInfo)

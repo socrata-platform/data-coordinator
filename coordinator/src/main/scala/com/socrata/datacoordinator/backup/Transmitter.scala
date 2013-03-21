@@ -28,6 +28,7 @@ import scala.Some
 import com.socrata.datacoordinator.common.util.ByteCountingOutputStream
 import scala.Some
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
+import com.socrata.datacoordinator.util.{NoopTimingReport, TimingReport}
 
 final abstract class Transmitter
 
@@ -58,6 +59,7 @@ object Transmitter extends App {
     SoQLRep.sqlRepFactories(typeContext.typeFromName(columnInfo.typeName))(columnInfo.physicalColumnBase)
   def repSchema(schema: ColumnIdMap[ColumnInfoLike]): ColumnIdMap[SqlColumnRep[SoQLType, Any]] =
     schema.mapValuesStrict(genericRepFor)
+  val timingReport = NoopTimingReport
 
   using(provider.openSocketChannel()) { socket =>
     connect(socket, address, connectTimeout)
@@ -72,7 +74,7 @@ object Transmitter extends App {
         val lastJob = backupMfst.lastJobId()
         val tasks = playback.pendingJobs(lastJob).buffered
         if(tasks.nonEmpty) {
-          send(client, conn, lastJob, backupMfst, tasks)
+          send(client, conn, lastJob, backupMfst, tasks, timingReport)
         } else {
           client.send(NothingYet())
           client.receive() match {
@@ -89,13 +91,13 @@ object Transmitter extends App {
     }
   }
 
-  def send(socket: Packets, conn: Connection, initialLastJobId: GlobalLogEntryId, backupMfst: PlaybackManifest, tasks: TraversableOnce[GlobalLogPlayback#Job]) {
+  def send(socket: Packets, conn: Connection, initialLastJobId: GlobalLogEntryId, backupMfst: PlaybackManifest, tasks: TraversableOnce[GlobalLogPlayback#Job], timingReport: TimingReport) {
     var lastJobId = initialLastJobId
     for(job <- tasks) {
       assert(job.id.underlying == lastJobId.underlying + 1, "MISSING JOBS IN GLOBAL QUEUE!!!!")
       lastJobId = job.id
 
-      val datasetMap = new PostgresDatasetMapReader(conn)
+      val datasetMap = new PostgresDatasetMapReader(conn, timingReport)
       log.info("Sending dataset {}'s version {}", job.datasetId.underlying, job.version)
       try {
         datasetMap.datasetInfo(job.datasetId) match {
@@ -180,7 +182,7 @@ object Transmitter extends App {
 
   def handleResyncRequest(client: Packets, conn: Connection, datasetId: DatasetId) {
     conn.setAutoCommit(false) // We'll be taking a lock and so we want transactions too
-    val datasetMap: DatasetMapWriter = new PostgresDatasetMapWriter(conn)
+    val datasetMap: DatasetMapWriter = new PostgresDatasetMapWriter(conn, timingReport)
     datasetMap.datasetInfo(datasetId) match {
       case Some(info) =>
         client.send(WillResync(info.unanchored))

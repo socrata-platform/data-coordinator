@@ -25,6 +25,7 @@ import util.control.ControlThrowable
 import scala.Some
 import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
+import com.socrata.datacoordinator.util.NoopTimingReport
 
 final abstract class Receiver
 
@@ -44,6 +45,7 @@ object Receiver extends App {
   val provider = SelectorProvider.provider
 
   val datasetMapLimits = StandardDatasetMapLimits
+  val timingReport = NoopTimingReport
 
   val codec = new LogDataCodec(() => SoQLRowLogCodec)
   val protocol = new Protocol(codec)
@@ -93,7 +95,7 @@ object Receiver extends App {
   def datasetUpdateRequested(datasetId: DatasetId, version: Long, client: Packets) {
     using(openConnection()) { conn =>
       conn.setAutoCommit(false)
-      val backup = new Backup(conn, executor, paranoid = true)
+      val backup = new Backup(conn, executor, timingReport, paranoid = true)
 
       try {
         backup.datasetMap.datasetInfo(datasetId) match {

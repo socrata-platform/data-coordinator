@@ -236,7 +236,7 @@ object Service extends App { self =>
     def versionInStore(storeId: String, datasetId: String): Option[Long] =
       using(dataSource.getConnection()) { conn =>
         val secondaryManifest = new SqlSecondaryManifest(conn)
-        val mapReader = new PostgresDatasetMapReader(conn)
+        val mapReader = new PostgresDatasetMapReader(conn, timingReport)
         for {
           systemId <- mapReader.datasetId(datasetId)
           result <- secondaryManifest.readLastDatasetInfo(storeId, systemId)
@@ -248,7 +248,7 @@ object Service extends App { self =>
         val secondaryManifest = new SqlSecondaryManifest(conn)
         val secondary = secondaries(storeId).asInstanceOf[Secondary[dataContext.CV]]
         val pb = new PlaybackToSecondary[dataContext.CT, dataContext.CV](conn, secondaryManifest, dataContext.sqlRepForColumn, timingReport)
-        val mapReader = new PostgresDatasetMapReader(conn)
+        val mapReader = new PostgresDatasetMapReader(conn, timingReport)
         for {
           systemId <- mapReader.datasetId(datasetId)
           datasetInfo <- mapReader.datasetInfo(systemId)

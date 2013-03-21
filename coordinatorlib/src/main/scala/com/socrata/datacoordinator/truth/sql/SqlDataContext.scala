@@ -65,7 +65,7 @@ trait PostgresDataContext extends SqlDataWritingContext with SqlDataReadingConte
     def copyIn(conn: Connection, sql: String, input: Reader) = self.copyIn(conn, sql, input)
   }
 
-  private def mapReaderFactory(conn: Connection) = new PostgresDatasetMapReader(conn)
+  private def mapReaderFactory(conn: Connection) = new PostgresDatasetMapReader(conn, timingReport)
 
   final lazy val databaseReader: LowLevelDatabaseReader[CV] =
     new PostgresDatabaseReader[CT, CV](dataSource, mapReaderFactory, sqlRepForColumn)
@@ -88,7 +88,7 @@ trait PostgresDataContext extends SqlDataWritingContext with SqlDataReadingConte
               new RepBasedSqlSchemaLoader(conn, logger(datasetInfo), sqlRepForColumn, tablespace)
 
             def datasetContentsCopier(datasetInfo: DatasetInfo): DatasetContentsCopier =
-              new RepBasedSqlDatasetContentsCopier(conn, logger(datasetInfo), sqlRepForColumn)
+              new RepBasedSqlDatasetContentsCopier(conn, logger(datasetInfo), sqlRepForColumn, timingReport)
 
             var loggerCache = Map.empty[String, Logger[CV]]
 
@@ -120,7 +120,7 @@ trait PostgresDataContext extends SqlDataWritingContext with SqlDataReadingConte
             val timingReport: TimingReport = self.timingReport
             var transactionStart: DateTime = DateTime.now()
             val globalLog: GlobalLog = new PostgresGlobalLog(conn)
-            val datasetMapWriter: DatasetMapWriter = new PostgresDatasetMapWriter(conn)
+            val datasetMapWriter: DatasetMapWriter = new PostgresDatasetMapWriter(conn, timingReport)
           }
 
           val result = f(universe)

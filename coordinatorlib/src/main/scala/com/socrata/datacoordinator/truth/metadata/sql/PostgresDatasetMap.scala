@@ -11,22 +11,24 @@ import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.truth.{DatasetSystemIdInUseByWriterException, DatasetIdInUseByWriterException}
 import com.socrata.datacoordinator.id._
-import com.socrata.datacoordinator.util.PostgresUniqueViolation
+import com.socrata.datacoordinator.util.{TimingReport, PostgresUniqueViolation}
 import com.socrata.datacoordinator.util.collection.MutableColumnIdMap
 import com.socrata.datacoordinator.truth.metadata.CopyPair
 import com.socrata.datacoordinator.truth.metadata.`-impl`.Tag
 
-class PostgresDatasetMapReader(val conn: Connection) extends DatasetMapReader {
+class PostgresDatasetMapReader(val conn: Connection, timingReport: TimingReport) extends DatasetMapReader {
   implicit def tag: Tag = null
 
   def lockNotAvailableState = "55P03"
+
+  protected def t = timingReport
 
   def snapshotCountQuery = "SELECT count(system_id) FROM copy_map WHERE dataset_system_id = ? AND lifecycle_stage = CAST(? AS dataset_lifecycle_stage)"
   def snapshotCount(dataset: DatasetInfo) =
     using(conn.prepareStatement(snapshotCountQuery)) { stmt =>
       stmt.setLong(1, dataset.systemId.underlying)
       stmt.setString(2, LifecycleStage.Snapshotted.name)
-      using(stmt.executeQuery()) { rs =>
+      using(t("shapshot-count", "dataset_id" -> dataset.systemId)(stmt.executeQuery())) { rs =>
         rs.next()
         rs.getInt(1)
       }
@@ -36,7 +38,7 @@ class PostgresDatasetMapReader(val conn: Connection) extends DatasetMapReader {
   def latest(datasetInfo: DatasetInfo) =
     using(conn.prepareStatement(latestQuery)) { stmt =>
       stmt.setLong(1, datasetInfo.systemId.underlying)
-      using(stmt.executeQuery()) { rs =>
+      using(t("latest-copy", "dataset_id" -> datasetInfo.systemId)(stmt.executeQuery())) { rs =>
         if(!rs.next()) sys.error("Looked up a table for " + datasetInfo.datasetName + " but didn't find any copy info?")
         CopyInfo(
           datasetInfo,
@@ -52,7 +54,7 @@ class PostgresDatasetMapReader(val conn: Connection) extends DatasetMapReader {
   def allCopies(datasetInfo: DatasetInfo): Vector[CopyInfo] =
     using(conn.prepareStatement(allCopiesQuery)) { stmt =>
       stmt.setLong(1, datasetInfo.systemId.underlying)
-      using(stmt.executeQuery()) { rs =>
+      using(t("all-copies", "dataset_id" -> datasetInfo.systemId)(stmt.executeQuery())) { rs =>
         val result = new VectorBuilder[CopyInfo]
         while(rs.next()) {
           result += CopyInfo(
@@ -73,7 +75,7 @@ class PostgresDatasetMapReader(val conn: Connection) extends DatasetMapReader {
       stmt.setLong(1, datasetInfo.systemId.underlying)
       stmt.setString(2, stage.name)
       stmt.setInt(3, nth)
-      using(stmt.executeQuery()) { rs =>
+      using(t("lookup-copy","dataset_id" -> datasetInfo.systemId,"lifecycle-stage"->stage,"n" -> nth)(stmt.executeQuery())) { rs =>
         if(rs.next()) {
           Some(CopyInfo(datasetInfo, new CopyId(rs.getLong("system_id")), rs.getLong("copy_number"), stage, rs.getLong("data_version")))
         } else {
@@ -88,7 +90,7 @@ class PostgresDatasetMapReader(val conn: Connection) extends DatasetMapReader {
     using(conn.prepareStatement(previousVersionQuery)) { stmt =>
       stmt.setLong(1, copyInfo.datasetInfo.systemId.underlying)
       stmt.setLong(2, copyInfo.copyNumber)
-      using(stmt.executeQuery()) { rs =>
+      using(t("previous-version","dataset_id" -> copyInfo.datasetInfo.systemId,"copy_num" -> copyInfo.copyNumber)(stmt.executeQuery())) { rs =>
         if(rs.next()) {
           Some(CopyInfo(
             copyInfo.datasetInfo,
@@ -108,7 +110,7 @@ class PostgresDatasetMapReader(val conn: Connection) extends DatasetMapReader {
     using(conn.prepareStatement(copyNumberQuery)) { stmt =>
       stmt.setLong(1, datasetInfo.systemId.underlying)
       stmt.setLong(2, copyNumber)
-      using(stmt.executeQuery()) { rs =>
+      using(t("copy-by-number", "dataset_id" -> datasetInfo.systemId, "copy_num" -> copyNumber)(stmt.executeQuery())) { rs =>
         if(rs.next()) {
           Some(CopyInfo(
             datasetInfo,
@@ -127,7 +129,7 @@ class PostgresDatasetMapReader(val conn: Connection) extends DatasetMapReader {
   def schema(copyInfo: CopyInfo) = {
     using(conn.prepareStatement(schemaQuery)) { stmt =>
       stmt.setLong(1, copyInfo.systemId.underlying)
-      using(stmt.executeQuery()) { rs =>
+      using(t("schema-lookup","dataset_id"->copyInfo.datasetInfo.systemId,"copy_num"->copyInfo.copyNumber)(stmt.executeQuery())) { rs =>
         val result = new MutableColumnIdMap[ColumnInfo]
         while(rs.next()) {
           val systemId = new ColumnId(rs.getLong("system_id"))
@@ -159,18 +161,9 @@ class PostgresDatasetMapReader(val conn: Connection) extends DatasetMapReader {
   def datasetId(datasetId: String) =
     using(conn.prepareStatement(datasetInfoByUserIdQuery)) { stmt =>
       stmt.setString(1, datasetId)
-      using(stmt.executeQuery()) { rs =>
+      using(t("dataset-id-by-name","name"->datasetId)(stmt.executeQuery())) { rs =>
         if(rs.next()) Some(new DatasetId(rs.getLong(1)))
         else None
-      }
-    }
-
-  def extractDatasetInfoFromResultSet(stmt: PreparedStatement) =
-    using(stmt.executeQuery) { rs =>
-      if(rs.next()) {
-        Some(DatasetInfo(new DatasetId(rs.getLong("system_id")), rs.getString("dataset_name"), rs.getString("table_base_base"), new RowId(rs.getLong("next_row_id"))))
-      } else {
-        None
       }
     }
 
@@ -179,7 +172,13 @@ class PostgresDatasetMapReader(val conn: Connection) extends DatasetMapReader {
     using(conn.prepareStatement(datasetInfoBySystemIdQuery)) { stmt =>
       stmt.setLong(1, datasetId.underlying)
       try {
-        extractDatasetInfoFromResultSet(stmt)
+        using(t("lookup-dataset", "dataset_id" -> datasetId)(stmt.executeQuery())) { rs =>
+          if(rs.next()) {
+            Some(DatasetInfo(new DatasetId(rs.getLong("system_id")), rs.getString("dataset_name"), rs.getString("table_base_base"), new RowId(rs.getLong("next_row_id"))))
+          } else {
+            None
+          }
+        }
       } catch {
         case e: PSQLException if e.getSQLState == lockNotAvailableState =>
           throw new DatasetSystemIdInUseByWriterException(datasetId, e)
@@ -188,7 +187,7 @@ class PostgresDatasetMapReader(val conn: Connection) extends DatasetMapReader {
   }
 }
 
-class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(_c) with DatasetMapWriter with BackupDatasetMap {
+class PostgresDatasetMapWriter(_c: Connection, _t: TimingReport) extends PostgresDatasetMapReader(_c, _t) with DatasetMapWriter with BackupDatasetMap {
   require(!conn.getAutoCommit, "Connection is in auto-commit mode")
 
   override def datasetInfoBySystemIdQuery = super.datasetInfoBySystemIdQuery + " FOR UPDATE NOWAIT"
@@ -202,7 +201,7 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
       stmt.setString(2, datasetInfoNoSystemId.tableBaseBase)
       stmt.setLong(3, datasetInfoNoSystemId.nextRowId.underlying)
       try {
-        using(stmt.executeQuery()) { rs =>
+        using(t("create-dataset", "dataset_name" -> datasetId)(stmt.executeQuery())) { rs =>
           val foundSomething = rs.next()
           assert(foundSomething, "INSERT didn't return a system id?")
           datasetInfoNoSystemId.copy(systemId = new DatasetId(rs.getLong(1)))
@@ -220,7 +219,7 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
       stmt.setLong(2, copyInfoNoSystemId.copyNumber)
       stmt.setString(3, copyInfoNoSystemId.lifecycleStage.name)
       stmt.setLong(4, copyInfoNoSystemId.dataVersion)
-      using(stmt.executeQuery()) { rs =>
+      using(t("create-initial-copy", "dataset_id" -> datasetInfo.systemId)(stmt.executeQuery())) { rs =>
         val foundSomething = rs.next()
         assert(foundSomething, "Didn't return a system ID?")
         copyInfoNoSystemId.copy(systemId = new CopyId(rs.getLong(1)))
@@ -241,7 +240,7 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
       stmt.setString(4, copyInfo.lifecycleStage.name)
       stmt.setLong(5, copyInfo.dataVersion)
       try {
-        stmt.execute()
+        t("create-create-copy-with-system-id", "dataset_id" -> systemId, "copy_id" -> initialCopyId)(stmt.execute())
       } catch {
         case PostgresUniqueViolation("system_id") =>
           throw new CopySystemIdAlreadyInUse(initialCopyId)
@@ -259,7 +258,7 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
     deleteCopiesOf(tableInfo)
     using(conn.prepareStatement(deleteQuery_tableMap)) { stmt =>
       stmt.setLong(1, tableInfo.systemId.underlying)
-      val count = stmt.executeUpdate()
+      val count = t("delete-dataset", "dataset_id" -> tableInfo.systemId)(stmt.executeUpdate())
       assert(count == 1, "Called delete on a table which is no longer there?")
     }
   }
@@ -267,11 +266,11 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
   def deleteCopiesOf(datasetInfo: DatasetInfo) {
     using(conn.prepareStatement(deleteQuery_columnMap)) { stmt =>
       stmt.setLong(1, datasetInfo.systemId.underlying)
-      stmt.executeUpdate()
+      t("delete-dataset-columns", "dataset_id" -> datasetInfo.systemId)(stmt.executeUpdate())
     }
     using(conn.prepareStatement(deleteQuery_copyMap)) { stmt =>
       stmt.setLong(1, datasetInfo.systemId.underlying)
-      stmt.executeUpdate()
+      t("delete-dataset-copies", "dataset_id" -> datasetInfo.systemId)(stmt.executeUpdate())
     }
   }
 
@@ -321,7 +320,7 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
       stmt.setLong(2, copyInfoB.systemId.underlying)
       stmt.setLong(3, copyInfoA.systemId.underlying)
       stmt.setLong(4, copyInfoB.systemId.underlying)
-      using(stmt.executeQuery()) { rs =>
+      using(t("find-first-free-column-id", "dataset_id" -> copyInfoA.datasetInfo.systemId, "copy_num_a" -> copyInfoA.copyNumber, "copy_num_b" -> copyInfoB.copyNumber)(stmt.executeQuery())) { rs =>
         val foundSomething = rs.next()
         assert(foundSomething, "Finding the last column info didn't return anything?")
         new ColumnId(rs.getLong("next_system_id"))
@@ -352,7 +351,7 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
       stmt.setString(4, typeName)
       stmt.setString(5, physicalColumnBaseBase)
       try {
-        stmt.execute()
+        t("add-column-with-id", "dataset_id" -> copyInfo.datasetInfo.systemId, "copy_num" -> copyInfo.copyNumber, "column_id" -> systemId)(stmt.execute())
       } catch {
         case PostgresUniqueViolation("copy_system_id", "system_id") =>
           throw new ColumnSystemIdAlreadyInUse(copyInfo, systemId)
@@ -374,6 +373,7 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
       stmt.setString(3, datasetInfo.tableBaseBase)
       stmt.setLong(4, datasetInfo.nextRowId.underlying)
       try {
+        t("unsafe-create-dataset", "dataset_id" -> systemId)(stmt.execute())
         stmt.execute()
       } catch {
         case PostgresUniqueViolation("system_id") =>
@@ -399,7 +399,7 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
       stmt.setLong(3, newDatasetInfo.nextRowId.underlying)
       stmt.setLong(4, newDatasetInfo.systemId.underlying)
       try {
-        val updated = stmt.executeUpdate()
+        val updated = t("unsafe-reload-dataset", "dataset_id" -> datasetInfo.systemId)(stmt.executeUpdate())
         assert(updated == 1, s"Dataset ${datasetInfo.systemId.underlying} does not exist?")
       } catch {
         case PostgresUniqueViolation("dataset_name") =>
@@ -427,7 +427,7 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
       stmt.setString(4, newCopy.lifecycleStage.name)
       stmt.setLong(5, newCopy.dataVersion)
       try {
-        stmt.execute()
+        t("unsafe-create-copy", "dataset_id" -> datasetInfo.systemId, "copy_num" -> copyNumber)(stmt.execute())
       } catch {
         case PostgresUniqueViolation("system_id") =>
           throw new CopySystemIdAlreadyInUse(systemId)
@@ -442,7 +442,7 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
     using(conn.prepareStatement(dropColumnQuery)) { stmt =>
       stmt.setLong(1, columnInfo.copyInfo.systemId.underlying)
       stmt.setLong(2, columnInfo.systemId.underlying)
-      val count = stmt.executeUpdate()
+      val count = t("drop-column", "dataset_id" -> columnInfo.copyInfo.datasetInfo.systemId, "copy_num" -> columnInfo.copyInfo.copyNumber, "column_id" -> columnInfo.systemId)(stmt.executeUpdate())
       assert(count == 1, "Column did not exist to be dropped?")
     }
   }
@@ -453,7 +453,7 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
       stmt.setString(1, newLogicalName)
       stmt.setLong(2, columnInfo.copyInfo.systemId.underlying)
       stmt.setLong(3, columnInfo.systemId.underlying)
-      val count = stmt.executeUpdate()
+      val count = t("rename-column", "dataset_id" -> columnInfo.copyInfo.datasetInfo.systemId, "copy_num" -> columnInfo.copyInfo.copyNumber, "column_id" -> columnInfo.systemId)(stmt.executeUpdate())
       assert(count == 1, "Column did not exist to be renamed?")
       columnInfo.copy(logicalName =  newLogicalName)
     }
@@ -465,29 +465,29 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
       stmt.setString(2, newPhysicalColumnBaseBase)
       stmt.setLong(3, columnInfo.copyInfo.systemId.underlying)
       stmt.setLong(4, columnInfo.systemId.underlying)
-      val count = stmt.executeUpdate()
+      val count = t("convert-column", "dataset_id" -> columnInfo.copyInfo.datasetInfo.systemId, "copy_num" -> columnInfo.copyInfo.copyNumber, "column_id" -> columnInfo.systemId)(stmt.executeUpdate())
       assert(count == 1, "Column did not exist to be converted?")
       columnInfo.copy(typeName = newType, physicalColumnBaseBase = newPhysicalColumnBaseBase)
     }
 
   def setSystemPrimaryKeyQuery = "UPDATE column_map SET is_system_primary_key = 'Unit' WHERE copy_system_id = ? AND system_id = ?"
-  def setSystemPrimaryKey(systemPrimaryKey: ColumnInfo) =
+  def setSystemPrimaryKey(columnInfo: ColumnInfo) =
     using(conn.prepareStatement(setSystemPrimaryKeyQuery)) { stmt =>
-      stmt.setLong(1, systemPrimaryKey.copyInfo.systemId.underlying)
-      stmt.setLong(2, systemPrimaryKey.systemId.underlying)
-      val count = stmt.executeUpdate()
+      stmt.setLong(1, columnInfo.copyInfo.systemId.underlying)
+      stmt.setLong(2, columnInfo.systemId.underlying)
+      val count = t("set-system-primary-key", "dataset_id" -> columnInfo.copyInfo.datasetInfo.systemId, "copy_num" -> columnInfo.copyInfo.copyNumber, "column_id" -> columnInfo.systemId)(stmt.executeUpdate())
       assert(count == 1, "Column did not exist to have it set as primary key?")
-      systemPrimaryKey.copy(isSystemPrimaryKey = true)
+      columnInfo.copy(isSystemPrimaryKey = true)
     }
 
   def setUserPrimaryKeyQuery = "UPDATE column_map SET is_user_primary_key = 'Unit' WHERE copy_system_id = ? AND system_id = ?"
-  def setUserPrimaryKey(userPrimaryKey: ColumnInfo) =
+  def setUserPrimaryKey(columnInfo: ColumnInfo) =
     using(conn.prepareStatement(setUserPrimaryKeyQuery)) { stmt =>
-      stmt.setLong(1, userPrimaryKey.copyInfo.systemId.underlying)
-      stmt.setLong(2, userPrimaryKey.systemId.underlying)
-      val count = stmt.executeUpdate()
+      stmt.setLong(1, columnInfo.copyInfo.systemId.underlying)
+      stmt.setLong(2, columnInfo.systemId.underlying)
+      val count = t("set-user-primary-key", "dataset_id" -> columnInfo.copyInfo.datasetInfo.systemId, "copy_num" -> columnInfo.copyInfo.copyNumber, "column_id" -> columnInfo.systemId)(stmt.executeUpdate())
       assert(count == 1, "Column did not exist to have it set as primary key?")
-      userPrimaryKey.copy(isUserPrimaryKey = true)
+      columnInfo.copy(isUserPrimaryKey = true)
     }
 
   def clearUserPrimaryKeyQuery = "UPDATE column_map SET is_user_primary_key = NULL WHERE copy_system_id = ? and system_id = ?"
@@ -507,7 +507,7 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
       using(conn.prepareStatement(updateNextRowIdQuery)) { stmt =>
         stmt.setLong(1, newNextRowId.underlying)
         stmt.setLong(2, datasetInfo.systemId.underlying)
-        stmt.executeUpdate()
+        t("update-next-row-id", "dataset_id" -> datasetInfo.systemId)(stmt.executeUpdate())
       }
       datasetInfo.copy(nextRowId = newNextRowId)
     } else {
@@ -525,7 +525,7 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
     using(conn.prepareStatement(updateDataVersionQuery)) { stmt =>
       stmt.setLong(1, newDataVersion)
       stmt.setLong(2, copyInfo.systemId.underlying)
-      val count = stmt.executeUpdate()
+      val count = t("update-data-version", "dataset_id" -> copyInfo.datasetInfo.systemId, "copy_num" -> copyInfo.copyNumber)(stmt.executeUpdate())
       assert(count == 1)
     }
     copyInfo.copy(dataVersion = newDataVersion)
@@ -543,7 +543,7 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
     using(conn.prepareStatement(dropCopyQuery)) { stmt =>
       stmt.setLong(1, copyInfo.systemId.underlying)
       stmt.setString(2, copyInfo.lifecycleStage.name) // just to make sure the user wasn't mistaken about the stage
-      val count = stmt.executeUpdate()
+      val count = t("drop-copy", "dataset_id" -> copyInfo.datasetInfo.systemId, "copy_num" -> copyInfo.copyNumber)(stmt.executeUpdate())
       assert(count == 1, "Copy did not exist to be dropped?")
     }
   }
@@ -567,7 +567,7 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
           case Some(publishedCopy) =>
             val newCopyNumber = using(conn.prepareStatement(ensureUnpublishedCopyQuery_newCopyNumber)) { stmt =>
               stmt.setLong(1, publishedCopy.datasetInfo.systemId.underlying)
-              using(stmt.executeQuery()) { rs =>
+              using(t("find-next-copy-number","dataset_id" -> tableInfo.systemId)(stmt.executeQuery())) { rs =>
                 rs.next()
                 rs.getLong(1)
               }
@@ -585,7 +585,7 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
                   stmt.setLong(2, newCopyWithoutSystemId.copyNumber)
                   stmt.setString(3, newCopyWithoutSystemId.lifecycleStage.name)
                   stmt.setLong(4, newCopyWithoutSystemId.dataVersion)
-                  using(stmt.executeQuery()) { rs =>
+                  using(t("create-new-copy", "dataset_id" -> newCopyWithoutSystemId.datasetInfo.systemId)(stmt.executeQuery())) { rs =>
                     val foundSomething = rs.next()
                     assert(foundSomething, "Insert didn't create a row?")
                     newCopyWithoutSystemId.copy(systemId = new CopyId(rs.getLong(1)))
@@ -615,7 +615,7 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
     using(conn.prepareStatement(ensureUnpublishedCopyQuery_columnMap)) { stmt =>
       stmt.setLong(1, newCopy.systemId.underlying)
       stmt.setLong(2, oldCopy.systemId.underlying)
-      stmt.execute()
+      t("copy-schema-to-unpublished-copy", "dataset_id" -> oldCopy.datasetInfo.systemId, "old_copy_num" -> oldCopy.copyNumber, "new_copy_num" -> newCopy.copyNumber)(stmt.execute())
     }
   }
 
@@ -628,12 +628,12 @@ class PostgresDatasetMapWriter(_c: Connection) extends PostgresDatasetMapReader(
       for(published <- lookup(unpublishedCopy.datasetInfo, LifecycleStage.Published)) {
         stmt.setString(1, LifecycleStage.Snapshotted.name)
         stmt.setLong(2, published.systemId.underlying)
-        val count = stmt.executeUpdate()
+        val count = t("snapshotify-published-copy", "dataset_id" -> published.datasetInfo.systemId, "copy_num" -> published.copyNumber)(stmt.executeUpdate())
         assert(count == 1, "Snapshotting a published copy didn't change a row?")
       }
       stmt.setString(1, LifecycleStage.Published.name)
       stmt.setLong(2, unpublishedCopy.systemId.underlying)
-      val count = stmt.executeUpdate()
+      val count = t("publish-unpublished-copy", "dataset_id" -> unpublishedCopy.datasetInfo.systemId, "copy_num" -> unpublishedCopy.copyNumber)(stmt.executeUpdate())
       assert(count == 1, "Publishing an unpublished copy didn't change a row?")
       unpublishedCopy.copy(lifecycleStage = LifecycleStage.Published)
     }

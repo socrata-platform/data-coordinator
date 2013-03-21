@@ -94,7 +94,7 @@ trait PostgresSoQLDataContext extends PostgresDataContext with SoQLDataContext w
     try {
       conn.setReadOnly(true)
       conn.setAutoCommit(false)
-      val datasetMap = new com.socrata.datacoordinator.truth.metadata.sql.PostgresDatasetMapReader(conn)
+      val datasetMap = new com.socrata.datacoordinator.truth.metadata.sql.PostgresDatasetMapReader(conn, timingReport)
       for {
         datasetId <- datasetMap.datasetId(datasetName)
         di <- datasetMap.datasetInfo(datasetId)

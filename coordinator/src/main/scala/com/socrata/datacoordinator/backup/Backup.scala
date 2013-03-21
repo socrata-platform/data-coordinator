@@ -31,11 +31,12 @@ import com.socrata.datacoordinator.truth.loader.Delete
 import com.socrata.datacoordinator.truth.metadata.CopyPair
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
 import com.socrata.datacoordinator.truth.loader.Insert
+import com.socrata.datacoordinator.util.{NoopTimingReport, TimingReport}
 
-class Backup(conn: Connection, executor: ExecutorService, paranoid: Boolean) {
+class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingReport, paranoid: Boolean) {
   val typeContext = SoQLTypeContext
   val logger: Logger[Any] = NullLogger
-  val datasetMap: BackupDatasetMap = new PostgresDatasetMapWriter(conn)
+  val datasetMap: BackupDatasetMap = new PostgresDatasetMapWriter(conn, timingReport)
   def tablespace(s: String) = None
 
   def genericRepFor(columnInfo: ColumnInfo): SqlColumnRep[SoQLType, Any] =
@@ -44,7 +45,7 @@ class Backup(conn: Connection, executor: ExecutorService, paranoid: Boolean) {
   def extractCopier(conn: Connection, sql: String, input: Reader): Long = conn.asInstanceOf[PGConnection].getCopyAPI.copyIn(sql, input)
 
   val schemaLoader: SchemaLoader = new RepBasedSqlSchemaLoader(conn, logger, genericRepFor, tablespace)
-  val contentsCopier: DatasetContentsCopier = new RepBasedSqlDatasetContentsCopier(conn, logger, genericRepFor)
+  val contentsCopier: DatasetContentsCopier = new RepBasedSqlDatasetContentsCopier(conn, logger, genericRepFor, timingReport)
   def decsvifier(copyInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo]): DatasetDecsvifier =
     new PostgresDatasetDecsvifier(conn, extractCopier, copyInfo.dataTableName, schema.mapValuesStrict(genericRepFor))
 
@@ -305,6 +306,8 @@ object Backup extends App {
   val datasetMapLimits = StandardDatasetMapLimits
 
   val executor = Executors.newCachedThreadPool()
+
+  val timingReport = NoopTimingReport
   try {
     for {
       primaryConn <- managed(DriverManager.getConnection("jdbc:postgresql://localhost:5432/robertm", "blist", "blist"))
@@ -315,7 +318,7 @@ object Backup extends App {
       try {
         DatabasePopulator.populate(backupConn, datasetMapLimits)
 
-        val bkp = new Backup(backupConn, executor, paranoid = true)
+        val bkp = new Backup(backupConn, executor, timingReport, paranoid = true)
 
         for {
           globalLogStmt <- managed(primaryConn.prepareStatement("SELECT id, dataset_system_id, version FROM global_log ORDER BY id"))

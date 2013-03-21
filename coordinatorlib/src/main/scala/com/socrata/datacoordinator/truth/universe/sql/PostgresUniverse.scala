@@ -70,7 +70,7 @@ final class PostgresUniverse[ColumnType, ColumnValue](conn: Connection, typeInfo
     new SqlSecondaryManifest(conn)
 
   lazy val datasetMapReader: DatasetMapReader =
-    new PostgresDatasetMapReader(conn)
+    new PostgresDatasetMapReader(conn, timingReport)
 
   lazy val globalLogPlayback: GlobalLogPlayback =
     new PostgresGlobalLogPlayback(conn)
