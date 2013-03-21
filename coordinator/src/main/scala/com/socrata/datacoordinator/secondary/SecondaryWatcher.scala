@@ -55,14 +55,28 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
 
   private def maybeSleep(storeId: String, nextRunTime: DateTime, finished: CountDownLatch): Boolean = {
     val remainingTime = nextRunTime.getMillis - System.currentTimeMillis()
-    if(remainingTime <= 0) log.warn("{} is behind schedule {}ms", storeId, remainingTime.abs)
     finished.await(remainingTime, TimeUnit.MILLISECONDS)
+  }
+
+  def bestNextRunTime(storeId: String, target: DateTime, interval: Int): DateTime = {
+    val now = DateTime.now()
+    val remainingTime = (now.getMillis - target.getMillis) / 1000
+    if(remainingTime > 0) {
+      val diffInIntervals = remainingTime / interval
+      log.warn("{} is behind schedule {}s ({} intervals)", storeId, remainingTime.asInstanceOf[AnyRef], diffInIntervals.asInstanceOf[AnyRef])
+      val newTarget = target.plus(Seconds.seconds(Math.min(diffInIntervals * interval, Int.MaxValue).toInt))
+      log.warn("Resetting target time to {}", newTarget)
+      newTarget
+    } else {
+      target
+    }
   }
 
   def mainloop(secondaryConfigInfo: SecondaryConfigInfo, secondary: Secondary[CV], finished: CountDownLatch) {
     var lastWrote = new DateTime(0L)
-    var nextRunTime = secondaryConfigInfo.nextRunTime
-    if(nextRunTime.compareTo(DateTime.now()) < 0) nextRunTime = DateTime.now()
+    var nextRunTime = bestNextRunTime(secondaryConfigInfo.storeId,
+      secondaryConfigInfo.nextRunTime,
+      secondaryConfigInfo.runIntervalSeconds)
 
     var done = maybeSleep(secondaryConfigInfo.storeId, nextRunTime, finished)
     while(!done) {
@@ -71,12 +85,15 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
 
         run(u, new NamedSecondary(secondaryConfigInfo.storeId, secondary))
 
-        nextRunTime = nextRunTime.plus(Seconds.seconds(secondaryConfigInfo.runIntervalSeconds))
+
+        nextRunTime = bestNextRunTime(secondaryConfigInfo.storeId,
+          nextRunTime.plus(Seconds.seconds(secondaryConfigInfo.runIntervalSeconds)),
+          secondaryConfigInfo.runIntervalSeconds)
 
         // we only actually write at most once every 15 minutes...
         val now = DateTime.now()
         if(now.getMillis - lastWrote.getMillis >= 15 * 60 * 1000) {
-          log.info("Writing new next-runtime")
+          log.info("Writing new next-runtime: {}", nextRunTime)
           secondaryConfig.updateNextRunTime(secondaryConfigInfo.storeId, nextRunTime)
         }
         lastWrote = now
