@@ -117,8 +117,6 @@ object SecondaryWatcher extends App { self =>
   val (dataSource, _) = DataSourceFromConfig(config)
   val secondaries = SecondaryLoader.load(config.getConfig("secondary.configs"), new File(config.getString("secondary.path"))).asInstanceOf[Map[String, Secondary[Any]]]
 
-  val pause = config.getMilliseconds("sleep-time").longValue.millis
-
   object SoQLTypeInfo extends TypeInfo[SoQLType, Any] {
     def repFor(ci: ColumnInfo) =
       SoQLRep.sqlRepFactories(SoQLType.typesByName(TypeName(ci.typeName)))(ci.physicalColumnBase)
