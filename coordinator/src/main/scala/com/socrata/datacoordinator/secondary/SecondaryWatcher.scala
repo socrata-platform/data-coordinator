@@ -164,7 +164,7 @@ object SecondaryWatcher extends App { self =>
 
     val threads =
       using(dataSource.getConnection()) { conn =>
-        val cfg = new SqlSecondaryConfig(conn)
+        val cfg = new SqlSecondaryConfig(conn, timingReport)
 
         secondaries.iterator.flatMap { case (name, secondary) =>
           cfg.lookup(name).map { info =>

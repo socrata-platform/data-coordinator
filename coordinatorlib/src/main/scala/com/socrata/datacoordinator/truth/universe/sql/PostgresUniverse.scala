@@ -76,5 +76,5 @@ final class PostgresUniverse[ColumnType, ColumnValue](conn: Connection, typeInfo
     new PostgresGlobalLogPlayback(conn)
 
   lazy val secondaryConfig =
-    new SqlSecondaryConfig(conn)
+    new SqlSecondaryConfig(conn, timingReport)
 }
