@@ -2,6 +2,7 @@ package com.socrata.datacoordinator.util
 
 import org.slf4j.Logger
 import scala.util.DynamicVariable
+import com.rojoma.json.util.JsonUtil
 
 trait TimingReport {
   def apply[T](name: String, kv: (String, Any)*)(f: => T): T
@@ -50,7 +51,9 @@ class LoggedTimingReport(log: Logger) extends TimingReport {
       f
     } finally {
       val end = System.nanoTime()
-      log.info("{}: {}ms; {}", name, ((end - start)/1000000).asInstanceOf[AnyRef], kv)
+      if(log.isInfoEnabled) {
+        log.info("{}: {}ms; {}", name, ((end - start)/1000000).asInstanceOf[AnyRef], JsonUtil.renderJson(kv.map { case (k,v) => (k, String.valueOf(v)) }))
+      }
     }
   }
 }
