@@ -10,9 +10,9 @@ import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.loader.{Loader, Logger, RowPreparer}
 import com.socrata.id.numeric.IdProvider
 import java.io.Reader
-import com.socrata.datacoordinator.util.{RowIdProvider, TimingReport}
+import com.socrata.datacoordinator.util.{TransferrableContextTimingReport, RowIdProvider, TimingReport}
 
-abstract class AbstractSqlLoaderProvider[CT, CV](val executor: ExecutorService, typeContext: TypeContext[CT, CV], repFor: ColumnInfo => SqlColumnRep[CT, CV], isSystemColumn: ColumnInfo => Boolean, timingReport: TimingReport)
+abstract class AbstractSqlLoaderProvider[CT, CV](val executor: ExecutorService, typeContext: TypeContext[CT, CV], repFor: ColumnInfo => SqlColumnRep[CT, CV], isSystemColumn: ColumnInfo => Boolean, timingReport: TransferrableContextTimingReport)
   extends ((Connection, CopyInfo, ColumnIdMap[ColumnInfo], RowPreparer[CV], RowIdProvider, Logger[CV]) => Loader[CV])
 {
   def produce(tableName: String, datasetContext: RepBasedSqlDatasetContext[CT, CV]): DataSqlizer[CT, CV]

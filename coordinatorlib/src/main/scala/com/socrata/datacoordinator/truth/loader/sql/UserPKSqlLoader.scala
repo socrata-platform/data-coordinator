@@ -13,9 +13,9 @@ import com.socrata.id.numeric.IdProvider
 import com.socrata.datacoordinator.truth.RowUserIdMap
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.id.RowId
-import com.socrata.datacoordinator.util.{RowIdProvider, TimingReport}
+import com.socrata.datacoordinator.util.{TransferrableContextTimingReport, RowIdProvider, TimingReport}
 
-final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: DataSqlizer[CT, CV], _l: DataLogger[CV], _i: RowIdProvider, _e: Executor, _tr: TimingReport)
+final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: DataSqlizer[CT, CV], _l: DataLogger[CV], _i: RowIdProvider, _e: Executor, _tr: TransferrableContextTimingReport)
   extends
 {
   // all these are early because they are all potential sources of exceptions, and I want all
@@ -147,40 +147,43 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: Dat
         val currentInsertSize = insertSize
         val currentDeleteSize = deleteSize
 
+        val ctx = timingReport.context
         executor.execute(new Runnable() {
           def run() {
-            connectionMutex.synchronized {
-              try {
-                started.release()
+            timingReport.withContext(ctx) {
+              connectionMutex.synchronized {
+                try {
+                  started.release()
 
-                val sidsForUpdateAndDelete = findSids(currentJobs.valuesIterator)
+                  val sidsForUpdateAndDelete = findSids(currentJobs.valuesIterator)
 
-                val deletes = new java.util.ArrayList[OperationLog[CV]]
-                val inserts = new java.util.ArrayList[OperationLog[CV]]
-                val updates = new java.util.ArrayList[OperationLog[CV]]
+                  val deletes = new java.util.ArrayList[OperationLog[CV]]
+                  val inserts = new java.util.ArrayList[OperationLog[CV]]
+                  val updates = new java.util.ArrayList[OperationLog[CV]]
 
-                var remainingInsertSize = currentInsertSize
+                  var remainingInsertSize = currentInsertSize
 
-                currentJobs.foreach { (_, op) =>
-                  if(op.hasDeleteJob) { deletes.add(op) }
-                  if(op.hasUpsertJob) {
-                    if(sidsForUpdateAndDelete.contains(op.id) && !op.forceInsert) {
-                      remainingInsertSize -= op.upsertSize
-                      updates.add(op)
-                    } else {
-                      inserts.add(op)
+                  currentJobs.foreach { (_, op) =>
+                    if(op.hasDeleteJob) { deletes.add(op) }
+                    if(op.hasUpsertJob) {
+                      if(sidsForUpdateAndDelete.contains(op.id) && !op.forceInsert) {
+                        remainingInsertSize -= op.upsertSize
+                        updates.add(op)
+                      } else {
+                        inserts.add(op)
+                      }
                     }
                   }
-                }
 
-                val errors = new TIntObjectHashMap[Failure[CV]]
-                pendingDeleteResults = processDeletes(sidsForUpdateAndDelete, currentDeleteSize, deletes, errors)
-                pendingInsertResults = processInserts(remainingInsertSize, inserts)
-                pendingUpdateResults = processUpdates(sidsForUpdateAndDelete, updates)
-                if(!errors.isEmpty) pendingErrors = errors
-              } catch {
-                case e: Throwable =>
-                  pendingException = e
+                  val errors = new TIntObjectHashMap[Failure[CV]]
+                  pendingDeleteResults = processDeletes(sidsForUpdateAndDelete, currentDeleteSize, deletes, errors)
+                  pendingInsertResults = processInserts(remainingInsertSize, inserts)
+                  pendingUpdateResults = processUpdates(sidsForUpdateAndDelete, updates)
+                  if(!errors.isEmpty) pendingErrors = errors
+                } catch {
+                  case e: Throwable =>
+                    pendingException = e
+                }
               }
             }
           }

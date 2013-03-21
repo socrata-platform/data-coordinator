@@ -11,7 +11,8 @@ import gnu.trove.map.hash.TIntObjectHashMap
 
 import com.socrata.id.numeric.IdProvider
 
-import com.socrata.datacoordinator.util.{RowIdProvider, TimingReport, TIntObjectHashMapWrapper, Counter}
+import com.socrata.datacoordinator.util._
+import com.socrata.datacoordinator.util.TIntObjectHashMapWrapper
 
 /**
  * @note After passing the `dataLogger` to this constructor, the created `SqlLoader`
@@ -24,7 +25,7 @@ abstract class SqlLoader[CT, CV](val connection: Connection,
                                  val dataLogger: DataLogger[CV],
                                  val idProvider: RowIdProvider,
                                  val executor: Executor,
-                                 val timingReport: TimingReport)
+                                 val timingReport: TransferrableContextTimingReport)
   extends Loader[CV]
 {
   require(!connection.getAutoCommit, "Connection is in auto-commit mode")
@@ -66,7 +67,7 @@ abstract class SqlLoader[CT, CV](val connection: Connection,
 }
 
 object SqlLoader {
-  def apply[CT, CV](connection: Connection, preparer: RowPreparer[CV], sqlizer: DataSqlizer[CT, CV], dataLogger: DataLogger[CV], idProvider: RowIdProvider, executor: Executor, timingReport: TimingReport): SqlLoader[CT,CV] = {
+  def apply[CT, CV](connection: Connection, preparer: RowPreparer[CV], sqlizer: DataSqlizer[CT, CV], dataLogger: DataLogger[CV], idProvider: RowIdProvider, executor: Executor, timingReport: TransferrableContextTimingReport): SqlLoader[CT,CV] = {
     if(sqlizer.datasetContext.hasUserPrimaryKey)
       new UserPKSqlLoader(connection, preparer, sqlizer, dataLogger, idProvider, executor, timingReport)
     else

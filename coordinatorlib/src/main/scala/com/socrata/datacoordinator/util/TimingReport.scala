@@ -7,23 +7,38 @@ trait TimingReport {
   def apply[T](name: String, kv: (String, Any)*)(f: => T): T
 }
 
-object NoopTimingReport extends TimingReport {
-  def apply[T](name: String, kv: (String, Any)*)(f: => T): T = f
+trait TransferrableContextTimingReport extends TimingReport {
+  // for use when getting a worker from a thread pool
+  type Context
+  def context: Context
+  def withContext[T](context: Context)(f: => T): T
 }
 
-trait StackedTimingReport extends TimingReport {
-  private val stackLocal = new ThreadLocal[List[String]] {
+trait StackedTimingReport extends TimingReport with TransferrableContextTimingReport {
+  private val contextLocal = new ThreadLocal[List[String]] {
     override def initialValue = Nil
   }
 
-  def stack = stackLocal.get
+  type Context = List[String]
+
+  def context = contextLocal.get
 
   abstract override def apply[T](name: String, kv: (String, Any)*)(f: => T): T = {
-    stackLocal.set(name :: stack)
+    contextLocal.set(name :: context)
     try {
-      super.apply(stack.reverse.mkString("/"), kv: _*)(f)
+      super.apply(context.reverse.mkString("/"), kv: _*)(f)
     } finally {
-      stackLocal.set(stack.tail)
+      contextLocal.set(context.tail)
+    }
+  }
+
+  def withContext[T](context: Context)(f: => T): T = {
+    val oldContext = contextLocal.get
+    contextLocal.set(context)
+    try {
+      f
+    } finally {
+      contextLocal.set(oldContext)
     }
   }
 }
@@ -39,3 +54,12 @@ class LoggedTimingReport(log: Logger) extends TimingReport {
     }
   }
 }
+
+object NoopTimingReport extends TransferrableContextTimingReport {
+  def apply[T](name: String, kv: (String, Any)*)(f: => T): T = f
+
+  type Context = Unit
+  def context = ()
+  def withContext[T](ctx: Unit)(f: => T) = f
+}
+

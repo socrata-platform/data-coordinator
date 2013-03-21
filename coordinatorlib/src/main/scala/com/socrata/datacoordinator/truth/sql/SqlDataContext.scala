@@ -14,7 +14,7 @@ import com.socrata.datacoordinator.truth.loader.{SchemaLoader, DatasetContentsCo
 import java.io.Reader
 import com.socrata.datacoordinator.truth.metadata.sql.{PostgresDatasetMapReader, PostgresGlobalLog, PostgresDatasetMapWriter}
 import scala.concurrent.duration.Duration
-import com.socrata.datacoordinator.util.{RowIdProvider, TimingReport}
+import com.socrata.datacoordinator.util.{TransferrableContextTimingReport, RowIdProvider, TimingReport}
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
 
@@ -52,8 +52,10 @@ trait SqlDataReadingContext extends SqlDataTypeContext with DataReadingContext {
   final lazy val datasetReader = DatasetReader(databaseReader)
 }
 
-trait PostgresDataContext extends SqlDataWritingContext with SqlDataReadingContext { self: DataSchemaContext with ExecutionContext with DatasetLockContext =>
+trait PostgresDataContext extends SqlDataWritingContext with SqlDataReadingContext with ExecutionContext { self: DataSchemaContext with DatasetLockContext =>
   type SqlRepType = SqlColumnRep[CT, CV]
+
+  override val timingReport: TransferrableContextTimingReport
 
   protected def tablespace(s: String): Option[String]
 

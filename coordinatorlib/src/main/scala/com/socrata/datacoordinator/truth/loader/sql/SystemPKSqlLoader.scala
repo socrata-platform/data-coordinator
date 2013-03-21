@@ -12,9 +12,9 @@ import com.socrata.id.numeric.IdProvider
 
 import com.socrata.datacoordinator.util.collection.MutableRowIdMap
 import com.socrata.datacoordinator.id.RowId
-import com.socrata.datacoordinator.util.{RowIdProvider, TimingReport}
+import com.socrata.datacoordinator.util.{TransferrableContextTimingReport, RowIdProvider, TimingReport}
 
-final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: DataSqlizer[CT, CV], _l: DataLogger[CV], _i: RowIdProvider, _e: Executor, _tr: TimingReport)
+final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: DataSqlizer[CT, CV], _l: DataLogger[CV], _i: RowIdProvider, _e: Executor, _tr: TransferrableContextTimingReport)
   extends
 {
   // all these are early because they are all potential sources of exceptions, and I want all
@@ -171,34 +171,37 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
         val currentUpdateSize = updateSize
         val currentDeleteSize = deleteSize
 
+        val ctx = timingReport.context
         executor.execute(new Runnable() {
           def run() {
-            connectionMutex.synchronized {
-              try {
-                started.release()
+            timingReport.withContext(ctx) {
+              connectionMutex.synchronized {
+                try {
+                  started.release()
 
-                val deletes = new java.util.ArrayList[Delete]
-                val inserts = new java.util.ArrayList[Insert[CV]]
-                val updates = new java.util.ArrayList[Update[CV]]
+                  val deletes = new java.util.ArrayList[Delete]
+                  val inserts = new java.util.ArrayList[Insert[CV]]
+                  val updates = new java.util.ArrayList[Update[CV]]
 
-                val it = currentJobs.iterator
-                while(it.hasNext) {
-                  it.advance()
-                  it.value match {
-                    case i@Insert(_,_,_, _) => inserts.add(i)
-                    case u@Update(_,_,_, _) => updates.add(u)
-                    case d@Delete(_,_) => deletes.add(d)
+                  val it = currentJobs.iterator
+                  while(it.hasNext) {
+                    it.advance()
+                    it.value match {
+                      case i@Insert(_,_,_, _) => inserts.add(i)
+                      case u@Update(_,_,_, _) => updates.add(u)
+                      case d@Delete(_,_) => deletes.add(d)
+                    }
                   }
-                }
 
-                val errors = new TIntObjectHashMap[Failure[CV]]
-                pendingDeleteResults = processDeletes(currentDeleteSize, deletes, errors)
-                pendingUpdateResults = processUpdates(currentUpdateSize, updates, errors)
-                pendingInsertResults = processInserts(currentInsertSize, inserts)
-                if(!errors.isEmpty) pendingErrors = errors
-              } catch {
-                  case e: Throwable =>
-                    pendingException = e
+                  val errors = new TIntObjectHashMap[Failure[CV]]
+                  pendingDeleteResults = processDeletes(currentDeleteSize, deletes, errors)
+                  pendingUpdateResults = processUpdates(currentUpdateSize, updates, errors)
+                  pendingInsertResults = processInserts(currentInsertSize, inserts)
+                  if(!errors.isEmpty) pendingErrors = errors
+                } catch {
+                    case e: Throwable =>
+                      pendingException = e
+                }
               }
             }
           }
