@@ -15,13 +15,13 @@ import com.socrata.datacoordinator.util.{TimingReport, PostgresUniqueViolation}
 import com.socrata.datacoordinator.util.collection.MutableColumnIdMap
 import com.socrata.datacoordinator.truth.metadata.CopyPair
 import com.socrata.datacoordinator.truth.metadata.`-impl`.Tag
+import scala.concurrent.duration.Duration
 
-class PostgresDatasetMapReader(val conn: Connection, timingReport: TimingReport) extends DatasetMapReader {
+trait BasePostgresDatasetMapReader extends `-impl`.BaseDatasetMapReader {
   implicit def tag: Tag = null
 
-  def lockNotAvailableState = "55P03"
-
-  protected def t = timingReport
+  val conn: Connection
+  def t: TimingReport
 
   def snapshotCountQuery = "SELECT count(system_id) FROM copy_map WHERE dataset_system_id = ? AND lifecycle_stage = CAST(? AS dataset_lifecycle_stage)"
   def snapshotCount(dataset: DatasetInfo) =
@@ -157,40 +157,36 @@ class PostgresDatasetMapReader(val conn: Connection, timingReport: TimingReport)
   def snapshot(datasetInfo: DatasetInfo, age: Int) =
     lookup(datasetInfo, LifecycleStage.Snapshotted, age)
 
-  def datasetInfoByUserIdQuery = "SELECT system_id FROM dataset_map WHERE dataset_name = ?"
+  def datasetIdByUserIdQuery = "SELECT system_id FROM dataset_map WHERE dataset_name = ?"
   def datasetId(datasetId: String) =
-    using(conn.prepareStatement(datasetInfoByUserIdQuery)) { stmt =>
+    using(conn.prepareStatement(datasetIdByUserIdQuery)) { stmt =>
       stmt.setString(1, datasetId)
       using(t("dataset-id-by-name","name"->datasetId)(stmt.executeQuery())) { rs =>
         if(rs.next()) Some(new DatasetId(rs.getLong(1)))
         else None
       }
     }
-
-  def datasetInfoBySystemIdQuery = "SELECT system_id, dataset_name, table_base_base, next_row_id FROM dataset_map WHERE system_id = ?"
-  def datasetInfo(datasetId: DatasetId) = {
-    using(conn.prepareStatement(datasetInfoBySystemIdQuery)) { stmt =>
-      stmt.setLong(1, datasetId.underlying)
-      try {
-        using(t("lookup-dataset", "dataset_id" -> datasetId)(stmt.executeQuery())) { rs =>
-          if(rs.next()) {
-            Some(DatasetInfo(new DatasetId(rs.getLong("system_id")), rs.getString("dataset_name"), rs.getString("table_base_base"), new RowId(rs.getLong("next_row_id"))))
-          } else {
-            None
-          }
-        }
-      } catch {
-        case e: PSQLException if e.getSQLState == lockNotAvailableState =>
-          throw new DatasetSystemIdInUseByWriterException(datasetId, e)
-      }
-    }
-  }
 }
 
-class PostgresDatasetMapWriter(_c: Connection, _t: TimingReport) extends PostgresDatasetMapReader(_c, _t) with DatasetMapWriter with BackupDatasetMap {
-  require(!conn.getAutoCommit, "Connection is in auto-commit mode")
+class PostgresDatasetMapReader(val conn: Connection, timingReport: TimingReport) extends DatasetMapReader with BasePostgresDatasetMapReader {
+  def t = timingReport
 
-  override def datasetInfoBySystemIdQuery = super.datasetInfoBySystemIdQuery + " FOR UPDATE NOWAIT"
+  def datasetInfoBySystemIdQuery = "SELECT system_id, dataset_name, table_base_base, next_row_id FROM dataset_map WHERE system_id = ?"
+  def datasetInfo(datasetId: DatasetId) =
+    using(conn.prepareStatement(datasetInfoBySystemIdQuery)) { stmt =>
+      stmt.setLong(1, datasetId.underlying)
+      using(t("lookup-dataset", "dataset_id" -> datasetId)(stmt.executeQuery())) { rs =>
+        if(rs.next()) {
+          Some(DatasetInfo(new DatasetId(rs.getLong("system_id")), rs.getString("dataset_name"), rs.getString("table_base_base"), new RowId(rs.getLong("next_row_id"))))
+        } else {
+          None
+        }
+      }
+    }
+}
+
+trait BasePostgresDatasetMapWriter extends BasePostgresDatasetMapReader with `-impl`.BaseDatasetMapWriter {
+  def lockNotAvailableState = "55P03"
 
   def createQuery_tableMap = "INSERT INTO dataset_map (dataset_name, table_base_base, next_row_id) VALUES (?, ?, ?) RETURNING system_id"
   def createQuery_copyMap = "INSERT INTO copy_map (dataset_system_id, copy_number, lifecycle_stage, data_version) VALUES (?, ?, CAST(? AS dataset_lifecycle_stage), ?) RETURNING system_id"
@@ -636,6 +632,51 @@ class PostgresDatasetMapWriter(_c: Connection, _t: TimingReport) extends Postgre
       val count = t("publish-unpublished-copy", "dataset_id" -> unpublishedCopy.datasetInfo.systemId, "copy_num" -> unpublishedCopy.copyNumber)(stmt.executeUpdate())
       assert(count == 1, "Publishing an unpublished copy didn't change a row?")
       unpublishedCopy.copy(lifecycleStage = LifecycleStage.Published)
+    }
+  }
+}
+
+class PostgresDatasetMapWriter(val conn: Connection, timingReport: TimingReport) extends DatasetMapWriter with BasePostgresDatasetMapWriter with BackupDatasetMap {
+  require(!conn.getAutoCommit, "Connection is in auto-commit mode")
+
+  def t = timingReport
+
+  def datasetInfoBySystemIdQuery = "SELECT system_id, dataset_name, table_base_base, next_row_id FROM dataset_map WHERE system_id = ? FOR UPDATE"
+  def datasetInfo(datasetId: DatasetId, timeout: Duration) = {
+    val savepoint = conn.setSavepoint()
+    try {
+      // ok.  For now we're going to assume that we're the only one setting this parameter.
+      // If this turns out not to be true, we'll have to use SHOW to query the current value.
+      if(timeout.isFinite()) {
+        using(conn.createStatement()) { stmt =>
+          stmt.execute("SET LOCAL statement_timeout TO " + timeout.toMillis)
+        }
+      }
+      try {
+        val res = using(conn.prepareStatement(datasetInfoBySystemIdQuery)) { stmt =>
+          stmt.setLong(1, datasetId.underlying)
+          using(t("lookup-dataset-for-update", "dataset_id" -> datasetId)(stmt.executeQuery())) { rs =>
+            if(rs.next()) {
+              Some(DatasetInfo(new DatasetId(rs.getLong("system_id")), rs.getString("dataset_name"), rs.getString("table_base_base"), new RowId(rs.getLong("next_row_id"))))
+            } else {
+              None
+            }
+          }
+        }
+        if(timeout.isFinite()) {
+          using(conn.createStatement()) { stmt =>
+            stmt.execute("SET LOCAL statement_timeout TO DEFAULT")
+          }
+        }
+        res
+      } catch {
+        case e: PSQLException =>
+          println(e.getSQLState)
+          conn.rollback(savepoint)
+          throw new DatasetSystemIdInUseByWriterException(datasetId, e)
+      }
+    } finally {
+      conn.releaseSavepoint(savepoint)
     }
   }
 }

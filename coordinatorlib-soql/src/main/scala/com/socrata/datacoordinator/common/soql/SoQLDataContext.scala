@@ -11,7 +11,7 @@ import org.joda.time.DateTime
 import com.socrata.soql.brita.{IdentifierFilter, AsciiIdentifierFilter}
 import com.socrata.soql.types.{SoQLFixedTimestamp, SoQLID, SoQLType}
 import com.socrata.datacoordinator.truth._
-import com.socrata.datacoordinator.truth.sql.{DatasetLockContext, PostgresDataContext, DatasetMapLimits}
+import com.socrata.datacoordinator.truth.sql.{PostgresDataContext, DatasetMapLimits}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.loader.RowPreparer
@@ -85,7 +85,7 @@ object SoQLDataContext {
   }
 }
 
-trait PostgresSoQLDataContext extends PostgresDataContext with SoQLDataContext with ExecutionContext { this: DatasetLockContext =>
+trait PostgresSoQLDataContext extends PostgresDataContext with SoQLDataContext with ExecutionContext {
   def sqlRepForColumn(physicalColumnBase: String, typ: CT) =
     SoQLRep.sqlRepFactories(typ)(physicalColumnBase)
 

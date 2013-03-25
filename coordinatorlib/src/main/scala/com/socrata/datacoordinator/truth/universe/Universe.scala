@@ -99,10 +99,6 @@ trait LowLevelDatabaseReaderProvider { this: TypeUniverse =>
   val lowLevelDatabaseReader: LowLevelDatabaseReader[CV]
 }
 
-trait DatasetLockProvider {
-  val datasetLock: DatasetLock
-}
-
 trait TypeContextProvider { this: TypeUniverse =>
   val typeContext: TypeContext[CT, CV]
 }

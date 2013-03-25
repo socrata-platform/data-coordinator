@@ -19,7 +19,7 @@ import com.typesafe.config.ConfigFactory
 import com.socrata.datacoordinator.common.{DataSourceFromConfig, StandardDatasetMapLimits}
 import java.sql.Connection
 import com.rojoma.simplearm.util._
-import com.socrata.datacoordinator.truth.sql.{SqlDataReadingContext, DatasetLockContext}
+import com.socrata.datacoordinator.truth.sql.SqlDataReadingContext
 import metadata.UnanchoredCopyInfo
 import scala.concurrent.duration.Duration
 import scala.Some
@@ -210,16 +210,15 @@ object Service extends App { self =>
 
   val executorService = Executors.newCachedThreadPool()
   try {
-    val dataContext: DataReadingContext with DataWritingContext with JsonDataContext with SqlDataReadingContext = new PostgresSoQLDataContext with JsonSoQLDataContext with DatasetLockContext {
+    val dataContext: DataReadingContext with DataWritingContext with JsonDataContext with SqlDataReadingContext = new PostgresSoQLDataContext with JsonSoQLDataContext {
       val dataSource = self.dataSource
       val executorService = self.executorService
       def copyIn(conn: Connection, sql: String, input: Reader): Long =
         copyInForDataSource(conn, sql, input)
       def tablespace(s: String) = Some("pg_default")
       val datasetMapLimits = StandardDatasetMapLimits
-      val datasetLock: DatasetLock = NoopDatasetLock
-      val datasetLockTimeout: Duration = Duration.Inf
       val timingReport = self.timingReport
+      val datasetMutatorLockTimeout = Duration.Inf
     }
 
     val fileStore = new FileStore(new File("/tmp/filestore"))

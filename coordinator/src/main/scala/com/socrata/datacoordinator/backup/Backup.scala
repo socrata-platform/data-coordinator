@@ -32,6 +32,7 @@ import com.socrata.datacoordinator.truth.metadata.CopyPair
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
 import com.socrata.datacoordinator.truth.loader.Insert
 import com.socrata.datacoordinator.util.{NoopTimingReport, TimingReport}
+import scala.concurrent.duration.Duration
 
 class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingReport, paranoid: Boolean) {
   val typeContext = SoQLTypeContext
@@ -292,7 +293,7 @@ object Backup extends App {
   }
 
   def playbackExisting(primaryConn: Connection, backup: Backup, datasetSystemId: DatasetId, version: Long) = {
-    val datasetInfo = backup.datasetMap.datasetInfo(datasetSystemId).getOrElse {
+    val datasetInfo = backup.datasetMap.datasetInfo(datasetSystemId, Duration.Inf).getOrElse {
       Resync(datasetSystemId, "Expected dataset " + datasetSystemId.underlying + " to exist for version " + version)
     }
     val initialVersionInfo = backup.datasetMap.latest(datasetInfo)

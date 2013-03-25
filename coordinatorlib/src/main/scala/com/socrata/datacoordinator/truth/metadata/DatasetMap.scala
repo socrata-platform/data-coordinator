@@ -1,10 +1,21 @@
 package com.socrata.datacoordinator.truth.metadata
 
 import com.socrata.datacoordinator.id.{RowId, ColumnId, CopyId, DatasetId}
+import scala.concurrent.duration.Duration
 
-trait DatasetMapReader extends `-impl`.BaseDatasetMapReader
+trait DatasetMapBase extends `-impl`.BaseDatasetMapReader {
+}
 
-trait DatasetMapWriter extends DatasetMapReader with `-impl`.BaseDatasetMapWriter {
+trait DatasetMapReader extends DatasetMapBase {
+  /** Looks up a dataset record by its system ID. */
+  def datasetInfo(datasetId: DatasetId): Option[DatasetInfo]
+}
+
+trait DatasetMapWriter extends DatasetMapBase with `-impl`.BaseDatasetMapWriter {
+  /** Looks up a dataset record by its system ID.
+    * @throws DatasetIdInUseByWriterException if some other writer has been used to look up this dataset. */
+  def datasetInfo(datasetId: DatasetId, timeout: Duration): Option[DatasetInfo]
+
   /** Creates a new dataset in the truthstore.
     * @note Does not actually create any tables; this just updates the bookkeeping.
     * @note `datasetId` needs to be globally unique; if you have namespacing do it yourself.
@@ -33,7 +44,7 @@ trait DatasetMapWriter extends DatasetMapReader with `-impl`.BaseDatasetMapWrite
   def addColumn(copyInfo: CopyInfo, logicalName: String, typeName: String, physicalColumnBaseBase: String): ColumnInfo
 }
 
-trait BackupDatasetMap extends DatasetMapReader with `-impl`.BaseDatasetMapWriter {
+trait BackupDatasetMap extends DatasetMapWriter with `-impl`.BaseDatasetMapWriter {
   /** Creates a new dataset in the truthstore.
     * @note Does not actually create any tables; this just updates the bookkeeping.
     * @note `datasetId` needs to be globally unique; if you have namespacing do it yourself.

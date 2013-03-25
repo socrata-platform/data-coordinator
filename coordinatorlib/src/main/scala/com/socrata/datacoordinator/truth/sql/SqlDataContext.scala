@@ -26,12 +26,7 @@ trait SqlDataTypeContext extends DataTypeContext {
   final def sqlRepForColumn(ci: ColumnInfo): SqlRepType = sqlRepForColumn(ci.physicalColumnBase, typeContext.typeFromName(ci.typeName))
 }
 
-trait DatasetLockContext {
-  val datasetLock: DatasetLock
-  val datasetLockTimeout: Duration
-}
-
-trait SqlDataWritingContext extends SqlDataTypeContext with DataWritingContext { this: DatasetLockContext =>
+trait SqlDataWritingContext extends SqlDataTypeContext with DataWritingContext {
   type SqlRepType <: SqlColumnWriteRep[CT, CV]
 
   protected val loaderProvider: AbstractSqlLoaderProvider[CT, CV]
@@ -42,7 +37,9 @@ trait SqlDataWritingContext extends SqlDataTypeContext with DataWritingContext {
 
   val databaseMutator: LowLevelDatabaseMutator[CV]
 
-  final lazy val datasetMutator = DatasetMutator(databaseMutator, datasetLock, datasetLockTimeout)
+  val datasetMutatorLockTimeout: Duration
+
+  lazy val datasetMutator = DatasetMutator(databaseMutator, datasetMutatorLockTimeout)
 }
 
 trait SqlDataReadingContext extends SqlDataTypeContext with DataReadingContext {
@@ -52,7 +49,7 @@ trait SqlDataReadingContext extends SqlDataTypeContext with DataReadingContext {
   final lazy val datasetReader = DatasetReader(databaseReader)
 }
 
-trait PostgresDataContext extends SqlDataWritingContext with SqlDataReadingContext with ExecutionContext { self: DataSchemaContext with DatasetLockContext =>
+trait PostgresDataContext extends SqlDataWritingContext with SqlDataReadingContext with ExecutionContext { self: DataSchemaContext =>
   type SqlRepType = SqlColumnRep[CT, CV]
 
   override val timingReport: TransferrableContextTimingReport

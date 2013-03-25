@@ -183,7 +183,7 @@ object Transmitter extends App {
   def handleResyncRequest(client: Packets, conn: Connection, datasetId: DatasetId) {
     conn.setAutoCommit(false) // We'll be taking a lock and so we want transactions too
     val datasetMap: DatasetMapWriter = new PostgresDatasetMapWriter(conn, timingReport)
-    datasetMap.datasetInfo(datasetId) match {
+    datasetMap.datasetInfo(datasetId, Duration.Inf) match {
       case Some(info) =>
         client.send(WillResync(info.unanchored))
         for(copy <- datasetMap.allCopies(info)) {
@@ -225,7 +225,7 @@ object Transmitter extends App {
     loop()
   }
 
-  def sendCopy(client: Packets, conn: Connection, datasetMap: DatasetMapReader)(copy: CopyInfo) {
+  def sendCopy(client: Packets, conn: Connection, datasetMap: DatasetMapBase)(copy: CopyInfo) {
     log.info("Doing full send of the copy data to the backup")
     val schema = datasetMap.schema(copy)
     val columnInfos = schema.values.map(_.unanchored).toSeq

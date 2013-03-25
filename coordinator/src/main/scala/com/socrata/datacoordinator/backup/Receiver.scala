@@ -98,7 +98,7 @@ object Receiver extends App {
       val backup = new Backup(conn, executor, timingReport, paranoid = true)
 
       try {
-        backup.datasetMap.datasetInfo(datasetId) match {
+        backup.datasetMap.datasetInfo(datasetId, Duration.Inf) match {
           case Some(datasetInfo) =>
             receiveUpdate(conn, backup, client)(datasetInfo, version)
           case None =>
@@ -223,7 +223,7 @@ object Receiver extends App {
   }
 
   def receiveResync(conn: Connection, backup: Backup, client: Packets, datasetInfo: UnanchoredDatasetInfo) {
-    val clearedDatasetInfo = backup.datasetMap.datasetInfo(datasetInfo.systemId) match {
+    val clearedDatasetInfo = backup.datasetMap.datasetInfo(datasetInfo.systemId, Duration.Inf) match {
       case Some(originalDatasetInfo) =>
         using(conn.createStatement()) { stmt =>
           for(copy <- backup.datasetMap.allCopies(originalDatasetInfo)) {

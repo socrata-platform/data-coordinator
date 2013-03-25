@@ -34,9 +34,9 @@ class PostgresDatabaseMutator[CT, CV](universe: Managed[Universe[CT, CV] with Lo
   private class S(universe: Universe[CT, CV] with LoggerProvider with SchemaLoaderProvider with LoaderProvider with DatasetContentsCopierProvider with DatasetMapWriterProvider with GlobalLogProvider) extends MutationContext {
     lazy val now = universe.transactionStart
 
-    final def loadLatestVersionOfDataset(datasetId: DatasetId): Option[(CopyInfo, ColumnIdMap[ColumnInfo])] = {
+    final def loadLatestVersionOfDataset(datasetId: DatasetId, lockTimeout: Duration): Option[(CopyInfo, ColumnIdMap[ColumnInfo])] = {
       val map = datasetMap
-      map.datasetInfo(datasetId) map { datasetInfo =>
+      map.datasetInfo(datasetId, lockTimeout) map { datasetInfo =>
         val latest = map.latest(datasetInfo)
         val schema = map.schema(latest)
         (latest, schema)

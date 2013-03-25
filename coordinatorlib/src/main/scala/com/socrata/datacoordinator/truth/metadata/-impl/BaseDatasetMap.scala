@@ -8,9 +8,6 @@ trait BaseDatasetMapReader {
   /** Looks up a dataset record by its ID. */
   def datasetId(datasetId: String): Option[DatasetId]
 
-  /** Looks up a dataset record by its system ID. */
-  def datasetInfo(datasetId: DatasetId): Option[DatasetInfo]
-
   /** Gets the newest copy, no matter what the lifecycle stage is. */
   def latest(datasetInfo: DatasetInfo): CopyInfo
 
@@ -41,10 +38,6 @@ trait BaseDatasetMapReader {
 }
 
 trait BaseDatasetMapWriter extends BaseDatasetMapReader {
-  /** Looks up a dataset record by its system ID.
-    * @throws DatasetIdInUseByWriterException if some other writer has been used to look up this dataset. */
-  def datasetInfo(datasetId: DatasetId): Option[DatasetInfo]
-
   /** Completely removes a dataset (all its copies) from the truthstore.
     * @note Does not actually drop (or queue for dropping) any tables; this just updates the bookkeeping. */
   def delete(datasetInfo: DatasetInfo)

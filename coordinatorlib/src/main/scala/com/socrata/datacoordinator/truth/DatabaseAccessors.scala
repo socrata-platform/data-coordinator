@@ -39,7 +39,7 @@ trait LowLevelDatabaseMutator[CV] {
 
     def finishDatasetTransaction(username: String, copyInfo: CopyInfo)
 
-    def loadLatestVersionOfDataset(datasetId: DatasetId): Option[(CopyInfo, ColumnIdMap[ColumnInfo])]
+    def loadLatestVersionOfDataset(datasetId: DatasetId, lockTimeout: Duration): Option[(CopyInfo, ColumnIdMap[ColumnInfo])]
   }
 
   def openDatabase: Managed[MutationContext]
@@ -116,7 +116,7 @@ trait DatasetMutator[CV] {
 }
 
 object DatasetMutator {
-  private class Impl[CV](val databaseMutator: LowLevelDatabaseMutator[CV], lock: DatasetLock, lockTimeout: Duration) extends DatasetMutator[CV] {
+  private class Impl[CV](val databaseMutator: LowLevelDatabaseMutator[CV], lockTimeout: Duration) extends DatasetMutator[CV] {
     class S(var copyInfo: CopyInfo, var schema: ColumnIdMap[ColumnInfo], val schemaLoader: SchemaLoader, val logger: Logger[CV], llCtx: databaseMutator.MutationContext) extends MutationContext {
       def now = llCtx.now
       def datasetMap = llCtx.datasetMap
@@ -236,18 +236,16 @@ object DatasetMutator {
       } yield {
         llCtx.datasetMap.datasetId(datasetName) match {
           case Some(datasetId) =>
-            lock.withDatasetLock(datasetId, lockTimeout) {
-              val ctx = llCtx.loadLatestVersionOfDataset(datasetId) map { case (initialCopy, initialSchema) =>
-                val logger = llCtx.logger(initialCopy.datasetInfo)
-                val schemaLoader = llCtx.schemaLoader(initialCopy.datasetInfo)
-                new S(initialCopy, initialSchema, schemaLoader, logger, llCtx)
-              }
-              val result = action(ctx)
-              ctx.foreach { state =>
-                llCtx.finishDatasetTransaction(username, state.copyInfo)
-              }
-              result
+            val ctx = llCtx.loadLatestVersionOfDataset(datasetId, lockTimeout) map { case (initialCopy, initialSchema) =>
+              val logger = llCtx.logger(initialCopy.datasetInfo)
+              val schemaLoader = llCtx.schemaLoader(initialCopy.datasetInfo)
+              new S(initialCopy, initialSchema, schemaLoader, logger, llCtx)
             }
+            val result = action(ctx)
+            ctx.foreach { state =>
+              llCtx.finishDatasetTransaction(username, state.copyInfo)
+            }
+            result
           case None =>
             action(None)
         }
@@ -291,6 +289,6 @@ object DatasetMutator {
       firstOp(as, datasetName, _.drop())
   }
 
-  def apply[CV](lowLevelMutator: LowLevelDatabaseMutator[CV], lock: DatasetLock, lockTimeout: Duration): DatasetMutator[CV] =
-    new Impl(lowLevelMutator, lock, lockTimeout)
+  def apply[CV](lowLevelMutator: LowLevelDatabaseMutator[CV], lockTimeout: Duration): DatasetMutator[CV] =
+    new Impl(lowLevelMutator, lockTimeout)
 }

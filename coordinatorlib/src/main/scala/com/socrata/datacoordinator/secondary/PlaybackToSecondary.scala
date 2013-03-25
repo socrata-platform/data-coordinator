@@ -10,7 +10,6 @@ import scala.util.control.ControlThrowable
 import java.sql.Connection
 import com.socrata.datacoordinator.truth.loader.sql.RepBasedDatasetExtractor
 import com.socrata.datacoordinator.truth.metadata.sql.{PostgresDatasetMapWriter, PostgresDatasetMapReader}
-import com.socrata.datacoordinator.truth.NoopDatasetLock
 import scala.concurrent.duration.Duration
 import scala.Some
 import com.socrata.datacoordinator.truth.metadata.DatasetInfo
@@ -26,7 +25,6 @@ class PlaybackToSecondary[CT, CV](conn: Connection, secondaryManifest: Secondary
   val log = LoggerFactory.getLogger(classOf[PlaybackToSecondary[_,_]])
   val datasetMapReader = new PostgresDatasetMapReader(conn, timingReport)
 
-  val datasetLock = NoopDatasetLock
   val datasetLockTimeout = Duration.Inf
 
   def apply(datasetId: DatasetId, secondary: NamedSecondary[CV], datasetMapReader: DatasetMapReader, delogger: Delogger[CV]) {
@@ -61,28 +59,26 @@ class PlaybackToSecondary[CT, CV](conn: Connection, secondaryManifest: Secondary
 
   def resync(datasetId: DatasetId, secondary: NamedSecondary[CV], delogger: Delogger[CV]) {
     timingReport("resync", "dataset" -> datasetId) {
-      datasetLock.withDatasetLock(datasetId, datasetLockTimeout) {
-        val w = new PostgresDatasetMapWriter(conn, timingReport)
-        w.datasetInfo(datasetId) match {
-          case Some(datasetInfo) =>
-            val allCopies = w.allCopies(datasetInfo)
-            var currentCookie = getCookie(secondary, datasetId)
-            val newLastDataVersion =
-              if(secondary.store.wantsWorkingCopies) delogger.lastVersion.getOrElse(0L)
-              else lastPublishedDataVersion(delogger)
-            for(copy <- allCopies) {
-              timingReport("copy", "number" -> copy.copyNumber) {
-                currentCookie =
-                  if(copy.lifecycleStage == LifecycleStage.Discarded) secondary.store.dropCopy(datasetId, copy.copyNumber, currentCookie)
-                  else if(copy.lifecycleStage != LifecycleStage.Unpublished) syncCopy(secondary, copy, w.schema(copy), currentCookie)
-                  else if(secondary.store.wantsWorkingCopies) syncCopy(secondary, copy, w.schema(copy), currentCookie)
-                  else currentCookie
-              }
+      val w = new PostgresDatasetMapWriter(conn, timingReport)
+      w.datasetInfo(datasetId, datasetLockTimeout) match {
+        case Some(datasetInfo) =>
+          val allCopies = w.allCopies(datasetInfo)
+          var currentCookie = getCookie(secondary, datasetId)
+          val newLastDataVersion =
+            if(secondary.store.wantsWorkingCopies) delogger.lastVersion.getOrElse(0L)
+            else lastPublishedDataVersion(delogger)
+          for(copy <- allCopies) {
+            timingReport("copy", "number" -> copy.copyNumber) {
+              currentCookie =
+                if(copy.lifecycleStage == LifecycleStage.Discarded) secondary.store.dropCopy(datasetId, copy.copyNumber, currentCookie)
+                else if(copy.lifecycleStage != LifecycleStage.Unpublished) syncCopy(secondary, copy, w.schema(copy), currentCookie)
+                else if(secondary.store.wantsWorkingCopies) syncCopy(secondary, copy, w.schema(copy), currentCookie)
+                else currentCookie
             }
-            updateSecondaryMap(secondary, datasetInfo.systemId, newLastDataVersion, currentCookie)
-          case None =>
-            drop(secondary, datasetId)
-        }
+          }
+          updateSecondaryMap(secondary, datasetInfo.systemId, newLastDataVersion, currentCookie)
+        case None =>
+          drop(secondary, datasetId)
       }
     }
   }

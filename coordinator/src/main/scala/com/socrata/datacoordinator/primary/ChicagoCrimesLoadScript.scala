@@ -15,10 +15,9 @@ import com.socrata.datacoordinator.{Row, MutableRow}
 import com.socrata.datacoordinator.common.StandardDatasetMapLimits
 import org.postgresql.PGConnection
 import com.socrata.soql.brita.IdentifierFilter
-import com.socrata.datacoordinator.truth.sql.DatasetLockContext
-import scala.concurrent.duration.Duration
 import com.socrata.datacoordinator.util.{StackedTimingReport, LoggedTimingReport}
 import org.slf4j.LoggerFactory
+import scala.concurrent.duration.Duration
 
 object ChicagoCrimesLoadScript extends App {
   val url =
@@ -44,15 +43,14 @@ object ChicagoCrimesLoadScript extends App {
   val executor = java.util.concurrent.Executors.newCachedThreadPool()
   try {
 
-    val dataContextRaw = new PostgresSoQLDataContext with CsvSoQLDataContext with DatasetLockContext {
+    val dataContextRaw = new PostgresSoQLDataContext with CsvSoQLDataContext {
       val dataSource = ds
       val executorService = executor
       def copyIn(conn: Connection, sql: String, input: Reader): Long =
         conn.asInstanceOf[PGConnection].getCopyAPI.copyIn(sql, input)
       def tablespace(s: String) = None
       val datasetMapLimits = StandardDatasetMapLimits
-      val datasetLock: DatasetLock = NoopDatasetLock
-      val datasetLockTimeout: Duration = Duration.Inf
+      val datasetMutatorLockTimeout = Duration.Inf
       val timingReport = new LoggedTimingReport(LoggerFactory.getLogger("timing-report")) with StackedTimingReport
     }
 
