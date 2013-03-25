@@ -4,7 +4,7 @@ package sql
 
 import scala.collection.immutable.VectorBuilder
 
-import java.sql.{PreparedStatement, Connection}
+import java.sql.{Statement, SQLException, PreparedStatement, Connection}
 
 import org.postgresql.util.PSQLException
 import com.rojoma.simplearm.util._
@@ -186,8 +186,6 @@ class PostgresDatasetMapReader(val conn: Connection, timingReport: TimingReport)
 }
 
 trait BasePostgresDatasetMapWriter extends BasePostgresDatasetMapReader with `-impl`.BaseDatasetMapWriter {
-  def lockNotAvailableState = "55P03"
-
   def createQuery_tableMap = "INSERT INTO dataset_map (dataset_name, table_base_base, next_row_id) VALUES (?, ?, ?) RETURNING system_id"
   def createQuery_copyMap = "INSERT INTO copy_map (dataset_system_id, copy_number, lifecycle_stage, data_version) VALUES (?, ?, CAST(? AS dataset_lifecycle_stage), ?) RETURNING system_id"
   def create(datasetId: String, tableBaseBase: String): CopyInfo = {
@@ -639,44 +637,89 @@ trait BasePostgresDatasetMapWriter extends BasePostgresDatasetMapReader with `-i
 class PostgresDatasetMapWriter(val conn: Connection, timingReport: TimingReport) extends DatasetMapWriter with BasePostgresDatasetMapWriter with BackupDatasetMap {
   require(!conn.getAutoCommit, "Connection is in auto-commit mode")
 
+  import PostgresDatasetMapWriter._
+
   def t = timingReport
 
-  def datasetInfoBySystemIdQuery = "SELECT system_id, dataset_name, table_base_base, next_row_id FROM dataset_map WHERE system_id = ? FOR UPDATE"
+  def lockNotAvailableState = "55P03"
+  def queryCancelledState = "57014"
+
+  // Can't set parameters' values via prepared statement placeholders
+  def setTimeout(timeoutMs: Int) =
+    s"SET LOCAL statement_timeout TO $timeoutMs"
+  def datasetInfoBySystemIdQuery =
+    "SELECT system_id, dataset_name, table_base_base, next_row_id FROM dataset_map WHERE system_id = ? FOR UPDATE"
+  def resetTimeout = "SET LOCAL statement_timeout TO DEFAULT"
   def datasetInfo(datasetId: DatasetId, timeout: Duration) = {
+    // For now we assume that we're the only one setting the statement_timeout parameter.  If this turns out
+    // to be wrong, we'll have to SHOW the parameter in order to
+    //   * set the value properly in the case of a nonfinite timeout
+    //   * save the value to restore.
     val savepoint = conn.setSavepoint()
-    try {
-      // ok.  For now we're going to assume that we're the only one setting this parameter.
-      // If this turns out not to be true, we'll have to use SHOW to query the current value.
-      if(timeout.isFinite()) {
-        using(conn.createStatement()) { stmt =>
-          stmt.execute("SET LOCAL statement_timeout TO " + timeout.toMillis)
-        }
-      }
+    val result =
       try {
-        val res = using(conn.prepareStatement(datasetInfoBySystemIdQuery)) { stmt =>
-          stmt.setLong(1, datasetId.underlying)
-          using(t("lookup-dataset-for-update", "dataset_id" -> datasetId)(stmt.executeQuery())) { rs =>
-            if(rs.next()) {
-              Some(DatasetInfo(new DatasetId(rs.getLong("system_id")), rs.getString("dataset_name"), rs.getString("table_base_base"), new RowId(rs.getLong("next_row_id"))))
-            } else {
-              None
+        if(timeout.isFinite()) {
+          val ms = timeout.toMillis.min(Int.MaxValue).max(1).toInt
+          log.trace("Setting statement timeout to {}ms", ms)
+          execute(setTimeout(ms))
+        }
+        val result =
+          using(conn.prepareStatement(datasetInfoBySystemIdQuery)) { stmt =>
+            stmt.setLong(1, datasetId.underlying)
+            try {
+              t("lookup-dataset-for-update", "dataset_id" -> datasetId)(stmt.execute())
+              getInfoResult(stmt)
+            } catch {
+              case e: PSQLException if isStatementTimeout(e) =>
+                log.trace("Get dataset _with_ waiting failed; abandoning")
+                conn.rollback(savepoint)
+                throw new DatasetSystemIdInUseByWriterException(datasetId, e)
             }
           }
-        }
-        if(timeout.isFinite()) {
-          using(conn.createStatement()) { stmt =>
-            stmt.execute("SET LOCAL statement_timeout TO DEFAULT")
-          }
-        }
-        res
+        if(timeout.isFinite) execute(resetTimeout)
+        result
       } catch {
-        case e: PSQLException =>
-          println(e.getSQLState)
-          conn.rollback(savepoint)
-          throw new DatasetSystemIdInUseByWriterException(datasetId, e)
+        case t: Throwable if !t.isInstanceOf[SQLException] =>
+          // can't release a save point if the txn is aborted.  If it _is_ aborted, there are only two things that
+          // can happen: we can either roll back to an earlier savepoint, or we can roll back completely.  Either
+          // way, this savepoint will be dropped.
+          //
+          // If t is a SQLException but not a server-side sql exception, then.. meh.  Even if it happens it won't
+          // matter in practice, because actually handling SQLExceptions doesn't happen much.
+          conn.releaseSavepoint(savepoint)
+          throw t
       }
-    } finally {
-      conn.releaseSavepoint(savepoint)
+    conn.releaseSavepoint(savepoint)
+    result
+  }
+
+  def execute(s: String) {
+    using(conn.createStatement()) { stmt =>
+      log.trace("Executing simple SQL {}", s)
+      stmt.execute(s)
     }
   }
+
+  def getInfoResult(stmt: Statement) =
+    using(stmt.getResultSet) { rs =>
+      if(rs.next()) {
+        Some(DatasetInfo(new DatasetId(rs.getLong("system_id")), rs.getString("dataset_name"), rs.getString("table_base_base"), new RowId(rs.getLong("next_row_id"))))
+      } else {
+        None
+      }
+    }
+
+  def isStatementTimeout(e: PSQLException): Boolean =
+    e.getSQLState == queryCancelledState &&
+      errorMessage(e).map(_.endsWith("due to statement timeout")).getOrElse(false)
+
+  def errorMessage(e: PSQLException): Option[String] =
+    for {
+      serverErrorMessage <- Option(e.getServerErrorMessage)
+      message <- Option(serverErrorMessage.getMessage)
+    } yield message
+}
+
+object PostgresDatasetMapWriter {
+  val log = org.slf4j.LoggerFactory.getLogger(classOf[PostgresDatasetMapWriter])
 }

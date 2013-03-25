@@ -13,6 +13,11 @@ trait DatasetMapReader extends DatasetMapBase {
 
 trait DatasetMapWriter extends DatasetMapBase with `-impl`.BaseDatasetMapWriter {
   /** Looks up a dataset record by its system ID.
+    * @param timeout Amount of time to block before throwing.
+    * @note An implementation should make a "best effort" to honor the timeout, but
+    *       is permitted to wait less or more.  In particular, the postgresql implementation
+    *       will only wait up to `Int.MaxValue` milliseconds unless the timeout is
+    *       actually non-finite.
     * @throws DatasetIdInUseByWriterException if some other writer has been used to look up this dataset. */
   def datasetInfo(datasetId: DatasetId, timeout: Duration): Option[DatasetInfo]
 
