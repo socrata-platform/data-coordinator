@@ -651,46 +651,58 @@ class PostgresDatasetMapWriter(val conn: Connection, timingReport: TimingReport)
     "SELECT system_id, dataset_name, table_base_base, next_row_id FROM dataset_map WHERE system_id = ? FOR UPDATE"
   def resetTimeout = "SET LOCAL statement_timeout TO DEFAULT"
   def datasetInfo(datasetId: DatasetId, timeout: Duration) = {
-    // For now we assume that we're the only one setting the statement_timeout parameter.  If this turns out
-    // to be wrong, we'll have to SHOW the parameter in order to
+    // For now we assume that we're the only one setting the statement_timeout
+    // parameter.  If this turns out to be wrong, we'll have to SHOW the
+    // parameter in order to
     //   * set the value properly in the case of a nonfinite timeout
     //   * save the value to restore.
+    // One might think this would be better done as a stored procedure,
+    // which can do the save/restore thing automatically -- see the paragraph
+    // that begins "If SET LOCAL is used within a function..." at
+    //     http://www.postgresql.org/docs/9.2/static/sql-set.html
+    // but unfortunately setting statement_timeout doesn't affect the
+    // _current_ statement.  For this same reason we're not just doing all
+    // three operations in a single "set timeout;query;restore timeout"
+    // call.
     val savepoint = conn.setSavepoint()
-    val result =
-      try {
-        if(timeout.isFinite()) {
-          val ms = timeout.toMillis.min(Int.MaxValue).max(1).toInt
-          log.trace("Setting statement timeout to {}ms", ms)
-          execute(setTimeout(ms))
-        }
-        val result =
-          using(conn.prepareStatement(datasetInfoBySystemIdQuery)) { stmt =>
-            stmt.setLong(1, datasetId.underlying)
-            try {
-              t("lookup-dataset-for-update", "dataset_id" -> datasetId)(stmt.execute())
-              getInfoResult(stmt)
-            } catch {
-              case e: PSQLException if isStatementTimeout(e) =>
-                log.trace("Get dataset _with_ waiting failed; abandoning")
-                conn.rollback(savepoint)
-                throw new DatasetSystemIdInUseByWriterException(datasetId, e)
-            }
-          }
-        if(timeout.isFinite) execute(resetTimeout)
-        result
-      } catch {
-        case t: Throwable if !t.isInstanceOf[SQLException] =>
-          // can't release a save point if the txn is aborted.  If it _is_ aborted, there are only two things that
-          // can happen: we can either roll back to an earlier savepoint, or we can roll back completely.  Either
-          // way, this savepoint will be dropped.
-          //
-          // If t is a SQLException but not a server-side sql exception, then.. meh.  Even if it happens it won't
-          // matter in practice, because actually handling SQLExceptions doesn't happen much.
-          conn.releaseSavepoint(savepoint)
-          throw t
+    try {
+      if(timeout.isFinite()) {
+        val ms = timeout.toMillis.min(Int.MaxValue).max(1).toInt
+        log.trace("Setting statement timeout to {}ms", ms)
+        execute(setTimeout(ms))
       }
-    conn.releaseSavepoint(savepoint)
-    result
+      val result =
+        using(conn.prepareStatement(datasetInfoBySystemIdQuery)) { stmt =>
+          stmt.setLong(1, datasetId.underlying)
+          try {
+            t("lookup-dataset-for-update", "dataset_id" -> datasetId)(stmt.execute())
+            getInfoResult(stmt)
+          } catch {
+            case e: PSQLException if isStatementTimeout(e) =>
+              log.trace("Get dataset _with_ waiting failed; abandoning")
+              conn.rollback(savepoint)
+              throw new DatasetSystemIdInUseByWriterException(datasetId, e)
+          }
+        }
+      if(timeout.isFinite) execute(resetTimeout)
+      result
+    } finally {
+      try {
+        conn.releaseSavepoint(savepoint)
+      } catch {
+        case e: SQLException =>
+          // Ignore; this means one of two things:
+          // * the server is in an unexpected "transaction aborted" state, so all we
+          //    can do is roll back (either to another, earlier savepoint or completely)
+          //    and either way this savepoint will be dropped implicitly
+          // * things have completely exploded and nothing can be done except
+          //    dropping the connection altogether.
+          // The latter could happen if this finally block is being run because
+          // this method is exiting normally, but in that case whatever we do next
+          // will fail so meh.  Just log it and continue.
+          log.warn("Unexpected exception while releasing savepoint", e)
+      }
+    }
   }
 
   def execute(s: String) {
