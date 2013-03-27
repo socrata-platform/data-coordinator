@@ -47,7 +47,8 @@ class Service(storeFile: InputStream => String,
               secondaries: Set[String],
               datasetsInStore: (String) => DatasetIdMap[Long],
               versionInStore: (String, String) => Option[Long],
-              updateVersionInStore: (String, String) => Unit)
+              updateVersionInStore: (String, String) => Unit,
+              secondariesOfDataset: String => Option[Map[String, Long]])
 {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
 
@@ -157,6 +158,18 @@ class Service(storeFile: InputStream => String,
     OK
   }
 
+  def doGetSecondariesOfDataset(datasetIdRaw: String)(req: HttpServletRequest): HttpResponse = {
+    val datasetId =
+      try { URLDecoder.decode(datasetIdRaw, "UTF-8") }
+      catch { case _: IllegalArgumentException => return BadRequest }
+    secondariesOfDataset(datasetId) match {
+      case Some(ss) =>
+        OK ~> ContentType("application/json; charset=utf-8") ~> Write(JsonUtil.writeJson(_, ss, buffer = true))
+      case None =>
+        NotFound
+    }
+  }
+
   def doPublish(id: String)(req: HttpServletRequest): HttpResponse = { resp =>
     publish(norm(id), "blist")
   }
@@ -175,7 +188,8 @@ class Service(storeFile: InputStream => String,
     ExtractingRouter[HttpService]("GET", "/secondary-manifest")(doGetSecondaries _),
     ExtractingRouter[HttpService]("GET", "/secondary-manifest/?")(doGetSecondaryManifest _),
     ExtractingRouter[HttpService]("GET", "/secondary-manifest/?/?")(doGetDataVersionInSecondary _),
-    ExtractingRouter[HttpService]("POST", "/secondary-manifest/?/?")(doUpdateVersionInSecondary _)
+    ExtractingRouter[HttpService]("POST", "/secondary-manifest/?/?")(doUpdateVersionInSecondary _),
+    ExtractingRouter[HttpService]("GET", "/secondaries-of-dataset/?")(doGetSecondariesOfDataset _)
   )
 
   private def handler(req: HttpServletRequest): HttpResponse = {
@@ -257,10 +271,20 @@ object Service extends App { self =>
         }
         conn.commit()
       }
+    def secondariesOfDataset(datasetId: String): Option[Map[String, Long]] =
+      using(dataSource.getConnection()) { conn =>
+        conn.setAutoCommit(false)
+        val mapReader = new PostgresDatasetMapReader(conn, timingReport)
+        val secondaryManifest = new SqlSecondaryManifest(conn)
+        for {
+          systemId <- mapReader.datasetId(datasetId)
+        } yield secondaryManifest.stores(systemId)
+      }
 
     val serv = new Service(fileStore.store, importer.importFile, importer.updateFile, exporter.export,
       publisher.publish, workingCopyCreator.copyDataset,
-      secondaries.keySet, datasetsInStore, versionInStore, updateVersionInStore)
+      secondaries.keySet, datasetsInStore, versionInStore, updateVersionInStore,
+      secondariesOfDataset)
     serv.run(port)
 
     secondaries.values.foreach(_.shutdown())
