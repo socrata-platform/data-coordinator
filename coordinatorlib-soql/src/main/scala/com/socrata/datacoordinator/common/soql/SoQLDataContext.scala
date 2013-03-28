@@ -18,6 +18,7 @@ import com.socrata.datacoordinator.truth.loader.RowPreparer
 import com.socrata.datacoordinator.id.RowId
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 
+@deprecated("deprected", "now")
 trait SoQLDataContext extends DataSchemaContext with DataWritingContext with DataReadingContext {
   type CT = SoQLType
   type CV = Any
@@ -77,6 +78,7 @@ trait SoQLDataContext extends DataSchemaContext with DataWritingContext with Dat
   }
 }
 
+@deprecated("deprected", "now")
 object SoQLDataContext {
   object ColumnNames {
     val systemId = ":id"
@@ -85,6 +87,7 @@ object SoQLDataContext {
   }
 }
 
+@deprecated("deprected", "now")
 trait PostgresSoQLDataContext extends PostgresDataContext with SoQLDataContext with ExecutionContext {
   def sqlRepForColumn(physicalColumnBase: String, typ: CT) =
     SoQLRep.sqlRepFactories(typ)(physicalColumnBase)
@@ -135,11 +138,13 @@ trait PostgresSoQLDataContext extends PostgresDataContext with SoQLDataContext w
   }
 }
 
+@deprecated("deprected", "now")
 trait CsvSoQLDataContext extends CsvDataContext with SoQLDataContext {
   def csvRepForColumn(typ: CT) =
     SoQLRep.csvRepFactories(typ)
 }
 
+@deprecated
 trait JsonSoQLDataContext extends JsonDataContext with SoQLDataContext {
   def jsonRepForColumn(name: String, typ: CT) =
     SoQLRep.jsonRepFactories(typ)(name)

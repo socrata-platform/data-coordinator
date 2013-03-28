@@ -5,7 +5,7 @@ import com.rojoma.simplearm.Managed
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth._
-import com.socrata.datacoordinator.util.TimingReport
+import com.socrata.datacoordinator.util.{TransferrableContextTimingReport, RowIdProvider, TimingReport}
 import com.socrata.datacoordinator.secondary.{SecondaryConfig, PlaybackToSecondary, SecondaryManifest}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import org.joda.time.DateTime
@@ -46,7 +46,7 @@ trait Universe[ColumnType, ColumnValue] extends TypeUniverse {
     */
   def commit()
 
-  val timingReport: TimingReport
+  val timingReport: TransferrableContextTimingReport
 
   def transactionStart: DateTime
 }
@@ -60,11 +60,11 @@ trait DeloggerProvider { this: TypeUniverse =>
 }
 
 trait PrevettedLoaderProvider { this: TypeUniverse =>
-  def prevettedLoader: Managed[PrevettedLoader[CV]]
+  def prevettedLoader(copyInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[CV]): PrevettedLoader[CV]
 }
 
 trait LoaderProvider { this: TypeUniverse =>
-  def loader(copy: CopyInfo, schema: ColumnIdMap[ColumnInfo]): Managed[Loader[CV]]
+  def loader(copyInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo], rowIdProvider: RowIdProvider, logger: Logger[CV]): Managed[Loader[CV]]
 }
 
 trait SchemaLoaderProvider {
@@ -79,28 +79,13 @@ trait DatasetMapWriterProvider {
   val datasetMapWriter: DatasetMapWriter
 }
 
-trait RowLogCodecProvider { this: TypeUniverse =>
-  def newRowLogCodec(): RowLogCodec[CV]
-}
-
-trait RowPreparerProvider { this: TypeUniverse =>
-  val rowPreparer: RowPreparer[CV]
-}
-
 trait DatasetMutatorProvider { this: TypeUniverse =>
   val datasetMutator: DatasetMutator[CV]
 }
 
 trait DatasetReaderProvider { this: TypeUniverse =>
-  val datasetReaderProvider: DatasetReader[CV]
-}
-
-trait LowLevelDatabaseReaderProvider { this: TypeUniverse =>
   val lowLevelDatabaseReader: LowLevelDatabaseReader[CV]
-}
-
-trait TypeContextProvider { this: TypeUniverse =>
-  val typeContext: TypeContext[CT, CV]
+  val datasetReader: DatasetReader[CV]
 }
 
 trait GlobalLogPlaybackProvider {

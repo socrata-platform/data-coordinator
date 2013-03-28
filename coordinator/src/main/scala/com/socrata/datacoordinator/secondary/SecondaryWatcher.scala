@@ -5,21 +5,19 @@ import com.rojoma.simplearm.{SimpleArm, Managed}
 
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.secondary.sql.SqlSecondaryConfig
-import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.typesafe.config.ConfigFactory
 import com.socrata.datacoordinator.common.DataSourceFromConfig
 import java.io.File
-import com.socrata.datacoordinator.common.soql.{SoQLRowLogCodec, SoQLRep}
 import com.socrata.soql.types.SoQLType
-import com.socrata.soql.environment.TypeName
 import org.slf4j.LoggerFactory
 import sun.misc.{Signal, SignalHandler}
-import java.util.concurrent.{TimeUnit, CountDownLatch}
+import java.util.concurrent.{Executors, TimeUnit, CountDownLatch}
 import org.joda.time.{DateTime, Seconds}
-import com.socrata.datacoordinator.util.{StackedTimingReport, LoggedTimingReport, TimingReport}
+import com.socrata.datacoordinator.util.{TransferrableContextTimingReport, StackedTimingReport, LoggedTimingReport, TimingReport}
 import com.socrata.datacoordinator.truth.universe._
 import java.sql.Connection
-import com.socrata.datacoordinator.truth.universe.sql.{TypeInfo, PostgresUniverse}
+import com.socrata.datacoordinator.truth.universe.sql.{PostgresCopyIn, PostgresUniverse}
+import com.socrata.datacoordinator.common.soql.universe.PostgresUniverseCommonSupport
 
 class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseType[CT, CV]]) {
   import SecondaryWatcher.log
@@ -117,15 +115,13 @@ object SecondaryWatcher extends App { self =>
   val (dataSource, _) = DataSourceFromConfig(config)
   val secondaries = SecondaryLoader.load(config.getConfig("secondary.configs"), new File(config.getString("secondary.path"))).asInstanceOf[Map[String, Secondary[Any]]]
 
-  object SoQLTypeInfo extends TypeInfo[SoQLType, Any] {
-    def repFor(ci: ColumnInfo) =
-      SoQLRep.sqlRepFactories(SoQLType.typesByName(TypeName(ci.typeName)))(ci.physicalColumnBase)
+  val executor = Executors.newCachedThreadPool()
 
-    def newRowCodec() = SoQLRowLogCodec
-  }
+  val commonSupport = new PostgresUniverseCommonSupport(executor, PostgresCopyIn)
 
   type SoQLUniverse = PostgresUniverse[SoQLType, Any]
-  def soqlUniverse(conn: Connection, timingReport: TimingReport) = new SoQLUniverse(conn, SoQLTypeInfo, timingReport)
+  def soqlUniverse(conn: Connection, timingReport: TransferrableContextTimingReport) =
+    new SoQLUniverse(conn, commonSupport, timingReport, ":secondary-watcher")
 
   val universe = new SimpleArm[SoQLUniverse] {
     def flatMap[B](f: SoQLUniverse => B): B = {
@@ -194,4 +190,5 @@ object SecondaryWatcher extends App { self =>
   }
 
   secondaries.values.foreach(_.shutdown())
+  executor.shutdown()
 }

@@ -88,7 +88,7 @@ class SqlPrevettedLoader[CT, CV](val conn: Connection, sqlizer: DataSqlizer[CT, 
     }
   }
 
-  def close() {
+  def flush() {
     flushInserts()
     flushUpdates()
     flushDeletes()

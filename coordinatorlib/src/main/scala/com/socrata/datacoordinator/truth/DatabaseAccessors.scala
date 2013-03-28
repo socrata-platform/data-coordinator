@@ -6,7 +6,7 @@ import com.rojoma.simplearm.{SimpleArm, Managed}
 
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth.loader._
-import com.socrata.datacoordinator.util.collection.{MutableColumnIdMap, ColumnIdMap}
+import com.socrata.datacoordinator.util.collection.{ColumnIdSet, MutableColumnIdMap, ColumnIdMap}
 import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.metadata.CopyPair
@@ -33,7 +33,7 @@ trait LowLevelDatabaseMutator[CV] {
     def logger(info: DatasetInfo): Logger[CV]
     def schemaLoader(info: DatasetInfo): SchemaLoader
     def datasetContentsCopier(info: DatasetInfo): DatasetContentsCopier
-    def withDataLoader[A](table: CopyInfo, schema: ColumnIdMap[ColumnInfo])(f: Loader[CV] => A): (Report[CV], RowId, A)
+    def withDataLoader[A](table: CopyInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[CV])(f: Loader[CV] => A): (Report[CV], RowId, A)
 
     def globalLog: GlobalLog
 
@@ -51,7 +51,7 @@ trait DatasetReader[CV] {
   trait ReadContext {
     val copyInfo: CopyInfo
     val schema: ColumnIdMap[ColumnInfo]
-    def withRows[A](f: Iterator[ColumnIdMap[CV]] => A): A // TODO: I think this should return a Managed[Iterator...]
+    def withRows[A](cids: ColumnIdSet)(f: Iterator[ColumnIdMap[CV]] => A): A // TODO: I think this should return a Managed[Iterator...]
   }
 
   /**
@@ -64,8 +64,8 @@ trait DatasetReader[CV] {
 object DatasetReader {
   private class Impl[CV](val databaseReader: LowLevelDatabaseReader[CV]) extends DatasetReader[CV] {
     class S(val copyInfo: CopyInfo, val schema: ColumnIdMap[ColumnInfo], llCtx: databaseReader.ReadContext) extends ReadContext {
-      def withRows[A](f: Iterator[ColumnIdMap[CV]] => A): A =
-        llCtx.withRows(copyInfo, schema, f)
+      def withRows[A](keySet: ColumnIdSet)(f: Iterator[ColumnIdMap[CV]] => A): A =
+        llCtx.withRows(copyInfo, schema.filter { (id, _) => keySet.contains(id) }, f)
     }
 
     def openDataset(datasetName: String, latest: Boolean): Managed[Option[ReadContext]] =
@@ -104,7 +104,9 @@ trait DatasetMutator[CV] {
     def upsert(inputGenerator: Iterator[Either[CV, Row[CV]]]): Report[CV]
   }
 
+  // FIXME: There is no way to tell whether the dataset exists before calling this
   def createDataset(as: String)(datasetName: String, tableBaseBase: String): Managed[MutationContext]
+
   def openDataset(as: String)(datasetName: String): Managed[Option[MutationContext]]
 
   // FIXME: There is no way to tell whether the dataset is in the right state for these before calling them.
@@ -212,7 +214,7 @@ object DatasetMutator {
       }
 
       def upsert(inputGenerator: Iterator[Either[CV, Row[CV]]]): Report[CV] = {
-        val (report, nextRowId, _) = llCtx.withDataLoader(copyInfo, schema) { loader =>
+        val (report, nextRowId, _) = llCtx.withDataLoader(copyInfo, schema, logger) { loader =>
           inputGenerator.foreach {
             case Right(row) => loader.upsert(row)
             case Left(id) => loader.delete(id)

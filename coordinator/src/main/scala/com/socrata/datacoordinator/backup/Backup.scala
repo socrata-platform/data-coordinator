@@ -50,7 +50,7 @@ class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingRe
   def decsvifier(copyInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo]): DatasetDecsvifier =
     new PostgresDatasetDecsvifier(conn, extractCopier, copyInfo.dataTableName, schema.mapValuesStrict(genericRepFor))
 
-  def dataLoader(version: CopyInfo): Managed[PrevettedLoader[Any]] = {
+  def dataLoader(version: CopyInfo): PrevettedLoader[Any] = {
     val schemaInfo = datasetMap.schema(version)
     val schema = schemaInfo.mapValuesStrict(genericRepFor)
     val idCol = schemaInfo.values.find(_.isSystemPrimaryKey).getOrElse(sys.error("No system ID column?")).systemId
@@ -62,7 +62,7 @@ class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingRe
       idCol,
       systemIds)
     val sqlizer = new PostgresRepBasedDataSqlizer(version.dataTableName, datasetContext, executor, extractCopier)
-    managed(new SqlPrevettedLoader(conn, sqlizer, logger))
+    new SqlPrevettedLoader(conn, sqlizer, logger)
   }
 
   // TODO: Move this elsewhere, etc.
@@ -198,13 +198,13 @@ class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingRe
   }
 
   def populateData(currentVersionInfo: CopyInfo, ops: Seq[Operation[Any]]): currentVersionInfo.type = {
-    for(loader <- dataLoader(currentVersionInfo)) {
-      ops.foreach {
-        case Insert(sid, row) => loader.insert(sid, row)
-        case Update(sid, row) => loader.update(sid, row)
-        case Delete(sid) => loader.delete(sid)
-      }
+    val loader = dataLoader(currentVersionInfo)
+    ops.foreach {
+      case Insert(sid, row) => loader.insert(sid, row)
+      case Update(sid, row) => loader.update(sid, row)
+      case Delete(sid) => loader.delete(sid)
     }
+    loader.flush()
     currentVersionInfo
   }
 

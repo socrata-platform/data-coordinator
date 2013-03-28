@@ -1,6 +1,7 @@
 package com.socrata.datacoordinator.truth
 
 import org.joda.time.DateTime
+import com.rojoma.simplearm.Managed
 
 import com.socrata.datacoordinator.truth.metadata.{ColumnInfoLike, ColumnInfo}
 import com.socrata.datacoordinator.truth.loader.RowPreparer
@@ -10,6 +11,7 @@ import java.util.concurrent.ExecutorService
 import com.socrata.datacoordinator.truth.csv.CsvColumnRep
 import com.socrata.datacoordinator.util.TimingReport
 
+@deprecated
 trait DataTypeContext {
   type CT
   type CV
@@ -24,11 +26,13 @@ trait DataTypeContext {
   val typeContext: TypeContext[CT, CV]
 }
 
+@deprecated
 trait ExecutionContext {
   val executorService: ExecutorService
   val timingReport: TimingReport
 }
 
+@deprecated
 trait DataSchemaContext extends DataTypeContext {
   /** The set of all system columns, along with their types. */
   val systemColumns: Map[String, CT]
@@ -48,6 +52,7 @@ trait DataSchemaContext extends DataTypeContext {
   def isSystemColumn(ci: ColumnInfoLike): Boolean = isSystemColumn(ci.logicalName)
 }
 
+@deprecated
 trait DataWritingContext extends DataTypeContext {
   /** Creates a row preparer object for use within a series of insert or update events. */
   def rowPreparer(transactionStart: DateTime, schema: ColumnIdMap[ColumnInfo]): RowPreparer[CV]
@@ -72,10 +77,12 @@ trait DataWritingContext extends DataTypeContext {
   val datasetMapLimits: DatasetMapLimits
 }
 
+@deprecated
 trait DataReadingContext extends DataTypeContext {
-  val datasetReader: DatasetReader[CV]
+  val datasetReader: Managed[DatasetReader[CV]]
 }
 
+@deprecated
 trait CsvDataContext extends DataTypeContext {
   type CsvRepType = CsvColumnRep[CT, CV]
 

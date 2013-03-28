@@ -1,38 +1,26 @@
-package com.socrata.datacoordinator.service
+package com.socrata.datacoordinator
+package service
 
-import com.rojoma.json.ast.{JNull, JValue, JObject}
+import com.socrata.datacoordinator.truth.universe.{DatasetReaderProvider, Universe}
+import com.socrata.datacoordinator.util.collection.ColumnIdMap
+import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 
-import com.socrata.datacoordinator.truth.{JsonDataWritingContext, DataReadingContext}
-
-class Exporter(val dataContext: DataReadingContext with JsonDataWritingContext) {
-  def export(id: String, columns: Option[Set[String]])(f: Iterator[JObject] => Unit): Boolean = {
-    val res = for {
-      ctxOpt <- dataContext.datasetReader.openDataset(id, latest = true)
+object Exporter {
+  def export[CT, CV, T](u: Universe[CT, CV] with DatasetReaderProvider, id: String, columns: Option[Set[String]])(f: (ColumnIdMap[ColumnInfo], Iterator[Row[CV]]) => T): Option[T] = {
+    for {
+      ctxOpt <- u.datasetReader.openDataset(id, latest = true)
       ctx <- ctxOpt
     } yield {
-      import ctx._
-      val jsonSchema = schema.filter { case (cid, ci) =>
-        columns match {
-          case Some(set) => set(ci.logicalName)
-          case None => true
-        }
-      }.mapValuesStrict(dataContext.jsonRepForColumn)
-      withRows { it =>
-        val objectified = it.map { row =>
-          val res = new scala.collection.mutable.HashMap[String, JValue]
-          row.foreach { case (cid, value) =>
-            if(jsonSchema.contains(cid)) {
-              val rep = jsonSchema(cid)
-              val v = rep.toJValue(value)
-              if(JNull != v) res(rep.name) = v
-            }
-          }
-          JObject(res)
-        }
-        f(objectified)
+      import ctx. _
+
+      val selectedSchema = columns match {
+        case Some(set) => schema.filter { case (_, ci) => set(ci.logicalName) }
+        case None => schema
+      }
+
+      withRows(selectedSchema.keySet) { it =>
+        f(selectedSchema, it)
       }
     }
-
-    res.isDefined
   }
 }

@@ -17,7 +17,7 @@ import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.id.{DatasetId, RowId}
 import com.rojoma.simplearm.SimpleArm
 import scala.concurrent.duration.Duration
-import com.socrata.datacoordinator.util.TimingReport
+import com.socrata.datacoordinator.util.{RowIdProvider, TimingReport}
 import com.socrata.datacoordinator.truth.universe._
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.metadata.DatasetInfo
@@ -62,11 +62,12 @@ class PostgresDatabaseMutator[CT, CV](universe: Managed[Universe[CT, CV] with Lo
 
     def datasetMap = universe.datasetMapWriter
 
-    def withDataLoader[A](table: CopyInfo, schema: ColumnIdMap[ColumnInfo])(f: (Loader[CV]) => A): (Report[CV], RowId, A) = {
-      for(loader <- universe.loader(table, schema)) yield {
+    def withDataLoader[A](table: CopyInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[CV])(f: (Loader[CV]) => A): (Report[CV], RowId, A) = {
+      val idProvider = new RowIdProvider(table.datasetInfo.nextRowId)
+      for(loader <- universe.loader(table, schema, idProvider, logger)) yield {
         val result = f(loader)
         val report = loader.report
-        (report, loader.idProvider.finish(), result)
+        (report, idProvider.finish(), result)
       }
     }
   }

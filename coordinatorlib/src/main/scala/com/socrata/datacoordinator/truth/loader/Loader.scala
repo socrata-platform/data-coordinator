@@ -21,8 +21,6 @@ trait Loader[CV] extends Closeable {
     *       transaction MUST be rolled back.
     */
   def report: Report[CV]
-
-  val idProvider: RowIdProvider
 }
 
 /** A report is a collection of maps that inform the caller what

@@ -13,13 +13,13 @@ import com.rojoma.simplearm.SimpleArm
 import com.socrata.datacoordinator.truth.loader.sql.RepBasedDatasetExtractor
 
 // Does this need to be *Postgres*, or is all postgres-specific stuff encapsulated in its paramters?
-class PostgresDatabaseReader[CT, CV](dataSource: DataSource,
-                                     mapReaderFactory: Connection => DatasetMapReader,
+class PostgresDatabaseReader[CT, CV](conn: Connection,
+                                     datasetMap: DatasetMapReader,
                                      repFor: ColumnInfo => SqlColumnReadRep[CT, CV])
   extends LowLevelDatabaseReader[CV]
 {
   private class S(conn: Connection) extends ReadContext {
-    val datasetMap: DatasetMapReader = mapReaderFactory(conn)
+    val datasetMap = PostgresDatabaseReader.this.datasetMap
 
     def loadDataset(datasetName: String, latest: Boolean): Option[(CopyInfo, ColumnIdMap[ColumnInfo])] = {
       val map = datasetMap
@@ -36,10 +36,6 @@ class PostgresDatabaseReader[CT, CV](dataSource: DataSource,
 
   def openDatabase: Managed[ReadContext] = new SimpleArm[ReadContext] {
     def flatMap[A](f: ReadContext => A): A =
-      using(dataSource.getConnection()) { conn =>
-        conn.setAutoCommit(false)
-        conn.setReadOnly(true)
-        f(new S(conn))
-      }
+      f(new S(conn))
   }
 }
