@@ -9,8 +9,6 @@ import java.util.concurrent.Executor
 
 import gnu.trove.map.hash.TIntObjectHashMap
 
-import com.socrata.id.numeric.IdProvider
-
 import com.socrata.datacoordinator.util._
 import com.socrata.datacoordinator.util.TIntObjectHashMapWrapper
 

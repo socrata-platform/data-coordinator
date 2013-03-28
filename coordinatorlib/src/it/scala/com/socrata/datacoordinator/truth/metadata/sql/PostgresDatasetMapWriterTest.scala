@@ -7,7 +7,6 @@ import com.socrata.datacoordinator.truth.sql.{DatasetMapLimits, DatabasePopulato
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.truth.metadata.{CopyPair, ColumnAlreadyExistsException, LifecycleStage}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
-import com.socrata.id.numeric.{FixedSizeIdProvider, InMemoryBlockIdProvider, IdProvider}
 import com.socrata.datacoordinator.id.ColumnId
 import com.socrata.datacoordinator.util.NoopTimingReport
 import scala.concurrent.duration.Duration
@@ -27,8 +26,6 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       f(conn)
     }
   }
-
-  def idProvider = new FixedSizeIdProvider(new InMemoryBlockIdProvider(releasable = false), 1024)
 
   def count(conn: Connection, table: String, where: String = null): Int = {
     for {

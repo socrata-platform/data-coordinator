@@ -5,7 +5,6 @@ import javax.sql.DataSource
 import java.sql.Connection
 
 import org.joda.time.DateTime
-import com.socrata.id.numeric.IdProvider
 
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth.loader.sql.{PostgresSqlLoaderProvider, AbstractSqlLoaderProvider}

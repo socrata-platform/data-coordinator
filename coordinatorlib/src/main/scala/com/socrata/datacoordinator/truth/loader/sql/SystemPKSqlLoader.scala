@@ -8,8 +8,6 @@ import java.util.concurrent.Executor
 import gnu.trove.map.hash.TIntObjectHashMap
 import com.rojoma.simplearm.util._
 
-import com.socrata.id.numeric.IdProvider
-
 import com.socrata.datacoordinator.util.collection.MutableRowIdMap
 import com.socrata.datacoordinator.id.RowId
 import com.socrata.datacoordinator.util.{TransferrableContextTimingReport, RowIdProvider, TimingReport}

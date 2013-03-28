@@ -105,6 +105,8 @@ class Service(storeFile: InputStream => String,
 
   def doExportFile(id: String)(req: HttpServletRequest): HttpResponse = { resp =>
     val onlyColumns = Option(req.getParameterValues("c")).map(_.flatMap { c => norm(c).toLowerCase /* FIXME: This needs to happen in the dataset context */.split(',') }.toSet)
+    val limit = Option(req.getParameter("limit")).map { limStr =>
+    }
     val found = datasetContents(norm(id), onlyColumns) { rows =>
       resp.setContentType("application/json")
       resp.setCharacterEncoding("utf-8")

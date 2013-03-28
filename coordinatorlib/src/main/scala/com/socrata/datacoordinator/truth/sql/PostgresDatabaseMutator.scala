@@ -15,7 +15,6 @@ import com.socrata.datacoordinator.truth.loader.sql.{RepBasedSqlSchemaLoader, Re
 import com.socrata.datacoordinator.truth.{TypeContext, RowLogCodec}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.id.{DatasetId, RowId}
-import com.socrata.id.numeric.IdProvider
 import com.rojoma.simplearm.SimpleArm
 import scala.concurrent.duration.Duration
 import com.socrata.datacoordinator.util.TimingReport

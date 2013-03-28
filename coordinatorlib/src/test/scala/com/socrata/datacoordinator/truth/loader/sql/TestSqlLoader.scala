@@ -12,8 +12,7 @@ import org.scalatest.matchers.MustMatchers
 import org.scalatest.prop.PropertyChecks
 import com.rojoma.simplearm.util._
 
-import com.socrata.id.numeric.{FixedSizeIdProvider, InMemoryBlockIdProvider}
-import com.socrata.datacoordinator.util.{RowIdProvider, NoopTimingReport, IdProviderPoolImpl}
+import com.socrata.datacoordinator.util.{RowIdProvider, NoopTimingReport}
 import com.socrata.datacoordinator.id.{RowId, ColumnId}
 import com.socrata.datacoordinator.util.collection.{ColumnIdSet, MutableColumnIdMap, ColumnIdMap}
 

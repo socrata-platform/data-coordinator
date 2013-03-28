@@ -8,8 +8,6 @@ import java.sql.Connection
 
 import com.rojoma.simplearm.util._
 
-import com.socrata.id.numeric.IdProvider
-
 import com.socrata.datacoordinator.util.{RowIdProvider, Counter}
 import com.socrata.datacoordinator.id.RowId
 
