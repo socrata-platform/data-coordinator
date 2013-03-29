@@ -28,10 +28,53 @@ class Mutator[CT, CV](repFor: ColumnInfo => JsonColumnReadRep[CT, CV]) {
       commandStream.map(decodeCommand).foreach(f)
   }
 
-  // Failure cases:
-  //  * iterator is empty
-  //  * iterator's first element is not a context establishment
+  // User-causable failure cases:
+  //  * command stream is empty
+  //  * command stream's first element is not a context establishment
+  //    - or it is a "create" of a dataset that already exists
+  //    - or it is any other operation on a dataset that DOESN'T exist
+  //    - or it is copy/publish/drop on a dataset whose latest copy is the wrong lifecycle stage
+  //  * something else is holding dataset's write lock long enough to time out
+  //  * subsequent element is not a valid operation
+  //  * operation fails:
+  //    - column add
+  //       + column with name already exists
+  //       + illegal name (e.g., system column)
+  //       + unknown type
+  //    - column rename
+  //       + column with source name doesn't exist
+  //       + column with target name already exists
+  //       + source is system column
+  //       + illegal target name (e.g., system column)
+  //    - column drop
+  //       + column doesn't exist
+  //       + system column
+  //    - make primary key
+  //       + unknown column
+  //       + column doesn't have a PKable type
+  //       + system column
+  //    - remove primary key
+  //       + Some other column is user PK
+  //       + NO column is user PK
+  //    - row data, if "abort on data error" is true
+  //       + no such id to delete
+  //       + no such id to upsert (and no user PK is defined)
+  //       + no id provided (and user PK is defined)
+  //       + unable to convert data to column type
+  //    - row data, unconditional errors
+  //       + (can't think of any?)
   //
+  // Explicitly NOT failure cases:
+  //  * operations:
+  //    - row data
+  //       + system columns provided (we sanitize them)
+  //       + unknown column in object
+  //
+  // Uncertainty:
+  //  * Should DDL-on-working-copies-only be enforced at this level?
+  //     - I think yes
+  //  * Should we enforce "you must perform SOME kind of DDL in order to publish a working copy?"
+  //     - I think.. maybe?  I don't want people to unnecessarily create working copies!
   def apply(u: Universe[CT, CV] with DatasetMutatorProvider, commandStream: Iterator[JValue], user: String) {
     val commands = new CommandStream(commandStream)
     commands.streamType match {
