@@ -158,7 +158,7 @@ class Service(processMutation: Iterator[JValue] => Unit,
       catch { case _: UnsupportedEncodingException =>
         return Left(UnsupportedMediaType ~> Content("Unknown character encoding"))
       }
-    Right(new JsonEventIterator(new JsonTokenIterator(reader).map(normalizeJson)))
+    Right(new JsonEventIterator(new BlockJsonTokenIterator(reader).map(normalizeJson)))
   }
 
   def doMutation()(req: HttpServletRequest): HttpResponse = {
