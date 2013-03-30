@@ -80,6 +80,7 @@ trait DatasetMapWriterProvider {
 }
 
 trait DatasetMutatorProvider { this: TypeUniverse =>
+  val lowLevelDatabaseMutator: LowLevelDatabaseMutator[CV]
   val datasetMutator: DatasetMutator[CV]
 }
 

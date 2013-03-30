@@ -485,13 +485,14 @@ trait BasePostgresDatasetMapWriter extends BasePostgresDatasetMapReader with `-i
     }
 
   def clearUserPrimaryKeyQuery = "UPDATE column_map SET is_user_primary_key = NULL WHERE copy_system_id = ? and system_id = ?"
-  def clearUserPrimaryKey(columnInfo: ColumnInfo) {
+  def clearUserPrimaryKey(columnInfo: ColumnInfo) = {
     require(columnInfo.isUserPrimaryKey, "Requested clearing a non-primary key")
     using(conn.prepareStatement(clearUserPrimaryKeyQuery)) { stmt =>
       stmt.setLong(1, columnInfo.copyInfo.systemId.underlying)
       stmt.setLong(2, columnInfo.systemId.underlying)
       stmt.executeUpdate()
     }
+    columnInfo.copy(isUserPrimaryKey = false)
   }
 
   def updateNextRowIdQuery = "UPDATE dataset_map SET next_row_id = ? WHERE system_id = ?"

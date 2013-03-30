@@ -14,7 +14,7 @@ import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.loader.RowPreparer
 import com.socrata.datacoordinator.id.RowId
 
-class PostgresUniverseCommonSupport(val executor: ExecutorService, val copyInProvider: (Connection, String, Reader) => Long) extends CommonSupport[SoQLType, Any] {
+class PostgresUniverseCommonSupport(val executor: ExecutorService, val tablespace: String => Option[String], val copyInProvider: (Connection, String, Reader) => Long) extends CommonSupport[SoQLType, Any] {
   val typeContext = SoQLTypeContext
 
   def repFor(ci: ColumnInfo) =

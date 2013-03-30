@@ -78,7 +78,7 @@ trait BaseDatasetMapWriter extends BaseDatasetMapReader {
 
   /** Clears the user primary key column for this dataset-copy.
     * @note Does not change the actual table; this just updates the bookkeeping. */
-  def clearUserPrimaryKey(columnInfo: ColumnInfo)
+  def clearUserPrimaryKey(columnInfo: ColumnInfo): ColumnInfo
 
   /** Stores the next available row ID for this dataset. */
   def updateNextRowId(datasetInfo: DatasetInfo, newNextRowId: RowId): DatasetInfo

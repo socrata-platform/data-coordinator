@@ -20,7 +20,7 @@ import com.socrata.datacoordinator.common.{DataSourceFromConfig, StandardDataset
 import java.sql.Connection
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.truth.sql.SqlDataReadingContext
-import metadata.UnanchoredCopyInfo
+import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, UnanchoredCopyInfo}
 import scala.concurrent.duration.Duration
 import scala.Some
 import com.socrata.datacoordinator.secondary.{Secondary, NamedSecondary, PlaybackToSecondary, SecondaryLoader}
@@ -39,6 +39,7 @@ import com.socrata.datacoordinator.truth.universe.sql.{PostgresCopyIn, PostgresU
 import com.rojoma.simplearm.SimpleArm
 import com.socrata.datacoordinator.common.soql.universe.PostgresUniverseCommonSupport
 import com.socrata.soql.types.SoQLType
+import com.socrata.datacoordinator.truth.json.JsonColumnReadRep
 
 case class Field(name: String, @JsonKey("type") typ: String)
 object Field {
@@ -275,7 +276,7 @@ object Service extends App { self =>
         } yield secondaryManifest.stores(systemId)
       }
 
-    val commonSupport = new PostgresUniverseCommonSupport(executorService, PostgresCopyIn)
+    val commonSupport = new PostgresUniverseCommonSupport(executorService, _ => None, PostgresCopyIn)
 
     type SoQLUniverse = PostgresUniverse[SoQLType, Any]
     def soqlUniverse(conn: Connection) =
@@ -292,7 +293,30 @@ object Service extends App { self =>
       }
     }
 
+    val mutationCommon = new MutatorCommon[SoQLType, Any] {
+      val repFor = dataContext.jsonRepForColumn(_: ColumnInfo)
+
+      def physicalColumnBaseBase(logicalColumnName: String, systemColumn: Boolean): String =
+        dataContext.physicalColumnBaseBase(logicalColumnName, systemColumn = systemColumn)
+
+      def isLegalLogicalName(identifier: String): Boolean =
+        dataContext.isLegalLogicalName(identifier)
+
+      def isSystemColumnName(identifier: String): Boolean =
+        dataContext.isSystemColumn(identifier)
+
+      def magicDeleteKey: String = ":delete"
+
+      def systemSchema = dataContext.systemColumns.mapValues(dataContext.typeContext.nameFromType)
+      def systemIdColumnName = dataContext.systemIdColumnName
+    }
+
+    val mutator = new Mutator(mutationCommon)
+
     def processMutation(input: Iterator[JValue]) = {
+      for(u <- universeProvider) {
+        mutator(u, input)
+      }
     }
 
     def exporter(id: String, columns: Option[Set[String]])(f: Iterator[JObject] => Unit): Boolean = {

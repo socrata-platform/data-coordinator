@@ -117,7 +117,7 @@ object SecondaryWatcher extends App { self =>
 
   val executor = Executors.newCachedThreadPool()
 
-  val commonSupport = new PostgresUniverseCommonSupport(executor, PostgresCopyIn)
+  val commonSupport = new PostgresUniverseCommonSupport(executor, _ => None, PostgresCopyIn)
 
   type SoQLUniverse = PostgresUniverse[SoQLType, Any]
   def soqlUniverse(conn: Connection, timingReport: TransferrableContextTimingReport) =

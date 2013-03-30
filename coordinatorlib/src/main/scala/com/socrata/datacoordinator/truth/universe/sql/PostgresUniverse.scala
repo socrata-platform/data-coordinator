@@ -6,21 +6,34 @@ import java.sql.Connection
 import java.io.Reader
 
 import org.joda.time.DateTime
-import com.rojoma.simplearm.Managed
+import com.rojoma.simplearm.{SimpleArm, Managed}
 import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.truth.metadata._
-import com.socrata.datacoordinator.truth.sql.{PostgresDatabaseReader, RepBasedSqlDatasetContext, SqlColumnRep}
-import com.socrata.datacoordinator.truth.{LowLevelDatabaseReader, DatasetReader, TypeContext, RowLogCodec}
-import com.socrata.datacoordinator.truth.metadata.sql.{PostgresGlobalLog, PostgresGlobalLogPlayback, PostgresDatasetMapReader, PostgresSecondaryPlaybackManifest}
+import com.socrata.datacoordinator.truth.sql.{PostgresDatabaseMutator, PostgresDatabaseReader, RepBasedSqlDatasetContext, SqlColumnRep}
+import com.socrata.datacoordinator.truth._
+import com.socrata.datacoordinator.truth.metadata.sql._
 import com.socrata.datacoordinator.secondary.{SecondaryManifest, PlaybackToSecondary}
-import com.socrata.datacoordinator.truth.loader.{RowPreparer, Loader, Logger, Delogger}
+import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.loader.sql._
 import com.socrata.datacoordinator.secondary.sql.{SqlSecondaryConfig, SqlSecondaryManifest}
 import com.socrata.datacoordinator.util.{RowIdProvider, TransferrableContextTimingReport, TimingReport}
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
+import com.socrata.datacoordinator.truth.metadata.ColumnInfo
+import scala.Some
+import com.socrata.datacoordinator.truth.metadata.DatasetInfo
+import com.socrata.datacoordinator.truth.metadata.CopyInfo
+import scala.concurrent.duration.Duration
+import scala.Some
+import com.socrata.datacoordinator.truth.metadata.DatasetInfo
+import com.socrata.datacoordinator.truth.metadata.ColumnInfo
+import com.socrata.datacoordinator.truth.metadata.CopyInfo
+import scala.Some
+import com.socrata.datacoordinator.truth.metadata.DatasetInfo
+import com.socrata.datacoordinator.truth.metadata.ColumnInfo
+import com.socrata.datacoordinator.truth.metadata.CopyInfo
 
 trait CommonSupport[CT, CV] {
   val executor: ExecutorService
@@ -29,11 +42,12 @@ trait CommonSupport[CT, CV] {
   def newRowCodec(): RowLogCodec[CV]
   def isSystemColumn(ci: ColumnInfo): Boolean
 
+  val tablespace: String => Option[String]
   val copyInProvider: (Connection, String, Reader) => Long
 
   def rowPreparer(transactionStart: DateTime, schema: ColumnIdMap[ColumnInfo]): RowPreparer[CV]
 
-  val loaderProvider = new AbstractSqlLoaderProvider(executor, typeContext, repFor, isSystemColumn) with PostgresSqlLoaderProvider[CT, CV] {
+  lazy val loaderProvider = new AbstractSqlLoaderProvider(executor, typeContext, repFor, isSystemColumn) with PostgresSqlLoaderProvider[CT, CV] {
     def copyIn(conn: Connection, sql: String, reader: Reader): Long =
       copyInProvider(conn, sql, reader)
   }
@@ -59,6 +73,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
                                                 user: String)
   extends Universe[ColumnType, ColumnValue]
     with DatasetMapReaderProvider
+    with DatasetMapWriterProvider
     with GlobalLogPlaybackProvider
     with SecondaryManifestProvider
     with SecondaryPlaybackManifestProvider
@@ -68,8 +83,11 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
     with SecondaryConfigProvider
     with PrevettedLoaderProvider
     with LoaderProvider
+    with DatasetContentsCopierProvider
+    with SchemaLoaderProvider
     with GlobalLogProvider
     with DatasetReaderProvider
+    with DatasetMutatorProvider
 {
   import commonSupport._
 
@@ -112,6 +130,9 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
   lazy val datasetMapReader: DatasetMapReader =
     new PostgresDatasetMapReader(conn, timingReport)
 
+  lazy val datasetMapWriter: DatasetMapWriter =
+    new PostgresDatasetMapWriter(conn, timingReport)
+
   lazy val globalLogPlayback: GlobalLogPlayback =
     new PostgresGlobalLogPlayback(conn)
 
@@ -143,4 +164,19 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
   lazy val lowLevelDatabaseReader = new PostgresDatabaseReader(conn, datasetMapReader, repFor)
 
   lazy val datasetReader = DatasetReader(lowLevelDatabaseReader)
+
+  lazy val lowLevelDatabaseMutator = new PostgresDatabaseMutator[ColumnType, ColumnValue](
+    new SimpleArm[PostgresUniverse.this.type] {
+      def flatMap[B](f: PostgresUniverse.this.type => B): B = f(PostgresUniverse.this)
+    }
+  )
+
+  lazy val datasetMutator: DatasetMutator[CV] =
+    DatasetMutator(lowLevelDatabaseMutator, Duration(10, "s"))
+
+  def schemaLoader(datasetInfo: DatasetInfo) =
+    new RepBasedSqlSchemaLoader(conn, logger(datasetInfo), repFor, tablespace)
+
+  def datasetContentsCopier(datasetInfo: DatasetInfo): DatasetContentsCopier =
+    new RepBasedSqlDatasetContentsCopier(conn, logger(datasetInfo), repFor, timingReport)
 }
