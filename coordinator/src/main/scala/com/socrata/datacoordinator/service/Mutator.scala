@@ -4,7 +4,7 @@ package service
 import com.rojoma.json.ast._
 import com.socrata.datacoordinator.truth.universe.{DatasetMutatorProvider, Universe}
 import com.socrata.datacoordinator.truth.DatasetMutator
-import com.socrata.datacoordinator.truth.metadata.ColumnInfo
+import com.socrata.datacoordinator.truth.metadata.{AbstractColumnInfoLike, ColumnInfo}
 import com.socrata.datacoordinator.truth.json.JsonColumnReadRep
 import com.rojoma.json.codec.JsonCodec
 import com.socrata.datacoordinator.truth.loader.Report
@@ -13,7 +13,6 @@ import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.id.ColumnId
 import scala.Some
 import com.rojoma.json.ast.JString
-import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 
 object Mutator {
   sealed abstract class StreamType
@@ -134,7 +133,7 @@ object Mutator {
 }
 
 trait MutatorCommon[CT, CV] {
-  def repFor: ColumnInfo =>  JsonColumnReadRep[CT, CV]
+  def repFor: AbstractColumnInfoLike =>  JsonColumnReadRep[CT, CV]
   def physicalColumnBaseBase(logicalColumnName: String, systemColumn: Boolean = false): String
   def isLegalLogicalName(identifier: String): Boolean
   def isSystemColumnName(identifier: String): Boolean
@@ -273,57 +272,11 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
     }
   }
 
-  def rowDecodePlan(schema: ColumnIdMap[ColumnInfo]): JValue => Either[CV, Row[CV]] = {
-    val pkCol = schema.values.find(_.isUserPrimaryKey).orElse(schema.values.find(_.isSystemPrimaryKey)).getOrElse {
-      sys.error("No system primary key in the schema?")
-    }
-    val pkId = pkCol.logicalName
-    val pkRep = repFor(pkCol)
-    val cookedSchema: Map[String, (ColumnId, JsonColumnReadRep[CT, CV])] =
-      schema.iterator.map { case (systemId, ci) =>
-        ci.logicalName -> (systemId, repFor(ci))
-      }.toMap
-    (json: JValue) => json match {
-      case JObject(row) =>
-        if(row.contains(magicDeleteKey) && JBoolean.canonicalTrue == row(magicDeleteKey)) {
-          row.get(pkId) match {
-            case Some(value) =>
-              pkRep.fromJValue(value) match {
-               case Some(trueValue) =>
-                  Left(trueValue)
-                case None =>
-                 ??? // TODO throw new BadDataException("Unable to interpret field " + pkId)
-             }
-            case None =>
-              ??? // TODO throw new BadDataException("Delete command without associated ID value")
-          }
-        } else {
-          val result = new MutableRow[CV]
-          cookedSchema.iterator.foreach { case (field, (systemId, rep)) =>
-           row.get(field) match {
-              case Some(value) =>
-                rep.fromJValue(value) match {
-                  case Some(trueValue) =>
-                    result(systemId) = trueValue
-                  case None =>
-                    ??? // TODO throw new BadDataException("Unable to interpret field " + field)
-                }
-              case None =>
-               /* pass */
-            }
-          }
-          Right(result.freeze())
-        }
-      case _ =>
-        ??? // TODO: bad data
-    }
-  }
-
   def processRowData(rows: BufferedIterator[JValue], fatalRowErrors: Boolean, mutator: DatasetMutator[CV]#MutationContext): Report[CV] = {
     import mutator._
     val result = mutator.upsert(
       new Iterator[Either[CV, Row[CV]]] {
-        val plan = rowDecodePlan(schema)
+        val plan = new RowDecodePlan(schema, repFor, magicDeleteKey)
         def hasNext = rows.hasNext && JNull != rows.head
         def next() = {
           if(!hasNext) throw new NoSuchElementException

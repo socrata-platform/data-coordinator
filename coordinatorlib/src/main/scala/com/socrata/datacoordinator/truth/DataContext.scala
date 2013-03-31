@@ -3,7 +3,7 @@ package com.socrata.datacoordinator.truth
 import org.joda.time.DateTime
 import com.rojoma.simplearm.Managed
 
-import com.socrata.datacoordinator.truth.metadata.{ColumnInfoLike, ColumnInfo}
+import com.socrata.datacoordinator.truth.metadata.{AbstractColumnInfoLike, ColumnInfoLike, ColumnInfo}
 import com.socrata.datacoordinator.truth.loader.RowPreparer
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.sql.DatasetMapLimits
@@ -92,7 +92,7 @@ trait CsvDataContext extends DataTypeContext {
 trait JsonDataTypeContext extends DataTypeContext {
   type JsonRepType <: json.JsonColumnCommonRep[CT, CV]
   def jsonRepForColumn(name: String, typ: CT): JsonRepType
-  final def jsonRepForColumn(ci: ColumnInfo): JsonRepType = jsonRepForColumn(ci.logicalName, typeContext.typeFromName(ci.typeName))
+  final def jsonRepForColumn(ci: AbstractColumnInfoLike): JsonRepType = jsonRepForColumn(ci.logicalName, typeContext.typeFromName(ci.typeName))
 }
 
 trait JsonDataReadingContext extends JsonDataTypeContext {

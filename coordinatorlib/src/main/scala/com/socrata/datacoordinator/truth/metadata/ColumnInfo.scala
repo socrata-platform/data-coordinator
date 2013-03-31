@@ -1,22 +1,19 @@
 package com.socrata.datacoordinator
 package truth.metadata
 
-import scala.runtime.ScalaRunTime
-
-import com.rojoma.json.codec.JsonCodec
-import com.rojoma.json.matcher.{PObject, Variable}
-import com.rojoma.json.ast.JValue
-
 import com.socrata.datacoordinator.id.ColumnId
 import com.rojoma.json.util.{AutomaticJsonCodecBuilder, JsonKey}
 
-sealed trait ColumnInfoLike extends Product {
+sealed trait AbstractColumnInfoLike extends Product {
   val systemId: ColumnId
   val logicalName: String
   val typeName: String
-  val physicalColumnBaseBase: String
   val isSystemPrimaryKey: Boolean
   val isUserPrimaryKey: Boolean
+}
+
+sealed trait ColumnInfoLike extends AbstractColumnInfoLike {
+  val physicalColumnBaseBase: String
 
   lazy val physicalColumnBase = physicalColumnBaseBase + "_" + systemId.underlying
 }

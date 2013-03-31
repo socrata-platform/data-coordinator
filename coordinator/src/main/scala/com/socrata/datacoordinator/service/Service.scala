@@ -20,7 +20,7 @@ import com.socrata.datacoordinator.common.{DataSourceFromConfig, StandardDataset
 import java.sql.Connection
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.truth.sql.SqlDataReadingContext
-import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, UnanchoredCopyInfo}
+import com.socrata.datacoordinator.truth.metadata.{AbstractColumnInfoLike, ColumnInfo, UnanchoredCopyInfo}
 import scala.concurrent.duration.Duration
 import scala.Some
 import com.socrata.datacoordinator.secondary.{Secondary, NamedSecondary, PlaybackToSecondary, SecondaryLoader}
@@ -294,7 +294,7 @@ object Service extends App { self =>
     }
 
     val mutationCommon = new MutatorCommon[SoQLType, Any] {
-      val repFor = dataContext.jsonRepForColumn(_: ColumnInfo)
+      val repFor = dataContext.jsonRepForColumn(_: AbstractColumnInfoLike)
 
       def physicalColumnBaseBase(logicalColumnName: String, systemColumn: Boolean): String =
         dataContext.physicalColumnBaseBase(logicalColumnName, systemColumn = systemColumn)
