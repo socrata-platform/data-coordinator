@@ -165,6 +165,8 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
           PublishWorkingCopyMutation(snapshotLimit)
         case "drop" =>
           DropWorkingCopyMutation
+        case "normal" =>
+          NormalMutation
         case other =>
           throw new InvalidCommandFieldValue(0, JString(other), "c")
       }
