@@ -40,6 +40,7 @@ import com.rojoma.simplearm.SimpleArm
 import com.socrata.datacoordinator.common.soql.universe.PostgresUniverseCommonSupport
 import com.socrata.soql.types.SoQLType
 import com.socrata.datacoordinator.truth.json.JsonColumnReadRep
+import com.socrata.soql.environment.ColumnName
 
 case class Field(name: String, @JsonKey("type") typ: String)
 object Field {
@@ -47,7 +48,7 @@ object Field {
 }
 
 class Service(processMutation: Iterator[JValue] => Unit,
-              datasetContents: (String, Option[Set[String]]) => (Iterator[JObject] => Unit) => Boolean,
+              datasetContents: (String, Option[Set[ColumnName]]) => (Iterator[JObject] => Unit) => Boolean,
               secondaries: Set[String],
               datasetsInStore: (String) => DatasetIdMap[Long],
               versionInStore: (String, String) => Option[Long],
@@ -73,7 +74,7 @@ class Service(processMutation: Iterator[JValue] => Unit,
   }
 
   def doExportFile(id: String)(req: HttpServletRequest): HttpResponse = { resp =>
-    val onlyColumns = Option(req.getParameterValues("c")).map(_.flatMap { c => norm(c).toLowerCase /* FIXME: This needs to happen in the dataset context */.split(',') }.toSet)
+    val onlyColumns = Option(req.getParameterValues("c")).map(_.flatMap { c => norm(c).split(',').map(ColumnName) }.toSet)
     val limit = Option(req.getParameter("limit")).map { limStr =>
     }
     val found = datasetContents(norm(id), onlyColumns) { rows =>
@@ -296,16 +297,16 @@ object Service extends App { self =>
     val mutationCommon = new MutatorCommon[SoQLType, Any] {
       val repFor = dataContext.jsonRepForColumn(_: AbstractColumnInfoLike)
 
-      def physicalColumnBaseBase(logicalColumnName: String, systemColumn: Boolean): String =
+      def physicalColumnBaseBase(logicalColumnName: ColumnName, systemColumn: Boolean): String =
         dataContext.physicalColumnBaseBase(logicalColumnName, systemColumn = systemColumn)
 
-      def isLegalLogicalName(identifier: String): Boolean =
+      def isLegalLogicalName(identifier: ColumnName): Boolean =
         dataContext.isLegalLogicalName(identifier)
 
-      def isSystemColumnName(identifier: String): Boolean =
+      def isSystemColumnName(identifier: ColumnName): Boolean =
         dataContext.isSystemColumn(identifier)
 
-      def magicDeleteKey: String = ":delete"
+      val magicDeleteKey = ColumnName(":delete")
 
       def systemSchema = dataContext.systemColumns.mapValues(dataContext.typeContext.nameFromType)
       def systemIdColumnName = dataContext.systemIdColumnName
@@ -319,7 +320,7 @@ object Service extends App { self =>
       }
     }
 
-    def exporter(id: String, columns: Option[Set[String]])(f: Iterator[JObject] => Unit): Boolean = {
+    def exporter(id: String, columns: Option[Set[ColumnName]])(f: Iterator[JObject] => Unit): Boolean = {
       val res = for(u <- universeProvider) yield {
         Exporter.export(u, id, columns) { (schema, it) =>
           val jsonSchema = schema.mapValuesStrict(dataContext.jsonRepForColumn)
@@ -329,7 +330,7 @@ object Service extends App { self =>
               if(jsonSchema.contains(cid)) {
                 val rep = jsonSchema(cid)
                 val v = rep.toJValue(value)
-                if(JNull != v) res(rep.name) = v
+                if(JNull != v) res(rep.name.name) = v
               }
             }
             JObject(res)

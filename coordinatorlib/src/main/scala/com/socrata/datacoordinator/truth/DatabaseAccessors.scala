@@ -13,6 +13,7 @@ import com.socrata.datacoordinator.truth.metadata.CopyPair
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
 import com.socrata.datacoordinator.id.{DatasetId, RowId}
 import scala.concurrent.duration.Duration
+import com.socrata.soql.environment.{TypeName, ColumnName}
 
 trait LowLevelDatabaseReader[CV] {
   trait ReadContext {
@@ -91,13 +92,13 @@ trait DatasetMutator[CV] {
     def copyInfo: CopyInfo
     def schema: ColumnIdMap[ColumnInfo]
 
-    def schemaByLogicalName: Map[String, ColumnInfo] =
-      schema.values.foldLeft(Map.empty[String, ColumnInfo]) { (acc, ci) =>
+    def schemaByLogicalName: Map[ColumnName, ColumnInfo] =
+      schema.values.foldLeft(Map.empty[ColumnName, ColumnInfo]) { (acc, ci) =>
         acc + (ci.logicalName -> ci)
       }
 
-    def addColumn(logicalName: String, typeName: String, physicalColumnBaseBase: String): ColumnInfo
-    def renameColumn(col: ColumnInfo, newName: String): ColumnInfo
+    def addColumn(logicalName: ColumnName, typeName: TypeName, physicalColumnBaseBase: String): ColumnInfo
+    def renameColumn(col: ColumnInfo, newName: ColumnName): ColumnInfo
     def makeSystemPrimaryKey(ci: ColumnInfo): ColumnInfo
     def makeUserPrimaryKey(ci: ColumnInfo): ColumnInfo
     def unmakeUserPrimaryKey(ci: ColumnInfo): ColumnInfo
@@ -122,7 +123,7 @@ trait DatasetMutator[CV] {
 object DatasetMutator {
   private class Impl[CV](val databaseMutator: LowLevelDatabaseMutator[CV], lockTimeout: Duration) extends DatasetMutator[CV] {
     class S(var copyInfo: CopyInfo, var _schema: ColumnIdMap[ColumnInfo], val schemaLoader: SchemaLoader, val logger: Logger[CV], llCtx: databaseMutator.MutationContext) extends MutationContext {
-      var _schemaByLogicalName: Map[String, ColumnInfo] = null
+      var _schemaByLogicalName: Map[ColumnName, ColumnInfo] = null
       override def schemaByLogicalName = {
         if(_schemaByLogicalName == null) _schemaByLogicalName = super.schemaByLogicalName
         _schemaByLogicalName
@@ -138,14 +139,14 @@ object DatasetMutator {
       def datasetMap = llCtx.datasetMap
       def datasetContetsCopier = llCtx.datasetContentsCopier(copyInfo.datasetInfo)
 
-      def addColumn(logicalName: String, typeName: String, physicalColumnBaseBase: String): ColumnInfo = {
+      def addColumn(logicalName: ColumnName, typeName: TypeName, physicalColumnBaseBase: String): ColumnInfo = {
         val newColumn = datasetMap.addColumn(copyInfo, logicalName, typeName, physicalColumnBaseBase)
         schemaLoader.addColumn(newColumn)
         schema += newColumn.systemId -> newColumn
         newColumn
       }
 
-      def renameColumn(ci: ColumnInfo, newName: String): ColumnInfo = {
+      def renameColumn(ci: ColumnInfo, newName: ColumnName): ColumnInfo = {
         val newCi = datasetMap.renameColumn(ci, newName)
         logger.logicalNameChanged(newCi)
         schema += newCi.systemId -> newCi

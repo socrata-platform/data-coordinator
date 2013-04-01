@@ -5,10 +5,11 @@ import com.rojoma.json.ast._
 import com.socrata.datacoordinator.truth.json.JsonColumnRep
 import com.socrata.soql.types.{SoQLBoolean, SoQLType}
 import com.socrata.datacoordinator.common.soql.SoQLNullValue
+import com.socrata.soql.environment.ColumnName
 
 // This can't be a codec-based rep because of some weirdness involving
 // pattern matching with an implicit ClassTag in scope + a boxed primitive
-class BooleanRep(val name: String) extends JsonColumnRep[SoQLType, Any] {
+class BooleanRep(val name: ColumnName) extends JsonColumnRep[SoQLType, Any] {
   val representedType = SoQLBoolean
 
   def fromJValue(input: JValue) = input match {

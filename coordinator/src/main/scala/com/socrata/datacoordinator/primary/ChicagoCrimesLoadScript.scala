@@ -18,6 +18,7 @@ import com.socrata.soql.brita.IdentifierFilter
 import com.socrata.datacoordinator.util.{StackedTimingReport, LoggedTimingReport}
 import org.slf4j.LoggerFactory
 import scala.concurrent.duration.Duration
+import com.socrata.soql.environment.{ColumnName, TypeName}
 
 object ChicagoCrimesLoadScript extends App {
   val url =
@@ -79,36 +80,36 @@ object ChicagoCrimesLoadScript extends App {
     try { datasetCreator.createDataset(datasetName, user) }
     catch { case _: DatasetAlreadyExistsException => /* pass */ }
     using(CSVIterator.fromFile(new File(inputFile))) { it =>
-      val NumberT = dataContext.typeContext.typeFromName("number")
-      val TextT = dataContext.typeContext.typeFromName("text")
-      val BooleanT = dataContext.typeContext.typeFromName("boolean")
-      val FixedTimestampT = dataContext.typeContext.typeFromName("fixed_timestamp")
-      val LocationT = dataContext.typeContext.typeFromName("location")
+      val NumberT = dataContext.typeContext.typeFromName(TypeName("number"))
+      val TextT = dataContext.typeContext.typeFromName(TypeName("text"))
+      val BooleanT = dataContext.typeContext.typeFromName(TypeName("boolean"))
+      val FixedTimestampT = dataContext.typeContext.typeFromName(TypeName("fixed_timestamp"))
+      val LocationT = dataContext.typeContext.typeFromName(TypeName("location"))
       val types = Map(
-        "id" -> NumberT,
-        "case_number" -> TextT,
-        "date" -> FixedTimestampT,
-        "block" -> TextT,
-        "iucr" -> TextT,
-        "primary_type" -> TextT,
-        "description" -> TextT,
-        "location_description" -> TextT,
-        "arrest" -> BooleanT,
-        "domestic" -> BooleanT,
-        "beat" -> TextT,
-        "district" -> TextT,
-        "ward" -> NumberT,
-        "community_area" -> TextT,
-        "fbi_code" -> TextT,
-        "x_coordinate" -> NumberT,
-        "y_coordinate" -> NumberT,
-        "year" -> NumberT,
-        "updated_on" -> FixedTimestampT,
-        "latitude" -> NumberT,
-        "longitude" -> NumberT,
-        "location" -> LocationT
+        ColumnName("id") -> NumberT,
+        ColumnName("case_number") -> TextT,
+        ColumnName("date") -> FixedTimestampT,
+        ColumnName("block") -> TextT,
+        ColumnName("iucr") -> TextT,
+        ColumnName("primary_type") -> TextT,
+        ColumnName("description") -> TextT,
+        ColumnName("location_description") -> TextT,
+        ColumnName("arrest") -> BooleanT,
+        ColumnName("domestic") -> BooleanT,
+        ColumnName("beat") -> TextT,
+        ColumnName("district") -> TextT,
+        ColumnName("ward") -> NumberT,
+        ColumnName("community_area") -> TextT,
+        ColumnName("fbi_code") -> TextT,
+        ColumnName("x_coordinate") -> NumberT,
+        ColumnName("y_coordinate") -> NumberT,
+        ColumnName("year") -> NumberT,
+        ColumnName("updated_on") -> FixedTimestampT,
+        ColumnName("latitude") -> NumberT,
+        ColumnName("longitude") -> NumberT,
+        ColumnName("location") -> LocationT
       )
-      val headers = it.next().map(IdentifierFilter(_).toLowerCase)
+      val headers = it.next().map { t => ColumnName(IdentifierFilter(t)) }
       val schema = columnAdder.addToSchema(datasetName, headers.map { x => x -> types(x) }.toMap, user).mapValues { ci =>
         (ci, dataContext.typeContext.typeFromName(ci.typeName))
       }.toMap
@@ -139,7 +140,7 @@ object ChicagoCrimesLoadScript extends App {
     executor.shutdown()
   }
 
-  def rowDecodePlan(ctx: CsvDataContext)(schema: Map[String, (ColumnInfo, ctx.CT)], headers: IndexedSeq[String]): IndexedSeq[String] => (Seq[String], Row[ctx.CV]) = {
+  def rowDecodePlan(ctx: CsvDataContext)(schema: Map[ColumnName, (ColumnInfo, ctx.CT)], headers: IndexedSeq[ColumnName]): IndexedSeq[String] => (Seq[ColumnName], Row[ctx.CV]) = {
     val colInfo = headers.zipWithIndex.map { case (header, idx) =>
       val (ci, typ) = schema(header)
       (header, ci.systemId, ctx.csvRepForColumn(typ), Array(idx) : IndexedSeq[Int])

@@ -16,6 +16,7 @@ import com.socrata.datacoordinator.util.collection.MutableColumnIdMap
 import com.socrata.datacoordinator.truth.metadata.CopyPair
 import com.socrata.datacoordinator.truth.metadata.`-impl`.Tag
 import scala.concurrent.duration.Duration
+import com.socrata.soql.environment.{ColumnName, TypeName}
 
 trait BasePostgresDatasetMapReader extends `-impl`.BaseDatasetMapReader {
   implicit def tag: Tag = null
@@ -136,8 +137,8 @@ trait BasePostgresDatasetMapReader extends `-impl`.BaseDatasetMapReader {
           result += systemId -> ColumnInfo(
             copyInfo,
             systemId,
-            rs.getString("logical_column"),
-            rs.getString("type_name"),
+            ColumnName(rs.getString("logical_column")),
+            TypeName(rs.getString("type_name")),
             rs.getString("physical_column_base_base"),
             rs.getBoolean("is_system_primary_key"),
             rs.getBoolean("is_user_primary_key"))
@@ -323,7 +324,7 @@ trait BasePostgresDatasetMapWriter extends BasePostgresDatasetMapReader with `-i
   }
 
   def addColumnQuery = "INSERT INTO column_map (system_id, copy_system_id, logical_column, type_name, physical_column_base_base) VALUES (?, ?, ?, ?, ?)"
-  def addColumn(copyInfo: CopyInfo, logicalName: String, typeName: String, physicalColumnBaseBase: String): ColumnInfo = {
+  def addColumn(copyInfo: CopyInfo, logicalName: ColumnName, typeName: TypeName, physicalColumnBaseBase: String): ColumnInfo = {
     val systemId =
       previousVersion(copyInfo) match {
         case Some(previousCopy) =>
@@ -335,14 +336,14 @@ trait BasePostgresDatasetMapWriter extends BasePostgresDatasetMapReader with `-i
     addColumnWithId(systemId, copyInfo, logicalName, typeName, physicalColumnBaseBase)
   }
 
-  def addColumnWithId(systemId: ColumnId, copyInfo: CopyInfo, logicalName: String, typeName: String, physicalColumnBaseBase: String): ColumnInfo = {
+  def addColumnWithId(systemId: ColumnId, copyInfo: CopyInfo, logicalName: ColumnName, typeName: TypeName, physicalColumnBaseBase: String): ColumnInfo = {
     using(conn.prepareStatement(addColumnQuery)) { stmt =>
       val columnInfo = ColumnInfo(copyInfo, systemId, logicalName, typeName, physicalColumnBaseBase, isSystemPrimaryKey = false, isUserPrimaryKey = false)
 
       stmt.setLong(1, columnInfo.systemId.underlying)
       stmt.setLong(2, columnInfo.copyInfo.systemId.underlying)
-      stmt.setString(3, logicalName)
-      stmt.setString(4, typeName)
+      stmt.setString(3, logicalName.name)
+      stmt.setString(4, typeName.name)
       stmt.setString(5, physicalColumnBaseBase)
       try {
         t("add-column-with-id", "dataset_id" -> copyInfo.datasetInfo.systemId, "copy_num" -> copyInfo.copyNumber, "column_id" -> systemId)(stmt.execute())
@@ -442,9 +443,9 @@ trait BasePostgresDatasetMapWriter extends BasePostgresDatasetMapReader with `-i
   }
 
   def renameColumnQuery = "UPDATE column_map SET logical_column = ? WHERE copy_system_id = ? AND system_id = ?"
-  def renameColumn(columnInfo: ColumnInfo, newLogicalName: String): ColumnInfo =
+  def renameColumn(columnInfo: ColumnInfo, newLogicalName: ColumnName): ColumnInfo =
     using(conn.prepareStatement(renameColumnQuery)) { stmt =>
-      stmt.setString(1, newLogicalName)
+      stmt.setString(1, newLogicalName.name)
       stmt.setLong(2, columnInfo.copyInfo.systemId.underlying)
       stmt.setLong(3, columnInfo.systemId.underlying)
       val count = t("rename-column", "dataset_id" -> columnInfo.copyInfo.datasetInfo.systemId, "copy_num" -> columnInfo.copyInfo.copyNumber, "column_id" -> columnInfo.systemId)(stmt.executeUpdate())
@@ -453,9 +454,9 @@ trait BasePostgresDatasetMapWriter extends BasePostgresDatasetMapReader with `-i
     }
 
   def convertColumnQuery = "UPDATE column_map SET type_name = ?, physical_column_base_base = ? WHERE copy_system_id = ? AND system_id = ?"
-  def convertColumn(columnInfo: ColumnInfo, newType: String, newPhysicalColumnBaseBase: String): ColumnInfo =
+  def convertColumn(columnInfo: ColumnInfo, newType: TypeName, newPhysicalColumnBaseBase: String): ColumnInfo =
     using(conn.prepareStatement(convertColumnQuery)) { stmt =>
-      stmt.setString(1, newType)
+      stmt.setString(1, newType.name)
       stmt.setString(2, newPhysicalColumnBaseBase)
       stmt.setLong(3, columnInfo.copyInfo.systemId.underlying)
       stmt.setLong(4, columnInfo.systemId.underlying)

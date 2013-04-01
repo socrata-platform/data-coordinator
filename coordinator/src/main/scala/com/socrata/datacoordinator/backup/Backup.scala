@@ -54,7 +54,7 @@ class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingRe
     val schemaInfo = datasetMap.schema(version)
     val schema = schemaInfo.mapValuesStrict(genericRepFor)
     val idCol = schemaInfo.values.find(_.isSystemPrimaryKey).getOrElse(sys.error("No system ID column?")).systemId
-    val systemIds = schemaInfo.filter { (_, ci) => ci.logicalName.startsWith(":") }.keySet
+    val systemIds = schemaInfo.filter { (_, ci) => ci.logicalName.name.startsWith(":") }.keySet
     val datasetContext = RepBasedSqlDatasetContext(
       typeContext,
       schema,

@@ -8,7 +8,7 @@ import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import java.util.concurrent.ExecutorService
 import com.socrata.soql.types.SoQLType
 import com.socrata.datacoordinator.common.soql.{SoQLRowLogCodec, SoQLRep, SoQLTypeContext}
-import com.socrata.soql.environment.TypeName
+import com.socrata.soql.environment.{ColumnName, TypeName}
 import org.joda.time.DateTime
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.loader.RowPreparer
@@ -18,19 +18,19 @@ class PostgresUniverseCommonSupport(val executor: ExecutorService, val tablespac
   val typeContext = SoQLTypeContext
 
   def repFor(ci: ColumnInfo) =
-    SoQLRep.sqlRepFactories(SoQLType.typesByName(TypeName(ci.typeName)))(ci.physicalColumnBase)
+    SoQLRep.sqlRepFactories(SoQLType.typesByName(ci.typeName))(ci.physicalColumnBase)
 
   def newRowCodec() = SoQLRowLogCodec
 
-  def isSystemColumn(ci: ColumnInfo): Boolean = ci.logicalName.startsWith(":")
+  def isSystemColumn(ci: ColumnInfo): Boolean = ci.logicalName.name.startsWith(":")
 
-  val systemId = ":id"
-  val createdAt = ":created_at"
-  val updatedAt = ":updated_at"
+  val systemId = ColumnName(":id")
+  val createdAt = ColumnName(":created_at")
+  val updatedAt = ColumnName(":updated_at")
 
   def rowPreparer(transactionStart: DateTime, schema: ColumnIdMap[ColumnInfo]): RowPreparer[Any] =
     new RowPreparer[Any] {
-      def findCol(name: String) =
+      def findCol(name: ColumnName) =
         schema.values.find(_.logicalName == name).getOrElse(sys.error(s"No $name column?")).systemId
 
       val idColumn = findCol(systemId)

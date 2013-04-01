@@ -5,6 +5,7 @@ import scala.collection.JavaConverters._
 import com.socrata.soql.types.{SoQLText, SoQLType}
 import com.socrata.datacoordinator.truth.{SimpleRowUserIdMap, RowUserIdMap, TypeContext}
 import com.socrata.datacoordinator.id.RowId
+import com.socrata.soql.environment.TypeName
 
 object SoQLTypeContext extends TypeContext[SoQLType, Any] {
   def isNull(value: Any): Boolean = SoQLNullValue == value
@@ -15,12 +16,12 @@ object SoQLTypeContext extends TypeContext[SoQLType, Any] {
 
   def nullValue: Any = SoQLNullValue
 
-  private val typesByStringName = SoQLType.typesByName.values.foldLeft(Map.empty[String, SoQLType]) { (acc, typ) =>
-    acc + (typ.toString -> typ)
+  private val typesByTypeName = SoQLType.typesByName.values.foldLeft(Map.empty[TypeName, SoQLType]) { (acc, typ) =>
+    acc + (typ.name -> typ)
   }
-  def typeFromNameOpt(name: String) = typesByStringName.get(name)
+  def typeFromNameOpt(name: TypeName) = typesByTypeName.get(name)
 
-  def nameFromType(typ: SoQLType): String = typ.toString
+  def nameFromType(typ: SoQLType): TypeName = typ.name
 
   def makeIdMap[T](idColumnType: SoQLType): RowUserIdMap[Any, T] =
     if(idColumnType == SoQLText) {

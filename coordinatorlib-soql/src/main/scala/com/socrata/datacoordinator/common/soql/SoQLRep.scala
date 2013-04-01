@@ -4,6 +4,7 @@ import com.socrata.soql.types._
 import com.socrata.datacoordinator.truth.sql.SqlColumnRep
 import com.socrata.datacoordinator.truth.csv.CsvColumnRep
 import com.socrata.datacoordinator.truth.json.JsonColumnRep
+import com.socrata.soql.environment.ColumnName
 
 object SoQLRep {
   val sqlRepFactories = Map[SoQLType, String => SqlColumnRep[SoQLType, Any]](
@@ -32,7 +33,7 @@ object SoQLRep {
     SoQLLocation -> csvreps.LocationRep
   )
 
-  val jsonRepFactories = Map[SoQLType, String => JsonColumnRep[SoQLType, Any]](
+  val jsonRepFactories = Map[SoQLType, ColumnName => JsonColumnRep[SoQLType, Any]](
     SoQLID -> (name => new jsonreps.IDRep(name)),
     SoQLText -> (name => new jsonreps.TextRep(name)),
     SoQLBoolean -> (name => new jsonreps.BooleanRep(name)),

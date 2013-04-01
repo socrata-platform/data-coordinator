@@ -4,9 +4,10 @@ package service
 import com.socrata.datacoordinator.truth.universe.{DatasetReaderProvider, Universe}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
+import com.socrata.soql.environment.ColumnName
 
 object Exporter {
-  def export[CT, CV, T](u: Universe[CT, CV] with DatasetReaderProvider, id: String, columns: Option[Set[String]])(f: (ColumnIdMap[ColumnInfo], Iterator[Row[CV]]) => T): Option[T] = {
+  def export[CT, CV, T](u: Universe[CT, CV] with DatasetReaderProvider, id: String, columns: Option[Set[ColumnName]])(f: (ColumnIdMap[ColumnInfo], Iterator[Row[CV]]) => T): Option[T] = {
     for {
       ctxOpt <- u.datasetReader.openDataset(id, latest = true)
       ctx <- ctxOpt

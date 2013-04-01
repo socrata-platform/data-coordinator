@@ -13,6 +13,7 @@ import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.id.ColumnId
 import scala.Some
 import com.rojoma.json.ast.JString
+import com.socrata.soql.environment.{TypeName, ColumnName}
 
 object Mutator {
   sealed abstract class StreamType
@@ -81,11 +82,11 @@ object Mutator {
   }
 
   sealed abstract class Command
-  case class AddColumn(name: String, typ: String) extends Command
-  case class DropColumn(name: String) extends Command
-  case class RenameColumn(from: String, to: String) extends Command
-  case class SetRowId(name: String) extends Command
-  case class DropRowId(name: String) extends Command
+  case class AddColumn(name: ColumnName, typ: TypeName) extends Command
+  case class DropColumn(name: ColumnName) extends Command
+  case class RenameColumn(from: ColumnName, to: ColumnName) extends Command
+  case class SetRowId(name: ColumnName) extends Command
+  case class DropRowId(name: ColumnName) extends Command
   case class RowData(truncate: Boolean, mergeReplace: MergeReplace) extends Command
 
   class CommandStream(val streamType: StreamType, val datasetName: String, val user: String, val fatalRowErrors: Boolean, val rawCommandStream: BufferedIterator[JValue]) {
@@ -103,20 +104,20 @@ object Mutator {
         case "add column" =>
           val name = get[String]("name")
           val typ = get[String]("type")
-          AddColumn(name, typ)
+          AddColumn(ColumnName(name), TypeName(typ))
         case "drop column" =>
           val column = get[String]("column")
-          DropColumn(column)
+          DropColumn(ColumnName(column))
         case "rename column" =>
           val from = get[String]("from")
           val to  =get[String]("to")
-          RenameColumn(from, to)
+          RenameColumn(ColumnName(from), ColumnName(to))
         case "set row id" =>
           val column = get[String]("column")
-          SetRowId(column)
+          SetRowId(ColumnName(column))
         case "drop row id" =>
           val column = get[String]("column")
-          DropRowId(column)
+          DropRowId(ColumnName(column))
         case "row data" =>
           val truncate = getWithDefault("truncate", false)
           val mergeReplace = getWithDefault[MergeReplace]("update", Merge)
@@ -134,12 +135,12 @@ object Mutator {
 
 trait MutatorCommon[CT, CV] {
   def repFor: AbstractColumnInfoLike =>  JsonColumnReadRep[CT, CV]
-  def physicalColumnBaseBase(logicalColumnName: String, systemColumn: Boolean = false): String
-  def isLegalLogicalName(identifier: String): Boolean
-  def isSystemColumnName(identifier: String): Boolean
-  def magicDeleteKey: String
-  def systemSchema: Map[String, String]
-  def systemIdColumnName: String
+  def physicalColumnBaseBase(logicalColumnName: ColumnName, systemColumn: Boolean = false): String
+  def isLegalLogicalName(identifier: ColumnName): Boolean
+  def isSystemColumnName(identifier: ColumnName): Boolean
+  def magicDeleteKey: ColumnName
+  def systemSchema: Map[ColumnName, TypeName]
+  def systemIdColumnName: ColumnName
 }
 
 class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {

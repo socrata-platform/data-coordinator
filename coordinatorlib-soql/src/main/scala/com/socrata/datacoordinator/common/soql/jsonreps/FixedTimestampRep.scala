@@ -7,8 +7,9 @@ import org.joda.time.format.ISODateTimeFormat
 import com.socrata.datacoordinator.truth.json.JsonColumnRep
 import com.socrata.soql.types.{SoQLFixedTimestamp, SoQLType}
 import com.socrata.datacoordinator.common.soql.SoQLNullValue
+import com.socrata.soql.environment.ColumnName
 
-class FixedTimestampRep(val name: String) extends JsonColumnRep[SoQLType, Any] {
+class FixedTimestampRep(val name: ColumnName) extends JsonColumnRep[SoQLType, Any] {
   val representedType = SoQLFixedTimestamp
 
   private val formatter = ISODateTimeFormat.dateTime.withZoneUTC

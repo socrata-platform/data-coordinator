@@ -17,6 +17,7 @@ import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.loader.RowPreparer
 import com.socrata.datacoordinator.id.RowId
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
+import com.socrata.soql.environment.{ColumnName, TypeName}
 
 @deprecated("deprected", "now")
 trait SoQLDataContext extends DataSchemaContext with DataWritingContext with DataReadingContext {
@@ -27,26 +28,26 @@ trait SoQLDataContext extends DataSchemaContext with DataWritingContext with Dat
   import columnNames._
 
   val typeContext = SoQLTypeContext
-  val systemColumns = Map[String, CT](
+  val systemColumns = Map[ColumnName, CT](
     systemId -> SoQLID,
     createdAt -> SoQLFixedTimestamp,
     updatedAt -> SoQLFixedTimestamp
   )
-  val systemIdColumnName: String = systemId
+  val systemIdColumnName: ColumnName = systemId
 
-  def isSystemColumn(name: String) = name.startsWith(":")
+  def isSystemColumn(name: ColumnName) = name.name.startsWith(":")
 
   def newRowLogCodec() = SoQLRowLogCodec
 
-   def physicalColumnBaseBase(logicalName: String, systemColumn: Boolean) =
-    AsciiIdentifierFilter(List(if(systemColumn) "s" else "u", logicalName)).take(datasetMapLimits.maximumPhysicalColumnBaseLength).replaceAll("_$", "").toLowerCase
+   def physicalColumnBaseBase(logicalName: ColumnName, systemColumn: Boolean) =
+    AsciiIdentifierFilter(List(if(systemColumn) "s" else "u", logicalName.name)).take(datasetMapLimits.maximumPhysicalColumnBaseLength).replaceAll("_$", "").toLowerCase
 
-  def isLegalLogicalName(name: String) =
-    IdentifierFilter(name) == name && name.length <= datasetMapLimits.maximumLogicalColumnNameLength
+  def isLegalLogicalName(name: ColumnName) =
+    IdentifierFilter(name.name) == name.name && name.name.length <= datasetMapLimits.maximumLogicalColumnNameLength
 
   def rowPreparer(transactionStart: DateTime, schema: ColumnIdMap[ColumnInfo]) =
     new RowPreparer[CV] {
-      def findCol(name: String) =
+      def findCol(name: ColumnName) =
         schema.values.find(_.logicalName == name).getOrElse(sys.error(s"No $name column?")).systemId
       val idColumn = findCol(systemId)
       val createdAtColumn = findCol(createdAt)
@@ -81,9 +82,9 @@ trait SoQLDataContext extends DataSchemaContext with DataWritingContext with Dat
 @deprecated("deprected", "now")
 object SoQLDataContext {
   object ColumnNames {
-    val systemId = ":id"
-    val createdAt = ":created_at"
-    val updatedAt = ":updated_at"
+    val systemId = ColumnName(":id")
+    val createdAt = ColumnName(":created_at")
+    val updatedAt = ColumnName(":updated_at")
   }
 }
 
@@ -146,6 +147,6 @@ trait CsvSoQLDataContext extends CsvDataContext with SoQLDataContext {
 
 @deprecated
 trait JsonSoQLDataContext extends JsonDataContext with SoQLDataContext {
-  def jsonRepForColumn(name: String, typ: CT) =
+  def jsonRepForColumn(name: ColumnName, typ: CT) =
     SoQLRep.jsonRepFactories(typ)(name)
 }

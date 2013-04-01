@@ -2,6 +2,7 @@ package com.socrata.datacoordinator.truth.reader.sql
 
 import com.socrata.datacoordinator.truth.{RowUserIdMap, TypeContext}
 import com.socrata.datacoordinator.id.RowId
+import com.socrata.soql.environment.TypeName
 
 object TestTypeContext extends TypeContext[TestColumnType, TestColumnValue] {
   def isNull(value: TestColumnValue) = value eq NullValue
@@ -12,7 +13,7 @@ object TestTypeContext extends TypeContext[TestColumnType, TestColumnValue] {
 
   def nullValue = NullValue
 
-  def typeFromNameOpt(name: String) = sys.error("shouldn't call this")
+  def typeFromNameOpt(name: TypeName) = sys.error("shouldn't call this")
 
   def nameFromType(typ: TestColumnType) = sys.error("shouldn't call this")
 

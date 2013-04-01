@@ -10,8 +10,12 @@ import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.id.ColumnId
 import com.socrata.datacoordinator.util.NoopTimingReport
 import scala.concurrent.duration.Duration
+import com.socrata.soql.environment.{TypeName, ColumnName}
 
 class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
+  def c(s: String) = ColumnName(s)
+  def t(s: String) = TypeName(s)
+
   def populateDatabase(conn: Connection) {
     val sql = DatabasePopulator.metadataTablesCreate(DatasetMapLimits())
     using(conn.createStatement()) { stmt =>
@@ -56,11 +60,11 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
     withDb() { conn =>
       val tables = new PostgresDatasetMapWriter(conn, NoopTimingReport)
       val vi = tables.create("hello", "world")
-      val ci = tables.addColumn(vi, "col1", "typ", "colbase")
+      val ci = tables.addColumn(vi, c("col1"), t("typ"), "colbase")
 
       ci.copyInfo must equal (vi)
-      ci.logicalName must be ("col1")
-      ci.typeName must be ("typ")
+      ci.logicalName must be (c("col1"))
+      ci.typeName must be (t("typ"))
       ci.physicalColumnBaseBase must be ("colbase")
       ci.isUserPrimaryKey must be (false)
 
@@ -72,7 +76,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
     withDb() { conn =>
       val tables = new PostgresDatasetMapWriter(conn, NoopTimingReport)
       val vi = tables.create("hello", "world")
-      val ci = tables.addColumn(vi, "col1", "typ", "colbase")
+      val ci = tables.addColumn(vi, c("col1"), t("typ"), "colbase")
 
       tables.setUserPrimaryKey(ci)
 
@@ -84,12 +88,12 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
     withDb() { conn =>
       val tables = new PostgresDatasetMapWriter(conn, NoopTimingReport)
       val vi = tables.create("hello", "world")
-      val ci1 = tables.addColumn(vi, "col1", "typ", "colbase")
-      val ci2 = tables.addColumn(vi, "col2", "typ2", "colbase2")
+      val ci1 = tables.addColumn(vi, c("col1"), t("typ"), "colbase")
+      val ci2 = tables.addColumn(vi, c("col2"), t("typ2"), "colbase2")
 
       ci2.copyInfo must equal (vi)
-      ci2.logicalName must be ("col2")
-      ci2.typeName must be ("typ2")
+      ci2.logicalName must be (c("col2"))
+      ci2.typeName must be (t("typ2"))
       ci2.physicalColumnBaseBase must be ("colbase2")
       ci2.isUserPrimaryKey must be (false)
 
@@ -101,8 +105,8 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
     withDb() { conn =>
       val tables = new PostgresDatasetMapWriter(conn, NoopTimingReport)
       val vi = tables.create("hello", "world")
-      val ci1 = tables.addColumn(vi, "col1", "typ", "colbase")
-      val ci2 = tables.addColumn(vi, "col2", "typ2", "colbase2")
+      val ci1 = tables.addColumn(vi, c("col1"), t("typ"), "colbase")
+      val ci2 = tables.addColumn(vi, c("col2"), t("typ2"), "colbase2")
 
       tables.setUserPrimaryKey(ci1)
 
@@ -115,8 +119,8 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
     withDb() { conn =>
       val tables = new PostgresDatasetMapWriter(conn, NoopTimingReport)
       val vi = tables.create("hello", "world")
-      val ci1 = tables.addColumn(vi, "col1", "typ", "colbase")
-      val ci2 = tables.addColumn(vi, "col2", "typ2", "colbase2")
+      val ci1 = tables.addColumn(vi, c("col1"), t("typ"), "colbase")
+      val ci2 = tables.addColumn(vi, c("col2"), t("typ2"), "colbase2")
 
       val pk = tables.setUserPrimaryKey(ci1)
       tables.clearUserPrimaryKey(pk)
@@ -130,9 +134,9 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
     withDb() { conn =>
       val tables = new PostgresDatasetMapWriter(conn, NoopTimingReport)
       val vi = tables.create("hello", "world")
-      tables.addColumn(vi, "col1", "typ", "colbase")
+      tables.addColumn(vi, c("col1"), t("typ"), "colbase")
 
-      evaluating(tables.addColumn(vi, "col1", "typ2", "colbase2")) must produce [ColumnAlreadyExistsException]
+      evaluating(tables.addColumn(vi, c("col1"), t("typ2"), "colbase2")) must produce [ColumnAlreadyExistsException]
     }
   }
 
@@ -152,8 +156,8 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
     withDb() { conn =>
       val tables = new PostgresDatasetMapWriter(conn, NoopTimingReport)
       val vi = tables.create("hello", "world")
-      val c1 = tables.addColumn(vi, "col1", "typ1", "pcol1")
-      val c2 = tables.addColumn(vi, "col2", "typ2", "pcol2")
+      val c1 = tables.addColumn(vi, c("col1"), t("typ1"), "pcol1")
+      val c2 = tables.addColumn(vi, c("col2"), t("typ2"), "pcol2")
 
       tables.dropColumn(c2)
 
@@ -165,8 +169,8 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
     withDb() { conn =>
       val tables = new PostgresDatasetMapWriter(conn, NoopTimingReport)
       val vi1 = tables.publish(tables.create("hello", "world"))
-      val ci1 = tables.addColumn(vi1, "col1", "typ", "colbase")
-      val ci2 = tables.addColumn(vi1, "col2", "typ2", "colbase2")
+      val ci1 = tables.addColumn(vi1, c("col1"), t("typ"), "colbase")
+      val ci2 = tables.addColumn(vi1, c("col2"), t("typ2"), "colbase2")
 
       tables.unpublished(vi1.datasetInfo) must be (None)
 
@@ -217,9 +221,9 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
     withDb() { conn =>
       val tables = new PostgresDatasetMapWriter(conn, NoopTimingReport)
       val vi = tables.create("hello", "world")
-      tables.addColumnWithId(new ColumnId(0), vi, "col0", "typ0", "t")
-      tables.addColumnWithId(new ColumnId(2), vi, "col2", "typ2", "t")
-      tables.addColumn(vi, "col1", "typ1", "t").systemId must equal (new ColumnId(1))
+      tables.addColumnWithId(new ColumnId(0), vi, c("col0"), t("typ0"), "t")
+      tables.addColumnWithId(new ColumnId(2), vi, c("col2"), t("typ2"), "t")
+      tables.addColumn(vi, c("col1"), t("typ1"), "t").systemId must equal (new ColumnId(1))
     }
   }
 
@@ -227,9 +231,9 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
     withDb() { conn =>
       val tables = new PostgresDatasetMapWriter(conn, NoopTimingReport)
       val vi = tables.create("hello", "world")
-      tables.addColumnWithId(new ColumnId(1), vi, "col1", "typ1", "t")
-      tables.addColumnWithId(new ColumnId(2), vi, "col2", "typ2", "t")
-      tables.addColumn(vi, "col0", "typ0", "t").systemId must equal (new ColumnId(0))
+      tables.addColumnWithId(new ColumnId(1), vi, c("col1"), t("typ1"), "t")
+      tables.addColumnWithId(new ColumnId(2), vi, c("col2"), t("typ2"), "t")
+      tables.addColumn(vi, c("col0"), t("typ0"), "t").systemId must equal (new ColumnId(0))
     }
   }
 
@@ -237,9 +241,9 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
     withDb() { conn =>
       val tables = new PostgresDatasetMapWriter(conn, NoopTimingReport)
       val vi = tables.create("hello", "world")
-      tables.addColumnWithId(new ColumnId(0), vi, "col0", "typ0", "t")
-      tables.addColumnWithId(new ColumnId(1), vi, "col1", "typ1", "t")
-      tables.addColumn(vi, "col2", "typ2", "t").systemId must equal (new ColumnId(2))
+      tables.addColumnWithId(new ColumnId(0), vi, c("col0"), t("typ0"), "t")
+      tables.addColumnWithId(new ColumnId(1), vi, c("col1"), t("typ1"), "t")
+      tables.addColumn(vi, c("col2"), t("typ2"), "t").systemId must equal (new ColumnId(2))
     }
   }
 
@@ -247,12 +251,12 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
     withDb() { conn =>
       val tables = new PostgresDatasetMapWriter(conn, NoopTimingReport)
       val vi0 = tables.create("hello", "world")
-      val ci0 = tables.addColumn(vi0, "col0", "typ0", "base0")
-      val ci1 = tables.addColumn(vi0, "col1", "typ1", "base1")
+      val ci0 = tables.addColumn(vi0, c("col0"), t("typ0"), "base0")
+      val ci1 = tables.addColumn(vi0, c("col1"), t("typ1"), "base1")
       val vi1 = tables.ensureUnpublishedCopy(tables.publish(vi0).datasetInfo).right.get.newCopyInfo
-      val ci2 = tables.addColumn(vi1, "col2", "typ2", "base2")
+      val ci2 = tables.addColumn(vi1, c("col2"), t("typ2"), "base2")
       tables.dropColumn(tables.schema(vi1)(new ColumnId(1)))
-      val ci3 = tables.addColumn(vi1, "col3", "typ3", "base3")
+      val ci3 = tables.addColumn(vi1, c("col3"), t("typ3"), "base3")
 
       ci3.systemId must be (new ColumnId(3))
     }
@@ -262,8 +266,8 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
     withDb() { conn =>
       val tables = new PostgresDatasetMapWriter(conn, NoopTimingReport)
       val vi1 = tables.create("hello", "world")
-      tables.addColumn(vi1, "col1", "typ1", "pcol1")
-      tables.addColumn(vi1, "col2", "typ2", "pcol2")
+      tables.addColumn(vi1, c("col1"), t("typ1"), "pcol1")
+      tables.addColumn(vi1, c("col2"), t("typ2"), "pcol2")
 
       (1 to 5).foldLeft(vi1) { (vi, _) =>
         val vi2 = tables.publish(vi)

@@ -6,6 +6,7 @@ import scala.collection.JavaConverters._
 
 import com.socrata.datacoordinator.truth.{RowUserIdMap, TypeContext}
 import com.socrata.datacoordinator.id.RowId
+import com.socrata.soql.environment.TypeName
 
 object TestTypeContext extends TypeContext[TestColumnType, TestColumnValue] {
   def makeValueFromSystemId(id: RowId) = LongValue(id.underlying)
@@ -18,14 +19,14 @@ object TestTypeContext extends TypeContext[TestColumnType, TestColumnValue] {
   def nullValue = NullValue
 
   val types = Map(
-    "long" -> LongColumn,
-    "string" -> StringColumn
+    TypeName("long") -> LongColumn,
+    TypeName("string") -> StringColumn
   )
 
-  def typeFromNameOpt(name: String) = types.get(name)
+  def typeFromNameOpt(name: TypeName) = types.get(name)
   def nameFromType(typ: TestColumnType) = typ match {
-    case LongColumn => "long"
-    case StringColumn => "string"
+    case LongColumn => TypeName("long")
+    case StringColumn => TypeName("string")
   }
 
   def makeIdMap[V](ignored: TestColumnType) = {

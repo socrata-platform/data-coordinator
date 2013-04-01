@@ -2,6 +2,7 @@ package com.socrata.datacoordinator.truth.metadata
 
 import com.socrata.datacoordinator.id.{RowId, ColumnId, CopyId, DatasetId}
 import scala.concurrent.duration.Duration
+import com.socrata.soql.environment.{ColumnName, TypeName}
 
 trait DatasetMapBase extends `-impl`.BaseDatasetMapReader {
 }
@@ -46,7 +47,7 @@ trait DatasetMapWriter extends DatasetMapBase with `-impl`.BaseDatasetMapWriter 
     * @note Does not change the actual table; this just updates the bookkeeping.
     * @return The new column
     * @throws ColumnAlreadyExistsException if the column already exists */
-  def addColumn(copyInfo: CopyInfo, logicalName: String, typeName: String, physicalColumnBaseBase: String): ColumnInfo
+  def addColumn(copyInfo: CopyInfo, logicalName: ColumnName, typeName: TypeName, physicalColumnBaseBase: String): ColumnInfo
 }
 
 trait BackupDatasetMap extends DatasetMapWriter with `-impl`.BaseDatasetMapWriter {
@@ -76,7 +77,7 @@ trait BackupDatasetMap extends DatasetMapWriter with `-impl`.BaseDatasetMapWrite
     * @return The new column
     * @throws ColumnAlreadyExistsException if the column already exists
     * @throws ColumnSystemIdAlreadyInUse if `systemId` already names a column on this copy of the table. */
-  def addColumnWithId(systemId: ColumnId, copyInfo: CopyInfo, logicalName: String, typeName: String, physicalColumnBaseBase: String): ColumnInfo
+  def addColumnWithId(systemId: ColumnId, copyInfo: CopyInfo, logicalName: ColumnName, typeName: TypeName, physicalColumnBaseBase: String): ColumnInfo
 
   /** Creates a dataset with the specified attributes
     * @note Using this carelessly can get you into trouble.  In particular, this
