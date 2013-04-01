@@ -39,7 +39,6 @@ import com.socrata.datacoordinator.truth.universe.sql.{PostgresCopyIn, PostgresU
 import com.rojoma.simplearm.SimpleArm
 import com.socrata.datacoordinator.common.soql.universe.PostgresUniverseCommonSupport
 import com.socrata.soql.types.SoQLType
-import com.socrata.datacoordinator.truth.json.JsonColumnReadRep
 import com.socrata.soql.environment.ColumnName
 
 case class Field(name: String, @JsonKey("type") typ: String)
@@ -48,7 +47,7 @@ object Field {
 }
 
 class Service(processMutation: Iterator[JValue] => Unit,
-              datasetContents: (String, Option[Set[ColumnName]], Option[Long], Option[Long]) => (Iterator[JObject] => Unit) => Boolean,
+              datasetContents: (String, CopySelector, Option[Set[ColumnName]], Option[Long], Option[Long]) => (Iterator[JObject] => Unit) => Boolean,
               secondaries: Set[String],
               datasetsInStore: (String) => DatasetIdMap[Long],
               versionInStore: (String, String) => Option[Long],
@@ -91,7 +90,17 @@ class Service(processMutation: Iterator[JValue] => Unit,
           return BadRequest ~> Content("Bad offset")
       }
     }
-    val found = datasetContents(norm(id), onlyColumns, limit, offset) { rows =>
+    val copy = Option(req.getParameter("copy")).getOrElse("latest").toLowerCase match {
+      case "latest" => LatestCopy
+      case "published" => PublishedCopy
+      case "working" => WorkingCopy
+      case other =>
+        try { Snapshot(other.toInt) }
+        catch { case _: NumberFormatException =>
+          return BadRequest ~> Content("Bad copy selector")
+        }
+    }
+    val found = datasetContents(norm(id), copy, onlyColumns, limit, offset) { rows =>
       resp.setContentType("application/json")
       resp.setCharacterEncoding("utf-8")
       val out = new BufferedWriter(resp.getWriter)
@@ -338,9 +347,9 @@ object Service extends App { self =>
       }
     }
 
-    def exporter(id: String, columns: Option[Set[ColumnName]], limit: Option[Long], offset: Option[Long])(f: Iterator[JObject] => Unit): Boolean = {
+    def exporter(id: String, copy: CopySelector, columns: Option[Set[ColumnName]], limit: Option[Long], offset: Option[Long])(f: Iterator[JObject] => Unit): Boolean = {
       val res = for(u <- universeProvider) yield {
-        Exporter.export(u, id, columns, limit, offset) { (schema, it) =>
+        Exporter.export(u, id, copy, columns, limit, offset) { (schema, it) =>
           val jsonSchema = schema.mapValuesStrict(dataContext.jsonRepForColumn)
           f(it.map { row =>
             val res = new scala.collection.mutable.HashMap[String, JValue]

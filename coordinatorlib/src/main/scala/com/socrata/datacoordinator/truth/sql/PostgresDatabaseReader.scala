@@ -21,12 +21,17 @@ class PostgresDatabaseReader[CT, CV](conn: Connection,
   private class S(conn: Connection) extends ReadContext {
     val datasetMap = PostgresDatabaseReader.this.datasetMap
 
-    def loadDataset(datasetName: String, latest: Boolean): Option[(CopyInfo, ColumnIdMap[ColumnInfo])] = {
+    def loadDataset(datasetName: String, copySelector: CopySelector): Option[(CopyInfo, ColumnIdMap[ColumnInfo])] = {
       val map = datasetMap
       for {
         datasetId <- map.datasetId(datasetName)
         datasetInfo <- map.datasetInfo(datasetId)
-        copyInfo <- if(latest) Some(map.latest(datasetInfo)) else map.published(datasetInfo)
+        copyInfo <- copySelector match {
+          case LatestCopy => Some(map.latest(datasetInfo))
+          case PublishedCopy => map.published(datasetInfo)
+          case WorkingCopy => map.unpublished(datasetInfo)
+          case Snapshot(n) => map.snapshot(datasetInfo, n)
+        }
       } yield (copyInfo, map.schema(copyInfo))
     }
 

@@ -19,7 +19,7 @@ trait LowLevelDatabaseReader[CV] {
   trait ReadContext {
     def datasetMap: DatasetMapReader
 
-    def loadDataset(datasetName: String, latest: Boolean): Option[(CopyInfo, ColumnIdMap[ColumnInfo])]
+    def loadDataset(datasetName: String, latest: CopySelector): Option[(CopyInfo, ColumnIdMap[ColumnInfo])]
 
     def withRows[A](ci: CopyInfo, sidCol: ColumnInfo, schema: ColumnIdMap[ColumnInfo], f: Iterator[ColumnIdMap[CV]] => A, limit: Option[Long], offset: Option[Long]): A
   }
@@ -47,6 +47,12 @@ trait LowLevelDatabaseMutator[CV] {
   def openDatabase: Managed[MutationContext]
 }
 
+sealed abstract class CopySelector
+case object LatestCopy extends CopySelector
+case object PublishedCopy extends CopySelector
+case object WorkingCopy extends CopySelector
+case class Snapshot(nth: Int) extends CopySelector
+
 trait DatasetReader[CV] {
   val databaseReader: LowLevelDatabaseReader[CV]
 
@@ -56,11 +62,7 @@ trait DatasetReader[CV] {
     def withRows[A](cids: ColumnIdSet, offset: Option[Long], limit: Option[Long])(f: Iterator[ColumnIdMap[CV]] => A): A // TODO: I think this should return a Managed[Iterator...]
   }
 
-  /**
-   * @param latest If false, this action operates on the published version even if there
-   *               is a newer working copy.
-   */
-  def openDataset(datasetName: String, latest: Boolean): Managed[Option[ReadContext]]
+  def openDataset(datasetName: String, copy: CopySelector): Managed[Option[ReadContext]]
 }
 
 object DatasetReader {
@@ -70,12 +72,12 @@ object DatasetReader {
         llCtx.withRows(copyInfo, schema.values.find(_.isSystemPrimaryKey).getOrElse(sys.error("No system PK in this dataset?")), schema.filter { (id, _) => keySet.contains(id) }, f, limit, offset)
     }
 
-    def openDataset(datasetName: String, latest: Boolean): Managed[Option[ReadContext]] =
+    def openDataset(datasetName: String, copySelector: CopySelector): Managed[Option[ReadContext]] =
       new SimpleArm[Option[ReadContext]] {
         def flatMap[A](f: Option[ReadContext] => A): A = for {
           llCtx <- databaseReader.openDatabase
         } yield {
-          val ctx = llCtx.loadDataset(datasetName, latest) map { case (initialCopy, initialSchema) =>
+          val ctx = llCtx.loadDataset(datasetName, copySelector) map { case (initialCopy, initialSchema) =>
             new S(initialCopy, initialSchema, llCtx)
           }
           f(ctx)
