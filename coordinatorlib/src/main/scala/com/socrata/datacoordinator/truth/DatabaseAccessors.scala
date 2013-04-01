@@ -21,7 +21,7 @@ trait LowLevelDatabaseReader[CV] {
 
     def loadDataset(datasetName: String, latest: Boolean): Option[(CopyInfo, ColumnIdMap[ColumnInfo])]
 
-    def withRows[A](ci: CopyInfo, schema: ColumnIdMap[ColumnInfo], f: Iterator[ColumnIdMap[CV]] => A): A
+    def withRows[A](ci: CopyInfo, sidCol: ColumnInfo, schema: ColumnIdMap[ColumnInfo], f: Iterator[ColumnIdMap[CV]] => A, limit: Option[Long], offset: Option[Long]): A
   }
 
   def openDatabase: Managed[ReadContext]
@@ -53,7 +53,7 @@ trait DatasetReader[CV] {
   trait ReadContext {
     val copyInfo: CopyInfo
     val schema: ColumnIdMap[ColumnInfo]
-    def withRows[A](cids: ColumnIdSet)(f: Iterator[ColumnIdMap[CV]] => A): A // TODO: I think this should return a Managed[Iterator...]
+    def withRows[A](cids: ColumnIdSet, offset: Option[Long], limit: Option[Long])(f: Iterator[ColumnIdMap[CV]] => A): A // TODO: I think this should return a Managed[Iterator...]
   }
 
   /**
@@ -66,8 +66,8 @@ trait DatasetReader[CV] {
 object DatasetReader {
   private class Impl[CV](val databaseReader: LowLevelDatabaseReader[CV]) extends DatasetReader[CV] {
     class S(val copyInfo: CopyInfo, val schema: ColumnIdMap[ColumnInfo], llCtx: databaseReader.ReadContext) extends ReadContext {
-      def withRows[A](keySet: ColumnIdSet)(f: Iterator[ColumnIdMap[CV]] => A): A =
-        llCtx.withRows(copyInfo, schema.filter { (id, _) => keySet.contains(id) }, f)
+      def withRows[A](keySet: ColumnIdSet, limit: Option[Long], offset: Option[Long])(f: Iterator[ColumnIdMap[CV]] => A): A =
+        llCtx.withRows(copyInfo, schema.values.find(_.isSystemPrimaryKey).getOrElse(sys.error("No system PK in this dataset?")), schema.filter { (id, _) => keySet.contains(id) }, f, limit, offset)
     }
 
     def openDataset(datasetName: String, latest: Boolean): Managed[Option[ReadContext]] =

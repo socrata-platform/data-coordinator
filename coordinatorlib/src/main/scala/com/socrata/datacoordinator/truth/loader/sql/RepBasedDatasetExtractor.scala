@@ -10,7 +10,7 @@ import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.sql.SqlColumnReadRep
 import com.socrata.datacoordinator.id.ColumnId
 
-class RepBasedDatasetExtractor[CT, CV](conn: Connection, dataTableName: String, schema: ColumnIdMap[SqlColumnReadRep[CT, CV]])
+class RepBasedDatasetExtractor[CT, CV](conn: Connection, dataTableName: String, sidCol: SqlColumnReadRep[CT, CV], schema: ColumnIdMap[SqlColumnReadRep[CT, CV]])
   extends DatasetExtractor[CV]
 {
   require(!conn.getAutoCommit, "Connection must not be in auto-commit mode")
@@ -31,13 +31,16 @@ class RepBasedDatasetExtractor[CT, CV](conn: Connection, dataTableName: String, 
     result.freeze()
   }
 
-  def allRows: Managed[Iterator[Row[CV]]] = new SimpleArm[Iterator[Row[CV]]] {
+  def allRows(limit: Option[Long], offset: Option[Long]): Managed[Iterator[Row[CV]]] = new SimpleArm[Iterator[Row[CV]]] {
     def flatMap[B](f: (Iterator[Row[CV]]) => B): B = {
       if(schema.isEmpty) {
         f(Iterator.empty)
       } else {
         val colSelectors = cids.flatMap { cid => schema(new ColumnId(cid)).physColumns }
-        val q = "SELECT " + colSelectors.mkString(",") + " FROM " + dataTableName
+        val q = "SELECT " + colSelectors.mkString(",") + " FROM " + dataTableName +
+          " ORDER BY " + sidCol.physColumns.mkString(",") +
+          limit.map { l => " LIMIT " + l.max(0) }.getOrElse("") +
+          offset.map { o => " OFFSET " + o.max(0) }.getOrElse("")
         using(conn.createStatement()) { stmt =>
           stmt.setFetchSize(1000)
           using(stmt.executeQuery(q)) { rs =>

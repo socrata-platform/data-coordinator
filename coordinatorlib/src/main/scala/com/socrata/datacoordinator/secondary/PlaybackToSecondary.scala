@@ -97,7 +97,7 @@ class PlaybackToSecondary[CT, CV](conn: Connection, secondaryManifest: Secondary
     timingReport("sync-copy", "secondary" -> secondary.storeId, "dataset" -> copy.datasetInfo.systemId, "copy" -> copy.copyNumber) {
       secondary.store.resync(copy, cookie, schema, new SimpleArm[Iterator[Row[CV]]] {
         def flatMap[A](f: Iterator[Row[CV]] => A): A =
-          new RepBasedDatasetExtractor(conn, copy.dataTableName, schema.mapValuesStrict(repFor)).allRows.map(f)
+          new RepBasedDatasetExtractor(conn, copy.dataTableName, repFor(schema.values.find(_.isSystemPrimaryKey).getOrElse(sys.error("No system PK column?"))), schema.mapValuesStrict(repFor)).allRows(None, None).map(f)
       })
     }
 

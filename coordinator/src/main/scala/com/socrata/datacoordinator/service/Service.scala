@@ -48,7 +48,7 @@ object Field {
 }
 
 class Service(processMutation: Iterator[JValue] => Unit,
-              datasetContents: (String, Option[Set[ColumnName]]) => (Iterator[JObject] => Unit) => Boolean,
+              datasetContents: (String, Option[Set[ColumnName]], Option[Long], Option[Long]) => (Iterator[JObject] => Unit) => Boolean,
               secondaries: Set[String],
               datasetsInStore: (String) => DatasetIdMap[Long],
               versionInStore: (String, String) => Option[Long],
@@ -76,8 +76,22 @@ class Service(processMutation: Iterator[JValue] => Unit,
   def doExportFile(id: String)(req: HttpServletRequest): HttpResponse = { resp =>
     val onlyColumns = Option(req.getParameterValues("c")).map(_.flatMap { c => norm(c).split(',').map(ColumnName) }.toSet)
     val limit = Option(req.getParameter("limit")).map { limStr =>
+      try {
+        limStr.toLong
+      } catch {
+        case _: NumberFormatException =>
+          return BadRequest ~> Content("Bad limit")
+      }
     }
-    val found = datasetContents(norm(id), onlyColumns) { rows =>
+    val offset = Option(req.getParameter("offset")).map { offStr =>
+      try {
+        offStr.toLong
+      } catch {
+        case _: NumberFormatException =>
+          return BadRequest ~> Content("Bad offset")
+      }
+    }
+    val found = datasetContents(norm(id), onlyColumns, limit, offset) { rows =>
       resp.setContentType("application/json")
       resp.setCharacterEncoding("utf-8")
       val out = new BufferedWriter(resp.getWriter)
@@ -324,9 +338,9 @@ object Service extends App { self =>
       }
     }
 
-    def exporter(id: String, columns: Option[Set[ColumnName]])(f: Iterator[JObject] => Unit): Boolean = {
+    def exporter(id: String, columns: Option[Set[ColumnName]], limit: Option[Long], offset: Option[Long])(f: Iterator[JObject] => Unit): Boolean = {
       val res = for(u <- universeProvider) yield {
-        Exporter.export(u, id, columns) { (schema, it) =>
+        Exporter.export(u, id, columns, limit, offset) { (schema, it) =>
           val jsonSchema = schema.mapValuesStrict(dataContext.jsonRepForColumn)
           f(it.map { row =>
             val res = new scala.collection.mutable.HashMap[String, JValue]

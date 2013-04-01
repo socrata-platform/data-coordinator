@@ -7,7 +7,7 @@ import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.soql.environment.ColumnName
 
 object Exporter {
-  def export[CT, CV, T](u: Universe[CT, CV] with DatasetReaderProvider, id: String, columns: Option[Set[ColumnName]])(f: (ColumnIdMap[ColumnInfo], Iterator[Row[CV]]) => T): Option[T] = {
+  def export[CT, CV, T](u: Universe[CT, CV] with DatasetReaderProvider, id: String, columns: Option[Set[ColumnName]], limit: Option[Long], offset: Option[Long])(f: (ColumnIdMap[ColumnInfo], Iterator[Row[CV]]) => T): Option[T] = {
     for {
       ctxOpt <- u.datasetReader.openDataset(id, latest = true)
       ctx <- ctxOpt
@@ -19,7 +19,7 @@ object Exporter {
         case None => schema
       }
 
-      withRows(selectedSchema.keySet) { it =>
+      withRows(selectedSchema.keySet, limit, offset) { it =>
         f(selectedSchema, it)
       }
     }
