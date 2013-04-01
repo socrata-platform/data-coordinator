@@ -222,6 +222,10 @@ object Service extends App { self =>
 
   val (dataSource, copyInForDataSource) = DataSourceFromConfig(serviceConfig)
 
+  com.rojoma.simplearm.util.using(dataSource.getConnection()) { conn =>
+    com.socrata.datacoordinator.truth.sql.DatabasePopulator.populate(conn, StandardDatasetMapLimits)
+  }
+
   val port = serviceConfig.getInt("network.port")
 
   val executorService = Executors.newCachedThreadPool()

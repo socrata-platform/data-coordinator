@@ -25,12 +25,12 @@ import com.socrata.datacoordinator.truth.metadata.CopyInfo
 
 // Does this need to be *Postgres*, or is all postgres-specific stuff encapsulated in its paramters?
 // Actually does this need to be in the sql package at all now that Universe exists?
-class PostgresDatabaseMutator[CT, CV](universe: Managed[Universe[CT, CV] with LoggerProvider with SchemaLoaderProvider with LoaderProvider with DatasetContentsCopierProvider with DatasetMapWriterProvider with GlobalLogProvider])
+class PostgresDatabaseMutator[CT, CV](universe: Managed[Universe[CT, CV] with LoggerProvider with SchemaLoaderProvider with LoaderProvider with TruncatorProvider with DatasetContentsCopierProvider with DatasetMapWriterProvider with GlobalLogProvider])
   extends LowLevelDatabaseMutator[CV]
 {
   // type LoaderProvider = (CopyInfo, ColumnIdMap[ColumnInfo], RowPreparer[CV], IdProvider, Logger[CV], ColumnInfo => SqlColumnRep[CT, CV]) => Loader[CV]
 
-  private class S(universe: Universe[CT, CV] with LoggerProvider with SchemaLoaderProvider with LoaderProvider with DatasetContentsCopierProvider with DatasetMapWriterProvider with GlobalLogProvider) extends MutationContext {
+  private class S(universe: Universe[CT, CV] with LoggerProvider with SchemaLoaderProvider with LoaderProvider with TruncatorProvider with DatasetContentsCopierProvider with DatasetMapWriterProvider with GlobalLogProvider) extends MutationContext {
     lazy val now = universe.transactionStart
 
     final def loadLatestVersionOfDataset(datasetId: DatasetId, lockTimeout: Duration): Option[(CopyInfo, ColumnIdMap[ColumnInfo])] = {
@@ -47,6 +47,9 @@ class PostgresDatabaseMutator[CT, CV](universe: Managed[Universe[CT, CV] with Lo
 
     def schemaLoader(datasetInfo: DatasetInfo): SchemaLoader =
       universe.schemaLoader(datasetInfo)
+
+    def truncate(table: CopyInfo, logger: Logger[CV]) =
+      universe.truncator.truncate(table, logger)
 
     def datasetContentsCopier(datasetInfo: DatasetInfo): DatasetContentsCopier =
       universe.datasetContentsCopier(datasetInfo)

@@ -73,7 +73,7 @@ trait PostgresDataContext extends SqlDataWritingContext with SqlDataReadingConte
     import com.rojoma.simplearm.{SimpleArm, Managed}
     import com.rojoma.simplearm.util._
     import com.socrata.datacoordinator.truth.universe._
-    abstract class UniverseType extends Universe[CT, CV] with LoggerProvider with SchemaLoaderProvider with LoaderProvider with DatasetContentsCopierProvider with DatasetMapWriterProvider with GlobalLogProvider
+    abstract class UniverseType extends Universe[CT, CV] with LoggerProvider with SchemaLoaderProvider with LoaderProvider with TruncatorProvider with DatasetContentsCopierProvider with DatasetMapWriterProvider with GlobalLogProvider
     new PostgresDatabaseMutator(new SimpleArm[UniverseType] {
       def flatMap[B](f: UniverseType => B): B = {
         // dataSource, sqlRepForColumn, newRowLogCodec, mapWriterFactory, globalLogFactory, loaderFactory, tablespace, timingReport
@@ -82,6 +82,8 @@ trait PostgresDataContext extends SqlDataWritingContext with SqlDataReadingConte
 
           val universe = new UniverseType {
             import com.socrata.datacoordinator.truth.loader.sql._
+
+            lazy val truncator = new SqlTruncator(conn)
 
             def schemaLoader(datasetInfo: DatasetInfo): SchemaLoader =
               new RepBasedSqlSchemaLoader(conn, logger(datasetInfo), sqlRepForColumn, tablespace)

@@ -35,6 +35,7 @@ trait LowLevelDatabaseMutator[CV] {
     def schemaLoader(info: DatasetInfo): SchemaLoader
     def datasetContentsCopier(info: DatasetInfo): DatasetContentsCopier
     def withDataLoader[A](table: CopyInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[CV])(f: Loader[CV] => A): (Report[CV], RowId, A)
+    def truncate(table: CopyInfo, logger: Logger[CV])
 
     def globalLog: GlobalLog
 
@@ -237,7 +238,7 @@ object DatasetMutator {
       }
 
       def truncate() {
-        ??? // TODO: implement me
+        llCtx.truncate(copyInfo, logger)
       }
 
       def upsert(inputGenerator: Iterator[Either[CV, Row[CV]]]): Report[CV] = {

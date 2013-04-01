@@ -71,6 +71,10 @@ trait SchemaLoaderProvider {
   def schemaLoader(datasetInfo: DatasetInfo): SchemaLoader
 }
 
+trait TruncatorProvider {
+  val truncator: Truncator
+}
+
 trait DatasetMapReaderProvider {
   val datasetMapReader: DatasetMapReader
 }
