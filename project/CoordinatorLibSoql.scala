@@ -1,16 +1,11 @@
 import sbt._
 import Keys._
 
-import com.socrata.socratasbt.SocrataSbt._
-import SocrataSbtKeys._
-
 object CoordinatorLibSoql {
   lazy val settings: Seq[Setting[_]] = BuildSettings.projectSettings() ++ Seq(
-    libraryDependencies <++= (scalaVersion, slf4jVersion) { (scalaVersion, slf4jVersion) =>
-      Seq(
-        "com.socrata" %% "soql-types" % "[0.0.12,0.0.15)"
-      )
-    }
+    libraryDependencies ++= Seq(
+      "com.socrata" %% "soql-types" % "0.0.14"
+    )
   )
 
   lazy val configs: Seq[Configuration] = BuildSettings.projectConfigs
