@@ -8,7 +8,7 @@ trait DatasetInfoLike extends Product {
   val systemId: DatasetId
   val datasetName: String
   val tableBaseBase: String
-  val nextRowId: RowId
+  val nextRowIdNumber: Long
 
   lazy val tableBase = tableBaseBase + "_" + systemId.underlying
   lazy val logTableName = tableBase + "_log"
@@ -17,9 +17,9 @@ trait DatasetInfoLike extends Product {
 case class UnanchoredDatasetInfo(@JsonKey("sid") systemId: DatasetId,
                                  @JsonKey("name") datasetName: String,
                                  @JsonKey("tbase") tableBaseBase: String,
-                                 @JsonKey("rid") nextRowId: RowId) extends DatasetInfoLike
+                                 @JsonKey("rid") nextRowIdNumber: Long) extends DatasetInfoLike
 
-object UnanchoredDatasetInfo extends ((DatasetId, String, String, RowId) => UnanchoredDatasetInfo) {
+object UnanchoredDatasetInfo extends ((DatasetId, String, String, Long) => UnanchoredDatasetInfo) {
   override def toString = "DatasetInfo"
   implicit val jCodec = AutomaticJsonCodecBuilder[UnanchoredDatasetInfo]
 }
@@ -28,6 +28,6 @@ object UnanchoredDatasetInfo extends ((DatasetId, String, String, RowId) => Unan
   * or [[com.socrata.datacoordinator.truth.metadata.DatasetMapWriter]].
   * @param tag Guard against a non-map accidentially instantiating this.
   */
-case class DatasetInfo(systemId: DatasetId, datasetName: String, tableBaseBase: String, nextRowId: RowId)(implicit tag: com.socrata.datacoordinator.truth.metadata.`-impl`.Tag) extends DatasetInfoLike {
-  def unanchored: UnanchoredDatasetInfo = UnanchoredDatasetInfo(systemId, datasetName, tableBaseBase, nextRowId)
+case class DatasetInfo(systemId: DatasetId, datasetName: String, tableBaseBase: String, nextRowIdNumber: Long)(implicit tag: com.socrata.datacoordinator.truth.metadata.`-impl`.Tag) extends DatasetInfoLike {
+  def unanchored: UnanchoredDatasetInfo = UnanchoredDatasetInfo(systemId, datasetName, tableBaseBase, nextRowIdNumber)
 }

@@ -9,7 +9,7 @@ import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.truth.sql.{ReadOnlyRepBasedSqlDatasetContext, SqlColumnReadRep}
 import com.socrata.datacoordinator.util.collection.{ColumnIdSet, MutableColumnIdMap, ColumnIdMap}
-import com.socrata.datacoordinator.id.{RowId, ColumnId}
+import com.socrata.datacoordinator.id.{RowIdProcessor, RowId, ColumnId}
 
 class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
   def datasetContext(s: ColumnIdMap[SqlColumnReadRep[TestColumnType, TestColumnValue]]) = new ReadOnlyRepBasedSqlDatasetContext[TestColumnType, TestColumnValue] {
@@ -32,6 +32,8 @@ class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
     def mergeRows(base: Row[TestColumnValue], overlay: Row[TestColumnValue]) = sys.error("Shouldn't call this")
   }
 
+  val ridProc = new RowIdProcessor(0, _.toString, _.toLong)
+
   def managedConn = managed(DriverManager.getConnection("jdbc:h2:mem:"))
 
   def repSchemaBuilder(schema: ColumnIdMap[TestColumnType]): ColumnIdMap[SqlColumnReadRep[TestColumnType, TestColumnValue]] = {
@@ -43,7 +45,7 @@ class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
         case StringType => new StringRep(col)
       }
     }
-    res(new ColumnId(0)) = new IdRep(new ColumnId(0))
+    res(new ColumnId(0)) = new IdRep(new ColumnId(0), ridProc)
     res.freeze()
   }
 
@@ -72,7 +74,7 @@ class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
       for(row <- rows) {
         val sb = new StringBuilder("INSERT INTO ").append(tableName).append(" (").append(row.iterator.map(c => "c_" + c._1).mkString(",")).append(") VALUES (")
         val vals = row.map(_._2).map {
-          case IdValue(v) => v.underlying
+          case IdValue(v) => v.numeric
           case NumberValue(v) => v
           case StringValue(v) => "'" + v.replaceAllLiterally("'","''") + "'"
           case NullValue => "null"
@@ -90,10 +92,10 @@ class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
     )
     create(conn, schema)
     load(conn)(
-      List(0L -> IdValue(new RowId(1)), 1L -> StringValue("a"), 2L -> NumberValue(1000)),
-      List(0L -> IdValue(new RowId(2)), 1L -> NullValue, 2L -> NumberValue(1001)),
-      List(0L -> IdValue(new RowId(3)), 1L -> StringValue("b"), 2L -> NullValue),
-      List(0L -> IdValue(new RowId(4)), 1L -> NullValue, 2L -> NullValue)
+      List(0L -> IdValue(ridProc(1)), 1L -> StringValue("a"), 2L -> NumberValue(1000)),
+      List(0L -> IdValue(ridProc(2)), 1L -> NullValue, 2L -> NumberValue(1001)),
+      List(0L -> IdValue(ridProc(3)), 1L -> StringValue("b"), 2L -> NullValue),
+      List(0L -> IdValue(ridProc(4)), 1L -> NullValue, 2L -> NullValue)
     )
 
     managed(new SqlReader(conn, tableName, datasetContext(repSchemaBuilder(schema)), TestTypeContext, blockSize = 3))
@@ -107,10 +109,10 @@ class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
     )
     create(conn, schema)
     load(conn)(
-      List(0L -> IdValue(new RowId(1)), 100L -> StringValue("alpha"), 1L -> StringValue("a"), 2L -> NumberValue(1000)),
-      List(0L -> IdValue(new RowId(2)), 100L -> StringValue("beta"), 1L -> NullValue, 2L -> NumberValue(1001)),
-      List(0L -> IdValue(new RowId(3)), 100L -> StringValue("gamma"), 1L -> StringValue("b"), 2L -> NullValue),
-      List(0L -> IdValue(new RowId(4)), 100L -> StringValue("delta"), 1L -> NullValue, 2L -> NullValue)
+      List(0L -> IdValue(ridProc(1)), 100L -> StringValue("alpha"), 1L -> StringValue("a"), 2L -> NumberValue(1000)),
+      List(0L -> IdValue(ridProc(2)), 100L -> StringValue("beta"), 1L -> NullValue, 2L -> NumberValue(1001)),
+      List(0L -> IdValue(ridProc(3)), 100L -> StringValue("gamma"), 1L -> StringValue("b"), 2L -> NullValue),
+      List(0L -> IdValue(ridProc(4)), 100L -> StringValue("delta"), 1L -> NullValue, 2L -> NullValue)
     )
 
     managed(new SqlReader(conn, tableName, datasetContext(repSchemaBuilder(schema)), TestTypeContext, blockSize = 3))
@@ -121,13 +123,13 @@ class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
     for {
       conn <- managedConn
       r <- stdSidTable(conn)
-      rows <- managed(r.lookupBySystemId(Set(one), Iterator(4,3,2,1).map(new RowId(_))))
+      rows <- managed(r.lookupBySystemId(Set(one), Iterator(4,3,2,1).map(ridProc(_))))
     } {
       rows.flatten.toList must equal (List(
-        new RowId(4) -> Some(ColumnIdMap(one -> NullValue)),
-        new RowId(3) -> Some(ColumnIdMap(one -> StringValue("b"))),
-        new RowId(2) -> Some(ColumnIdMap(one -> NullValue)),
-        new RowId(1) -> Some(ColumnIdMap(one -> StringValue("a")))
+        ridProc(4) -> Some(ColumnIdMap(one -> NullValue)),
+        ridProc(3) -> Some(ColumnIdMap(one -> StringValue("b"))),
+        ridProc(2) -> Some(ColumnIdMap(one -> NullValue)),
+        ridProc(1) -> Some(ColumnIdMap(one -> StringValue("a")))
       ))
     }
   }
@@ -136,10 +138,10 @@ class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
     for {
       conn <- managedConn
       r <- stdSidTable(conn)
-      rows <- managed(r.lookupBySystemId(Set(new ColumnId(1L), new ColumnId(2L)), Iterator(new RowId(2))))
+      rows <- managed(r.lookupBySystemId(Set(new ColumnId(1L), new ColumnId(2L)), Iterator(ridProc(2))))
     } {
       rows.flatten.toList must equal (List(
-        new RowId(2) -> Some(ColumnIdMap(new ColumnId(1L) -> NullValue, new ColumnId(2L) -> NumberValue(1001)))
+        ridProc(2) -> Some(ColumnIdMap(new ColumnId(1L) -> NullValue, new ColumnId(2L) -> NumberValue(1001)))
       ))
     }
   }
@@ -148,13 +150,13 @@ class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
     for {
       conn <- managedConn
       r <- stdSidTable(conn)
-      rows <- managed(r.lookupBySystemId(Set(new ColumnId(1L)), Iterator(4,99,98,1).map(new RowId(_))))
+      rows <- managed(r.lookupBySystemId(Set(new ColumnId(1L)), Iterator(4,99,98,1).map(ridProc(_))))
     } {
       rows.flatten.toList must equal (List(
-        new RowId(4) -> Some(ColumnIdMap(new ColumnId(1L) -> NullValue)),
-        new RowId(99) -> None,
-        new RowId(98) -> None,
-        new RowId(1) -> Some(ColumnIdMap(new ColumnId(1L) -> StringValue("a")))
+        ridProc(4) -> Some(ColumnIdMap(new ColumnId(1L) -> NullValue)),
+        ridProc(99) -> None,
+        ridProc(98) -> None,
+        ridProc(1) -> Some(ColumnIdMap(new ColumnId(1L) -> StringValue("a")))
       ))
     }
   }

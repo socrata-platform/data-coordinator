@@ -12,7 +12,7 @@ import com.socrata.datacoordinator.common.soql._
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth._
 import com.socrata.datacoordinator.{Row, MutableRow}
-import com.socrata.datacoordinator.common.StandardDatasetMapLimits
+import com.socrata.datacoordinator.common.{BasicRowIdProcessor, StandardDatasetMapLimits}
 import org.postgresql.PGConnection
 import com.socrata.soql.brita.IdentifierFilter
 import com.socrata.datacoordinator.util.{StackedTimingReport, LoggedTimingReport}
@@ -53,6 +53,8 @@ object ChicagoCrimesLoadScript extends App {
       val datasetMapLimits = StandardDatasetMapLimits
       val datasetMutatorLockTimeout = Duration.Inf
       val timingReport = new LoggedTimingReport(LoggerFactory.getLogger("timing-report")) with StackedTimingReport
+      val rowIdProcessor = BasicRowIdProcessor
+      val jsonRowIdCodec = rowIdProcessor.obfusactedCodec
     }
 
     com.rojoma.simplearm.util.using(ds.getConnection()) { conn =>

@@ -29,6 +29,7 @@ import com.socrata.datacoordinator.common.util.ByteCountingOutputStream
 import scala.Some
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
 import com.socrata.datacoordinator.util.{NoopTimingReport, TimingReport}
+import com.socrata.datacoordinator.common.BasicRowIdProcessor
 
 final abstract class Transmitter
 
@@ -50,13 +51,16 @@ object Transmitter extends App {
   def openConnection(): Connection =
     DriverManager.getConnection(backupConfig.getString("database.url"), backupConfig.getString("database.username"), backupConfig.getString("database.password"))
 
-  val rowCodecFactory = () => SoQLRowLogCodec
-  val protocol = new Protocol(new LogDataCodec(rowCodecFactory))
+  val rowIdProcessor = BasicRowIdProcessor
+  implicit def rowIdJsonSerializer = rowIdProcessor.obfusactedCodec
+  def newRowLogCodec() = SoQLRowLogCodec
+  val soqlReps = new SoQLRep(rowIdProcessor)
+  val protocol = new Protocol(new LogDataCodec(newRowLogCodec), rowIdProcessor)
   import protocol._
 
   val typeContext = SoQLTypeContext
   def genericRepFor(columnInfo: ColumnInfoLike): SqlColumnRep[SoQLType, Any] =
-    SoQLRep.sqlRepFactories(typeContext.typeFromName(columnInfo.typeName))(columnInfo.physicalColumnBase)
+    soqlReps.sqlRepFactories(typeContext.typeFromName(columnInfo.typeName))(columnInfo.physicalColumnBase)
   def repSchema(schema: ColumnIdMap[ColumnInfoLike]): ColumnIdMap[SqlColumnRep[SoQLType, Any]] =
     schema.mapValuesStrict(genericRepFor)
   val timingReport = NoopTimingReport
@@ -103,7 +107,7 @@ object Transmitter extends App {
         datasetMap.datasetInfo(job.datasetId) match {
           case Some(datasetInfo) =>
             socket.send(DatasetUpdated(job.datasetId, job.version))
-            val delogger = new SqlDelogger(conn, datasetInfo.logTableName, rowCodecFactory)
+            val delogger = new SqlDelogger(conn, datasetInfo.logTableName, newRowLogCodec, rowIdProcessor)
             try {
               for {
                 it <- managed(delogger.delog(job.version))
@@ -182,7 +186,7 @@ object Transmitter extends App {
 
   def handleResyncRequest(client: Packets, conn: Connection, datasetId: DatasetId) {
     conn.setAutoCommit(false) // We'll be taking a lock and so we want transactions too
-    val datasetMap: DatasetMapWriter = new PostgresDatasetMapWriter(conn, timingReport)
+    val datasetMap: DatasetMapWriter = new PostgresDatasetMapWriter(conn, rowIdProcessor.initial, timingReport)
     datasetMap.datasetInfo(datasetId, Duration.Inf) match {
       case Some(info) =>
         client.send(WillResync(info.unanchored))

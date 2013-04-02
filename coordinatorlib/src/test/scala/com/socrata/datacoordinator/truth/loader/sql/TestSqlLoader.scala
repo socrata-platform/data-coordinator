@@ -13,7 +13,7 @@ import org.scalatest.prop.PropertyChecks
 import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.util.{RowIdProvider, NoopTimingReport}
-import com.socrata.datacoordinator.id.{RowId, ColumnId}
+import com.socrata.datacoordinator.id.{RowIdProcessor, RowId, ColumnId}
 import com.socrata.datacoordinator.util.collection.{ColumnIdSet, MutableColumnIdMap, ColumnIdMap}
 
 class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with BeforeAndAfterAll {
@@ -23,7 +23,9 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     executor.shutdownNow()
   }
 
-  def idProvider(initial: Int) = new RowIdProvider(new RowId(initial))
+  val ridProc = new RowIdProcessor(2, _.toString, _.toLong)
+
+  def idProvider(initial: Int) = new RowIdProvider(ridProc(initial), ridProc)
 
   def withDB[T]()(f: Connection => T): T = {
     using(DriverManager.getConnection("jdbc:h2:mem:")) { conn =>
@@ -98,7 +100,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
   val rowPreparer = new RowPreparer[TestColumnValue] {
     def prepareForInsert(row: Row[TestColumnValue], sid: RowId) = {
       val newRow = new MutableColumnIdMap(row)
-      newRow(idCol) = LongValue(sid.underlying)
+      newRow(idCol) = LongValue(sid.numeric)
       newRow.freeze()
     }
 
@@ -106,7 +108,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
   }
 
   test("adding a new row with system PK succeeds") {
-    val dsContext = new TestDatasetContext(standardSchema, idCol, None)
+    val dsContext = new TestDatasetContext(standardSchema, idCol, None, ridProc)
     val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
 
     withDB() { conn =>
@@ -140,7 +142,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
   test("inserting and then updating a new row with system PK succeeds") {
     val ids = idProvider(15)
-    val dsContext = new TestDatasetContext(standardSchema, idCol, None)
+    val dsContext = new TestDatasetContext(standardSchema, idCol, None, ridProc)
     val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
 
     withDB() { conn =>
@@ -164,7 +166,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       }
       conn.commit()
 
-      ids.finish() must be (new RowId(16))
+      ids.finish() must be (ridProc(16))
 
       query(conn, rawSelect) must equal (Seq(Map(idColName -> 15L, numName -> 2L, strName -> "b")))
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq(
@@ -174,7 +176,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
   }
 
   test("trying to add a new row with a NULL system PK fails") {
-    val dsContext = new TestDatasetContext(standardSchema, idCol, None)
+    val dsContext = new TestDatasetContext(standardSchema, idCol, None, ridProc)
     val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
 
     withDB() { conn =>
@@ -203,7 +205,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
   }
 
   test("trying to add a new row with a nonexistant system PK fails") {
-    val dsContext = new TestDatasetContext(standardSchema, idCol, None)
+    val dsContext = new TestDatasetContext(standardSchema, idCol, None, ridProc)
     val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
 
     withDB() { conn =>
@@ -233,7 +235,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
   test("updating an existing row by system id succeeds") {
     val ids = idProvider(13)
-    val dsContext = new TestDatasetContext(standardSchema, idCol, None)
+    val dsContext = new TestDatasetContext(standardSchema, idCol, None, ridProc)
     val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
 
     withDB() { conn =>
@@ -258,7 +260,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       }
       conn.commit()
 
-      ids.finish() must be (new RowId(13))
+      ids.finish() must be (ridProc(13))
 
       query(conn, rawSelect) must equal (Seq(
         Map(idColName -> 7L, numName -> 44L, strName -> "q")
@@ -271,7 +273,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
   test("adding a new row with user PK succeeds") {
     val ids = idProvider(15)
-    val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str))
+    val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str), ridProc)
     val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
 
     withDB() { conn =>
@@ -294,7 +296,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       }
       conn.commit()
 
-      ids.finish() must equal (new RowId(16))
+      ids.finish() must equal (ridProc(16))
 
       query(conn, rawSelect) must equal (Seq(
         Map(idColName -> 15L, numName -> 1L, strName -> "a")
@@ -307,7 +309,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
   test("trying to add a new row with a NULL user PK fails") {
     val ids = idProvider(22)
-    val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str))
+    val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str), ridProc)
     val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
 
     withDB() { conn =>
@@ -330,7 +332,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       }
       conn.commit()
 
-      ids.finish() must equal (new RowId(22))
+      ids.finish() must equal (ridProc(22))
 
       query(conn, rawSelect) must equal (Seq.empty)
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq.empty)
@@ -339,7 +341,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
   test("trying to add a new row without user PK fails") {
     val ids = idProvider(22)
-    val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str))
+    val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str), ridProc)
     val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
 
     withDB() { conn =>
@@ -362,7 +364,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       }
       conn.commit()
 
-      ids.finish() must equal (new RowId(22))
+      ids.finish() must equal (ridProc(22))
 
       query(conn, rawSelect) must equal (Seq.empty)
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq.empty)
@@ -371,7 +373,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
   test("updating an existing row by user pk succeeds") {
     val ids = idProvider(13)
-    val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str))
+    val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str), ridProc)
     val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
 
     withDB() { conn =>
@@ -396,7 +398,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       }
       conn.commit()
 
-      ids.finish() must be (new RowId(13))
+      ids.finish() must be (ridProc(13))
 
       query(conn, rawSelect) must equal (Seq(
         Map(idColName -> 7L, numName -> 44L, strName -> "q")
@@ -409,7 +411,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
   test("inserting and then updating a new row with user PK succeeds") {
     val ids = idProvider(15)
-    val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str))
+    val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str), ridProc)
     val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
 
     withDB() { conn =>
@@ -433,7 +435,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       }
       conn.commit()
 
-      ids.finish() must be (new RowId(16))
+      ids.finish() must be (ridProc(16))
 
       query(conn, rawSelect) must equal (Seq(
         Map(idColName -> 15L, numName -> 2L, strName -> "q")
@@ -446,7 +448,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
   test("specifying :id when there's a user PK fails") {
     val ids = idProvider(15)
-    val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str))
+    val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str), ridProc)
     val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
 
     withDB() { conn =>
@@ -469,7 +471,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       }
       conn.commit()
 
-      ids.finish() must be (new RowId(15))
+      ids.finish() must be (ridProc(15))
 
       query(conn, rawSelect) must equal (Seq.empty)
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq.empty)
@@ -478,7 +480,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
   test("deleting a row just inserted with a user PK succeeds") {
     val ids = idProvider(15)
-    val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str))
+    val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str), ridProc)
     val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
 
     withDB() { conn =>
@@ -502,7 +504,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       }
       conn.commit()
 
-      ids.finish() must be (new RowId(15)) // and it never even allocated a sid for it
+      ids.finish() must be (ridProc(15)) // and it never even allocated a sid for it
 
       query(conn, rawSelect) must equal (Seq.empty)
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq.empty)
@@ -513,7 +515,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     // This isn't a useful thing to be able to do, since in the real system
     // IDs won't be user-predictable, but it's a valuable sanity check anyway.
     val ids = idProvider(15)
-    val dsContext = new TestDatasetContext(standardSchema, idCol, None)
+    val dsContext = new TestDatasetContext(standardSchema, idCol, None, ridProc)
     val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
 
     withDB() { conn =>
@@ -537,7 +539,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       }
       conn.commit()
 
-      ids.finish() must be (new RowId(16))
+      ids.finish() must be (ridProc(16))
 
       query(conn, rawSelect) must equal (Seq.empty)
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq.empty)
@@ -577,10 +579,10 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       str -> new StringRep(str)
     )
 
-    val dsContext = new TestDatasetContext(schema, idCol, Some(userIdCol))
+    val dsContext = new TestDatasetContext(schema, idCol, Some(userIdCol), ridProc)
     val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
 
-    val stupidDsContext = new TestDatasetContext(schema, idCol, Some(userIdCol))
+    val stupidDsContext = new TestDatasetContext(schema, idCol, Some(userIdCol), ridProc)
     val stupidDataSqlizer = new TestDataSqlizer("stupid_data", stupidDsContext)
 
     def applyOps(txn: Loader[TestColumnValue], ops: List[Op]) {
@@ -693,10 +695,10 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
     implicit val arbOp = Arbitrary[Op](genOp)
 
-    val dsContext = new TestDatasetContext(standardSchema, idCol, None)
+    val dsContext = new TestDatasetContext(standardSchema, idCol, None, ridProc)
     val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
 
-    val stupidDsContext = new TestDatasetContext(standardSchema, idCol, None)
+    val stupidDsContext = new TestDatasetContext(standardSchema, idCol, None, ridProc)
     val stupidDataSqlizer = new TestDataSqlizer("stupid_data", stupidDsContext)
 
     def applyOps(txn: Loader[TestColumnValue], ops: List[Op]) {

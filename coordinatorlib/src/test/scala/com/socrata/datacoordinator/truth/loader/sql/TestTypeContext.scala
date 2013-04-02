@@ -5,14 +5,14 @@ package sql
 import scala.collection.JavaConverters._
 
 import com.socrata.datacoordinator.truth.{RowUserIdMap, TypeContext}
-import com.socrata.datacoordinator.id.RowId
+import com.socrata.datacoordinator.id.{RowIdProcessor, RowId}
 import com.socrata.soql.environment.TypeName
 
-object TestTypeContext extends TypeContext[TestColumnType, TestColumnValue] {
-  def makeValueFromSystemId(id: RowId) = LongValue(id.underlying)
+class TestTypeContext(ridProc: RowIdProcessor) extends TypeContext[TestColumnType, TestColumnValue] {
+  def makeValueFromSystemId(id: RowId) = LongValue(id.numeric)
   def makeSystemIdFromValue(id: TestColumnValue) = {
     require(id.isInstanceOf[LongValue], "Not an id")
-    new RowId(id.asInstanceOf[LongValue].value)
+    ridProc(id.asInstanceOf[LongValue].value)
   }
 
   def isNull(v: TestColumnValue) = v == NullValue

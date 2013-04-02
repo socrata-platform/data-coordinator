@@ -74,7 +74,7 @@ trait PostgresDataContext extends SqlDataWritingContext with SqlDataReadingConte
     import com.rojoma.simplearm.util._
     import com.socrata.datacoordinator.truth.universe._
     abstract class UniverseType extends Universe[CT, CV] with LoggerProvider with SchemaLoaderProvider with LoaderProvider with TruncatorProvider with DatasetContentsCopierProvider with DatasetMapWriterProvider with GlobalLogProvider
-    new PostgresDatabaseMutator(new SimpleArm[UniverseType] {
+    new PostgresDatabaseMutator(rowIdProcessor, new SimpleArm[UniverseType] {
       def flatMap[B](f: UniverseType => B): B = {
         // dataSource, sqlRepForColumn, newRowLogCodec, mapWriterFactory, globalLogFactory, loaderFactory, tablespace, timingReport
         using(dataSource.getConnection()) { conn =>
@@ -120,7 +120,7 @@ trait PostgresDataContext extends SqlDataWritingContext with SqlDataReadingConte
             val timingReport = self.timingReport
             var transactionStart: DateTime = DateTime.now()
             val globalLog: GlobalLog = new PostgresGlobalLog(conn)
-            val datasetMapWriter: DatasetMapWriter = new PostgresDatasetMapWriter(conn, timingReport)
+            val datasetMapWriter: DatasetMapWriter = new PostgresDatasetMapWriter(conn, rowIdProcessor.initial, timingReport)
           }
 
           val result = f(universe)

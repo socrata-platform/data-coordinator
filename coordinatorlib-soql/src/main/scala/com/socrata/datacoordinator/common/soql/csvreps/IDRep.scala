@@ -2,10 +2,10 @@ package com.socrata.datacoordinator.common.soql.csvreps
 
 import com.socrata.datacoordinator.truth.csv.CsvColumnRep
 import com.socrata.soql.types.{SoQLID, SoQLType}
-import com.socrata.datacoordinator.id.RowId
+import com.socrata.datacoordinator.id.{RowIdProcessor, RowId}
 import com.socrata.datacoordinator.common.soql.SoQLNullValue
 
-object IDRep extends CsvColumnRep[SoQLType, Any] {
+class IDRep(rowIdProcessor: RowIdProcessor) extends CsvColumnRep[SoQLType, Any] {
   val size = 1
 
   val representedType = SoQLID
@@ -15,7 +15,7 @@ object IDRep extends CsvColumnRep[SoQLType, Any] {
     val x = row(indices(0))
     if(x.isEmpty) Some(SoQLNullValue)
     else try {
-      Some(new RowId(row(indices(0)).toLong))
+      Some(rowIdProcessor(row(indices(0))))
     } catch {
       case _: NumberFormatException =>
         None

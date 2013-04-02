@@ -11,6 +11,7 @@ import java.util.concurrent.ExecutorService
 import com.socrata.datacoordinator.truth.csv.CsvColumnRep
 import com.socrata.datacoordinator.util.TimingReport
 import com.socrata.soql.environment.{TypeName, ColumnName}
+import com.socrata.datacoordinator.id.RowIdProcessor
 
 @deprecated
 trait DataTypeContext {
@@ -25,6 +26,8 @@ trait DataTypeContext {
 
   /** Methods to introspect type-related info. */
   val typeContext: TypeContext[CT, CV]
+
+  val rowIdProcessor: RowIdProcessor
 }
 
 @deprecated

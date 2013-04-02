@@ -12,13 +12,13 @@ import com.socrata.soql.environment.{ColumnName, TypeName}
 import org.joda.time.DateTime
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.loader.RowPreparer
-import com.socrata.datacoordinator.id.RowId
+import com.socrata.datacoordinator.id.{RowIdProcessor, RowId}
 
-class PostgresUniverseCommonSupport(val executor: ExecutorService, val tablespace: String => Option[String], val copyInProvider: (Connection, String, Reader) => Long) extends CommonSupport[SoQLType, Any] {
+class PostgresUniverseCommonSupport(val executor: ExecutorService, val rowIdProcessor: RowIdProcessor, val tablespace: String => Option[String], val copyInProvider: (Connection, String, Reader) => Long, soqlReps: SoQLRep) extends CommonSupport[SoQLType, Any] {
   val typeContext = SoQLTypeContext
 
   def repFor(ci: ColumnInfo) =
-    SoQLRep.sqlRepFactories(SoQLType.typesByName(ci.typeName))(ci.physicalColumnBase)
+    soqlReps.sqlRepFactories(SoQLType.typesByName(ci.typeName))(ci.physicalColumnBase)
 
   def newRowCodec() = SoQLRowLogCodec
 

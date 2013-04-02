@@ -7,12 +7,12 @@ import com.rojoma.json.util.JsonUtil
 import com.socrata.datacoordinator.truth.loader.Delogger
 import com.socrata.datacoordinator.truth.loader.Delogger.{LogEventCompanion, LogEvent}
 import com.socrata.datacoordinator.truth.metadata._
-import com.socrata.datacoordinator.id.RowId
+import com.socrata.datacoordinator.id.{RowIdProcessor, RowId}
 import com.socrata.datacoordinator.truth.RowLogCodec
 
 trait Codec[T] {
   def encode(target: DataOutputStream, data: T)
-  def decode(input: DataInputStream): T
+  def decode(input: DataInputStream, rowIdProcessor: RowIdProcessor): T
 }
 
 class LogDataCodec[CV](rowLogCodecFactory: () => RowLogCodec[CV]) extends Codec[Delogger.LogEvent[CV]] {
@@ -20,9 +20,8 @@ class LogDataCodec[CV](rowLogCodecFactory: () => RowLogCodec[CV]) extends Codec[
     LogDataCodec.encodeEvent(dos, event)
   }
 
-
-  def decode(stream: DataInputStream): Delogger.LogEvent[CV] = {
-    LogDataCodec.decodeEvent(Delogger.LogEvent.fromProductName(eventType(stream)), stream, rowLogCodecFactory)
+  def decode(stream: DataInputStream, rowIdProcessor: RowIdProcessor): Delogger.LogEvent[CV] = {
+    LogDataCodec.decodeEvent(Delogger.LogEvent.fromProductName(eventType(stream)), stream, rowLogCodecFactory, rowIdProcessor)
   }
 
   def eventType(in: InputStream) = {
@@ -46,12 +45,12 @@ object LogDataCodec {
     eventMap(event.companion).encode(stream, event)
   }
 
-  def decodeEvent[CV](eventType: LogEventCompanion, stream: DataInputStream, rowLogCodecFactory: () => RowLogCodec[CV]) =
-    eventMap(eventType).decode(stream, rowLogCodecFactory)
+  def decodeEvent[CV](eventType: LogEventCompanion, stream: DataInputStream, rowLogCodecFactory: () => RowLogCodec[CV], rowIdProcessor: RowIdProcessor) =
+    eventMap(eventType).decode(stream, rowLogCodecFactory, rowIdProcessor)
 
   private abstract class EventCodec {
     def encode(stream: DataOutputStream, event: Delogger.LogEvent[Any])
-    def decode[CV](stream: DataInputStream, rowCodecFactory: () => RowLogCodec[CV]): Delogger.LogEvent[CV]
+    def decode[CV](stream: DataInputStream, rowCodecFactory: () => RowLogCodec[CV], rowIdProcessor: RowIdProcessor): Delogger.LogEvent[CV]
   }
 
   private val eventMap = Map[LogEventCompanion, EventCodec](
@@ -81,23 +80,22 @@ object LogDataCodec {
       stream.write(bytes)
     }
 
-
-    def decode[CV](stream: DataInputStream, rowLogCodecFactory: () => RowLogCodec[CV]) = {
+    def decode[CV](stream: DataInputStream, rowLogCodecFactory: () => RowLogCodec[CV], rowIdProcessor: RowIdProcessor) = {
       val count = stream.readInt()
       val bytes = new Array[Byte](count)
       stream.readFully(bytes)
-      Delogger.RowDataUpdated(bytes)(rowLogCodecFactory())
+      Delogger.RowDataUpdated(bytes)(rowLogCodecFactory(), rowIdProcessor)
     }
   }
 
   private object RowIdCounterUpdatedCodec extends EventCodec {
     def encode(stream: DataOutputStream, eventRaw: Delogger.LogEvent[Any]) {
       val Delogger.RowIdCounterUpdated(rid) = eventRaw
-      stream.writeLong(rid.underlying)
+      stream.writeLong(rid.numeric)
     }
 
-    def decode[CV](stream: DataInputStream, rowLogCodecFactory: () => RowLogCodec[CV]) = {
-      val rid = new RowId(stream.readLong())
+    def decode[CV](stream: DataInputStream, rowLogCodecFactory: () => RowLogCodec[CV], rowIdProcessor: RowIdProcessor) = {
+      val rid = rowIdProcessor(stream.readLong())
       Delogger.RowIdCounterUpdated(rid)
     }
   }
@@ -110,7 +108,7 @@ object LogDataCodec {
       stream.write(JsonUtil.renderJson(ci).getBytes("UTF-8"))
     }
 
-    def decode[CV](stream: DataInputStream, rowLogCodecFactory: () => RowLogCodec[CV]) = {
+    def decode[CV](stream: DataInputStream, rowLogCodecFactory: () => RowLogCodec[CV], rowIdProcessor: RowIdProcessor) = {
       val r = new InputStreamReader(stream, "UTF-8")
       val di = JsonUtil.readJson[UnanchoredDatasetInfo](r).getOrElse {
         throw new PacketDecodeException("Unable to decode a datasetinfo")
@@ -126,7 +124,7 @@ object LogDataCodec {
     def encode(stream: DataOutputStream, event: Delogger.LogEvent[Any]) {
       val Delogger.WorkingCopyPublished = event
     }
-    def decode[CV](stream: DataInputStream, rowCodecFactory: () => RowLogCodec[CV]) =
+    def decode[CV](stream: DataInputStream, rowCodecFactory: () => RowLogCodec[CV], rowIdProcessor: RowIdProcessor) =
       Delogger.WorkingCopyPublished
   }
 
@@ -134,7 +132,7 @@ object LogDataCodec {
     def encode(stream: DataOutputStream, event: Delogger.LogEvent[Any]) {
       val Delogger.DataCopied = event
     }
-    def decode[CV](stream: DataInputStream, rowCodecFactory: () => RowLogCodec[CV]) =
+    def decode[CV](stream: DataInputStream, rowCodecFactory: () => RowLogCodec[CV], rowIdProcessor: RowIdProcessor) =
       Delogger.DataCopied
   }
 
@@ -142,7 +140,7 @@ object LogDataCodec {
     def encode(stream: DataOutputStream, event: Delogger.LogEvent[Any]) {
       val Delogger.Truncated = event
     }
-    def decode[CV](stream: DataInputStream, rowCodecFactory: () => RowLogCodec[CV]) =
+    def decode[CV](stream: DataInputStream, rowCodecFactory: () => RowLogCodec[CV], rowIdProcessor: RowIdProcessor) =
       Delogger.Truncated
   }
 
@@ -150,7 +148,7 @@ object LogDataCodec {
     def encode(stream: DataOutputStream, event: Delogger.LogEvent[Any]) {
       val Delogger.WorkingCopyDropped = event
     }
-    def decode[CV](stream: DataInputStream, rowCodecFactory: () => RowLogCodec[CV]) =
+    def decode[CV](stream: DataInputStream, rowCodecFactory: () => RowLogCodec[CV], rowIdProcessor: RowIdProcessor) =
       Delogger.WorkingCopyDropped
   }
 
@@ -159,7 +157,7 @@ object LogDataCodec {
       val Delogger.SnapshotDropped(ci) = event
       stream.write(JsonUtil.renderJson(ci).getBytes("UTF-8"))
     }
-    def decode[CV](stream: DataInputStream, rowLogCodecFactory: () => RowLogCodec[CV]) = {
+    def decode[CV](stream: DataInputStream, rowLogCodecFactory: () => RowLogCodec[CV], rowIdProcessor: RowIdProcessor) = {
       val ci = JsonUtil.readJson[UnanchoredCopyInfo](new InputStreamReader(stream, "UTF-8")).getOrElse {
         throw new PacketDecodeException("Unable to decode a columnInfo")
       }
@@ -176,7 +174,7 @@ object LogDataCodec {
       stream.write(JsonUtil.renderJson(col).getBytes("UTF-8"))
     }
 
-    def decode[CV](stream: DataInputStream, rowLogCodecFactory: () => RowLogCodec[CV]) = {
+    def decode[CV](stream: DataInputStream, rowLogCodecFactory: () => RowLogCodec[CV], rowIdProcessor: RowIdProcessor) = {
       val ci = JsonUtil.readJson[UnanchoredColumnInfo](new InputStreamReader(stream, "UTF-8")).getOrElse {
         throw new PacketDecodeException("Unable to decode a columnInfo")
       }
@@ -243,7 +241,7 @@ object LogDataCodec {
       val Delogger.EndTransaction = event
     }
 
-    def decode[CV](stream: DataInputStream, rowCodecFactory: () => RowLogCodec[CV]): LogEvent[CV] =
+    def decode[CV](stream: DataInputStream, rowCodecFactory: () => RowLogCodec[CV], rowIdProcessor: RowIdProcessor): LogEvent[CV] =
       Delogger.EndTransaction
   }
 }

@@ -8,9 +8,8 @@ import java.util.concurrent.Executor
 import gnu.trove.map.hash.TIntObjectHashMap
 import com.rojoma.simplearm.util._
 
-import com.socrata.datacoordinator.util.collection.MutableRowIdMap
 import com.socrata.datacoordinator.id.RowId
-import com.socrata.datacoordinator.util.{TransferrableContextTimingReport, RowIdProvider, TimingReport}
+import com.socrata.datacoordinator.util.{TransferrableContextTimingReport, RowIdProvider}
 
 final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: DataSqlizer[CT, CV], _l: DataLogger[CV], _i: RowIdProvider, _e: Executor, _tr: TransferrableContextTimingReport)
   extends
@@ -20,7 +19,7 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
   // constructor.
   // so that if an OOM exception occurs the initializations in the base class are rolled back.
   private val log = SystemPKSqlLoader.log
-  var jobs = new MutableRowIdMap[SystemPKSqlLoader.Operation[CV]]() // map from sid to operation
+  var jobs = new java.util.HashMap[RowId, SystemPKSqlLoader.Operation[CV]]() // map from sid to operation
 } with SqlLoader(_c, _p, _s, _l, _i, _e, _tr)
 {
   import SystemPKSqlLoader._
@@ -47,19 +46,19 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
           case None =>
             val systemId = typeContext.makeSystemIdFromValue(systemIdValue)
             jobs.get(systemId) match {
-              case None => // first job of this type
+              case null => // first job of this type
                 maybeFlush()
                 val op = Update(systemId, rowPreparer.prepareForUpdate(row), job, sqlizer.sizeofUpdate(row))
-                jobs(systemId) = op
+                jobs.put(systemId, op)
                 updateSize += op.size
-              case Some(oldJob) =>
+              case oldJob =>
                 oldJob match {
                   case Insert(insSid, oldRow, oldJob, oldSize) =>
                     assert(insSid == systemId)
                     insertSize -= oldSize
                     val newRow = datasetContext.mergeRows(oldRow, row)
                     val newOp = Insert(systemId, newRow, oldJob, sqlizer.sizeofInsert(newRow))
-                    jobs(systemId) = newOp
+                    jobs.put(systemId, newOp)
                     insertSize += newOp.size
                     elided.put(job, (systemIdValue, oldJob))
                   case Update(updSid, oldRow, oldJob, oldSize) =>
@@ -67,7 +66,7 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
                     updateSize -= oldSize
                     val newRow = datasetContext.mergeRows(oldRow, row)
                     val newOp = Update(systemId, newRow, oldJob, sqlizer.sizeofUpdate(newRow))
-                    jobs(systemId) = newOp
+                    jobs.put(systemId, newOp)
                     updateSize += newOp.size
                     elided.put(job, (systemIdValue, oldJob))
                   case _: Delete =>
@@ -83,23 +82,23 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
             val systemId = idProvider.allocate()
             val insert = Insert(systemId, rowPreparer.prepareForInsert(row, systemId), job, sqlizer.sizeofInsert(row))
             jobs.get(systemId) match {
-              case None =>
+              case null =>
                 maybeFlush()
-                jobs(systemId) = insert
+                jobs.put(systemId, insert)
                 insertSize += insert.size
-              case Some(oldJob) =>
+              case oldJob =>
                 oldJob match {
                   case d@Delete(_, oldJob) =>
                     // hey look at that, we deleted a row that didn't exist yet
                     errors.put(oldJob, NoSuchRowToDelete(typeContext.makeValueFromSystemId(systemId)))
                     deleteSize -= sqlizer.sizeofDelete
-                    jobs(systemId) = insert
+                    jobs.put(systemId, insert)
                     insertSize += insert.size
                   case Update(_, _, oldJob, oldSize) =>
                     // and we updated a row that didn't exist yet, too!
                     errors.put(oldJob, NoSuchRowToUpdate(typeContext.makeValueFromSystemId(systemId)))
                     updateSize -= oldSize
-                    jobs(systemId) = insert
+                    jobs.put(systemId, insert)
                     insertSize += insert.size
                   case Insert(_, _, _, _) =>
                     sys.error("Allocated the same row ID twice?")
@@ -116,17 +115,17 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
     val systemId = typeContext.makeSystemIdFromValue(id)
     val delete = Delete(systemId, job)
     jobs.get(systemId) match {
-      case None =>
+      case null =>
         maybeFlush()
-        jobs(systemId) = delete
+        jobs.put(systemId, delete)
         deleteSize += sqlizer.sizeofDelete
-      case Some(oldJob) =>
+      case oldJob =>
         oldJob match {
           case Update(_, _, oldJob, oldSize) =>
             // delete-of-update -> we have to flush because we can't know if this row
             // actually exists.  Hopefully this won't happen a lot!
             flush()
-            jobs(systemId) = delete
+            jobs.put(systemId, delete)
             deleteSize += sqlizer.sizeofDelete
           case Insert(allocatedSid, _, oldJob, oldSize) =>
             // deleting a row we just inserted?  Ok.  Let's nuke 'em!
@@ -135,7 +134,7 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
             insertSize -= oldSize
             // and we can skip actually doing this delete too, because we know it'll succeed
             deleted.put(job, id)
-            jobs -= systemId // and then we need do nothing with this job
+            jobs.remove(systemId) // and then we need do nothing with this job
           case Delete(_, _) =>
             // two deletes in a row.... this one certainly fails
             errors.put(job, NoSuchRowToDelete(id))
@@ -181,10 +180,9 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
                   val inserts = new java.util.ArrayList[Insert[CV]]
                   val updates = new java.util.ArrayList[Update[CV]]
 
-                  val it = currentJobs.iterator
+                  val it = currentJobs.values.iterator
                   while(it.hasNext) {
-                    it.advance()
-                    it.value match {
+                    it.next() match {
                       case i@Insert(_,_,_, _) => inserts.add(i)
                       case u@Update(_,_,_, _) => updates.add(u)
                       case d@Delete(_,_) => deletes.add(d)
@@ -208,7 +206,7 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
 
       started.acquire()
 
-      jobs = new MutableRowIdMap[Operation[CV]]
+      jobs = new java.util.HashMap[RowId, Operation[CV]]
       insertSize = 0
       updateSize = 0
       deleteSize = 0

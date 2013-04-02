@@ -7,10 +7,10 @@ import java.sql.{PreparedStatement, Connection}
 import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.util.{LeakDetect, CloseableIterator, FastGroupedIterator}
-import com.socrata.datacoordinator.util.collection.{MutableRowIdMap, MutableColumnIdMap}
 import com.socrata.datacoordinator.truth.sql.{ReadOnlyRepBasedSqlDatasetContext, SqlPKableColumnReadRep}
 import com.socrata.datacoordinator.truth.TypeContext
 import com.socrata.datacoordinator.id.{RowId, ColumnId}
+import com.socrata.datacoordinator.util.collection.MutableColumnIdMap
 
 class SqlReader[CT, CV](connection: Connection,
                         dataTableName: String,
@@ -72,7 +72,7 @@ class SqlReader[CT, CV](connection: Connection,
         sidRep.prepareMultiLookup(stmt, typeContext.makeValueFromSystemId(id), start)
       }
       using(stmt.executeQuery()) { rs =>
-        val result = new MutableRowIdMap[Row[CV]]
+        val result = new java.util.HashMap[RowId, Row[CV]]
         while(rs.next()) {
           val sid = typeContext.makeSystemIdFromValue(sidRep.fromResultSet(rs, 1))
           val row = new MutableColumnIdMap[CV]
@@ -83,10 +83,10 @@ class SqlReader[CT, CV](connection: Connection,
             i += rep.physColumns.length
             row(c) = v
           }
-          result(sid) = row.freeze()
+          result.put(sid, row.freeze())
         }
         block.map { sid =>
-          result.get(sid)
+          Option(result.get(sid))
         }
       }
     }
