@@ -43,7 +43,7 @@ class TestDataLogger(conn: Connection, logTableName: String) extends DataLogger[
   }
 
   def delete(systemID: RowId) {
-    list += JObject(Map("d" -> JNumber(systemID.numeric)))
+    list += JObject(Map("d" -> JNumber(systemID.underlying)))
   }
 
   def rowIdCounterUpdated(nextRowId: RowId) {

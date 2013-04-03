@@ -16,7 +16,7 @@ import java.util.concurrent.{TimeUnit, Executors}
 import org.postgresql.ds.PGSimpleDataSource
 import com.socrata.datacoordinator.truth._
 import com.typesafe.config.ConfigFactory
-import com.socrata.datacoordinator.common.{BasicRowIdProcessor, DataSourceFromConfig, StandardDatasetMapLimits}
+import com.socrata.datacoordinator.common.{DataSourceFromConfig, StandardDatasetMapLimits}
 import java.sql.Connection
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.truth.sql.SqlDataReadingContext
@@ -262,8 +262,6 @@ object Service extends App { self =>
       val datasetMapLimits = StandardDatasetMapLimits
       val timingReport = self.timingReport
       val datasetMutatorLockTimeout = Duration.Inf
-      val rowIdProcessor = BasicRowIdProcessor
-      val jsonRowIdCodec = rowIdProcessor.obfusactedCodec
     }
 
     def datasetsInStore(storeId: String): DatasetIdMap[Long] =
@@ -285,13 +283,13 @@ object Service extends App { self =>
         conn.setAutoCommit(false)
         val secondaryManifest = new SqlSecondaryManifest(conn)
         val secondary = secondaries(storeId).asInstanceOf[Secondary[dataContext.CV]]
-        val pb = new PlaybackToSecondary[dataContext.CT, dataContext.CV](conn, secondaryManifest, dataContext.rowIdProcessor, dataContext.sqlRepForColumn, timingReport)
+        val pb = new PlaybackToSecondary[dataContext.CT, dataContext.CV](conn, secondaryManifest, dataContext.sqlRepForColumn, timingReport)
         val mapReader = new PostgresDatasetMapReader(conn, timingReport)
         for {
           systemId <- mapReader.datasetId(datasetId)
           datasetInfo <- mapReader.datasetInfo(systemId)
         } yield {
-          val delogger = new SqlDelogger(conn, datasetInfo.logTableName, dataContext.newRowLogCodec, dataContext.rowIdProcessor)
+          val delogger = new SqlDelogger(conn, datasetInfo.logTableName, dataContext.newRowLogCodec)
           pb(systemId, NamedSecondary(storeId, secondary), mapReader, delogger)
         }
         conn.commit()
@@ -306,7 +304,7 @@ object Service extends App { self =>
         } yield secondaryManifest.stores(systemId)
       }
 
-    val commonSupport = new PostgresUniverseCommonSupport(executorService, dataContext.rowIdProcessor, _ => None, PostgresCopyIn, dataContext.soqlReps)
+    val commonSupport = new PostgresUniverseCommonSupport(executorService, _ => None, PostgresCopyIn)
 
     type SoQLUniverse = PostgresUniverse[SoQLType, Any]
     def soqlUniverse(conn: Connection) =

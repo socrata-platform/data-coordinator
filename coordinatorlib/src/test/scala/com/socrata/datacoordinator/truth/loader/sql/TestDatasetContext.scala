@@ -3,11 +3,11 @@ package truth.loader
 package sql
 
 import com.socrata.datacoordinator.util.collection.{ColumnIdSet, ColumnIdMap}
-import com.socrata.datacoordinator.id.{RowIdProcessor, RowId, ColumnId}
+import com.socrata.datacoordinator.id.{RowId, ColumnId}
 import com.socrata.datacoordinator.truth.sql.{SqlColumnRep, RepBasedSqlDatasetContext}
 
-class TestDatasetContext(val schema: ColumnIdMap[SqlColumnRep[TestColumnType, TestColumnValue]], val systemIdColumn: ColumnId, val userPrimaryKeyColumn: Option[ColumnId], ridProc: RowIdProcessor) extends RepBasedSqlDatasetContext[TestColumnType, TestColumnValue] {
-  val typeContext = new TestTypeContext(ridProc)
+class TestDatasetContext(val schema: ColumnIdMap[SqlColumnRep[TestColumnType, TestColumnValue]], val systemIdColumn: ColumnId, val userPrimaryKeyColumn: Option[ColumnId]) extends RepBasedSqlDatasetContext[TestColumnType, TestColumnValue] {
+  val typeContext = TestTypeContext
 
   val systemColumnIds = ColumnIdSet(systemIdColumn)
 
@@ -23,7 +23,7 @@ class TestDatasetContext(val schema: ColumnIdMap[SqlColumnRep[TestColumnType, Te
   } yield value
 
   def systemId(row: Row[TestColumnValue]) =
-    row.get(systemIdColumn).map { i => ridProc(i.asInstanceOf[LongValue].value) }
+    row.get(systemIdColumn).map { i => new RowId(i.asInstanceOf[LongValue].value) }
 
   def systemIdAsValue(row: Row[TestColumnValue]) = row.get(systemIdColumn)
 

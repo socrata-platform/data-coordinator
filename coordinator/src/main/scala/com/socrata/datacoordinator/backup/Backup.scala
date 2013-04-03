@@ -10,7 +10,7 @@ import com.socrata.soql.types.SoQLType
 
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.metadata._
-import com.socrata.datacoordinator.id.{RowIdProcessor, RowId, DatasetId}
+import com.socrata.datacoordinator.id.{RowId, DatasetId}
 import com.socrata.datacoordinator.truth.sql.{RepBasedSqlDatasetContext, SqlColumnRep, DatabasePopulator}
 import com.socrata.datacoordinator.truth.loader.sql._
 import com.socrata.datacoordinator.common.soql.{SoQLRowLogCodec, SoQLRep, SoQLTypeContext}
@@ -20,7 +20,7 @@ import com.socrata.datacoordinator.truth.loader.Update
 import com.socrata.datacoordinator.truth.loader.Delete
 import com.socrata.datacoordinator.truth.metadata.CopyPair
 import com.socrata.datacoordinator.truth.loader.Insert
-import com.socrata.datacoordinator.common.{BasicRowIdProcessor, StandardDatasetMapLimits}
+import com.socrata.datacoordinator.common.StandardDatasetMapLimits
 import org.postgresql.PGConnection
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import java.io.Reader
@@ -34,14 +34,14 @@ import com.socrata.datacoordinator.truth.loader.Insert
 import com.socrata.datacoordinator.util.{NoopTimingReport, TimingReport}
 import scala.concurrent.duration.Duration
 
-class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingReport, rowIdProcessor: RowIdProcessor,soqlReps: SoQLRep, paranoid: Boolean) {
+class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingReport, paranoid: Boolean) {
   val typeContext = SoQLTypeContext
   val logger: Logger[Any] = NullLogger
-  val datasetMap: BackupDatasetMap = new PostgresDatasetMapWriter(conn, rowIdProcessor.initial, timingReport)
+  val datasetMap: BackupDatasetMap = new PostgresDatasetMapWriter(conn, timingReport)
   def tablespace(s: String) = None
 
   def genericRepFor(columnInfo: ColumnInfo): SqlColumnRep[SoQLType, Any] =
-    soqlReps.sqlRepFactories(typeContext.typeFromName(columnInfo.typeName))(columnInfo.physicalColumnBase)
+    SoQLRep.sqlRepFactories(typeContext.typeFromName(columnInfo.typeName))(columnInfo.physicalColumnBase)
 
   def extractCopier(conn: Connection, sql: String, input: Reader): Long = conn.asInstanceOf[PGConnection].getCopyAPI.copyIn(sql, input)
 
@@ -260,9 +260,6 @@ class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingRe
 object Backup extends App {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Backup])
 
-  val rowIdProcessor: RowIdProcessor = BasicRowIdProcessor
-  def newRowLogCodec() = SoQLRowLogCodec
-
   def playback(primaryConn: Connection, backup: Backup, datasetSystemId: DatasetId, version: Long) {
     log.info("Playing back logs for version {}", version)
 
@@ -283,7 +280,7 @@ object Backup extends App {
     it.foldLeft(initialVersionInfo)(backup.dispatch)
 
   def playbackNew(primaryConn: Connection, backup: Backup, datasetSystemId: DatasetId) = {
-    val delogger: Delogger[Any] = new SqlDelogger(primaryConn, "t_" + datasetSystemId.underlying + "_log", newRowLogCodec, rowIdProcessor)
+    val delogger: Delogger[Any] = new SqlDelogger(primaryConn, "t_" + datasetSystemId.underlying + "_log", () => SoQLRowLogCodec)
     using(delogger.delog(1L)) { it =>
       it.next() match {
         case WorkingCopyCreated(newDatasetInfo, newVersionInfo) =>
@@ -301,7 +298,7 @@ object Backup extends App {
     }
     val initialVersionInfo = backup.datasetMap.latest(datasetInfo)
     Resync.unless(datasetSystemId, initialVersionInfo.dataVersion == version - 1, "Received a change to version " + version + " but this is only at " + initialVersionInfo.dataVersion)
-    val delogger: Delogger[Any] = new SqlDelogger(primaryConn, datasetInfo.logTableName, newRowLogCodec _, rowIdProcessor)
+    val delogger: Delogger[Any] = new SqlDelogger(primaryConn, datasetInfo.logTableName, () => SoQLRowLogCodec)
     using(delogger.delog(version)) { it =>
       continuePlayback(backup)(initialVersionInfo)(it)
     }
@@ -322,9 +319,7 @@ object Backup extends App {
       try {
         DatabasePopulator.populate(backupConn, datasetMapLimits)
 
-        val soqlReps = new SoQLRep(rowIdProcessor)
-
-        val bkp = new Backup(backupConn, executor, timingReport, rowIdProcessor, soqlReps, paranoid = true)
+        val bkp = new Backup(backupConn, executor, timingReport, paranoid = true)
 
         for {
           globalLogStmt <- managed(primaryConn.prepareStatement("SELECT id, dataset_system_id, version FROM global_log ORDER BY id"))

@@ -14,7 +14,7 @@ import com.socrata.datacoordinator.truth.loader.{DatasetContentsCopier, Logger, 
 import com.socrata.datacoordinator.truth.loader.sql.{RepBasedSqlSchemaLoader, RepBasedSqlDatasetContentsCopier, SqlLogger}
 import com.socrata.datacoordinator.truth.{TypeContext, RowLogCodec}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
-import com.socrata.datacoordinator.id.{RowIdProcessor, DatasetId, RowId}
+import com.socrata.datacoordinator.id.{DatasetId, RowId}
 import com.rojoma.simplearm.SimpleArm
 import scala.concurrent.duration.Duration
 import com.socrata.datacoordinator.util.{RowIdProvider, TimingReport}
@@ -25,7 +25,7 @@ import com.socrata.datacoordinator.truth.metadata.CopyInfo
 
 // Does this need to be *Postgres*, or is all postgres-specific stuff encapsulated in its paramters?
 // Actually does this need to be in the sql package at all now that Universe exists?
-class PostgresDatabaseMutator[CT, CV](rowIdProcessor: RowIdProcessor, universe: Managed[Universe[CT, CV] with LoggerProvider with SchemaLoaderProvider with LoaderProvider with TruncatorProvider with DatasetContentsCopierProvider with DatasetMapWriterProvider with GlobalLogProvider])
+class PostgresDatabaseMutator[CT, CV](universe: Managed[Universe[CT, CV] with LoggerProvider with SchemaLoaderProvider with LoaderProvider with TruncatorProvider with DatasetContentsCopierProvider with DatasetMapWriterProvider with GlobalLogProvider])
   extends LowLevelDatabaseMutator[CV]
 {
   // type LoaderProvider = (CopyInfo, ColumnIdMap[ColumnInfo], RowPreparer[CV], IdProvider, Logger[CV], ColumnInfo => SqlColumnRep[CT, CV]) => Loader[CV]
@@ -66,7 +66,7 @@ class PostgresDatabaseMutator[CT, CV](rowIdProcessor: RowIdProcessor, universe: 
     def datasetMap = universe.datasetMapWriter
 
     def withDataLoader[A](table: CopyInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[CV])(f: (Loader[CV]) => A): (Report[CV], RowId, A) = {
-      val idProvider = new RowIdProvider(rowIdProcessor(table.datasetInfo.nextRowIdNumber), rowIdProcessor)
+      val idProvider = new RowIdProvider(table.datasetInfo.nextRowId)
       for(loader <- universe.loader(table, schema, idProvider, logger)) yield {
         val result = f(loader)
         val report = loader.report

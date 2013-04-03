@@ -34,7 +34,6 @@ import scala.Some
 import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
-import com.socrata.datacoordinator.id.RowIdProcessor
 
 trait CommonSupport[CT, CV] {
   val executor: ExecutorService
@@ -46,7 +45,6 @@ trait CommonSupport[CT, CV] {
   val tablespace: String => Option[String]
   val copyInProvider: (Connection, String, Reader) => Long
 
-  def rowIdProcessor: RowIdProcessor
   def rowPreparer(transactionStart: DateTime, schema: ColumnIdMap[ColumnInfo]): RowPreparer[CV]
 
   lazy val loaderProvider = new AbstractSqlLoaderProvider(executor, typeContext, repFor, isSystemColumn) with PostgresSqlLoaderProvider[CT, CV] {
@@ -110,7 +108,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
     new PostgresSecondaryPlaybackManifest(conn, storeId)
 
   lazy val playbackToSecondary: PlaybackToSecondary[CT, CV] =
-    new PlaybackToSecondary(conn, secondaryManifest, rowIdProcessor, repFor, timingReport)
+    new PlaybackToSecondary(conn, secondaryManifest, repFor, timingReport)
 
   def logger(datasetInfo: DatasetInfo): Logger[CV] = {
     val logName = datasetInfo.logTableName
@@ -125,7 +123,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
   }
 
   def delogger(datasetInfo: DatasetInfo): Delogger[CV] =
-    new SqlDelogger(conn, datasetInfo.logTableName, newRowCodec _, rowIdProcessor)
+    new SqlDelogger(conn, datasetInfo.logTableName, newRowCodec _)
 
   lazy val secondaryManifest: SecondaryManifest =
     new SqlSecondaryManifest(conn)
@@ -137,7 +135,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
     new PostgresDatasetMapReader(conn, timingReport)
 
   lazy val datasetMapWriter: DatasetMapWriter =
-    new PostgresDatasetMapWriter(conn, rowIdProcessor.initial, timingReport)
+    new PostgresDatasetMapWriter(conn, timingReport)
 
   lazy val globalLogPlayback: GlobalLogPlayback =
     new PostgresGlobalLogPlayback(conn)
@@ -172,7 +170,6 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
   lazy val datasetReader = DatasetReader(lowLevelDatabaseReader)
 
   lazy val lowLevelDatabaseMutator = new PostgresDatabaseMutator[ColumnType, ColumnValue](
-    rowIdProcessor,
     new SimpleArm[PostgresUniverse.this.type] {
       def flatMap[B](f: PostgresUniverse.this.type => B): B = f(PostgresUniverse.this)
     }

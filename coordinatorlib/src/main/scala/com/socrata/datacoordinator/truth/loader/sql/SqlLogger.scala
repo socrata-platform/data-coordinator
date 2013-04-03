@@ -241,7 +241,7 @@ class SqlLogger[CV](connection: Connection,
   def rowIdCounterUpdated(nextRowId: RowId) {
     checkTxn()
     flushRowData()
-    logLine(SqlLogger.RowIdCounterUpdated, nextRowId.numeric.toString)
+    logLine(SqlLogger.RowIdCounterUpdated, nextRowId.underlying.toString)
   }
 
   def close() {

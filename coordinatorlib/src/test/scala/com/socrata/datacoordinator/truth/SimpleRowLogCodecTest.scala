@@ -7,23 +7,21 @@ import org.scalatest.matchers.MustMatchers
 import org.scalatest.prop.PropertyChecks
 import java.io.ByteArrayOutputStream
 import com.google.protobuf.{CodedInputStream, CodedOutputStream}
-import com.socrata.datacoordinator.id.{RowIdProcessor, BothRowId, ColumnId, RowId}
+import com.socrata.datacoordinator.id.{ColumnId, RowId}
 import com.socrata.datacoordinator.util.collection.MutableColumnIdMap
 
 class SimpleRowLogCodecTest extends FunSuite with MustMatchers with PropertyChecks {
-  val ridProc = new RowIdProcessor(2, _.toString, _.toLong)
-
   def serialize[T](codec: SimpleRowLogCodec[T], row: Row[T]): Array[Byte] = {
     val baos = new ByteArrayOutputStream
     val cos = CodedOutputStream.newInstance(baos)
-    codec.insert(cos, ridProc(0), row)
+    codec.insert(cos, new RowId(0), row)
     cos.flush()
     baos.toByteArray
   }
 
   def deserialize[T](codec: SimpleRowLogCodec[T], bs: Array[Byte]): Row[T] = {
     val cis = CodedInputStream.newInstance(bs)
-    codec.extract(cis, ridProc).getOrElse {
+    codec.extract(cis).getOrElse {
       fail("No data in source")
     } match {
       case Insert(rid, r) => r
@@ -38,7 +36,7 @@ class SimpleRowLogCodecTest extends FunSuite with MustMatchers with PropertyChec
       target.writeSInt32NoTag(cv)
     }
 
-    protected def readValue(source: CodedInputStream, ridProc: RowIdProcessor): Int =
+    protected def readValue(source: CodedInputStream): Int =
       source.readSInt32()
   }
 

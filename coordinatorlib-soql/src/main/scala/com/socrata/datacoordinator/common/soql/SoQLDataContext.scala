@@ -18,14 +18,11 @@ import com.socrata.datacoordinator.truth.loader.RowPreparer
 import com.socrata.datacoordinator.id.RowId
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.soql.environment.{ColumnName, TypeName}
-import com.rojoma.json.codec.JsonCodec
 
 @deprecated("deprected", "now")
 trait SoQLDataContext extends DataSchemaContext with DataWritingContext with DataReadingContext {
   type CT = SoQLType
   type CV = Any
-
-  lazy val soqlReps = new SoQLRep(rowIdProcessor)
 
   val columnNames = SoQLDataContext.ColumnNames
   import columnNames._
@@ -94,7 +91,7 @@ object SoQLDataContext {
 @deprecated("deprected", "now")
 trait PostgresSoQLDataContext extends PostgresDataContext with SoQLDataContext with ExecutionContext {
   def sqlRepForColumn(physicalColumnBase: String, typ: CT) =
-    soqlReps.sqlRepFactories(typ)(physicalColumnBase)
+    SoQLRep.sqlRepFactories(typ)(physicalColumnBase)
 
   def withRows[T](datasetName: String)(f: Iterator[Row] => T): Option[T] = {
     val conn = dataSource.getConnection()
@@ -145,11 +142,11 @@ trait PostgresSoQLDataContext extends PostgresDataContext with SoQLDataContext w
 @deprecated("deprected", "now")
 trait CsvSoQLDataContext extends CsvDataContext with SoQLDataContext {
   def csvRepForColumn(typ: CT) =
-    soqlReps.csvRepFactories(typ)
+    SoQLRep.csvRepFactories(typ)
 }
 
 @deprecated
 trait JsonSoQLDataContext extends JsonDataContext with SoQLDataContext {
   def jsonRepForColumn(name: ColumnName, typ: CT) =
-    soqlReps.obfuscatedJsonRepFactories(typ)(name)
+    SoQLRep.jsonRepFactories(typ)(name)
 }

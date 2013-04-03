@@ -5,7 +5,7 @@ import java.io.{EOFException, IOException}
 
 import com.google.protobuf.{CodedInputStream, CodedOutputStream, InvalidProtocolBufferException}
 
-import com.socrata.datacoordinator.id.{RowIdProcessor, ColumnId, RowId}
+import com.socrata.datacoordinator.id.{ColumnId, RowId}
 import com.socrata.datacoordinator.truth.loader.{Operation, Insert, Update, Delete}
 
 // Hm, may want to refactor this somewhat.  In particular, we'll
@@ -19,7 +19,7 @@ trait RowLogCodec[CV] {
 
   def rowDataVersion: Short
   protected def encode(target: CodedOutputStream, row: Row[CV])
-  protected def decode(source: CodedInputStream, rowIdProcessor: RowIdProcessor): Row[CV]
+  protected def decode(source: CodedInputStream): Row[CV]
 
   def writeVersion(target: CodedOutputStream) {
     target.writeFixed32NoTag((structureVersion.toInt << 16) | (rowDataVersion & 0xffff))
@@ -27,26 +27,26 @@ trait RowLogCodec[CV] {
 
   def insert(target: CodedOutputStream, systemID: RowId, row: Row[CV]) {
     target.writeRawByte(0)
-    target.writeInt64NoTag(systemID.numeric)
+    target.writeInt64NoTag(systemID.underlying)
     encode(target, row)
   }
 
   def update(target: CodedOutputStream, systemID: RowId, row: Row[CV]) {
     target.writeRawByte(1)
-    target.writeInt64NoTag(systemID.numeric)
+    target.writeInt64NoTag(systemID.underlying)
     encode(target, row)
   }
 
   def delete(target: CodedOutputStream, systemID: RowId) {
     target.writeRawByte(2)
-    target.writeInt64NoTag(systemID.numeric)
+    target.writeInt64NoTag(systemID.underlying)
   }
 
   def skipVersion(source: CodedInputStream) {
     source.readFixed32()
   }
 
-  def extract(source: CodedInputStream, rowIdProcessor: RowIdProcessor): Option[Operation[CV]] = {
+  def extract(source: CodedInputStream): Option[Operation[CV]] = {
     try {
       if(source.isAtEnd) {
         None
@@ -54,15 +54,15 @@ trait RowLogCodec[CV] {
         val op = source.readRawByte() match {
           case 0 =>
             val sid = source.readInt64()
-            val row = decode(source, rowIdProcessor)
-            Insert(rowIdProcessor(sid), row)
+            val row = decode(source)
+            Insert(new RowId(sid), row)
           case 1 =>
             val sid = source.readInt64()
-            val row = decode(source, rowIdProcessor)
-            Update(rowIdProcessor(sid), row)
+            val row = decode(source)
+            Update(new RowId(sid), row)
           case 2 =>
             val sid = source.readInt64()
-            Delete(rowIdProcessor(sid))
+            Delete(new RowId(sid))
           case other =>
             throw new UnknownRowLogOperationException(other)
         }
@@ -87,7 +87,7 @@ trait SimpleRowLogCodec[CV] extends RowLogCodec[CV] {
   }
 
   protected def writeValue(target: CodedOutputStream, cv: CV)
-  protected def readValue(source: CodedInputStream, rowIdProcessor: RowIdProcessor): CV
+  protected def readValue(source: CodedInputStream): CV
 
   protected def encode(target: CodedOutputStream, row: Row[CV]) {
     target.writeInt32NoTag(row.size)
@@ -110,13 +110,13 @@ trait SimpleRowLogCodec[CV] extends RowLogCodec[CV] {
     }
   }
 
-  protected def decode(source: CodedInputStream, rowIdProcessor: RowIdProcessor) = {
+  protected def decode(source: CodedInputStream) = {
     val count = source.readInt32()
     val result = new MutableRow[CV]
     var i = 0
     while(i < count) {
       val k = readKey(source)
-      val v = readValue(source, rowIdProcessor)
+      val v = readValue(source)
       result(k) = v
 
       i += 1

@@ -14,16 +14,14 @@ import com.socrata.datacoordinator.truth.RowLogCodec
 import com.socrata.datacoordinator.truth.loader.Delogger
 import com.socrata.datacoordinator.util.{CloseableIterator, LeakDetect}
 import com.socrata.datacoordinator.truth.metadata.{UnanchoredDatasetInfo, UnanchoredCopyInfo, UnanchoredColumnInfo}
-import com.socrata.datacoordinator.id.{RowIdProcessor, RowId}
+import com.socrata.datacoordinator.id.RowId
 
 class SqlDelogger[CV](connection: Connection,
                       logTableName: String,
-                      rowCodecFactory: () => RowLogCodec[CV],
-                      rowIdProcessor: RowIdProcessor)
+                      rowCodecFactory: () => RowLogCodec[CV])
   extends Delogger[CV]
 {
   var stmt: PreparedStatement = null
-  private implicit def rowIdCodec = rowIdProcessor.nonObfusactedCodec
 
   def query = {
     if(stmt == null) {
@@ -163,7 +161,7 @@ class SqlDelogger[CV](connection: Connection,
     }
 
     def decodeRowDataUpdated(aux: Array[Byte]) =
-      Delogger.RowDataUpdated(aux)(rowCodecFactory(), rowIdProcessor)
+      Delogger.RowDataUpdated(aux)(rowCodecFactory())
 
     def decodeRowIdCounterUpdated(aux: Array[Byte]) = {
       val rid = fromJson[RowId](aux).getOrElse {

@@ -2,7 +2,7 @@ package com.socrata.datacoordinator.common.soql
 
 import com.socrata.datacoordinator.truth.SimpleRowLogCodec
 import com.google.protobuf.{CodedInputStream, CodedOutputStream}
-import com.socrata.datacoordinator.id.{RowIdProcessor, RowId}
+import com.socrata.datacoordinator.id.RowId
 import org.joda.time.{DateTimeZone, DateTime}
 
 object SoQLRowLogCodec extends SimpleRowLogCodec[Any] {
@@ -14,7 +14,7 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[Any] {
     v match {
       case l: RowId =>
         target.writeRawByte(0)
-        target.writeInt64NoTag(l.numeric)
+        target.writeInt64NoTag(l.underlying)
       case s: String =>
         target.writeRawByte(1)
         target.writeStringNoTag(s)
@@ -37,10 +37,10 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[Any] {
     }
   }
 
-  protected def readValue(source: CodedInputStream, rowIdProcessor: RowIdProcessor): Any =
+  protected def readValue(source: CodedInputStream): Any =
     source.readRawByte() match {
       case 0 =>
-        rowIdProcessor(source.readInt64())
+        new RowId(source.readInt64())
       case 1 =>
         source.readString()
       case 2 =>

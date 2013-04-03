@@ -5,25 +5,21 @@ import java.lang.StringBuilder
 import java.sql.{ResultSet, PreparedStatement}
 
 import com.socrata.datacoordinator.truth.sql.SqlPKableColumnRep
-import com.socrata.soql.types.{SoQLID, SoQLFixedTimestamp, SoQLType}
-import com.socrata.datacoordinator.id.{RowIdProcessor, RowId}
+import com.socrata.soql.types.{SoQLFixedTimestamp, SoQLType}
+import com.socrata.datacoordinator.id.RowId
 
-class IDRep(val base: String, rowIdProcessor: RowIdProcessor) extends RepUtils with SqlPKableColumnRep[SoQLType, Any] {
-  val physColumns: Array[String] = Array(base, base + "_obfs")
-
-  val sqlTypes: Array[String] = Array("BIGINT", "CHAR(9)")
-
+class IDRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType, Any] {
   def templateForMultiLookup(n: Int): String =
     s"($base in (${(1 to n).map(_ => "?").mkString(",")}))"
 
   def prepareMultiLookup(stmt: PreparedStatement, v: Any, start: Int): Int = {
-    stmt.setLong(start, v.asInstanceOf[RowId].numeric)
+    stmt.setLong(start, v.asInstanceOf[RowId].underlying)
     start + 1
   }
 
   def sql_in(literals: Iterable[Any]): String =
     literals.iterator.map { lit =>
-      lit.asInstanceOf[RowId].numeric
+      lit.asInstanceOf[RowId].underlying
     }.mkString(s"($base in (", ",", "))")
 
   def templateForSingleLookup: String = s"($base = ?)"
@@ -31,39 +27,40 @@ class IDRep(val base: String, rowIdProcessor: RowIdProcessor) extends RepUtils w
   def prepareSingleLookup(stmt: PreparedStatement, v: Any, start: Int): Int = prepareMultiLookup(stmt, v, start)
 
   def sql_==(literal: Any): String = {
-    val v = literal.asInstanceOf[RowId].numeric
+    val v = literal.asInstanceOf[RowId].underlying
     s"($base = $v)"
   }
 
   def equalityIndexExpression: String = base
 
-  def representedType: SoQLType = SoQLID
+  def representedType: SoQLType = SoQLFixedTimestamp
+
+  val physColumns: Array[String] = Array(base)
+
+  val sqlTypes: Array[String] = Array("BIGINT")
 
   def csvifyForInsert(sb: StringBuilder, v: Any) {
-    if(SoQLNullValue == v) { sb.append(',') }
-    else {
-      csvescape(sb.append(v.asInstanceOf[RowId].numeric).append(','), v.asInstanceOf[RowId].obfuscated)
-    }
+    if(SoQLNullValue == v) { /* pass */ }
+    else sb.append(v.asInstanceOf[RowId].underlying)
   }
 
   def prepareInsert(stmt: PreparedStatement, v: Any, start: Int): Int = {
-    stmt.setLong(start, v.asInstanceOf[RowId].numeric)
-    stmt.setString(start + 1, v.asInstanceOf[RowId].obfuscated)
-    start + 2
+    stmt.setLong(start, v.asInstanceOf[RowId].underlying)
+    start + 1
   }
 
   def estimateInsertSize(v: Any): Int =
     30
 
   def SETsForUpdate(sb: StringBuilder, v: Any) {
-    sqlescape(sb.append(physColumns(0)).append('=').append(v.asInstanceOf[RowId].numeric).append(',').append(physColumns(1)).append('='), v.asInstanceOf[RowId].obfuscated)
+    sb.append(base).append('=').append(v.asInstanceOf[RowId].underlying)
   }
 
   def estimateUpdateSize(v: Any): Int =
     base.length + 30
 
   def fromResultSet(rs: ResultSet, start: Int): Any = {
-    rowIdProcessor(rs.getLong(start), rs.getString(start + 1))
+    new RowId(rs.getLong(start))
   }
 
   override def orderBy(ascending: Boolean, nullsFirst: Option[Boolean]) =

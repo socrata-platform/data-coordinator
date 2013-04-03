@@ -5,7 +5,7 @@ import java.io.{ByteArrayInputStream, OutputStream, Closeable}
 
 import com.socrata.datacoordinator.util.CloseableIterator
 import com.socrata.datacoordinator.truth.metadata.{UnanchoredDatasetInfo, UnanchoredColumnInfo, UnanchoredCopyInfo}
-import com.socrata.datacoordinator.id.{RowIdProcessor, RowId}
+import com.socrata.datacoordinator.id.RowId
 import com.socrata.datacoordinator.truth.RowLogCodec
 import scala.collection.immutable.VectorBuilder
 
@@ -64,7 +64,7 @@ object Delogger {
   case class ColumnLogicalNameChanged(info: UnanchoredColumnInfo) extends LogEvent[Nothing]
   object ColumnLogicalNameChanged extends LogEventCompanion
 
-  case class RowDataUpdated[CV](bytes: Array[Byte])(codec: RowLogCodec[CV], rowIdProcessor: RowIdProcessor) extends LogEvent[CV] {
+  case class RowDataUpdated[CV](bytes: Array[Byte])(codec: RowLogCodec[CV]) extends LogEvent[CV] {
     lazy val operations: Vector[Operation[CV]] = { // TODO: A standard decode exception
       val bais = new ByteArrayInputStream(bytes)
       bais.read() match {
@@ -80,7 +80,7 @@ object Delogger {
 
       val results = new VectorBuilder[Operation[CV]]
       def loop(): Vector[Operation[CV]] = {
-        codec.extract(cis, rowIdProcessor) match {
+        codec.extract(cis) match {
           case Some(op) =>
             results += op
             loop()

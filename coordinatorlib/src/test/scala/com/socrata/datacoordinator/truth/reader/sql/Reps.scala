@@ -4,9 +4,9 @@ package truth.reader.sql
 import com.socrata.datacoordinator.truth.sql.{SqlColumnReadRep, SqlPKableColumnReadRep}
 import java.sql.{PreparedStatement, ResultSet}
 import java.lang.StringBuilder
-import com.socrata.datacoordinator.id.{RowIdProcessor, RowId, ColumnId}
+import com.socrata.datacoordinator.id.{RowId, ColumnId}
 
-class IdRep(cid: ColumnId, ridProc: RowIdProcessor) extends SqlPKableColumnReadRep[TestColumnType, TestColumnValue] {
+class IdRep(cid: ColumnId) extends SqlPKableColumnReadRep[TestColumnType, TestColumnValue] {
   def representedType = IdType
 
   val base = "c_" + cid.underlying
@@ -16,24 +16,24 @@ class IdRep(cid: ColumnId, ridProc: RowIdProcessor) extends SqlPKableColumnReadR
   def sqlTypes = Array("BIGINT")
 
   def fromResultSet(rs: ResultSet, start: Int) =
-    IdValue(ridProc(rs.getLong(start)))
+    IdValue(new RowId(rs.getLong(start)))
 
   def templateForMultiLookup(n: Int) = (1 to n).map(_ => "?").mkString("(" + base + " in (", ",", "))")
 
   def prepareMultiLookup(stmt: PreparedStatement, v: TestColumnValue, start: Int) = {
-    stmt.setLong(start, v.asInstanceOf[IdValue].value.numeric)
+    stmt.setLong(start, v.asInstanceOf[IdValue].value.underlying)
     start + 1
   }
 
   def sql_in(literals: Iterable[TestColumnValue]) =
-    literals.map(_.asInstanceOf[IdValue].value.numeric).mkString("(" + base + " in (", ",", "))")
+    literals.map(_.asInstanceOf[IdValue].value.underlying).mkString("(" + base + " in (", ",", "))")
 
   def templateForSingleLookup = "(" + base + " = ?)"
 
   def prepareSingleLookup(stmt: PreparedStatement, v: TestColumnValue, start: Int) =
     prepareMultiLookup(stmt, v, start)
 
-  def sql_==(literal: TestColumnValue) = "(" + base + " = " + literal.asInstanceOf[IdValue].value.numeric + ")"
+  def sql_==(literal: TestColumnValue) = "(" + base + " = " + literal.asInstanceOf[IdValue].value.underlying + ")"
 
   def equalityIndexExpression = base
 }

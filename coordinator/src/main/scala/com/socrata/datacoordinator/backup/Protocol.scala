@@ -5,11 +5,11 @@ import java.io.{InputStreamReader, OutputStreamWriter, DataInputStream, DataOutp
 import com.rojoma.json.util.JsonUtil
 
 import com.socrata.datacoordinator.packets.Packet
-import com.socrata.datacoordinator.id.{RowIdProcessor, DatasetId}
+import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.common.util.ByteBufferInputStream
 import com.socrata.datacoordinator.truth.metadata.{UnanchoredDatasetInfo, UnanchoredColumnInfo, UnanchoredCopyInfo, DatasetInfo}
 
-class Protocol[LogData](logDataCodec: Codec[LogData], rowIdProcessor: RowIdProcessor) {
+class Protocol[LogData](logDataCodec: Codec[LogData]) {
   import Packet.{SimplePacket, LabelledPacket}
 
   // primary -> backup
@@ -43,7 +43,7 @@ class Protocol[LogData](logDataCodec: Codec[LogData], rowIdProcessor: RowIdProce
 
     def unapply(packet: Packet): Option[LogData] = extract(packet) map { data =>
       val stream = new DataInputStream(new ByteBufferInputStream(data))
-      logDataCodec.decode(stream, rowIdProcessor)
+      logDataCodec.decode(stream)
     }
   }
 

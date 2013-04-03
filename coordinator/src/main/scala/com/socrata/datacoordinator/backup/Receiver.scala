@@ -14,9 +14,9 @@ import com.socrata.datacoordinator.packets.network.NetworkPackets
 import com.socrata.datacoordinator.packets.{PacketsInputStream, Packets}
 import com.socrata.datacoordinator.truth.loader.Delogger
 import com.socrata.datacoordinator.id.{ColumnId, DatasetId}
-import com.socrata.datacoordinator.common.soql.{SoQLRep, SoQLRowLogCodec}
+import com.socrata.datacoordinator.common.soql.SoQLRowLogCodec
 import com.socrata.datacoordinator.truth.sql.DatabasePopulator
-import com.socrata.datacoordinator.common.{BasicRowIdProcessor, StandardDatasetMapLimits}
+import com.socrata.datacoordinator.common.StandardDatasetMapLimits
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.util.collection.{MutableColumnIdMap, ColumnIdMap}
 import org.xerial.snappy.SnappyInputStream
@@ -47,12 +47,8 @@ object Receiver extends App {
   val datasetMapLimits = StandardDatasetMapLimits
   val timingReport = NoopTimingReport
 
-  val rowIdProcessor = BasicRowIdProcessor
-  def newRowLogCodec() = SoQLRowLogCodec
-  val soqlReps = new SoQLRep(rowIdProcessor)
-
-  val codec = new LogDataCodec(newRowLogCodec)
-  val protocol = new Protocol(codec, rowIdProcessor)
+  val codec = new LogDataCodec(() => SoQLRowLogCodec)
+  val protocol = new Protocol(codec)
   import protocol._
 
   using(openConnection()) { conn =>
@@ -99,7 +95,7 @@ object Receiver extends App {
   def datasetUpdateRequested(datasetId: DatasetId, version: Long, client: Packets) {
     using(openConnection()) { conn =>
       conn.setAutoCommit(false)
-      val backup = new Backup(conn, executor, timingReport, rowIdProcessor, soqlReps, paranoid = true)
+      val backup = new Backup(conn, executor, timingReport, paranoid = true)
 
       try {
         backup.datasetMap.datasetInfo(datasetId, Duration.Inf) match {
@@ -237,9 +233,9 @@ object Receiver extends App {
           client.send(PreparingDatabaseForResync())
           stmt.execute("DROP TABLE IF EXISTS " + datasetInfo.logTableName)
         }
-        backup.datasetMap.unsafeReloadDataset(originalDatasetInfo, datasetInfo.datasetName, datasetInfo.tableBaseBase, rowIdProcessor(datasetInfo.nextRowIdNumber))
+        backup.datasetMap.unsafeReloadDataset(originalDatasetInfo, datasetInfo.datasetName, datasetInfo.tableBaseBase, datasetInfo.nextRowId)
       case None =>
-        backup.datasetMap.unsafeCreateDataset(datasetInfo.systemId, datasetInfo.datasetName, datasetInfo.tableBaseBase, rowIdProcessor(datasetInfo.nextRowIdNumber))
+        backup.datasetMap.unsafeCreateDataset(datasetInfo.systemId, datasetInfo.datasetName, datasetInfo.tableBaseBase, datasetInfo.nextRowId)
     }
 
     @tailrec
