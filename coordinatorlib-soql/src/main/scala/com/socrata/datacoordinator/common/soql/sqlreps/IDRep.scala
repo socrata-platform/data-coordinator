@@ -65,4 +65,7 @@ class IDRep(val base: String, rowIdProcessor: RowIdProcessor) extends RepUtils w
   def fromResultSet(rs: ResultSet, start: Int): Any = {
     rowIdProcessor(rs.getLong(start), rs.getString(start + 1))
   }
+
+  override def orderBy(ascending: Boolean, nullsFirst: Option[Boolean]) =
+    simpleOrderBy(Array(base), ascending, nullsFirst)
 }

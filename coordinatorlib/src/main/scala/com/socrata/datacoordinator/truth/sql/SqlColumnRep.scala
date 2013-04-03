@@ -19,6 +19,8 @@ trait SqlColumnCommonRep[Type] {
 
   /** Helper function to create physical column names for types with multiple physical columns. */
   protected def physCol(suffix: String) = "\"" + base + "$" + suffix + "\""
+
+  def isPKableRep: Boolean = false
 }
 
 trait SqlColumnReadRep[Type, Value] extends SqlColumnCommonRep[Type] {
@@ -26,6 +28,23 @@ trait SqlColumnReadRep[Type, Value] extends SqlColumnCommonRep[Type] {
     * columns equal to `physColumnsForQuery.length`.
     */
   def fromResultSet(rs: ResultSet, start: Int): Value
+  def asPKableRep: SqlPKableColumnReadRep[Type, Value] = sys.error("Not a PKable rep")
+}
+
+trait SqlOrderableColumnRep {  this: SqlColumnCommonRep[_] =>
+  /** Produce an order specification for this column. */
+  def orderBy(ascending: Boolean = true, nullsFirst: Option[Boolean] = None): String =
+    simpleOrderBy(physColumns, ascending, nullsFirst)
+
+  protected def simpleOrderBy(cols: Array[String], ascending: Boolean, nullsFirst: Option[Boolean]) = {
+    val ascendingFragment = if(ascending) " ASC" else " DESC"
+    val nullsFragment = nullsFirst match {
+      case None => ""
+      case Some(true) => " NULLS FIRST"
+      case Some(false) => " NULLS LAST"
+    }
+    cols.map(_ + ascendingFragment + nullsFragment).mkString(",")
+  }
 }
 
 trait SqlColumnWriteRep[Type, Value] extends SqlColumnCommonRep[Type] {
@@ -50,9 +69,11 @@ trait SqlColumnWriteRep[Type, Value] extends SqlColumnCommonRep[Type] {
   def estimateUpdateSize(v: Value): Int
 }
 
-trait SqlColumnRep[Type, Value] extends SqlColumnReadRep[Type, Value] with SqlColumnWriteRep[Type, Value]
+trait SqlColumnRep[Type, Value] extends SqlColumnReadRep[Type, Value] with SqlColumnWriteRep[Type, Value] {
+  override def asPKableRep: SqlPKableColumnRep[Type, Value] = sys.error("Not a PKable rep")
+}
 
-trait SqlPKableColumnReadRep[Type, Value] extends SqlColumnReadRep[Type, Value] {
+trait SqlPKableColumnReadRep[Type, Value] extends SqlColumnReadRep[Type, Value] with SqlOrderableColumnRep {
   /** Generates sql equivalent to "column in (?, ...)" where there are `n` placeholders to be filled in by
     * `prepareMultiLookup`.
     * @param n The number of values to prepare slots for.
@@ -93,6 +114,10 @@ trait SqlPKableColumnReadRep[Type, Value] extends SqlColumnReadRep[Type, Value] 
   /** Generates a SQL expression which can be used to create an index on this column suitable
     * for use in equality expressions. */
   def equalityIndexExpression: String
+
+  override def isPKableRep = true
+
+  override def asPKableRep: this.type = this
 }
 
 trait SqlPKableColumnRep[Type, Value] extends SqlColumnRep[Type, Value] with SqlPKableColumnReadRep[Type, Value]
