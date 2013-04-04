@@ -3,11 +3,11 @@ package service
 
 import com.rojoma.json.ast._
 import com.socrata.datacoordinator.truth.universe.{DatasetMutatorProvider, Universe}
-import com.socrata.datacoordinator.truth.DatasetMutator
+import com.socrata.datacoordinator.truth.{DatasetIdInUseByWriterException, DatasetMutator}
 import com.socrata.datacoordinator.truth.metadata.{DatasetInfo, AbstractColumnInfoLike, ColumnInfo}
 import com.socrata.datacoordinator.truth.json.JsonColumnReadRep
 import com.rojoma.json.codec.JsonCodec
-import com.socrata.datacoordinator.truth.loader.Report
+import com.socrata.datacoordinator.truth.loader.{Failure, Report}
 import scala.collection.immutable.VectorBuilder
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.id.ColumnId
@@ -25,11 +25,17 @@ object Mutator {
   case class PublishWorkingCopyMutation(keepingSnapshotCount: Option[Long]) extends StreamType
   case object DropWorkingCopyMutation extends StreamType
 
-  sealed abstract class InvalidCommandStreamException(msg: String = null, cause: Throwable = null) extends Exception(msg, cause)
+  sealed abstract class MutationException(msg: String = null, cause: Throwable = null) extends Exception(msg, cause)
+
+  sealed abstract class InvalidCommandStreamException(msg: String = null, cause: Throwable = null) extends MutationException(msg, cause)
   case class EmptyCommandStream() extends InvalidCommandStreamException
   case class CommandIsNotAnObject(index: Long, value: JValue) extends InvalidCommandStreamException
   case class MissingCommandField(index: Long, value: JValue, field: String) extends InvalidCommandStreamException
   case class InvalidCommandFieldValue(index: Long, value: JValue, field: String) extends InvalidCommandStreamException
+
+  case class NoSuchDataset(name: String) extends MutationException
+  case class LockTimeout(name: String) extends MutationException
+  // UpsertError is defined inside the Mutator class
 
   sealed abstract class MergeReplace
   object MergeReplace {
@@ -148,6 +154,8 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
   import Mutator._
   import common._
 
+  case class UpsertError(failure: Failure[CV]) extends MutationException
+
   def createCommandStream(value: JValue, remainingCommands: Iterator[JValue]) =
     withObjectFields(0, value) { accessor =>
       import accessor._
@@ -190,37 +198,42 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
       processor.carryOutCommands(mutator, commands)
     }
 
-    commands.streamType match {
-      case NormalMutation =>
-        for(ctx <- u.datasetMutator.openDataset(user)(commands.datasetName)) {
-          val mutator = ctx.getOrElse { ??? /* TODO: Not found */ }
-          process(mutator)
-        }
-      case CreateDatasetMutation =>
-        for(mutator <- u.datasetMutator.createDataset(user)(commands.datasetName, "t")) { // TODO: Already exists
-          for((col, typ) <- systemSchema) {
-            val ci = mutator.addColumn(col, lookupType(typ), physicalColumnBaseBase(col, systemColumn = true))
-            if(col == systemIdColumnName) {
-              mutator.makeSystemPrimaryKey(ci)
-            }
+    try {
+      commands.streamType match {
+        case NormalMutation =>
+          for(ctx <- u.datasetMutator.openDataset(user)(commands.datasetName)) {
+            val mutator = ctx.getOrElse { throw new NoSuchDataset(commands.datasetName) }
+            process(mutator)
           }
-          process(mutator)
-        }
-      case CreateWorkingCopyMutation(copyData) =>
-        for(ctx <- u.datasetMutator.createCopy(user)(commands.datasetName, copyData = copyData)) {
-          val mutator = ctx.getOrElse { ??? /* TODO: Not found */ }
-          process(mutator)
-        }
-      case PublishWorkingCopyMutation(keepingSnapshotCount) =>
-        for(ctx <- u.datasetMutator.publishCopy(user)(commands.datasetName)) {
-          val mutator = ctx.getOrElse { ??? /* TODO: Not found */ }
-          process(mutator)
-        }
-      case DropWorkingCopyMutation =>
-        for(ctx <- u.datasetMutator.dropCopy(user)(commands.datasetName)) {
-          val mutator = ctx.getOrElse { ??? /* TODO: Not found */ }
-          process(mutator)
-        }
+        case CreateDatasetMutation =>
+          for(mutator <- u.datasetMutator.createDataset(user)(commands.datasetName, "t")) { // TODO: Already exists
+            for((col, typ) <- systemSchema) {
+              val ci = mutator.addColumn(col, lookupType(typ), physicalColumnBaseBase(col, systemColumn = true))
+              if(col == systemIdColumnName) {
+                mutator.makeSystemPrimaryKey(ci)
+              }
+            }
+            process(mutator)
+          }
+        case CreateWorkingCopyMutation(copyData) =>
+          for(ctx <- u.datasetMutator.createCopy(user)(commands.datasetName, copyData = copyData)) {
+            val mutator = ctx.getOrElse { throw new NoSuchDataset(commands.datasetName) }
+            process(mutator)
+          }
+        case PublishWorkingCopyMutation(keepingSnapshotCount) =>
+          for(ctx <- u.datasetMutator.publishCopy(user)(commands.datasetName)) {
+            val mutator = ctx.getOrElse { throw new NoSuchDataset(commands.datasetName) }
+            process(mutator)
+          }
+        case DropWorkingCopyMutation =>
+          for(ctx <- u.datasetMutator.dropCopy(user)(commands.datasetName)) {
+            val mutator = ctx.getOrElse { throw new NoSuchDataset(commands.datasetName) }
+            process(mutator)
+          }
+      }
+    } catch {
+      case e: DatasetIdInUseByWriterException =>
+        throw new LockTimeout(e.datasetId)
     }
   }
 
@@ -305,7 +318,9 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
         }
         val result = mutator.upsert(it)
         if(rows.hasNext && JNull == rows.head) rows.next()
-        if(fatalRowErrors && result.errors.nonEmpty) ??? // TODO: Error
+        if(fatalRowErrors && result.errors.nonEmpty) {
+          throw UpsertError(result.errors.minBy(_._1)._2)
+        }
         result
       } catch {
         case e: plan.BadDataException =>
