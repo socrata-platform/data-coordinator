@@ -6,7 +6,7 @@ import com.rojoma.simplearm.{SimpleArm, Managed}
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.secondary.sql.SqlSecondaryConfig
 import com.typesafe.config.ConfigFactory
-import com.socrata.datacoordinator.common.DataSourceFromConfig
+import com.socrata.datacoordinator.common.{StandardObfuscationKeyGenerator, DataSourceFromConfig}
 import java.io.File
 import com.socrata.soql.types.SoQLType
 import org.slf4j.LoggerFactory
@@ -18,6 +18,7 @@ import com.socrata.datacoordinator.truth.universe._
 import java.sql.Connection
 import com.socrata.datacoordinator.truth.universe.sql.{PostgresCopyIn, PostgresUniverse}
 import com.socrata.datacoordinator.common.soql.universe.PostgresUniverseCommonSupport
+import com.socrata.datacoordinator.id.RowId
 
 class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseType[CT, CV]]) {
   import SecondaryWatcher.log
@@ -117,7 +118,7 @@ object SecondaryWatcher extends App { self =>
 
   val executor = Executors.newCachedThreadPool()
 
-  val commonSupport = new PostgresUniverseCommonSupport(executor, _ => None, PostgresCopyIn)
+  val commonSupport = new PostgresUniverseCommonSupport(executor, _ => None, PostgresCopyIn, StandardObfuscationKeyGenerator, new RowId(0L))
 
   type SoQLUniverse = PostgresUniverse[SoQLType, Any]
   def soqlUniverse(conn: Connection, timingReport: TransferrableContextTimingReport) =

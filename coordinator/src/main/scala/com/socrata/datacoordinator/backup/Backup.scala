@@ -37,7 +37,7 @@ import scala.concurrent.duration.Duration
 class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingReport, paranoid: Boolean) {
   val typeContext = SoQLTypeContext
   val logger: Logger[Any] = NullLogger
-  val datasetMap: BackupDatasetMap = new PostgresDatasetMapWriter(conn, timingReport)
+  val datasetMap: BackupDatasetMap = new PostgresDatasetMapWriter(conn, timingReport, () => sys.error("Backup should never generate obfuscation keys"), new RowId(0L))
   def tablespace(s: String) = None
 
   def genericRepFor(columnInfo: ColumnInfo): SqlColumnRep[SoQLType, Any] =
@@ -81,7 +81,7 @@ class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingRe
     require(prototypeVersionInfo.lifecycleStage == LifecycleStage.Unpublished, "Bad lifecycle stage")
     require(prototypeVersionInfo.copyNumber == 1, "Bad lifecycle version")
 
-    val vi = datasetMap.createWithId(prototypeDatasetInfo.systemId, prototypeDatasetInfo.datasetName, prototypeDatasetInfo.tableBaseBase, prototypeVersionInfo.systemId)
+    val vi = datasetMap.createWithId(prototypeDatasetInfo.systemId, prototypeDatasetInfo.datasetName, prototypeDatasetInfo.tableBaseBase, prototypeVersionInfo.systemId, prototypeDatasetInfo.obfuscationKey)
     assert(vi.datasetInfo.unanchored == prototypeDatasetInfo)
     assert(vi.unanchored == prototypeVersionInfo)
     schemaLoader.create(vi)

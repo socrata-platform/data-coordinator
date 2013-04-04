@@ -120,7 +120,7 @@ trait PostgresDataContext extends SqlDataWritingContext with SqlDataReadingConte
             val timingReport = self.timingReport
             var transactionStart: DateTime = DateTime.now()
             val globalLog: GlobalLog = new PostgresGlobalLog(conn)
-            val datasetMapWriter: DatasetMapWriter = new PostgresDatasetMapWriter(conn, timingReport)
+            val datasetMapWriter: DatasetMapWriter = new PostgresDatasetMapWriter(conn, timingReport, obfuscationKeyGenerator, initialRowId)
           }
 
           val result = f(universe)

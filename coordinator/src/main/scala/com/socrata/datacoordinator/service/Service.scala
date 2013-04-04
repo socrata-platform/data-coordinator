@@ -11,21 +11,20 @@ import com.rojoma.json.util.{JsonArrayIterator, AutomaticJsonCodecBuilder, JsonK
 import com.rojoma.json.io._
 import com.rojoma.json.ast.{JNull, JValue, JNumber, JObject}
 import com.ibm.icu.text.Normalizer
-import com.socrata.datacoordinator.common.soql.{SoQLRowLogCodec, JsonSoQLDataContext, PostgresSoQLDataContext}
+import com.socrata.datacoordinator.common.soql.{SoQLRep, SoQLRowLogCodec, PostgresSoQLDataContext}
 import java.util.concurrent.{TimeUnit, Executors}
 import org.postgresql.ds.PGSimpleDataSource
 import com.socrata.datacoordinator.truth._
 import com.typesafe.config.ConfigFactory
-import com.socrata.datacoordinator.common.{DataSourceFromConfig, StandardDatasetMapLimits}
+import com.socrata.datacoordinator.common.{StandardObfuscationKeyGenerator, DataSourceFromConfig, StandardDatasetMapLimits}
 import java.sql.Connection
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.truth.sql.SqlDataReadingContext
-import com.socrata.datacoordinator.truth.metadata.{AbstractColumnInfoLike, ColumnInfo, UnanchoredCopyInfo}
+import com.socrata.datacoordinator.truth.metadata.{DatasetInfo, AbstractColumnInfoLike, ColumnInfo, UnanchoredCopyInfo}
 import scala.concurrent.duration.Duration
-import scala.Some
 import com.socrata.datacoordinator.secondary.{Secondary, NamedSecondary, PlaybackToSecondary, SecondaryLoader}
 import com.socrata.datacoordinator.util.collection.DatasetIdMap
-import com.socrata.datacoordinator.id.{ColumnId, DatasetId}
+import com.socrata.datacoordinator.id.{RowId, ColumnId, DatasetId}
 import com.socrata.datacoordinator.secondary.sql.SqlSecondaryManifest
 import com.socrata.datacoordinator.truth.metadata.sql.PostgresDatasetMapReader
 import com.socrata.datacoordinator.truth.loader.sql.SqlDelogger
@@ -40,6 +39,8 @@ import com.rojoma.simplearm.SimpleArm
 import com.socrata.datacoordinator.common.soql.universe.PostgresUniverseCommonSupport
 import com.socrata.soql.types.SoQLType
 import com.socrata.soql.environment.ColumnName
+import com.socrata.datacoordinator.common.soql.SoQLRep.IdObfuscationContext
+import com.socrata.datacoordinator.truth.json.JsonColumnRep
 
 case class Field(name: String, @JsonKey("type") typ: String)
 object Field {
@@ -253,7 +254,9 @@ object Service extends App { self =>
 
   val executorService = Executors.newCachedThreadPool()
   try {
-    val dataContext = new PostgresSoQLDataContext with JsonSoQLDataContext {
+    val dataContext = new PostgresSoQLDataContext {
+      val obfuscationKeyGenerator = StandardObfuscationKeyGenerator
+      val initialRowId = new RowId(0L)
       val dataSource = self.dataSource
       val executorService = self.executorService
       def copyIn(conn: Connection, sql: String, input: Reader): Long =
@@ -304,7 +307,7 @@ object Service extends App { self =>
         } yield secondaryManifest.stores(systemId)
       }
 
-    val commonSupport = new PostgresUniverseCommonSupport(executorService, _ => None, PostgresCopyIn)
+    val commonSupport = new PostgresUniverseCommonSupport(executorService, _ => None, PostgresCopyIn, StandardObfuscationKeyGenerator, dataContext.initialRowId)
 
     type SoQLUniverse = PostgresUniverse[SoQLType, Any]
     def soqlUniverse(conn: Connection) =
@@ -322,8 +325,6 @@ object Service extends App { self =>
     }
 
     val mutationCommon = new MutatorCommon[SoQLType, Any] {
-      val repFor = dataContext.jsonRepForColumn(_: AbstractColumnInfoLike)
-
       def physicalColumnBaseBase(logicalColumnName: ColumnName, systemColumn: Boolean): String =
         dataContext.physicalColumnBaseBase(logicalColumnName, systemColumn = systemColumn)
 
@@ -341,16 +342,35 @@ object Service extends App { self =>
 
     val mutator = new Mutator(mutationCommon)
 
+    def obfuscationContextFor(key: Array[Byte]) = {
+      new IdObfuscationContext {
+        def deobfuscate(obfuscatedRowId: String): Option[RowId] =
+          try {
+            Some(new RowId(obfuscatedRowId.takeWhile(_!=',').toLong))
+          } catch {
+            case _: Exception => None
+          }
+        def obfuscate(rowId: RowId): String = rowId.underlying + "," + key.mkString(",")
+      }
+    }
+
+    def jsonRepForColumn(datasetInfo: DatasetInfo): AbstractColumnInfoLike => JsonColumnRep[SoQLType, Any] = {
+      val reps = SoQLRep.jsonRepFactories(obfuscationContextFor(datasetInfo.obfuscationKey));
+      { (col: AbstractColumnInfoLike) =>
+        reps(dataContext.typeContext.typeFromName(col.typeName))(col.logicalName)
+      }
+    }
+
     def processMutation(input: Iterator[JValue]) = {
       for(u <- universeProvider) {
-        mutator(u, input)
+        mutator(u, jsonRepForColumn, input)
       }
     }
 
     def exporter(id: String, copy: CopySelector, columns: Option[Set[ColumnName]], limit: Option[Long], offset: Option[Long])(f: Iterator[JObject] => Unit): Boolean = {
       val res = for(u <- universeProvider) yield {
-        Exporter.export(u, id, copy, columns, limit, offset) { (schema, it) =>
-          val jsonSchema = schema.mapValuesStrict(dataContext.jsonRepForColumn)
+        Exporter.export(u, id, copy, columns, limit, offset) { (copyInfo, schema, it) =>
+          val jsonSchema = schema.mapValuesStrict(jsonRepForColumn(copyInfo.datasetInfo))
           f(it.map { row =>
             val res = new scala.collection.mutable.HashMap[String, JValue]
             row.foreach { case (cid, value) =>

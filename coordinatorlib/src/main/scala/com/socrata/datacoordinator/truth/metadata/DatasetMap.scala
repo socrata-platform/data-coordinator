@@ -57,7 +57,7 @@ trait BackupDatasetMap extends DatasetMapWriter with `-impl`.BaseDatasetMapWrite
     * @throws DatasetAlreadyExistsException if `datasetId` is already in use.
     * @throws DatasetSystemIdAlreadyInUse if `systemId` is already in use.
     * @return A `CopyInfo` that refers to an unpublished copy with system id `systemId`. */
-  def createWithId(systemId: DatasetId, datasetId: String, tableBaseBase: String, initialCopySystemId: CopyId): CopyInfo
+  def createWithId(systemId: DatasetId, datasetId: String, tableBaseBase: String, initialCopySystemId: CopyId, obfuscationKey: Array[Byte]): CopyInfo
 
   /** Ensures that an "unpublished" table exists, creating it if necessary.
     * @note Does not copy the actual tables; this just updates the bookkeeping.
@@ -85,7 +85,8 @@ trait BackupDatasetMap extends DatasetMapWriter with `-impl`.BaseDatasetMapWrite
   def unsafeCreateDataset(systemId: DatasetId,
                           datasetId: String,
                           tableBaseBase: String,
-                          nextRowId: RowId): DatasetInfo
+                          nextRowId: RowId,
+                          obfuscationKey: Array[Byte]): DatasetInfo
 
   /** Reloads a dataset with the specified attributes, including CLEARING ALL COPIES.
     * @note Using this carelessly can get you into trouble.  It is intended to be used
@@ -93,7 +94,8 @@ trait BackupDatasetMap extends DatasetMapWriter with `-impl`.BaseDatasetMapWrite
   def unsafeReloadDataset(datasetInfo: DatasetInfo,
                           datasetId: String,
                           tableBaseBase: String,
-                          nextRowId: RowId): DatasetInfo
+                          nextRowId: RowId,
+                          obfuscationKey: Array[Byte]): DatasetInfo
 
   /** Creates a copy with the specified attributes.
     * @note Using this carelessly can get you into trouble.  It is intended to be used

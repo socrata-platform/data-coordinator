@@ -4,14 +4,13 @@ package secondary
 import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.truth.loader.Delogger
-import com.socrata.datacoordinator.id.DatasetId
+import com.socrata.datacoordinator.id.{RowId, DatasetId}
 import com.socrata.datacoordinator.truth.metadata._
 import scala.util.control.ControlThrowable
 import java.sql.Connection
 import com.socrata.datacoordinator.truth.loader.sql.RepBasedDatasetExtractor
 import com.socrata.datacoordinator.truth.metadata.sql.{PostgresDatasetMapWriter, PostgresDatasetMapReader}
 import scala.concurrent.duration.Duration
-import scala.Some
 import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.rojoma.simplearm.SimpleArm
@@ -59,7 +58,7 @@ class PlaybackToSecondary[CT, CV](conn: Connection, secondaryManifest: Secondary
 
   def resync(datasetId: DatasetId, secondary: NamedSecondary[CV], delogger: Delogger[CV]) {
     timingReport("resync", "dataset" -> datasetId) {
-      val w = new PostgresDatasetMapWriter(conn, timingReport)
+      val w = new PostgresDatasetMapWriter(conn, timingReport, () => sys.error("Secondary should not be generating obfuscation keys"), new RowId(0))
       w.datasetInfo(datasetId, datasetLockTimeout) match {
         case Some(datasetInfo) =>
           val allCopies = w.allCopies(datasetInfo)

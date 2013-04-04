@@ -18,22 +18,12 @@ import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.loader.sql._
 import com.socrata.datacoordinator.secondary.sql.{SqlSecondaryConfig, SqlSecondaryManifest}
 import com.socrata.datacoordinator.util.{RowIdProvider, TransferrableContextTimingReport, TimingReport}
-import com.socrata.datacoordinator.truth.metadata.ColumnInfo
-import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
-import com.socrata.datacoordinator.truth.metadata.ColumnInfo
-import scala.Some
-import com.socrata.datacoordinator.truth.metadata.DatasetInfo
-import com.socrata.datacoordinator.truth.metadata.CopyInfo
 import scala.concurrent.duration.Duration
-import scala.Some
 import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
-import scala.Some
-import com.socrata.datacoordinator.truth.metadata.DatasetInfo
-import com.socrata.datacoordinator.truth.metadata.ColumnInfo
-import com.socrata.datacoordinator.truth.metadata.CopyInfo
+import com.socrata.datacoordinator.id.RowId
 
 trait CommonSupport[CT, CV] {
   val executor: ExecutorService
@@ -42,6 +32,8 @@ trait CommonSupport[CT, CV] {
   def newRowCodec(): RowLogCodec[CV]
   def isSystemColumn(ci: ColumnInfo): Boolean
 
+  val obfuscationKeyGenerator: () => Array[Byte]
+  val initialRowId: RowId
   val tablespace: String => Option[String]
   val copyInProvider: (Connection, String, Reader) => Long
 
@@ -135,7 +127,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
     new PostgresDatasetMapReader(conn, timingReport)
 
   lazy val datasetMapWriter: DatasetMapWriter =
-    new PostgresDatasetMapWriter(conn, timingReport)
+    new PostgresDatasetMapWriter(conn, timingReport, obfuscationKeyGenerator, initialRowId)
 
   lazy val globalLogPlayback: GlobalLogPlayback =
     new PostgresGlobalLogPlayback(conn)

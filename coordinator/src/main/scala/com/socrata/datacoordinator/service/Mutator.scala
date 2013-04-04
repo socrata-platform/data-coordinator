@@ -4,7 +4,7 @@ package service
 import com.rojoma.json.ast._
 import com.socrata.datacoordinator.truth.universe.{DatasetMutatorProvider, Universe}
 import com.socrata.datacoordinator.truth.DatasetMutator
-import com.socrata.datacoordinator.truth.metadata.{AbstractColumnInfoLike, ColumnInfo}
+import com.socrata.datacoordinator.truth.metadata.{DatasetInfo, AbstractColumnInfoLike, ColumnInfo}
 import com.socrata.datacoordinator.truth.json.JsonColumnReadRep
 import com.rojoma.json.codec.JsonCodec
 import com.socrata.datacoordinator.truth.loader.Report
@@ -134,7 +134,6 @@ object Mutator {
 }
 
 trait MutatorCommon[CT, CV] {
-  def repFor: AbstractColumnInfoLike =>  JsonColumnReadRep[CT, CV]
   def physicalColumnBaseBase(logicalColumnName: ColumnName, systemColumn: Boolean = false): String
   def isLegalLogicalName(identifier: ColumnName): Boolean
   def isSystemColumnName(identifier: ColumnName): Boolean
@@ -173,16 +172,21 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
       new CommandStream(streamType, dataset, user, fatalRowErrors, remainingCommands.buffered)
     }
 
-  def apply(u: Universe[CT, CV] with DatasetMutatorProvider, commandStream: Iterator[JValue]) {
+  def apply(u: Universe[CT, CV] with DatasetMutatorProvider, jsonRepFor: DatasetInfo => AbstractColumnInfoLike => JsonColumnReadRep[CT, CV], commandStream: Iterator[JValue]) {
     if(commandStream.isEmpty) throw EmptyCommandStream()
     val commands = createCommandStream(commandStream.next(), commandStream)
     def user = commands.user
+
+    def process(mutator: DatasetMutator[CV]#MutationContext) = {
+      val processor = new Processor(jsonRepFor(mutator.copyInfo.datasetInfo))
+      processor.carryOutCommands(mutator, commands)
+    }
 
     commands.streamType match {
       case NormalMutation =>
         for(ctx <- u.datasetMutator.openDataset(user)(commands.datasetName)) {
           val mutator = ctx.getOrElse { ??? /* TODO: Not found */ }
-          carryOutCommands(mutator, commands)
+          process(mutator)
         }
       case CreateDatasetMutation =>
         for(mutator <- u.datasetMutator.createDataset(user)(commands.datasetName, "t")) { // TODO: Already exists
@@ -192,102 +196,104 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
               mutator.makeSystemPrimaryKey(ci)
             }
           }
-          carryOutCommands(mutator, commands)
+          process(mutator)
         }
       case CreateWorkingCopyMutation(copyData) =>
         for(ctx <- u.datasetMutator.createCopy(user)(commands.datasetName, copyData = copyData)) {
           val mutator = ctx.getOrElse { ??? /* TODO: Not found */ }
-          carryOutCommands(mutator, commands)
+          process(mutator)
         }
       case PublishWorkingCopyMutation(keepingSnapshotCount) =>
         for(ctx <- u.datasetMutator.publishCopy(user)(commands.datasetName)) {
           val mutator = ctx.getOrElse { ??? /* TODO: Not found */ }
-          carryOutCommands(mutator, commands)
+          process(mutator)
         }
       case DropWorkingCopyMutation =>
         for(ctx <- u.datasetMutator.dropCopy(user)(commands.datasetName)) {
           val mutator = ctx.getOrElse { ??? /* TODO: Not found */ }
-          carryOutCommands(mutator, commands)
+          process(mutator)
         }
     }
   }
 
-  def carryOutCommands(mutator: DatasetMutator[CV]#MutationContext, commands: CommandStream): Seq[Report[CV]] = {
-    val reports = new VectorBuilder[Report[CV]]
-    def loop() {
-      commands.nextCommand() match {
-        case Some(cmd) => reports ++= carryOutCommand(mutator, commands, cmd); loop()
-        case None => /* done */
+  class Processor(jsonRepFor: AbstractColumnInfoLike => JsonColumnReadRep[CT, CV]) {
+    def carryOutCommands(mutator: DatasetMutator[CV]#MutationContext, commands: CommandStream): Seq[Report[CV]] = {
+      val reports = new VectorBuilder[Report[CV]]
+      def loop() {
+        commands.nextCommand() match {
+          case Some(cmd) => reports ++= carryOutCommand(mutator, commands, cmd); loop()
+          case None => /* done */
+        }
+      }
+      loop()
+      reports.result()
+    }
+
+    def carryOutCommand(mutator: DatasetMutator[CV]#MutationContext, commands: CommandStream, cmd: Command): Option[Report[CV]] = {
+      import mutator._
+      cmd match {
+        case AddColumn(name, typ) =>
+          if(!isLegalLogicalName(name)) ??? // TODO: proper error
+          if(schemaByLogicalName.contains(name)) ??? // TODO: proper error
+          addColumn(name, typ, physicalColumnBaseBase(name)) // TODO: I should really be giving this a CT instance instead of "typ"
+          None
+        case DropColumn(name) =>
+          schemaByLogicalName.get(name) match {
+            case Some(colInfo) => dropColumn(colInfo)
+            case None => ??? // TODO: proper error
+          }
+          None
+        case RenameColumn(from, to) =>
+          schemaByLogicalName.get(from) match {
+            case Some(colInfo) =>
+              if(isSystemColumnName(from)) ??? // TODO: proper error
+              if(!isLegalLogicalName(to)) ??? // TODO: proper error
+              if(schemaByLogicalName.contains(to)) ??? // TODO: proper error
+              renameColumn(colInfo, to)
+            case None =>
+              ??? // TODO: proper error
+          }
+          None
+        case SetRowId(name) =>
+          schemaByLogicalName.get(name) match {
+            case Some(colInfo) =>
+              if(isSystemColumnName(name)) ??? // TODO: proper error
+              if(schema.values.exists(_.isUserPrimaryKey)) ??? // TODO: proper error
+              makeUserPrimaryKey(colInfo) // TODO: errors for "unPKable type" and "data has nulls or dups"
+            case None =>
+              ??? // TODO: proper error
+          }
+          None
+        case DropRowId(name) =>
+          schemaByLogicalName.get(name) match {
+            case Some(colInfo) =>
+              if(!colInfo.isUserPrimaryKey) ??? // TODO: proper error
+              unmakeUserPrimaryKey(colInfo)
+            case None =>
+              ??? // TODO: proper error
+          }
+          None
+        case RowData(truncate, mergeReplace) =>
+          if(mergeReplace == Replace) ??? // TODO: implement this
+          if(truncate) mutator.truncate()
+          Some(processRowData(commands.rawCommandStream, commands.fatalRowErrors, mutator))
       }
     }
-    loop()
-    reports.result()
-  }
 
-  def carryOutCommand(mutator: DatasetMutator[CV]#MutationContext, commands: CommandStream, cmd: Command): Option[Report[CV]] = {
-    import mutator._
-    cmd match {
-      case AddColumn(name, typ) =>
-        if(!isLegalLogicalName(name)) ??? // TODO: proper error
-        if(schemaByLogicalName.contains(name)) ??? // TODO: proper error
-        addColumn(name, typ, physicalColumnBaseBase(name)) // TODO: I should really be giving this a CT instance instead of "typ"
-        None
-      case DropColumn(name) =>
-        schemaByLogicalName.get(name) match {
-          case Some(colInfo) => dropColumn(colInfo)
-          case None => ??? // TODO: proper error
-        }
-        None
-      case RenameColumn(from, to) =>
-        schemaByLogicalName.get(from) match {
-          case Some(colInfo) =>
-            if(isSystemColumnName(from)) ??? // TODO: proper error
-            if(!isLegalLogicalName(to)) ??? // TODO: proper error
-            if(schemaByLogicalName.contains(to)) ??? // TODO: proper error
-            renameColumn(colInfo, to)
-          case None =>
-            ??? // TODO: proper error
-        }
-        None
-      case SetRowId(name) =>
-        schemaByLogicalName.get(name) match {
-          case Some(colInfo) =>
-            if(isSystemColumnName(name)) ??? // TODO: proper error
-            if(schema.values.exists(_.isUserPrimaryKey)) ??? // TODO: proper error
-            makeUserPrimaryKey(colInfo) // TODO: errors for "unPKable type" and "data has nulls or dups"
-          case None =>
-            ??? // TODO: proper error
-        }
-        None
-      case DropRowId(name) =>
-        schemaByLogicalName.get(name) match {
-          case Some(colInfo) =>
-            if(!colInfo.isUserPrimaryKey) ??? // TODO: proper error
-            unmakeUserPrimaryKey(colInfo)
-          case None =>
-            ??? // TODO: proper error
-        }
-        None
-      case RowData(truncate, mergeReplace) =>
-        if(mergeReplace == Replace) ??? // TODO: implement this
-        if(truncate) mutator.truncate()
-        Some(processRowData(commands.rawCommandStream, commands.fatalRowErrors, mutator))
+    def processRowData(rows: BufferedIterator[JValue], fatalRowErrors: Boolean, mutator: DatasetMutator[CV]#MutationContext): Report[CV] = {
+      import mutator._
+      val result = mutator.upsert(
+        new Iterator[Either[CV, Row[CV]]] {
+          val plan = new RowDecodePlan(schema, jsonRepFor, magicDeleteKey)
+          def hasNext = rows.hasNext && JNull != rows.head
+          def next() = {
+            if(!hasNext) throw new NoSuchElementException
+            plan(rows.next)
+          }
+        })
+      if(rows.hasNext && JNull == rows.head) rows.next()
+      if(fatalRowErrors && result.errors.nonEmpty) ??? // TODO: Error
+      result
     }
-  }
-
-  def processRowData(rows: BufferedIterator[JValue], fatalRowErrors: Boolean, mutator: DatasetMutator[CV]#MutationContext): Report[CV] = {
-    import mutator._
-    val result = mutator.upsert(
-      new Iterator[Either[CV, Row[CV]]] {
-        val plan = new RowDecodePlan(schema, repFor, magicDeleteKey)
-        def hasNext = rows.hasNext && JNull != rows.head
-        def next() = {
-          if(!hasNext) throw new NoSuchElementException
-          plan(rows.next)
-        }
-      })
-    if(rows.hasNext && JNull == rows.head) rows.next()
-    if(fatalRowErrors && result.errors.nonEmpty) ??? // TODO: Error
-    result
   }
 }

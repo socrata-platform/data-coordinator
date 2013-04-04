@@ -16,7 +16,7 @@ import com.socrata.datacoordinator.common.soql.{SoQLTypeContext, SoQLRep, SoQLRo
 import com.socrata.datacoordinator.packets.network.{KeepaliveSetup, NetworkPackets}
 import com.socrata.datacoordinator.packets.{Packet, PacketsOutputStream, Packets}
 import com.socrata.datacoordinator.truth.metadata.sql._
-import com.socrata.datacoordinator.id.{GlobalLogEntryId, DatasetId}
+import com.socrata.datacoordinator.id.{RowId, GlobalLogEntryId, DatasetId}
 import annotation.tailrec
 import com.socrata.soql.types.{SoQLType, SoQLNull}
 import org.xerial.snappy.SnappyOutputStream
@@ -182,7 +182,7 @@ object Transmitter extends App {
 
   def handleResyncRequest(client: Packets, conn: Connection, datasetId: DatasetId) {
     conn.setAutoCommit(false) // We'll be taking a lock and so we want transactions too
-    val datasetMap: DatasetMapWriter = new PostgresDatasetMapWriter(conn, timingReport)
+    val datasetMap: DatasetMapWriter = new PostgresDatasetMapWriter(conn, timingReport, () => sys.error("Transmitter should never be generating obfuscation keys"), new RowId(0L))
     datasetMap.datasetInfo(datasetId, Duration.Inf) match {
       case Some(info) =>
         client.send(WillResync(info.unanchored))

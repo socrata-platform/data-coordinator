@@ -11,6 +11,7 @@ import java.util.concurrent.ExecutorService
 import com.socrata.datacoordinator.truth.csv.CsvColumnRep
 import com.socrata.datacoordinator.util.TimingReport
 import com.socrata.soql.environment.{TypeName, ColumnName}
+import com.socrata.datacoordinator.id.RowId
 
 @deprecated
 trait DataTypeContext {
@@ -25,6 +26,11 @@ trait DataTypeContext {
 
   /** Methods to introspect type-related info. */
   val typeContext: TypeContext[CT, CV]
+
+  /** Generator for a key used to obfuscate datasets' row IDs */
+  val obfuscationKeyGenerator: () => Array[Byte]
+
+  val initialRowId: RowId
 }
 
 @deprecated
@@ -88,22 +94,4 @@ trait CsvDataContext extends DataTypeContext {
   type CsvRepType = CsvColumnRep[CT, CV]
 
   def csvRepForColumn(typ: CT): CsvRepType
-}
-
-trait JsonDataTypeContext extends DataTypeContext {
-  type JsonRepType <: json.JsonColumnCommonRep[CT, CV]
-  def jsonRepForColumn(name: ColumnName, typ: CT): JsonRepType
-  final def jsonRepForColumn(ci: AbstractColumnInfoLike): JsonRepType = jsonRepForColumn(ci.logicalName, typeContext.typeFromName(ci.typeName))
-}
-
-trait JsonDataReadingContext extends JsonDataTypeContext {
-  type JsonRepType <: json.JsonColumnReadRep[CT, CV]
-}
-
-trait JsonDataWritingContext extends JsonDataTypeContext {
-  type JsonRepType <: json.JsonColumnWriteRep[CT, CV]
-}
-
-trait JsonDataContext extends JsonDataReadingContext with JsonDataWritingContext {
-  type JsonRepType = json.JsonColumnRep[CT, CV]
 }

@@ -18,6 +18,7 @@ import com.socrata.datacoordinator.truth.loader.RowPreparer
 import com.socrata.datacoordinator.id.RowId
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.soql.environment.{ColumnName, TypeName}
+import com.socrata.datacoordinator.truth.json.JsonColumnRep
 
 @deprecated("deprected", "now")
 trait SoQLDataContext extends DataSchemaContext with DataWritingContext with DataReadingContext {
@@ -143,10 +144,4 @@ trait PostgresSoQLDataContext extends PostgresDataContext with SoQLDataContext w
 trait CsvSoQLDataContext extends CsvDataContext with SoQLDataContext {
   def csvRepForColumn(typ: CT) =
     SoQLRep.csvRepFactories(typ)
-}
-
-@deprecated
-trait JsonSoQLDataContext extends JsonDataContext with SoQLDataContext {
-  def jsonRepForColumn(name: ColumnName, typ: CT) =
-    SoQLRep.jsonRepFactories(typ)(name)
 }

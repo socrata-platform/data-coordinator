@@ -47,10 +47,11 @@ CREATE TABLE IF NOT EXISTS dataset_map (
   --
   -- Note 2: when flipping a backup to primary, the system_id sequence object must be set since
   -- playing back logs doesn't access the object.
-  system_id       BIGSERIAL                   NOT NULL PRIMARY KEY,
-  dataset_name    VARCHAR(%DATASET_ID_LEN%)   NOT NULL UNIQUE, -- This probably contains the domain ID in some manner...
-  table_base_base VARCHAR(%PHYSTAB_BASE_LEN%) NOT NULL, -- this + version_map's copy_number is used to name per-dataset tables.
-  next_row_id     BIGINT                      NOT NULL
+  system_id       BIGSERIAL                    NOT NULL PRIMARY KEY,
+  dataset_name    VARCHAR(%DATASET_ID_LEN%)    NOT NULL UNIQUE, -- This probably contains the domain ID in some manner...
+  table_base_base VARCHAR(%PHYSTAB_BASE_LEN%)  NOT NULL, -- this + version_map's copy_number is used to name per-dataset tables.
+  next_row_id     BIGINT                       NOT NULL,
+  obfuscation_key BYTEA                        NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS copy_map (

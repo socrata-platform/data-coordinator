@@ -12,13 +12,14 @@ import com.socrata.datacoordinator.common.soql._
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth._
 import com.socrata.datacoordinator.{Row, MutableRow}
-import com.socrata.datacoordinator.common.StandardDatasetMapLimits
+import com.socrata.datacoordinator.common.{StandardObfuscationKeyGenerator, StandardDatasetMapLimits}
 import org.postgresql.PGConnection
 import com.socrata.soql.brita.IdentifierFilter
 import com.socrata.datacoordinator.util.{StackedTimingReport, LoggedTimingReport}
 import org.slf4j.LoggerFactory
 import scala.concurrent.duration.Duration
 import com.socrata.soql.environment.{ColumnName, TypeName}
+import com.socrata.datacoordinator.id.RowId
 
 object ChicagoCrimesLoadScript extends App {
   val url =
@@ -45,6 +46,8 @@ object ChicagoCrimesLoadScript extends App {
   try {
 
     val dataContextRaw = new PostgresSoQLDataContext with CsvSoQLDataContext {
+      val obfuscationKeyGenerator = StandardObfuscationKeyGenerator
+      val initialRowId = new RowId(0L)
       val dataSource = ds
       val executorService = executor
       def copyIn(conn: Connection, sql: String, input: Reader): Long =

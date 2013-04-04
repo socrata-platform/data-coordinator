@@ -5,6 +5,7 @@ import com.socrata.datacoordinator.truth.sql.SqlColumnRep
 import com.socrata.datacoordinator.truth.csv.CsvColumnRep
 import com.socrata.datacoordinator.truth.json.JsonColumnRep
 import com.socrata.soql.environment.ColumnName
+import com.socrata.datacoordinator.id.RowId
 
 object SoQLRep {
   val sqlRepFactories = Map[SoQLType, String => SqlColumnRep[SoQLType, Any]](
@@ -33,8 +34,7 @@ object SoQLRep {
     SoQLLocation -> csvreps.LocationRep
   )
 
-  val jsonRepFactories = Map[SoQLType, ColumnName => JsonColumnRep[SoQLType, Any]](
-    SoQLID -> (name => new jsonreps.IDRep(name)),
+  private val jsonRepFactoriesMinusId = Map[SoQLType, ColumnName => JsonColumnRep[SoQLType, Any]](
     SoQLText -> (name => new jsonreps.TextRep(name)),
     SoQLBoolean -> (name => new jsonreps.BooleanRep(name)),
     SoQLNumber -> (name => new jsonreps.NumberLikeRep(name, SoQLNumber)),
@@ -42,4 +42,12 @@ object SoQLRep {
     SoQLFixedTimestamp -> (name => new jsonreps.FixedTimestampRep(name)),
     SoQLLocation -> (name => new jsonreps.LocationRep(name))
   )
+
+  trait IdObfuscationContext {
+    def obfuscate(rowId: RowId): String
+    def deobfuscate(obfuscatedRowId: String): Option[RowId]
+  }
+
+  def jsonRepFactories(obfuscationContext: IdObfuscationContext) =
+    jsonRepFactoriesMinusId + (SoQLID -> ((name: ColumnName) => new jsonreps.IDRep(name, obfuscationContext)))
 }
