@@ -63,27 +63,24 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: Dat
       case Some(userId) =>
         if(typeContext.isNull(userId))
           errors.put(job, NullPrimaryKey)
-        else checkNoSystemColumns(row) match {
-          case None =>
-            val record = jobEntry(userId)
-            if(record.hasUpsertJob) {
-              val oldSize = record.upsertSize
-              record.upsertedRow = datasetContext.mergeRows(record.upsertedRow, row)
-              record.upsertSize = sqlizer.sizeofInsert(record.upsertedRow)
-              insertSize += record.upsertSize - oldSize
+        else {
+          val record = jobEntry(userId)
+          if(record.hasUpsertJob) {
+            val oldSize = record.upsertSize
+            record.upsertedRow = datasetContext.mergeRows(record.upsertedRow, row)
+            record.upsertSize = sqlizer.sizeofInsert(record.upsertedRow)
+            insertSize += record.upsertSize - oldSize
 
-              elided.put(job, (userId, record.upsertJob))
-            } else {
-              record.upsertedRow = row
-              record.upsertJob = job
-              record.upsertSize = sqlizer.sizeofInsert(row)
-              insertSize += record.upsertSize
+            elided.put(job, (userId, record.upsertJob))
+          } else {
+            record.upsertedRow = row
+            record.upsertJob = job
+            record.upsertSize = sqlizer.sizeofInsert(row)
+            insertSize += record.upsertSize
 
-              if(record.hasDeleteJob)
-                record.forceInsert = true
-            }
-          case Some(error) =>
-            errors.put(job, error)
+            if(record.hasDeleteJob)
+              record.forceInsert = true
+          }
         }
       case None =>
         errors.put(job, NoPrimaryKey)
@@ -124,12 +121,6 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: Dat
         deleteSize += sqlizer.sizeofDelete
       }
     }
-  }
-
-  def checkNoSystemColumns(row: Row[CV]): Option[Failure[CV]] = {
-    val systemColumns = datasetContext.systemColumns(row)
-    if(systemColumns.isEmpty) None
-    else Some(SystemColumnsSet(systemColumns))
   }
 
   def flush() {

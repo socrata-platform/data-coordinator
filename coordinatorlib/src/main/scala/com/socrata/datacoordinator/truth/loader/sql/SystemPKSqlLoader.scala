@@ -43,70 +43,62 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
       case Some(systemIdValue) => // update
         if(typeContext.isNull(systemIdValue)) {
           errors.put(job, NullPrimaryKey)
-        } else checkNoSystemColumnsExceptId(row) match {
-          case None =>
-            val systemId = typeContext.makeSystemIdFromValue(systemIdValue)
-            jobs.get(systemId) match {
-              case None => // first job of this type
-                maybeFlush()
-                val op = Update(systemId, rowPreparer.prepareForUpdate(row), job, sqlizer.sizeofUpdate(row))
-                jobs(systemId) = op
-                updateSize += op.size
-              case Some(oldJob) =>
-                oldJob match {
-                  case Insert(insSid, oldRow, oldJob, oldSize) =>
-                    assert(insSid == systemId)
-                    insertSize -= oldSize
-                    val newRow = datasetContext.mergeRows(oldRow, row)
-                    val newOp = Insert(systemId, newRow, oldJob, sqlizer.sizeofInsert(newRow))
-                    jobs(systemId) = newOp
-                    insertSize += newOp.size
-                    elided.put(job, (systemIdValue, oldJob))
-                  case Update(updSid, oldRow, oldJob, oldSize) =>
-                    assert(updSid == systemId)
-                    updateSize -= oldSize
-                    val newRow = datasetContext.mergeRows(oldRow, row)
-                    val newOp = Update(systemId, newRow, oldJob, sqlizer.sizeofUpdate(newRow))
-                    jobs(systemId) = newOp
-                    updateSize += newOp.size
-                    elided.put(job, (systemIdValue, oldJob))
-                  case _: Delete =>
-                    errors.put(job, NoSuchRowToUpdate(systemIdValue))
-                }
-            }
-          case Some(error) =>
-            errors.put(job, error)
+        } else {
+          val systemId = typeContext.makeSystemIdFromValue(systemIdValue)
+          jobs.get(systemId) match {
+            case None => // first job of this type
+              maybeFlush()
+              val op = Update(systemId, rowPreparer.prepareForUpdate(row), job, sqlizer.sizeofUpdate(row))
+              jobs(systemId) = op
+              updateSize += op.size
+            case Some(oldJob) =>
+              oldJob match {
+                case Insert(insSid, oldRow, oldJob, oldSize) =>
+                  assert(insSid == systemId)
+                  insertSize -= oldSize
+                  val newRow = datasetContext.mergeRows(oldRow, row)
+                  val newOp = Insert(systemId, newRow, oldJob, sqlizer.sizeofInsert(newRow))
+                  jobs(systemId) = newOp
+                  insertSize += newOp.size
+                  elided.put(job, (systemIdValue, oldJob))
+                case Update(updSid, oldRow, oldJob, oldSize) =>
+                  assert(updSid == systemId)
+                  updateSize -= oldSize
+                  val newRow = datasetContext.mergeRows(oldRow, row)
+                  val newOp = Update(systemId, newRow, oldJob, sqlizer.sizeofUpdate(newRow))
+                  jobs(systemId) = newOp
+                  updateSize += newOp.size
+                  elided.put(job, (systemIdValue, oldJob))
+                case _: Delete =>
+                  errors.put(job, NoSuchRowToUpdate(systemIdValue))
+              }
+          }
         }
       case None => // insert
-        checkNoSystemColumnsExceptId(row) match {
+        val systemId = idProvider.allocate()
+        val insert = Insert(systemId, rowPreparer.prepareForInsert(row, systemId), job, sqlizer.sizeofInsert(row))
+        jobs.get(systemId) match {
           case None =>
-            val systemId = idProvider.allocate()
-            val insert = Insert(systemId, rowPreparer.prepareForInsert(row, systemId), job, sqlizer.sizeofInsert(row))
-            jobs.get(systemId) match {
-              case None =>
-                maybeFlush()
+            maybeFlush()
+            jobs(systemId) = insert
+            insertSize += insert.size
+          case Some(oldJob) =>
+            oldJob match {
+              case d@Delete(_, oldJob) =>
+                // hey look at that, we deleted a row that didn't exist yet
+                errors.put(oldJob, NoSuchRowToDelete(typeContext.makeValueFromSystemId(systemId)))
+                deleteSize -= sqlizer.sizeofDelete
                 jobs(systemId) = insert
                 insertSize += insert.size
-              case Some(oldJob) =>
-                oldJob match {
-                  case d@Delete(_, oldJob) =>
-                    // hey look at that, we deleted a row that didn't exist yet
-                    errors.put(oldJob, NoSuchRowToDelete(typeContext.makeValueFromSystemId(systemId)))
-                    deleteSize -= sqlizer.sizeofDelete
-                    jobs(systemId) = insert
-                    insertSize += insert.size
-                  case Update(_, _, oldJob, oldSize) =>
-                    // and we updated a row that didn't exist yet, too!
-                    errors.put(oldJob, NoSuchRowToUpdate(typeContext.makeValueFromSystemId(systemId)))
-                    updateSize -= oldSize
-                    jobs(systemId) = insert
-                    insertSize += insert.size
-                  case Insert(_, _, _, _) =>
-                    sys.error("Allocated the same row ID twice?")
-                }
+              case Update(_, _, oldJob, oldSize) =>
+                // and we updated a row that didn't exist yet, too!
+                errors.put(oldJob, NoSuchRowToUpdate(typeContext.makeValueFromSystemId(systemId)))
+                updateSize -= oldSize
+                jobs(systemId) = insert
+                insertSize += insert.size
+              case Insert(_, _, _, _) =>
+                sys.error("Allocated the same row ID twice?")
             }
-          case Some(error) =>
-            errors.put(job, error)
         }
     }
   }
@@ -147,12 +139,6 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
     if(deleteSize >= softMaxBatchSizeInBytes || updateSize >= softMaxBatchSizeInBytes || insertSize >= softMaxBatchSizeInBytes) {
       flush()
     }
-  }
-
-  def checkNoSystemColumnsExceptId(row: Row[CV]): Option[Failure[CV]] = {
-    val systemColumns = datasetContext.systemColumns(row) - systemIdColumn
-    if(systemColumns.isEmpty) None
-    else Some(SystemColumnsSet(systemColumns))
   }
 
   override def flush() {

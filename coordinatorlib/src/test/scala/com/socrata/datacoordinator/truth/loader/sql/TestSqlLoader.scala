@@ -444,7 +444,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     }
   }
 
-  test("specifying :id when there's a user PK fails") {
+  test("specifying :id when there's a user PK succeeds (and ignores it)") {
     val ids = idProvider(15)
     val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str))
     val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
@@ -461,18 +461,22 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         val report = txn.report
         dataLogger.finish()
 
-        report.inserted must be ('empty)
+        report.inserted must be (Map(0 -> StringValue("q")))
         report.updated must be ('empty)
         report.deleted must be ('empty)
-        report.errors must equal (Map(0 -> SystemColumnsSet(ColumnIdSet(idCol))))
+        report.errors must be ('empty)
         report.elided must be ('empty)
       }
       conn.commit()
 
-      ids.finish() must be (new RowId(15))
+      ids.finish() must be (new RowId(16))
 
-      query(conn, rawSelect) must equal (Seq.empty)
-      query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq.empty)
+      query(conn, rawSelect) must equal (Seq(
+        Map(idColName -> 15L, numName -> 1L, strName -> "q")
+      ))
+      query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq(
+        Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"i":{"""" + idCol.underlying + """":15,"""" + num.underlying + """":1,"""" + str.underlying + """":"q"}}]"""), "who" -> "hello")
+      ))
     }
   }
 
