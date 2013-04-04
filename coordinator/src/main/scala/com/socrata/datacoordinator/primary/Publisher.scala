@@ -6,11 +6,11 @@ import com.socrata.datacoordinator.truth.metadata.UnanchoredCopyInfo
 class Publisher(mutator: DatasetMutator[_, _]) extends ExistingDatasetMutator {
   def publish(dataset: String, username: String): UnanchoredCopyInfo = {
     finish(dataset) {
-      for {
-        ctxOpt <- mutator.publishCopy(as = username)(dataset)
-        ctx <- ctxOpt
-      } yield {
-        ctx.copyInfo.unanchored
+      mutator.publishCopy(as = username)(dataset).map {
+        case mutator.CopyOperationComplete(ctx) =>
+          Some(ctx.copyInfo.unanchored)
+        case _ =>
+          None
       }
     }
   }

@@ -7,11 +7,11 @@ class WorkingCopyCreator(mutator: DatasetMutator[_,_]) extends ExistingDatasetMu
   import mutator._
   def copyDataset(dataset: String, username: String, copyData: Boolean): UnanchoredCopyInfo = {
     finish(dataset) {
-      for {
-        ctxOpt <- createCopy(as = username)(dataset, copyData)
-        ctx <- ctxOpt
-      } yield {
-        ctx.copyInfo.unanchored
+      createCopy(as = username)(dataset, copyData) map {
+        case CopyOperationComplete(ctx) =>
+          Some(ctx.copyInfo.unanchored)
+        case _ =>
+          None
       }
     }
   }

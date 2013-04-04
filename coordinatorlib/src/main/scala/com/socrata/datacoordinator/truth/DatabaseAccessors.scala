@@ -117,17 +117,18 @@ trait DatasetMutator[CT, CV] {
     def upsert(inputGenerator: Iterator[RowDataUpdateJob]): Report[CV]
   }
 
-  // FIXME: There is no way to tell whether the dataset exists before calling this
-  def createDataset(as: String)(datasetName: String, tableBaseBase: String): Managed[MutationContext]
+  def createDataset(as: String)(datasetName: String, tableBaseBase: String): Managed[Option[MutationContext]]
 
   def openDataset(as: String)(datasetName: String): Managed[Option[MutationContext]]
 
-  // FIXME: There is no way to tell whether the dataset is in the right state for these before calling them.
-  // So its return type should include all three of "this dataset did not exist", "it was in the wrong state",
-  // and "ok, here's your MutationContext for more work."
-  def createCopy(as: String)(datasetName: String, copyData: Boolean): Managed[Option[MutationContext]]
-  def publishCopy(as: String)(datasetName: String): Managed[Option[MutationContext]]
-  def dropCopy(as: String)(datasetName: String): Managed[Option[MutationContext]]
+  sealed trait CopyContext
+  case object DatasetDidNotExist extends CopyContext
+  case class IncorrectLifecycleStage(lifecycleStage: LifecycleStage) extends CopyContext
+  case class CopyOperationComplete(mutationContext: MutationContext) extends CopyContext
+
+  def createCopy(as: String)(datasetName: String, copyData: Boolean): Managed[CopyContext]
+  def publishCopy(as: String)(datasetName: String): Managed[CopyContext]
+  def dropCopy(as: String)(datasetName: String): Managed[CopyContext]
 }
 
 object DatasetMutator {
@@ -295,37 +296,46 @@ object DatasetMutator {
         go(as, datasetName, f)
     }
 
-    def createDataset(as: String)(datasetName: String, tableBaseBase: String): Managed[MutationContext] = new SimpleArm[MutationContext] {
-      def flatMap[A](f: MutationContext => A): A =
+    def createDataset(as: String)(datasetName: String, tableBaseBase: String) = new SimpleArm[Option[MutationContext]] {
+      def flatMap[A](f: Option[MutationContext] => A): A =
         for { llCtx <- databaseMutator.openDatabase } yield {
           val m = llCtx.datasetMap
-          val firstVersion = m.create(datasetName, tableBaseBase)
+          val firstVersion =
+            try { m.create(datasetName, tableBaseBase) }
+            catch { case _: DatasetAlreadyExistsException => return f(None) }
           val logger = llCtx.logger(firstVersion.datasetInfo)
           val schemaLoader = llCtx.schemaLoader(firstVersion.datasetInfo)
           schemaLoader.create(firstVersion)
           val state = new S(firstVersion, ColumnIdMap.empty, schemaLoader, logger, llCtx)
-          val result = f(state)
+          val result = f(Some(state))
           llCtx.finishDatasetTransaction(as, state.copyInfo)
           result
         }
     }
 
-    def firstOp[U](as: String, datasetName: String, op: S => U) = new SimpleArm[Option[MutationContext]] {
-      def flatMap[A](f: Option[MutationContext] => A): A =
-        go(as,datasetName, { ctxOpt =>
-          ctxOpt.foreach(op)
-          f(ctxOpt)
+    def firstOp[U](as: String, datasetName: String, targetStage: LifecycleStage, op: S => U) = new SimpleArm[CopyContext] {
+      def flatMap[A](f: CopyContext => A): A =
+        go(as,datasetName, {
+          case None =>
+            f(DatasetDidNotExist)
+          case Some(ctx) =>
+            if(ctx.copyInfo.lifecycleStage == targetStage) {
+              op(ctx)
+              f(CopyOperationComplete(ctx))
+            } else {
+              f(IncorrectLifecycleStage(ctx.copyInfo.lifecycleStage))
+            }
         })
     }
 
-    def createCopy(as: String)(datasetName: String, copyData: Boolean): Managed[Option[MutationContext]] =
-      firstOp(as, datasetName, _.makeWorkingCopy(copyData))
+    def createCopy(as: String)(datasetName: String, copyData: Boolean): Managed[CopyContext] =
+      firstOp(as, datasetName, LifecycleStage.Published, _.makeWorkingCopy(copyData))
 
-    def publishCopy(as: String)(datasetName: String): Managed[Option[MutationContext]] =
-      firstOp(as, datasetName, _.publish())
+    def publishCopy(as: String)(datasetName: String): Managed[CopyContext] =
+      firstOp(as, datasetName, LifecycleStage.Unpublished, _.publish())
 
-    def dropCopy(as: String)(datasetName: String): Managed[Option[MutationContext]] =
-      firstOp(as, datasetName, _.drop())
+    def dropCopy(as: String)(datasetName: String): Managed[CopyContext] =
+      firstOp(as, datasetName, LifecycleStage.Unpublished, _.drop())
   }
 
   def apply[CT, CV](lowLevelMutator: LowLevelDatabaseMutator[CV], typeNameFor: CT => TypeName, lockTimeout: Duration): DatasetMutator[CT, CV] =

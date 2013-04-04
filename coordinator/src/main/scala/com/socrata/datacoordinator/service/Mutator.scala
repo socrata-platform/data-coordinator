@@ -4,7 +4,7 @@ package service
 import com.rojoma.json.ast._
 import com.socrata.datacoordinator.truth.universe.{DatasetMutatorProvider, Universe}
 import com.socrata.datacoordinator.truth.{DatasetIdInUseByWriterException, DatasetMutator}
-import com.socrata.datacoordinator.truth.metadata.{DatasetInfo, AbstractColumnInfoLike, ColumnInfo}
+import com.socrata.datacoordinator.truth.metadata.{LifecycleStage, DatasetInfo, AbstractColumnInfoLike, ColumnInfo}
 import com.socrata.datacoordinator.truth.json.JsonColumnReadRep
 import com.rojoma.json.codec.JsonCodec
 import com.socrata.datacoordinator.truth.loader.{Failure, Report}
@@ -34,6 +34,8 @@ object Mutator {
   case class InvalidCommandFieldValue(index: Long, value: JValue, field: String) extends InvalidCommandStreamException
 
   case class NoSuchDataset(name: String) extends MutationException
+  case class DatasetAlreadyExists(name: String) extends MutationException
+  case class IncorrectLifecycleStage(name: String, lifecycleStage: LifecycleStage) extends MutationException
   case class LockTimeout(name: String) extends MutationException
   // UpsertError is defined inside the Mutator class
 
@@ -193,43 +195,45 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
     val commands = createCommandStream(commandStream.next(), commandStream)
     def user = commands.user
 
-    def process(mutator: DatasetMutator[CT, CV]#MutationContext) = {
-      val processor = new Processor(jsonRepFor(mutator.copyInfo.datasetInfo))
-      processor.carryOutCommands(mutator, commands)
+    def doProcess(ctx: DatasetMutator[CT, CV]#MutationContext) = {
+      val processor = new Processor(jsonRepFor(ctx.copyInfo.datasetInfo))
+      processor.carryOutCommands(ctx, commands)
+    }
+
+    def process(datasetName: String, mutator: DatasetMutator[CT, CV])(maybeCtx: mutator.CopyContext) = maybeCtx match {
+      case mutator.CopyOperationComplete(ctx) =>
+        doProcess(ctx)
+      case mutator.IncorrectLifecycleStage(stage) =>
+        throw new IncorrectLifecycleStage(datasetName, stage)
+      case mutator.DatasetDidNotExist =>
+        throw new NoSuchDataset(commands.datasetName)
     }
 
     try {
+      val mutator = u.datasetMutator
       commands.streamType match {
         case NormalMutation =>
-          for(ctx <- u.datasetMutator.openDataset(user)(commands.datasetName)) {
-            val mutator = ctx.getOrElse { throw new NoSuchDataset(commands.datasetName) }
-            process(mutator)
+          for(ctxOpt <- mutator.openDataset(user)(commands.datasetName)) {
+            val ctx = ctxOpt.getOrElse { throw new NoSuchDataset(commands.datasetName) }
+            doProcess(ctx)
           }
         case CreateDatasetMutation =>
-          for(mutator <- u.datasetMutator.createDataset(user)(commands.datasetName, "t")) { // TODO: Already exists
+          for(ctxOpt <- u.datasetMutator.createDataset(user)(commands.datasetName, "t")) {
+            val ctx = ctxOpt.getOrElse { throw new DatasetAlreadyExists(commands.datasetName) }
             for((col, typ) <- systemSchema) {
-              val ci = mutator.addColumn(col, lookupType(typ), physicalColumnBaseBase(col, systemColumn = true))
+              val ci = ctx.addColumn(col, lookupType(typ), physicalColumnBaseBase(col, systemColumn = true))
               if(col == systemIdColumnName) {
-                mutator.makeSystemPrimaryKey(ci)
+                ctx.makeSystemPrimaryKey(ci)
               }
             }
-            process(mutator)
+            doProcess(ctx)
           }
         case CreateWorkingCopyMutation(copyData) =>
-          for(ctx <- u.datasetMutator.createCopy(user)(commands.datasetName, copyData = copyData)) {
-            val mutator = ctx.getOrElse { throw new NoSuchDataset(commands.datasetName) }
-            process(mutator)
-          }
+          mutator.createCopy(user)(commands.datasetName, copyData = copyData).map(process(commands.datasetName, mutator))
         case PublishWorkingCopyMutation(keepingSnapshotCount) =>
-          for(ctx <- u.datasetMutator.publishCopy(user)(commands.datasetName)) {
-            val mutator = ctx.getOrElse { throw new NoSuchDataset(commands.datasetName) }
-            process(mutator)
-          }
+          mutator.publishCopy(user)(commands.datasetName).map(process(commands.datasetName, mutator))
         case DropWorkingCopyMutation =>
-          for(ctx <- u.datasetMutator.dropCopy(user)(commands.datasetName)) {
-            val mutator = ctx.getOrElse { throw new NoSuchDataset(commands.datasetName) }
-            process(mutator)
-          }
+          mutator.dropCopy(user)(commands.datasetName).map(process(commands.datasetName, mutator))
       }
     } catch {
       case e: DatasetIdInUseByWriterException =>

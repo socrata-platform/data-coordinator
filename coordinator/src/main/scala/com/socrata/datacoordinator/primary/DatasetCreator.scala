@@ -6,7 +6,9 @@ class DatasetCreator[T](dataWritingContext: DataWritingContext) {
   import dataWritingContext.datasetMutator
 
   def createDataset(datasetId: String, username: String) {
-    for(ctx <- datasetMutator.createDataset(as = username)(datasetId, "t"))
-      dataWritingContext.addSystemColumns(ctx)
+    for {
+      ctxOpt <- datasetMutator.createDataset(as = username)(datasetId, "t")
+      ctx <- ctxOpt
+    } dataWritingContext.addSystemColumns(ctx)
   }
 }
