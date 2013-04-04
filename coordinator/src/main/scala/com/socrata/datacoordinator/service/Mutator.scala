@@ -282,18 +282,23 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
 
     def processRowData(rows: BufferedIterator[JValue], fatalRowErrors: Boolean, mutator: DatasetMutator[CV]#MutationContext): Report[CV] = {
       import mutator._
-      val result = mutator.upsert(
-        new Iterator[Either[CV, Row[CV]]] {
-          val plan = new RowDecodePlan(schema, jsonRepFor, magicDeleteKey)
-          def hasNext = rows.hasNext && JNull != rows.head
-          def next() = {
-            if(!hasNext) throw new NoSuchElementException
-            plan(rows.next)
-          }
-        })
-      if(rows.hasNext && JNull == rows.head) rows.next()
-      if(fatalRowErrors && result.errors.nonEmpty) ??? // TODO: Error
-      result
+      try {
+        val result = mutator.upsert(
+          new Iterator[Either[CV, Row[CV]]] {
+            val plan = new RowDecodePlan(schema, jsonRepFor, magicDeleteKey)
+            def hasNext = rows.hasNext && JNull != rows.head
+            def next() = {
+              if(!hasNext) throw new NoSuchElementException
+              plan(rows.next)
+            }
+          })
+        if(rows.hasNext && JNull == rows.head) rows.next()
+        if(fatalRowErrors && result.errors.nonEmpty) ??? // TODO: Error
+        result
+      } catch {
+        case e: RowDecodePlan.BadDataException =>
+          ??? // TODO: proper error
+      }
     }
   }
 }
