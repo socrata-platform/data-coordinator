@@ -37,8 +37,8 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
   var updateSize = 0
   var deleteSize = 0
 
-  def upsert(row: Row[CV]) {
-    val job = nextJobNum()
+  def upsert(job: Int, row: Row[CV]) {
+    checkJob(job)
     row.get(systemIdColumn) match {
       case Some(systemIdValue) => // update
         if(typeContext.isNull(systemIdValue)) {
@@ -111,8 +111,8 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
     }
   }
 
-  def delete(id: CV) {
-    val job = nextJobNum()
+  def delete(job: Int, id: CV) {
+    checkJob(job)
     val systemId = typeContext.makeSystemIdFromValue(id)
     val delete = Delete(systemId, job)
     jobs.get(systemId) match {

@@ -42,7 +42,12 @@ abstract class SqlLoader[CT, CV](val connection: Connection,
   protected val connectionMutex = new Object
   def checkAsyncJob()
 
-  val nextJobNum = new Counter
+  var lastJobNum = -1
+
+  def checkJob(num: Int) {
+    if(num > lastJobNum) lastJobNum = num
+    else throw new IllegalArgumentException("Job numbers must be strictly increasing")
+  }
 
   def flush()
 

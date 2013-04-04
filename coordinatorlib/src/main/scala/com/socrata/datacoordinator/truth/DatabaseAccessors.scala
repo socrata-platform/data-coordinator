@@ -107,7 +107,14 @@ trait DatasetMutator[CT, CV] {
     def unmakeUserPrimaryKey(ci: ColumnInfo): ColumnInfo
     def dropColumn(ci: ColumnInfo)
     def truncate()
-    def upsert(inputGenerator: Iterator[Either[CV, Row[CV]]]): Report[CV]
+
+    sealed trait RowDataUpdateJob {
+      def jobNumber: Int
+    }
+    case class DeleteJob(jobNumber: Int, id: CV) extends RowDataUpdateJob
+    case class UpsertJob(jobNumber: Int, row: Row[CV]) extends RowDataUpdateJob
+
+    def upsert(inputGenerator: Iterator[RowDataUpdateJob]): Report[CV]
   }
 
   // FIXME: There is no way to tell whether the dataset exists before calling this
@@ -243,11 +250,11 @@ object DatasetMutator {
         llCtx.truncate(copyInfo, logger)
       }
 
-      def upsert(inputGenerator: Iterator[Either[CV, Row[CV]]]): Report[CV] = {
+      def upsert(inputGenerator: Iterator[RowDataUpdateJob]): Report[CV] = {
         val (report, nextRowId, _) = llCtx.withDataLoader(copyInfo, schema, logger) { loader =>
           inputGenerator.foreach {
-            case Right(row) => loader.upsert(row)
-            case Left(id) => loader.delete(id)
+            case UpsertJob(jobNum, row) => loader.upsert(jobNum, row)
+            case DeleteJob(jobNum, id) => loader.delete(jobNum, id)
           }
         }
         copyInfo = datasetMap.updateNextRowId(copyInfo, nextRowId)

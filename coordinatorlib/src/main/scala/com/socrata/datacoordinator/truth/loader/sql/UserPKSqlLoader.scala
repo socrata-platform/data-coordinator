@@ -57,8 +57,8 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: Dat
     }
   }
 
-  def upsert(row: Row[CV]) {
-    val job = nextJobNum()
+  def upsert(job: Int, row: Row[CV]) {
+    checkJob(job)
     row.get(primaryKey) match {
       case Some(userId) =>
         if(typeContext.isNull(userId))
@@ -90,8 +90,8 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: Dat
     }
   }
 
-  def delete(id: CV) {
-    val job = nextJobNum()
+  def delete(job: Int, id: CV) {
+    checkJob(job)
     val record = jobEntry(id)
 
     if(record.hasUpsertJob) {

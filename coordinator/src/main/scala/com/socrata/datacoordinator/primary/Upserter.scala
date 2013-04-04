@@ -13,7 +13,10 @@ class Upserter[CV](mutator: DatasetMutator[_, CV]) extends ExistingDatasetMutato
         ctxOpt <- mutator.openDataset(as = username)(dataset)
         ctx <- ctxOpt
       } yield {
-        ctx.upsert(inputGenerator(ctx.schema))
+        ctx.upsert(inputGenerator(ctx.schema).zipWithIndex.map {
+          case (Left(id), num) => ctx.DeleteJob(num, id)
+          case (Right(row), num) => ctx.UpsertJob(num, row)
+        })
       }
     }
 }

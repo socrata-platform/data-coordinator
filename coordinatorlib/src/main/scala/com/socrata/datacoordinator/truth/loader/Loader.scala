@@ -8,8 +8,8 @@ import com.socrata.datacoordinator.util.collection.ColumnIdSet
 import com.socrata.datacoordinator.util.RowIdProvider
 
 trait Loader[CV] extends Closeable {
-  def upsert(row: Row[CV])
-  def delete(id: CV)
+  def upsert(jobId: Int, row: Row[CV])
+  def delete(jobId: Int, id: CV)
 
   /** Flushes any changes which have accumulated in-memory and
     * returns a report summarizing the changes.

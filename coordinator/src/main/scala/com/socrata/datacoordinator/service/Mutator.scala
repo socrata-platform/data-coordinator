@@ -14,6 +14,7 @@ import com.socrata.datacoordinator.id.ColumnId
 import scala.Some
 import com.rojoma.json.ast.JString
 import com.socrata.soql.environment.{TypeName, ColumnName}
+import com.socrata.datacoordinator.util.Counter
 
 object Mutator {
   sealed abstract class StreamType
@@ -291,14 +292,18 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
       import mutator._
       val plan = new RowDecodePlan(schema, jsonRepFor, typeNameFor)
       try {
-        val result = mutator.upsert(
-          new Iterator[Either[CV, Row[CV]]] {
-            def hasNext = rows.hasNext && JNull != rows.head
-            def next() = {
-              if(!hasNext) throw new NoSuchElementException
-              plan(rows.next)
+        val counter = new Counter(1)
+        val it = new Iterator[RowDataUpdateJob] {
+          def hasNext = rows.hasNext && JNull != rows.head
+          def next() = {
+            if(!hasNext) throw new NoSuchElementException
+            plan(rows.next) match {
+              case Right(row) => UpsertJob(counter(), row)
+              case Left(id) => DeleteJob(counter(), id)
             }
-          })
+          }
+        }
+        val result = mutator.upsert(it)
         if(rows.hasNext && JNull == rows.head) rows.next()
         if(fatalRowErrors && result.errors.nonEmpty) ??? // TODO: Error
         result

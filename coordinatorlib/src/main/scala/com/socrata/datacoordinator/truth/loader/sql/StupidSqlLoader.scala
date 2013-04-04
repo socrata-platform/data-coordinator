@@ -27,10 +27,14 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
   val deleted = new java.util.HashMap[Int, CV]
   val errors = new java.util.HashMap[Int, Failure[CV]]
 
-  val nextJobNum = new Counter
+  var lastJobNum: Int = -1
+  def checkJob(job: Int) {
+    if(job > lastJobNum) lastJobNum = job
+    else throw new IllegalArgumentException("Job numbers must be strictly increasing")
+  }
 
-  def upsert(unpreparedRow: Row[CV]) {
-    val job = nextJobNum()
+  def upsert(job: Int, unpreparedRow: Row[CV]) {
+    checkJob(job)
     datasetContext.userPrimaryKeyColumn match {
       case Some(pkCol) =>
         datasetContext.userPrimaryKey(unpreparedRow) match {
@@ -89,8 +93,8 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
     }
   }
 
-  def delete(id: CV) {
-    val job = nextJobNum()
+  def delete(job: Int, id: CV) {
+    checkJob(job)
     datasetContext.userPrimaryKeyColumn match {
       case Some(pkCol) =>
         findSid(id) match {
