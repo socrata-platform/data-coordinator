@@ -38,7 +38,7 @@ import com.socrata.datacoordinator.truth.universe.sql.{PostgresCopyIn, PostgresU
 import com.rojoma.simplearm.SimpleArm
 import com.socrata.datacoordinator.common.soql.universe.PostgresUniverseCommonSupport
 import com.socrata.soql.types.SoQLType
-import com.socrata.soql.environment.ColumnName
+import com.socrata.soql.environment.{TypeName, ColumnName}
 import com.socrata.datacoordinator.common.soql.SoQLRep.IdObfuscationContext
 import com.socrata.datacoordinator.truth.json.JsonColumnRep
 import com.socrata.datacoordinator.common.util.RowIdObfuscator
@@ -337,7 +337,8 @@ object Service extends App { self =>
 
       def systemSchema = dataContext.systemColumns.mapValues(dataContext.typeContext.nameFromType)
       def systemIdColumnName = dataContext.systemIdColumnName
-      def typeNameFor(typ: SoQLType) = typ.name
+      def typeNameFor(typ: SoQLType) = dataContext.typeContext.nameFromType(typ)
+      def nameForTypeOpt(typeName: TypeName) = dataContext.typeContext.typeFromNameOpt(typeName)
     }
 
     val mutator = new Mutator(mutationCommon)

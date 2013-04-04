@@ -140,6 +140,7 @@ trait MutatorCommon[CT, CV] {
   def systemSchema: Map[ColumnName, TypeName]
   def systemIdColumnName: ColumnName
   def typeNameFor(typ: CT): TypeName
+  def nameForTypeOpt(name: TypeName): Option[CT]
 }
 
 class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
@@ -172,12 +173,18 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
       new CommandStream(streamType, dataset, user, fatalRowErrors, remainingCommands.buffered)
     }
 
+  private def lookupType(typeName: TypeName): CT =
+    nameForTypeOpt(typeName) match {
+      case Some(typ) => typ
+      case None => ??? // TODO: Proper error
+    }
+
   def apply(u: Universe[CT, CV] with DatasetMutatorProvider, jsonRepFor: DatasetInfo => AbstractColumnInfoLike => JsonColumnReadRep[CT, CV], commandStream: Iterator[JValue]) {
     if(commandStream.isEmpty) throw EmptyCommandStream()
     val commands = createCommandStream(commandStream.next(), commandStream)
     def user = commands.user
 
-    def process(mutator: DatasetMutator[CV]#MutationContext) = {
+    def process(mutator: DatasetMutator[CT, CV]#MutationContext) = {
       val processor = new Processor(jsonRepFor(mutator.copyInfo.datasetInfo))
       processor.carryOutCommands(mutator, commands)
     }
@@ -191,7 +198,7 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
       case CreateDatasetMutation =>
         for(mutator <- u.datasetMutator.createDataset(user)(commands.datasetName, "t")) { // TODO: Already exists
           for((col, typ) <- systemSchema) {
-            val ci = mutator.addColumn(col, typ, physicalColumnBaseBase(col, systemColumn = true))
+            val ci = mutator.addColumn(col, lookupType(typ), physicalColumnBaseBase(col, systemColumn = true))
             if(col == systemIdColumnName) {
               mutator.makeSystemPrimaryKey(ci)
             }
@@ -217,7 +224,7 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
   }
 
   class Processor(jsonRepFor: AbstractColumnInfoLike => JsonColumnReadRep[CT, CV]) {
-    def carryOutCommands(mutator: DatasetMutator[CV]#MutationContext, commands: CommandStream): Seq[Report[CV]] = {
+    def carryOutCommands(mutator: DatasetMutator[CT, CV]#MutationContext, commands: CommandStream): Seq[Report[CV]] = {
       val reports = new VectorBuilder[Report[CV]]
       def loop() {
         commands.nextCommand() match {
@@ -229,13 +236,13 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
       reports.result()
     }
 
-    def carryOutCommand(mutator: DatasetMutator[CV]#MutationContext, commands: CommandStream, cmd: Command): Option[Report[CV]] = {
+    def carryOutCommand(mutator: DatasetMutator[CT, CV]#MutationContext, commands: CommandStream, cmd: Command): Option[Report[CV]] = {
       import mutator._
       cmd match {
         case AddColumn(name, typ) =>
           if(!isLegalLogicalName(name)) ??? // TODO: proper error
           if(schemaByLogicalName.contains(name)) ??? // TODO: proper error
-          addColumn(name, typ, physicalColumnBaseBase(name)) // TODO: I should really be giving this a CT instance instead of "typ"
+          addColumn(name, lookupType(typ), physicalColumnBaseBase(name))
           None
         case DropColumn(name) =>
           schemaByLogicalName.get(name) match {
@@ -280,7 +287,7 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
       }
     }
 
-    def processRowData(rows: BufferedIterator[JValue], fatalRowErrors: Boolean, mutator: DatasetMutator[CV]#MutationContext): Report[CV] = {
+    def processRowData(rows: BufferedIterator[JValue], fatalRowErrors: Boolean, mutator: DatasetMutator[CT,CV]#MutationContext): Report[CV] = {
       import mutator._
       val plan = new RowDecodePlan(schema, jsonRepFor, typeNameFor)
       try {

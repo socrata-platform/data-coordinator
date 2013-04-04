@@ -10,7 +10,7 @@ class ColumnAdder[CT] private (val dataContext: DataWritingContext) extends Exis
   def addToSchema(dataset: String, columns: Map[ColumnName, CT], username: String): Map[ColumnName, ColumnInfo] = {
     def columnCreations(ctx: MutationContext) = columns.iterator.map { case (columnName, columnType) =>
       val baseName = dataContext.physicalColumnBaseBase(columnName)
-      ctx.addColumn(columnName, dataContext.typeContext.nameFromType(columnType.asInstanceOf[dataContext.CT] /* SI-5712, see below */), baseName)
+      ctx.addColumn(columnName, columnType.asInstanceOf[dataContext.CT] /* SI-5712, see below */, baseName)
     }.toList
 
     finish(dataset) {

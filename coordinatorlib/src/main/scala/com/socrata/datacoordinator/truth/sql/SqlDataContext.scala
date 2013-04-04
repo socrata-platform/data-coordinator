@@ -40,7 +40,7 @@ trait SqlDataWritingContext extends SqlDataTypeContext with DataWritingContext {
 
   val datasetMutatorLockTimeout: Duration
 
-  lazy val datasetMutator = DatasetMutator(databaseMutator, datasetMutatorLockTimeout)
+  lazy val datasetMutator = DatasetMutator(databaseMutator, typeContext.nameFromType, datasetMutatorLockTimeout)
 }
 
 trait SqlDataReadingContext extends SqlDataTypeContext with DataReadingContext {

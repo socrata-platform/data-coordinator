@@ -3,7 +3,7 @@ package com.socrata.datacoordinator.primary
 import com.socrata.datacoordinator.truth.metadata.UnanchoredCopyInfo
 import com.socrata.datacoordinator.truth.DatasetMutator
 
-class WorkingCopyCreator(mutator: DatasetMutator[_]) extends ExistingDatasetMutator {
+class WorkingCopyCreator(mutator: DatasetMutator[_,_]) extends ExistingDatasetMutator {
   import mutator._
   def copyDataset(dataset: String, username: String, copyData: Boolean): UnanchoredCopyInfo = {
     finish(dataset) {

@@ -74,7 +74,7 @@ trait SoQLDataContext extends DataSchemaContext with DataWritingContext with Dat
   def addSystemColumns(ctx: datasetMutator.MutationContext) {
     for((name, typ) <- systemColumns) {
       import ctx._
-      val col = addColumn(name, typeContext.nameFromType(typ), physicalColumnBaseBase(name, systemColumn = true))
+      val col = addColumn(name, typ, physicalColumnBaseBase(name, systemColumn = true))
       if(col.logicalName == systemId) makeSystemPrimaryKey(col)
     }
   }

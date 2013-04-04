@@ -88,7 +88,7 @@ object DatasetReader {
   def apply[CV](lowLevelReader: LowLevelDatabaseReader[CV]): DatasetReader[CV] = new Impl(lowLevelReader)
 }
 
-trait DatasetMutator[CV] {
+trait DatasetMutator[CT, CV] {
   val databaseMutator: LowLevelDatabaseMutator[CV]
 
   trait MutationContext {
@@ -100,7 +100,7 @@ trait DatasetMutator[CV] {
         acc + (ci.logicalName -> ci)
       }
 
-    def addColumn(logicalName: ColumnName, typeName: TypeName, physicalColumnBaseBase: String): ColumnInfo
+    def addColumn(logicalName: ColumnName, typ: CT, physicalColumnBaseBase: String): ColumnInfo
     def renameColumn(col: ColumnInfo, newName: ColumnName): ColumnInfo
     def makeSystemPrimaryKey(ci: ColumnInfo): ColumnInfo
     def makeUserPrimaryKey(ci: ColumnInfo): ColumnInfo
@@ -124,7 +124,7 @@ trait DatasetMutator[CV] {
 }
 
 object DatasetMutator {
-  private class Impl[CV](val databaseMutator: LowLevelDatabaseMutator[CV], lockTimeout: Duration) extends DatasetMutator[CV] {
+  private class Impl[CT, CV](val databaseMutator: LowLevelDatabaseMutator[CV], typeNameFor: CT => TypeName, lockTimeout: Duration) extends DatasetMutator[CT, CV] {
     class S(var copyInfo: CopyInfo, var _schema: ColumnIdMap[ColumnInfo], val schemaLoader: SchemaLoader, val logger: Logger[CV], llCtx: databaseMutator.MutationContext) extends MutationContext {
       var _schemaByLogicalName: Map[ColumnName, ColumnInfo] = null
       override def schemaByLogicalName = {
@@ -142,8 +142,8 @@ object DatasetMutator {
       def datasetMap = llCtx.datasetMap
       def datasetContetsCopier = llCtx.datasetContentsCopier(copyInfo.datasetInfo)
 
-      def addColumn(logicalName: ColumnName, typeName: TypeName, physicalColumnBaseBase: String): ColumnInfo = {
-        val newColumn = datasetMap.addColumn(copyInfo, logicalName, typeName, physicalColumnBaseBase)
+      def addColumn(logicalName: ColumnName, typ: CT, physicalColumnBaseBase: String): ColumnInfo = {
+        val newColumn = datasetMap.addColumn(copyInfo, logicalName, typeNameFor(typ), physicalColumnBaseBase)
         schemaLoader.addColumn(newColumn)
         schema += newColumn.systemId -> newColumn
         newColumn
@@ -321,6 +321,6 @@ object DatasetMutator {
       firstOp(as, datasetName, _.drop())
   }
 
-  def apply[CV](lowLevelMutator: LowLevelDatabaseMutator[CV], lockTimeout: Duration): DatasetMutator[CV] =
-    new Impl(lowLevelMutator, lockTimeout)
+  def apply[CT, CV](lowLevelMutator: LowLevelDatabaseMutator[CV], typeNameFor: CT => TypeName, lockTimeout: Duration): DatasetMutator[CT, CV] =
+    new Impl(lowLevelMutator, typeNameFor, lockTimeout)
 }

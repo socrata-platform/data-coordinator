@@ -65,7 +65,7 @@ trait DataWritingContext extends DataTypeContext {
   def rowPreparer(transactionStart: DateTime, schema: ColumnIdMap[ColumnInfo]): RowPreparer[CV]
 
   /** Monad in which actions to update the database may occur. */
-  val datasetMutator: DatasetMutator[CV]
+  val datasetMutator: DatasetMutator[CT, CV]
 
   /** An action that adds system columns to a dataset's schema. */
   def addSystemColumns(ctx: datasetMutator.MutationContext)

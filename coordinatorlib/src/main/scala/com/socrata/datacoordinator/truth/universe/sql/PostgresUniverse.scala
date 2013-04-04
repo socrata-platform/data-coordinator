@@ -167,8 +167,8 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
     }
   )
 
-  lazy val datasetMutator: DatasetMutator[CV] =
-    DatasetMutator(lowLevelDatabaseMutator, Duration(10, "s"))
+  lazy val datasetMutator: DatasetMutator[CT, CV] =
+    DatasetMutator(lowLevelDatabaseMutator, typeContext.nameFromType, Duration(10, "s"))
 
   def schemaLoader(datasetInfo: DatasetInfo) =
     new RepBasedSqlSchemaLoader(conn, logger(datasetInfo), repFor, tablespace)

@@ -2,7 +2,7 @@ package com.socrata.datacoordinator.primary
 
 import com.socrata.datacoordinator.truth.DatasetMutator
 
-class PrimaryKeySetter(mutator: DatasetMutator[_]) extends ExistingDatasetMutator {
+class PrimaryKeySetter(mutator: DatasetMutator[_, _]) extends ExistingDatasetMutator {
   import mutator._
   def makePrimaryKey(dataset: String, column: String, username: String) {
     finish(dataset) {
