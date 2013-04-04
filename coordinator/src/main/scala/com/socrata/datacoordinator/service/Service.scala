@@ -41,6 +41,7 @@ import com.socrata.soql.types.SoQLType
 import com.socrata.soql.environment.ColumnName
 import com.socrata.datacoordinator.common.soql.SoQLRep.IdObfuscationContext
 import com.socrata.datacoordinator.truth.json.JsonColumnRep
+import com.socrata.datacoordinator.common.util.RowIdObfuscator
 
 case class Field(name: String, @JsonKey("type") typ: String)
 object Field {
@@ -342,17 +343,7 @@ object Service extends App { self =>
 
     val mutator = new Mutator(mutationCommon)
 
-    def obfuscationContextFor(key: Array[Byte]) = {
-      new IdObfuscationContext {
-        def deobfuscate(obfuscatedRowId: String): Option[RowId] =
-          try {
-            Some(new RowId(obfuscatedRowId.takeWhile(_!=',').toLong))
-          } catch {
-            case _: Exception => None
-          }
-        def obfuscate(rowId: RowId): String = rowId.underlying + "," + key.mkString(",")
-      }
-    }
+    def obfuscationContextFor(key: Array[Byte]) = new RowIdObfuscator(key)
 
     def jsonRepForColumn(datasetInfo: DatasetInfo): AbstractColumnInfoLike => JsonColumnRep[SoQLType, Any] = {
       val reps = SoQLRep.jsonRepFactories(obfuscationContextFor(datasetInfo.obfuscationKey));

@@ -13,6 +13,7 @@ object Coordinator {
         "com.typesafe" % "config" % "1.0.0",
         "com.socrata" %% "socrata-csv" % "[1.1.1,2.0.0)",
         "com.socrata" %% "socrata-http" % "[1.2.0,2.0.0)",
+        "org.bouncycastle" % "bcprov-jdk15on" % "1.48",
         "org.slf4j" % "slf4j-simple" % BuildSettings.slf4jVersion,
         "org.scalacheck" %% "scalacheck" % "1.10.0" % "test"
       )
