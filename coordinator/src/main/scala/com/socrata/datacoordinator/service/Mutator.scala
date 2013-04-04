@@ -137,9 +137,9 @@ trait MutatorCommon[CT, CV] {
   def physicalColumnBaseBase(logicalColumnName: ColumnName, systemColumn: Boolean = false): String
   def isLegalLogicalName(identifier: ColumnName): Boolean
   def isSystemColumnName(identifier: ColumnName): Boolean
-  def magicDeleteKey: ColumnName
   def systemSchema: Map[ColumnName, TypeName]
   def systemIdColumnName: ColumnName
+  def typeNameFor(typ: CT): TypeName
 }
 
 class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
@@ -282,10 +282,10 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
 
     def processRowData(rows: BufferedIterator[JValue], fatalRowErrors: Boolean, mutator: DatasetMutator[CV]#MutationContext): Report[CV] = {
       import mutator._
+      val plan = new RowDecodePlan(schema, jsonRepFor, typeNameFor)
       try {
         val result = mutator.upsert(
           new Iterator[Either[CV, Row[CV]]] {
-            val plan = new RowDecodePlan(schema, jsonRepFor, magicDeleteKey)
             def hasNext = rows.hasNext && JNull != rows.head
             def next() = {
               if(!hasNext) throw new NoSuchElementException
@@ -296,7 +296,7 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
         if(fatalRowErrors && result.errors.nonEmpty) ??? // TODO: Error
         result
       } catch {
-        case e: RowDecodePlan.BadDataException =>
+        case e: plan.BadDataException =>
           ??? // TODO: proper error
       }
     }

@@ -335,10 +335,9 @@ object Service extends App { self =>
       def isSystemColumnName(identifier: ColumnName): Boolean =
         dataContext.isSystemColumn(identifier)
 
-      val magicDeleteKey = ColumnName(":delete")
-
       def systemSchema = dataContext.systemColumns.mapValues(dataContext.typeContext.nameFromType)
       def systemIdColumnName = dataContext.systemIdColumnName
+      def typeNameFor(typ: SoQLType) = typ.name
     }
 
     val mutator = new Mutator(mutationCommon)

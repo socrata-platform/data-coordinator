@@ -2,22 +2,19 @@ package com.socrata.datacoordinator
 package service
 
 import com.socrata.datacoordinator.truth.json.JsonColumnReadRep
-import com.rojoma.json.ast.{JBoolean, JObject, JValue}
+import com.rojoma.json.ast.{JArray, JBoolean, JObject, JValue}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.metadata.AbstractColumnInfoLike
 import com.socrata.datacoordinator.id.ColumnId
-import com.socrata.soql.environment.ColumnName
+import com.socrata.soql.environment.{TypeName, ColumnName}
 
-object RowDecodePlan {
-  class BadDataException(msg: String) extends Exception(msg)
-  class RowNotObjectException extends BadDataException("Row data not an object")
-  class UninterpretableField(val column: ColumnName, val value: JValue) extends BadDataException("Unable to interpret value for field " + column + ": " + value)
-}
-
-class RowDecodePlan[CT, CV](schema: ColumnIdMap[AbstractColumnInfoLike], repFor: AbstractColumnInfoLike => JsonColumnReadRep[CT, CV], magicDeleteKey: ColumnName)
+class RowDecodePlan[CT, CV](schema: ColumnIdMap[AbstractColumnInfoLike], repFor: AbstractColumnInfoLike => JsonColumnReadRep[CT, CV], typeNameFor: CT => TypeName)
   extends (JValue => Either[CV, Row[CV]])
 {
-  import RowDecodePlan._
+  class BadDataException(msg: String) extends Exception(msg)
+  class BadUpsertCommandException(val value: JValue) extends BadDataException("Upsert command not an object or a singleton list")
+  class UninterpretableFieldValue(val column: ColumnName, val value: JValue, val columnType: CT) extends BadDataException("Unable to interpret value for field " + column + " as " + typeNameFor(columnType) + ": " + value)
+  class UninterpretableDeleteValue(val value: JValue, val columnType: CT) extends BadDataException("Unable to interpret value for delete as " + typeNameFor(columnType) + ": " + value)
 
   val pkCol = schema.values.find(_.isUserPrimaryKey).orElse(schema.values.find(_.isSystemPrimaryKey)).getOrElse {
     sys.error("No system primary key in the schema?")
@@ -41,32 +38,29 @@ class RowDecodePlan[CT, CV](schema: ColumnIdMap[AbstractColumnInfoLike], repFor:
   def apply(json: JValue): Either[CV, Row[CV]] = json match {
     case JObject(rawRow) =>
       val row = cook(rawRow)
-      row.get(magicDeleteKey) match {
-        case None =>
-          val result = new MutableRow[CV]
-          cookedSchema.foreach { case (field, systemId, rep) =>
-            row.get(field) match {
-              case Some(value) =>
-                rep.fromJValue(value) match {
-                  case Some(trueValue) =>
-                    result(systemId) = trueValue
-                  case None =>
-                    throw new UninterpretableField(field, value)
-                }
+      val result = new MutableRow[CV]
+      cookedSchema.foreach { case (field, systemId, rep) =>
+        row.get(field) match {
+          case Some(value) =>
+            rep.fromJValue(value) match {
+              case Some(trueValue) =>
+                result(systemId) = trueValue
               case None =>
-                /* pass */
+                throw new UninterpretableFieldValue(field, value, rep.representedType)
             }
-          }
-          Right(result.freeze())
-        case Some(value) =>
-          pkRep.fromJValue(value) match {
-            case Some(trueValue) =>
-              Left(trueValue)
-            case None =>
-              throw new UninterpretableField(magicDeleteKey, value)
-          }
+          case None =>
+          /* pass */
+        }
       }
-    case _ =>
-      throw new RowNotObjectException
+      Right(result.freeze())
+    case JArray(Seq(value)) =>
+      pkRep.fromJValue(value) match {
+        case Some(trueValue) =>
+          Left(trueValue)
+        case None =>
+          throw new UninterpretableDeleteValue(value, pkRep.representedType)
+      }
+    case other =>
+      throw new BadUpsertCommandException(other)
   }
 }
