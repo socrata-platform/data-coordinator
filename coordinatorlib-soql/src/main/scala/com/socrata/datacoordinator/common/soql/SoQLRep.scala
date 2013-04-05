@@ -15,9 +15,9 @@ object SoQLRep {
     SoQLNumber -> (base => new sqlreps.NumberLikeRep(SoQLNumber, base)),
     SoQLMoney -> (base => new sqlreps.NumberLikeRep(SoQLNumber, base)),
     SoQLFixedTimestamp -> (base => new sqlreps.FixedTimestampRep(base)),
+    SoQLFloatingTimestamp -> (base => new sqlreps.FloatingTimestampRep(base)),
     SoQLLocation -> (base => new sqlreps.LocationRep(base)) /*,
     SoQLDouble -> doubleRepFactory,
-    SoQLFloatingTimestamp -> floatingTimestampRepFactory,
     SoQLObject -> objectRepFactory,
     SoQLArray -> arrayRepFactory */
   )
@@ -31,6 +31,7 @@ object SoQLRep {
     SoQLNumber -> new csvreps.NumberLikeRep(SoQLNumber),
     SoQLMoney -> new csvreps.NumberLikeRep(SoQLMoney),
     SoQLFixedTimestamp -> csvreps.FixedTimestampRep,
+    SoQLFloatingTimestamp -> csvreps.FloatingTimestampRep,
     SoQLLocation -> csvreps.LocationRep
   )
 
@@ -40,6 +41,7 @@ object SoQLRep {
     SoQLNumber -> (name => new jsonreps.NumberLikeRep(name, SoQLNumber)),
     SoQLMoney -> (name => new jsonreps.NumberLikeRep(name, SoQLMoney)),
     SoQLFixedTimestamp -> (name => new jsonreps.FixedTimestampRep(name)),
+    SoQLFloatingTimestamp -> (name => new jsonreps.FloatingTimestampRep(name)),
     SoQLLocation -> (name => new jsonreps.LocationRep(name))
   )
 

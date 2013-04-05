@@ -86,12 +86,12 @@ object ChicagoCrimesLoadScript extends App {
       val NumberT = dataContext.typeContext.typeFromName(TypeName("number"))
       val TextT = dataContext.typeContext.typeFromName(TypeName("text"))
       val BooleanT = dataContext.typeContext.typeFromName(TypeName("boolean"))
-      val FixedTimestampT = dataContext.typeContext.typeFromName(TypeName("fixed_timestamp"))
+      val FloatingTimestampT = dataContext.typeContext.typeFromName(TypeName("floating_timestamp"))
       val LocationT = dataContext.typeContext.typeFromName(TypeName("location"))
       val types = Map(
         ColumnName("id") -> NumberT,
         ColumnName("case_number") -> TextT,
-        ColumnName("date") -> FixedTimestampT,
+        ColumnName("date") -> FloatingTimestampT,
         ColumnName("block") -> TextT,
         ColumnName("iucr") -> TextT,
         ColumnName("primary_type") -> TextT,
@@ -107,7 +107,7 @@ object ChicagoCrimesLoadScript extends App {
         ColumnName("x_coordinate") -> NumberT,
         ColumnName("y_coordinate") -> NumberT,
         ColumnName("year") -> NumberT,
-        ColumnName("updated_on") -> FixedTimestampT,
+        ColumnName("updated_on") -> FloatingTimestampT,
         ColumnName("latitude") -> NumberT,
         ColumnName("longitude") -> NumberT,
         ColumnName("location") -> LocationT
@@ -116,11 +116,11 @@ object ChicagoCrimesLoadScript extends App {
       val schema = columnAdder.addToSchema(datasetName, headers.map { x => x -> types(x) }.toMap, user).mapValues { ci =>
         (ci, dataContext.typeContext.typeFromName(ci.typeName))
       }.toMap
-      primaryKeySetter.makePrimaryKey(datasetName, "id", user)
+      primaryKeySetter.makePrimaryKey(datasetName, ColumnName("id"), user)
       val start = System.nanoTime()
       upserter.upsert(datasetName, user) { _ =>
         val plan = rowDecodePlan(dataContext)(schema, headers)
-        it.map { row =>
+        it.take(10).map { row =>
           val result = plan(row)
           if(result._1.nonEmpty) throw new Exception("Error decoding row; unable to decode columns: " + result._1.mkString(", "))
           result._2

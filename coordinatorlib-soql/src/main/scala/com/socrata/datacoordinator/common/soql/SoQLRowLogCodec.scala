@@ -3,10 +3,14 @@ package com.socrata.datacoordinator.common.soql
 import com.socrata.datacoordinator.truth.SimpleRowLogCodec
 import com.google.protobuf.{CodedInputStream, CodedOutputStream}
 import com.socrata.datacoordinator.id.RowId
-import org.joda.time.{DateTimeZone, DateTime}
+import org.joda.time.{LocalDateTime, DateTimeZone, DateTime}
+import org.joda.time.format.ISODateTimeFormat
 
 object SoQLRowLogCodec extends SimpleRowLogCodec[Any] {
   def rowDataVersion: Short = 0
+
+  val localTimeFormatter = ISODateTimeFormat.dateTime
+  val localTimeParser = ISODateTimeFormat.dateTimeParser
 
   // fixme; it'd be much better to do this in a manner simular to how column reps work
 
@@ -32,6 +36,9 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[Any] {
         target.writeRawByte(5)
         target.writeDoubleNoTag(loc.latitude)
         target.writeDoubleNoTag(loc.longitude)
+      case ts: LocalDateTime =>
+        target.writeRawByte(6)
+        target.writeStringNoTag(localTimeFormatter.print(ts))
       case SoQLNullValue =>
         target.writeRawByte(-1)
     }
@@ -54,6 +61,8 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[Any] {
         val lat = source.readDouble()
         val lon = source.readDouble()
         SoQLLocationValue(lat, lon)
+      case 6 =>
+        localTimeParser.parseLocalDateTime(source.readString())
       case -1 =>
         SoQLNullValue
     }
