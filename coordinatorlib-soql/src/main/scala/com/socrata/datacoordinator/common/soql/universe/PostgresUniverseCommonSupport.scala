@@ -7,14 +7,15 @@ import java.io.Reader
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import java.util.concurrent.ExecutorService
 import com.socrata.soql.types.SoQLType
-import com.socrata.datacoordinator.common.soql.{SoQLRowLogCodec, SoQLRep, SoQLTypeContext}
+import com.socrata.datacoordinator.common.soql._
 import com.socrata.soql.environment.{ColumnName, TypeName}
 import org.joda.time.DateTime
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.loader.RowPreparer
 import com.socrata.datacoordinator.id.RowId
+import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 
-class PostgresUniverseCommonSupport(val executor: ExecutorService, val tablespace: String => Option[String], val copyInProvider: (Connection, String, Reader) => Long, val obfuscationKeyGenerator: () => Array[Byte], val initialRowId: RowId) extends CommonSupport[SoQLType, Any] {
+class PostgresUniverseCommonSupport(val executor: ExecutorService, val tablespace: String => Option[String], val copyInProvider: (Connection, String, Reader) => Long, val obfuscationKeyGenerator: () => Array[Byte], val initialRowId: RowId) extends CommonSupport[SoQLType, SoQLValue] {
   val typeContext = SoQLTypeContext
 
   def repFor(ci: ColumnInfo) =
@@ -28,8 +29,8 @@ class PostgresUniverseCommonSupport(val executor: ExecutorService, val tablespac
   val createdAt = ColumnName(":created_at")
   val updatedAt = ColumnName(":updated_at")
 
-  def rowPreparer(transactionStart: DateTime, schema: ColumnIdMap[ColumnInfo]): RowPreparer[Any] =
-    new RowPreparer[Any] {
+  def rowPreparer(transactionStart: DateTime, schema: ColumnIdMap[ColumnInfo]): RowPreparer[SoQLValue] =
+    new RowPreparer[SoQLValue] {
       def findCol(name: ColumnName) =
         schema.values.find(_.logicalName == name).getOrElse(sys.error(s"No $name column?")).systemId
 
@@ -37,19 +38,19 @@ class PostgresUniverseCommonSupport(val executor: ExecutorService, val tablespac
       val createdAtColumn = findCol(createdAt)
       val updatedAtColumn = findCol(updatedAt)
 
-      def prepareForInsert(row: Row[Any], sid: RowId) = {
+      def prepareForInsert(row: Row[SoQLValue], sid: RowId) = {
         val tmp = new MutableRow(row)
-        tmp(idColumn) = sid
-        tmp(createdAtColumn) = transactionStart
-        tmp(updatedAtColumn) = transactionStart
+        tmp(idColumn) = SoQLIDValue(sid)
+        tmp(createdAtColumn) = SoQLFixedTimestampValue(transactionStart)
+        tmp(updatedAtColumn) = SoQLFixedTimestampValue(transactionStart)
         tmp.freeze()
       }
 
-      def prepareForUpdate(row: Row[Any]) = {
-        val tmp = new MutableRow[Any](row)
+      def prepareForUpdate(row: Row[SoQLValue]) = {
+        val tmp = new MutableRow[SoQLValue](row)
         tmp -= idColumn
         tmp -= createdAtColumn
-        tmp(updatedAtColumn) = transactionStart
+        tmp(updatedAtColumn) = SoQLFixedTimestampValue(transactionStart)
         tmp.freeze()
       }
     }

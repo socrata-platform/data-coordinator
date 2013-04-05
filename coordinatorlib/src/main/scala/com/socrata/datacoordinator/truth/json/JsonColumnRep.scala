@@ -23,14 +23,12 @@ trait JsonColumnWriteRep[CT, CV] extends JsonColumnCommonRep[CT, CV] {
 
 trait JsonColumnRep[CT, CV] extends JsonColumnReadRep[CT, CV] with JsonColumnWriteRep[CT, CV]
 
-class CodecBasedJsonColumnRep[CT, CV, TrueCV <: CV : ClassTag : JsonCodec](val name: ColumnName, val representedType: CT, NullValue: CV) extends JsonColumnRep[CT, CV] {
+class CodecBasedJsonColumnRep[CT, CV, TrueCV : JsonCodec](val name: ColumnName, val representedType: CT, unwrapper: CV => TrueCV, wrapper: TrueCV => CV, NullValue: CV) extends JsonColumnRep[CT, CV] {
   def fromJValue(input: JValue) =
     if(input == JNull) Some(NullValue)
-    else JsonCodec[TrueCV].decode(input)
+    else JsonCodec[TrueCV].decode(input).map(wrapper)
 
-  def toJValue(input: CV) = input match {
-    case trueCV: TrueCV => JsonCodec[TrueCV].encode(trueCV)
-    case NullValue => JNull
-    case _ => stdBadValue
-  }
+  def toJValue(input: CV) =
+    if(NullValue == input) JNull
+    else JsonCodec[TrueCV].encode(unwrapper(input))
 }

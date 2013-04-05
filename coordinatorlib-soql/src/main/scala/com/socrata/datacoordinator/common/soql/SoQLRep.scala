@@ -8,12 +8,12 @@ import com.socrata.soql.environment.ColumnName
 import com.socrata.datacoordinator.id.RowId
 
 object SoQLRep {
-  val sqlRepFactories = Map[SoQLType, String => SqlColumnRep[SoQLType, Any]](
+  val sqlRepFactories = Map[SoQLType, String => SqlColumnRep[SoQLType, SoQLValue]](
     SoQLID -> (base => new sqlreps.IDRep(base)),
     SoQLText -> (base => new sqlreps.TextRep(base)),
     SoQLBoolean -> (base => new sqlreps.BooleanRep(base)),
-    SoQLNumber -> (base => new sqlreps.NumberLikeRep(SoQLNumber, base)),
-    SoQLMoney -> (base => new sqlreps.NumberLikeRep(SoQLNumber, base)),
+    SoQLNumber -> (base => new sqlreps.NumberLikeRep(SoQLNumber, _.asInstanceOf[SoQLNumberValue].value, SoQLNumberValue(_), base)),
+    SoQLMoney -> (base => new sqlreps.NumberLikeRep(SoQLNumber, _.asInstanceOf[SoQLMoneyValue].value, SoQLMoneyValue(_), base)),
     SoQLFixedTimestamp -> (base => new sqlreps.FixedTimestampRep(base)),
     SoQLFloatingTimestamp -> (base => new sqlreps.FloatingTimestampRep(base)),
     SoQLDate -> (base => new sqlreps.DateRep(base)),
@@ -26,12 +26,12 @@ object SoQLRep {
 
   // for(typ <- SoQLType.typesByName.values) assert(repFactories.contains(typ))
 
-  val csvRepFactories = Map[SoQLType, CsvColumnRep[SoQLType, Any]](
+  val csvRepFactories = Map[SoQLType, CsvColumnRep[SoQLType, SoQLValue]](
     SoQLID -> csvreps.IDRep,
     SoQLText -> csvreps.TextRep,
     SoQLBoolean -> csvreps.BooleanRep,
-    SoQLNumber -> new csvreps.NumberLikeRep(SoQLNumber),
-    SoQLMoney -> new csvreps.NumberLikeRep(SoQLMoney),
+    SoQLNumber -> new csvreps.NumberLikeRep(SoQLNumber, SoQLNumberValue(_)),
+    SoQLMoney -> new csvreps.NumberLikeRep(SoQLMoney, SoQLMoneyValue(_)),
     SoQLFixedTimestamp -> csvreps.FixedTimestampRep,
     SoQLFloatingTimestamp -> csvreps.FloatingTimestampRep,
     SoQLDate -> csvreps.DateRep,
@@ -39,11 +39,11 @@ object SoQLRep {
     SoQLLocation -> csvreps.LocationRep
   )
 
-  private val jsonRepFactoriesMinusId = Map[SoQLType, ColumnName => JsonColumnRep[SoQLType, Any]](
+  private val jsonRepFactoriesMinusId = Map[SoQLType, ColumnName => JsonColumnRep[SoQLType, SoQLValue]](
     SoQLText -> (name => new jsonreps.TextRep(name)),
     SoQLBoolean -> (name => new jsonreps.BooleanRep(name)),
-    SoQLNumber -> (name => new jsonreps.NumberLikeRep(name, SoQLNumber)),
-    SoQLMoney -> (name => new jsonreps.NumberLikeRep(name, SoQLMoney)),
+    SoQLNumber -> (name => new jsonreps.NumberLikeRep(name, SoQLNumber, _.asInstanceOf[SoQLNumberValue].value, SoQLNumberValue(_))),
+    SoQLMoney -> (name => new jsonreps.NumberLikeRep(name, SoQLMoney, _.asInstanceOf[SoQLMoneyValue].value, SoQLMoneyValue(_))),
     SoQLFixedTimestamp -> (name => new jsonreps.FixedTimestampRep(name)),
     SoQLFloatingTimestamp -> (name => new jsonreps.FloatingTimestampRep(name)),
     SoQLDate -> (base => new jsonreps.DateRep(base)),

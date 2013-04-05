@@ -11,7 +11,7 @@ import com.rojoma.json.util.{JsonArrayIterator, AutomaticJsonCodecBuilder, JsonK
 import com.rojoma.json.io._
 import com.rojoma.json.ast.{JNull, JValue, JNumber, JObject}
 import com.ibm.icu.text.Normalizer
-import com.socrata.datacoordinator.common.soql.{SoQLRep, SoQLRowLogCodec, PostgresSoQLDataContext}
+import com.socrata.datacoordinator.common.soql.{SoQLValue, SoQLRep, SoQLRowLogCodec, PostgresSoQLDataContext}
 import java.util.concurrent.{TimeUnit, Executors}
 import org.postgresql.ds.PGSimpleDataSource
 import com.socrata.datacoordinator.truth._
@@ -310,7 +310,7 @@ object Service extends App { self =>
 
     val commonSupport = new PostgresUniverseCommonSupport(executorService, _ => None, PostgresCopyIn, StandardObfuscationKeyGenerator, dataContext.initialRowId)
 
-    type SoQLUniverse = PostgresUniverse[SoQLType, Any]
+    type SoQLUniverse = PostgresUniverse[SoQLType, SoQLValue]
     def soqlUniverse(conn: Connection) =
       new SoQLUniverse(conn, commonSupport, timingReport, ":secondary-watcher")
 
@@ -325,7 +325,7 @@ object Service extends App { self =>
       }
     }
 
-    val mutationCommon = new MutatorCommon[SoQLType, Any] {
+    val mutationCommon = new MutatorCommon[SoQLType, SoQLValue] {
       def physicalColumnBaseBase(logicalColumnName: ColumnName, systemColumn: Boolean): String =
         dataContext.physicalColumnBaseBase(logicalColumnName, systemColumn = systemColumn)
 
@@ -345,7 +345,7 @@ object Service extends App { self =>
 
     def obfuscationContextFor(key: Array[Byte]) = new RowIdObfuscator(key)
 
-    def jsonRepForColumn(datasetInfo: DatasetInfo): AbstractColumnInfoLike => JsonColumnRep[SoQLType, Any] = {
+    def jsonRepForColumn(datasetInfo: DatasetInfo): AbstractColumnInfoLike => JsonColumnRep[SoQLType, SoQLValue] = {
       val reps = SoQLRep.jsonRepFactories(obfuscationContextFor(datasetInfo.obfuscationKey));
       { (col: AbstractColumnInfoLike) =>
         reps(dataContext.typeContext.typeFromName(col.typeName))(col.logicalName)

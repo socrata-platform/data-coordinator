@@ -6,11 +6,11 @@ import com.socrata.datacoordinator.id.RowId
 import org.joda.time._
 import org.joda.time.format.ISODateTimeFormat
 
-object SoQLRowLogCodec extends SimpleRowLogCodec[Any] {
+object SoQLRowLogCodec extends SimpleRowLogCodec[SoQLValue] {
   def rowDataVersion: Short = 0
 
   def localDateTimeFormatter = ISODateTimeFormat.dateTime
-  def localDateTimeParser = ISODateTimeFormat.dateTimeParser
+  def localDateTimeParser = ISODateTimeFormat.localDateOptionalTimeParser
   def localDateFormatter = ISODateTimeFormat.date
   def localDateParser = ISODateTimeFormat.dateElementParser
   def localTimeFormatter = ISODateTimeFormat.time
@@ -18,65 +18,70 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[Any] {
 
   // fixme; it'd be much better to do this in a manner simular to how column reps work
 
-  protected def writeValue(target: CodedOutputStream, v: Any) {
+  protected def writeValue(target: CodedOutputStream, v: SoQLValue) {
     v match {
-      case l: RowId =>
+      case SoQLIDValue(l) =>
         target.writeRawByte(0)
         target.writeInt64NoTag(l.underlying)
-      case s: String =>
+      case SoQLTextValue(s) =>
         target.writeRawByte(1)
         target.writeStringNoTag(s)
-      case bd: BigDecimal =>
+      case SoQLNumberValue(bd) =>
         target.writeRawByte(2)
         target.writeStringNoTag(bd.toString)
-      case b: Boolean =>
+      case SoQLMoneyValue(bd) =>
         target.writeRawByte(3)
-        target.writeBoolNoTag(b)
-      case ts: DateTime =>
+        target.writeStringNoTag(bd.toString)
+      case SoQLBooleanValue(b) =>
         target.writeRawByte(4)
+        target.writeBoolNoTag(b)
+      case SoQLFixedTimestampValue(ts) =>
+        target.writeRawByte(5)
         target.writeStringNoTag(ts.getZone.getID)
         target.writeInt64NoTag(ts.getMillis)
-      case loc: SoQLLocationValue =>
-        target.writeRawByte(5)
-        target.writeDoubleNoTag(loc.latitude)
-        target.writeDoubleNoTag(loc.longitude)
-      case ts: LocalDateTime =>
+      case SoQLLocationValue(lat, lon) =>
         target.writeRawByte(6)
-        target.writeStringNoTag(localDateTimeFormatter.print(ts))
-      case ts: LocalDate =>
+        target.writeDoubleNoTag(lat)
+        target.writeDoubleNoTag(lon)
+      case SoQLFloatingTimestampValue(ts) =>
         target.writeRawByte(7)
-        target.writeStringNoTag(localDateFormatter.print(ts))
-      case ts: LocalTime =>
+        target.writeStringNoTag(localDateTimeFormatter.print(ts))
+      case SoQLDateValue(ts) =>
         target.writeRawByte(8)
+        target.writeStringNoTag(localDateFormatter.print(ts))
+      case SoQLTimeValue(ts) =>
+        target.writeRawByte(9)
         target.writeStringNoTag(localTimeFormatter.print(ts))
       case SoQLNullValue =>
         target.writeRawByte(-1)
     }
   }
 
-  protected def readValue(source: CodedInputStream): Any =
+  protected def readValue(source: CodedInputStream): SoQLValue =
     source.readRawByte() match {
       case 0 =>
-        new RowId(source.readInt64())
+        SoQLIDValue(new RowId(source.readInt64()))
       case 1 =>
-        source.readString()
+        SoQLTextValue(source.readString())
       case 2 =>
-        BigDecimal(source.readString())
+        SoQLNumberValue(new java.math.BigDecimal(source.readString()))
       case 3 =>
-        source.readBool()
+        SoQLMoneyValue(new java.math.BigDecimal(source.readString()))
       case 4 =>
-        val zone = DateTimeZone.forID(source.readString())
-        new DateTime(source.readInt64(), zone)
+        SoQLBooleanValue.canonical(source.readBool())
       case 5 =>
+        val zone = DateTimeZone.forID(source.readString())
+        SoQLFixedTimestampValue(new DateTime(source.readInt64(), zone))
+      case 6 =>
         val lat = source.readDouble()
         val lon = source.readDouble()
         SoQLLocationValue(lat, lon)
-      case 6 =>
-        localDateTimeParser.parseLocalDateTime(source.readString())
       case 7 =>
-        localDateParser.parseLocalDate(source.readString())
+        SoQLFloatingTimestampValue(localDateTimeParser.parseLocalDateTime(source.readString()))
       case 8 =>
-        localTimeParser.parseLocalTime(source.readString())
+        SoQLDateValue(localDateParser.parseLocalDate(source.readString()))
+      case 9 =>
+        SoQLTimeValue(localTimeParser.parseLocalTime(source.readString()))
       case -1 =>
         SoQLNullValue
     }

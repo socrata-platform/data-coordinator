@@ -4,7 +4,7 @@ package csvreps
 import com.socrata.datacoordinator.truth.csv.CsvColumnRep
 import com.socrata.soql.types.{SoQLBoolean, SoQLType}
 
-object BooleanRep extends CsvColumnRep[SoQLType, Any] {
+object BooleanRep extends CsvColumnRep[SoQLType, SoQLValue] {
   val size = 1
 
   val representedType = SoQLBoolean
@@ -12,8 +12,8 @@ object BooleanRep extends CsvColumnRep[SoQLType, Any] {
   def decode(row: IndexedSeq[String], indices: IndexedSeq[Int]) = {
     assert(indices.size == size)
     val x = row(indices(0))
-    if(x == "true") Some(true)
-    else if(x == "false") Some(false)
+    if(x == "true") Some(SoQLBooleanValue.canonicalTrue)
+    else if(x == "false") Some(SoQLBooleanValue.canonicalFalse)
     else if(x == "") Some(SoQLNullValue)
     else None
   }

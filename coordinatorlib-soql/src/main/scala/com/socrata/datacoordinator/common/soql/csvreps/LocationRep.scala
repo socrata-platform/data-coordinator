@@ -2,9 +2,9 @@ package com.socrata.datacoordinator.common.soql.csvreps
 
 import com.socrata.datacoordinator.truth.csv.CsvColumnRep
 import com.socrata.soql.types.{SoQLLocation, SoQLType}
-import com.socrata.datacoordinator.common.soql.{SoQLLocationValue, SoQLNullValue}
+import com.socrata.datacoordinator.common.soql.{SoQLValue, SoQLLocationValue, SoQLNullValue}
 
-object LocationRep extends CsvColumnRep[SoQLType, Any] {
+object LocationRep extends CsvColumnRep[SoQLType, SoQLValue] {
   val size = 1
 
   val representedType = SoQLLocation

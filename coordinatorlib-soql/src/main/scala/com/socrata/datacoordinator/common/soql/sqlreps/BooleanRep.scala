@@ -7,12 +7,12 @@ import java.sql.{ResultSet, Types, PreparedStatement}
 import com.socrata.datacoordinator.truth.sql.SqlPKableColumnRep
 import com.socrata.soql.types.{SoQLBoolean, SoQLType}
 
-class BooleanRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType, Any] {
+class BooleanRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType, SoQLValue] {
   def templateForMultiLookup(n: Int): String =
     s"($base in (${(1 to n).map(_ => "?").mkString(",")}))"
 
-  def prepareMultiLookup(stmt: PreparedStatement, v: Any, start: Int): Int = {
-    stmt.setBoolean(start, v.asInstanceOf[Boolean])
+  def prepareMultiLookup(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
+    stmt.setBoolean(start, v.asInstanceOf[SoQLBooleanValue].value)
     start + 1
   }
 
@@ -22,17 +22,17 @@ class BooleanRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQL
     *                 `representedType`.
     * @return An expression suitable for splicing into a SQL statement.
     */
-  def sql_in(literals: Iterable[Any]): String =
+  def sql_in(literals: Iterable[SoQLValue]): String =
     literals.iterator.map { lit =>
-      lit.asInstanceOf[Boolean].toString
+      lit.asInstanceOf[SoQLBooleanValue].value.toString
     }.mkString(s"($base in (", ",", "))")
 
   def templateForSingleLookup: String = s"($base = ?)"
 
-  def prepareSingleLookup(stmt: PreparedStatement, v: Any, start: Int): Int = prepareMultiLookup(stmt, v, start)
+  def prepareSingleLookup(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = prepareMultiLookup(stmt, v, start)
 
-  def sql_==(literal: Any): String = {
-    val v = literal.asInstanceOf[Boolean].toString
+  def sql_==(literal: SoQLValue): String = {
+    val v = literal.asInstanceOf[SoQLBooleanValue].value.toString
     s"($base = $v)"
   }
 
@@ -44,33 +44,33 @@ class BooleanRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQL
 
   val sqlTypes: Array[String] = Array("BOOLEAN")
 
-  def csvifyForInsert(sb: StringBuilder, v: Any) {
+  def csvifyForInsert(sb: StringBuilder, v: SoQLValue) {
     if(SoQLNullValue == v) { /* pass */ }
-    else sb.append(v.asInstanceOf[Boolean].toString)
+    else sb.append(v.asInstanceOf[SoQLBooleanValue].value.toString)
   }
 
-  def prepareInsert(stmt: PreparedStatement, v: Any, start: Int): Int = {
+  def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
     if(SoQLNullValue == v) stmt.setNull(start, Types.BOOLEAN)
-    else stmt.setBoolean(start, v.asInstanceOf[Boolean])
+    else stmt.setBoolean(start, v.asInstanceOf[SoQLBooleanValue].value)
     start + 1
   }
 
-  def estimateInsertSize(v: Any): Int =
+  def estimateInsertSize(v: SoQLValue): Int =
     if(SoQLNullValue == v) standardNullInsertSize
     else 5
 
-  def SETsForUpdate(sb: StringBuilder, v: Any) {
+  def SETsForUpdate(sb: StringBuilder, v: SoQLValue) {
     sb.append(base).append('=')
     if(SoQLNullValue == v) sb.append("NULL")
-    else sb.append(v.asInstanceOf[Boolean].toString)
+    else sb.append(v.asInstanceOf[SoQLBooleanValue].value.toString)
   }
 
-  def estimateUpdateSize(v: Any): Int =
+  def estimateUpdateSize(v: SoQLValue): Int =
     base.length + 11
 
-  def fromResultSet(rs: ResultSet, start: Int): Any = {
+  def fromResultSet(rs: ResultSet, start: Int): SoQLValue = {
     val b = rs.getBoolean(start)
     if(rs.wasNull) SoQLNullValue
-    else b
+    else SoQLBooleanValue.canonical(b)
   }
 }

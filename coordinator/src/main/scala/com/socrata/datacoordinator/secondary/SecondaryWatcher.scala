@@ -19,6 +19,7 @@ import java.sql.Connection
 import com.socrata.datacoordinator.truth.universe.sql.{PostgresCopyIn, PostgresUniverse}
 import com.socrata.datacoordinator.common.soql.universe.PostgresUniverseCommonSupport
 import com.socrata.datacoordinator.id.RowId
+import com.socrata.datacoordinator.common.soql.SoQLValue
 
 class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseType[CT, CV]]) {
   import SecondaryWatcher.log
@@ -114,13 +115,13 @@ object SecondaryWatcher extends App { self =>
   val config = rootConfig.getConfig("com.socrata.secondary-watcher")
   println(config.root.render())
   val (dataSource, _) = DataSourceFromConfig(config)
-  val secondaries = SecondaryLoader.load(config.getConfig("secondary.configs"), new File(config.getString("secondary.path"))).asInstanceOf[Map[String, Secondary[Any]]]
+  val secondaries = SecondaryLoader.load(config.getConfig("secondary.configs"), new File(config.getString("secondary.path"))).asInstanceOf[Map[String, Secondary[SoQLValue]]]
 
   val executor = Executors.newCachedThreadPool()
 
   val commonSupport = new PostgresUniverseCommonSupport(executor, _ => None, PostgresCopyIn, StandardObfuscationKeyGenerator, new RowId(0L))
 
-  type SoQLUniverse = PostgresUniverse[SoQLType, Any]
+  type SoQLUniverse = PostgresUniverse[SoQLType, SoQLValue]
   def soqlUniverse(conn: Connection, timingReport: TransferrableContextTimingReport) =
     new SoQLUniverse(conn, commonSupport, timingReport, ":secondary-watcher")
 

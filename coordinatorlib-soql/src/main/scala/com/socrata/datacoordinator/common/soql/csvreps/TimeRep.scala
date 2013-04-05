@@ -3,9 +3,9 @@ package com.socrata.datacoordinator.common.soql.csvreps
 import com.socrata.datacoordinator.truth.csv.CsvColumnRep
 import com.socrata.soql.types.{SoQLDate, SoQLType}
 import org.joda.time.format.DateTimeFormat
-import com.socrata.datacoordinator.common.soql.SoQLNullValue
+import com.socrata.datacoordinator.common.soql.{SoQLTimeValue, SoQLValue, SoQLNullValue}
 
-object TimeRep extends CsvColumnRep[SoQLType, Any] {
+object TimeRep extends CsvColumnRep[SoQLType, SoQLValue] {
   val size = 1
 
   val representedType = SoQLDate
@@ -17,7 +17,7 @@ object TimeRep extends CsvColumnRep[SoQLType, Any] {
     val x = row(indices(0))
     if(x.isEmpty) Some(SoQLNullValue)
     else try {
-      Some(tsParser.parseLocalTime(x))
+      Some(SoQLTimeValue(tsParser.parseLocalTime(x)))
     } catch {
       case e: IllegalArgumentException =>
         None

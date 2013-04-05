@@ -8,26 +8,26 @@ import com.socrata.datacoordinator.truth.sql.SqlPKableColumnRep
 import com.socrata.soql.types.{SoQLFixedTimestamp, SoQLType}
 import com.socrata.datacoordinator.id.RowId
 
-class IDRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType, Any] {
+class IDRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType, SoQLValue] {
   def templateForMultiLookup(n: Int): String =
     s"($base in (${(1 to n).map(_ => "?").mkString(",")}))"
 
-  def prepareMultiLookup(stmt: PreparedStatement, v: Any, start: Int): Int = {
-    stmt.setLong(start, v.asInstanceOf[RowId].underlying)
+  def prepareMultiLookup(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
+    stmt.setLong(start, v.asInstanceOf[SoQLIDValue].underlying)
     start + 1
   }
 
-  def sql_in(literals: Iterable[Any]): String =
+  def sql_in(literals: Iterable[SoQLValue]): String =
     literals.iterator.map { lit =>
-      lit.asInstanceOf[RowId].underlying
+      lit.asInstanceOf[SoQLIDValue].underlying
     }.mkString(s"($base in (", ",", "))")
 
   def templateForSingleLookup: String = s"($base = ?)"
 
-  def prepareSingleLookup(stmt: PreparedStatement, v: Any, start: Int): Int = prepareMultiLookup(stmt, v, start)
+  def prepareSingleLookup(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = prepareMultiLookup(stmt, v, start)
 
-  def sql_==(literal: Any): String = {
-    val v = literal.asInstanceOf[RowId].underlying
+  def sql_==(literal: SoQLValue): String = {
+    val v = literal.asInstanceOf[SoQLIDValue].underlying
     s"($base = $v)"
   }
 
@@ -39,29 +39,28 @@ class IDRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType,
 
   val sqlTypes: Array[String] = Array("BIGINT")
 
-  def csvifyForInsert(sb: StringBuilder, v: Any) {
+  def csvifyForInsert(sb: StringBuilder, v: SoQLValue) {
     if(SoQLNullValue == v) { /* pass */ }
-    else sb.append(v.asInstanceOf[RowId].underlying)
+    else sb.append(v.asInstanceOf[SoQLIDValue].underlying)
   }
 
-  def prepareInsert(stmt: PreparedStatement, v: Any, start: Int): Int = {
-    stmt.setLong(start, v.asInstanceOf[RowId].underlying)
+  def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
+    stmt.setLong(start, v.asInstanceOf[SoQLIDValue].underlying)
     start + 1
   }
 
-  def estimateInsertSize(v: Any): Int =
+  def estimateInsertSize(v: SoQLValue): Int =
     30
 
-  def SETsForUpdate(sb: StringBuilder, v: Any) {
-    sb.append(base).append('=').append(v.asInstanceOf[RowId].underlying)
+  def SETsForUpdate(sb: StringBuilder, v: SoQLValue) {
+    sb.append(base).append('=').append(v.asInstanceOf[SoQLIDValue].underlying)
   }
 
-  def estimateUpdateSize(v: Any): Int =
+  def estimateUpdateSize(v: SoQLValue): Int =
     base.length + 30
 
-  def fromResultSet(rs: ResultSet, start: Int): Any = {
-    new RowId(rs.getLong(start))
-  }
+  def fromResultSet(rs: ResultSet, start: Int): SoQLIDValue =
+    SoQLIDValue(new RowId(rs.getLong(start)))
 
   override def orderBy(ascending: Boolean, nullsFirst: Option[Boolean]) =
     simpleOrderBy(Array(base), ascending, nullsFirst)

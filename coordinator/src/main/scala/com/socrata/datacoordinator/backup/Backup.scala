@@ -13,7 +13,7 @@ import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.id.{RowId, DatasetId}
 import com.socrata.datacoordinator.truth.sql.{RepBasedSqlDatasetContext, SqlColumnRep, DatabasePopulator}
 import com.socrata.datacoordinator.truth.loader.sql._
-import com.socrata.datacoordinator.common.soql.{SoQLRowLogCodec, SoQLRep, SoQLTypeContext}
+import com.socrata.datacoordinator.common.soql.{SoQLValue, SoQLRowLogCodec, SoQLRep, SoQLTypeContext}
 import com.socrata.datacoordinator.truth.metadata.sql.PostgresDatasetMapWriter
 import com.socrata.datacoordinator.truth.loader.Delogger._
 import com.socrata.datacoordinator.truth.loader.Update
@@ -36,11 +36,11 @@ import scala.concurrent.duration.Duration
 
 class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingReport, paranoid: Boolean) {
   val typeContext = SoQLTypeContext
-  val logger: Logger[Any] = NullLogger
+  val logger: Logger[SoQLValue] = NullLogger[SoQLValue]
   val datasetMap: BackupDatasetMap = new PostgresDatasetMapWriter(conn, timingReport, () => sys.error("Backup should never generate obfuscation keys"), new RowId(0L))
   def tablespace(s: String) = None
 
-  def genericRepFor(columnInfo: ColumnInfo): SqlColumnRep[SoQLType, Any] =
+  def genericRepFor(columnInfo: ColumnInfo): SqlColumnRep[SoQLType, SoQLValue] =
     SoQLRep.sqlRepFactories(typeContext.typeFromName(columnInfo.typeName))(columnInfo.physicalColumnBase)
 
   def extractCopier(conn: Connection, sql: String, input: Reader): Long = conn.asInstanceOf[PGConnection].getCopyAPI.copyIn(sql, input)
@@ -50,7 +50,7 @@ class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingRe
   def decsvifier(copyInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo]): DatasetDecsvifier =
     new PostgresDatasetDecsvifier(conn, extractCopier, copyInfo.dataTableName, schema.mapValuesStrict(genericRepFor))
 
-  def dataLoader(version: CopyInfo): PrevettedLoader[Any] = {
+  def dataLoader(version: CopyInfo): PrevettedLoader[SoQLValue] = {
     val schemaInfo = datasetMap.schema(version)
     val schema = schemaInfo.mapValuesStrict(genericRepFor)
     val idCol = schemaInfo.values.find(_.isSystemPrimaryKey).getOrElse(sys.error("No system ID column?")).systemId
@@ -197,7 +197,7 @@ class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingRe
     currentVersion
   }
 
-  def populateData(currentVersionInfo: CopyInfo, ops: Seq[Operation[Any]]): currentVersionInfo.type = {
+  def populateData(currentVersionInfo: CopyInfo, ops: Seq[Operation[SoQLValue]]): currentVersionInfo.type = {
     val loader = dataLoader(currentVersionInfo)
     ops.foreach {
       case Insert(sid, row) => loader.insert(sid, row)
@@ -221,7 +221,7 @@ class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingRe
         Resync(currentVersionInfo, "Not a published copy")
     }
 
-  def dispatch(versionInfo: CopyInfo, event: Delogger.LogEvent[Any]): CopyInfo = {
+  def dispatch(versionInfo: CopyInfo, event: Delogger.LogEvent[SoQLValue]): CopyInfo = {
     event match {
       case WorkingCopyCreated(_, newVersionInfo) =>
         makeWorkingCopy(versionInfo, newVersionInfo)
@@ -276,11 +276,11 @@ object Backup extends App {
     log.info("Finished playing back logs for version {}", version)
   }
 
-  def continuePlayback(backup: Backup)(initialVersionInfo: CopyInfo)(it: Iterator[Delogger.LogEvent[Any]]) =
+  def continuePlayback(backup: Backup)(initialVersionInfo: CopyInfo)(it: Iterator[Delogger.LogEvent[SoQLValue]]) =
     it.foldLeft(initialVersionInfo)(backup.dispatch)
 
   def playbackNew(primaryConn: Connection, backup: Backup, datasetSystemId: DatasetId) = {
-    val delogger: Delogger[Any] = new SqlDelogger(primaryConn, "t_" + datasetSystemId.underlying + "_log", () => SoQLRowLogCodec)
+    val delogger: Delogger[SoQLValue] = new SqlDelogger(primaryConn, "t_" + datasetSystemId.underlying + "_log", () => SoQLRowLogCodec)
     using(delogger.delog(1L)) { it =>
       it.next() match {
         case WorkingCopyCreated(newDatasetInfo, newVersionInfo) =>
@@ -298,7 +298,7 @@ object Backup extends App {
     }
     val initialVersionInfo = backup.datasetMap.latest(datasetInfo)
     Resync.unless(datasetSystemId, initialVersionInfo.dataVersion == version - 1, "Received a change to version " + version + " but this is only at " + initialVersionInfo.dataVersion)
-    val delogger: Delogger[Any] = new SqlDelogger(primaryConn, datasetInfo.logTableName, () => SoQLRowLogCodec)
+    val delogger: Delogger[SoQLValue] = new SqlDelogger(primaryConn, datasetInfo.logTableName, () => SoQLRowLogCodec)
     using(delogger.delog(version)) { it =>
       continuePlayback(backup)(initialVersionInfo)(it)
     }

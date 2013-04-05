@@ -6,18 +6,18 @@ import org.joda.time.format.ISODateTimeFormat
 
 import com.socrata.datacoordinator.truth.json.JsonColumnRep
 import com.socrata.soql.types.{SoQLFloatingTimestamp, SoQLType}
-import com.socrata.datacoordinator.common.soql.SoQLNullValue
+import com.socrata.datacoordinator.common.soql.{SoQLFloatingTimestampValue, SoQLValue, SoQLNullValue}
 import com.socrata.soql.environment.ColumnName
 
-class FloatingTimestampRep(val name: ColumnName) extends JsonColumnRep[SoQLType, Any] {
+class FloatingTimestampRep(val name: ColumnName) extends JsonColumnRep[SoQLType, SoQLValue] {
   val representedType = SoQLFloatingTimestamp
 
   private val formatter = ISODateTimeFormat.dateTime
   private val parser = ISODateTimeFormat.localDateOptionalTimeParser
 
-  private def tryParseTimestamp(s: String): Option[LocalDateTime] =
+  private def tryParseTimestamp(s: String): Option[SoQLFloatingTimestampValue] =
     try {
-      Some(parser.parseLocalDateTime(s))
+      Some(SoQLFloatingTimestampValue(parser.parseLocalDateTime(s)))
     } catch {
       case _: IllegalArgumentException =>
         None
@@ -32,8 +32,8 @@ class FloatingTimestampRep(val name: ColumnName) extends JsonColumnRep[SoQLType,
     case _ => None
   }
 
-  def toJValue(input: Any) = input match {
-    case time: LocalDateTime => JString(printTimestamp(time))
+  def toJValue(input: SoQLValue) = input match {
+    case SoQLFloatingTimestampValue(time) => JString(printTimestamp(time))
     case SoQLNullValue => JNull
     case _ => stdBadValue
   }

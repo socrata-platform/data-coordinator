@@ -12,7 +12,7 @@ import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.truth.loader.sql.{RepBasedDatasetCsvifier, SqlDelogger}
 import com.socrata.datacoordinator.truth.metadata._
-import com.socrata.datacoordinator.common.soql.{SoQLTypeContext, SoQLRep, SoQLRowLogCodec}
+import com.socrata.datacoordinator.common.soql._
 import com.socrata.datacoordinator.packets.network.{KeepaliveSetup, NetworkPackets}
 import com.socrata.datacoordinator.packets.{Packet, PacketsOutputStream, Packets}
 import com.socrata.datacoordinator.truth.metadata.sql._
@@ -29,6 +29,8 @@ import com.socrata.datacoordinator.common.util.ByteCountingOutputStream
 import scala.Some
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
 import com.socrata.datacoordinator.util.{NoopTimingReport, TimingReport}
+import scala.Some
+import com.socrata.datacoordinator.truth.metadata.CopyInfo
 
 final abstract class Transmitter
 
@@ -55,9 +57,9 @@ object Transmitter extends App {
   import protocol._
 
   val typeContext = SoQLTypeContext
-  def genericRepFor(columnInfo: ColumnInfoLike): SqlColumnRep[SoQLType, Any] =
+  def genericRepFor(columnInfo: ColumnInfoLike): SqlColumnRep[SoQLType, SoQLValue] =
     SoQLRep.sqlRepFactories(typeContext.typeFromName(columnInfo.typeName))(columnInfo.physicalColumnBase)
-  def repSchema(schema: ColumnIdMap[ColumnInfoLike]): ColumnIdMap[SqlColumnRep[SoQLType, Any]] =
+  def repSchema(schema: ColumnIdMap[ColumnInfoLike]): ColumnIdMap[SqlColumnRep[SoQLType, SoQLValue]] =
     schema.mapValuesStrict(genericRepFor)
   val timingReport = NoopTimingReport
 
@@ -234,7 +236,7 @@ object Transmitter extends App {
 
     if(copy.lifecycleStage != LifecycleStage.Discarded) {
       log.info("Sending CSV of the data")
-      val datasetCsvifier = new RepBasedDatasetCsvifier(conn, copy.dataTableName, repSchema(schema), SoQLNull)
+      val datasetCsvifier = new RepBasedDatasetCsvifier(conn, copy.dataTableName, repSchema(schema), SoQLNullValue)
       // This is deliberately un-managed.  None of these streams allocate external resources,
       // so if an exception occurs, the only effect will be to not send the "end of stream"
       // packet -- which is exactly what we want to occur, so that the client doesn't believe

@@ -23,7 +23,7 @@ import com.socrata.datacoordinator.truth.json.JsonColumnRep
 @deprecated("deprected", "now")
 trait SoQLDataContext extends DataSchemaContext with DataWritingContext with DataReadingContext {
   type CT = SoQLType
-  type CV = Any
+  type CV = SoQLValue
 
   val columnNames = SoQLDataContext.ColumnNames
   import columnNames._
@@ -56,9 +56,9 @@ trait SoQLDataContext extends DataSchemaContext with DataWritingContext with Dat
 
       def prepareForInsert(row: Row, sid: RowId): Row = {
         val tmp = new MutableRow(row)
-        tmp(idColumn) = sid
-        tmp(createdAtColumn) = transactionStart
-        tmp(updatedAtColumn) = transactionStart
+        tmp(idColumn) = SoQLIDValue(sid)
+        tmp(createdAtColumn) = SoQLFixedTimestampValue(transactionStart)
+        tmp(updatedAtColumn) = SoQLFixedTimestampValue(transactionStart)
         tmp.freeze()
       }
 
@@ -66,7 +66,7 @@ trait SoQLDataContext extends DataSchemaContext with DataWritingContext with Dat
         val tmp = new MutableRow(row)
         tmp -= idColumn
         tmp -= createdAtColumn
-        tmp(updatedAtColumn) = transactionStart
+        tmp(updatedAtColumn) = SoQLFixedTimestampValue(transactionStart)
         tmp.freeze()
       }
     }
