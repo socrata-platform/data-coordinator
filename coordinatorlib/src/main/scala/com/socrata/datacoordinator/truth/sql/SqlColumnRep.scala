@@ -37,13 +37,16 @@ trait SqlOrderableColumnRep {  this: SqlColumnCommonRep[_] =>
     simpleOrderBy(physColumns, ascending, nullsFirst)
 
   protected def simpleOrderBy(cols: Array[String], ascending: Boolean, nullsFirst: Option[Boolean]) = {
-    val ascendingFragment = if(ascending) " ASC" else " DESC"
-    val nullsFragment = nullsFirst match {
-      case None => ""
-      case Some(true) => " NULLS FIRST"
-      case Some(false) => " NULLS LAST"
+    val sb = new java.lang.StringBuilder
+    def oneCol(col: String) {
+      sb.append(col)
+      sb.append(if(ascending) " ASC" else " DESC")
+      nullsFirst.foreach { nf =>
+        sb.append(if(nf) " NULLS FIRST" else " NULLS LAST")
+      }
     }
-    cols.map(_ + ascendingFragment + nullsFragment).mkString(",")
+    cols.foreach(oneCol)
+    sb.toString
   }
 }
 
