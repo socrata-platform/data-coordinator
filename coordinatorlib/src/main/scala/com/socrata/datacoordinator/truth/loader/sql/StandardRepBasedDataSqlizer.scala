@@ -22,7 +22,7 @@ class StandardRepBasedDataSqlizer[CT, CV](tableName: String,
   }
 
   val bulkInsertStatement =
-    "INSERT INTO " + dataTableName + " (" + repSchema.iterator.flatMap(_._2.physColumns).mkString(",") + ") VALUES (" + repSchema.iterator.flatMap(_._2.physColumns.map(_ => "?")).mkString(",") + ")"
+    "INSERT INTO " + dataTableName + " (" + repSchema.iterator.flatMap(_._2.physColumns).mkString(",") + ") VALUES (" + repSchema.iterator.map(_._2.templateForInsert).mkString(",") + ")"
 
   class InserterImpl(conn: Connection) extends Inserter with Closeable {
     val stmt = conn.prepareStatement(bulkInsertStatement)
