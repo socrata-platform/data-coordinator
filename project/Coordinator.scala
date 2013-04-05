@@ -8,7 +8,6 @@ object Coordinator {
     resourceGenerators in Compile <+= (baseDirectory, resourceManaged in Compile, streams) map buildNativeLib,
     libraryDependencies <++= (scalaVersion) { (scalaVersion) =>
       Seq(
-        "org.scala-lang" % "scala-reflect" % scalaVersion,
         "com.sun.jna" % "jna" % "3.0.9",
         "com.typesafe" % "config" % "1.0.0",
         "com.socrata" %% "socrata-csv" % "[1.1.1,2.0.0)",

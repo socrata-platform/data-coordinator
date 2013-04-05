@@ -94,28 +94,15 @@ object Delogger {
   }
   object RowDataUpdated extends LogEventCompanion
 
-  // This is a little annoying.
-  // TODO: see if the new scala-reflection library lets you enumerate the subclasses of a sealed trait.
-  // Seems not to be possible at the moment, without using compiler-internal APIs.  See
-  // http://stackoverflow.com/questions/12078366/can-i-get-a-compile-time-list-of-all-of-the-case-objects-which-derive-from-a-sea
-  // So we'll do it this verbosish way in order to at least get compiler warnings when we add one,
-  // if we don't add the mapping ourselves.  At least we can verify that we have them all...
-  private val (eventTypeCount, allLogEventNames, allLogEventCompanionNames) = locally {
-    import scala.reflect.runtime.universe._
-    val events = typeOf[LogEvent[_]].typeSymbol.asClass.knownDirectSubclasses
-    val objects = typeOf[LogEventCompanion].typeSymbol.asClass.knownDirectSubclasses
-    (objects.size, events.map(_.name.toString), objects.map(_.name.toString))
-  }
-  assert(allLogEventNames == allLogEventCompanionNames, "A companion object is not tagged with LogEventCompanion")
-
+  // Note: the Delogger test checks that this is exhaustive
   val allLogEventCompanions: Set[LogEventCompanion] =
     Set(Truncated, ColumnCreated, ColumnRemoved, RowIdentifierSet, RowIdentifierCleared,
       SystemRowIdentifierChanged, WorkingCopyCreated, DataCopied, WorkingCopyPublished,
       WorkingCopyDropped, SnapshotDropped, ColumnLogicalNameChanged, RowDataUpdated, RowIdCounterUpdated, EndTransaction)
-  assert(allLogEventCompanions.size == eventTypeCount,
-    "An entry is missing from the allLogEventCompanions set")
 
-  private final val companionFromProductName =
+  // Note: the Delogger test checks that this is exhaustive.  It is not intended
+  // to be used outside of this object and that test.
+  private[loader] val companionFromProductName =
     allLogEventCompanions.foldLeft(Map.empty[String, LogEventCompanion]) { (acc, obj) =>
       val n = obj match {
         case Truncated => "Truncated"
@@ -136,13 +123,11 @@ object Delogger {
       }
       acc + (n -> obj)
     }
-  assert(companionFromProductName.size == eventTypeCount)
-  assert(companionFromProductName.keySet == allLogEventCompanionNames,
-    s"Different:\n${companionFromProductName.keySet.toSeq.sorted}\n${allLogEventCompanionNames.toSeq.sorted}}")
 
-  private final val productNameFromCompanion =
+
+  // Note: This is not intended to be used outside of this object and that test.
+  private[loader] final val productNameFromCompanion =
     companionFromProductName.foldLeft(Map.empty[LogEventCompanion, String]) { (acc, kv) =>
       acc + kv.swap
     }
-  assert(productNameFromCompanion.size == companionFromProductName.size)
 }
