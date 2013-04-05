@@ -12,9 +12,9 @@ import com.socrata.datacoordinator.common.soql.SoQLNullValue
 
 class FloatingTimestampRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType, Any] {
   val printer = new DateTimeFormatterBuilder().
-    append(ISODateTimeFormat.date()).
+    append(ISODateTimeFormat.date).
     appendLiteral(' ').
-    append(ISODateTimeFormat.time()).
+    append(ISODateTimeFormat.time).
     toFormatter
   val parser = new DateTimeFormatterBuilder().
     append(ISODateTimeFormat.dateElementParser).

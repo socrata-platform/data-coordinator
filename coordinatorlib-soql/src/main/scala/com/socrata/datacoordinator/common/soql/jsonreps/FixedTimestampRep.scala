@@ -13,7 +13,7 @@ class FixedTimestampRep(val name: ColumnName) extends JsonColumnRep[SoQLType, An
   val representedType = SoQLFixedTimestamp
 
   private val formatter = ISODateTimeFormat.dateTime.withZoneUTC
-  private val parser = ISODateTimeFormat.dateTimeParser
+  private val parser = ISODateTimeFormat.dateTimeParser.withZoneUTC
 
   private def tryParseTimestamp(s: String): Option[DateTime] =
     try {

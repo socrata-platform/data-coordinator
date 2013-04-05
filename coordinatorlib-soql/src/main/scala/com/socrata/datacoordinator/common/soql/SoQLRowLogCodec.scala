@@ -3,14 +3,18 @@ package com.socrata.datacoordinator.common.soql
 import com.socrata.datacoordinator.truth.SimpleRowLogCodec
 import com.google.protobuf.{CodedInputStream, CodedOutputStream}
 import com.socrata.datacoordinator.id.RowId
-import org.joda.time.{LocalDateTime, DateTimeZone, DateTime}
+import org.joda.time._
 import org.joda.time.format.ISODateTimeFormat
 
 object SoQLRowLogCodec extends SimpleRowLogCodec[Any] {
   def rowDataVersion: Short = 0
 
-  val localTimeFormatter = ISODateTimeFormat.dateTime
-  val localTimeParser = ISODateTimeFormat.dateTimeParser
+  def localDateTimeFormatter = ISODateTimeFormat.dateTime
+  def localDateTimeParser = ISODateTimeFormat.dateTimeParser
+  def localDateFormatter = ISODateTimeFormat.date
+  def localDateParser = ISODateTimeFormat.dateElementParser
+  def localTimeFormatter = ISODateTimeFormat.time
+  def localTimeParser = ISODateTimeFormat.timeElementParser
 
   // fixme; it'd be much better to do this in a manner simular to how column reps work
 
@@ -38,6 +42,12 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[Any] {
         target.writeDoubleNoTag(loc.longitude)
       case ts: LocalDateTime =>
         target.writeRawByte(6)
+        target.writeStringNoTag(localDateTimeFormatter.print(ts))
+      case ts: LocalDate =>
+        target.writeRawByte(7)
+        target.writeStringNoTag(localDateFormatter.print(ts))
+      case ts: LocalTime =>
+        target.writeRawByte(8)
         target.writeStringNoTag(localTimeFormatter.print(ts))
       case SoQLNullValue =>
         target.writeRawByte(-1)
@@ -62,7 +72,11 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[Any] {
         val lon = source.readDouble()
         SoQLLocationValue(lat, lon)
       case 6 =>
-        localTimeParser.parseLocalDateTime(source.readString())
+        localDateTimeParser.parseLocalDateTime(source.readString())
+      case 7 =>
+        localDateParser.parseLocalDate(source.readString())
+      case 8 =>
+        localTimeParser.parseLocalTime(source.readString())
       case -1 =>
         SoQLNullValue
     }

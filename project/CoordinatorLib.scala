@@ -5,7 +5,7 @@ object CoordinatorLib {
   lazy val settings: Seq[Setting[_]] = BuildSettings.projectSettings() ++ Seq(
     libraryDependencies ++= Seq(
       "com.socrata" %% "soql-brita" % "[1.2.0,2.0.0)",
-      "com.socrata" %% "soql-environment" % "0.0.15",
+      "com.socrata" %% "soql-environment" % "0.0.16-SNAPSHOT",
       "com.rojoma" %% "rojoma-json" % "[2.3.0,3.0.0)",
       "com.rojoma" %% "simple-arm" % "1.1.10",
       "joda-time" % "joda-time" % "2.1",
