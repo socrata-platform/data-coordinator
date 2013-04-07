@@ -2,57 +2,49 @@ package com.socrata.datacoordinator.common.soql
 
 import com.socrata.datacoordinator.truth.SimpleRowLogCodec
 import com.google.protobuf.{CodedInputStream, CodedOutputStream}
-import com.socrata.datacoordinator.id.RowId
 import org.joda.time._
-import org.joda.time.format.ISODateTimeFormat
+import com.socrata.soql.types._
 
 object SoQLRowLogCodec extends SimpleRowLogCodec[SoQLValue] {
   def rowDataVersion: Short = 0
-
-  def localDateTimeFormatter = ISODateTimeFormat.dateTime
-  def localDateTimeParser = ISODateTimeFormat.localDateOptionalTimeParser
-  def localDateFormatter = ISODateTimeFormat.date
-  def localDateParser = ISODateTimeFormat.dateElementParser
-  def localTimeFormatter = ISODateTimeFormat.time
-  def localTimeParser = ISODateTimeFormat.timeElementParser
 
   // fixme; it'd be much better to do this in a manner simular to how column reps work
 
   protected def writeValue(target: CodedOutputStream, v: SoQLValue) {
     v match {
-      case SoQLIDValue(l) =>
+      case SoQLID(l) =>
         target.writeRawByte(0)
-        target.writeInt64NoTag(l.underlying)
-      case SoQLTextValue(s) =>
+        target.writeInt64NoTag(l)
+      case SoQLText(s) =>
         target.writeRawByte(1)
         target.writeStringNoTag(s)
-      case SoQLNumberValue(bd) =>
+      case SoQLNumber(bd) =>
         target.writeRawByte(2)
         target.writeStringNoTag(bd.toString)
-      case SoQLMoneyValue(bd) =>
+      case SoQLMoney(bd) =>
         target.writeRawByte(3)
         target.writeStringNoTag(bd.toString)
-      case SoQLBooleanValue(b) =>
+      case SoQLBoolean(b) =>
         target.writeRawByte(4)
         target.writeBoolNoTag(b)
-      case SoQLFixedTimestampValue(ts) =>
+      case SoQLFixedTimestamp(ts) =>
         target.writeRawByte(5)
         target.writeStringNoTag(ts.getZone.getID)
         target.writeInt64NoTag(ts.getMillis)
-      case SoQLLocationValue(lat, lon) =>
+      case SoQLLocation(lat, lon) =>
         target.writeRawByte(6)
         target.writeDoubleNoTag(lat)
         target.writeDoubleNoTag(lon)
-      case SoQLFloatingTimestampValue(ts) =>
+      case SoQLFloatingTimestamp(ts) =>
         target.writeRawByte(7)
-        target.writeStringNoTag(localDateTimeFormatter.print(ts))
-      case SoQLDateValue(ts) =>
+        target.writeStringNoTag(SoQLFloatingTimestamp.StringRep(ts))
+      case SoQLDate(ts) =>
         target.writeRawByte(8)
-        target.writeStringNoTag(localDateFormatter.print(ts))
-      case SoQLTimeValue(ts) =>
+        target.writeStringNoTag(SoQLDate.StringRep(ts))
+      case SoQLTime(ts) =>
         target.writeRawByte(9)
-        target.writeStringNoTag(localTimeFormatter.print(ts))
-      case SoQLNullValue =>
+        target.writeStringNoTag(SoQLTime.StringRep(ts))
+      case SoQLNull =>
         target.writeRawByte(-1)
     }
   }
@@ -60,29 +52,35 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[SoQLValue] {
   protected def readValue(source: CodedInputStream): SoQLValue =
     source.readRawByte() match {
       case 0 =>
-        SoQLIDValue(new RowId(source.readInt64()))
+        SoQLID(source.readInt64())
       case 1 =>
-        SoQLTextValue(source.readString())
+        SoQLText(source.readString())
       case 2 =>
-        SoQLNumberValue(new java.math.BigDecimal(source.readString()))
+        SoQLNumber(new java.math.BigDecimal(source.readString()))
       case 3 =>
-        SoQLMoneyValue(new java.math.BigDecimal(source.readString()))
+        SoQLMoney(new java.math.BigDecimal(source.readString()))
       case 4 =>
-        SoQLBooleanValue.canonical(source.readBool())
+        SoQLBoolean.canonicalValue(source.readBool())
       case 5 =>
         val zone = DateTimeZone.forID(source.readString())
-        SoQLFixedTimestampValue(new DateTime(source.readInt64(), zone))
+        SoQLFixedTimestamp(new DateTime(source.readInt64(), zone))
       case 6 =>
         val lat = source.readDouble()
         val lon = source.readDouble()
-        SoQLLocationValue(lat, lon)
+        SoQLLocation(lat, lon)
       case 7 =>
-        SoQLFloatingTimestampValue(localDateTimeParser.parseLocalDateTime(source.readString()))
+        SoQLFloatingTimestamp(SoQLFloatingTimestamp.StringRep.unapply(source.readString()).getOrElse {
+          sys.error("Unable to parse floating timestamp from log!")
+        })
       case 8 =>
-        SoQLDateValue(localDateParser.parseLocalDate(source.readString()))
+        SoQLDate(SoQLDate.StringRep.unapply(source.readString()).getOrElse {
+          sys.error("Unable to parse date from log!")
+        })
       case 9 =>
-        SoQLTimeValue(localTimeParser.parseLocalTime(source.readString()))
+        SoQLTime(SoQLTime.StringRep.unapply(source.readString()).getOrElse {
+          sys.error("Unable to parse time from log!")
+        })
       case -1 =>
-        SoQLNullValue
+        SoQLNull
     }
 }

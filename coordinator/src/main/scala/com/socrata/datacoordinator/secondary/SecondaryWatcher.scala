@@ -8,7 +8,7 @@ import com.socrata.datacoordinator.secondary.sql.SqlSecondaryConfig
 import com.typesafe.config.ConfigFactory
 import com.socrata.datacoordinator.common.{StandardObfuscationKeyGenerator, DataSourceFromConfig}
 import java.io.File
-import com.socrata.soql.types.SoQLType
+import com.socrata.soql.types.{SoQLValue, SoQLType}
 import org.slf4j.LoggerFactory
 import sun.misc.{Signal, SignalHandler}
 import java.util.concurrent.{Executors, TimeUnit, CountDownLatch}
@@ -19,7 +19,6 @@ import java.sql.Connection
 import com.socrata.datacoordinator.truth.universe.sql.{PostgresCopyIn, PostgresUniverse}
 import com.socrata.datacoordinator.common.soql.universe.PostgresUniverseCommonSupport
 import com.socrata.datacoordinator.id.RowId
-import com.socrata.datacoordinator.common.soql.SoQLValue
 
 class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseType[CT, CV]]) {
   import SecondaryWatcher.log

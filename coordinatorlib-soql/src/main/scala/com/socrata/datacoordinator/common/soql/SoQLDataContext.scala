@@ -9,7 +9,7 @@ import java.io.Reader
 import org.joda.time.DateTime
 
 import com.socrata.soql.brita.{IdentifierFilter, AsciiIdentifierFilter}
-import com.socrata.soql.types.{SoQLFixedTimestamp, SoQLID, SoQLType}
+import com.socrata.soql.types.{SoQLValue, SoQLFixedTimestamp, SoQLID, SoQLType}
 import com.socrata.datacoordinator.truth._
 import com.socrata.datacoordinator.truth.sql.{PostgresDataContext, DatasetMapLimits}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
@@ -56,9 +56,9 @@ trait SoQLDataContext extends DataSchemaContext with DataWritingContext with Dat
 
       def prepareForInsert(row: Row, sid: RowId): Row = {
         val tmp = new MutableRow(row)
-        tmp(idColumn) = SoQLIDValue(sid)
-        tmp(createdAtColumn) = SoQLFixedTimestampValue(transactionStart)
-        tmp(updatedAtColumn) = SoQLFixedTimestampValue(transactionStart)
+        tmp(idColumn) = SoQLID(sid.underlying)
+        tmp(createdAtColumn) = SoQLFixedTimestamp(transactionStart)
+        tmp(updatedAtColumn) = SoQLFixedTimestamp(transactionStart)
         tmp.freeze()
       }
 
@@ -66,7 +66,7 @@ trait SoQLDataContext extends DataSchemaContext with DataWritingContext with Dat
         val tmp = new MutableRow(row)
         tmp -= idColumn
         tmp -= createdAtColumn
-        tmp(updatedAtColumn) = SoQLFixedTimestampValue(transactionStart)
+        tmp(updatedAtColumn) = SoQLFixedTimestamp(transactionStart)
         tmp.freeze()
       }
     }

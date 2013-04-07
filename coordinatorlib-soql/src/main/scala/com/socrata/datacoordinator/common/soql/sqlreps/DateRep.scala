@@ -6,13 +6,12 @@ import java.sql.{ResultSet, Types, PreparedStatement}
 import org.joda.time.LocalDate
 
 import com.socrata.datacoordinator.truth.sql.SqlPKableColumnRep
-import com.socrata.soql.types.{SoQLDate, SoQLType}
+import com.socrata.soql.types.{SoQLNull, SoQLValue, SoQLDate, SoQLType}
 import org.joda.time.format.ISODateTimeFormat
-import com.socrata.datacoordinator.common.soql.{SoQLDateValue, SoQLValue, SoQLNullValue}
 
 class DateRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType, SoQLValue] {
   val printer = ISODateTimeFormat.date
-  val parser = ISODateTimeFormat.dateElementParser
+  val parser = ISODateTimeFormat.localDateParser
 
   override def templateForInsert = "(? :: DATE)"
 
@@ -20,16 +19,21 @@ class DateRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
     s"($base in (${(1 to n).map(_ => "(? :: DATE)").mkString(",")}))"
 
   def prepareMultiLookup(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
-    stmt.setString(start, printer.print(v.asInstanceOf[SoQLDateValue].value))
+    stmt.setString(start, printer.print(v.asInstanceOf[SoQLDate].value))
     start + 1
   }
 
   def literalize(t: LocalDate) =
-    "(DATE '" + printer.print(t) + "')"
+    literalizeTo(new StringBuilder, t)
+  def literalizeTo(sb: StringBuilder, t: LocalDate) = {
+    sb.append("(DATE '")
+    printer.printTo(sb, t)
+    sb.append("')")
+  }
 
   def sql_in(literals: Iterable[SoQLValue]): String =
     literals.iterator.map { lit =>
-      literalize(lit.asInstanceOf[SoQLDateValue].value)
+      literalize(lit.asInstanceOf[SoQLDate].value)
     }.mkString(s"($base in (", ",", "))")
 
   def templateForSingleLookup: String = s"($base = (? :: DATE))"
@@ -37,8 +41,10 @@ class DateRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
   def prepareSingleLookup(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = prepareMultiLookup(stmt, v, start)
 
   def sql_==(literal: SoQLValue): String = {
-    val v = literalize(literal.asInstanceOf[SoQLDateValue].value)
-    s"($base = $v)"
+    val sb = new StringBuilder
+    sb.append('(').append(base).append('=')
+    literalizeTo(sb, literal.asInstanceOf[SoQLDate].value)
+    sb.append(')').toString
   }
 
   def equalityIndexExpression: String = base
@@ -50,27 +56,24 @@ class DateRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
   val sqlTypes: Array[String] = Array("DATE")
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue) {
-    if(SoQLNullValue == v) { /* pass */ }
-    else {
-      val x = printer.print(v.asInstanceOf[SoQLDateValue].value)
-      sb.append(x)
-    }
+    if(SoQLNull == v) { /* pass */ }
+    else printer.printTo(sb, v.asInstanceOf[SoQLDate].value)
   }
 
   def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
-    if(SoQLNullValue == v) stmt.setNull(start, Types.VARCHAR)
-    else stmt.setObject(start, printer.print(v.asInstanceOf[SoQLDateValue].value), Types.VARCHAR)
+    if(SoQLNull == v) stmt.setNull(start, Types.VARCHAR)
+    else stmt.setObject(start, printer.print(v.asInstanceOf[SoQLDate].value), Types.VARCHAR)
     start + 1
   }
 
   def estimateInsertSize(v: SoQLValue): Int =
-    if(SoQLNullValue == v) standardNullInsertSize
+    if(SoQLNull == v) standardNullInsertSize
     else 30
 
   def SETsForUpdate(sb: StringBuilder, v: SoQLValue) {
     sb.append(base).append('=')
-    if(SoQLNullValue == v) sb.append("NULL")
-    else sb.append(literalize(v.asInstanceOf[SoQLDateValue].value))
+    if(SoQLNull == v) sb.append("NULL")
+    else literalizeTo(sb, v.asInstanceOf[SoQLDate].value)
   }
 
   def estimateUpdateSize(v: SoQLValue): Int =
@@ -78,7 +81,7 @@ class DateRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
 
   def fromResultSet(rs: ResultSet, start: Int): SoQLValue = {
     val ts = rs.getString(start)
-    if(ts == null) SoQLNullValue
-    else SoQLDateValue(parser.parseLocalDate(ts))
+    if(ts == null) SoQLNull
+    else SoQLDate(parser.parseLocalDate(ts))
   }
 }

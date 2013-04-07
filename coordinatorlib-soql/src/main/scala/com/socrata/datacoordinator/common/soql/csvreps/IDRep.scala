@@ -1,9 +1,7 @@
 package com.socrata.datacoordinator.common.soql.csvreps
 
 import com.socrata.datacoordinator.truth.csv.CsvColumnRep
-import com.socrata.soql.types.{SoQLID, SoQLType}
-import com.socrata.datacoordinator.id.RowId
-import com.socrata.datacoordinator.common.soql.{SoQLIDValue, SoQLValue, SoQLNullValue}
+import com.socrata.soql.types.{SoQLNull, SoQLValue, SoQLID, SoQLType}
 
 object IDRep extends CsvColumnRep[SoQLType, SoQLValue] {
   val size = 1
@@ -13,9 +11,9 @@ object IDRep extends CsvColumnRep[SoQLType, SoQLValue] {
   def decode(row: IndexedSeq[String], indices: IndexedSeq[Int]) = {
     assert(indices.size == size)
     val x = row(indices(0))
-    if(x.isEmpty) Some(SoQLNullValue)
+    if(x.isEmpty) Some(SoQLNull)
     else try {
-      Some(SoQLIDValue(new RowId(row(indices(0)).toLong)))
+      Some(SoQLID(row(indices(0)).toLong))
     } catch {
       case _: NumberFormatException =>
         None

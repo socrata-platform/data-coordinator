@@ -11,7 +11,7 @@ import com.rojoma.json.util.{JsonArrayIterator, AutomaticJsonCodecBuilder, JsonK
 import com.rojoma.json.io._
 import com.rojoma.json.ast.{JNull, JValue, JNumber, JObject}
 import com.ibm.icu.text.Normalizer
-import com.socrata.datacoordinator.common.soql.{SoQLValue, SoQLRep, SoQLRowLogCodec, PostgresSoQLDataContext}
+import com.socrata.datacoordinator.common.soql.{SoQLRep, SoQLRowLogCodec, PostgresSoQLDataContext}
 import java.util.concurrent.{TimeUnit, Executors}
 import org.postgresql.ds.PGSimpleDataSource
 import com.socrata.datacoordinator.truth._
@@ -37,7 +37,7 @@ import scala.Some
 import com.socrata.datacoordinator.truth.universe.sql.{PostgresCopyIn, PostgresUniverse}
 import com.rojoma.simplearm.SimpleArm
 import com.socrata.datacoordinator.common.soql.universe.PostgresUniverseCommonSupport
-import com.socrata.soql.types.SoQLType
+import com.socrata.soql.types.{SoQLValue, SoQLType}
 import com.socrata.soql.environment.{TypeName, ColumnName}
 import com.socrata.datacoordinator.common.soql.SoQLRep.IdObfuscationContext
 import com.socrata.datacoordinator.truth.json.JsonColumnRep

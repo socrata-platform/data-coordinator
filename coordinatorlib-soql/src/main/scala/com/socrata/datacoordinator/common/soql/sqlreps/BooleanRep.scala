@@ -5,14 +5,14 @@ import java.lang.StringBuilder
 import java.sql.{ResultSet, Types, PreparedStatement}
 
 import com.socrata.datacoordinator.truth.sql.SqlPKableColumnRep
-import com.socrata.soql.types.{SoQLBoolean, SoQLType}
+import com.socrata.soql.types.{SoQLNull, SoQLValue, SoQLBoolean, SoQLType}
 
 class BooleanRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType, SoQLValue] {
   def templateForMultiLookup(n: Int): String =
     s"($base in (${(1 to n).map(_ => "?").mkString(",")}))"
 
   def prepareMultiLookup(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
-    stmt.setBoolean(start, v.asInstanceOf[SoQLBooleanValue].value)
+    stmt.setBoolean(start, v.asInstanceOf[SoQLBoolean].value)
     start + 1
   }
 
@@ -24,7 +24,7 @@ class BooleanRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQL
     */
   def sql_in(literals: Iterable[SoQLValue]): String =
     literals.iterator.map { lit =>
-      lit.asInstanceOf[SoQLBooleanValue].value.toString
+      lit.asInstanceOf[SoQLBoolean].value.toString
     }.mkString(s"($base in (", ",", "))")
 
   def templateForSingleLookup: String = s"($base = ?)"
@@ -32,7 +32,7 @@ class BooleanRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQL
   def prepareSingleLookup(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = prepareMultiLookup(stmt, v, start)
 
   def sql_==(literal: SoQLValue): String = {
-    val v = literal.asInstanceOf[SoQLBooleanValue].value.toString
+    val v = literal.asInstanceOf[SoQLBoolean].value.toString
     s"($base = $v)"
   }
 
@@ -45,24 +45,24 @@ class BooleanRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQL
   val sqlTypes: Array[String] = Array("BOOLEAN")
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue) {
-    if(SoQLNullValue == v) { /* pass */ }
-    else sb.append(v.asInstanceOf[SoQLBooleanValue].value.toString)
+    if(SoQLNull == v) { /* pass */ }
+    else sb.append(v.asInstanceOf[SoQLBoolean].value)
   }
 
   def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
-    if(SoQLNullValue == v) stmt.setNull(start, Types.BOOLEAN)
-    else stmt.setBoolean(start, v.asInstanceOf[SoQLBooleanValue].value)
+    if(SoQLNull == v) stmt.setNull(start, Types.BOOLEAN)
+    else stmt.setBoolean(start, v.asInstanceOf[SoQLBoolean].value)
     start + 1
   }
 
   def estimateInsertSize(v: SoQLValue): Int =
-    if(SoQLNullValue == v) standardNullInsertSize
+    if(SoQLNull == v) standardNullInsertSize
     else 5
 
   def SETsForUpdate(sb: StringBuilder, v: SoQLValue) {
     sb.append(base).append('=')
-    if(SoQLNullValue == v) sb.append("NULL")
-    else sb.append(v.asInstanceOf[SoQLBooleanValue].value.toString)
+    if(SoQLNull == v) sb.append("NULL")
+    else sb.append(v.asInstanceOf[SoQLBoolean].value)
   }
 
   def estimateUpdateSize(v: SoQLValue): Int =
@@ -70,7 +70,7 @@ class BooleanRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQL
 
   def fromResultSet(rs: ResultSet, start: Int): SoQLValue = {
     val b = rs.getBoolean(start)
-    if(rs.wasNull) SoQLNullValue
-    else SoQLBooleanValue.canonical(b)
+    if(rs.wasNull) SoQLNull
+    else SoQLBoolean.canonicalValue(b)
   }
 }

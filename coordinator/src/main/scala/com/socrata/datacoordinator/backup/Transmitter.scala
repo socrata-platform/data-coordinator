@@ -18,7 +18,7 @@ import com.socrata.datacoordinator.packets.{Packet, PacketsOutputStream, Packets
 import com.socrata.datacoordinator.truth.metadata.sql._
 import com.socrata.datacoordinator.id.{RowId, GlobalLogEntryId, DatasetId}
 import annotation.tailrec
-import com.socrata.soql.types.{SoQLType, SoQLNull}
+import com.socrata.soql.types.{SoQLValue, SoQLType, SoQLNull}
 import org.xerial.snappy.SnappyOutputStream
 import java.io.OutputStreamWriter
 import com.socrata.datacoordinator.truth.sql.SqlColumnRep
@@ -236,7 +236,7 @@ object Transmitter extends App {
 
     if(copy.lifecycleStage != LifecycleStage.Discarded) {
       log.info("Sending CSV of the data")
-      val datasetCsvifier = new RepBasedDatasetCsvifier(conn, copy.dataTableName, repSchema(schema), SoQLNullValue)
+      val datasetCsvifier = new RepBasedDatasetCsvifier(conn, copy.dataTableName, repSchema(schema), SoQLNull)
       // This is deliberately un-managed.  None of these streams allocate external resources,
       // so if an exception occurs, the only effect will be to not send the "end of stream"
       // packet -- which is exactly what we want to occur, so that the client doesn't believe

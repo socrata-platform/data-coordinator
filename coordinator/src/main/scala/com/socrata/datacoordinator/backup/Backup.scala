@@ -6,14 +6,14 @@ import java.util.concurrent.{Executors, ExecutorService}
 import com.rojoma.simplearm.util._
 import com.rojoma.simplearm.Managed
 
-import com.socrata.soql.types.SoQLType
+import com.socrata.soql.types.{SoQLValue, SoQLType}
 
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.id.{RowId, DatasetId}
 import com.socrata.datacoordinator.truth.sql.{RepBasedSqlDatasetContext, SqlColumnRep, DatabasePopulator}
 import com.socrata.datacoordinator.truth.loader.sql._
-import com.socrata.datacoordinator.common.soql.{SoQLValue, SoQLRowLogCodec, SoQLRep, SoQLTypeContext}
+import com.socrata.datacoordinator.common.soql.{SoQLRowLogCodec, SoQLRep, SoQLTypeContext}
 import com.socrata.datacoordinator.truth.metadata.sql.PostgresDatasetMapWriter
 import com.socrata.datacoordinator.truth.loader.Delogger._
 import com.socrata.datacoordinator.truth.loader.Update

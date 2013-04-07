@@ -2,39 +2,33 @@ package com.socrata.datacoordinator.common.soql.jsonreps
 
 import com.rojoma.json.ast._
 import org.joda.time.DateTime
-import org.joda.time.format.ISODateTimeFormat
 
 import com.socrata.datacoordinator.truth.json.JsonColumnRep
-import com.socrata.soql.types.{SoQLFixedTimestamp, SoQLType}
-import com.socrata.datacoordinator.common.soql.{SoQLFixedTimestampValue, SoQLValue, SoQLNullValue}
+import com.socrata.soql.types.{SoQLNull, SoQLValue, SoQLFixedTimestamp, SoQLType}
 import com.socrata.soql.environment.ColumnName
 
 class FixedTimestampRep(val name: ColumnName) extends JsonColumnRep[SoQLType, SoQLValue] {
   val representedType = SoQLFixedTimestamp
 
-  private val formatter = ISODateTimeFormat.dateTime.withZoneUTC
-  private val parser = ISODateTimeFormat.dateTimeParser.withZoneUTC
-
-  private def tryParseTimestamp(s: String): Option[SoQLFixedTimestampValue] =
-    try {
-      Some(new SoQLFixedTimestampValue(parser.parseDateTime(s)))
-    } catch {
-      case _: IllegalArgumentException =>
-        None
-    }
+  private def tryParseTimestamp(s: String): Option[SoQLFixedTimestamp] = s match {
+    case SoQLFixedTimestamp.StringRep(dt) =>
+      Some(SoQLFixedTimestamp(dt))
+    case _ =>
+      None
+  }
 
   private def printTimestamp(t: DateTime): String =
-    formatter.print(t)
+    SoQLFixedTimestamp.StringRep(t)
 
   def fromJValue(input: JValue) = input match {
     case JString(s) => tryParseTimestamp(s)
-    case JNull => Some(SoQLNullValue)
+    case JNull => Some(SoQLNull)
     case _ => None
   }
 
   def toJValue(input: SoQLValue) = input match {
-    case SoQLFixedTimestampValue(time) => JString(printTimestamp(time))
-    case SoQLNullValue => JNull
+    case SoQLFixedTimestamp(time) => JString(printTimestamp(time))
+    case SoQLNull => JNull
     case _ => stdBadValue
   }
 }

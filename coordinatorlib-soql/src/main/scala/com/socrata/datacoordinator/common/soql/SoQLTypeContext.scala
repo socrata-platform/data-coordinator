@@ -2,19 +2,20 @@ package com.socrata.datacoordinator.common.soql
 
 import scala.collection.JavaConverters._
 
-import com.socrata.soql.types.{SoQLText, SoQLType}
+import com.socrata.soql.types._
 import com.socrata.datacoordinator.truth.{SimpleRowUserIdMap, RowUserIdMap, TypeContext}
 import com.socrata.datacoordinator.id.RowId
 import com.socrata.soql.environment.TypeName
+import scala.Some
 
 object SoQLTypeContext extends TypeContext[SoQLType, SoQLValue] {
-  def isNull(value: SoQLValue): Boolean = SoQLNullValue == value
+  def isNull(value: SoQLValue): Boolean = SoQLNull == value
 
-  def makeValueFromSystemId(id: RowId): SoQLValue = SoQLIDValue(id)
+  def makeValueFromSystemId(id: RowId): SoQLValue = SoQLID(id.underlying)
 
-  def makeSystemIdFromValue(id: SoQLValue): RowId = id.asInstanceOf[SoQLIDValue].value
+  def makeSystemIdFromValue(id: SoQLValue): RowId = new RowId(id.asInstanceOf[SoQLID].value)
 
-  def nullValue: SoQLValue = SoQLNullValue
+  def nullValue: SoQLValue = SoQLNull
 
   private val typesByTypeName = SoQLType.typesByName.values.foldLeft(Map.empty[TypeName, SoQLType]) { (acc, typ) =>
     acc + (typ.name -> typ)
@@ -29,19 +30,19 @@ object SoQLTypeContext extends TypeContext[SoQLType, SoQLValue] {
         val map = new java.util.HashMap[String, (SoQLValue, T)]
 
         def put(x: SoQLValue, v: T) {
-          val s = x.asInstanceOf[SoQLTextValue].value
+          val s = x.asInstanceOf[SoQLText].value
           map.put(s.toLowerCase, (x, v))
         }
 
         def apply(x: SoQLValue): T = {
-          val s = x.asInstanceOf[SoQLTextValue].value
+          val s = x.asInstanceOf[SoQLText].value
           val k = s.toLowerCase
           if(map.containsKey(k)) map.get(k)._2
           else throw new NoSuchElementException
         }
 
         def get(x: SoQLValue): Option[T] = {
-          val s = x.asInstanceOf[SoQLTextValue].value
+          val s = x.asInstanceOf[SoQLText].value
           val k = s.toLowerCase
           if(map.containsKey(k)) Some(map.get(k)._2)
           else None
@@ -52,7 +53,7 @@ object SoQLTypeContext extends TypeContext[SoQLType, SoQLValue] {
         }
 
         def contains(x: SoQLValue): Boolean = {
-          val s = x.asInstanceOf[SoQLTextValue].value
+          val s = x.asInstanceOf[SoQLText].value
           map.containsKey(s.toLowerCase)
         }
 

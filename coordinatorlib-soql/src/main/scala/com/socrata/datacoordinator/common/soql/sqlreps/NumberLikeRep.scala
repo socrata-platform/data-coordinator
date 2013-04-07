@@ -5,7 +5,7 @@ import java.lang.StringBuilder
 import java.sql.{ResultSet, Types, PreparedStatement}
 
 import com.socrata.datacoordinator.truth.sql.SqlPKableColumnRep
-import com.socrata.soql.types.SoQLType
+import com.socrata.soql.types.{SoQLNull, SoQLValue, SoQLType}
 
 class NumberLikeRep(repType: SoQLType, num: SoQLValue => java.math.BigDecimal, value: java.math.BigDecimal => SoQLValue, val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType, SoQLValue] {
   def representedType = repType
@@ -37,23 +37,23 @@ class NumberLikeRep(repType: SoQLType, num: SoQLValue => java.math.BigDecimal, v
   val sqlTypes: Array[String] = Array("NUMERIC")
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue) {
-    if(SoQLNullValue == v) { /* pass */ }
+    if(SoQLNull == v) { /* pass */ }
     else sb.append(num(v))
   }
 
   def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
-    if(SoQLNullValue == v) stmt.setNull(start, Types.DECIMAL)
+    if(SoQLNull == v) stmt.setNull(start, Types.DECIMAL)
     else stmt.setBigDecimal(start, num(v))
     start + 1
   }
 
   def estimateInsertSize(v: SoQLValue): Int =
-    if(SoQLNullValue == v) standardNullInsertSize
+    if(SoQLNull == v) standardNullInsertSize
     else num(v).toString.length //ick
 
   def SETsForUpdate(sb: StringBuilder, v: SoQLValue) {
     sb.append(base).append('=')
-    if(SoQLNullValue == v) sb.append("NULL")
+    if(SoQLNull == v) sb.append("NULL")
     else sb.append(num(v))
   }
 
@@ -62,7 +62,7 @@ class NumberLikeRep(repType: SoQLType, num: SoQLValue => java.math.BigDecimal, v
 
   def fromResultSet(rs: ResultSet, start: Int): SoQLValue = {
     val b = rs.getBigDecimal(start)
-    if(b == null) SoQLNullValue
+    if(b == null) SoQLNull
     else value(b)
   }
 }

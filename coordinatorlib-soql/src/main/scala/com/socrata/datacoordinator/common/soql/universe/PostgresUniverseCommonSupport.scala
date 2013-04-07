@@ -6,7 +6,7 @@ import java.sql.Connection
 import java.io.Reader
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import java.util.concurrent.ExecutorService
-import com.socrata.soql.types.SoQLType
+import com.socrata.soql.types.{SoQLFixedTimestamp, SoQLID, SoQLValue, SoQLType}
 import com.socrata.datacoordinator.common.soql._
 import com.socrata.soql.environment.{ColumnName, TypeName}
 import org.joda.time.DateTime
@@ -40,9 +40,9 @@ class PostgresUniverseCommonSupport(val executor: ExecutorService, val tablespac
 
       def prepareForInsert(row: Row[SoQLValue], sid: RowId) = {
         val tmp = new MutableRow(row)
-        tmp(idColumn) = SoQLIDValue(sid)
-        tmp(createdAtColumn) = SoQLFixedTimestampValue(transactionStart)
-        tmp(updatedAtColumn) = SoQLFixedTimestampValue(transactionStart)
+        tmp(idColumn) = SoQLID(sid.underlying)
+        tmp(createdAtColumn) = SoQLFixedTimestamp(transactionStart)
+        tmp(updatedAtColumn) = SoQLFixedTimestamp(transactionStart)
         tmp.freeze()
       }
 
@@ -50,7 +50,7 @@ class PostgresUniverseCommonSupport(val executor: ExecutorService, val tablespac
         val tmp = new MutableRow[SoQLValue](row)
         tmp -= idColumn
         tmp -= createdAtColumn
-        tmp(updatedAtColumn) = SoQLFixedTimestampValue(transactionStart)
+        tmp(updatedAtColumn) = SoQLFixedTimestamp(transactionStart)
         tmp.freeze()
       }
     }

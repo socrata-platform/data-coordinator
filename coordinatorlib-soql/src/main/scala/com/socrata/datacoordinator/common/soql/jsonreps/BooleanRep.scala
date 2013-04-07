@@ -3,8 +3,7 @@ package com.socrata.datacoordinator.common.soql.jsonreps
 import com.rojoma.json.ast._
 
 import com.socrata.datacoordinator.truth.json.JsonColumnRep
-import com.socrata.soql.types.{SoQLBoolean, SoQLType}
-import com.socrata.datacoordinator.common.soql.{SoQLBooleanValue, SoQLValue, SoQLNullValue}
+import com.socrata.soql.types.{SoQLNull, SoQLValue, SoQLBoolean, SoQLType}
 import com.socrata.soql.environment.ColumnName
 
 // This can't be a codec-based rep because of some weirdness involving
@@ -13,14 +12,14 @@ class BooleanRep(val name: ColumnName) extends JsonColumnRep[SoQLType, SoQLValue
   val representedType = SoQLBoolean
 
   def fromJValue(input: JValue) = input match {
-    case JBoolean(b) => Some(SoQLBooleanValue.canonical(b))
-    case JNull => Some(SoQLNullValue)
+    case JBoolean(b) => Some(SoQLBoolean.canonicalValue(b))
+    case JNull => Some(SoQLNull)
     case _ => None
   }
 
   def toJValue(input: SoQLValue) = input match {
-    case SoQLBooleanValue(b) => JBoolean(b)
-    case SoQLNullValue => JNull
+    case SoQLBoolean(b) => JBoolean(b)
+    case SoQLNull => JNull
     case _ => stdBadValue
   }
 }

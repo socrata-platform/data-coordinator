@@ -1,8 +1,7 @@
 package com.socrata.datacoordinator.common.soql.csvreps
 
 import com.socrata.datacoordinator.truth.csv.CsvColumnRep
-import com.socrata.soql.types.{SoQLText, SoQLType}
-import com.socrata.datacoordinator.common.soql.{SoQLValue, SoQLNullValue}
+import com.socrata.soql.types.{SoQLNull, SoQLValue, SoQLText, SoQLType}
 
 class NumberLikeRep(val representedType: SoQLType, ctor: java.math.BigDecimal => SoQLValue) extends CsvColumnRep[SoQLType, SoQLValue] {
   val size = 1
@@ -10,7 +9,7 @@ class NumberLikeRep(val representedType: SoQLType, ctor: java.math.BigDecimal =>
   def decode(row: IndexedSeq[String], indices: IndexedSeq[Int]) = {
     assert(indices.size == size)
     val x = row(indices(0))
-    if(x.isEmpty) Some(SoQLNullValue)
+    if(x.isEmpty) Some(SoQLNull)
     else try {
       Some(ctor(new java.math.BigDecimal(row(indices(0)))))
     } catch {

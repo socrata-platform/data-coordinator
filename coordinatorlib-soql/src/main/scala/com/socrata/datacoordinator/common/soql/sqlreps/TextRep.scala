@@ -5,14 +5,14 @@ import java.lang.StringBuilder
 import java.sql.{ResultSet, Types, PreparedStatement}
 
 import com.socrata.datacoordinator.truth.sql.SqlPKableColumnRep
-import com.socrata.soql.types.{SoQLText, SoQLType}
+import com.socrata.soql.types.{SoQLNull, SoQLValue, SoQLText, SoQLType}
 
 class TextRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType, SoQLValue] {
   def templateForMultiLookup(n: Int): String =
     s"(lower($base) in (${(1 to n).map(_ => "lower(?)").mkString(",")}))"
 
   def prepareMultiLookup(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
-    stmt.setString(start, v.asInstanceOf[SoQLTextValue].value)
+    stmt.setString(start, v.asInstanceOf[SoQLText].value)
     start + 1
   }
 
@@ -24,7 +24,7 @@ class TextRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
     */
   def sql_in(literals: Iterable[SoQLValue]): String =
     literals.iterator.map { lit =>
-      val escaped = sqlescape(lit.asInstanceOf[SoQLTextValue].value)
+      val escaped = sqlescape(lit.asInstanceOf[SoQLText].value)
       s"lower($escaped)"
     }.mkString(s"(lower($base) in (", ",", "))")
 
@@ -33,7 +33,7 @@ class TextRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
   def prepareSingleLookup(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = prepareMultiLookup(stmt, v, start)
 
   def sql_==(literal: SoQLValue): String = {
-    val escaped = sqlescape(literal.asInstanceOf[SoQLTextValue].value)
+    val escaped = sqlescape(literal.asInstanceOf[SoQLText].value)
     s"(lower($base) = lower($escaped))"
   }
 
@@ -46,32 +46,32 @@ class TextRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
   val sqlTypes: Array[String] = Array("TEXT")
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue) {
-    if(SoQLNullValue == v) { /* pass */ }
-    else csvescape(sb, v.asInstanceOf[SoQLTextValue].value)
+    if(SoQLNull == v) { /* pass */ }
+    else csvescape(sb, v.asInstanceOf[SoQLText].value)
   }
 
   def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
-    if(SoQLNullValue == v) stmt.setNull(start, Types.VARCHAR)
-    else stmt.setString(start, v.asInstanceOf[SoQLTextValue].value)
+    if(SoQLNull == v) stmt.setNull(start, Types.VARCHAR)
+    else stmt.setString(start, v.asInstanceOf[SoQLText].value)
     start + 1
   }
 
   def estimateInsertSize(v: SoQLValue): Int =
-    if(SoQLNullValue == v) standardNullInsertSize
-    else v.asInstanceOf[SoQLTextValue].value.length
+    if(SoQLNull == v) standardNullInsertSize
+    else v.asInstanceOf[SoQLText].value.length
 
   def SETsForUpdate(sb: StringBuilder, v: SoQLValue) {
     sb.append(base).append('=')
-    if(SoQLNullValue == v) sb.append("NULL")
-    else sqlescape(sb, v.asInstanceOf[SoQLTextValue].value)
+    if(SoQLNull == v) sb.append("NULL")
+    else sqlescape(sb, v.asInstanceOf[SoQLText].value)
   }
 
   def estimateUpdateSize(v: SoQLValue): Int =
-    base.length + (if(SoQLNullValue == v) 5 else v.asInstanceOf[SoQLTextValue].value.length)
+    base.length + (if(SoQLNull == v) 5 else v.asInstanceOf[SoQLText].value.length)
 
   def fromResultSet(rs: ResultSet, start: Int): SoQLValue = {
     val s = rs.getString(start)
-    if(s == null) SoQLNullValue
-    else SoQLTextValue(s)
+    if(s == null) SoQLNull
+    else SoQLText(s)
   }
 }
