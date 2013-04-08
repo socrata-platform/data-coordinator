@@ -8,10 +8,10 @@ import org.joda.time.DateTime
 
 import com.socrata.datacoordinator.truth.sql.SqlPKableColumnRep
 import com.socrata.soql.types.{SoQLNull, SoQLValue, SoQLFixedTimestamp, SoQLType}
-import org.joda.time.format.{ISODateTimeFormat, DateTimeFormatter}
+import org.joda.time.format.{DateTimeFormatterBuilder, ISODateTimeFormat, DateTimeFormatter}
 
 class FixedTimestampRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType, SoQLValue] {
-  val literalFormatter: DateTimeFormatter = ISODateTimeFormat.dateTime.withZoneUTC
+  import FixedTimestampRep._
 
   def templateForMultiLookup(n: Int): String =
     s"($base in (${(1 to n).map(_ => "?").mkString(",")}))"
@@ -29,7 +29,7 @@ class FixedTimestampRep(val base: String) extends RepUtils with SqlPKableColumnR
 
   def literalizeTo(sb: StringBuilder, t: DateTime) {
     sb.append("(TIMESTAMP WITH TIME ZONE '")
-    literalFormatter.printTo(sb, t)
+    printer.printTo(sb, t)
     sb.append("')")
   }
 
@@ -59,7 +59,7 @@ class FixedTimestampRep(val base: String) extends RepUtils with SqlPKableColumnR
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue) {
     if(SoQLNull == v) { /* pass */ }
-    else sb.append(literalFormatter.print(v.asInstanceOf[SoQLFixedTimestamp].value))
+    else printer.printTo(sb, v.asInstanceOf[SoQLFixedTimestamp].value)
   }
 
   def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
@@ -86,4 +86,12 @@ class FixedTimestampRep(val base: String) extends RepUtils with SqlPKableColumnR
     if(ts == null) SoQLNull
     else SoQLFixedTimestamp(new DateTime(ts.getTime))
   }
+}
+
+object FixedTimestampRep {
+  private val printer = new DateTimeFormatterBuilder().
+    append(ISODateTimeFormat.date).
+    appendLiteral(' ').
+    append(ISODateTimeFormat.time).
+    toFormatter.withZoneUTC
 }

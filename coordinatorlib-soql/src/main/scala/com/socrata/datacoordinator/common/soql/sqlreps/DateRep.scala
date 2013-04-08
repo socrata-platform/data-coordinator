@@ -10,8 +10,8 @@ import com.socrata.soql.types.{SoQLNull, SoQLValue, SoQLDate, SoQLType}
 import org.joda.time.format.ISODateTimeFormat
 
 class DateRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType, SoQLValue] {
-  val printer = ISODateTimeFormat.date
-  val parser = ISODateTimeFormat.localDateParser
+  def printer = ISODateTimeFormat.date
+  def parser = ISODateTimeFormat.localDateParser
 
   override def templateForInsert = "(? :: DATE)"
 

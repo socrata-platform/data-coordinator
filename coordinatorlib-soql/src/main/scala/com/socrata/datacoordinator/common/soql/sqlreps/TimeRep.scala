@@ -10,8 +10,8 @@ import com.socrata.soql.types.{SoQLNull, SoQLValue, SoQLTime, SoQLType}
 import org.joda.time.format.ISODateTimeFormat
 
 class TimeRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType, SoQLValue] {
-  val printer = ISODateTimeFormat.time
-  val parser = ISODateTimeFormat.localTimeParser
+  def printer = ISODateTimeFormat.time
+  def parser = ISODateTimeFormat.localTimeParser
 
   override def templateForInsert = "(? :: TIME WITHOUT TIME ZONE)"
 

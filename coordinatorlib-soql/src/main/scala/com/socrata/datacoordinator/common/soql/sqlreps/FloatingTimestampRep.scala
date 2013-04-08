@@ -10,16 +10,7 @@ import com.socrata.soql.types.{SoQLNull, SoQLValue, SoQLFloatingTimestamp, SoQLT
 import org.joda.time.format.{DateTimeFormatterBuilder, ISODateTimeFormat}
 
 class FloatingTimestampRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType, SoQLValue] {
-  val printer = new DateTimeFormatterBuilder().
-    append(ISODateTimeFormat.date).
-    appendLiteral(' ').
-    append(ISODateTimeFormat.time).
-    toFormatter
-  val parser = new DateTimeFormatterBuilder().
-    append(ISODateTimeFormat.dateElementParser).
-    appendLiteral(' ').
-    append(ISODateTimeFormat.timeElementParser).
-    toFormatter
+  import FloatingTimestampRep._
 
   override def templateForInsert = "(? :: TIMESTAMP WITHOUT TIME ZONE)"
 
@@ -92,4 +83,18 @@ class FloatingTimestampRep(val base: String) extends RepUtils with SqlPKableColu
     if(ts == null) SoQLNull
     else SoQLFloatingTimestamp(parser.parseLocalDateTime(ts))
   }
+}
+
+object FloatingTimestampRep {
+  private val printer = new DateTimeFormatterBuilder().
+    append(ISODateTimeFormat.date).
+    appendLiteral(' ').
+    append(ISODateTimeFormat.time).
+    toFormatter.withZoneUTC
+
+  private val parser = new DateTimeFormatterBuilder().
+    append(ISODateTimeFormat.dateElementParser).
+    appendLiteral(' ').
+    append(ISODateTimeFormat.timeElementParser).
+    toFormatter.withZoneUTC
 }
