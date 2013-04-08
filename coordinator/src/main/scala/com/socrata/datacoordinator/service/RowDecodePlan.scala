@@ -14,7 +14,6 @@ class RowDecodePlan[CT, CV](schema: ColumnIdMap[AbstractColumnInfoLike], repFor:
   sealed abstract class BadDataException(msg: String) extends Exception(msg)
   case class BadUpsertCommandException(value: JValue) extends BadDataException("Upsert command not an object or a singleton list")
   case class UninterpretableFieldValue(column: ColumnName, value: JValue, columnType: CT) extends BadDataException("Unable to interpret value for field " + column + " as " + typeNameFor(columnType) + ": " + value)
-  case class UninterpretableDeleteValue(value: JValue, columnType: CT) extends BadDataException("Unable to interpret value for delete as " + typeNameFor(columnType) + ": " + value)
 
   val pkCol = schema.values.find(_.isUserPrimaryKey).orElse(schema.values.find(_.isSystemPrimaryKey)).getOrElse {
     sys.error("No system primary key in the schema?")
@@ -58,7 +57,7 @@ class RowDecodePlan[CT, CV](schema: ColumnIdMap[AbstractColumnInfoLike], repFor:
         case Some(trueValue) =>
           Left(trueValue)
         case None =>
-          throw new UninterpretableDeleteValue(value, pkRep.representedType)
+          throw new UninterpretableFieldValue(pkCol.logicalName, value, pkRep.representedType)
       }
     case other =>
       throw new BadUpsertCommandException(other)

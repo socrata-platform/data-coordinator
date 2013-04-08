@@ -47,6 +47,8 @@ object Mutator {
   case class NotPrimaryKey(name: ColumnName) extends MutationException
   case class DuplicateValuesInColumn(name: ColumnName) extends MutationException
   case class InvalidSystemColumnOperation(name: ColumnName, op: String) extends MutationException
+  case class InvalidUpsertCommand(value: JValue) extends MutationException
+  case class InvalidValue(column: ColumnName, typ: TypeName, value: JValue) extends MutationException
   // UpsertError is defined inside the Mutator class
 
   sealed abstract class MergeReplace
@@ -355,8 +357,12 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
         }
         result
       } catch {
-        case e: plan.BadDataException =>
-          ??? // TODO: proper error
+        case e: plan.BadDataException => e match {
+          case plan.BadUpsertCommandException(value) =>
+            throw InvalidUpsertCommand(value)
+          case plan.UninterpretableFieldValue(column, value, columnType)  =>
+            throw InvalidValue(column, typeNameFor(columnType), value)
+        }
       }
     }
   }
