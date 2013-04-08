@@ -160,6 +160,9 @@ trait BasePostgresDatasetMapReader extends `-impl`.BaseDatasetMapReader {
   def snapshot(datasetInfo: DatasetInfo, age: Int) =
     lookup(datasetInfo, LifecycleStage.Snapshotted, age)
 
+  def snapshots(datasetInfo: DatasetInfo) =
+    allCopies(datasetInfo).filter(_.lifecycleStage == LifecycleStage.Snapshotted)
+
   def datasetIdByUserIdQuery = "SELECT system_id FROM dataset_map WHERE dataset_name = ?"
   def datasetId(datasetId: String) =
     using(conn.prepareStatement(datasetIdByUserIdQuery)) { stmt =>

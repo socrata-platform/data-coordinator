@@ -128,7 +128,7 @@ object ChicagoCrimesLoadScript extends App {
       }
       val end = System.nanoTime()
       println(s"Upsert took ${(end - start) / 1000000L}ms")
-      publisher.publish(datasetName, user)
+      publisher.publish(datasetName, None, user)
       workingCopyCreator.copyDataset(datasetName, user, copyData = true)
       val ci = for {
         dataContext.datasetMutator.CopyOperationComplete(ctx) <- dataContext.datasetMutator.dropCopy(user)(datasetName)

@@ -32,6 +32,9 @@ trait BaseDatasetMapReader {
     * @param age 0 gets the newest snapshot, 1 the next newest, etc... */
   def snapshot(datasetInfo: DatasetInfo, age: Int): Option[CopyInfo]
 
+  /** Finds information for all this dataset's snapshots. */
+  def snapshots(datasetInfo: DatasetInfo): Iterable[CopyInfo]
+
   /** Finds information for the specified copy of this dataset, if it exists.
     * @param copyNumber The copy number to look up.
     */

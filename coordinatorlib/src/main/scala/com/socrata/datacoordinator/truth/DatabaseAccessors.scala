@@ -117,22 +117,25 @@ trait DatasetMutator[CT, CV] {
     def upsert(inputGenerator: Iterator[RowDataUpdateJob]): Report[CV]
   }
 
-  def createDataset(as: String)(datasetName: String, tableBaseBase: String): Managed[Option[MutationContext]]
+  type TrueMutationContext <: MutationContext
 
-  def openDataset(as: String)(datasetName: String): Managed[Option[MutationContext]]
+  def createDataset(as: String)(datasetName: String, tableBaseBase: String): Managed[Option[TrueMutationContext]]
+
+  def openDataset(as: String)(datasetName: String): Managed[Option[TrueMutationContext]]
 
   sealed trait CopyContext
   case object DatasetDidNotExist extends CopyContext
   case class IncorrectLifecycleStage(lifecycleStage: LifecycleStage) extends CopyContext
-  case class CopyOperationComplete(mutationContext: MutationContext) extends CopyContext
+  case class CopyOperationComplete(mutationContext: TrueMutationContext) extends CopyContext
 
   def createCopy(as: String)(datasetName: String, copyData: Boolean): Managed[CopyContext]
-  def publishCopy(as: String)(datasetName: String): Managed[CopyContext]
+  def publishCopy(as: String)(datasetName: String, snapshotsToKeep: Option[Int]): Managed[CopyContext]
   def dropCopy(as: String)(datasetName: String): Managed[CopyContext]
 }
 
 object DatasetMutator {
   private class Impl[CT, CV](val databaseMutator: LowLevelDatabaseMutator[CV], typeNameFor: CT => TypeName, lockTimeout: Duration) extends DatasetMutator[CT, CV] {
+    type TrueMutationContext = S
     class S(var copyInfo: CopyInfo, var _schema: ColumnIdMap[ColumnInfo], val schemaLoader: SchemaLoader, val logger: Logger[CV], llCtx: databaseMutator.MutationContext) extends MutationContext {
       var _schemaByLogicalName: Map[ColumnName, ColumnInfo] = null
       override def schemaByLogicalName = {
@@ -291,13 +294,13 @@ object DatasetMutator {
         }
       }
 
-    def openDataset(as: String)(datasetName: String): Managed[Option[MutationContext]] = new SimpleArm[Option[MutationContext]] {
-      def flatMap[A](f: Option[MutationContext] => A): A =
+    def openDataset(as: String)(datasetName: String): Managed[Option[S]] = new SimpleArm[Option[S]] {
+      def flatMap[A](f: Option[S] => A): A =
         go(as, datasetName, f)
     }
 
-    def createDataset(as: String)(datasetName: String, tableBaseBase: String) = new SimpleArm[Option[MutationContext]] {
-      def flatMap[A](f: Option[MutationContext] => A): A =
+    def createDataset(as: String)(datasetName: String, tableBaseBase: String) = new SimpleArm[Option[S]] {
+      def flatMap[A](f: Option[S] => A): A =
         for { llCtx <- databaseMutator.openDatabase } yield {
           val m = llCtx.datasetMap
           val firstVersion =
@@ -331,8 +334,24 @@ object DatasetMutator {
     def createCopy(as: String)(datasetName: String, copyData: Boolean): Managed[CopyContext] =
       firstOp(as, datasetName, LifecycleStage.Published, _.makeWorkingCopy(copyData))
 
-    def publishCopy(as: String)(datasetName: String): Managed[CopyContext] =
-      firstOp(as, datasetName, LifecycleStage.Unpublished, _.publish())
+    def publishCopy(as: String)(datasetName: String, snapshotsToKeep: Option[Int]): Managed[CopyContext] =
+      new SimpleArm[CopyContext] {
+        def flatMap[B](f: CopyContext => B): B = {
+          firstOp(as, datasetName, LifecycleStage.Unpublished, _.publish()).map {
+            case good@CopyOperationComplete(ctx) =>
+              for(count <- snapshotsToKeep) {
+                val toDrop = ctx.datasetMap.snapshots(ctx.copyInfo.datasetInfo).toSeq.sortBy(_.copyNumber).dropRight(count)
+                for(snapshot <- toDrop) {
+                  ctx.datasetMap.dropCopy(snapshot)
+                  ctx.schemaLoader.drop(snapshot)
+                }
+              }
+              f(good)
+            case noGood =>
+              f(noGood)
+          }
+        }
+      }
 
     def dropCopy(as: String)(datasetName: String): Managed[CopyContext] =
       firstOp(as, datasetName, LifecycleStage.Unpublished, _.drop())

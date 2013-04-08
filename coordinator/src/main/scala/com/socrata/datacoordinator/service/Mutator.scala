@@ -22,7 +22,7 @@ object Mutator {
   case object NormalMutation extends StreamType
   case object CreateDatasetMutation extends StreamType
   case class CreateWorkingCopyMutation(copyData: Boolean) extends StreamType
-  case class PublishWorkingCopyMutation(keepingSnapshotCount: Option[Long]) extends StreamType
+  case class PublishWorkingCopyMutation(keepingSnapshotCount: Option[Int]) extends StreamType
   case object DropWorkingCopyMutation extends StreamType
 
   sealed abstract class MutationException(msg: String = null, cause: Throwable = null) extends Exception(msg, cause)
@@ -172,7 +172,7 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
           val copyData = get[Boolean]("copy_data")
           CreateWorkingCopyMutation(copyData)
         case "publish" =>
-          val snapshotLimit = getOption[Long]("snapshot_limit")
+          val snapshotLimit = getOption[Int]("snapshot_limit")
           PublishWorkingCopyMutation(snapshotLimit)
         case "drop" =>
           DropWorkingCopyMutation
@@ -231,7 +231,7 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
         case CreateWorkingCopyMutation(copyData) =>
           mutator.createCopy(user)(commands.datasetName, copyData = copyData).map(process(commands.datasetName, mutator))
         case PublishWorkingCopyMutation(keepingSnapshotCount) =>
-          mutator.publishCopy(user)(commands.datasetName).map(process(commands.datasetName, mutator))
+          mutator.publishCopy(user)(commands.datasetName, keepingSnapshotCount).map(process(commands.datasetName, mutator))
         case DropWorkingCopyMutation =>
           mutator.dropCopy(user)(commands.datasetName).map(process(commands.datasetName, mutator))
       }
