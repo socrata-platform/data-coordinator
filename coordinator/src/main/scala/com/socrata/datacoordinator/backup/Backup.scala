@@ -45,7 +45,7 @@ class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingRe
 
   def extractCopier(conn: Connection, sql: String, input: Reader): Long = conn.asInstanceOf[PGConnection].getCopyAPI.copyIn(sql, input)
 
-  val schemaLoader: SchemaLoader = new RepBasedSqlSchemaLoader(conn, logger, genericRepFor, tablespace)
+  val schemaLoader: SchemaLoader = new RepBasedPostgresSchemaLoader(conn, logger, genericRepFor, tablespace)
   val contentsCopier: DatasetContentsCopier = new RepBasedSqlDatasetContentsCopier(conn, logger, genericRepFor, timingReport)
   def decsvifier(copyInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo]): DatasetDecsvifier =
     new PostgresDatasetDecsvifier(conn, extractCopier, copyInfo.dataTableName, schema.mapValuesStrict(genericRepFor))

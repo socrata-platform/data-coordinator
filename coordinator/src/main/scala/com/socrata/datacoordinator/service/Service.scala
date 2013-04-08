@@ -335,7 +335,7 @@ object Service extends App { self =>
       def isSystemColumnName(identifier: ColumnName): Boolean =
         dataContext.isSystemColumn(identifier)
 
-      def systemSchema = dataContext.systemColumns.mapValues(dataContext.typeContext.nameFromType)
+      def systemSchema = dataContext.systemColumns
       def systemIdColumnName = dataContext.systemIdColumnName
       def typeNameFor(typ: SoQLType) = dataContext.typeContext.nameFromType(typ)
       def nameForTypeOpt(typeName: TypeName) = dataContext.typeContext.typeFromNameOpt(typeName)

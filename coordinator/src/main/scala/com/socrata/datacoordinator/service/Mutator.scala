@@ -37,6 +37,16 @@ object Mutator {
   case class DatasetAlreadyExists(name: String) extends MutationException
   case class IncorrectLifecycleStage(name: String, lifecycleStage: LifecycleStage) extends MutationException
   case class LockTimeout(name: String) extends MutationException
+  case class IllegalColumnName(name: ColumnName) extends MutationException
+  case class NoSuchColumn(name: ColumnName) extends MutationException
+  case class NoSuchType(name: TypeName) extends MutationException
+  case class ColumnAlreadyExists(name: ColumnName) extends MutationException
+  case class PrimaryKeyAlreadyExists(name: ColumnName, existingName: ColumnName) extends MutationException
+  case class InvalidTypeForPrimaryKey(name: ColumnName, typ: TypeName) extends MutationException
+  case class NullsInColumn(name: ColumnName) extends MutationException
+  case class NotPrimaryKey(name: ColumnName) extends MutationException
+  case class DuplicateValuesInColumn(name: ColumnName) extends MutationException
+  case class InvalidSystemColumnOperation(name: ColumnName, op: String) extends MutationException
   // UpsertError is defined inside the Mutator class
 
   sealed abstract class MergeReplace
@@ -98,6 +108,13 @@ object Mutator {
   case class DropRowId(name: ColumnName) extends Command
   case class RowData(truncate: Boolean, mergeReplace: MergeReplace) extends Command
 
+  val AddColumnOp = "add column"
+  val DropColumnOp = "drop column"
+  val RenameColumnOp = "rename column"
+  val SetRowIdOp = "set row id"
+  val DropRowIdOp = "drop row id"
+  val RowDataOp = "row data"
+
   class CommandStream(val streamType: StreamType, val datasetName: String, val user: String, val fatalRowErrors: Boolean, val rawCommandStream: BufferedIterator[JValue]) {
     private var idx = 1L
     private def nextIdx() = {
@@ -110,24 +127,24 @@ object Mutator {
       import accessor._
 
       get[String]("c") match {
-        case "add column" =>
+        case AddColumnOp =>
           val name = get[String]("name")
           val typ = get[String]("type")
           AddColumn(ColumnName(name), TypeName(typ))
-        case "drop column" =>
+        case DropColumnOp =>
           val column = get[String]("column")
           DropColumn(ColumnName(column))
-        case "rename column" =>
+        case RenameColumnOp =>
           val from = get[String]("from")
           val to  =get[String]("to")
           RenameColumn(ColumnName(from), ColumnName(to))
-        case "set row id" =>
+        case SetRowIdOp =>
           val column = get[String]("column")
           SetRowId(ColumnName(column))
-        case "drop row id" =>
+        case DropRowIdOp =>
           val column = get[String]("column")
           DropRowId(ColumnName(column))
-        case "row data" =>
+        case RowDataOp =>
           val truncate = getWithDefault("truncate", false)
           val mergeReplace = getWithDefault[MergeReplace]("update", Merge)
           RowData(truncate, mergeReplace)
@@ -146,7 +163,7 @@ trait MutatorCommon[CT, CV] {
   def physicalColumnBaseBase(logicalColumnName: ColumnName, systemColumn: Boolean = false): String
   def isLegalLogicalName(identifier: ColumnName): Boolean
   def isSystemColumnName(identifier: ColumnName): Boolean
-  def systemSchema: Map[ColumnName, TypeName]
+  def systemSchema: Map[ColumnName, CT]
   def systemIdColumnName: ColumnName
   def typeNameFor(typ: CT): TypeName
   def nameForTypeOpt(name: TypeName): Option[CT]
@@ -184,12 +201,6 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
       new CommandStream(streamType, dataset, user, fatalRowErrors, remainingCommands.buffered)
     }
 
-  private def lookupType(typeName: TypeName): CT =
-    nameForTypeOpt(typeName) match {
-      case Some(typ) => typ
-      case None => ??? // TODO: Proper error
-    }
-
   def apply(u: Universe[CT, CV] with DatasetMutatorProvider, jsonRepFor: DatasetInfo => AbstractColumnInfoLike => JsonColumnReadRep[CT, CV], commandStream: Iterator[JValue]) {
     if(commandStream.isEmpty) throw EmptyCommandStream()
     val commands = createCommandStream(commandStream.next(), commandStream)
@@ -221,7 +232,7 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
           for(ctxOpt <- u.datasetMutator.createDataset(user)(commands.datasetName, "t")) {
             val ctx = ctxOpt.getOrElse { throw new DatasetAlreadyExists(commands.datasetName) }
             for((col, typ) <- systemSchema) {
-              val ci = ctx.addColumn(col, lookupType(typ), physicalColumnBaseBase(col, systemColumn = true))
+              val ci = ctx.addColumn(col, typ, physicalColumnBaseBase(col, systemColumn = true))
               if(col == systemIdColumnName) {
                 ctx.makeSystemPrimaryKey(ci)
               }
@@ -255,47 +266,64 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
     }
 
     def carryOutCommand(mutator: DatasetMutator[CT, CV]#MutationContext, commands: CommandStream, cmd: Command): Option[Report[CV]] = {
-      import mutator._
       cmd match {
-        case AddColumn(name, typ) =>
-          if(!isLegalLogicalName(name)) ??? // TODO: proper error
-          if(schemaByLogicalName.contains(name)) ??? // TODO: proper error
-          addColumn(name, lookupType(typ), physicalColumnBaseBase(name))
+        case AddColumn(name, typName) =>
+          if(!isLegalLogicalName(name)) throw IllegalColumnName(name)
+          if(mutator.schemaByLogicalName.contains(name)) throw ColumnAlreadyExists(name)
+          val typ = nameForTypeOpt(typName).getOrElse {
+              throw NoSuchType(typName)
+            }
+          mutator.addColumn(name, typ, physicalColumnBaseBase(name))
           None
         case DropColumn(name) =>
-          schemaByLogicalName.get(name) match {
-            case Some(colInfo) => dropColumn(colInfo)
-            case None => ??? // TODO: proper error
+          mutator.schemaByLogicalName.get(name) match {
+            case Some(colInfo) =>
+              if(isSystemColumnName(name)) throw InvalidSystemColumnOperation(name, DropColumnOp)
+              mutator.dropColumn(colInfo)
+            case None =>
+              throw NoSuchColumn(name)
           }
           None
         case RenameColumn(from, to) =>
-          schemaByLogicalName.get(from) match {
+          mutator.schemaByLogicalName.get(from) match {
             case Some(colInfo) =>
-              if(isSystemColumnName(from)) ??? // TODO: proper error
-              if(!isLegalLogicalName(to)) ??? // TODO: proper error
-              if(schemaByLogicalName.contains(to)) ??? // TODO: proper error
-              renameColumn(colInfo, to)
+              if(isSystemColumnName(from)) throw InvalidSystemColumnOperation(from, RenameColumnOp)
+              if(!isLegalLogicalName(to)) new IllegalColumnName(to)
+              if(mutator.schemaByLogicalName.contains(to)) throw ColumnAlreadyExists(to)
+              mutator.renameColumn(colInfo, to)
             case None =>
-              ??? // TODO: proper error
+              throw NoSuchColumn(from)
           }
           None
         case SetRowId(name) =>
-          schemaByLogicalName.get(name) match {
+          mutator.schemaByLogicalName.get(name) match {
             case Some(colInfo) =>
-              if(isSystemColumnName(name)) ??? // TODO: proper error
-              if(schema.values.exists(_.isUserPrimaryKey)) ??? // TODO: proper error
-              makeUserPrimaryKey(colInfo) // TODO: errors for "unPKable type" and "data has nulls or dups"
+              for(pkCol <- mutator.schema.values.find(_.isUserPrimaryKey))
+                throw PrimaryKeyAlreadyExists(name, pkCol.logicalName)
+              if(isSystemColumnName(name)) throw new InvalidSystemColumnOperation(name, SetRowIdOp)
+              try {
+                mutator.makeUserPrimaryKey(colInfo)
+              } catch {
+                case e: mutator.PrimaryKeyCreationException => e match {
+                  case mutator.UnPKableColumnException(_, _) =>
+                    throw new InvalidTypeForPrimaryKey(colInfo.logicalName, colInfo.typeName)
+                  case mutator.NullCellsException(c) =>
+                    throw new NullsInColumn(colInfo.logicalName)
+                  case mutator.DuplicateCellsException(_) =>
+                    throw new DuplicateValuesInColumn(colInfo.logicalName)
+                }
+              }
             case None =>
-              ??? // TODO: proper error
+              throw NoSuchColumn(name)
           }
           None
         case DropRowId(name) =>
-          schemaByLogicalName.get(name) match {
+          mutator.schemaByLogicalName.get(name) match {
             case Some(colInfo) =>
-              if(!colInfo.isUserPrimaryKey) ??? // TODO: proper error
-              unmakeUserPrimaryKey(colInfo)
+              if(!colInfo.isUserPrimaryKey) throw NotPrimaryKey(name)
+              mutator.unmakeUserPrimaryKey(colInfo)
             case None =>
-              ??? // TODO: proper error
+              throw NoSuchColumn(name)
           }
           None
         case RowData(truncate, mergeReplace) =>
@@ -314,7 +342,7 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
           def hasNext = rows.hasNext && JNull != rows.head
           def next() = {
             if(!hasNext) throw new NoSuchElementException
-            plan(rows.next) match {
+            plan(rows.next()) match {
               case Right(row) => UpsertJob(counter(), row)
               case Left(id) => DeleteJob(counter(), id)
             }

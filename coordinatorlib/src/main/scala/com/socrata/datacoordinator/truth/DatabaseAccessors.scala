@@ -103,7 +103,16 @@ trait DatasetMutator[CT, CV] {
     def addColumn(logicalName: ColumnName, typ: CT, physicalColumnBaseBase: String): ColumnInfo
     def renameColumn(col: ColumnInfo, newName: ColumnName): ColumnInfo
     def makeSystemPrimaryKey(ci: ColumnInfo): ColumnInfo
+
+    /**
+     * @throws PrimaryKeyCreationException
+     */
     def makeUserPrimaryKey(ci: ColumnInfo): ColumnInfo
+    sealed abstract class PrimaryKeyCreationException extends Exception
+    case class UnPKableColumnException(name: ColumnName, typ: TypeName) extends PrimaryKeyCreationException
+    case class NullCellsException(name: ColumnName) extends PrimaryKeyCreationException
+    case class DuplicateCellsException(name: ColumnName) extends PrimaryKeyCreationException
+
     def unmakeUserPrimaryKey(ci: ColumnInfo): ColumnInfo
     def dropColumn(ci: ColumnInfo)
     def truncate()
@@ -175,24 +184,37 @@ object DatasetMutator {
 
       def makeSystemPrimaryKey(ci: ColumnInfo): ColumnInfo = {
         val result = datasetMap.setSystemPrimaryKey(ci)
-        val ok = schemaLoader.makeSystemPrimaryKey(result)
-        require(ok, "Column cannot be made a system primary key")
+        try {
+          schemaLoader.makeSystemPrimaryKey(result)
+        } catch {
+          case e: schemaLoader.PrimaryKeyCreationException =>
+            sys.error("Unable to create system primary key? " + e)
+        }
         schema += result.systemId -> result
         result
       }
 
       def unmakeUserPrimaryKey(ci: ColumnInfo): ColumnInfo = {
         val result = datasetMap.clearUserPrimaryKey(ci)
-        val ok = schemaLoader.dropPrimaryKey(ci)
-        require(ok, "Column cannot be unmade a system primary key")
+        schemaLoader.dropPrimaryKey(ci)
         schema += result.systemId -> result
         result
       }
 
       def makeUserPrimaryKey(ci: ColumnInfo): ColumnInfo = {
         val result = datasetMap.setUserPrimaryKey(ci)
-        val ok = schemaLoader.makePrimaryKey(result)
-        require(ok, "Column cannot be made a primary key")
+        try {
+          schemaLoader.makePrimaryKey(result)
+        } catch {
+          case e: schemaLoader.PrimaryKeyCreationException => e match {
+            case schemaLoader.NotPKableType(col, typ) =>
+              throw UnPKableColumnException(col, typ)
+            case schemaLoader.NullValuesInColumn(col) =>
+              throw NullCellsException(col)
+            case schemaLoader.DuplicateValuesInColumn(col) =>
+              throw DuplicateCellsException(col)
+          }
+        }
         schema += result.systemId -> result
         result
       }

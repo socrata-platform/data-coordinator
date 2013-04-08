@@ -2,6 +2,7 @@ package com.socrata.datacoordinator
 package truth.loader
 
 import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, CopyInfo}
+import com.socrata.soql.environment.{TypeName, ColumnName}
 
 trait SchemaLoader {
   def create(copyInfo: CopyInfo)
@@ -10,7 +11,12 @@ trait SchemaLoader {
   def addColumn(colInfo: ColumnInfo)
   def dropColumn(colInfo: ColumnInfo)
 
-  def makePrimaryKey(colInfo: ColumnInfo): Boolean // false if this type cannot be used as a PK by the database
-  def makeSystemPrimaryKey(colInfo: ColumnInfo): Boolean // false if this type cannot be used as a PK by the database
+  def makePrimaryKey(colInfo: ColumnInfo)
+  def makeSystemPrimaryKey(colInfo: ColumnInfo)
   def dropPrimaryKey(colInfo: ColumnInfo): Boolean
+
+  sealed abstract class PrimaryKeyCreationException extends Exception
+  case class NotPKableType(column: ColumnName, typ: TypeName) extends PrimaryKeyCreationException
+  case class NullValuesInColumn(column: ColumnName) extends PrimaryKeyCreationException
+  case class DuplicateValuesInColumn(column: ColumnName) extends PrimaryKeyCreationException
 }

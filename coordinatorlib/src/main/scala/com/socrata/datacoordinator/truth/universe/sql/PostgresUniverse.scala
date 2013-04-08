@@ -171,7 +171,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
     DatasetMutator(lowLevelDatabaseMutator, typeContext.nameFromType, Duration(10, "s"))
 
   def schemaLoader(datasetInfo: DatasetInfo) =
-    new RepBasedSqlSchemaLoader(conn, logger(datasetInfo), repFor, tablespace)
+    new RepBasedPostgresSchemaLoader(conn, logger(datasetInfo), repFor, tablespace)
 
   def datasetContentsCopier(datasetInfo: DatasetInfo): DatasetContentsCopier =
     new RepBasedSqlDatasetContentsCopier(conn, logger(datasetInfo), repFor, timingReport)

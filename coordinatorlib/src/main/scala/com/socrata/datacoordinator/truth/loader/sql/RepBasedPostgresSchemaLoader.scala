@@ -10,7 +10,10 @@ import com.socrata.datacoordinator.truth.sql.{DatabasePopulator, SqlPKableColumn
 import com.socrata.datacoordinator.truth.metadata.{LifecycleStage, CopyInfo, ColumnInfo}
 import org.joda.time.DateTime
 
-class RepBasedSqlSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV], repFor: ColumnInfo => SqlColumnRep[CT, CV], tablespace: String => Option[String]) extends SchemaLoader {
+class RepBasedPostgresSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV], repFor: ColumnInfo => SqlColumnRep[CT, CV], tablespace: String => Option[String]) extends SchemaLoader {
+  private val uniqueViolation = "23505"
+  private val notNullViolation = "23502"
+
   private def postgresTablespaceSuffixFor(s: String): String =
     tablespace(s) match {
       case Some(ts) =>
@@ -60,37 +63,36 @@ class RepBasedSqlSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV], repF
     logger.columnRemoved(columnInfo)
   }
 
-  def makePrimaryKey(columnInfo: ColumnInfo): Boolean = {
-    if(makePrimaryKeyWithoutLogging(columnInfo)) {
-      logger.rowIdentifierSet(columnInfo)
-      true
-    } else {
-      false
-    }
+  def makePrimaryKey(columnInfo: ColumnInfo) {
+    makePrimaryKeyWithoutLogging(columnInfo)
+    logger.rowIdentifierSet(columnInfo)
   }
 
-  def makeSystemPrimaryKey(columnInfo: ColumnInfo): Boolean =
-    if(makePrimaryKeyWithoutLogging(columnInfo)) {
-      logger.systemIdColumnSet(columnInfo)
-      true
-    } else {
-      false
-    }
+  def makeSystemPrimaryKey(columnInfo: ColumnInfo) {
+    makePrimaryKeyWithoutLogging(columnInfo)
+    logger.systemIdColumnSet(columnInfo)
+  }
 
-  def makePrimaryKeyWithoutLogging(columnInfo: ColumnInfo): Boolean = {
+  def makePrimaryKeyWithoutLogging(columnInfo: ColumnInfo) {
     repFor(columnInfo) match {
       case rep: SqlPKableColumnRep[CT, CV] =>
         using(conn.createStatement()) { stmt =>
           val table = columnInfo.copyInfo.dataTableName
-          for(col <- rep.physColumns) {
-            stmt.execute("ALTER TABLE " + table + " ALTER " + col + " SET NOT NULL")
+          try {
+            for(col <- rep.physColumns) {
+              stmt.execute("ALTER TABLE " + table + " ALTER " + col + " SET NOT NULL")
+            }
+            val indexName = "uniq_" + table + "_" + rep.base
+            stmt.execute("CREATE UNIQUE INDEX " + indexName + " ON " + table + "(" + rep.equalityIndexExpression + ")" + postgresTablespaceSuffixFor(indexName))
+          } catch {
+            case e: java.sql.SQLException if e.getSQLState == uniqueViolation =>
+              throw DuplicateValuesInColumn(columnInfo.logicalName)
+            case e: java.sql.SQLException if e.getSQLState == notNullViolation =>
+              throw NullValuesInColumn(columnInfo.logicalName)
           }
-          val indexName = "uniq_" + table + "_" + rep.base
-          stmt.execute("CREATE UNIQUE INDEX " + indexName + " ON " + table + "(" + rep.equalityIndexExpression + ")" + postgresTablespaceSuffixFor(indexName))
         }
-        true
       case _ =>
-        false
+        throw NotPKableType(columnInfo.logicalName, columnInfo.typeName)
     }
   }
 

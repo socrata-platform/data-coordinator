@@ -86,7 +86,7 @@ trait PostgresDataContext extends SqlDataWritingContext with SqlDataReadingConte
             lazy val truncator = new SqlTruncator(conn)
 
             def schemaLoader(datasetInfo: DatasetInfo): SchemaLoader =
-              new RepBasedSqlSchemaLoader(conn, logger(datasetInfo), sqlRepForColumn, tablespace)
+              new RepBasedPostgresSchemaLoader(conn, logger(datasetInfo), sqlRepForColumn, tablespace)
 
             def datasetContentsCopier(datasetInfo: DatasetInfo): DatasetContentsCopier =
               new RepBasedSqlDatasetContentsCopier(conn, logger(datasetInfo), sqlRepForColumn, timingReport)
