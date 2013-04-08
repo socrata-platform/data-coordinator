@@ -12,6 +12,8 @@ trait BaseDatasetMapReader {
   /** Gets the newest copy, no matter what the lifecycle stage is. */
   def latest(datasetInfo: DatasetInfo): CopyInfo
 
+  /** Returns all copies for this dataset, INCLUDING DISCARDED ONES.  The
+    * results are guaranteed to be ordered by copy number. */
   def allCopies(datasetInfo: DatasetInfo): Iterable[CopyInfo]
 
   /** Returns the number of snapshots attached to this dataset. */
@@ -32,7 +34,8 @@ trait BaseDatasetMapReader {
     * @param age 0 gets the newest snapshot, 1 the next newest, etc... */
   def snapshot(datasetInfo: DatasetInfo, age: Int): Option[CopyInfo]
 
-  /** Finds information for all this dataset's snapshots. */
+  /** Finds information for all this dataset's snapshots.  The results are guaranteed
+    * to be ordered by copy number. */
   def snapshots(datasetInfo: DatasetInfo): Iterable[CopyInfo]
 
   /** Finds information for the specified copy of this dataset, if it exists.

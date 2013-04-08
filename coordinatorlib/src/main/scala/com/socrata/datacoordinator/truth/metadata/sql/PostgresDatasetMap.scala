@@ -4,7 +4,7 @@ package sql
 
 import scala.collection.immutable.VectorBuilder
 
-import java.sql.{Statement, SQLException, PreparedStatement, Connection}
+import java.sql.{Connection, ResultSet, SQLException, Statement}
 
 import org.postgresql.util.PSQLException
 import com.rojoma.simplearm.util._
@@ -17,6 +17,10 @@ import com.socrata.datacoordinator.truth.metadata.CopyPair
 import com.socrata.datacoordinator.truth.metadata.`-impl`.Tag
 import scala.concurrent.duration.Duration
 import com.socrata.soql.environment.{ColumnName, TypeName}
+import com.socrata.datacoordinator.truth.metadata.DatasetInfo
+import com.socrata.datacoordinator.id.RowId
+import com.socrata.datacoordinator.truth.metadata.ColumnInfo
+import com.socrata.datacoordinator.truth.metadata.CopyInfo
 
 trait BasePostgresDatasetMapReader extends `-impl`.BaseDatasetMapReader {
   implicit def tag: Tag = null
@@ -55,20 +59,22 @@ trait BasePostgresDatasetMapReader extends `-impl`.BaseDatasetMapReader {
   def allCopies(datasetInfo: DatasetInfo): Vector[CopyInfo] =
     using(conn.prepareStatement(allCopiesQuery)) { stmt =>
       stmt.setLong(1, datasetInfo.systemId.underlying)
-      using(t("all-copies", "dataset_id" -> datasetInfo.systemId)(stmt.executeQuery())) { rs =>
-        val result = new VectorBuilder[CopyInfo]
-        while(rs.next()) {
-          result += CopyInfo(
-            datasetInfo,
-            new CopyId(rs.getLong("system_id")),
-            rs.getLong("copy_number"),
-            LifecycleStage.valueOf(rs.getString("lifecycle_stage")),
-            rs.getLong("data_version")
-          )
-        }
-        result.result()
-      }
+      using(t("all-copies", "dataset_id" -> datasetInfo.systemId)(stmt.executeQuery()))(readCopies(datasetInfo))
     }
+
+  private def readCopies(datasetInfo: DatasetInfo)(rs: ResultSet): Vector[CopyInfo] = {
+    val result = new VectorBuilder[CopyInfo]
+    while(rs.next()) {
+      result += CopyInfo(
+        datasetInfo,
+        new CopyId(rs.getLong("system_id")),
+        rs.getLong("copy_number"),
+        LifecycleStage.valueOf(rs.getString("lifecycle_stage")),
+        rs.getLong("data_version")
+      )
+    }
+    result.result()
+  }
 
   def lookupQuery = "SELECT system_id, copy_number, data_version FROM copy_map WHERE dataset_system_id = ? AND lifecycle_stage = CAST(? AS dataset_lifecycle_stage) ORDER BY copy_number DESC OFFSET ? LIMIT 1"
   def lookup(datasetInfo: DatasetInfo, stage: LifecycleStage, nth: Int = 0): Option[CopyInfo] = {
@@ -160,8 +166,13 @@ trait BasePostgresDatasetMapReader extends `-impl`.BaseDatasetMapReader {
   def snapshot(datasetInfo: DatasetInfo, age: Int) =
     lookup(datasetInfo, LifecycleStage.Snapshotted, age)
 
-  def snapshots(datasetInfo: DatasetInfo) =
-    allCopies(datasetInfo).filter(_.lifecycleStage == LifecycleStage.Snapshotted)
+  def snapshotsQuery = "SELECT system_id, copy_number, lifecycle_stage :: TEXT, data_version FROM copy_map WHERE dataset_system_id = ? AND lifecycle_stage = CAST(? AS dataset_lifecycle_stage) ORDER BY copy_number"
+  def snapshots(datasetInfo: DatasetInfo): Vector[CopyInfo] =
+    using(conn.prepareStatement(snapshotsQuery)) { stmt =>
+      stmt.setLong(1, datasetInfo.systemId.underlying)
+      stmt.setString(2, LifecycleStage.Snapshotted.name)
+      using(t("snapshots", "dataset_id" -> datasetInfo.systemId)(stmt.executeQuery()))(readCopies(datasetInfo))
+    }
 
   def datasetIdByUserIdQuery = "SELECT system_id FROM dataset_map WHERE dataset_name = ?"
   def datasetId(datasetId: String) =

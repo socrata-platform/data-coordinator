@@ -340,7 +340,7 @@ object DatasetMutator {
           firstOp(as, datasetName, LifecycleStage.Unpublished, _.publish()).map {
             case good@CopyOperationComplete(ctx) =>
               for(count <- snapshotsToKeep) {
-                val toDrop = ctx.datasetMap.snapshots(ctx.copyInfo.datasetInfo).toSeq.sortBy(_.copyNumber).dropRight(count)
+                val toDrop = ctx.datasetMap.snapshots(ctx.copyInfo.datasetInfo).dropRight(count)
                 for(snapshot <- toDrop) {
                   ctx.datasetMap.dropCopy(snapshot)
                   ctx.schemaLoader.drop(snapshot)
