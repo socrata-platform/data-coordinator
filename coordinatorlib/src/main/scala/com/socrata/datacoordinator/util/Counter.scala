@@ -9,5 +9,7 @@ class Counter(init: Int = 0) {
     r
   }
 
+  def lastValue = next - 1
+
   def peek = next
 }

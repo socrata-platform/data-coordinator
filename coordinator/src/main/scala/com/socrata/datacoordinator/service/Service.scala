@@ -196,13 +196,40 @@ class Service(processMutation: Iterator[JValue] => Unit,
           } catch { case _: JsonBadParse =>
             return BadRequest ~> Content("Not a JSON array")
           }
+
           processMutation(iterator)
+
           OK
         } catch {
-          case _: DatasetIdInUseByWriterException =>
-            Conflict ~> Content("Dataset in use by some other writer; retry later")
           case r: JsonReaderException =>
             BadRequest ~> Content("Malformed JSON : " + r.getMessage)
+          case e: Mutator.MutationException =>
+            def err(msg: String) =
+              e match {
+                case dataError: Mutator.RowDataException =>
+                  BadRequest ~> Content(dataError.index + ":" + dataError.subindex + ": " + msg)
+                case other =>
+                  BadRequest ~> Content(other.index + ": " + msg)
+              }
+            e match {
+              case Mutator.EmptyCommandStream() =>
+                err("Empty command stream")
+              case Mutator.CommandIsNotAnObject(value) =>
+                err("Command is not an object: " + value)
+              case Mutator.MissingCommandField(value, field) =>
+                err("Missing field " + field + " from object " + value)
+              case Mutator.InvalidCommandFieldValue(value, field) =>
+                err("Invalid value for field " + field + " at mutation script entry: " + value)
+              case Mutator.DatasetAlreadyExists(name) =>
+                err("Dataset " + name + " already exists")
+              case Mutator.NoSuchDataset(name) =>
+                err("No such dataset: " + name)
+              case Mutator.CannotAcquireDatasetWriteLock(name) =>
+                // TODO: This shouldn't be BadRequest
+                err("Cannot acquire write lock for dataset " + name)
+              case Mutator.IncorrectLifecycleStage(name, stage) =>
+                err("Cannot perform copy DDL while dataset " + name + " is in lifecycle stage " + stage.name)
+            }
         }
       case Left(response) =>
         response
