@@ -56,3 +56,30 @@ object UnanchoredColumnInfo extends ((ColumnId, ColumnName, TypeName, String, Bo
 case class ColumnInfo(copyInfo: CopyInfo, systemId: ColumnId, logicalName: ColumnName, typeName: TypeName, physicalColumnBaseBase: String, isSystemPrimaryKey: Boolean, isUserPrimaryKey: Boolean)(implicit tag: com.socrata.datacoordinator.truth.metadata.`-impl`.Tag)  extends ColumnInfoLike {
   def unanchored: UnanchoredColumnInfo = UnanchoredColumnInfo(systemId, logicalName, typeName, physicalColumnBaseBase, isSystemPrimaryKey, isUserPrimaryKey)
 }
+
+case class TypedColumnInfo[CT](copyInfo: CopyInfo, systemId: ColumnId, logicalName: ColumnName, typ: CT, physicalColumnBaseBase: String, isSystemPrimaryKey: Boolean, isUserPrimaryKey: Boolean)(ctx: TypedColumnInfoContext[CT], tag: com.socrata.datacoordinator.truth.metadata.`-impl`.Tag) {
+  def untyped = ctx.untyped(this)
+  def unanchored = untyped.unanchored
+}
+
+class TypedColumnInfoContext[CT](typeForName: TypeName => CT, nameForType: CT => TypeName) {
+  def typed(ci: ColumnInfo) = TypedColumnInfo(
+    copyInfo = ci.copyInfo,
+    systemId = ci.systemId,
+    logicalName = ci.logicalName,
+    typ = typeForName(ci.typeName),
+    physicalColumnBaseBase = ci.physicalColumnBaseBase,
+    isSystemPrimaryKey = ci.isSystemPrimaryKey,
+    isUserPrimaryKey = ci.isUserPrimaryKey
+  )(this, null)
+
+  def untyped(ci: TypedColumnInfo[CT]) = ColumnInfo(
+    copyInfo = ci.copyInfo,
+    systemId = ci.systemId,
+    logicalName = ci.logicalName,
+    typeName = nameForType(ci.typ),
+    physicalColumnBaseBase = ci.physicalColumnBaseBase,
+    isSystemPrimaryKey = ci.isSystemPrimaryKey,
+    isUserPrimaryKey = ci.isUserPrimaryKey
+  )(null)
+}
