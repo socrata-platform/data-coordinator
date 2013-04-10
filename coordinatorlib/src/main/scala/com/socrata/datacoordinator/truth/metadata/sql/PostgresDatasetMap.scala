@@ -190,13 +190,13 @@ class PostgresDatasetMapReader[CT](val conn: Connection, tns: TypeNamespace[CT],
   implicit def typeNamespace = tns
   def t = timingReport
 
-  def datasetInfoBySystemIdQuery = "SELECT system_id, dataset_name, table_base_base, next_row_id, obfuscation_key FROM dataset_map WHERE system_id = ?"
+  def datasetInfoBySystemIdQuery = "SELECT system_id, dataset_name, table_base_base, next_row_id, locale_name, obfuscation_key FROM dataset_map WHERE system_id = ?"
   def datasetInfo(datasetId: DatasetId) =
     using(conn.prepareStatement(datasetInfoBySystemIdQuery)) { stmt =>
       stmt.setLong(1, datasetId.underlying)
       using(t("lookup-dataset", "dataset_id" -> datasetId)(stmt.executeQuery())) { rs =>
         if(rs.next()) {
-          Some(DatasetInfo(new DatasetId(rs.getLong("system_id")), rs.getString("dataset_name"), rs.getString("table_base_base"), new RowId(rs.getLong("next_row_id")), rs.getBytes("obfuscation_key")))
+          Some(DatasetInfo(new DatasetId(rs.getLong("system_id")), rs.getString("dataset_name"), rs.getString("table_base_base"), new RowId(rs.getLong("next_row_id")), rs.getString("locale_name"), rs.getBytes("obfuscation_key")))
         } else {
           None
         }
@@ -208,15 +208,16 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
   val obfuscationKeyGenerator: () => Array[Byte]
   val initialRowId: RowId
 
-  def createQuery_tableMap = "INSERT INTO dataset_map (dataset_name, table_base_base, next_row_id, obfuscation_key) VALUES (?, ?, ?, ?) RETURNING system_id"
+  def createQuery_tableMap = "INSERT INTO dataset_map (dataset_name, table_base_base, next_row_id, locale_name, obfuscation_key) VALUES (?, ?, ?, ?, ?) RETURNING system_id"
   def createQuery_copyMap = "INSERT INTO copy_map (dataset_system_id, copy_number, lifecycle_stage, data_version) VALUES (?, ?, CAST(? AS dataset_lifecycle_stage), ?) RETURNING system_id"
-  def create(datasetId: String, tableBaseBase: String): CopyInfo = {
+  def create(datasetId: String, tableBaseBase: String, localeName: String): CopyInfo = {
     val datasetInfo = using(conn.prepareStatement(createQuery_tableMap)) { stmt =>
-      val datasetInfoNoSystemId = DatasetInfo(new DatasetId(-1), datasetId, tableBaseBase, initialRowId, obfuscationKeyGenerator())
+      val datasetInfoNoSystemId = DatasetInfo(new DatasetId(-1), datasetId, tableBaseBase, initialRowId, localeName, obfuscationKeyGenerator())
       stmt.setString(1, datasetInfoNoSystemId.datasetName)
       stmt.setString(2, datasetInfoNoSystemId.tableBaseBase)
       stmt.setLong(3, datasetInfoNoSystemId.nextRowId.underlying)
-      stmt.setBytes(4, datasetInfoNoSystemId.obfuscationKey)
+      stmt.setString(4, datasetInfoNoSystemId.localeName)
+      stmt.setBytes(5, datasetInfoNoSystemId.obfuscationKey)
       try {
         using(t("create-dataset", "dataset_name" -> datasetId)(stmt.executeQuery())) { rs =>
           val foundSomething = rs.next()
@@ -245,8 +246,8 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
   }
 
   def createQuery_copyMapWithSystemId = "INSERT INTO copy_map (system_id, dataset_system_id, copy_number, lifecycle_stage, data_version) VALUES (?, ?, ?, CAST(? AS dataset_lifecycle_stage), ?)"
-  def createWithId(systemId: DatasetId, datasetId: String, tableBaseBase: String, initialCopyId: CopyId, obfuscationKey: Array[Byte]): CopyInfo = {
-    val datasetInfo = unsafeCreateDataset(systemId, datasetId, tableBaseBase, initialRowId, obfuscationKey)
+  def createWithId(systemId: DatasetId, datasetId: String, tableBaseBase: String, initialCopyId: CopyId, localeName: String, obfuscationKey: Array[Byte]): CopyInfo = {
+    val datasetInfo = unsafeCreateDataset(systemId, datasetId, tableBaseBase, initialRowId, localeName, obfuscationKey)
 
     using(conn.prepareStatement(createQuery_copyMapWithSystemId)) { stmt =>
       val copyInfo = CopyInfo(datasetInfo, initialCopyId, 1, LifecycleStage.Unpublished, 0)
@@ -381,16 +382,17 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
     }
   }
 
-  def unsafeCreateDatasetQuery = "INSERT INTO dataset_map (system_id, dataset_name, table_base_base, next_row_id, obfuscation_key) VALUES (?, ?, ?, ?, ?)"
-  def unsafeCreateDataset(systemId: DatasetId, datasetId: String, tableBaseBase: String, nextRowId: RowId, obfuscationKey: Array[Byte]): DatasetInfo = {
-    val datasetInfo = DatasetInfo(systemId, datasetId, tableBaseBase, nextRowId, obfuscationKey)
+  def unsafeCreateDatasetQuery = "INSERT INTO dataset_map (system_id, dataset_name, table_base_base, next_row_id, locale_name, obfuscation_key) VALUES (?, ?, ?, ?, ?, ?)"
+  def unsafeCreateDataset(systemId: DatasetId, datasetId: String, tableBaseBase: String, nextRowId: RowId, localeName: String, obfuscationKey: Array[Byte]): DatasetInfo = {
+    val datasetInfo = DatasetInfo(systemId, datasetId, tableBaseBase, nextRowId, localeName, obfuscationKey)
 
     using(conn.prepareStatement(unsafeCreateDatasetQuery)) { stmt =>
       stmt.setLong(1, datasetInfo.systemId.underlying)
       stmt.setString(2, datasetInfo.datasetName)
       stmt.setString(3, datasetInfo.tableBaseBase)
       stmt.setLong(4, datasetInfo.nextRowId.underlying)
-      stmt.setBytes(5, datasetInfo.obfuscationKey)
+      stmt.setString(5, datasetInfo.localeName)
+      stmt.setBytes(6, datasetInfo.obfuscationKey)
       try {
         t("unsafe-create-dataset", "dataset_id" -> systemId)(stmt.execute())
         stmt.execute()
@@ -405,19 +407,21 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
     datasetInfo
   }
 
-  val unsafeReloadDatasetQuery = "UPDATE dataset_map SET dataset_name = ?, table_base_base = ?, next_row_id = ?, obfuscation_key = ? WHERE system_id = ?"
+  val unsafeReloadDatasetQuery = "UPDATE dataset_map SET dataset_name = ?, table_base_base = ?, next_row_id = ?, locale_name = ?, obfuscation_key = ? WHERE system_id = ?"
   def unsafeReloadDataset(datasetInfo: DatasetInfo,
                           datasetId: String,
                           tableBaseBase: String,
                           nextRowId: RowId,
+                          localeName: String,
                           obfuscationKey: Array[Byte]): DatasetInfo = {
-    val newDatasetInfo = DatasetInfo(datasetInfo.systemId, datasetId, tableBaseBase, nextRowId, obfuscationKey)
+    val newDatasetInfo = DatasetInfo(datasetInfo.systemId, datasetId, tableBaseBase, nextRowId, localeName, obfuscationKey)
     using(conn.prepareStatement(unsafeReloadDatasetQuery)) { stmt =>
       stmt.setString(1, newDatasetInfo.datasetName)
       stmt.setString(2, newDatasetInfo.tableBaseBase)
       stmt.setLong(3, newDatasetInfo.nextRowId.underlying)
       stmt.setLong(4, newDatasetInfo.systemId.underlying)
-      stmt.setBytes(5, newDatasetInfo.obfuscationKey)
+      stmt.setString(5, newDatasetInfo.localeName)
+      stmt.setBytes(6, newDatasetInfo.obfuscationKey)
       try {
         val updated = t("unsafe-reload-dataset", "dataset_id" -> datasetInfo.systemId)(stmt.executeUpdate())
         assert(updated == 1, s"Dataset ${datasetInfo.systemId.underlying} does not exist?")
@@ -677,7 +681,7 @@ class PostgresDatasetMapWriter[CT](val conn: Connection, tns: TypeNamespace[CT],
   def setTimeout(timeoutMs: Int) =
     s"SET LOCAL statement_timeout TO $timeoutMs"
   def datasetInfoBySystemIdQuery =
-    "SELECT system_id, dataset_name, table_base_base, next_row_id, obfuscation_key FROM dataset_map WHERE system_id = ? FOR UPDATE"
+    "SELECT system_id, dataset_name, table_base_base, next_row_id, locale_name, obfuscation_key FROM dataset_map WHERE system_id = ? FOR UPDATE"
   def resetTimeout = "SET LOCAL statement_timeout TO DEFAULT"
   def datasetInfo(datasetId: DatasetId, timeout: Duration) = {
     // For now we assume that we're the only one setting the statement_timeout
@@ -744,7 +748,7 @@ class PostgresDatasetMapWriter[CT](val conn: Connection, tns: TypeNamespace[CT],
   def getInfoResult(stmt: Statement) =
     using(stmt.getResultSet) { rs =>
       if(rs.next()) {
-        Some(DatasetInfo(new DatasetId(rs.getLong("system_id")), rs.getString("dataset_name"), rs.getString("table_base_base"), new RowId(rs.getLong("next_row_id")), rs.getBytes("obfuscation_key")))
+        Some(DatasetInfo(new DatasetId(rs.getLong("system_id")), rs.getString("dataset_name"), rs.getString("table_base_base"), new RowId(rs.getLong("next_row_id")), rs.getString("locale_name"), rs.getBytes("obfuscation_key")))
       } else {
         None
       }

@@ -80,7 +80,7 @@ object ChicagoCrimesLoadScript extends App {
 
     val user = "robertm"
 
-    try { datasetCreator.createDataset(datasetName, user) }
+    try { datasetCreator.createDataset(datasetName, user, "en_US") }
     catch { case _: DatasetAlreadyExistsException => /* pass */ }
     using(CSVIterator.fromFile(new File(inputFile))) { it =>
       val NumberT = dataContext.typeContext.typeNamespace.typeForUserType(TypeName("number")).get

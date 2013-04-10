@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS dataset_map (
   dataset_name    VARCHAR(%DATASET_ID_LEN%)    NOT NULL UNIQUE, -- This probably contains the domain ID in some manner...
   table_base_base VARCHAR(%PHYSTAB_BASE_LEN%)  NOT NULL, -- this + version_map's copy_number is used to name per-dataset tables.
   next_row_id     BIGINT                       NOT NULL,
+  locale_name     VARCHAR(%LOCALE_NAME_LEN%)   NOT NULL,
   obfuscation_key BYTEA                        NOT NULL
 );
 

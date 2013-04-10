@@ -124,7 +124,7 @@ trait DatasetMutator[CT, CV] {
 
   type TrueMutationContext <: MutationContext
 
-  def createDataset(as: String)(datasetName: String, tableBaseBase: String): Managed[Option[TrueMutationContext]]
+  def createDataset(as: String)(datasetName: String, tableBaseBase: String, localeName: String): Managed[Option[TrueMutationContext]]
 
   def openDataset(as: String)(datasetName: String): Managed[Option[TrueMutationContext]]
 
@@ -310,12 +310,12 @@ object DatasetMutator {
         go(as, datasetName, f)
     }
 
-    def createDataset(as: String)(datasetName: String, tableBaseBase: String) = new SimpleArm[Option[S]] {
+    def createDataset(as: String)(datasetName: String, tableBaseBase: String, localeName: String) = new SimpleArm[Option[S]] {
       def flatMap[A](f: Option[S] => A): A =
         for { llCtx <- databaseMutator.openDatabase } yield {
           val m = llCtx.datasetMap
           val firstVersion =
-            try { m.create(datasetName, tableBaseBase) }
+            try { m.create(datasetName, tableBaseBase, localeName) }
             catch { case _: DatasetAlreadyExistsException => return f(None) }
           val logger = llCtx.logger(firstVersion.datasetInfo)
           val schemaLoader = llCtx.schemaLoader(firstVersion.datasetInfo)

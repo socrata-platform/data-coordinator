@@ -20,7 +20,7 @@ object Mutator {
   }
 
   case class NormalMutation(index: Long) extends StreamType
-  case class CreateDatasetMutation(index: Long) extends StreamType
+  case class CreateDatasetMutation(index: Long, localeName: String) extends StreamType
   case class CreateWorkingCopyMutation(index: Long, copyData: Boolean) extends StreamType
   case class PublishWorkingCopyMutation(index: Long, keepingSnapshotCount: Option[Int]) extends StreamType
   case class DropWorkingCopyMutation(index: Long) extends StreamType
@@ -194,7 +194,9 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
       val fatalRowErrors = getWithDefault("fatal_row_errors", true)
       val streamType = command match {
         case "create" =>
-          CreateDatasetMutation(index)
+          val localeName = getWithDefault("locale", "en_US")
+          // TODO: Validate and canonicalize locale name
+          CreateDatasetMutation(index, localeName)
         case "copy" =>
           val copyData = get[Boolean]("copy_data")
           CreateWorkingCopyMutation(index, copyData)
@@ -238,8 +240,8 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
             val ctx = ctxOpt.getOrElse { throw NoSuchDataset(commands.datasetName)(idx) }
             doProcess(ctx)
           }
-        case CreateDatasetMutation(idx) =>
-          for(ctxOpt <- u.datasetMutator.createDataset(user)(commands.datasetName, "t")) {
+        case CreateDatasetMutation(idx, localeName) =>
+          for(ctxOpt <- u.datasetMutator.createDataset(user)(commands.datasetName, "t", localeName)) {
             val ctx = ctxOpt.getOrElse { throw DatasetAlreadyExists(commands.datasetName)(idx) }
             for((col, typ) <- systemSchema) {
               val ci = ctx.addColumn(col, typ, physicalColumnBaseBase(col, systemColumn = true))

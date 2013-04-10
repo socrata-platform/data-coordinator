@@ -81,7 +81,7 @@ class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingRe
     require(prototypeVersionInfo.lifecycleStage == LifecycleStage.Unpublished, "Bad lifecycle stage")
     require(prototypeVersionInfo.copyNumber == 1, "Bad lifecycle version")
 
-    val vi = datasetMap.createWithId(prototypeDatasetInfo.systemId, prototypeDatasetInfo.datasetName, prototypeDatasetInfo.tableBaseBase, prototypeVersionInfo.systemId, prototypeDatasetInfo.obfuscationKey)
+    val vi = datasetMap.createWithId(prototypeDatasetInfo.systemId, prototypeDatasetInfo.datasetName, prototypeDatasetInfo.tableBaseBase, prototypeVersionInfo.systemId, prototypeDatasetInfo.localeName, prototypeDatasetInfo.obfuscationKey)
     assert(vi.datasetInfo.unanchored == prototypeDatasetInfo)
     assert(vi.unanchored == prototypeVersionInfo)
     schemaLoader.create(vi)

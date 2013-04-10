@@ -27,7 +27,7 @@ trait DatasetMapWriter[CT] extends DatasetMapBase[CT] with `-impl`.BaseDatasetMa
     * @note `datasetId` needs to be globally unique; if you have namespacing do it yourself.
     * @throws DatasetAlreadyExistsException if `datasetId` is already in use.
     * @return A `CopyInfo` that refers to an unpublished copy. */
-  def create(datasetId: String, tableBaseBase: String): CopyInfo
+  def create(datasetId: String, tableBaseBase: String, localeName: String): CopyInfo
 
   /** Ensures that an "unpublished" table exists, creating it if necessary.
     * @note Does not copy the actual tables; this just updates the bookkeeping.
@@ -57,7 +57,7 @@ trait BackupDatasetMap[CT] extends DatasetMapWriter[CT] with `-impl`.BaseDataset
     * @throws DatasetAlreadyExistsException if `datasetId` is already in use.
     * @throws DatasetSystemIdAlreadyInUse if `systemId` is already in use.
     * @return A `CopyInfo` that refers to an unpublished copy with system id `systemId`. */
-  def createWithId(systemId: DatasetId, datasetId: String, tableBaseBase: String, initialCopySystemId: CopyId, obfuscationKey: Array[Byte]): CopyInfo
+  def createWithId(systemId: DatasetId, datasetId: String, tableBaseBase: String, initialCopySystemId: CopyId, localeName: String, obfuscationKey: Array[Byte]): CopyInfo
 
   /** Ensures that an "unpublished" table exists, creating it if necessary.
     * @note Does not copy the actual tables; this just updates the bookkeeping.
@@ -86,6 +86,7 @@ trait BackupDatasetMap[CT] extends DatasetMapWriter[CT] with `-impl`.BaseDataset
                           datasetId: String,
                           tableBaseBase: String,
                           nextRowId: RowId,
+                          localeName: String,
                           obfuscationKey: Array[Byte]): DatasetInfo
 
   /** Reloads a dataset with the specified attributes, including CLEARING ALL COPIES.
@@ -95,6 +96,7 @@ trait BackupDatasetMap[CT] extends DatasetMapWriter[CT] with `-impl`.BaseDataset
                           datasetId: String,
                           tableBaseBase: String,
                           nextRowId: RowId,
+                          localeName: String,
                           obfuscationKey: Array[Byte]): DatasetInfo
 
   /** Creates a copy with the specified attributes.

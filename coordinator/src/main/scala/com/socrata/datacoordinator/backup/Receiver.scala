@@ -235,9 +235,9 @@ object Receiver extends App {
           client.send(PreparingDatabaseForResync())
           stmt.execute("DROP TABLE IF EXISTS " + datasetInfo.logTableName)
         }
-        backup.datasetMap.unsafeReloadDataset(originalDatasetInfo, datasetInfo.datasetName, datasetInfo.tableBaseBase, datasetInfo.nextRowId, datasetInfo.obfuscationKey)
+        backup.datasetMap.unsafeReloadDataset(originalDatasetInfo, datasetInfo.datasetName, datasetInfo.tableBaseBase, datasetInfo.nextRowId, datasetInfo.localeName, datasetInfo.obfuscationKey)
       case None =>
-        backup.datasetMap.unsafeCreateDataset(datasetInfo.systemId, datasetInfo.datasetName, datasetInfo.tableBaseBase, datasetInfo.nextRowId, datasetInfo.obfuscationKey)
+        backup.datasetMap.unsafeCreateDataset(datasetInfo.systemId, datasetInfo.datasetName, datasetInfo.tableBaseBase, datasetInfo.nextRowId, datasetInfo.localeName, datasetInfo.obfuscationKey)
     }
 
     @tailrec
