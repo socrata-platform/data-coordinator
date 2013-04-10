@@ -42,8 +42,9 @@ trait SoQLDataContext extends DataSchemaContext with DataWritingContext with Dat
    def physicalColumnBaseBase(logicalName: ColumnName, systemColumn: Boolean) =
     AsciiIdentifierFilter(List(if(systemColumn) "s" else "u", logicalName.name)).take(datasetMapLimits.maximumPhysicalColumnBaseLength).replaceAll("_$", "").toLowerCase
 
-  def isLegalLogicalName(name: ColumnName) =
-    IdentifierFilter(name.name) == name.name && name.name.length <= datasetMapLimits.maximumLogicalColumnNameLength
+  def isLegalLogicalName(name: ColumnName) = {
+    IdentifierFilter(name.name) == name.name && name.name.length <= datasetMapLimits.maximumLogicalColumnNameLength && !name.name.contains('$')
+  }
 
   def rowPreparer(transactionStart: DateTime, schema: ColumnIdMap[AbstractColumnInfoLike]): RowPreparer[CV] =
     new RowPreparer[CV] {
