@@ -147,7 +147,7 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
             copyInfo,
             systemId,
             columnName,
-            typeNamespace.typeForName(rs.getString("type_name")),
+            typeNamespace.typeForName(copyInfo.datasetInfo, rs.getString("type_name")),
             rs.getString("physical_column_base_base"),
             rs.getBoolean("is_system_primary_key"),
             rs.getBoolean("is_user_primary_key"))

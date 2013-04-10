@@ -58,7 +58,7 @@ case class ColumnInfo[CT](copyInfo: CopyInfo, systemId: ColumnId, logicalName: C
 
 trait TypeNamespace[CT] {
   def nameForType(typ: CT): String
-  def typeForName(typeName: String): CT
+  def typeForName(datasetInfo: DatasetInfo, typeName: String): CT
   def typeForUserType(typeName: TypeName): Option[CT]
   def userTypeForType(typ: CT): TypeName
 }

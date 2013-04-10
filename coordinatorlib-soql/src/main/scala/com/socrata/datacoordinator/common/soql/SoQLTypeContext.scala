@@ -5,7 +5,7 @@ import scala.collection.JavaConverters._
 import com.socrata.soql.types._
 import com.socrata.datacoordinator.truth.{SimpleRowUserIdMap, RowUserIdMap, TypeContext}
 import com.socrata.datacoordinator.id.RowId
-import com.socrata.datacoordinator.truth.metadata.TypeNamespace
+import com.socrata.datacoordinator.truth.metadata.{DatasetInfo, TypeNamespace}
 import com.socrata.soql.environment.TypeName
 
 object SoQLTypeContext extends TypeContext[SoQLType, SoQLValue] {
@@ -21,7 +21,7 @@ object SoQLTypeContext extends TypeContext[SoQLType, SoQLValue] {
     private val typesByTypeName = SoQLType.typesByName.values.foldLeft(Map.empty[String, SoQLType]) { (acc, typ) =>
       acc + (typ.name.caseFolded -> typ)
     }
-    def typeForName(name: String) = typesByTypeName(name)
+    def typeForName(datasetInfo: DatasetInfo, name: String) = typesByTypeName(name)
 
     def nameForType(typ: SoQLType) = typ.name.caseFolded
 

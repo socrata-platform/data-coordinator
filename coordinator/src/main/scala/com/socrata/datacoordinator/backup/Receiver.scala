@@ -250,7 +250,7 @@ object Receiver extends App {
           val schema = locally {
             val createdColumns = new MutableColumnIdMap[ColumnInfo[SoQLType]]
             for(col <- columns) {
-              val colInfo = backup.datasetMap.addColumnWithId(col.systemId, copy, col.logicalName, typeNamespace.typeForName(col.typeName), col.physicalColumnBaseBase)
+              val colInfo = backup.datasetMap.addColumnWithId(col.systemId, copy, col.logicalName, typeNamespace.typeForName(copy.datasetInfo, col.typeName), col.physicalColumnBaseBase)
               createdColumns(colInfo.systemId) = colInfo
             }
             createdColumns.freeze()

@@ -5,12 +5,15 @@ import org.scalatest.matchers.MustMatchers
 import java.sql.{SQLException, Connection, DriverManager}
 import com.socrata.datacoordinator.truth.sql.{DatasetMapLimits, DatabasePopulator}
 import com.rojoma.simplearm.util._
-import com.socrata.datacoordinator.truth.metadata.{TypeNamespace, CopyPair, ColumnAlreadyExistsException, LifecycleStage}
+import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.id.{RowId, ColumnId}
 import com.socrata.datacoordinator.util.NoopTimingReport
 import scala.concurrent.duration.Duration
 import com.socrata.soql.environment.{TypeName, ColumnName}
+import scala.Some
+import com.socrata.datacoordinator.truth.metadata.CopyPair
+import com.socrata.datacoordinator.truth.sql.DatasetMapLimits
 
 class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
   def c(s: String) = ColumnName(s)
@@ -20,7 +23,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
   val noopTypeNamespace = new TypeNamespace[TypeName] {
     def nameForType(typ: TypeName): String = typ.name
 
-    def typeForName(typeName: String): TypeName = TypeName(typeName)
+    def typeForName(datasetInfo: DatasetInfo, typeName: String): TypeName = TypeName(typeName)
 
     def typeForUserType(typeName: TypeName): Option[TypeName] = Some(typeName)
 

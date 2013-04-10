@@ -91,7 +91,7 @@ class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingRe
   def addColumn(currentVersion: CopyInfo, columnInfo: UnanchoredColumnInfo): currentVersion.type = {
     // TODO: Re-paranoid this
     // Resync.unless(currentVersion, currentVersion == columnInfo.copyInfo, "Copy infos differ")
-    val ci = datasetMap.addColumnWithId(columnInfo.systemId, currentVersion, columnInfo.logicalName, typeNamespace.typeForName(columnInfo.typeName), columnInfo.physicalColumnBaseBase)
+    val ci = datasetMap.addColumnWithId(columnInfo.systemId, currentVersion, columnInfo.logicalName, typeNamespace.typeForName(currentVersion.datasetInfo, columnInfo.typeName), columnInfo.physicalColumnBaseBase)
     schemaLoader.addColumn(ci)
     Resync.unless(ci, ci.unanchored == columnInfo, "Newly created column info differs")
     currentVersion
