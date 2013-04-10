@@ -117,7 +117,7 @@ object Mutator {
   case class RenameColumn(index: Long, from: ColumnName, to: ColumnName) extends Command
   case class SetRowId(index: Long, name: ColumnName) extends Command
   case class DropRowId(index: Long, name: ColumnName) extends Command
-  case class RowData(index: Long, truncate: Boolean, mergeReplace: MergeReplace) extends Command
+  case class RowData(index: Long, truncate: Boolean, mergeReplace: MergeReplace, fatalRowErrors: Boolean) extends Command
 
   val AddColumnOp = "add column"
   val DropColumnOp = "drop column"
@@ -126,7 +126,7 @@ object Mutator {
   val DropRowIdOp = "drop row id"
   val RowDataOp = "row data"
 
-  class CommandStream(val streamType: StreamType, val datasetName: String, val user: String, val fatalRowErrors: Boolean, val rawCommandStream: BufferedIterator[JValue]) {
+  class CommandStream(val streamType: StreamType, val datasetName: String, val user: String, val rawCommandStream: BufferedIterator[JValue]) {
     private var idx = 1L
     private def nextIdx() = {
       val res = idx
@@ -158,7 +158,8 @@ object Mutator {
         case RowDataOp =>
           val truncate = getWithDefault("truncate", false)
           val mergeReplace = getWithDefault[MergeReplace]("update", Merge)
-          RowData(index, truncate, mergeReplace)
+          val fatalRowErrors = getWithDefault("fatal_row_errors", true)
+          RowData(index, truncate, mergeReplace, fatalRowErrors)
         case other =>
           throw InvalidCommandFieldValue(JString(other), "c")(index)
       }
@@ -192,7 +193,6 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
       val command = get[String]("c")
       val dataset = get[String]("dataset")
       val user = get[String]("user")
-      val fatalRowErrors = getWithDefault("fatal_row_errors", true)
       val streamType = command match {
         case "create" =>
           val locale = ULocale.createCanonical(getWithDefault("locale", "en_US"))
@@ -210,7 +210,7 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
         case other =>
           throw InvalidCommandFieldValue(JString(other), "c")(index)
       }
-      new CommandStream(streamType, dataset, user, fatalRowErrors, remainingCommands.buffered)
+      new CommandStream(streamType, dataset, user, remainingCommands.buffered)
     }
 
   def apply(u: Universe[CT, CV] with DatasetMutatorProvider, jsonRepFor: ColumnInfo[CT] => JsonColumnReadRep[CT, CV], commandStream: Iterator[JValue]) {
@@ -342,10 +342,10 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
               throw NoSuchColumn(name)(idx)
           }
           None
-        case RowData(idx, truncate, mergeReplace) =>
+        case RowData(idx, truncate, mergeReplace, fatalRowErrors) =>
           if(mergeReplace == Replace) ??? // TODO: implement this
           if(truncate) mutator.truncate()
-          Some(processRowData(idx, commands.rawCommandStream, commands.fatalRowErrors, mutator))
+          Some(processRowData(idx, commands.rawCommandStream, fatalRowErrors, mutator))
       }
     }
 
