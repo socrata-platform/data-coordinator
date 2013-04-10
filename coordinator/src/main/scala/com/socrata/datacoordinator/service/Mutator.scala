@@ -13,6 +13,7 @@ import scala.Some
 import com.rojoma.json.ast.JString
 import com.socrata.soql.environment.{TypeName, ColumnName}
 import com.socrata.datacoordinator.util.Counter
+import com.ibm.icu.util.ULocale
 
 object Mutator {
   sealed abstract class StreamType {
@@ -194,9 +195,8 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
       val fatalRowErrors = getWithDefault("fatal_row_errors", true)
       val streamType = command match {
         case "create" =>
-          val localeName = getWithDefault("locale", "en_US")
-          // TODO: Validate and canonicalize locale name
-          CreateDatasetMutation(index, localeName)
+          val locale = ULocale.createCanonical(getWithDefault("locale", "en_US"))
+          CreateDatasetMutation(index, locale.getName)
         case "copy" =>
           val copyData = get[Boolean]("copy_data")
           CreateWorkingCopyMutation(index, copyData)
