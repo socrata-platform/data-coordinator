@@ -4,11 +4,10 @@ package secondary
 import com.rojoma.simplearm.Managed
 
 import com.socrata.datacoordinator.truth.loader.Delogger
-import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, CopyInfo}
-import com.socrata.datacoordinator.util.collection.ColumnIdMap
+import com.socrata.datacoordinator.truth.metadata.DatasetCopyContext
 import com.socrata.datacoordinator.id.DatasetId
 
-trait Secondary[CV] {
+trait Secondary[CT, CV] {
   import Secondary.Cookie
 
   def shutdown()
@@ -48,7 +47,7 @@ trait Secondary[CV] {
     */
   def version(datasetId: DatasetId, dataVersion: Long, cookie: Cookie, events: Iterator[Delogger.LogEvent[CV]]): Cookie
 
-  def resync(copyInfo: CopyInfo, cookie: Cookie, schema: ColumnIdMap[ColumnInfo], rows: Managed[Iterator[Row[CV]]]): Cookie
+  def resync(copyContext: DatasetCopyContext[CT], cookie: Cookie, rows: Managed[Iterator[Row[CV]]]): Cookie
 }
 
 object Secondary {

@@ -36,18 +36,19 @@ import scala.concurrent.duration.Duration
 
 class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingReport, paranoid: Boolean) {
   val typeContext = SoQLTypeContext
-  val logger: Logger[SoQLValue] = NullLogger[SoQLValue]
-  val datasetMap: BackupDatasetMap = new PostgresDatasetMapWriter(conn, timingReport, () => sys.error("Backup should never generate obfuscation keys"), new RowId(0L))
+  val logger: Logger[SoQLType, SoQLValue] = NullLogger[SoQLType, SoQLValue]
+  val typeNamespace = SoQLTypeContext.typeNamespace
+  val datasetMap: BackupDatasetMap[SoQLType] = new PostgresDatasetMapWriter(conn, typeNamespace, timingReport, () => sys.error("Backup should never generate obfuscation keys"), new RowId(0L))
   def tablespace(s: String) = None
 
-  def genericRepFor(columnInfo: ColumnInfo): SqlColumnRep[SoQLType, SoQLValue] =
-    SoQLRep.sqlRepFactories(typeContext.typeFromName(columnInfo.typeName))(columnInfo.physicalColumnBase)
+  def genericRepFor(columnInfo: ColumnInfo[SoQLType]): SqlColumnRep[SoQLType, SoQLValue] =
+    SoQLRep.sqlRep(columnInfo)
 
   def extractCopier(conn: Connection, sql: String, input: Reader): Long = conn.asInstanceOf[PGConnection].getCopyAPI.copyIn(sql, input)
 
-  val schemaLoader: SchemaLoader = new RepBasedPostgresSchemaLoader(conn, logger, genericRepFor, tablespace)
-  val contentsCopier: DatasetContentsCopier = new RepBasedSqlDatasetContentsCopier(conn, logger, genericRepFor, timingReport)
-  def decsvifier(copyInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo]): DatasetDecsvifier =
+  val schemaLoader: SchemaLoader[SoQLType] = new RepBasedPostgresSchemaLoader(conn, logger, genericRepFor, tablespace)
+  val contentsCopier: DatasetContentsCopier[SoQLType] = new RepBasedSqlDatasetContentsCopier(conn, logger, genericRepFor, timingReport)
+  def decsvifier(copyInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo[SoQLType]]): DatasetDecsvifier =
     new PostgresDatasetDecsvifier(conn, extractCopier, copyInfo.dataTableName, schema.mapValuesStrict(genericRepFor))
 
   def dataLoader(version: CopyInfo): PrevettedLoader[SoQLValue] = {
@@ -73,7 +74,6 @@ class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingRe
     }
     logger.truncated()
   }
-
   def updateVersion(version: CopyInfo, newVersion: Long): CopyInfo =
     datasetMap.updateDataVersion(version, newVersion)
 
@@ -91,7 +91,7 @@ class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingRe
   def addColumn(currentVersion: CopyInfo, columnInfo: UnanchoredColumnInfo): currentVersion.type = {
     // TODO: Re-paranoid this
     // Resync.unless(currentVersion, currentVersion == columnInfo.copyInfo, "Copy infos differ")
-    val ci = datasetMap.addColumnWithId(columnInfo.systemId, currentVersion, columnInfo.logicalName, columnInfo.typeName, columnInfo.physicalColumnBaseBase)
+    val ci = datasetMap.addColumnWithId(columnInfo.systemId, currentVersion, columnInfo.logicalName, typeNamespace.typeForName(columnInfo.typeName), columnInfo.physicalColumnBaseBase)
     schemaLoader.addColumn(ci)
     Resync.unless(ci, ci.unanchored == columnInfo, "Newly created column info differs")
     currentVersion
@@ -159,7 +159,7 @@ class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingRe
         "published and unpublished schemas differ:\n" + oldSchema.mapValuesStrict(_.unanchored) + "\n" + newSchema.mapValuesStrict(_.unanchored))
     }
 
-    contentsCopier.copy(oldVersion, currentVersion, newSchema)
+    contentsCopier.copy(oldVersion, new DatasetCopyContext(currentVersion, newSchema))
 
     currentVersion
   }

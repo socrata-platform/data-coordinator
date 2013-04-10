@@ -13,10 +13,9 @@ import com.socrata.soql.types.{SoQLValue, SoQLFixedTimestamp, SoQLID, SoQLType}
 import com.socrata.datacoordinator.truth._
 import com.socrata.datacoordinator.truth.sql.{PostgresDataContext, DatasetMapLimits}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
-import com.socrata.datacoordinator.truth.metadata.ColumnInfo
+import com.socrata.datacoordinator.truth.metadata.{AbstractColumnInfoLike, ColumnInfo}
 import com.socrata.datacoordinator.truth.loader.RowPreparer
 import com.socrata.datacoordinator.id.RowId
-import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.soql.environment.{ColumnName, TypeName}
 import com.socrata.datacoordinator.truth.json.JsonColumnRep
 
@@ -46,7 +45,7 @@ trait SoQLDataContext extends DataSchemaContext with DataWritingContext with Dat
   def isLegalLogicalName(name: ColumnName) =
     IdentifierFilter(name.name) == name.name && name.name.length <= datasetMapLimits.maximumLogicalColumnNameLength
 
-  def rowPreparer(transactionStart: DateTime, schema: ColumnIdMap[ColumnInfo]) =
+  def rowPreparer(transactionStart: DateTime, schema: ColumnIdMap[AbstractColumnInfoLike]): RowPreparer[CV] =
     new RowPreparer[CV] {
       def findCol(name: ColumnName) =
         schema.values.find(_.logicalName == name).getOrElse(sys.error(s"No $name column?")).systemId
@@ -91,15 +90,14 @@ object SoQLDataContext {
 
 @deprecated("deprected", "now")
 trait PostgresSoQLDataContext extends PostgresDataContext with SoQLDataContext with ExecutionContext {
-  def sqlRepForColumn(physicalColumnBase: String, typ: CT) =
-    SoQLRep.sqlRepFactories(typ)(physicalColumnBase)
+  def sqlRepForColumn(ci: ColumnInfo[CT]) = SoQLRep.sqlRep(ci)
 
   def withRows[T](datasetName: String)(f: Iterator[Row] => T): Option[T] = {
     val conn = dataSource.getConnection()
     try {
       conn.setReadOnly(true)
       conn.setAutoCommit(false)
-      val datasetMap = new com.socrata.datacoordinator.truth.metadata.sql.PostgresDatasetMapReader(conn, timingReport)
+      val datasetMap = new com.socrata.datacoordinator.truth.metadata.sql.PostgresDatasetMapReader(conn, typeContext.typeNamespace, timingReport)
       for {
         datasetId <- datasetMap.datasetId(datasetName)
         di <- datasetMap.datasetInfo(datasetId)
@@ -142,6 +140,6 @@ trait PostgresSoQLDataContext extends PostgresDataContext with SoQLDataContext w
 
 @deprecated("deprected", "now")
 trait CsvSoQLDataContext extends CsvDataContext with SoQLDataContext {
-  def csvRepForColumn(typ: CT) =
-    SoQLRep.csvRepFactories(typ)
+  def csvRepForColumn(col: ColumnInfo[CT]) =
+    SoQLRep.csvRep(col)
 }

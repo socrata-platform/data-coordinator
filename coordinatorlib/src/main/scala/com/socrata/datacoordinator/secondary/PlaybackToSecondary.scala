@@ -18,15 +18,15 @@ import com.socrata.datacoordinator.truth.sql.SqlColumnReadRep
 import org.slf4j.LoggerFactory
 import com.socrata.datacoordinator.util.TimingReport
 
-class PlaybackToSecondary[CT, CV](conn: Connection, secondaryManifest: SecondaryManifest, repFor: ColumnInfo => SqlColumnReadRep[CT, CV], timingReport: TimingReport) {
+class PlaybackToSecondary[CT, CV](conn: Connection, secondaryManifest: SecondaryManifest, typeNamespace: TypeNamespace[CT], repFor: ColumnInfo[CT] => SqlColumnReadRep[CT, CV], timingReport: TimingReport) {
   require(!conn.getAutoCommit, "Connection must not be in auto-commit mode")
 
   val log = LoggerFactory.getLogger(classOf[PlaybackToSecondary[_,_]])
-  val datasetMapReader = new PostgresDatasetMapReader(conn, timingReport)
+  val datasetMapReader = new PostgresDatasetMapReader[CT](conn, typeNamespace, timingReport)
 
   val datasetLockTimeout = Duration.Inf
 
-  def apply(datasetId: DatasetId, secondary: NamedSecondary[CV], datasetMapReader: DatasetMapReader, delogger: Delogger[CV]) {
+  def apply(datasetId: DatasetId, secondary: NamedSecondary[CT, CV], datasetMapReader: DatasetMapReader[CT], delogger: Delogger[CV]) {
     datasetMapReader.datasetInfo(datasetId) match {
       case Some(datasetInfo) =>
         log.info("Found dataset " + datasetInfo.datasetName + " in truth")
@@ -49,16 +49,16 @@ class PlaybackToSecondary[CT, CV](conn: Connection, secondaryManifest: Secondary
     }
   }
 
-  def drop(secondary: NamedSecondary[CV], datasetId: DatasetId) {
+  def drop(secondary: NamedSecondary[CT, CV], datasetId: DatasetId) {
     timingReport("drop", "dataset" -> datasetId) {
       secondary.store.dropDataset(datasetId, getCookie(secondary, datasetId))
       dropFromSecondaryMap(secondary, datasetId)
     }
   }
 
-  def resync(datasetId: DatasetId, secondary: NamedSecondary[CV], delogger: Delogger[CV]) {
+  def resync(datasetId: DatasetId, secondary: NamedSecondary[CT, CV], delogger: Delogger[CV]) {
     timingReport("resync", "dataset" -> datasetId) {
-      val w = new PostgresDatasetMapWriter(conn, timingReport, () => sys.error("Secondary should not be generating obfuscation keys"), new RowId(0))
+      val w = new PostgresDatasetMapWriter(conn, typeNamespace, timingReport, () => sys.error("Secondary should not be generating obfuscation keys"), new RowId(0))
       w.datasetInfo(datasetId, datasetLockTimeout) match {
         case Some(datasetInfo) =>
           val allCopies = w.allCopies(datasetInfo)
@@ -70,8 +70,8 @@ class PlaybackToSecondary[CT, CV](conn: Connection, secondaryManifest: Secondary
             timingReport("copy", "number" -> copy.copyNumber) {
               currentCookie =
                 if(copy.lifecycleStage == LifecycleStage.Discarded) secondary.store.dropCopy(datasetId, copy.copyNumber, currentCookie)
-                else if(copy.lifecycleStage != LifecycleStage.Unpublished) syncCopy(secondary, copy, w.schema(copy), currentCookie)
-                else if(secondary.store.wantsWorkingCopies) syncCopy(secondary, copy, w.schema(copy), currentCookie)
+                else if(copy.lifecycleStage != LifecycleStage.Unpublished) syncCopy(secondary, new DatasetCopyContext(copy, w.schema(copy)), currentCookie)
+                else if(secondary.store.wantsWorkingCopies) syncCopy(secondary, new DatasetCopyContext(copy, w.schema(copy)), currentCookie)
                 else currentCookie
             }
           }
@@ -92,15 +92,19 @@ class PlaybackToSecondary[CT, CV](conn: Connection, secondaryManifest: Secondary
     }
   }
 
-  def syncCopy(secondary: NamedSecondary[CV], copy: CopyInfo, schema: ColumnIdMap[ColumnInfo], cookie: Secondary.Cookie): Secondary.Cookie =
-    timingReport("sync-copy", "secondary" -> secondary.storeId, "dataset" -> copy.datasetInfo.systemId, "copy" -> copy.copyNumber) {
-      secondary.store.resync(copy, cookie, schema, new SimpleArm[Iterator[Row[CV]]] {
+  def syncCopy(secondary: NamedSecondary[CT, CV], copyCtx: DatasetCopyContext[CT], cookie: Secondary.Cookie): Secondary.Cookie =
+    timingReport("sync-copy", "secondary" -> secondary.storeId, "dataset" -> copyCtx.datasetInfo.systemId, "copy" -> copyCtx.copyInfo.copyNumber) {
+      secondary.store.resync(copyCtx, cookie, new SimpleArm[Iterator[Row[CV]]] {
         def flatMap[A](f: Iterator[Row[CV]] => A): A =
-          new RepBasedDatasetExtractor(conn, copy.dataTableName, repFor(schema.values.find(_.isSystemPrimaryKey).getOrElse(sys.error("No system PK column?"))).asPKableRep, schema.mapValuesStrict(repFor)).allRows(None, None).map(f)
+          new RepBasedDatasetExtractor(
+            conn,
+            copyCtx.copyInfo.dataTableName,
+            repFor(copyCtx.schema.values.find(_.isSystemPrimaryKey).getOrElse(sys.error("No system PK column?"))).asPKableRep,
+            copyCtx.schema.mapValuesStrict(repFor)).allRows(None, None).map(f)
       })
     }
 
-  def playbackAll(datasetInfo: DatasetInfo, secondary: NamedSecondary[CV], datasetMapReader: DatasetMapReader, delogger: Delogger[CV]) {
+  def playbackAll(datasetInfo: DatasetInfo, secondary: NamedSecondary[CT, CV], datasetMapReader: DatasetMapReader[CT], delogger: Delogger[CV]) {
     timingReport("playback-all", "secondary" -> secondary.storeId, "dataset" -> datasetInfo.systemId) {
       val latest = datasetMapReader.latest(datasetInfo)
       var currentCookie = getCookie(secondary, datasetInfo.systemId)
@@ -121,7 +125,7 @@ class PlaybackToSecondary[CT, CV](conn: Connection, secondaryManifest: Secondary
     }
   }
 
-  def playback(secondary: NamedSecondary[CV], datasetInfo: DatasetInfo, dataVersion: Long, events: Iterator[Delogger.LogEvent[CV]], cookie: Secondary.Cookie): Secondary.Cookie = {
+  def playback(secondary: NamedSecondary[CT, CV], datasetInfo: DatasetInfo, dataVersion: Long, events: Iterator[Delogger.LogEvent[CV]], cookie: Secondary.Cookie): Secondary.Cookie = {
     timingReport("playback", "secondary" -> secondary.storeId, "dataset" -> datasetInfo.systemId, "version" -> dataVersion) {
       val newCookie = secondary.store.version(datasetInfo.systemId, dataVersion, cookie, events)
       updateSecondaryMap(secondary, datasetInfo.systemId, dataVersion, newCookie)
@@ -129,18 +133,18 @@ class PlaybackToSecondary[CT, CV](conn: Connection, secondaryManifest: Secondary
     }
   }
 
-  def getCookie(secondary: NamedSecondary[CV], datasetId: DatasetId): Secondary.Cookie =
+  def getCookie(secondary: NamedSecondary[CT, CV], datasetId: DatasetId): Secondary.Cookie =
     secondaryManifest.lastDataInfo(secondary.storeId, datasetId)._2
 
-  def updateSecondaryMap(secondary: NamedSecondary[CV], datasetId: DatasetId, newLastDataVersion: Long, newCookie: Secondary.Cookie) {
+  def updateSecondaryMap(secondary: NamedSecondary[CT, CV], datasetId: DatasetId, newLastDataVersion: Long, newCookie: Secondary.Cookie) {
     secondaryManifest.updateDataInfo(secondary.storeId, datasetId, newLastDataVersion, newCookie)
   }
 
-  def dropFromSecondaryMap(secondary: NamedSecondary[CV], datasetId: DatasetId) {
+  def dropFromSecondaryMap(secondary: NamedSecondary[CT, CV], datasetId: DatasetId) {
     secondaryManifest.dropDataset(secondary.storeId, datasetId)
   }
 
-  def playbackPublished(datasetInfo: DatasetInfo, secondary: NamedSecondary[CV], datasetMapReader: DatasetMapReader, delogger: Delogger[CV]) {
+  def playbackPublished(datasetInfo: DatasetInfo, secondary: NamedSecondary[CT, CV], datasetMapReader: DatasetMapReader[CT], delogger: Delogger[CV]) {
     timingReport("playback-published", "secondary" -> secondary.storeId, "dataset" -> datasetInfo.systemId) {
       var currentCookie = getCookie(secondary, datasetInfo.systemId)
       val currentVersion = secondary.store.currentVersion(datasetInfo.systemId, currentCookie)

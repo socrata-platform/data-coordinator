@@ -15,7 +15,7 @@ import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.loader.{SchemaLoader, DatasetContentsCopier, Loader, Logger}
 import com.socrata.datacoordinator.truth.metadata.sql.{PostgresDatasetMapReader, PostgresGlobalLog, PostgresDatasetMapWriter}
 import scala.concurrent.duration.Duration
-import com.socrata.datacoordinator.util.{TransferrableContextTimingReport, RowIdProvider, TimingReport}
+import com.socrata.datacoordinator.util.{TransferrableContextTimingReport, RowIdProvider}
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
 
@@ -23,8 +23,7 @@ trait SqlDataTypeContext extends DataTypeContext {
   val dataSource: DataSource
 
   type SqlRepType <: SqlColumnCommonRep[CT]
-  def sqlRepForColumn(physicalColumnBase: String, typ: CT): SqlRepType
-  final def sqlRepForColumn(ci: ColumnInfo): SqlRepType = sqlRepForColumn(ci.physicalColumnBase, typeContext.typeFromName(ci.typeName))
+  def sqlRepForColumn(ci: ColumnInfo[CT]): SqlRepType
 }
 
 trait SqlDataWritingContext extends SqlDataTypeContext with DataWritingContext {
@@ -32,15 +31,15 @@ trait SqlDataWritingContext extends SqlDataTypeContext with DataWritingContext {
 
   protected val loaderProvider: AbstractSqlLoaderProvider[CT, CV]
 
-  protected final def loaderFactory(conn: Connection, now: DateTime, copy: CopyInfo, schema: ColumnIdMap[ColumnInfo], idProvider: RowIdProvider, logger: Logger[CV], timingReport: TransferrableContextTimingReport): Loader[CV] = {
-    loaderProvider(conn, copy, schema, rowPreparer(now, schema), idProvider, logger, timingReport)
+  protected final def loaderFactory(conn: Connection, now: DateTime, copyCtx: DatasetCopyContext[CT], idProvider: RowIdProvider, logger: Logger[CT, CV], timingReport: TransferrableContextTimingReport): Loader[CV] = {
+    loaderProvider(conn, copyCtx, rowPreparer(now, copyCtx.schema), idProvider, logger, timingReport)
   }
 
-  val databaseMutator: LowLevelDatabaseMutator[CV]
+  val databaseMutator: LowLevelDatabaseMutator[CT, CV]
 
   val datasetMutatorLockTimeout: Duration
 
-  lazy val datasetMutator = DatasetMutator(databaseMutator, typeContext.nameFromType, datasetMutatorLockTimeout)
+  lazy val datasetMutator = DatasetMutator(databaseMutator, datasetMutatorLockTimeout)
 }
 
 trait SqlDataReadingContext extends SqlDataTypeContext with DataReadingContext {
@@ -60,16 +59,16 @@ trait PostgresDataContext extends SqlDataWritingContext with SqlDataReadingConte
     def copyIn(conn: Connection, sql: String, input: Reader) = self.copyIn(conn, sql, input)
   }
 
-  final lazy val datasetReader = new SimpleArm[DatasetReader[CV]] {
-    def flatMap[B](f: (DatasetReader[CV]) => B): B =
+  final lazy val datasetReader = new SimpleArm[DatasetReader[CT, CV]] {
+    def flatMap[B](f: (DatasetReader[CT, CV]) => B): B =
       using(dataSource.getConnection()) { conn =>
         conn.setAutoCommit(false)
         conn.setReadOnly(true)
-        f(DatasetReader(new PostgresDatabaseReader(conn, new PostgresDatasetMapReader(conn, timingReport), sqlRepForColumn)))
+        f(DatasetReader(new PostgresDatabaseReader(conn, new PostgresDatasetMapReader(conn, typeContext.typeNamespace, timingReport), sqlRepForColumn)))
       }
   }
 
-  final lazy val databaseMutator: LowLevelDatabaseMutator[CV] = {
+  final lazy val databaseMutator: LowLevelDatabaseMutator[CT, CV] = {
     import com.rojoma.simplearm.{SimpleArm, Managed}
     import com.rojoma.simplearm.util._
     import com.socrata.datacoordinator.truth.universe._
@@ -85,28 +84,28 @@ trait PostgresDataContext extends SqlDataWritingContext with SqlDataReadingConte
 
             lazy val truncator = new SqlTruncator(conn)
 
-            def schemaLoader(datasetInfo: DatasetInfo): SchemaLoader =
+            def schemaLoader(datasetInfo: DatasetInfo): SchemaLoader[CT] =
               new RepBasedPostgresSchemaLoader(conn, logger(datasetInfo), sqlRepForColumn, tablespace)
 
-            def datasetContentsCopier(datasetInfo: DatasetInfo): DatasetContentsCopier =
+            def datasetContentsCopier(datasetInfo: DatasetInfo): DatasetContentsCopier[CT] =
               new RepBasedSqlDatasetContentsCopier(conn, logger(datasetInfo), sqlRepForColumn, timingReport)
 
-            var loggerCache = Map.empty[String, Logger[CV]]
+            var loggerCache = Map.empty[String, Logger[CT, CV]]
 
-            def logger(datasetInfo: DatasetInfo): Logger[CV] =
+            def logger(datasetInfo: DatasetInfo): Logger[CT, CV] =
               loggerCache.get(datasetInfo.logTableName) match {
                 case Some(logger) =>
                   logger
                 case None =>
-                  val logger = new SqlLogger(conn, datasetInfo.logTableName, newRowLogCodec, timingReport)
+                  val logger = new SqlLogger[CT, CV](conn, datasetInfo.logTableName, newRowLogCodec, timingReport)
                   loggerCache += datasetInfo.logTableName -> logger
                   logger
               }
 
-            def loader(copy: CopyInfo, schema: ColumnIdMap[ColumnInfo], rowIdProvider: RowIdProvider, logger: Logger[CV]): Managed[Loader[CV]] =
+            def loader(copyCtx: DatasetCopyContext[CT], rowIdProvider: RowIdProvider, logger: Logger[CT, CV]): Managed[Loader[CV]] =
               new SimpleArm[Loader[CV]] {
                 def flatMap[B](f: Loader[CV] => B): B = {
-                  f(loaderProvider(conn, copy, schema, rowPreparer(transactionStart, schema), rowIdProvider, logger, timingReport))
+                  f(loaderProvider(conn, copyCtx, rowPreparer(transactionStart, copyCtx.schema), rowIdProvider, logger, timingReport))
                 }
               }
 
@@ -120,7 +119,7 @@ trait PostgresDataContext extends SqlDataWritingContext with SqlDataReadingConte
             val timingReport = self.timingReport
             var transactionStart: DateTime = DateTime.now()
             val globalLog: GlobalLog = new PostgresGlobalLog(conn)
-            val datasetMapWriter: DatasetMapWriter = new PostgresDatasetMapWriter(conn, timingReport, obfuscationKeyGenerator, initialRowId)
+            val datasetMapWriter: DatasetMapWriter[CT] = new PostgresDatasetMapWriter(conn, typeContext.typeNamespace, timingReport, obfuscationKeyGenerator, initialRowId)
           }
 
           val result = f(universe)

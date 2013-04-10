@@ -303,7 +303,7 @@ object Service extends App { self =>
     def versionInStore(storeId: String, datasetId: String): Option[Long] =
       using(dataSource.getConnection()) { conn =>
         val secondaryManifest = new SqlSecondaryManifest(conn)
-        val mapReader = new PostgresDatasetMapReader(conn, timingReport)
+        val mapReader = new PostgresDatasetMapReader(conn, dataContext.typeContext.typeNamespace, timingReport)
         for {
           systemId <- mapReader.datasetId(datasetId)
           result <- secondaryManifest.readLastDatasetInfo(storeId, systemId)
@@ -313,9 +313,9 @@ object Service extends App { self =>
       using(dataSource.getConnection()) { conn =>
         conn.setAutoCommit(false)
         val secondaryManifest = new SqlSecondaryManifest(conn)
-        val secondary = secondaries(storeId).asInstanceOf[Secondary[dataContext.CV]]
-        val pb = new PlaybackToSecondary[dataContext.CT, dataContext.CV](conn, secondaryManifest, dataContext.sqlRepForColumn, timingReport)
-        val mapReader = new PostgresDatasetMapReader(conn, timingReport)
+        val secondary = secondaries(storeId).asInstanceOf[Secondary[dataContext.CT, dataContext.CV]]
+        val pb = new PlaybackToSecondary[dataContext.CT, dataContext.CV](conn, secondaryManifest, dataContext.typeContext.typeNamespace, dataContext.sqlRepForColumn, timingReport)
+        val mapReader = new PostgresDatasetMapReader(conn, dataContext.typeContext.typeNamespace, timingReport)
         for {
           systemId <- mapReader.datasetId(datasetId)
           datasetInfo <- mapReader.datasetInfo(systemId)
@@ -328,7 +328,7 @@ object Service extends App { self =>
     def secondariesOfDataset(datasetId: String): Option[Map[String, Long]] =
       using(dataSource.getConnection()) { conn =>
         conn.setAutoCommit(false)
-        val mapReader = new PostgresDatasetMapReader(conn, timingReport)
+        val mapReader = new PostgresDatasetMapReader(conn, dataContext.typeContext.typeNamespace, timingReport)
         val secondaryManifest = new SqlSecondaryManifest(conn)
         for {
           systemId <- mapReader.datasetId(datasetId)
@@ -364,20 +364,15 @@ object Service extends App { self =>
 
       def systemSchema = dataContext.systemColumns
       def systemIdColumnName = dataContext.systemIdColumnName
-      def typeNameFor(typ: SoQLType) = dataContext.typeContext.nameFromType(typ)
-      def nameForTypeOpt(typeName: TypeName) = dataContext.typeContext.typeFromNameOpt(typeName)
+      def typeNameFor(typ: SoQLType) = dataContext.typeContext.typeNamespace.userTypeForType(typ)
+      def nameForTypeOpt(typeName: TypeName) = dataContext.typeContext.typeNamespace.typeForUserType(typeName)
     }
 
     val mutator = new Mutator(mutationCommon)
 
     def obfuscationContextFor(key: Array[Byte]) = new RowIdObfuscator(key)
 
-    def jsonRepForColumn(datasetInfo: DatasetInfo): AbstractColumnInfoLike => JsonColumnRep[SoQLType, SoQLValue] = {
-      val reps = SoQLRep.jsonRepFactories(obfuscationContextFor(datasetInfo.obfuscationKey));
-      { (col: AbstractColumnInfoLike) =>
-        reps(dataContext.typeContext.typeFromName(col.typeName))(col.logicalName)
-      }
-    }
+    val jsonRepForColumn = SoQLRep.jsonRep { di => obfuscationContextFor(di.obfuscationKey) }
 
     def processMutation(input: Iterator[JValue]) = {
       for(u <- universeProvider) {
@@ -387,8 +382,8 @@ object Service extends App { self =>
 
     def exporter(id: String, copy: CopySelector, columns: Option[Set[ColumnName]], limit: Option[Long], offset: Option[Long])(f: Iterator[JObject] => Unit): Boolean = {
       val res = for(u <- universeProvider) yield {
-        Exporter.export(u, id, copy, columns, limit, offset) { (copyInfo, schema, it) =>
-          val jsonSchema = schema.mapValuesStrict(jsonRepForColumn(copyInfo.datasetInfo))
+        Exporter.export(u, id, copy, columns, limit, offset) { (copyCtx, it) =>
+          val jsonSchema = copyCtx.schema.mapValuesStrict(jsonRepForColumn)
           f(it.map { row =>
             val res = new scala.collection.mutable.HashMap[String, JValue]
             row.foreach { case (cid, value) =>

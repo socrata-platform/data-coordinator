@@ -8,7 +8,7 @@ import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
 
 class SqlTruncator(conn: Connection) extends Truncator {
-  def truncate[CV](table: CopyInfo, logger: Logger[CV]) {
+  def truncate(table: CopyInfo, logger: Logger[_, _]) {
     using(conn.createStatement()) { stmt =>
       stmt.execute("DELETE FROM " + table.dataTableName)
     }

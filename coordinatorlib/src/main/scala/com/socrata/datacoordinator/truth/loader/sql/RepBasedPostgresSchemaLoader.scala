@@ -8,9 +8,8 @@ import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.truth.sql.{DatabasePopulator, SqlPKableColumnRep, SqlColumnRep}
 import com.socrata.datacoordinator.truth.metadata.{LifecycleStage, CopyInfo, ColumnInfo}
-import org.joda.time.DateTime
 
-class RepBasedPostgresSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV], repFor: ColumnInfo => SqlColumnRep[CT, CV], tablespace: String => Option[String]) extends SchemaLoader {
+class RepBasedPostgresSchemaLoader[CT, CV](conn: Connection, logger: Logger[CT, CV], repFor: ColumnInfo[CT] => SqlColumnRep[CT, CV], tablespace: String => Option[String]) extends SchemaLoader[CT] {
   private val uniqueViolation = "23505"
   private val notNullViolation = "23502"
 
@@ -43,7 +42,7 @@ class RepBasedPostgresSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV],
       sys.error("Dropped a non-snapshot/working copy")
   }
 
-  def addColumn(columnInfo: ColumnInfo) {
+  def addColumn(columnInfo: ColumnInfo[CT]) {
     val rep = repFor(columnInfo)
     using(conn.createStatement()) { stmt =>
       for((col, colTyp) <- rep.physColumns.zip(rep.sqlTypes)) {
@@ -53,7 +52,7 @@ class RepBasedPostgresSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV],
     logger.columnCreated(columnInfo)
   }
 
-  def dropColumn(columnInfo: ColumnInfo) {
+  def dropColumn(columnInfo: ColumnInfo[CT]) {
     val rep = repFor(columnInfo)
     using(conn.createStatement()) { stmt =>
       for(col <- rep.physColumns) {
@@ -63,17 +62,17 @@ class RepBasedPostgresSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV],
     logger.columnRemoved(columnInfo)
   }
 
-  def makePrimaryKey(columnInfo: ColumnInfo) {
+  def makePrimaryKey(columnInfo: ColumnInfo[CT]) {
     makePrimaryKeyWithoutLogging(columnInfo)
     logger.rowIdentifierSet(columnInfo)
   }
 
-  def makeSystemPrimaryKey(columnInfo: ColumnInfo) {
+  def makeSystemPrimaryKey(columnInfo: ColumnInfo[CT]) {
     makePrimaryKeyWithoutLogging(columnInfo)
     logger.systemIdColumnSet(columnInfo)
   }
 
-  def makePrimaryKeyWithoutLogging(columnInfo: ColumnInfo) {
+  def makePrimaryKeyWithoutLogging(columnInfo: ColumnInfo[CT]) {
     repFor(columnInfo) match {
       case rep: SqlPKableColumnRep[CT, CV] =>
         using(conn.createStatement()) { stmt =>
@@ -92,11 +91,11 @@ class RepBasedPostgresSchemaLoader[CT, CV](conn: Connection, logger: Logger[CV],
           }
         }
       case _ =>
-        throw NotPKableType(columnInfo.logicalName, columnInfo.typeName)
+        throw NotPKableType(columnInfo.logicalName, columnInfo.typ)
     }
   }
 
-  def dropPrimaryKey(columnInfo: ColumnInfo): Boolean = {
+  def dropPrimaryKey(columnInfo: ColumnInfo[CT]): Boolean = {
     repFor(columnInfo) match {
       case rep: SqlPKableColumnRep[CT, CV] =>
         using(conn.createStatement()) { stmt =>

@@ -14,7 +14,7 @@ import com.socrata.datacoordinator.packets.network.NetworkPackets
 import com.socrata.datacoordinator.packets.{PacketsInputStream, Packets}
 import com.socrata.datacoordinator.truth.loader.Delogger
 import com.socrata.datacoordinator.id.{ColumnId, DatasetId}
-import com.socrata.datacoordinator.common.soql.SoQLRowLogCodec
+import com.socrata.datacoordinator.common.soql.{SoQLTypeContext, SoQLRowLogCodec}
 import com.socrata.datacoordinator.truth.sql.DatabasePopulator
 import com.socrata.datacoordinator.common.StandardDatasetMapLimits
 import com.socrata.datacoordinator.truth.metadata._
@@ -26,6 +26,7 @@ import scala.Some
 import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
 import com.socrata.datacoordinator.util.NoopTimingReport
+import com.socrata.soql.types.SoQLType
 
 final abstract class Receiver
 
@@ -47,6 +48,7 @@ object Receiver extends App {
   val datasetMapLimits = StandardDatasetMapLimits
   val timingReport = NoopTimingReport
 
+  val typeNamespace = SoQLTypeContext.typeNamespace
   val codec = new LogDataCodec(() => SoQLRowLogCodec)
   val protocol = new Protocol(codec)
   import protocol._
@@ -246,9 +248,9 @@ object Receiver extends App {
           val copy = backup.datasetMap.unsafeCreateCopy(clearedDatasetInfo, copyInfo.systemId, copyInfo.copyNumber, copyInfo.lifecycleStage, copyInfo.dataVersion)
 
           val schema = locally {
-            val createdColumns = new MutableColumnIdMap[ColumnInfo]
+            val createdColumns = new MutableColumnIdMap[ColumnInfo[SoQLType]]
             for(col <- columns) {
-              val colInfo = backup.datasetMap.addColumnWithId(col.systemId, copy, col.logicalName, col.typeName, col.physicalColumnBaseBase)
+              val colInfo = backup.datasetMap.addColumnWithId(col.systemId, copy, col.logicalName, typeNamespace.typeForName(col.typeName), col.physicalColumnBaseBase)
               createdColumns(colInfo.systemId) = colInfo
             }
             createdColumns.freeze()
@@ -274,7 +276,7 @@ object Receiver extends App {
     client.send(ResyncComplete())
   }
 
-  def copyDataForResync(backup: Backup, client: Packets)(copyInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo], columns: Seq[ColumnId]) {
+  def copyDataForResync(backup: Backup, client: Packets)(copyInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo[SoQLType]], columns: Seq[ColumnId]) {
     val decsvifier = backup.decsvifier(copyInfo, schema)
     for {
       is <- managed(new PacketsInputStream(client, ResyncStreamDataLabel, ResyncStreamEndLabel, dataTimeout))

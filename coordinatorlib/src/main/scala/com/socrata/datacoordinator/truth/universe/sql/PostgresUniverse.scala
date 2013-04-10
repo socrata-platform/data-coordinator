@@ -6,7 +6,7 @@ import java.sql.Connection
 import java.io.Reader
 
 import org.joda.time.DateTime
-import com.rojoma.simplearm.{SimpleArm, Managed}
+import com.rojoma.simplearm.SimpleArm
 import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.truth.metadata._
@@ -17,7 +17,7 @@ import com.socrata.datacoordinator.secondary.{SecondaryManifest, PlaybackToSecon
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.loader.sql._
 import com.socrata.datacoordinator.secondary.sql.{SqlSecondaryConfig, SqlSecondaryManifest}
-import com.socrata.datacoordinator.util.{RowIdProvider, TransferrableContextTimingReport, TimingReport}
+import com.socrata.datacoordinator.util.{RowIdProvider, TransferrableContextTimingReport}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import scala.concurrent.duration.Duration
 import com.socrata.datacoordinator.truth.metadata.DatasetInfo
@@ -28,16 +28,16 @@ import com.socrata.datacoordinator.id.RowId
 trait CommonSupport[CT, CV] {
   val executor: ExecutorService
   val typeContext: TypeContext[CT, CV]
-  def repFor(ci: ColumnInfo): SqlColumnRep[CT, CV]
+  def repFor(ci: ColumnInfo[CT]): SqlColumnRep[CT, CV]
   def newRowCodec(): RowLogCodec[CV]
-  def isSystemColumn(ci: ColumnInfo): Boolean
+  def isSystemColumn(ci: AbstractColumnInfoLike): Boolean
 
   val obfuscationKeyGenerator: () => Array[Byte]
   val initialRowId: RowId
   val tablespace: String => Option[String]
   val copyInProvider: (Connection, String, Reader) => Long
 
-  def rowPreparer(transactionStart: DateTime, schema: ColumnIdMap[ColumnInfo]): RowPreparer[CV]
+  def rowPreparer(transactionStart: DateTime, schema: ColumnIdMap[AbstractColumnInfoLike]): RowPreparer[CV]
 
   lazy val loaderProvider = new AbstractSqlLoaderProvider(executor, typeContext, repFor, isSystemColumn) with PostgresSqlLoaderProvider[CT, CV] {
     def copyIn(conn: Connection, sql: String, reader: Reader): Long =
@@ -84,7 +84,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
 {
   import commonSupport._
 
-  private var loggerCache = Map.empty[String, Logger[CV]]
+  private var loggerCache = Map.empty[String, Logger[CT, CV]]
   private var txnStart = DateTime.now()
 
   def commit() {
@@ -100,15 +100,15 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
     new PostgresSecondaryPlaybackManifest(conn, storeId)
 
   lazy val playbackToSecondary: PlaybackToSecondary[CT, CV] =
-    new PlaybackToSecondary(conn, secondaryManifest, repFor, timingReport)
+    new PlaybackToSecondary(conn, secondaryManifest, typeContext.typeNamespace, repFor, timingReport)
 
-  def logger(datasetInfo: DatasetInfo): Logger[CV] = {
+  def logger(datasetInfo: DatasetInfo): Logger[CT, CV] = {
     val logName = datasetInfo.logTableName
     loggerCache.get(logName) match {
       case Some(logger) =>
         logger
       case None =>
-        val logger = new SqlLogger(conn, logName, newRowCodec, timingReport)
+        val logger = new SqlLogger[CT, CV](conn, logName, newRowCodec, timingReport)
         loggerCache += logName -> logger
         logger
     }
@@ -123,11 +123,11 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
   lazy val truncator =
     new SqlTruncator(conn)
 
-  lazy val datasetMapReader: DatasetMapReader =
-    new PostgresDatasetMapReader(conn, timingReport)
+  lazy val datasetMapReader: DatasetMapReader[CT] =
+    new PostgresDatasetMapReader(conn, typeContext.typeNamespace, timingReport)
 
-  lazy val datasetMapWriter: DatasetMapWriter =
-    new PostgresDatasetMapWriter(conn, timingReport, obfuscationKeyGenerator, initialRowId)
+  lazy val datasetMapWriter: DatasetMapWriter[CT] =
+    new PostgresDatasetMapWriter(conn, typeContext.typeNamespace, timingReport, obfuscationKeyGenerator, initialRowId)
 
   lazy val globalLogPlayback: GlobalLogPlayback =
     new PostgresGlobalLogPlayback(conn)
@@ -138,7 +138,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
   lazy val globalLog =
     new PostgresGlobalLog(conn)
 
-  def datasetContextFactory(schema: ColumnIdMap[ColumnInfo]): RepBasedSqlDatasetContext[CT, CV] = {
+  def datasetContextFactory(schema: ColumnIdMap[ColumnInfo[CT]]): RepBasedSqlDatasetContext[CT, CV] = {
     RepBasedSqlDatasetContext(
       typeContext,
       schema.mapValuesStrict(repFor),
@@ -151,11 +151,11 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
   def sqlizerFactory(copyInfo: CopyInfo, datasetContext: RepBasedSqlDatasetContext[CT, CV]) =
     new PostgresRepBasedDataSqlizer(copyInfo.dataTableName, datasetContext, executor, copyInProvider)
 
-  def prevettedLoader(copyInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[CV]) =
-    new SqlPrevettedLoader(conn, sqlizerFactory(copyInfo, datasetContextFactory(schema)), logger)
+  def prevettedLoader(copyCtx: DatasetCopyContext[CT], logger: Logger[CT, CV]) =
+    new SqlPrevettedLoader(conn, sqlizerFactory(copyCtx.copyInfo, datasetContextFactory(copyCtx.schema)), logger)
 
-  def loader(copyInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo], rowIdProvider: RowIdProvider, logger: Logger[CV]) =
-    managed(loaderProvider(conn, copyInfo, schema, rowPreparer(transactionStart, schema), rowIdProvider, logger, timingReport))
+  def loader(copyCtx: DatasetCopyContext[CT], rowIdProvider: RowIdProvider, logger: Logger[CT, CV]) =
+    managed(loaderProvider(conn, copyCtx, rowPreparer(transactionStart, copyCtx.schema), rowIdProvider, logger, timingReport))
 
   lazy val lowLevelDatabaseReader = new PostgresDatabaseReader(conn, datasetMapReader, repFor)
 
@@ -168,11 +168,11 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
   )
 
   lazy val datasetMutator: DatasetMutator[CT, CV] =
-    DatasetMutator(lowLevelDatabaseMutator, typeContext.nameFromType, Duration(10, "s"))
+    DatasetMutator(lowLevelDatabaseMutator, Duration(10, "s"))
 
   def schemaLoader(datasetInfo: DatasetInfo) =
     new RepBasedPostgresSchemaLoader(conn, logger(datasetInfo), repFor, tablespace)
 
-  def datasetContentsCopier(datasetInfo: DatasetInfo): DatasetContentsCopier =
+  def datasetContentsCopier(datasetInfo: DatasetInfo): DatasetContentsCopier[CT] =
     new RepBasedSqlDatasetContentsCopier(conn, logger(datasetInfo), repFor, timingReport)
 }

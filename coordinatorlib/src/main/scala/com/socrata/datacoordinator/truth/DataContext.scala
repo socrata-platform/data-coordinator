@@ -3,7 +3,7 @@ package com.socrata.datacoordinator.truth
 import org.joda.time.DateTime
 import com.rojoma.simplearm.Managed
 
-import com.socrata.datacoordinator.truth.metadata.{AbstractColumnInfoLike, ColumnInfoLike, ColumnInfo}
+import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth.loader.RowPreparer
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.sql.DatasetMapLimits
@@ -12,6 +12,7 @@ import com.socrata.datacoordinator.truth.csv.CsvColumnRep
 import com.socrata.datacoordinator.util.TimingReport
 import com.socrata.soql.environment.{TypeName, ColumnName}
 import com.socrata.datacoordinator.id.RowId
+import com.socrata.datacoordinator.truth.sql.DatasetMapLimits
 
 @deprecated
 trait DataTypeContext {
@@ -56,13 +57,13 @@ trait DataSchemaContext extends DataTypeContext {
   /** Convenience alias for `isSystemColumn` which operates on [[com.socrata.datacoordinator.truth.metadata.ColumnInfo]]
     * and [[com.socrata.datacoordinator.truth.metadata.UnanchoredColumnInfo]] values.
     */
-  def isSystemColumn(ci: ColumnInfoLike): Boolean = isSystemColumn(ci.logicalName)
+  def isSystemColumn(ci: AbstractColumnInfoLike): Boolean = isSystemColumn(ci.logicalName)
 }
 
 @deprecated
 trait DataWritingContext extends DataTypeContext {
   /** Creates a row preparer object for use within a series of insert or update events. */
-  def rowPreparer(transactionStart: DateTime, schema: ColumnIdMap[ColumnInfo]): RowPreparer[CV]
+  def rowPreparer(transactionStart: DateTime, schema: ColumnIdMap[AbstractColumnInfoLike]): RowPreparer[CV]
 
   /** Monad in which actions to update the database may occur. */
   val datasetMutator: DatasetMutator[CT, CV]
@@ -86,12 +87,12 @@ trait DataWritingContext extends DataTypeContext {
 
 @deprecated
 trait DataReadingContext extends DataTypeContext {
-  val datasetReader: Managed[DatasetReader[CV]]
+  val datasetReader: Managed[DatasetReader[CT, CV]]
 }
 
 @deprecated
 trait CsvDataContext extends DataTypeContext {
   type CsvRepType = CsvColumnRep[CT, CV]
 
-  def csvRepForColumn(typ: CT): CsvRepType
+  def csvRepForColumn(col: ColumnInfo[CT]): CsvRepType
 }

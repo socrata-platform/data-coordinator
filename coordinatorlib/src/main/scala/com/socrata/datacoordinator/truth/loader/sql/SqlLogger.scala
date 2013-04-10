@@ -14,13 +14,13 @@ import com.socrata.datacoordinator.truth.RowLogCodec
 import com.socrata.datacoordinator.truth.metadata.{CopyInfo, ColumnInfo}
 import com.socrata.datacoordinator.id.RowId
 
-class SqlLogger[CV](connection: Connection,
-                    logTableName: String,
-                    rowCodecFactory: () => RowLogCodec[CV],
-                    timingReport: TimingReport,
-                    rowFlushSize: Int = 128000,
-                    batchFlushSize: Int = 2000000)
-  extends Logger[CV]
+class SqlLogger[CT, CV](connection: Connection,
+                        logTableName: String,
+                        rowCodecFactory: () => RowLogCodec[CV],
+                        timingReport: TimingReport,
+                        rowFlushSize: Int = 128000,
+                        batchFlushSize: Int = 2000000)
+  extends Logger[CT, CV]
 {
   import SqlLogger.log
 
@@ -95,37 +95,37 @@ class SqlLogger[CV](connection: Connection,
     logLine(SqlLogger.Truncated, nullBytes)
   }
 
-  def columnCreated(info: ColumnInfo) {
+  def columnCreated(info: ColumnInfo[CT]) {
     checkTxn()
     flushRowData()
     logLine(SqlLogger.ColumnCreated, JsonUtil.renderJson(info.unanchored))
   }
 
-  def columnRemoved(info: ColumnInfo) {
+  def columnRemoved(info: ColumnInfo[CT]) {
     checkTxn()
     flushRowData()
     logLine(SqlLogger.ColumnRemoved, JsonUtil.renderJson(info.unanchored))
   }
 
-  def rowIdentifierSet(info: ColumnInfo) {
+  def rowIdentifierSet(info: ColumnInfo[CT]) {
     checkTxn()
     flushRowData()
     logLine(SqlLogger.RowIdentifierSet, JsonUtil.renderJson(info.unanchored))
   }
 
-  def rowIdentifierCleared(info: ColumnInfo) {
+  def rowIdentifierCleared(info: ColumnInfo[CT]) {
     checkTxn()
     flushRowData()
     logLine(SqlLogger.RowIdentifierCleared, JsonUtil.renderJson(info.unanchored))
   }
 
-  def systemIdColumnSet(info: ColumnInfo) {
+  def systemIdColumnSet(info: ColumnInfo[CT]) {
     checkTxn()
     flushRowData()
     logLine(SqlLogger.SystemRowIdentifierChanged, JsonUtil.renderJson(info.unanchored))
   }
 
-  def logicalNameChanged(info: ColumnInfo) {
+  def logicalNameChanged(info: ColumnInfo[CT]) {
     checkTxn()
     flushRowData()
     logLine(SqlLogger.ColumnLogicalNameChanged, JsonUtil.renderJson(info.unanchored))
@@ -253,7 +253,7 @@ class SqlLogger[CV](connection: Connection,
 }
 
 object SqlLogger {
-  private val log = org.slf4j.LoggerFactory.getLogger(classOf[SqlLogger[_]])
+  private val log = org.slf4j.LoggerFactory.getLogger(classOf[SqlLogger[_,_]])
 
   // all of these must be at most 8 characters long and consist of
   // nothing but lower-case ASCII letters.

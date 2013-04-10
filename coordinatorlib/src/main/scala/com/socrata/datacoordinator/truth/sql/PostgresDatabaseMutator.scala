@@ -8,7 +8,7 @@ import org.joda.time.DateTime
 import com.rojoma.simplearm.util._
 import com.rojoma.simplearm.Managed
 
-import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, CopyInfo, GlobalLog, DatasetMapWriter, DatasetInfo}
+import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth.metadata.sql.{PostgresGlobalLog, PostgresDatasetMapWriter}
 import com.socrata.datacoordinator.truth.loader.{DatasetContentsCopier, Logger, SchemaLoader, Loader, Report, RowPreparer}
 import com.socrata.datacoordinator.truth.loader.sql.{RepBasedSqlDatasetContentsCopier, SqlLogger}
@@ -26,32 +26,32 @@ import com.socrata.datacoordinator.truth.metadata.CopyInfo
 // Does this need to be *Postgres*, or is all postgres-specific stuff encapsulated in its paramters?
 // Actually does this need to be in the sql package at all now that Universe exists?
 class PostgresDatabaseMutator[CT, CV](universe: Managed[Universe[CT, CV] with LoggerProvider with SchemaLoaderProvider with LoaderProvider with TruncatorProvider with DatasetContentsCopierProvider with DatasetMapWriterProvider with GlobalLogProvider])
-  extends LowLevelDatabaseMutator[CV]
+  extends LowLevelDatabaseMutator[CT, CV]
 {
   // type LoaderProvider = (CopyInfo, ColumnIdMap[ColumnInfo], RowPreparer[CV], IdProvider, Logger[CV], ColumnInfo => SqlColumnRep[CT, CV]) => Loader[CV]
 
-  private class S(universe: Universe[CT, CV] with LoggerProvider with SchemaLoaderProvider with LoaderProvider with TruncatorProvider with DatasetContentsCopierProvider with DatasetMapWriterProvider with GlobalLogProvider) extends MutationContext {
+  private class S(val universe: Universe[CT, CV] with LoggerProvider with SchemaLoaderProvider with LoaderProvider with TruncatorProvider with DatasetContentsCopierProvider with DatasetMapWriterProvider with GlobalLogProvider) extends MutationContext {
     lazy val now = universe.transactionStart
 
-    final def loadLatestVersionOfDataset(datasetId: DatasetId, lockTimeout: Duration): Option[(CopyInfo, ColumnIdMap[ColumnInfo])] = {
+    final def loadLatestVersionOfDataset(datasetId: DatasetId, lockTimeout: Duration): Option[DatasetCopyContext[CT]] = {
       val map = datasetMap
       map.datasetInfo(datasetId, lockTimeout) map { datasetInfo =>
         val latest = map.latest(datasetInfo)
         val schema = map.schema(latest)
-        (latest, schema)
+        new DatasetCopyContext(latest, schema)
       }
     }
 
-    def logger(datasetInfo: DatasetInfo): Logger[CV] =
+    def logger(datasetInfo: DatasetInfo): Logger[CT, CV] =
       universe.logger(datasetInfo)
 
-    def schemaLoader(datasetInfo: DatasetInfo): SchemaLoader =
+    def schemaLoader(datasetInfo: DatasetInfo): SchemaLoader[CT] =
       universe.schemaLoader(datasetInfo)
 
-    def truncate(table: CopyInfo, logger: Logger[CV]) =
+    def truncate(table: CopyInfo, logger: Logger[CT, CV]) =
       universe.truncator.truncate(table, logger)
 
-    def datasetContentsCopier(datasetInfo: DatasetInfo): DatasetContentsCopier =
+    def datasetContentsCopier(datasetInfo: DatasetInfo): DatasetContentsCopier[CT] =
       universe.datasetContentsCopier(datasetInfo)
 
     def globalLog = universe.globalLog
@@ -65,9 +65,9 @@ class PostgresDatabaseMutator[CT, CV](universe: Managed[Universe[CT, CV] with Lo
 
     def datasetMap = universe.datasetMapWriter
 
-    def withDataLoader[A](table: CopyInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[CV])(f: (Loader[CV]) => A): (Report[CV], RowId, A) = {
-      val idProvider = new RowIdProvider(table.datasetInfo.nextRowId)
-      for(loader <- universe.loader(table, schema, idProvider, logger)) yield {
+    def withDataLoader[A](copyCtx: DatasetCopyContext[CT], logger: Logger[CT, CV])(f: (Loader[CV]) => A): (Report[CV], RowId, A) = {
+      val idProvider = new RowIdProvider(copyCtx.datasetInfo.nextRowId)
+      for(loader <- universe.loader(copyCtx, idProvider, logger)) yield {
         val result = f(loader)
         val report = loader.report
         (report, idProvider.finish(), result)

@@ -1,8 +1,7 @@
 package com.socrata.datacoordinator.truth.loader
 
-import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, CopyInfo}
-import com.socrata.datacoordinator.util.collection.ColumnIdMap
+import com.socrata.datacoordinator.truth.metadata.{DatasetCopyContext, CopyInfo}
 
-trait DatasetContentsCopier {
-  def copy(from: CopyInfo, to: CopyInfo, schema: ColumnIdMap[ColumnInfo])
+trait DatasetContentsCopier[CT] {
+  def copy(from: CopyInfo, to: DatasetCopyContext[CT])
 }

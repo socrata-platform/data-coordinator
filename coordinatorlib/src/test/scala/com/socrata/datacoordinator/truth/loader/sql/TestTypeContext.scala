@@ -7,6 +7,7 @@ import scala.collection.JavaConverters._
 import com.socrata.datacoordinator.truth.{RowUserIdMap, TypeContext}
 import com.socrata.datacoordinator.id.RowId
 import com.socrata.soql.environment.TypeName
+import com.socrata.datacoordinator.truth.metadata.TypeNamespace
 
 object TestTypeContext extends TypeContext[TestColumnType, TestColumnValue] {
   def makeValueFromSystemId(id: RowId) = LongValue(id.underlying)
@@ -18,15 +19,25 @@ object TestTypeContext extends TypeContext[TestColumnType, TestColumnValue] {
   def isNull(v: TestColumnValue) = v == NullValue
   def nullValue = NullValue
 
-  val types = Map(
-    TypeName("long") -> LongColumn,
-    TypeName("string") -> StringColumn
-  )
+  val typeNamespace = new TypeNamespace[TestColumnType] {
+    val types = Map(
+      "long" -> LongColumn,
+      "string" -> StringColumn
+    )
 
-  def typeFromNameOpt(name: TypeName) = types.get(name)
-  def nameFromType(typ: TestColumnType) = typ match {
-    case LongColumn => TypeName("long")
-    case StringColumn => TypeName("string")
+    def nameForType(typ: TestColumnType): String = typ match {
+      case LongColumn => "long"
+      case StringColumn => "string"
+    }
+
+    def typeForName(typeName: String): TestColumnType = types(typeName)
+
+    def typeForUserType(typeName: TypeName): Option[TestColumnType] = types.get(typeName.caseFolded)
+
+    def userTypeForType(typ: TestColumnType): TypeName = typ match {
+      case LongColumn => TypeName("long")
+      case StringColumn => TypeName("string")
+    }
   }
 
   def makeIdMap[V](ignored: TestColumnType) = {

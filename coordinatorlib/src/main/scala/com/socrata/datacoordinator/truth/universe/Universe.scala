@@ -52,7 +52,7 @@ trait Universe[ColumnType, ColumnValue] extends TypeUniverse {
 }
 
 trait LoggerProvider { this: TypeUniverse =>
-  def logger(datasetInfo: DatasetInfo): Logger[CV]
+  def logger(datasetInfo: DatasetInfo): Logger[CT, CV]
 }
 
 trait DeloggerProvider { this: TypeUniverse =>
@@ -60,37 +60,35 @@ trait DeloggerProvider { this: TypeUniverse =>
 }
 
 trait PrevettedLoaderProvider { this: TypeUniverse =>
-  def prevettedLoader(copyInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[CV]): PrevettedLoader[CV]
+  def prevettedLoader(copyCtx: DatasetCopyContext[CT], logger: Logger[CT, CV]): PrevettedLoader[CV]
 }
 
 trait LoaderProvider { this: TypeUniverse =>
-  def loader(copyInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo], rowIdProvider: RowIdProvider, logger: Logger[CV]): Managed[Loader[CV]]
+  def loader(copyCtx: DatasetCopyContext[CT], rowIdProvider: RowIdProvider, logger: Logger[CT, CV]): Managed[Loader[CV]]
 }
 
-trait SchemaLoaderProvider {
-  def schemaLoader(datasetInfo: DatasetInfo): SchemaLoader
+trait SchemaLoaderProvider { this: TypeUniverse =>
+  def schemaLoader(datasetInfo: DatasetInfo): SchemaLoader[CT]
 }
 
 trait TruncatorProvider {
   val truncator: Truncator
 }
 
-trait DatasetMapReaderProvider {
-  val datasetMapReader: DatasetMapReader
+trait DatasetMapReaderProvider { this: TypeUniverse =>
+  val datasetMapReader: DatasetMapReader[CT]
 }
 
-trait DatasetMapWriterProvider {
-  val datasetMapWriter: DatasetMapWriter
+trait DatasetMapWriterProvider { this: TypeUniverse =>
+  val datasetMapWriter: DatasetMapWriter[CT]
 }
 
 trait DatasetMutatorProvider { this: TypeUniverse =>
-  val lowLevelDatabaseMutator: LowLevelDatabaseMutator[CV]
   val datasetMutator: DatasetMutator[CT, CV]
 }
 
 trait DatasetReaderProvider { this: TypeUniverse =>
-  val lowLevelDatabaseReader: LowLevelDatabaseReader[CV]
-  val datasetReader: DatasetReader[CV]
+  val datasetReader: DatasetReader[CT, CV]
 }
 
 trait GlobalLogPlaybackProvider {
@@ -113,8 +111,8 @@ trait SecondaryConfigProvider {
   val secondaryConfig: SecondaryConfig
 }
 
-trait DatasetContentsCopierProvider {
-  def datasetContentsCopier(datasetInfo: DatasetInfo): DatasetContentsCopier
+trait DatasetContentsCopierProvider { this: TypeUniverse =>
+  def datasetContentsCopier(datasetInfo: DatasetInfo): DatasetContentsCopier[CT]
 }
 
 trait GlobalLogProvider {

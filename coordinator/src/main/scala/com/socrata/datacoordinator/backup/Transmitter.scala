@@ -57,9 +57,9 @@ object Transmitter extends App {
   import protocol._
 
   val typeContext = SoQLTypeContext
-  def genericRepFor(columnInfo: ColumnInfoLike): SqlColumnRep[SoQLType, SoQLValue] =
-    SoQLRep.sqlRepFactories(typeContext.typeFromName(columnInfo.typeName))(columnInfo.physicalColumnBase)
-  def repSchema(schema: ColumnIdMap[ColumnInfoLike]): ColumnIdMap[SqlColumnRep[SoQLType, SoQLValue]] =
+  def genericRepFor(columnInfo: ColumnInfo[SoQLType]): SqlColumnRep[SoQLType, SoQLValue] =
+    SoQLRep.sqlRep(columnInfo)
+  def repSchema(schema: ColumnIdMap[ColumnInfo[SoQLType]]): ColumnIdMap[SqlColumnRep[SoQLType, SoQLValue]] =
     schema.mapValuesStrict(genericRepFor)
   val timingReport = NoopTimingReport
 
@@ -99,7 +99,7 @@ object Transmitter extends App {
       assert(job.id.underlying == lastJobId.underlying + 1, "MISSING JOBS IN GLOBAL QUEUE!!!!")
       lastJobId = job.id
 
-      val datasetMap = new PostgresDatasetMapReader(conn, timingReport)
+      val datasetMap = new PostgresDatasetMapReader(conn, typeContext.typeNamespace, timingReport)
       log.info("Sending dataset {}'s version {}", job.datasetId.underlying, job.version)
       try {
         datasetMap.datasetInfo(job.datasetId) match {
@@ -184,7 +184,7 @@ object Transmitter extends App {
 
   def handleResyncRequest(client: Packets, conn: Connection, datasetId: DatasetId) {
     conn.setAutoCommit(false) // We'll be taking a lock and so we want transactions too
-    val datasetMap: DatasetMapWriter = new PostgresDatasetMapWriter(conn, timingReport, () => sys.error("Transmitter should never be generating obfuscation keys"), new RowId(0L))
+    val datasetMap: DatasetMapWriter[SoQLType] = new PostgresDatasetMapWriter(conn, typeContext.typeNamespace, timingReport, () => sys.error("Transmitter should never be generating obfuscation keys"), new RowId(0L))
     datasetMap.datasetInfo(datasetId, Duration.Inf) match {
       case Some(info) =>
         client.send(WillResync(info.unanchored))
@@ -227,7 +227,7 @@ object Transmitter extends App {
     loop()
   }
 
-  def sendCopy(client: Packets, conn: Connection, datasetMap: DatasetMapBase)(copy: CopyInfo) {
+  def sendCopy(client: Packets, conn: Connection, datasetMap: DatasetMapBase[SoQLType])(copy: CopyInfo) {
     log.info("Doing full send of the copy data to the backup")
     val schema = datasetMap.schema(copy)
     val columnInfos = schema.values.map(_.unanchored).toSeq

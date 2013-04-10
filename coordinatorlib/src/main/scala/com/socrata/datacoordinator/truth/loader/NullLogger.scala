@@ -3,18 +3,17 @@ package truth.loader
 
 import com.socrata.datacoordinator.truth.metadata.{CopyInfo, ColumnInfo}
 import com.socrata.datacoordinator.id.RowId
-import com.socrata.datacoordinator.util.collection.ColumnIdMap
 
-class NullLogger[CV] extends Logger[CV] {
-  def columnCreated(info: ColumnInfo) {}
+class NullLogger[CT, CV] extends Logger[CT, CV] {
+  def columnCreated(info: ColumnInfo[CT]) {}
 
-  def columnRemoved(info: ColumnInfo) {}
+  def columnRemoved(info: ColumnInfo[CT]) {}
 
-  def rowIdentifierSet(info: ColumnInfo) {}
+  def rowIdentifierSet(info: ColumnInfo[CT]) {}
 
-  def rowIdentifierCleared(info: ColumnInfo) {}
+  def rowIdentifierCleared(info: ColumnInfo[CT]) {}
 
-  def systemIdColumnSet(info: ColumnInfo) {}
+  def systemIdColumnSet(info: ColumnInfo[CT]) {}
 
   def workingCopyCreated(info: CopyInfo) {}
 
@@ -40,9 +39,9 @@ class NullLogger[CV] extends Logger[CV] {
 
   def truncated() {}
 
-  def logicalNameChanged(info: ColumnInfo) {}
+  def logicalNameChanged(info: ColumnInfo[CT]) {}
 }
 
-object NullLogger extends NullLogger[Any] {
-  def apply[A] = this.asInstanceOf[NullLogger[A]]
+object NullLogger extends NullLogger[Any, Any] {
+  def apply[A, B] = this.asInstanceOf[NullLogger[A, B]]
 }

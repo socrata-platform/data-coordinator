@@ -13,4 +13,4 @@ trait SecondaryManifest {
   def stores(datasetId: DatasetId): Map[String, Long]
 }
 
-case class NamedSecondary[CV](storeId: String, store: Secondary[CV])
+case class NamedSecondary[CT, CV](storeId: String, store: Secondary[CT, CV])

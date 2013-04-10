@@ -8,5 +8,5 @@ object DatasetIdable {
   implicit object datasetIdableDatasetId extends DatasetIdable[DatasetId] { def datasetId(x: DatasetId) = x }
   implicit object datasetIdableDatasetInfo extends DatasetIdable[DatasetInfo] { def datasetId(x: DatasetInfo) = x.systemId }
   implicit object datasetIdableVersionInfo extends DatasetIdable[CopyInfo] { def datasetId(x: CopyInfo) = x.datasetInfo.systemId }
-  implicit object datasetIdableColumnInfo extends DatasetIdable[ColumnInfo] { def datasetId(x: ColumnInfo) = x.copyInfo.datasetInfo.systemId }
+  implicit object datasetIdableColumnInfo extends DatasetIdable[ColumnInfo[_]] { def datasetId(x: ColumnInfo[_]) = x.copyInfo.datasetInfo.systemId }
 }

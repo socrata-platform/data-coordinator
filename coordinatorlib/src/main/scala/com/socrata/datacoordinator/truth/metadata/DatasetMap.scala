@@ -4,15 +4,15 @@ import com.socrata.datacoordinator.id.{RowId, ColumnId, CopyId, DatasetId}
 import scala.concurrent.duration.Duration
 import com.socrata.soql.environment.{ColumnName, TypeName}
 
-trait DatasetMapBase extends `-impl`.BaseDatasetMapReader {
+trait DatasetMapBase[CT] extends `-impl`.BaseDatasetMapReader[CT] {
 }
 
-trait DatasetMapReader extends DatasetMapBase {
+trait DatasetMapReader[CT] extends DatasetMapBase[CT] {
   /** Looks up a dataset record by its system ID. */
   def datasetInfo(datasetId: DatasetId): Option[DatasetInfo]
 }
 
-trait DatasetMapWriter extends DatasetMapBase with `-impl`.BaseDatasetMapWriter {
+trait DatasetMapWriter[CT] extends DatasetMapBase[CT] with `-impl`.BaseDatasetMapWriter[CT] {
   /** Looks up a dataset record by its system ID.
     * @param timeout Amount of time to block before throwing.
     * @note An implementation should make a "best effort" to honor the timeout, but
@@ -47,10 +47,10 @@ trait DatasetMapWriter extends DatasetMapBase with `-impl`.BaseDatasetMapWriter 
     * @note Does not change the actual table; this just updates the bookkeeping.
     * @return The new column
     * @throws ColumnAlreadyExistsException if the column already exists */
-  def addColumn(copyInfo: CopyInfo, logicalName: ColumnName, typeName: TypeName, physicalColumnBaseBase: String): ColumnInfo
+  def addColumn(copyInfo: CopyInfo, logicalName: ColumnName, typ: CT, physicalColumnBaseBase: String): ColumnInfo[CT]
 }
 
-trait BackupDatasetMap extends DatasetMapWriter with `-impl`.BaseDatasetMapWriter {
+trait BackupDatasetMap[CT] extends DatasetMapWriter[CT] with `-impl`.BaseDatasetMapWriter[CT] {
   /** Creates a new dataset in the truthstore.
     * @note Does not actually create any tables; this just updates the bookkeeping.
     * @note `datasetId` needs to be globally unique; if you have namespacing do it yourself.
@@ -77,7 +77,7 @@ trait BackupDatasetMap extends DatasetMapWriter with `-impl`.BaseDatasetMapWrite
     * @return The new column
     * @throws ColumnAlreadyExistsException if the column already exists
     * @throws ColumnSystemIdAlreadyInUse if `systemId` already names a column on this copy of the table. */
-  def addColumnWithId(systemId: ColumnId, copyInfo: CopyInfo, logicalName: ColumnName, typeName: TypeName, physicalColumnBaseBase: String): ColumnInfo
+  def addColumnWithId(systemId: ColumnId, copyInfo: CopyInfo, logicalName: ColumnName, typ: CT, physicalColumnBaseBase: String): ColumnInfo[CT]
 
   /** Creates a dataset with the specified attributes
     * @note Using this carelessly can get you into trouble.  In particular, this

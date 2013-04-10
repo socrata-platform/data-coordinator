@@ -7,7 +7,7 @@ import com.socrata.soql.environment.ColumnName
 class ColumnAdder[CT] private (val dataContext: DataWritingContext) extends ExistingDatasetMutator {
   import dataContext.datasetMutator._
 
-  def addToSchema(dataset: String, columns: Map[ColumnName, CT], username: String): Map[ColumnName, ColumnInfo] = {
+  def addToSchema(dataset: String, columns: Map[ColumnName, CT], username: String): Map[ColumnName, ColumnInfo[CT]] = {
     def columnCreations(ctx: MutationContext) = columns.iterator.map { case (columnName, columnType) =>
       val baseName = dataContext.physicalColumnBaseBase(columnName)
       ctx.addColumn(columnName, columnType.asInstanceOf[dataContext.CT] /* SI-5712, see below */, baseName)
@@ -18,8 +18,8 @@ class ColumnAdder[CT] private (val dataContext: DataWritingContext) extends Exis
         ctxOpt <- openDataset(as = username)(dataset)
         ctx <- ctxOpt
       } yield {
-        columnCreations(ctx).foldLeft(Map.empty[ColumnName, ColumnInfo]) { (acc, ci) =>
-          acc + (ci.logicalName -> ci)
+        columnCreations(ctx).foldLeft(Map.empty[ColumnName, ColumnInfo[CT]]) { (acc, ci) =>
+          acc + (ci.logicalName -> ci.asInstanceOf[ColumnInfo[CT]])
         }
       }
     }

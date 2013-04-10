@@ -4,29 +4,32 @@ import com.socrata.soql.types._
 import com.socrata.datacoordinator.truth.sql.SqlColumnRep
 import com.socrata.datacoordinator.truth.csv.CsvColumnRep
 import com.socrata.datacoordinator.truth.json.JsonColumnRep
-import com.socrata.soql.environment.ColumnName
 import com.socrata.datacoordinator.id.RowId
+import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, DatasetInfo}
 
 object SoQLRep {
-  val sqlRepFactories = Map[SoQLType, String => SqlColumnRep[SoQLType, SoQLValue]](
-    SoQLID -> (base => new sqlreps.IDRep(base)),
-    SoQLText -> (base => new sqlreps.TextRep(base)),
-    SoQLBoolean -> (base => new sqlreps.BooleanRep(base)),
-    SoQLNumber -> (base => new sqlreps.NumberLikeRep(SoQLNumber, _.asInstanceOf[SoQLNumber].value, SoQLNumber(_), base)),
-    SoQLMoney -> (base => new sqlreps.NumberLikeRep(SoQLNumber, _.asInstanceOf[SoQLMoney].value, SoQLMoney(_), base)),
-    SoQLFixedTimestamp -> (base => new sqlreps.FixedTimestampRep(base)),
-    SoQLFloatingTimestamp -> (base => new sqlreps.FloatingTimestampRep(base)),
-    SoQLDate -> (base => new sqlreps.DateRep(base)),
-    SoQLTime -> (base => new sqlreps.TimeRep(base)),
-    SoQLLocation -> (base => new sqlreps.LocationRep(base)) /*,
+  private val sqlRepFactories = Map[SoQLType, ColumnInfo[SoQLType] => SqlColumnRep[SoQLType, SoQLValue]](
+    SoQLID -> (ci => new sqlreps.IDRep(ci.physicalColumnBase)),
+    SoQLText -> (ci => new sqlreps.TextRep(ci.physicalColumnBase)),
+    SoQLBoolean -> (ci => new sqlreps.BooleanRep(ci.physicalColumnBase)),
+    SoQLNumber -> (ci => new sqlreps.NumberLikeRep(SoQLNumber, _.asInstanceOf[SoQLNumber].value, SoQLNumber(_), ci.physicalColumnBase)),
+    SoQLMoney -> (ci => new sqlreps.NumberLikeRep(SoQLNumber, _.asInstanceOf[SoQLMoney].value, SoQLMoney(_), ci.physicalColumnBase)),
+    SoQLFixedTimestamp -> (ci => new sqlreps.FixedTimestampRep(ci.physicalColumnBase)),
+    SoQLFloatingTimestamp -> (ci => new sqlreps.FloatingTimestampRep(ci.physicalColumnBase)),
+    SoQLDate -> (ci => new sqlreps.DateRep(ci.physicalColumnBase)),
+    SoQLTime -> (ci => new sqlreps.TimeRep(ci.physicalColumnBase)),
+    SoQLLocation -> (ci => new sqlreps.LocationRep(ci.physicalColumnBase)) /*,
     SoQLDouble -> doubleRepFactory,
     SoQLObject -> objectRepFactory,
     SoQLArray -> arrayRepFactory */
   )
 
+  def sqlRep(columnInfo: ColumnInfo[SoQLType]): SqlColumnRep[SoQLType, SoQLValue] =
+    sqlRepFactories(columnInfo.typ)(columnInfo)
+
   // for(typ <- SoQLType.typesByName.values) assert(repFactories.contains(typ))
 
-  val csvRepFactories = Map[SoQLType, CsvColumnRep[SoQLType, SoQLValue]](
+  private val csvRepFactories = Map[SoQLType, CsvColumnRep[SoQLType, SoQLValue]](
     SoQLID -> csvreps.IDRep,
     SoQLText -> csvreps.TextRep,
     SoQLBoolean -> csvreps.BooleanRep,
@@ -38,17 +41,19 @@ object SoQLRep {
     SoQLTime -> csvreps.TimeRep,
     SoQLLocation -> csvreps.LocationRep
   )
+  def csvRep(columnInfo: ColumnInfo[SoQLType]): CsvColumnRep[SoQLType, SoQLValue] =
+    csvRepFactories(columnInfo.typ)
 
-  private val jsonRepFactoriesMinusId = Map[SoQLType, ColumnName => JsonColumnRep[SoQLType, SoQLValue]](
-    SoQLText -> (name => new jsonreps.TextRep(name)),
-    SoQLBoolean -> (name => new jsonreps.BooleanRep(name)),
-    SoQLNumber -> (name => new jsonreps.NumberLikeRep(name, SoQLNumber, _.asInstanceOf[SoQLNumber].value, SoQLNumber(_))),
-    SoQLMoney -> (name => new jsonreps.NumberLikeRep(name, SoQLMoney, _.asInstanceOf[SoQLMoney].value, SoQLMoney(_))),
-    SoQLFixedTimestamp -> (name => new jsonreps.FixedTimestampRep(name)),
-    SoQLFloatingTimestamp -> (name => new jsonreps.FloatingTimestampRep(name)),
-    SoQLDate -> (base => new jsonreps.DateRep(base)),
-    SoQLTime -> (base => new jsonreps.TimeRep(base)),
-    SoQLLocation -> (name => new jsonreps.LocationRep(name))
+  private val jsonRepFactoriesMinusId = Map[SoQLType, ColumnInfo[SoQLType] => JsonColumnRep[SoQLType, SoQLValue]](
+    SoQLText -> (ci => new jsonreps.TextRep(ci.logicalName)),
+    SoQLBoolean -> (ci => new jsonreps.BooleanRep(ci.logicalName)),
+    SoQLNumber -> (ci => new jsonreps.NumberLikeRep(ci.logicalName, SoQLNumber, _.asInstanceOf[SoQLNumber].value, SoQLNumber(_))),
+    SoQLMoney -> (ci => new jsonreps.NumberLikeRep(ci.logicalName, SoQLMoney, _.asInstanceOf[SoQLMoney].value, SoQLMoney(_))),
+    SoQLFixedTimestamp -> (ci => new jsonreps.FixedTimestampRep(ci.logicalName)),
+    SoQLFloatingTimestamp -> (ci => new jsonreps.FloatingTimestampRep(ci.logicalName)),
+    SoQLDate -> (ci => new jsonreps.DateRep(ci.logicalName)),
+    SoQLTime -> (ci => new jsonreps.TimeRep(ci.logicalName)),
+    SoQLLocation -> (ci => new jsonreps.LocationRep(ci.logicalName))
   )
 
   trait IdObfuscationContext {
@@ -56,6 +61,11 @@ object SoQLRep {
     def deobfuscate(obfuscatedRowId: String): Option[RowId]
   }
 
-  def jsonRepFactories(obfuscationContext: IdObfuscationContext) =
-    jsonRepFactoriesMinusId + (SoQLID -> ((name: ColumnName) => new jsonreps.IDRep(name, obfuscationContext)))
+  private def jsonRepFactories(obfuscationContext: DatasetInfo => IdObfuscationContext) =
+    jsonRepFactoriesMinusId + (SoQLID -> ((ci: ColumnInfo[SoQLType]) => new jsonreps.IDRep(ci.logicalName, obfuscationContext(ci.copyInfo.datasetInfo))))
+
+  def jsonRep(obfuscationContext: DatasetInfo => IdObfuscationContext): (ColumnInfo[SoQLType] => JsonColumnRep[SoQLType, SoQLValue]) = {
+    val factories = jsonRepFactories(obfuscationContext);
+    { ci => factories(ci.typ)(ci) }
+  }
 }

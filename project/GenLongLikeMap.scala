@@ -285,6 +285,12 @@ class """ + targetClassName + """[V](private var _underlying: TLongObjectHashMap
     result
   }
 
+  def frozenCopy() = {
+    if(underlying == null) throw new NullPointerException
+    val tmp = new TLongObjectHashMap[V](_underlying)
+    new """ + immutableVersion + """[V](tmp)
+  }
+
   @inline def size = underlying.size
 
   @inline def isEmpty = underlying.isEmpty

@@ -4,11 +4,11 @@ package service
 import com.socrata.datacoordinator.truth.json.JsonColumnReadRep
 import com.rojoma.json.ast.{JArray, JBoolean, JObject, JValue}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
-import com.socrata.datacoordinator.truth.metadata.AbstractColumnInfoLike
+import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, AbstractColumnInfoLike}
 import com.socrata.datacoordinator.id.ColumnId
 import com.socrata.soql.environment.{TypeName, ColumnName}
 
-class RowDecodePlan[CT, CV](schema: ColumnIdMap[AbstractColumnInfoLike], repFor: AbstractColumnInfoLike => JsonColumnReadRep[CT, CV], typeNameFor: CT => TypeName)
+class RowDecodePlan[CT, CV](schema: ColumnIdMap[ColumnInfo[CT]], repFor: ColumnInfo[CT] => JsonColumnReadRep[CT, CV], typeNameFor: CT => TypeName)
   extends (JValue => Either[CV, Row[CV]])
 {
   sealed abstract class BadDataException(msg: String) extends Exception(msg)

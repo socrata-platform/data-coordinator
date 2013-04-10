@@ -1,35 +1,36 @@
 package com.socrata.datacoordinator
 package common.soql.universe
 
-import com.socrata.datacoordinator.truth.universe.sql.CommonSupport
+import java.util.concurrent.ExecutorService
 import java.sql.Connection
 import java.io.Reader
-import com.socrata.datacoordinator.truth.metadata.ColumnInfo
-import java.util.concurrent.ExecutorService
+
+import org.joda.time.DateTime
+
+import com.socrata.datacoordinator.truth.universe.sql.CommonSupport
+import com.socrata.datacoordinator.truth.metadata.{AbstractColumnInfoLike, ColumnInfo}
 import com.socrata.soql.types.{SoQLFixedTimestamp, SoQLID, SoQLValue, SoQLType}
 import com.socrata.datacoordinator.common.soql._
-import com.socrata.soql.environment.{ColumnName, TypeName}
-import org.joda.time.DateTime
+import com.socrata.soql.environment.ColumnName
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.loader.RowPreparer
 import com.socrata.datacoordinator.id.RowId
-import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 
 class PostgresUniverseCommonSupport(val executor: ExecutorService, val tablespace: String => Option[String], val copyInProvider: (Connection, String, Reader) => Long, val obfuscationKeyGenerator: () => Array[Byte], val initialRowId: RowId) extends CommonSupport[SoQLType, SoQLValue] {
   val typeContext = SoQLTypeContext
 
-  def repFor(ci: ColumnInfo) =
-    SoQLRep.sqlRepFactories(SoQLType.typesByName(ci.typeName))(ci.physicalColumnBase)
+  def repFor(ci: ColumnInfo[SoQLType]) =
+    SoQLRep.sqlRep(ci)
 
   def newRowCodec() = SoQLRowLogCodec
 
-  def isSystemColumn(ci: ColumnInfo): Boolean = ci.logicalName.name.startsWith(":")
+  def isSystemColumn(ci: AbstractColumnInfoLike): Boolean = ci.logicalName.name.startsWith(":")
 
   val systemId = ColumnName(":id")
   val createdAt = ColumnName(":created_at")
   val updatedAt = ColumnName(":updated_at")
 
-  def rowPreparer(transactionStart: DateTime, schema: ColumnIdMap[ColumnInfo]): RowPreparer[SoQLValue] =
+  def rowPreparer(transactionStart: DateTime, schema: ColumnIdMap[AbstractColumnInfoLike]): RowPreparer[SoQLValue] =
     new RowPreparer[SoQLValue] {
       def findCol(name: ColumnName) =
         schema.values.find(_.logicalName == name).getOrElse(sys.error(s"No $name column?")).systemId

@@ -23,7 +23,7 @@ import com.socrata.datacoordinator.id.RowId
 class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseType[CT, CV]]) {
   import SecondaryWatcher.log
 
-  def run(u: Universe[CT, CV] with DatasetMapReaderProvider with GlobalLogPlaybackProvider with SecondaryManifestProvider with SecondaryPlaybackManifestProvider with PlaybackToSecondaryProvider with DeloggerProvider, secondary: NamedSecondary[CV]) {
+  def run(u: Universe[CT, CV] with DatasetMapReaderProvider with GlobalLogPlaybackProvider with SecondaryManifestProvider with SecondaryPlaybackManifestProvider with PlaybackToSecondaryProvider with DeloggerProvider, secondary: NamedSecondary[CT, CV]) {
     import u._
 
     val globalLog = globalLogPlayback
@@ -71,7 +71,7 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
     }
   }
 
-  def mainloop(secondaryConfigInfo: SecondaryConfigInfo, secondary: Secondary[CV], finished: CountDownLatch) {
+  def mainloop(secondaryConfigInfo: SecondaryConfigInfo, secondary: Secondary[CT, CV], finished: CountDownLatch) {
     var lastWrote = new DateTime(0L)
     var nextRunTime = bestNextRunTime(secondaryConfigInfo.storeId,
       secondaryConfigInfo.nextRunTime,
@@ -114,7 +114,7 @@ object SecondaryWatcher extends App { self =>
   val config = rootConfig.getConfig("com.socrata.secondary-watcher")
   println(config.root.render())
   val (dataSource, _) = DataSourceFromConfig(config)
-  val secondaries = SecondaryLoader.load(config.getConfig("secondary.configs"), new File(config.getString("secondary.path"))).asInstanceOf[Map[String, Secondary[SoQLValue]]]
+  val secondaries = SecondaryLoader.load(config.getConfig("secondary.configs"), new File(config.getString("secondary.path"))).asInstanceOf[Map[String, Secondary[SoQLType, SoQLValue]]]
 
   val executor = Executors.newCachedThreadPool()
 

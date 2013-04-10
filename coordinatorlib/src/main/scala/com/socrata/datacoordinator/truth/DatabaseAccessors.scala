@@ -11,37 +11,37 @@ import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.metadata.CopyPair
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
-import com.socrata.datacoordinator.id.{DatasetId, RowId}
+import com.socrata.datacoordinator.id.{ColumnId, DatasetId, RowId}
 import scala.concurrent.duration.Duration
 import com.socrata.soql.environment.{TypeName, ColumnName}
 
-trait LowLevelDatabaseReader[CV] {
+trait LowLevelDatabaseReader[CT, CV] {
   trait ReadContext {
-    def datasetMap: DatasetMapReader
+    def datasetMap: DatasetMapReader[CT]
 
-    def loadDataset(datasetName: String, latest: CopySelector): Option[(CopyInfo, ColumnIdMap[ColumnInfo])]
+    def loadDataset(datasetName: String, latest: CopySelector): Option[DatasetCopyContext[CT]]
 
-    def withRows[A](ci: CopyInfo, sidCol: ColumnInfo, schema: ColumnIdMap[ColumnInfo], f: Iterator[ColumnIdMap[CV]] => A, limit: Option[Long], offset: Option[Long]): A
+    def withRows[A](copyCtx: DatasetCopyContext[CT], sidCol: ColumnId, f: Iterator[ColumnIdMap[CV]] => A, limit: Option[Long], offset: Option[Long]): A
   }
 
   def openDatabase: Managed[ReadContext]
 }
 
-trait LowLevelDatabaseMutator[CV] {
+trait LowLevelDatabaseMutator[CT, CV] {
   trait MutationContext {
     def now: DateTime
-    def datasetMap: DatasetMapWriter
-    def logger(info: DatasetInfo): Logger[CV]
-    def schemaLoader(info: DatasetInfo): SchemaLoader
-    def datasetContentsCopier(info: DatasetInfo): DatasetContentsCopier
-    def withDataLoader[A](table: CopyInfo, schema: ColumnIdMap[ColumnInfo], logger: Logger[CV])(f: Loader[CV] => A): (Report[CV], RowId, A)
-    def truncate(table: CopyInfo, logger: Logger[CV])
+    def datasetMap: DatasetMapWriter[CT]
+    def logger(info: DatasetInfo): Logger[CT, CV]
+    def schemaLoader(info: DatasetInfo): SchemaLoader[CT]
+    def datasetContentsCopier(info: DatasetInfo): DatasetContentsCopier[CT]
+    def withDataLoader[A](copyCtx: DatasetCopyContext[CT], logger: Logger[CT, CV])(f: Loader[CV] => A): (Report[CV], RowId, A)
+    def truncate(table: CopyInfo, logger: Logger[CT, CV])
 
     def globalLog: GlobalLog
 
     def finishDatasetTransaction(username: String, copyInfo: CopyInfo)
 
-    def loadLatestVersionOfDataset(datasetId: DatasetId, lockTimeout: Duration): Option[(CopyInfo, ColumnIdMap[ColumnInfo])]
+    def loadLatestVersionOfDataset(datasetId: DatasetId, lockTimeout: Duration): Option[DatasetCopyContext[CT]]
   }
 
   def openDatabase: Managed[MutationContext]
@@ -53,12 +53,13 @@ case object PublishedCopy extends CopySelector
 case object WorkingCopy extends CopySelector
 case class Snapshot(nth: Int) extends CopySelector
 
-trait DatasetReader[CV] {
-  val databaseReader: LowLevelDatabaseReader[CV]
+trait DatasetReader[CT, CV] {
+  val databaseReader: LowLevelDatabaseReader[CT, CV]
 
   trait ReadContext {
-    val copyInfo: CopyInfo
-    val schema: ColumnIdMap[ColumnInfo]
+    val copyCtx: DatasetCopyContext[CT]
+    def copyInfo = copyCtx.copyInfo
+    def schema = copyCtx.schema
     def withRows[A](cids: ColumnIdSet, offset: Option[Long], limit: Option[Long])(f: Iterator[ColumnIdMap[CV]] => A): A // TODO: I think this should return a Managed[Iterator...]
   }
 
@@ -66,10 +67,10 @@ trait DatasetReader[CV] {
 }
 
 object DatasetReader {
-  private class Impl[CV](val databaseReader: LowLevelDatabaseReader[CV]) extends DatasetReader[CV] {
-    class S(val copyInfo: CopyInfo, val schema: ColumnIdMap[ColumnInfo], llCtx: databaseReader.ReadContext) extends ReadContext {
+  private class Impl[CT, CV](val databaseReader: LowLevelDatabaseReader[CT, CV]) extends DatasetReader[CT, CV] {
+    class S(val copyCtx: DatasetCopyContext[CT], llCtx: databaseReader.ReadContext) extends ReadContext {
       def withRows[A](keySet: ColumnIdSet, limit: Option[Long], offset: Option[Long])(f: Iterator[ColumnIdMap[CV]] => A): A =
-        llCtx.withRows(copyInfo, schema.values.find(_.isSystemPrimaryKey).getOrElse(sys.error("No system PK in this dataset?")), schema.filter { (id, _) => keySet.contains(id) }, f, limit, offset)
+        llCtx.withRows(copyCtx.verticalSlice { col => keySet.contains(col.systemId) }, schema.values.find(_.isSystemPrimaryKey).getOrElse(sys.error("No system PK in this dataset?")).systemId, f, limit, offset)
     }
 
     def openDataset(datasetName: String, copySelector: CopySelector): Managed[Option[ReadContext]] =
@@ -77,44 +78,39 @@ object DatasetReader {
         def flatMap[A](f: Option[ReadContext] => A): A = for {
           llCtx <- databaseReader.openDatabase
         } yield {
-          val ctx = llCtx.loadDataset(datasetName, copySelector) map { case (initialCopy, initialSchema) =>
-            new S(initialCopy, initialSchema, llCtx)
-          }
-          f(ctx)
+          val ctxOpt = llCtx.loadDataset(datasetName, copySelector).map(new S(_, llCtx))
+          f(ctxOpt)
         }
       }
   }
 
-  def apply[CV](lowLevelReader: LowLevelDatabaseReader[CV]): DatasetReader[CV] = new Impl(lowLevelReader)
+  def apply[CT, CV](lowLevelReader: LowLevelDatabaseReader[CT, CV]): DatasetReader[CT, CV] = new Impl(lowLevelReader)
 }
 
 trait DatasetMutator[CT, CV] {
-  val databaseMutator: LowLevelDatabaseMutator[CV]
+  val databaseMutator: LowLevelDatabaseMutator[CT, CV]
 
   trait MutationContext {
     def copyInfo: CopyInfo
-    def schema: ColumnIdMap[ColumnInfo]
+    def schema: ColumnIdMap[ColumnInfo[CT]]
+    def columnInfo(id: ColumnId): Option[ColumnInfo[CT]]
+    def columnInfo(name: ColumnName): Option[ColumnInfo[CT]]
 
-    def schemaByLogicalName: Map[ColumnName, ColumnInfo] =
-      schema.values.foldLeft(Map.empty[ColumnName, ColumnInfo]) { (acc, ci) =>
-        acc + (ci.logicalName -> ci)
-      }
-
-    def addColumn(logicalName: ColumnName, typ: CT, physicalColumnBaseBase: String): ColumnInfo
-    def renameColumn(col: ColumnInfo, newName: ColumnName): ColumnInfo
-    def makeSystemPrimaryKey(ci: ColumnInfo): ColumnInfo
+    def addColumn(logicalName: ColumnName, typ: CT, physicalColumnBaseBase: String): ColumnInfo[CT]
+    def renameColumn(col: ColumnInfo[CT], newName: ColumnName): ColumnInfo[CT]
+    def makeSystemPrimaryKey(ci: ColumnInfo[CT]): ColumnInfo[CT]
 
     /**
      * @throws PrimaryKeyCreationException
      */
-    def makeUserPrimaryKey(ci: ColumnInfo): ColumnInfo
+    def makeUserPrimaryKey(ci: ColumnInfo[CT]): ColumnInfo[CT]
     sealed abstract class PrimaryKeyCreationException extends Exception
-    case class UnPKableColumnException(name: ColumnName, typ: TypeName) extends PrimaryKeyCreationException
+    case class UnPKableColumnException(name: ColumnName, typ: CT) extends PrimaryKeyCreationException
     case class NullCellsException(name: ColumnName) extends PrimaryKeyCreationException
     case class DuplicateCellsException(name: ColumnName) extends PrimaryKeyCreationException
 
-    def unmakeUserPrimaryKey(ci: ColumnInfo): ColumnInfo
-    def dropColumn(ci: ColumnInfo)
+    def unmakeUserPrimaryKey(ci: ColumnInfo[CT]): ColumnInfo[CT]
+    def dropColumn(ci: ColumnInfo[CT])
     def truncate()
 
     sealed trait RowDataUpdateJob {
@@ -143,46 +139,39 @@ trait DatasetMutator[CT, CV] {
 }
 
 object DatasetMutator {
-  private class Impl[CT, CV](val databaseMutator: LowLevelDatabaseMutator[CV], typeNameFor: CT => TypeName, lockTimeout: Duration) extends DatasetMutator[CT, CV] {
+  private class Impl[CT, CV](val databaseMutator: LowLevelDatabaseMutator[CT, CV], lockTimeout: Duration) extends DatasetMutator[CT, CV] {
     type TrueMutationContext = S
-    class S(var copyInfo: CopyInfo, var _schema: ColumnIdMap[ColumnInfo], val schemaLoader: SchemaLoader, val logger: Logger[CV], llCtx: databaseMutator.MutationContext) extends MutationContext {
-      var _schemaByLogicalName: Map[ColumnName, ColumnInfo] = null
-      override def schemaByLogicalName = {
-        if(_schemaByLogicalName == null) _schemaByLogicalName = super.schemaByLogicalName
-        _schemaByLogicalName
-      }
-
-      def schema = _schema
-      def schema_=(newSchema: ColumnIdMap[ColumnInfo]) = {
-        _schemaByLogicalName = null
-        _schema = newSchema
-      }
+    class S(var copyCtx: MutableDatasetCopyContext[CT], val schemaLoader: SchemaLoader[CT], val logger: Logger[CT, CV], llCtx: databaseMutator.MutationContext) extends MutationContext {
+      def copyInfo = copyCtx.copyInfo
+      def schema = copyCtx.currentSchema
+      def columnInfo(id: ColumnId) = copyCtx.columnInfoOpt(id)
+      def columnInfo(name: ColumnName) = copyCtx.columnInfoOpt(name)
 
       def now = llCtx.now
       def datasetMap = llCtx.datasetMap
       def datasetContetsCopier = llCtx.datasetContentsCopier(copyInfo.datasetInfo)
 
-      def addColumn(logicalName: ColumnName, typ: CT, physicalColumnBaseBase: String): ColumnInfo = {
-        val newColumn = datasetMap.addColumn(copyInfo, logicalName, typeNameFor(typ), physicalColumnBaseBase)
+      def addColumn(logicalName: ColumnName, typ: CT, physicalColumnBaseBase: String): ColumnInfo[CT] = {
+        val newColumn = datasetMap.addColumn(copyInfo, logicalName, typ, physicalColumnBaseBase)
         schemaLoader.addColumn(newColumn)
-        schema += newColumn.systemId -> newColumn
+        copyCtx.addColumn(newColumn)
         newColumn
       }
 
-      def renameColumn(ci: ColumnInfo, newName: ColumnName): ColumnInfo = {
+      def renameColumn(ci: ColumnInfo[CT], newName: ColumnName): ColumnInfo[CT] = {
         val newCi = datasetMap.renameColumn(ci, newName)
         logger.logicalNameChanged(newCi)
-        schema += newCi.systemId -> newCi
+        copyCtx.addColumn(newCi)
         newCi
       }
 
-      def dropColumn(ci: ColumnInfo) {
+      def dropColumn(ci: ColumnInfo[CT]) {
         datasetMap.dropColumn(ci)
         schemaLoader.dropColumn(ci)
-        schema -= ci.systemId
+        copyCtx.removeColumn(ci.systemId)
       }
 
-      def makeSystemPrimaryKey(ci: ColumnInfo): ColumnInfo = {
+      def makeSystemPrimaryKey(ci: ColumnInfo[CT]): ColumnInfo[CT] = {
         val result = datasetMap.setSystemPrimaryKey(ci)
         try {
           schemaLoader.makeSystemPrimaryKey(result)
@@ -190,18 +179,18 @@ object DatasetMutator {
           case e: schemaLoader.PrimaryKeyCreationException =>
             sys.error("Unable to create system primary key? " + e)
         }
-        schema += result.systemId -> result
+        copyCtx.addColumn(result)
         result
       }
 
-      def unmakeUserPrimaryKey(ci: ColumnInfo): ColumnInfo = {
+      def unmakeUserPrimaryKey(ci: ColumnInfo[CT]): ColumnInfo[CT] = {
         val result = datasetMap.clearUserPrimaryKey(ci)
         schemaLoader.dropPrimaryKey(ci)
-        schema += result.systemId -> result
+        copyCtx.addColumn(result)
         result
       }
 
-      def makeUserPrimaryKey(ci: ColumnInfo): ColumnInfo = {
+      def makeUserPrimaryKey(ci: ColumnInfo[CT]): ColumnInfo[CT] = {
         val result = datasetMap.setUserPrimaryKey(ci)
         try {
           schemaLoader.makePrimaryKey(result)
@@ -215,7 +204,7 @@ object DatasetMutator {
               throw DuplicateCellsException(col)
           }
         }
-        schema += result.systemId -> result
+        copyCtx.addColumn(result)
         result
       }
 
@@ -236,30 +225,32 @@ object DatasetMutator {
               schemaLoader.addColumn(ci)
             }
 
-            dataCopier.foreach(_.copy(oldCopy, newCopy, schema))
+            val newFrozenCopyContext = new DatasetCopyContext(newCopy, newSchema)
+            dataCopier.foreach(_.copy(oldCopy, newFrozenCopyContext))
+            val newCopyCtx = newFrozenCopyContext.thaw()
 
-            val finalSchema = new MutableColumnIdMap[ColumnInfo]
-            for(ci <- newSchema.values) {
-              val ci2 = if(schema(ci.systemId).isSystemPrimaryKey) {
+            for(ci <- newCopyCtx.currentColumns) {
+              val maybeSystemIdCol = if(copyCtx.columnInfo(ci.systemId).isSystemPrimaryKey) {
                 val pkified = datasetMap.setSystemPrimaryKey(ci)
                 schemaLoader.makeSystemPrimaryKey(pkified)
+                newCopyCtx.addColumn(pkified)
                 pkified
               } else {
                 ci
               }
 
-              val ci3 = if(schema(ci2.systemId).isUserPrimaryKey) {
-                val pkified = datasetMap.setUserPrimaryKey(ci2)
+              val maybeUserIdCol = if(copyCtx.columnInfo(maybeSystemIdCol.systemId).isUserPrimaryKey) {
+                val pkified = datasetMap.setUserPrimaryKey(maybeSystemIdCol)
                 schemaLoader.makePrimaryKey(pkified)
                 pkified
               } else {
-                ci2
+                maybeSystemIdCol
               }
-              finalSchema(ci3.systemId) = ci3
+
+              if(maybeUserIdCol ne ci) newCopyCtx.addColumn(maybeUserIdCol)
             }
 
-            copyInfo = newCopy
-            schema = finalSchema.freeze()
+            copyCtx = newCopyCtx
             newCopy
         }
       }
@@ -267,8 +258,7 @@ object DatasetMutator {
       def publish(): CopyInfo = {
         val newCi = datasetMap.publish(copyInfo)
         logger.workingCopyPublished()
-        copyInfo = newCi
-        schema = datasetMap.schema(newCi)
+        copyCtx = new DatasetCopyContext(newCi, datasetMap.schema(newCi)).thaw()
         copyInfo
       }
 
@@ -277,21 +267,20 @@ object DatasetMutator {
       }
 
       def upsert(inputGenerator: Iterator[RowDataUpdateJob]): Report[CV] = {
-        val (report, nextRowId, _) = llCtx.withDataLoader(copyInfo, schema, logger) { loader =>
+        val (report, nextRowId, _) = llCtx.withDataLoader(copyCtx.frozenCopy(), logger) { loader =>
           inputGenerator.foreach {
             case UpsertJob(jobNum, row) => loader.upsert(jobNum, row)
             case DeleteJob(jobNum, id) => loader.delete(jobNum, id)
           }
         }
-        copyInfo = datasetMap.updateNextRowId(copyInfo, nextRowId)
+        copyCtx.copyInfo = datasetMap.updateNextRowId(copyInfo, nextRowId)
         report
       }
 
       def drop() {
         datasetMap.dropCopy(copyInfo)
         schemaLoader.drop(copyInfo)
-        copyInfo = datasetMap.latest(copyInfo.datasetInfo)
-        schema = datasetMap.schema(copyInfo)
+        copyCtx.copyInfo = datasetMap.latest(copyInfo.datasetInfo)
       }
     }
 
@@ -301,10 +290,10 @@ object DatasetMutator {
       } yield {
         llCtx.datasetMap.datasetId(datasetName) match {
           case Some(datasetId) =>
-            val ctx = llCtx.loadLatestVersionOfDataset(datasetId, lockTimeout) map { case (initialCopy, initialSchema) =>
-              val logger = llCtx.logger(initialCopy.datasetInfo)
-              val schemaLoader = llCtx.schemaLoader(initialCopy.datasetInfo)
-              new S(initialCopy, initialSchema, schemaLoader, logger, llCtx)
+            val ctx = llCtx.loadLatestVersionOfDataset(datasetId, lockTimeout) map { copyCtx =>
+              val logger = llCtx.logger(copyCtx.datasetInfo)
+              val schemaLoader = llCtx.schemaLoader(copyCtx.datasetInfo)
+              new S(copyCtx.thaw(), schemaLoader, logger, llCtx)
             }
             val result = action(ctx)
             ctx.foreach { state =>
@@ -331,7 +320,7 @@ object DatasetMutator {
           val logger = llCtx.logger(firstVersion.datasetInfo)
           val schemaLoader = llCtx.schemaLoader(firstVersion.datasetInfo)
           schemaLoader.create(firstVersion)
-          val state = new S(firstVersion, ColumnIdMap.empty, schemaLoader, logger, llCtx)
+          val state = new S(new DatasetCopyContext(firstVersion, ColumnIdMap.empty).thaw(), schemaLoader, logger, llCtx)
           val result = f(Some(state))
           llCtx.finishDatasetTransaction(as, state.copyInfo)
           result
@@ -379,6 +368,6 @@ object DatasetMutator {
       firstOp(as, datasetName, LifecycleStage.Unpublished, _.drop())
   }
 
-  def apply[CT, CV](lowLevelMutator: LowLevelDatabaseMutator[CV], typeNameFor: CT => TypeName, lockTimeout: Duration): DatasetMutator[CT, CV] =
-    new Impl(lowLevelMutator, typeNameFor, lockTimeout)
+  def apply[CT, CV](lowLevelMutator: LowLevelDatabaseMutator[CT, CV], lockTimeout: Duration): DatasetMutator[CT, CV] =
+    new Impl(lowLevelMutator, lockTimeout)
 }

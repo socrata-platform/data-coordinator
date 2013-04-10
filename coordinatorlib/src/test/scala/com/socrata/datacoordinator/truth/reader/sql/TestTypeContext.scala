@@ -13,10 +13,7 @@ object TestTypeContext extends TypeContext[TestColumnType, TestColumnValue] {
 
   def nullValue = NullValue
 
-  def typeFromNameOpt(name: TypeName) = sys.error("shouldn't call this")
-
-  def nameFromType(typ: TestColumnType) = sys.error("shouldn't call this")
-
+  lazy val typeNamespace = sys.error("shouldn't call this")
 
   def makeIdMap[T](ignored: TestColumnType) = new RowUserIdMap[TestColumnValue, T] {
     val underlying = new scala.collection.mutable.HashMap[String, T]

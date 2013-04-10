@@ -18,11 +18,11 @@ object SecondaryDescription {
 class SecondaryLoader(parentClassLoader: ClassLoader, secondaryConfigRoot: Config) {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[SecondaryLoader])
 
-  def loadSecondaries(dir: File): Map[String, Secondary[_]] = {
+  def loadSecondaries(dir: File): Map[String, Secondary[_, _]] = {
     val jars = Option(dir.listFiles(new FilenameFilter {
       def accept(dir: File, name: String): Boolean = name.endsWith(".jar")
     })).getOrElse(Array.empty).toSeq
-    jars.foldLeft(Map.empty[String, Secondary[_]]) { (acc, jar) =>
+    jars.foldLeft(Map.empty[String, Secondary[_, _]]) { (acc, jar) =>
       log.info("Loading secondary from " + jar.getAbsolutePath)
       try {
         val cl = new URLClassLoader(Array(jar.toURI.toURL), parentClassLoader)
@@ -49,13 +49,13 @@ class SecondaryLoader(parentClassLoader: ClassLoader, secondaryConfigRoot: Confi
         val cls =
           try { cl.loadClass(desc.className) }
           catch { case e: Exception => throw Nope("Unable to load class " + desc.className + " from " + jar.getAbsolutePath, e) }
-        if(!classOf[Secondary[_]].isAssignableFrom(cls)) throw Nope(desc.className + " is not a subclass of Secondary")
+        if(!classOf[Secondary[_,_]].isAssignableFrom(cls)) throw Nope(desc.className + " is not a subclass of Secondary")
         val ctor =
           try { cls.getConstructor(classOf[Config]) }
           catch { case e: Exception => throw Nope("Unable to find constructor for " + desc.className + " from " + jar.getAbsolutePath, e) }
         log.info("Instantiating secondary \"" + desc.name + "\" from " + jar.getAbsolutePath + " with configuration " + mergedConfig.root.render)
         val instance =
-          try { ctor.newInstance(mergedConfig).asInstanceOf[Secondary[_]] }
+          try { ctor.newInstance(mergedConfig).asInstanceOf[Secondary[_,_]] }
           catch { case e: Exception => throw Nope("Unable to create a new instance of " + desc.className, e) }
         acc + (desc.name -> instance)
       } catch {
@@ -92,7 +92,7 @@ class SecondaryLoader(parentClassLoader: ClassLoader, secondaryConfigRoot: Confi
 }
 
 object SecondaryLoader {
-  def load(secondaryConfigs: Config, dir: File): Map[String, Secondary[_]] =
+  def load(secondaryConfigs: Config, dir: File): Map[String, Secondary[_,_]] =
     new SecondaryLoader(Thread.currentThread.getContextClassLoader, secondaryConfigs).loadSecondaries(dir)
 }
 

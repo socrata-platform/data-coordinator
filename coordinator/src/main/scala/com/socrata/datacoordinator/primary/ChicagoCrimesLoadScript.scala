@@ -83,11 +83,11 @@ object ChicagoCrimesLoadScript extends App {
     try { datasetCreator.createDataset(datasetName, user) }
     catch { case _: DatasetAlreadyExistsException => /* pass */ }
     using(CSVIterator.fromFile(new File(inputFile))) { it =>
-      val NumberT = dataContext.typeContext.typeFromName(TypeName("number"))
-      val TextT = dataContext.typeContext.typeFromName(TypeName("text"))
-      val BooleanT = dataContext.typeContext.typeFromName(TypeName("boolean"))
-      val FloatingTimestampT = dataContext.typeContext.typeFromName(TypeName("floating_timestamp"))
-      val LocationT = dataContext.typeContext.typeFromName(TypeName("location"))
+      val NumberT = dataContext.typeContext.typeNamespace.typeForUserType(TypeName("number")).get
+      val TextT = dataContext.typeContext.typeNamespace.typeForUserType(TypeName("text")).get
+      val BooleanT = dataContext.typeContext.typeNamespace.typeForUserType(TypeName("boolean")).get
+      val FloatingTimestampT = dataContext.typeContext.typeNamespace.typeForUserType(TypeName("floating_timestamp")).get
+      val LocationT = dataContext.typeContext.typeNamespace.typeForUserType(TypeName("location")).get
       val types = Map(
         ColumnName("id") -> NumberT,
         ColumnName("case_number") -> TextT,
@@ -113,9 +113,7 @@ object ChicagoCrimesLoadScript extends App {
         ColumnName("location") -> LocationT
       )
       val headers = it.next().map { t => ColumnName(IdentifierFilter(t)) }
-      val schema = columnAdder.addToSchema(datasetName, headers.map { x => x -> types(x) }.toMap, user).mapValues { ci =>
-        (ci, dataContext.typeContext.typeFromName(ci.typeName))
-      }.toMap
+      val schema = columnAdder.addToSchema(datasetName, headers.map { x => x -> types(x) }.toMap, user)
       primaryKeySetter.makePrimaryKey(datasetName, ColumnName("id"), user)
       val start = System.nanoTime()
       upserter.upsert(datasetName, user) { _ =>
@@ -142,10 +140,10 @@ object ChicagoCrimesLoadScript extends App {
     executor.shutdown()
   }
 
-  def rowDecodePlan(ctx: CsvDataContext)(schema: Map[ColumnName, (ColumnInfo, ctx.CT)], headers: IndexedSeq[ColumnName]): IndexedSeq[String] => (Seq[ColumnName], Row[ctx.CV]) = {
+  def rowDecodePlan(ctx: CsvDataContext)(schema: Map[ColumnName, ColumnInfo[ctx.CT]], headers: IndexedSeq[ColumnName]): IndexedSeq[String] => (Seq[ColumnName], Row[ctx.CV]) = {
     val colInfo = headers.zipWithIndex.map { case (header, idx) =>
-      val (ci, typ) = schema(header)
-      (header, ci.systemId, ctx.csvRepForColumn(typ), Array(idx) : IndexedSeq[Int])
+      val ci = schema(header)
+      (header, ci.systemId, ctx.csvRepForColumn(ci), Array(idx) : IndexedSeq[Int])
     }
     (row: IndexedSeq[String]) => {
       val result = new MutableRow[ctx.CV]
