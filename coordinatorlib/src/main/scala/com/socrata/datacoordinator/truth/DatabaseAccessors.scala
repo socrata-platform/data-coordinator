@@ -147,11 +147,17 @@ object DatasetMutator {
       def columnInfo(id: ColumnId) = copyCtx.columnInfoOpt(id)
       def columnInfo(name: ColumnName) = copyCtx.columnInfoOpt(name)
 
+      var doingRows = false
+      def checkDoingRows() {
+        if(doingRows) throw new IllegalStateException("Cannot perform operation while rows are being processed")
+      }
+
       def now = llCtx.now
       def datasetMap = llCtx.datasetMap
       def datasetContetsCopier = llCtx.datasetContentsCopier(copyInfo.datasetInfo)
 
       def addColumn(logicalName: ColumnName, typ: CT, physicalColumnBaseBase: String): ColumnInfo[CT] = {
+        checkDoingRows()
         val newColumn = datasetMap.addColumn(copyInfo, logicalName, typ, physicalColumnBaseBase)
         schemaLoader.addColumn(newColumn)
         copyCtx.addColumn(newColumn)
@@ -159,6 +165,7 @@ object DatasetMutator {
       }
 
       def renameColumn(ci: ColumnInfo[CT], newName: ColumnName): ColumnInfo[CT] = {
+        checkDoingRows()
         val newCi = datasetMap.renameColumn(ci, newName)
         logger.logicalNameChanged(newCi)
         copyCtx.addColumn(newCi)
@@ -166,12 +173,14 @@ object DatasetMutator {
       }
 
       def dropColumn(ci: ColumnInfo[CT]) {
+        checkDoingRows()
         datasetMap.dropColumn(ci)
         schemaLoader.dropColumn(ci)
         copyCtx.removeColumn(ci.systemId)
       }
 
       def makeSystemPrimaryKey(ci: ColumnInfo[CT]): ColumnInfo[CT] = {
+        checkDoingRows()
         val result = datasetMap.setSystemPrimaryKey(ci)
         try {
           schemaLoader.makeSystemPrimaryKey(result)
@@ -184,6 +193,7 @@ object DatasetMutator {
       }
 
       def unmakeUserPrimaryKey(ci: ColumnInfo[CT]): ColumnInfo[CT] = {
+        checkDoingRows()
         val result = datasetMap.clearUserPrimaryKey(ci)
         schemaLoader.dropPrimaryKey(ci)
         copyCtx.addColumn(result)
@@ -191,6 +201,7 @@ object DatasetMutator {
       }
 
       def makeUserPrimaryKey(ci: ColumnInfo[CT]): ColumnInfo[CT] = {
+        checkDoingRows()
         val result = datasetMap.setUserPrimaryKey(ci)
         try {
           schemaLoader.makePrimaryKey(result)
@@ -263,18 +274,25 @@ object DatasetMutator {
       }
 
       def truncate() {
+        checkDoingRows()
         llCtx.truncate(copyInfo, logger)
       }
 
       def upsert(inputGenerator: Iterator[RowDataUpdateJob]): Report[CV] = {
-        val (report, nextRowId, _) = llCtx.withDataLoader(copyCtx.frozenCopy(), logger) { loader =>
-          inputGenerator.foreach {
-            case UpsertJob(jobNum, row) => loader.upsert(jobNum, row)
-            case DeleteJob(jobNum, id) => loader.delete(jobNum, id)
+        checkDoingRows()
+        try {
+          doingRows = true
+          val (report, nextRowId, _) = llCtx.withDataLoader(copyCtx.frozenCopy(), logger) { loader =>
+            inputGenerator.foreach {
+              case UpsertJob(jobNum, row) => loader.upsert(jobNum, row)
+              case DeleteJob(jobNum, id) => loader.delete(jobNum, id)
+            }
           }
+          copyCtx.copyInfo = datasetMap.updateNextRowId(copyInfo, nextRowId)
+          report
+        } finally {
+          doingRows = false
         }
-        copyCtx.copyInfo = datasetMap.updateNextRowId(copyInfo, nextRowId)
-        report
       }
 
       def drop() {
