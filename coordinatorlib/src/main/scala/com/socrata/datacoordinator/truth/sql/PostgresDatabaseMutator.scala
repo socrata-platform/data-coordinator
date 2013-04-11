@@ -45,14 +45,14 @@ class PostgresDatabaseMutator[CT, CV](universe: Managed[Universe[CT, CV] with Lo
     def logger(datasetInfo: DatasetInfo): Logger[CT, CV] =
       universe.logger(datasetInfo)
 
-    def schemaLoader(datasetInfo: DatasetInfo): SchemaLoader[CT] =
-      universe.schemaLoader(datasetInfo)
+    def schemaLoader(logger: Logger[CT, CV]): SchemaLoader[CT] =
+      universe.schemaLoader(logger)
 
     def truncate(table: CopyInfo, logger: Logger[CT, CV]) =
       universe.truncator.truncate(table, logger)
 
-    def datasetContentsCopier(datasetInfo: DatasetInfo): DatasetContentsCopier[CT] =
-      universe.datasetContentsCopier(datasetInfo)
+    def datasetContentsCopier(logger: Logger[CT, CV]): DatasetContentsCopier[CT] =
+      universe.datasetContentsCopier(logger)
 
     def globalLog = universe.globalLog
 

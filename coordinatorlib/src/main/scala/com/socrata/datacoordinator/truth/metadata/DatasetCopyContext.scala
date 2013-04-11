@@ -17,6 +17,7 @@ class DatasetCopyContext[CT](val copyInfo: CopyInfo, val schema: ColumnIdMap[Col
 }
 
 class MutableDatasetCopyContext[CT](var _copyInfo: CopyInfo, private var schema: MutableColumnIdMap[ColumnInfo[CT]]) {
+  def datasetInfo = _copyInfo.datasetInfo
   var _currentSchema: ColumnIdMap[ColumnInfo[CT]] = null
   def copyInfo = _copyInfo
   def copyInfo_=(newCopyInfo: CopyInfo) {

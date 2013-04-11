@@ -32,8 +32,8 @@ trait LowLevelDatabaseMutator[CT, CV] {
     def now: DateTime
     def datasetMap: DatasetMapWriter[CT]
     def logger(info: DatasetInfo): Logger[CT, CV]
-    def schemaLoader(info: DatasetInfo): SchemaLoader[CT]
-    def datasetContentsCopier(info: DatasetInfo): DatasetContentsCopier[CT]
+    def schemaLoader(logger: Logger[CT, CV]): SchemaLoader[CT]
+    def datasetContentsCopier(logger: Logger[CT, CV]): DatasetContentsCopier[CT]
     def withDataLoader[A](copyCtx: DatasetCopyContext[CT], logger: Logger[CT, CV])(f: Loader[CV] => A): (Report[CV], RowId, A)
     def truncate(table: CopyInfo, logger: Logger[CT, CV])
 
@@ -141,11 +141,13 @@ trait DatasetMutator[CT, CV] {
 object DatasetMutator {
   private class Impl[CT, CV](val databaseMutator: LowLevelDatabaseMutator[CT, CV], lockTimeout: Duration) extends DatasetMutator[CT, CV] {
     type TrueMutationContext = S
-    class S(var copyCtx: MutableDatasetCopyContext[CT], val schemaLoader: SchemaLoader[CT], val logger: Logger[CT, CV], llCtx: databaseMutator.MutationContext) extends MutationContext {
+    class S(var copyCtx: MutableDatasetCopyContext[CT], llCtx: databaseMutator.MutationContext, logger: Logger[CT, CV], val schemaLoader: SchemaLoader[CT]) extends MutationContext {
       def copyInfo = copyCtx.copyInfo
       def schema = copyCtx.currentSchema
       def columnInfo(id: ColumnId) = copyCtx.columnInfoOpt(id)
       def columnInfo(name: ColumnName) = copyCtx.columnInfoOpt(name)
+
+      def datasetContetsCopier = llCtx.datasetContentsCopier(logger)
 
       var doingRows = false
       def checkDoingRows() {
@@ -154,7 +156,6 @@ object DatasetMutator {
 
       def now = llCtx.now
       def datasetMap = llCtx.datasetMap
-      def datasetContetsCopier = llCtx.datasetContentsCopier(copyInfo.datasetInfo)
 
       def addColumn(logicalName: ColumnName, typ: CT, physicalColumnBaseBase: String): ColumnInfo[CT] = {
         checkDoingRows()
@@ -219,7 +220,7 @@ object DatasetMutator {
         result
       }
 
-      def datasetContentsCopier = llCtx.datasetContentsCopier(copyInfo.datasetInfo)
+      def datasetContentsCopier = llCtx.datasetContentsCopier(logger)
 
       def makeWorkingCopy(copyData: Boolean): CopyInfo = {
         val dataCopier = if(copyData) Some(datasetContentsCopier) else None
@@ -310,8 +311,8 @@ object DatasetMutator {
           case Some(datasetId) =>
             val ctx = llCtx.loadLatestVersionOfDataset(datasetId, lockTimeout) map { copyCtx =>
               val logger = llCtx.logger(copyCtx.datasetInfo)
-              val schemaLoader = llCtx.schemaLoader(copyCtx.datasetInfo)
-              new S(copyCtx.thaw(), schemaLoader, logger, llCtx)
+              val schemaLoader = llCtx.schemaLoader(logger)
+              new S(copyCtx.thaw(), llCtx, logger, schemaLoader)
             }
             val result = action(ctx)
             ctx.foreach { state =>
@@ -336,9 +337,8 @@ object DatasetMutator {
             try { m.create(datasetName, tableBaseBase, localeName) }
             catch { case _: DatasetAlreadyExistsException => return f(None) }
           val logger = llCtx.logger(firstVersion.datasetInfo)
-          val schemaLoader = llCtx.schemaLoader(firstVersion.datasetInfo)
-          schemaLoader.create(firstVersion)
-          val state = new S(new DatasetCopyContext(firstVersion, ColumnIdMap.empty).thaw(), schemaLoader, logger, llCtx)
+          val schemaLoader = llCtx.schemaLoader(logger)
+          val state = new S(new DatasetCopyContext(firstVersion, ColumnIdMap.empty).thaw(), llCtx, logger, schemaLoader)
           val result = f(Some(state))
           llCtx.finishDatasetTransaction(as, state.copyInfo)
           result

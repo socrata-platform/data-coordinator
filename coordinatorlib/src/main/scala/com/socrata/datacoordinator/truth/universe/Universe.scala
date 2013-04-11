@@ -65,8 +65,12 @@ trait LoaderProvider { this: TypeUniverse =>
   def loader(copyCtx: DatasetCopyContext[CT], rowIdProvider: RowIdProvider, logger: Logger[CT, CV]): Managed[Loader[CV]]
 }
 
+trait DatasetDecsvifierProvider {
+  def datasetDecsvifier: DatasetDecsvifier
+}
+
 trait SchemaLoaderProvider { this: TypeUniverse =>
-  def schemaLoader(datasetInfo: DatasetInfo): SchemaLoader[CT]
+  def schemaLoader(logger: Logger[CT, CV]): SchemaLoader[CT]
 }
 
 trait TruncatorProvider {
@@ -79,6 +83,10 @@ trait DatasetMapReaderProvider { this: TypeUniverse =>
 
 trait DatasetMapWriterProvider { this: TypeUniverse =>
   val datasetMapWriter: DatasetMapWriter[CT]
+}
+
+trait BackupDatasetMapWriterProvider { this: TypeUniverse =>
+  val backupDatasetMapWriter: BackupDatasetMap[CT]
 }
 
 trait DatasetMutatorProvider { this: TypeUniverse =>
@@ -110,7 +118,7 @@ trait SecondaryConfigProvider {
 }
 
 trait DatasetContentsCopierProvider { this: TypeUniverse =>
-  def datasetContentsCopier(datasetInfo: DatasetInfo): DatasetContentsCopier[CT]
+  def datasetContentsCopier(logger: Logger[CT, CV]): DatasetContentsCopier[CT]
 }
 
 trait GlobalLogProvider {

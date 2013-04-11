@@ -169,9 +169,9 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
   lazy val datasetMutator: DatasetMutator[CT, CV] =
     DatasetMutator(lowLevelDatabaseMutator, Duration(10, "s"))
 
-  def schemaLoader(datasetInfo: DatasetInfo) =
-    new RepBasedPostgresSchemaLoader(conn, logger(datasetInfo), repFor, tablespace)
+  def schemaLoader(logger: Logger[CT, CV]) =
+    new RepBasedPostgresSchemaLoader(conn, logger, repFor, tablespace)
 
-  def datasetContentsCopier(datasetInfo: DatasetInfo): DatasetContentsCopier[CT] =
-    new RepBasedSqlDatasetContentsCopier(conn, logger(datasetInfo), repFor, timingReport)
+  def datasetContentsCopier(logger: Logger[CT, CV]): DatasetContentsCopier[CT] =
+    new RepBasedSqlDatasetContentsCopier(conn, logger, repFor, timingReport)
 }
