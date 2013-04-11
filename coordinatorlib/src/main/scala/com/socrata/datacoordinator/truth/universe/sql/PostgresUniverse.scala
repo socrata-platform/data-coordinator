@@ -25,17 +25,18 @@ import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
 import com.socrata.datacoordinator.id.RowId
 
-trait CommonSupport[CT, CV] {
+trait PostgresCommonSupport[CT, CV] {
   val executor: ExecutorService
   val typeContext: TypeContext[CT, CV]
-  def repFor(ci: ColumnInfo[CT]): SqlColumnRep[CT, CV]
-  def newRowCodec(): RowLogCodec[CV]
+  def repFor: ColumnInfo[CT] => SqlColumnRep[CT, CV]
+  def newRowCodec: () => RowLogCodec[CV]
   def isSystemColumn(ci: AbstractColumnInfoLike): Boolean
 
   val obfuscationKeyGenerator: () => Array[Byte]
   val initialRowId: RowId
   val tablespace: String => Option[String]
   val copyInProvider: (Connection, String, Reader) => Long
+  val timingReport: TransferrableContextTimingReport
 
   def rowPreparer(transactionStart: DateTime, schema: ColumnIdMap[AbstractColumnInfoLike]): RowPreparer[CV]
 
@@ -60,9 +61,7 @@ object C3P0WrappedPostgresCopyIn extends ((Connection, String, Reader) => Long) 
 }
 
 class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
-                                                commonSupport: CommonSupport[ColumnType, ColumnValue],
-                                                val timingReport: TransferrableContextTimingReport,
-                                                user: String)
+                                                commonSupport: PostgresCommonSupport[ColumnType, ColumnValue])
   extends Universe[ColumnType, ColumnValue]
     with DatasetMapReaderProvider
     with DatasetMapWriterProvider
@@ -115,7 +114,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
   }
 
   def delogger(datasetInfo: DatasetInfo): Delogger[CV] =
-    new SqlDelogger(conn, datasetInfo.logTableName, newRowCodec _)
+    new SqlDelogger(conn, datasetInfo.logTableName, newRowCodec)
 
   lazy val secondaryManifest: SecondaryManifest =
     new SqlSecondaryManifest(conn)

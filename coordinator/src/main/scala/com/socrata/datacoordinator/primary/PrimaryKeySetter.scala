@@ -1,14 +1,16 @@
 package com.socrata.datacoordinator.primary
 
-import com.socrata.datacoordinator.truth.DatasetMutator
-import com.socrata.soql.environment.ColumnName
+import com.rojoma.simplearm.Managed
 
-class PrimaryKeySetter[CT](mutator: DatasetMutator[CT, _]) extends ExistingDatasetMutator {
-  import mutator._
+import com.socrata.soql.environment.ColumnName
+import com.socrata.datacoordinator.truth.universe.{DatasetMutatorProvider, Universe}
+
+class PrimaryKeySetter[CT](universe: Managed[Universe[CT, _] with DatasetMutatorProvider]) extends ExistingDatasetMutator {
   def makePrimaryKey(dataset: String, column: ColumnName, username: String) {
     finish(dataset) {
       for {
-        ctxOpt <- openDataset(as = username)(dataset)
+        u <- universe
+        ctxOpt <- u.datasetMutator.openDataset(as = username)(dataset)
         ctx <- ctxOpt
       } yield {
         import ctx._

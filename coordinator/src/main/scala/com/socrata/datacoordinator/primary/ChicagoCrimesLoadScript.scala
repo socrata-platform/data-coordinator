@@ -1,25 +1,22 @@
 package com.socrata.datacoordinator.primary
 
-import java.sql.Connection
-import java.io.{Reader, File}
+import java.io.File
 
 import com.socrata.csv.CSVIterator
 
 import org.postgresql.ds._
 import com.rojoma.simplearm.util._
 
-import com.socrata.datacoordinator.common.soql._
 import com.socrata.datacoordinator.truth.metadata._
-import com.socrata.datacoordinator.truth._
 import com.socrata.datacoordinator.{Row, MutableRow}
-import com.socrata.datacoordinator.common.{StandardObfuscationKeyGenerator, StandardDatasetMapLimits}
-import org.postgresql.PGConnection
+import com.socrata.datacoordinator.common.{SoQLCommon, StandardDatasetMapLimits}
 import com.socrata.soql.brita.IdentifierFilter
 import com.socrata.datacoordinator.util.{StackedTimingReport, LoggedTimingReport}
 import org.slf4j.LoggerFactory
-import scala.concurrent.duration.Duration
 import com.socrata.soql.environment.{ColumnName, TypeName}
-import com.socrata.datacoordinator.id.RowId
+import com.socrata.datacoordinator.truth.universe.sql.PostgresCopyIn
+import com.socrata.datacoordinator.truth.csv.CsvColumnReadRep
+import com.socrata.datacoordinator.common.soql.SoQLRep
 
 object ChicagoCrimesLoadScript extends App {
   val url =
@@ -45,36 +42,29 @@ object ChicagoCrimesLoadScript extends App {
   val executor = java.util.concurrent.Executors.newCachedThreadPool()
   try {
 
-    val dataContextRaw = new PostgresSoQLDataContext with CsvSoQLDataContext {
-      val obfuscationKeyGenerator = StandardObfuscationKeyGenerator
-      val initialRowId = new RowId(0L)
-      val dataSource = ds
-      val executorService = executor
-      def copyIn(conn: Connection, sql: String, input: Reader): Long =
-        conn.asInstanceOf[PGConnection].getCopyAPI.copyIn(sql, input)
-      def tablespace(s: String) = None
-      val datasetMapLimits = StandardDatasetMapLimits
-      val datasetMutatorLockTimeout = Duration.Inf
-      val timingReport = new LoggedTimingReport(LoggerFactory.getLogger("timing-report")) with StackedTimingReport
-    }
+    val common = new SoQLCommon(
+      ds,
+      PostgresCopyIn,
+      executor,
+      Function.const(None),
+      new LoggedTimingReport(LoggerFactory.getLogger("timing-report")) with StackedTimingReport
+    )
 
     com.rojoma.simplearm.util.using(ds.getConnection()) { conn =>
       com.socrata.datacoordinator.truth.sql.DatabasePopulator.populate(conn, StandardDatasetMapLimits)
     }
 
-    val dataContext: DataWritingContext with CsvDataContext = dataContextRaw
+    val datasetCreator = new DatasetCreator(common.universe, common.systemSchema, common.physicalColumnBaseBase)
 
-    val datasetCreator = new DatasetCreator(dataContext)
+    val columnAdder = new ColumnAdder(common.universe, common.physicalColumnBaseBase)
 
-    val columnAdder = ColumnAdder[dataContext.CT](dataContext)
+    val primaryKeySetter = new PrimaryKeySetter(common.universe)
 
-    val primaryKeySetter = new PrimaryKeySetter(dataContext.datasetMutator)
+    val upserter = new Upserter(common.universe)
 
-    val upserter = new Upserter(dataContext.datasetMutator)
+    val publisher = new Publisher(common.universe)
 
-    val publisher = new Publisher(dataContext.datasetMutator)
-
-    val workingCopyCreator = new WorkingCopyCreator(dataContext.datasetMutator)
+    val workingCopyCreator = new WorkingCopyCreator(common.universe)
 
     // Above this can be re-used for every query
 
@@ -83,11 +73,11 @@ object ChicagoCrimesLoadScript extends App {
     try { datasetCreator.createDataset(datasetName, user, "en_US") }
     catch { case _: DatasetAlreadyExistsException => /* pass */ }
     using(CSVIterator.fromFile(new File(inputFile))) { it =>
-      val NumberT = dataContext.typeContext.typeNamespace.typeForUserType(TypeName("number")).get
-      val TextT = dataContext.typeContext.typeNamespace.typeForUserType(TypeName("text")).get
-      val BooleanT = dataContext.typeContext.typeNamespace.typeForUserType(TypeName("boolean")).get
-      val FloatingTimestampT = dataContext.typeContext.typeNamespace.typeForUserType(TypeName("floating_timestamp")).get
-      val LocationT = dataContext.typeContext.typeNamespace.typeForUserType(TypeName("location")).get
+      val NumberT = common.typeContext.typeNamespace.typeForUserType(TypeName("number")).get
+      val TextT = common.typeContext.typeNamespace.typeForUserType(TypeName("text")).get
+      val BooleanT = common.typeContext.typeNamespace.typeForUserType(TypeName("boolean")).get
+      val FloatingTimestampT = common.typeContext.typeNamespace.typeForUserType(TypeName("floating_timestamp")).get
+      val LocationT = common.typeContext.typeNamespace.typeForUserType(TypeName("location")).get
       val types = Map(
         ColumnName("id") -> NumberT,
         ColumnName("case_number") -> TextT,
@@ -117,7 +107,7 @@ object ChicagoCrimesLoadScript extends App {
       primaryKeySetter.makePrimaryKey(datasetName, ColumnName("id"), user)
       val start = System.nanoTime()
       upserter.upsert(datasetName, user) { _ =>
-        val plan = rowDecodePlan(dataContext)(schema, headers)
+        val plan = rowDecodePlan(schema, headers, SoQLRep.csvRep)
         it.take(10).map { row =>
           val result = plan(row)
           if(result._1.nonEmpty) throw new Exception("Error decoding row; unable to decode columns: " + result._1.mkString(", "))
@@ -129,7 +119,8 @@ object ChicagoCrimesLoadScript extends App {
       publisher.publish(datasetName, None, user)
       workingCopyCreator.copyDataset(datasetName, user, copyData = true)
       val ci = for {
-        dataContext.datasetMutator.CopyOperationComplete(ctx) <- dataContext.datasetMutator.dropCopy(user)(datasetName)
+        u <- common.universe
+        u.datasetMutator.CopyOperationComplete(ctx) <- u.datasetMutator.dropCopy(user)(datasetName)
       } yield {
         ctx.copyInfo.unanchored
       }
@@ -140,13 +131,13 @@ object ChicagoCrimesLoadScript extends App {
     executor.shutdown()
   }
 
-  def rowDecodePlan(ctx: CsvDataContext)(schema: Map[ColumnName, ColumnInfo[ctx.CT]], headers: IndexedSeq[ColumnName]): IndexedSeq[String] => (Seq[ColumnName], Row[ctx.CV]) = {
+  def rowDecodePlan[CT, CV](schema: Map[ColumnName, ColumnInfo[CT]], headers: IndexedSeq[ColumnName], csvRepForColumn: ColumnInfo[CT] => CsvColumnReadRep[CT, CV]): IndexedSeq[String] => (Seq[ColumnName], Row[CV]) = {
     val colInfo = headers.zipWithIndex.map { case (header, idx) =>
       val ci = schema(header)
-      (header, ci.systemId, ctx.csvRepForColumn(ci), Array(idx) : IndexedSeq[Int])
+      (header, ci.systemId, csvRepForColumn(ci), Array(idx) : IndexedSeq[Int])
     }
     (row: IndexedSeq[String]) => {
-      val result = new MutableRow[ctx.CV]
+      val result = new MutableRow[CV]
       val bads = colInfo.flatMap { case (header, systemId, rep, indices) =>
         try {
           result += systemId -> rep.decode(row, indices).get

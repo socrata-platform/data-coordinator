@@ -6,7 +6,7 @@ import com.rojoma.simplearm.{SimpleArm, Managed}
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.secondary.sql.SqlSecondaryConfig
 import com.typesafe.config.ConfigFactory
-import com.socrata.datacoordinator.common.{StandardObfuscationKeyGenerator, DataSourceFromConfig}
+import com.socrata.datacoordinator.common.{SoQLCommon, StandardObfuscationKeyGenerator, DataSourceFromConfig}
 import java.io.File
 import com.socrata.soql.types.{SoQLValue, SoQLType}
 import org.slf4j.LoggerFactory
@@ -17,7 +17,6 @@ import com.socrata.datacoordinator.util.{TransferrableContextTimingReport, Stack
 import com.socrata.datacoordinator.truth.universe._
 import java.sql.Connection
 import com.socrata.datacoordinator.truth.universe.sql.{PostgresCopyIn, PostgresUniverse}
-import com.socrata.datacoordinator.common.soql.universe.PostgresUniverseCommonSupport
 import com.socrata.datacoordinator.id.RowId
 
 class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseType[CT, CV]]) {
@@ -108,34 +107,23 @@ object SecondaryWatcher extends App { self =>
 
   type UniverseType[CT, CV] = Universe[CT, CV] with DatasetMapReaderProvider with GlobalLogPlaybackProvider with SecondaryManifestProvider with SecondaryPlaybackManifestProvider with PlaybackToSecondaryProvider with DeloggerProvider with SecondaryConfigProvider
 
-  val timingReport = new LoggedTimingReport(log) with StackedTimingReport
-
   val rootConfig = ConfigFactory.load()
   val config = rootConfig.getConfig("com.socrata.secondary-watcher")
   println(config.root.render())
-  val (dataSource, _) = DataSourceFromConfig(config)
+  val (dataSource, copyIn) = DataSourceFromConfig(config)
   val secondaries = SecondaryLoader.load(config.getConfig("secondary.configs"), new File(config.getString("secondary.path"))).asInstanceOf[Map[String, Secondary[SoQLType, SoQLValue]]]
 
   val executor = Executors.newCachedThreadPool()
 
-  val commonSupport = new PostgresUniverseCommonSupport(executor, _ => None, PostgresCopyIn, StandardObfuscationKeyGenerator, new RowId(0L))
+  val common = new SoQLCommon(
+    dataSource,
+    copyIn,
+    executor,
+    _ => None,
+    new LoggedTimingReport(log) with StackedTimingReport
+  )
 
-  type SoQLUniverse = PostgresUniverse[SoQLType, SoQLValue]
-  def soqlUniverse(conn: Connection, timingReport: TransferrableContextTimingReport) =
-    new SoQLUniverse(conn, commonSupport, timingReport, ":secondary-watcher")
-
-  val universe = new SimpleArm[SoQLUniverse] {
-    def flatMap[B](f: SoQLUniverse => B): B = {
-      using(dataSource.getConnection()) { conn =>
-        conn.setAutoCommit(false)
-        val result = f(soqlUniverse(conn, timingReport))
-        conn.commit()
-        result
-      }
-    }
-  }
-
-  val w = new SecondaryWatcher(universe)
+  val w = new SecondaryWatcher(common.universe)
 
   val SIGTERM = new Signal("TERM")
   val SIGINT = new Signal("INT")
@@ -159,7 +147,7 @@ object SecondaryWatcher extends App { self =>
 
     val threads =
       using(dataSource.getConnection()) { conn =>
-        val cfg = new SqlSecondaryConfig(conn, timingReport)
+        val cfg = new SqlSecondaryConfig(conn, common.timingReport)
 
         secondaries.iterator.flatMap { case (name, secondary) =>
           cfg.lookup(name).map { info =>

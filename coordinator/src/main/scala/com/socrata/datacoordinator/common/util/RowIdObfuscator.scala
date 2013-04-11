@@ -5,6 +5,7 @@ import com.socrata.datacoordinator.id.RowId
 import org.bouncycastle.crypto.engines.BlowfishEngine
 import org.bouncycastle.crypto.params.KeyParameter
 import org.bouncycastle.crypto.BlockCipher
+import java.security.SecureRandom
 
 class RowIdObfuscator(key: Array[Byte]) extends SoQLRep.IdObfuscationContext {
   private val formatter = LongFormatter
@@ -73,4 +74,14 @@ class RowIdObfuscator(key: Array[Byte]) extends SoQLRep.IdObfuscationContext {
     } else {
       None
     }
+}
+
+object RowIdObfuscator {
+  private val rng = new SecureRandom
+
+  def generateKey(): Array[Byte] = {
+    val bs = new Array[Byte](72)
+    rng.nextBytes(bs)
+    bs
+  }
 }

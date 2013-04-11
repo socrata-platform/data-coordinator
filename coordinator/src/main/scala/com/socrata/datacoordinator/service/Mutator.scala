@@ -179,6 +179,7 @@ trait MutatorCommon[CT, CV] {
   def systemIdColumnName: ColumnName
   def typeNameFor(typ: CT): TypeName
   def nameForTypeOpt(name: TypeName): Option[CT]
+  def jsonRepFor(columnInfo: ColumnInfo[CT]): JsonColumnReadRep[CT, CV]
 }
 
 class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
@@ -213,7 +214,7 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
       new CommandStream(streamType, dataset, user, remainingCommands.buffered)
     }
 
-  def apply(u: Universe[CT, CV] with DatasetMutatorProvider, jsonRepFor: ColumnInfo[CT] => JsonColumnReadRep[CT, CV], commandStream: Iterator[JValue]) {
+  def apply(u: Universe[CT, CV] with DatasetMutatorProvider, commandStream: Iterator[JValue]) {
     if(commandStream.isEmpty) throw EmptyCommandStream()(0L)
     val commands = createCommandStream(0L, commandStream.next(), commandStream)
     def user = commands.user

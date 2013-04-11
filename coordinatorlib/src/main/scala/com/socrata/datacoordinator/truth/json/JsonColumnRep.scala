@@ -1,9 +1,6 @@
 package com.socrata.datacoordinator.truth.json
 
-import scala.reflect.ClassTag
-
 import com.rojoma.json.ast._
-import com.rojoma.json.io._
 import com.rojoma.json.codec._
 import com.socrata.soql.environment.ColumnName
 

@@ -5,6 +5,7 @@ import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.util.collection.DatasetIdMap
 
 trait SecondaryManifest {
+  def readLastDatasetInfo(storeId: String, datasetId: DatasetId): Option[(Long, Option[String])]
   def lastDataInfo(storeId: String, datasetId: DatasetId): (Long, Option[String])
   def updateDataInfo(storeId: String, datasetId: DatasetId, dataVersion: Long, cookie: Option[String])
   def dropDataset(storeId: String, datasetId: DatasetId)

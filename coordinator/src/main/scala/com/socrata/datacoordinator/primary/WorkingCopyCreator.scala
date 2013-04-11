@@ -1,14 +1,18 @@
 package com.socrata.datacoordinator.primary
 
-import com.socrata.datacoordinator.truth.metadata.UnanchoredCopyInfo
-import com.socrata.datacoordinator.truth.DatasetMutator
+import com.rojoma.simplearm.Managed
 
-class WorkingCopyCreator(mutator: DatasetMutator[_,_]) extends ExistingDatasetMutator {
-  import mutator._
+import com.socrata.datacoordinator.truth.metadata.UnanchoredCopyInfo
+import com.socrata.datacoordinator.truth.universe.{DatasetMutatorProvider, Universe}
+
+class WorkingCopyCreator(universe: Managed[Universe[_, _] with DatasetMutatorProvider]) extends ExistingDatasetMutator {
   def copyDataset(dataset: String, username: String, copyData: Boolean): UnanchoredCopyInfo = {
     finish(dataset) {
-      createCopy(as = username)(dataset, copyData) map {
-        case CopyOperationComplete(ctx) =>
+      for {
+        u <- universe
+        ctx <- u.datasetMutator.createCopy(as = username)(dataset, copyData)
+      } yield ctx match {
+        case u.datasetMutator.CopyOperationComplete(ctx) =>
           Some(ctx.copyInfo.unanchored)
         case _ =>
           None

@@ -11,37 +11,29 @@ import com.rojoma.json.util.{JsonArrayIterator, AutomaticJsonCodecBuilder, JsonK
 import com.rojoma.json.io._
 import com.rojoma.json.ast.{JNull, JValue, JNumber, JObject}
 import com.ibm.icu.text.Normalizer
-import com.socrata.datacoordinator.common.soql.{SoQLRep, SoQLRowLogCodec, PostgresSoQLDataContext}
+import com.socrata.datacoordinator.common.soql.{SoQLTypeContext, SoQLRep, SoQLRowLogCodec}
 import java.util.concurrent.{TimeUnit, Executors}
 import org.postgresql.ds.PGSimpleDataSource
 import com.socrata.datacoordinator.truth._
 import com.typesafe.config.ConfigFactory
-import com.socrata.datacoordinator.common.{StandardObfuscationKeyGenerator, DataSourceFromConfig, StandardDatasetMapLimits}
+import com.socrata.datacoordinator.common.{SoQLCommon, StandardObfuscationKeyGenerator, DataSourceFromConfig, StandardDatasetMapLimits}
 import java.sql.Connection
 import com.rojoma.simplearm.util._
-import com.socrata.datacoordinator.truth.sql.SqlDataReadingContext
-import com.socrata.datacoordinator.truth.metadata.{DatasetInfo, AbstractColumnInfoLike, ColumnInfo, UnanchoredCopyInfo}
 import scala.concurrent.duration.Duration
-import com.socrata.datacoordinator.secondary.{Secondary, NamedSecondary, PlaybackToSecondary, SecondaryLoader}
+import com.socrata.datacoordinator.secondary.{Secondary, PlaybackToSecondary, SecondaryLoader}
 import com.socrata.datacoordinator.util.collection.DatasetIdMap
-import com.socrata.datacoordinator.id.{RowId, ColumnId, DatasetId}
+import com.socrata.datacoordinator.id.RowId
 import com.socrata.datacoordinator.secondary.sql.SqlSecondaryManifest
 import com.socrata.datacoordinator.truth.metadata.sql.PostgresDatasetMapReader
 import com.socrata.datacoordinator.truth.loader.sql.SqlDelogger
-import com.socrata.datacoordinator.primary.{WorkingCopyCreator, Publisher}
 import java.net.URLDecoder
 import com.socrata.datacoordinator.util.{StackedTimingReport, LoggedTimingReport}
 import javax.activation.{MimeTypeParseException, MimeType}
 import com.socrata.datacoordinator.secondary.NamedSecondary
-import scala.Some
 import com.socrata.datacoordinator.truth.universe.sql.{PostgresCopyIn, PostgresUniverse}
 import com.rojoma.simplearm.SimpleArm
-import com.socrata.datacoordinator.common.soql.universe.PostgresUniverseCommonSupport
 import com.socrata.soql.types.{SoQLValue, SoQLType}
-import com.socrata.soql.environment.{TypeName, ColumnName}
-import com.socrata.datacoordinator.common.soql.SoQLRep.IdObfuscationContext
-import com.socrata.datacoordinator.truth.json.JsonColumnRep
-import com.socrata.datacoordinator.common.util.RowIdObfuscator
+import com.socrata.soql.environment.ColumnName
 
 case class Field(name: String, @JsonKey("type") typ: String)
 object Field {
@@ -264,126 +256,79 @@ class Service(processMutation: Iterator[JValue] => Unit,
 object Service extends App { self =>
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
 
-  val timingReport = new LoggedTimingReport(org.slf4j.LoggerFactory.getLogger("timing-report")) with StackedTimingReport
-
   val config = ConfigFactory.load()
   val serviceConfig = config.getConfig("com.socrata.coordinator-service")
   println(config.root.render)
 
   val secondaries = SecondaryLoader.load(serviceConfig.getConfig("secondary.configs"), new File(serviceConfig.getString("secondary.path")))
 
-  val (dataSource, copyInForDataSource) = DataSourceFromConfig(serviceConfig)
-
-  com.rojoma.simplearm.util.using(dataSource.getConnection()) { conn =>
-    com.socrata.datacoordinator.truth.sql.DatabasePopulator.populate(conn, StandardDatasetMapLimits)
-  }
-
   val port = serviceConfig.getInt("network.port")
 
   val executorService = Executors.newCachedThreadPool()
   try {
-    val dataContext = new PostgresSoQLDataContext {
-      val obfuscationKeyGenerator = StandardObfuscationKeyGenerator
-      val initialRowId = new RowId(0L)
-      val dataSource = self.dataSource
-      val executorService = self.executorService
-      def copyIn(conn: Connection, sql: String, input: Reader): Long =
-        copyInForDataSource(conn, sql, input)
-      def tablespace(s: String) = Some("pg_default")
-      val datasetMapLimits = StandardDatasetMapLimits
-      val timingReport = self.timingReport
-      val datasetMutatorLockTimeout = Duration.Inf
+    val common = locally {
+      val (dataSource, copyInForDataSource) = DataSourceFromConfig(serviceConfig)
+
+      com.rojoma.simplearm.util.using(dataSource.getConnection()) { conn =>
+        com.socrata.datacoordinator.truth.sql.DatabasePopulator.populate(conn, StandardDatasetMapLimits)
+      }
+
+      new SoQLCommon(
+        dataSource,
+        copyInForDataSource,
+        executorService,
+        _ => Some("pg_default"),
+        new LoggedTimingReport(org.slf4j.LoggerFactory.getLogger("timing-report")) with StackedTimingReport
+      )
     }
 
     def datasetsInStore(storeId: String): DatasetIdMap[Long] =
-      using(dataSource.getConnection()) { conn =>
-        val secondaryManifest = new SqlSecondaryManifest(conn)
-        secondaryManifest.datasets(storeId)
+      for(u <- common.universe) yield {
+        u.secondaryManifest.datasets(storeId)
       }
+
     def versionInStore(storeId: String, datasetId: String): Option[Long] =
-      using(dataSource.getConnection()) { conn =>
-        val secondaryManifest = new SqlSecondaryManifest(conn)
-        val mapReader = new PostgresDatasetMapReader(conn, dataContext.typeContext.typeNamespace, timingReport)
+      for(u <- common.universe) yield {
         for {
-          systemId <- mapReader.datasetId(datasetId)
-          result <- secondaryManifest.readLastDatasetInfo(storeId, systemId)
+          systemId <- u.datasetMapReader.datasetId(datasetId)
+          result <- u.secondaryManifest.readLastDatasetInfo(storeId, systemId)
         } yield result._1
       }
+
     def updateVersionInStore(storeId: String, datasetId: String): Unit =
-      using(dataSource.getConnection()) { conn =>
-        conn.setAutoCommit(false)
-        val secondaryManifest = new SqlSecondaryManifest(conn)
-        val secondary = secondaries(storeId).asInstanceOf[Secondary[dataContext.CT, dataContext.CV]]
-        val pb = new PlaybackToSecondary[dataContext.CT, dataContext.CV](conn, secondaryManifest, dataContext.typeContext.typeNamespace, dataContext.sqlRepForColumn, timingReport)
-        val mapReader = new PostgresDatasetMapReader(conn, dataContext.typeContext.typeNamespace, timingReport)
+      for(u <- common.universe) {
+        val secondary = secondaries(storeId).asInstanceOf[Secondary[u.CT, u.CV]]
+        val pb = u.playbackToSecondary
+        val mapReader = u.datasetMapReader
         for {
           systemId <- mapReader.datasetId(datasetId)
           datasetInfo <- mapReader.datasetInfo(systemId)
         } yield {
-          val delogger = new SqlDelogger(conn, datasetInfo.logTableName, dataContext.newRowLogCodec)
+          val delogger = u.delogger(datasetInfo)
           pb(systemId, NamedSecondary(storeId, secondary), mapReader, delogger)
         }
-        conn.commit()
       }
     def secondariesOfDataset(datasetId: String): Option[Map[String, Long]] =
-      using(dataSource.getConnection()) { conn =>
-        conn.setAutoCommit(false)
-        val mapReader = new PostgresDatasetMapReader(conn, dataContext.typeContext.typeNamespace, timingReport)
-        val secondaryManifest = new SqlSecondaryManifest(conn)
+      for(u <- common.universe) yield {
+        val mapReader = u.datasetMapReader
+        val secondaryManifest = u.secondaryManifest
         for {
           systemId <- mapReader.datasetId(datasetId)
         } yield secondaryManifest.stores(systemId)
       }
 
-    val commonSupport = new PostgresUniverseCommonSupport(executorService, _ => None, PostgresCopyIn, StandardObfuscationKeyGenerator, dataContext.initialRowId)
-
-    type SoQLUniverse = PostgresUniverse[SoQLType, SoQLValue]
-    def soqlUniverse(conn: Connection) =
-      new SoQLUniverse(conn, commonSupport, timingReport, ":secondary-watcher")
-
-    val universeProvider = new SimpleArm[SoQLUniverse] {
-      def flatMap[B](f: SoQLUniverse => B): B = {
-        using(dataSource.getConnection()) { conn =>
-          conn.setAutoCommit(false)
-          val result = f(soqlUniverse(conn))
-          conn.commit()
-          result
-        }
-      }
-    }
-
-    val mutationCommon = new MutatorCommon[SoQLType, SoQLValue] {
-      def physicalColumnBaseBase(logicalColumnName: ColumnName, systemColumn: Boolean): String =
-        dataContext.physicalColumnBaseBase(logicalColumnName, systemColumn = systemColumn)
-
-      def isLegalLogicalName(identifier: ColumnName): Boolean =
-        dataContext.isLegalLogicalName(identifier)
-
-      def isSystemColumnName(identifier: ColumnName): Boolean =
-        dataContext.isSystemColumn(identifier)
-
-      def systemSchema = dataContext.systemColumns
-      def systemIdColumnName = dataContext.systemIdColumnName
-      def typeNameFor(typ: SoQLType) = dataContext.typeContext.typeNamespace.userTypeForType(typ)
-      def nameForTypeOpt(typeName: TypeName) = dataContext.typeContext.typeNamespace.typeForUserType(typeName)
-    }
-
-    val mutator = new Mutator(mutationCommon)
-
-    def obfuscationContextFor(key: Array[Byte]) = new RowIdObfuscator(key)
-
-    val jsonRepForColumn = SoQLRep.jsonRep { di => obfuscationContextFor(di.obfuscationKey) }
+    val mutator = new Mutator(common.Mutator)
 
     def processMutation(input: Iterator[JValue]) = {
-      for(u <- universeProvider) {
-        mutator(u, jsonRepForColumn, input)
+      for(u <- common.universe) {
+        mutator(u, input)
       }
     }
 
     def exporter(id: String, copy: CopySelector, columns: Option[Set[ColumnName]], limit: Option[Long], offset: Option[Long])(f: Iterator[JObject] => Unit): Boolean = {
-      val res = for(u <- universeProvider) yield {
+      val res = for(u <- common.universe) yield {
         Exporter.export(u, id, copy, columns, limit, offset) { (copyCtx, it) =>
-          val jsonSchema = copyCtx.schema.mapValuesStrict(jsonRepForColumn)
+          val jsonSchema = copyCtx.schema.mapValuesStrict(common.jsonRepFor)
           f(it.map { row =>
             val res = new scala.collection.mutable.HashMap[String, JValue]
             row.foreach { case (cid, value) =>

@@ -46,8 +46,6 @@ trait Universe[ColumnType, ColumnValue] extends TypeUniverse {
     */
   def commit()
 
-  val timingReport: TransferrableContextTimingReport
-
   def transactionStart: DateTime
 }
 
