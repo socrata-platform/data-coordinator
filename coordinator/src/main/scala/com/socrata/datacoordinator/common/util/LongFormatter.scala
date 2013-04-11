@@ -23,17 +23,17 @@ object LongFormatter {
     new String(cs)
   }
 
-  def deformat(s: String): Option[Long] =
-    try { Some(deformatEx(s)) }
+  def deformat(s: String, offset: Int = 0): Option[Long] =
+    try { Some(deformatEx(s, offset)) }
     catch { case e: IllegalArgumentException => None }
 
-  def deformatEx(s: String): Long = {
-    if(s.length != 14) badRid()
-    val q1 = dequadify(s, 0).toLong
-    val p1 = depunctEx(s.charAt(4)).toLong
-    val q2 = dequadify(s, 5).toLong
-    val p2 = depunctEx(s.charAt(9)).toLong
-    val q3 = dequadify(s, 10).toLong
+  def deformatEx(s: String, offset: Int = 0): Long = {
+    if(s.length != offset + 14) badRid()
+    val q1 = dequadify(s, offset).toLong
+    val p1 = depunctEx(s.charAt(offset + 4)).toLong
+    val q2 = dequadify(s, offset + 5).toLong
+    val p2 = depunctEx(s.charAt(offset + 9)).toLong
+    val q3 = dequadify(s, offset + 10).toLong
     q1 + (q2 << 20) + (q3 << 40) + (p1 << 60) + (p2 << 62)
   }
 

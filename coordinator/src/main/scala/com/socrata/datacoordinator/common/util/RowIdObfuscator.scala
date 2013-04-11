@@ -67,7 +67,7 @@ class RowIdObfuscator(key: Array[Byte]) extends SoQLRep.IdObfuscationContext {
 
   def deobfuscate(obfuscatedRowId: String): Option[RowId] =
     if(obfuscatedRowId.startsWith(prefix)) {
-      formatter.deformat(obfuscatedRowId.substring(prefix.length)).map { x =>
+      formatter.deformat(obfuscatedRowId, prefix.length).map { x =>
         new RowId(crypt(x, decryptor))
       }
     } else {
