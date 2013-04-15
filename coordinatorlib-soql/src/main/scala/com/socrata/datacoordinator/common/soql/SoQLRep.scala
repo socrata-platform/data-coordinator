@@ -53,7 +53,8 @@ object SoQLRep {
     SoQLFloatingTimestamp -> (ci => new jsonreps.FloatingTimestampRep(ci.logicalName)),
     SoQLDate -> (ci => new jsonreps.DateRep(ci.logicalName)),
     SoQLTime -> (ci => new jsonreps.TimeRep(ci.logicalName)),
-    SoQLLocation -> (ci => new jsonreps.LocationRep(ci.logicalName))
+    SoQLLocation -> (ci => new jsonreps.LocationRep(ci.logicalName)),
+    SoQLDouble -> (ci => new jsonreps.DoubleRep(ci.logicalName))
   )
 
   trait IdObfuscationContext {
