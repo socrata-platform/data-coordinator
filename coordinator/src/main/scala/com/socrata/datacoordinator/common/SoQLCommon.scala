@@ -8,7 +8,7 @@ import com.socrata.soql.brita.{AsciiIdentifierFilter, IdentifierFilter}
 import com.socrata.datacoordinator.common.soql.{SoQLRowLogCodec, SoQLRep, SoQLTypeContext}
 import com.socrata.datacoordinator.common.util.RowIdObfuscator
 import com.socrata.datacoordinator.truth.metadata.{AbstractColumnInfoLike, ColumnInfo}
-import com.socrata.datacoordinator.truth.json.JsonColumnReadRep
+import com.socrata.datacoordinator.truth.json.{JsonColumnRep, JsonColumnReadRep}
 import java.util.concurrent.ExecutorService
 import com.socrata.datacoordinator.truth.universe.sql.{PostgresUniverse, PostgresCommonSupport}
 import org.joda.time.DateTime
@@ -145,7 +145,7 @@ class SoQLCommon(dataSource: DataSource,
     def nameForTypeOpt(name: TypeName): Option[CT] =
       typeContext.typeNamespace.typeForUserType(name)
 
-    def jsonRepFor(columnInfo: ColumnInfo[CT]): JsonColumnReadRep[CT, CV] =
+    def jsonRepFor(columnInfo: ColumnInfo[CT]): JsonColumnRep[CT, CV] =
       common.jsonRepFor(columnInfo)
   }
 }

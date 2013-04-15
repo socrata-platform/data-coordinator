@@ -9,7 +9,7 @@ import com.socrata.http.server.responses._
 import com.socrata.http.routing.{ExtractingRouter, RouterSet}
 import com.rojoma.json.util.{JsonArrayIterator, AutomaticJsonCodecBuilder, JsonKey, JsonUtil}
 import com.rojoma.json.io._
-import com.rojoma.json.ast.{JNull, JValue, JNumber, JObject}
+import com.rojoma.json.ast._
 import com.ibm.icu.text.Normalizer
 import com.socrata.datacoordinator.common.soql.{SoQLTypeContext, SoQLRep, SoQLRowLogCodec}
 import java.util.concurrent.{TimeUnit, Executors}
@@ -34,6 +34,11 @@ import com.socrata.datacoordinator.truth.universe.sql.{PostgresCopyIn, PostgresU
 import com.rojoma.simplearm.SimpleArm
 import com.socrata.soql.types.{SoQLValue, SoQLType}
 import com.socrata.soql.environment.ColumnName
+import com.socrata.datacoordinator.secondary.NamedSecondary
+import com.socrata.datacoordinator.truth.Snapshot
+import com.rojoma.json.io.TokenIdentifier
+import com.rojoma.json.io.TokenString
+import com.socrata.datacoordinator.truth.loader.{NoSuchRowToUpdate, NoSuchRowToDelete, NullPrimaryKey, NoPrimaryKey}
 
 case class Field(name: String, @JsonKey("type") typ: String)
 object Field {
@@ -162,21 +167,34 @@ class Service(processMutation: Iterator[JValue] => Unit,
   def jsonStream(req: HttpServletRequest): Either[HttpResponse, JsonEventIterator] = {
     val nullableContentType = req.getContentType
     if(nullableContentType == null)
-      return Left(BadRequest ~> Content("No content-type specified"))
+      return Left(err(BadRequest, "req.content-type.missing"))
     val contentType =
       try { new MimeType(nullableContentType) }
       catch { case _: MimeTypeParseException =>
-        return Left(BadRequest ~> Content("Unparsable content-type"))
+        return Left(err(BadRequest, "req.content-type.unparsable",
+          "content-type" -> JString(nullableContentType)))
       }
     if(!contentType.`match`("application/json")) {
-      return Left(UnsupportedMediaType ~> Content("Not application/json"))
+      return Left(err(UnsupportedMediaType, "req.content-type.not-json",
+        "content-type" -> JString(contentType.toString)))
     }
     val reader =
       try { req.getReader }
       catch { case _: UnsupportedEncodingException =>
-        return Left(UnsupportedMediaType ~> Content("Unknown character encoding"))
+        return Left(err(UnsupportedMediaType, "req.content-type.unknown-charset",
+          "content-type" -> JString(req.getContentType.toString)))
       }
     Right(new JsonEventIterator(new BlockJsonTokenIterator(reader).map(normalizeJson)))
+  }
+
+  def err(codeSetter: HttpResponse, errorCode: String, data: (String, JValue)*): HttpResponse = {
+    val response = JObject(Map(
+      "errorCode" -> JString(errorCode),
+      "data" -> JObject(data.toMap)
+    ))
+    codeSetter ~> ContentType("application/json; charset=utf-8") ~> Write { w =>
+      JsonUtil.writeJson(w, response, pretty = true, buffer = true)
+    }
   }
 
   def doMutation()(req: HttpServletRequest): HttpResponse = {
@@ -186,7 +204,7 @@ class Service(processMutation: Iterator[JValue] => Unit,
           val iterator = try {
             JsonArrayIterator[JValue](events)
           } catch { case _: JsonBadParse =>
-            return BadRequest ~> Content("Not a JSON array")
+            return err(BadRequest, "req.body.not-json-array")
           }
 
           processMutation(iterator)
@@ -194,33 +212,93 @@ class Service(processMutation: Iterator[JValue] => Unit,
           OK
         } catch {
           case r: JsonReaderException =>
-            BadRequest ~> Content("Malformed JSON : " + r.getMessage)
+            return err(BadRequest, "req.body.malformed-json",
+              "row" -> JNumber(r.row),
+              "column" -> JNumber(r.column))
           case e: Mutator.MutationException =>
-            def err(msg: String) =
-              e match {
-                case dataError: Mutator.RowDataException =>
-                  BadRequest ~> Content(dataError.index + ":" + dataError.subindex + ": " + msg)
-                case other =>
-                  BadRequest ~> Content(other.index + ": " + msg)
-              }
+            type ColErr = { def dataset: String; def name: ColumnName }
+            def colErr(msg: String, value: ColErr, resp: HttpResponse = BadRequest) = {
+              import scala.language.reflectiveCalls
+              err(resp, msg,
+                "dataset" -> JString(value.dataset),
+                "column" -> JString(value.name.name))
+            }
             e match {
               case Mutator.EmptyCommandStream() =>
-                err("Empty command stream")
+                err(BadRequest, "req.script.header.missing")
               case Mutator.CommandIsNotAnObject(value) =>
-                err("Command is not an object: " + value)
-              case Mutator.MissingCommandField(value, field) =>
-                err("Missing field " + field + " from object " + value)
-              case Mutator.InvalidCommandFieldValue(value, field) =>
-                err("Invalid value for field " + field + " at mutation script entry: " + value)
+                err(BadRequest, "req.script.command.non-object",
+                  "value" -> value)
+              case Mutator.MissingCommandField(obj, field) =>
+                err(BadRequest, "req.script.command.missing-field",
+                  "object" -> obj,
+                  "field" -> JString(field))
+              case Mutator.InvalidCommandFieldValue(obj, field, value) =>
+                err(BadRequest, "req.script.command.invalid-field",
+                  "object" -> obj,
+                  "field" -> JString(field),
+                  "value" -> value)
               case Mutator.DatasetAlreadyExists(name) =>
-                err("Dataset " + name + " already exists")
+                err(Conflict, "update.dataset.already-exists",
+                  "dataset" -> JString(name))
               case Mutator.NoSuchDataset(name) =>
-                err("No such dataset: " + name)
+                err(NotFound, "update.dataset.does-not-exist",
+                  "dataset" -> JString(name))
               case Mutator.CannotAcquireDatasetWriteLock(name) =>
-                // TODO: This shouldn't be BadRequest
-                err("Cannot acquire write lock for dataset " + name)
-              case Mutator.IncorrectLifecycleStage(name, stage) =>
-                err("Cannot perform copy DDL while dataset " + name + " is in lifecycle stage " + stage.name)
+                err(Conflict, "update.dataset.temporarily-not-writable",
+                  "dataset" -> JString(name))
+              case Mutator.IncorrectLifecycleStage(name, currentStage, expectedStage) =>
+                err(Conflict, "update.dataset.invalid-state",
+                  "dataset" -> JString(name),
+                  "actual-state" -> JString(currentStage.name),
+                  "expected-state" -> JString(expectedStage.name))
+              case e: Mutator.ColumnAlreadyExists =>
+                colErr("update.column.exists", e, Conflict)
+              case Mutator.IllegalColumnName(columnName) =>
+                err(BadRequest, "update.column.illegal-name",
+                  "name" -> JString(columnName.name))
+              case Mutator.NoSuchType(typeName) =>
+                err(BadRequest, "update.type.unknown",
+                  "type" -> JString(typeName.name))
+              case e: Mutator.NoSuchColumn =>
+                colErr("update.column.not-found", e)
+              case e: Mutator.InvalidSystemColumnOperation =>
+                colErr("update.column.system", e)
+              case Mutator.PrimaryKeyAlreadyExists(datasetName, columnName, existingColumn) =>
+                err(BadRequest, "update.row-identifier.already-set",
+                  "dataset" -> JString(datasetName),
+                  "column" -> JString(columnName.name),
+                  "existing-column" -> JString(existingColumn.name))
+              case Mutator.InvalidTypeForPrimaryKey(datasetName, columnName, typeName) =>
+                err(BadRequest, "update.row-identifier.invalid-type",
+                  "dataset" -> JString(datasetName),
+                  "column" -> JString(columnName.name),
+                  "type" -> JString(typeName.name))
+              case e: Mutator.DuplicateValuesInColumn =>
+                colErr("update.row-identifier.duplicate-values", e)
+              case e: Mutator.NullsInColumn =>
+                colErr("update.row-identifier.null-values", e)
+              case e: Mutator.NotPrimaryKey =>
+                colErr("update.row-identifier.not-row-identifier", e)
+              case Mutator.InvalidUpsertCommand(value) =>
+                err(BadRequest, "update.script.row-data.invalid-value",
+                  "value" -> value)
+              case Mutator.InvalidValue(columnName, typeName, value) =>
+                err(BadRequest, "update.row.unparsable-value",
+                  "column" -> JString(columnName.name),
+                  "type" -> JString(typeName.name),
+                  "value" -> value)
+              case Mutator.UpsertError(datasetName, NoPrimaryKey | NullPrimaryKey) =>
+                err(BadRequest, "update.row.no-id",
+                  "dataset" -> JString(datasetName))
+              case Mutator.UpsertError(datasetName, NoSuchRowToDelete(id)) =>
+                err(BadRequest, "update.row.no-such-id",
+                  "dataset" -> JString(datasetName),
+                  "value" -> id)
+              case Mutator.UpsertError(datasetName, NoSuchRowToUpdate(id)) =>
+                err(BadRequest, "update.row.no-such-id",
+                  "dataset" -> JString(datasetName),
+                  "value" -> id)
             }
         }
       case Left(response) =>

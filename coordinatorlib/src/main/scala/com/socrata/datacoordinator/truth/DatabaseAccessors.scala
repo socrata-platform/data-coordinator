@@ -130,7 +130,7 @@ trait DatasetMutator[CT, CV] {
 
   sealed trait CopyContext
   case object DatasetDidNotExist extends CopyContext
-  case class IncorrectLifecycleStage(lifecycleStage: LifecycleStage) extends CopyContext
+  case class IncorrectLifecycleStage(currentLifecycleStage: LifecycleStage, expectedLifecycleStage: LifecycleStage) extends CopyContext
   case class CopyOperationComplete(mutationContext: TrueMutationContext) extends CopyContext
 
   def createCopy(as: String)(datasetName: String, copyData: Boolean): Managed[CopyContext]
@@ -356,7 +356,7 @@ object DatasetMutator {
               op(ctx)
               f(CopyOperationComplete(ctx))
             } else {
-              f(IncorrectLifecycleStage(ctx.copyInfo.lifecycleStage))
+              f(IncorrectLifecycleStage(ctx.copyInfo.lifecycleStage, targetStage))
             }
         })
     }

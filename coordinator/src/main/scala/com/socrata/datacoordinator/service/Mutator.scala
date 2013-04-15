@@ -5,15 +5,16 @@ import com.rojoma.json.ast._
 import com.socrata.datacoordinator.truth.universe.{DatasetMutatorProvider, Universe}
 import com.socrata.datacoordinator.truth.{DatasetIdInUseByWriterException, DatasetMutator}
 import com.socrata.datacoordinator.truth.metadata.{LifecycleStage, DatasetInfo, AbstractColumnInfoLike, ColumnInfo}
-import com.socrata.datacoordinator.truth.json.JsonColumnReadRep
+import com.socrata.datacoordinator.truth.json.{JsonColumnRep, JsonColumnReadRep}
 import com.rojoma.json.codec.JsonCodec
-import com.socrata.datacoordinator.truth.loader.{Failure, Report}
+import com.socrata.datacoordinator.truth.loader._
 import scala.collection.immutable.VectorBuilder
-import scala.Some
-import com.rojoma.json.ast.JString
 import com.socrata.soql.environment.{TypeName, ColumnName}
 import com.socrata.datacoordinator.util.Counter
 import com.ibm.icu.util.ULocale
+import com.socrata.datacoordinator.truth.loader.NoSuchRowToDelete
+import com.rojoma.json.ast.JString
+import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 
 object Mutator {
   sealed abstract class StreamType {
@@ -33,30 +34,30 @@ object Mutator {
   sealed abstract class InvalidCommandStreamException(msg: String = null, cause: Throwable = null) extends MutationException(msg, cause)
   case class EmptyCommandStream()(val index: Long) extends InvalidCommandStreamException
   case class CommandIsNotAnObject(value: JValue)(val index: Long) extends InvalidCommandStreamException
-  case class MissingCommandField(value: JValue, field: String)(val index: Long) extends InvalidCommandStreamException
-  case class InvalidCommandFieldValue(value: JValue, field: String)(val index: Long) extends InvalidCommandStreamException
+  case class MissingCommandField(obj: JObject, field: String)(val index: Long) extends InvalidCommandStreamException
+  case class InvalidCommandFieldValue(obj: JObject, field: String, value: JValue)(val index: Long) extends InvalidCommandStreamException
 
   case class DatasetAlreadyExists(name: String)(val index: Long) extends MutationException
   case class NoSuchDataset(name: String)(val index: Long) extends MutationException
   case class CannotAcquireDatasetWriteLock(name: String)(val index: Long) extends MutationException
-  case class IncorrectLifecycleStage(name: String, lifecycleStage: LifecycleStage)(val index: Long) extends MutationException
+  case class IncorrectLifecycleStage(name: String, currentLifecycleStage: LifecycleStage, expected: LifecycleStage)(val index: Long) extends MutationException
   case class IllegalColumnName(name: ColumnName)(val index: Long) extends MutationException
-  case class NoSuchColumn(name: ColumnName)(val index: Long) extends MutationException
+  case class NoSuchColumn(dataset: String, name: ColumnName)(val index: Long) extends MutationException
   case class NoSuchType(name: TypeName)(val index: Long) extends MutationException
-  case class ColumnAlreadyExists(name: ColumnName)(val index: Long) extends MutationException
-  case class PrimaryKeyAlreadyExists(name: ColumnName, existingName: ColumnName)(val index: Long) extends MutationException
-  case class InvalidTypeForPrimaryKey(name: ColumnName, typ: TypeName)(val index: Long) extends MutationException
-  case class NullsInColumn(name: ColumnName)(val index: Long) extends MutationException
-  case class NotPrimaryKey(name: ColumnName)(val index: Long) extends MutationException
-  case class DuplicateValuesInColumn(name: ColumnName)(val index: Long) extends MutationException
-  case class InvalidSystemColumnOperation(name: ColumnName, op: String)(val index: Long) extends MutationException
+  case class ColumnAlreadyExists(dataset: String, name: ColumnName)(val index: Long) extends MutationException
+  case class PrimaryKeyAlreadyExists(dataset: String, name: ColumnName, existingName: ColumnName)(val index: Long) extends MutationException
+  case class InvalidTypeForPrimaryKey(dataset: String, name: ColumnName, typ: TypeName)(val index: Long) extends MutationException
+  case class NullsInColumn(dataset: String, name: ColumnName)(val index: Long) extends MutationException
+  case class NotPrimaryKey(dataset: String, name: ColumnName)(val index: Long) extends MutationException
+  case class DuplicateValuesInColumn(dataset: String, name: ColumnName)(val index: Long) extends MutationException
+  case class InvalidSystemColumnOperation(dataset: String, name: ColumnName, op: String)(val index: Long) extends MutationException
 
   sealed abstract class RowDataException extends MutationException {
     def subindex: Int
   }
   case class InvalidUpsertCommand(value: JValue)(val index: Long, val subindex: Int) extends RowDataException
   case class InvalidValue(column: ColumnName, typ: TypeName, value: JValue)(val index: Long, val subindex: Int) extends RowDataException
-  // UpsertError is defined inside the Mutator class
+  case class UpsertError(dataset: String, failure: Failure[JValue])(val index: Long) extends MutationException
 
   sealed abstract class MergeReplace
   object MergeReplace {
@@ -78,31 +79,32 @@ object Mutator {
   case object Replace extends MergeReplace
 
   trait Accessor {
-    def fields: scala.collection.Map[String, JValue]
+    def originalObject: JObject
+    def fields: scala.collection.Map[String, JValue] = originalObject.fields
     def get[T: JsonCodec](field: String): T
     def getOption[T: JsonCodec](field: String): Option[T]
     def getWithDefault[T: JsonCodec](field: String, default: T): T
   }
 
   def withObjectFields[A](index: Long, value: JValue)(f: Accessor => A): A = value match {
-    case JObject(rawFields) =>
+    case obj: JObject =>
       f(new Accessor {
-        val fields = rawFields
+        val originalObject = obj
         def get[T : JsonCodec](field: String) = {
-          val json = fields.getOrElse(field, throw MissingCommandField(value, field)(index))
-          JsonCodec[T].decode(json).getOrElse(throw InvalidCommandFieldValue(json, field)(index))
+          val json = fields.getOrElse(field, throw MissingCommandField(originalObject, field)(index))
+          JsonCodec[T].decode(json).getOrElse(throw InvalidCommandFieldValue(obj, field, json)(index))
         }
         def getWithDefault[T : JsonCodec](field: String, default: T) = {
           fields.get(field) match {
             case Some(json) =>
-              JsonCodec[T].decode(json).getOrElse(throw InvalidCommandFieldValue(json, field)(index))
+              JsonCodec[T].decode(json).getOrElse(throw InvalidCommandFieldValue(obj, field, json)(index))
             case None =>
               default
           }
         }
         def getOption[T : JsonCodec](field: String) =
           fields.get(field).map { json =>
-            JsonCodec[T].decode(json).getOrElse(throw InvalidCommandFieldValue(json, field)(index))
+            JsonCodec[T].decode(json).getOrElse(throw InvalidCommandFieldValue(obj, field, json)(index))
           }
       })
     case other =>
@@ -161,7 +163,7 @@ object Mutator {
           val fatalRowErrors = getWithDefault("fatal_row_errors", true)
           RowData(index, truncate, mergeReplace, fatalRowErrors)
         case other =>
-          throw InvalidCommandFieldValue(JString(other), "c")(index)
+          throw InvalidCommandFieldValue(originalObject, "c", JString(other))(index)
       }
     }
 
@@ -179,14 +181,12 @@ trait MutatorCommon[CT, CV] {
   def systemIdColumnName: ColumnName
   def typeNameFor(typ: CT): TypeName
   def nameForTypeOpt(name: TypeName): Option[CT]
-  def jsonRepFor(columnInfo: ColumnInfo[CT]): JsonColumnReadRep[CT, CV]
+  def jsonRepFor(columnInfo: ColumnInfo[CT]): JsonColumnRep[CT, CV]
 }
 
 class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
   import Mutator._
   import common._
-
-  case class UpsertError(failure: Failure[CV])(val index: Long) extends MutationException
 
   def createCommandStream(index: Long, value: JValue, remainingCommands: Iterator[JValue]) =
     withObjectFields(index, value) { accessor =>
@@ -209,7 +209,7 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
         case "normal" =>
           NormalMutation(index)
         case other =>
-          throw InvalidCommandFieldValue(JString(other), "c")(index)
+          throw InvalidCommandFieldValue(originalObject, "c", JString(other))(index)
       }
       new CommandStream(streamType, dataset, user, remainingCommands.buffered)
     }
@@ -227,8 +227,8 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
     def process(index: Long, datasetName: String, mutator: DatasetMutator[CT, CV])(maybeCtx: mutator.CopyContext) = maybeCtx match {
       case mutator.CopyOperationComplete(ctx) =>
         doProcess(ctx)
-      case mutator.IncorrectLifecycleStage(stage) =>
-        throw IncorrectLifecycleStage(datasetName, stage)(index)
+      case mutator.IncorrectLifecycleStage(currentStage, expectedStage) =>
+        throw IncorrectLifecycleStage(datasetName, currentStage, expectedStage)(index)
       case mutator.DatasetDidNotExist =>
         throw NoSuchDataset(commands.datasetName)(index)
     }
@@ -265,7 +265,7 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
     }
   }
 
-  class Processor(jsonRepFor: ColumnInfo[CT] => JsonColumnReadRep[CT, CV]) {
+  class Processor(jsonRepFor: ColumnInfo[CT] => JsonColumnRep[CT, CV]) {
     def carryOutCommands(mutator: DatasetMutator[CT, CV]#MutationContext, commands: CommandStream): Seq[Report[CV]] = {
       val reports = new VectorBuilder[Report[CV]]
       def loop() {
@@ -290,67 +290,67 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
               mutator.addColumn(name, typ, physicalColumnBaseBase(name))
               None
             case Some(_) =>
-              throw ColumnAlreadyExists(name)(idx)
+              throw ColumnAlreadyExists(commands.datasetName, name)(idx)
           }
         case DropColumn(idx, name) =>
           mutator.columnInfo(name) match {
             case Some(colInfo) =>
-              if(isSystemColumnName(name)) throw InvalidSystemColumnOperation(name, DropColumnOp)(idx)
+              if(isSystemColumnName(name)) throw InvalidSystemColumnOperation(commands.datasetName, name, DropColumnOp)(idx)
               mutator.dropColumn(colInfo)
             case None =>
-              throw NoSuchColumn(name)(idx)
+              throw NoSuchColumn(commands.datasetName, name)(idx)
           }
           None
         case RenameColumn(idx, from, to) =>
           mutator.columnInfo(from) match {
             case Some(colInfo) =>
-              if(isSystemColumnName(from)) throw InvalidSystemColumnOperation(from, RenameColumnOp)(idx)
+              if(isSystemColumnName(from)) throw InvalidSystemColumnOperation(commands.datasetName, from, RenameColumnOp)(idx)
               if(!isLegalLogicalName(to)) throw IllegalColumnName(to)(idx)
-              if(mutator.columnInfo(to).isDefined) throw ColumnAlreadyExists(to)(idx)
+              if(mutator.columnInfo(to).isDefined) throw ColumnAlreadyExists(commands.datasetName, to)(idx)
               mutator.renameColumn(colInfo, to)
             case None =>
-              throw NoSuchColumn(from)(idx)
+              throw NoSuchColumn(commands.datasetName, from)(idx)
           }
           None
         case SetRowId(idx, name) =>
           mutator.columnInfo(name) match {
             case Some(colInfo) =>
               for(pkCol <- mutator.schema.values.find(_.isUserPrimaryKey))
-                throw PrimaryKeyAlreadyExists(name, pkCol.logicalName)(idx)
-              if(isSystemColumnName(name)) throw InvalidSystemColumnOperation(name, SetRowIdOp)(idx)
+                throw PrimaryKeyAlreadyExists(commands.datasetName, name, pkCol.logicalName)(idx)
+              if(isSystemColumnName(name)) throw InvalidSystemColumnOperation(commands.datasetName, name, SetRowIdOp)(idx)
               try {
                 mutator.makeUserPrimaryKey(colInfo)
               } catch {
                 case e: mutator.PrimaryKeyCreationException => e match {
                   case mutator.UnPKableColumnException(_, _) =>
-                    throw InvalidTypeForPrimaryKey(colInfo.logicalName, typeNameFor(colInfo.typ))(idx)
+                    throw InvalidTypeForPrimaryKey(commands.datasetName, colInfo.logicalName, typeNameFor(colInfo.typ))(idx)
                   case mutator.NullCellsException(c) =>
-                    throw NullsInColumn(colInfo.logicalName)(idx)
+                    throw NullsInColumn(commands.datasetName, colInfo.logicalName)(idx)
                   case mutator.DuplicateCellsException(_) =>
-                    throw DuplicateValuesInColumn(colInfo.logicalName)(idx)
+                    throw DuplicateValuesInColumn(commands.datasetName, colInfo.logicalName)(idx)
                 }
               }
             case None =>
-              throw NoSuchColumn(name)(idx)
+              throw NoSuchColumn(commands.datasetName, name)(idx)
           }
           None
         case DropRowId(idx, name) =>
           mutator.columnInfo(name) match {
             case Some(colInfo) =>
-              if(!colInfo.isUserPrimaryKey) throw NotPrimaryKey(name)(idx)
+              if(!colInfo.isUserPrimaryKey) throw NotPrimaryKey(commands.datasetName, name)(idx)
               mutator.unmakeUserPrimaryKey(colInfo)
             case None =>
-              throw NoSuchColumn(name)(idx)
+              throw NoSuchColumn(commands.datasetName, name)(idx)
           }
           None
         case RowData(idx, truncate, mergeReplace, fatalRowErrors) =>
           if(mergeReplace == Replace) ??? // TODO: implement this
           if(truncate) mutator.truncate()
-          Some(processRowData(idx, commands.rawCommandStream, fatalRowErrors, mutator))
+          Some(processRowData(idx, commands.rawCommandStream, fatalRowErrors, mutator, commands.datasetName))
       }
     }
 
-    def processRowData(idx: Long, rows: BufferedIterator[JValue], fatalRowErrors: Boolean, mutator: DatasetMutator[CT,CV]#MutationContext): Report[CV] = {
+    def processRowData(idx: Long, rows: BufferedIterator[JValue], fatalRowErrors: Boolean, mutator: DatasetMutator[CT,CV]#MutationContext, datasetName: String): Report[CV] = {
       import mutator._
       val plan = new RowDecodePlan(schema, jsonRepFor, typeNameFor)
       val counter = new Counter(1)
@@ -368,7 +368,16 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
         val result = mutator.upsert(it)
         if(rows.hasNext && JNull == rows.head) rows.next()
         if(fatalRowErrors && result.errors.nonEmpty) {
-          throw UpsertError(result.errors.minBy(_._1)._2)(idx)
+          val pk = schema.values.find(_.isUserPrimaryKey).orElse(schema.values.find(_.isSystemPrimaryKey)).getOrElse {
+            sys.error("No primary key on this dataset?")
+          }
+          val trueError = result.errors.minBy(_._1)._2 match {
+            case NullPrimaryKey => NullPrimaryKey
+            case NoPrimaryKey => NoPrimaryKey
+            case NoSuchRowToDelete(x) => NoSuchRowToDelete(jsonRepFor(pk).toJValue(x))
+            case NoSuchRowToUpdate(x) => NoSuchRowToUpdate(jsonRepFor(pk).toJValue(x))
+          }
+          throw UpsertError(datasetName, trueError)(idx)
         }
         result
       } catch {
