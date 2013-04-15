@@ -371,12 +371,7 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
           val pk = schema.values.find(_.isUserPrimaryKey).orElse(schema.values.find(_.isSystemPrimaryKey)).getOrElse {
             sys.error("No primary key on this dataset?")
           }
-          val trueError = result.errors.minBy(_._1)._2 match {
-            case NullPrimaryKey => NullPrimaryKey
-            case NoPrimaryKey => NoPrimaryKey
-            case NoSuchRowToDelete(x) => NoSuchRowToDelete(jsonRepFor(pk).toJValue(x))
-            case NoSuchRowToUpdate(x) => NoSuchRowToUpdate(jsonRepFor(pk).toJValue(x))
-          }
+          val trueError = result.errors.minBy(_._1)._2.map(jsonRepFor(pk).toJValue)
           throw UpsertError(datasetName, trueError)(idx)
         }
         result

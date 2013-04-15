@@ -47,9 +47,19 @@ trait Report[CV] {
   def errors: sc.Map[Int, Failure[CV]]
 }
 
-sealed abstract class Failure[+CV]
-case object NullPrimaryKey extends Failure[Nothing]
-case class NoSuchRowToDelete[CV](id: CV) extends Failure[CV]
-case class NoSuchRowToUpdate[CV](id: CV) extends Failure[CV]
-case object NoPrimaryKey extends Failure[Nothing]
+sealed abstract class Failure[+CV] {
+  def map[B](f: CV => B): Failure[B]
+}
+case object NullPrimaryKey extends Failure[Nothing] {
+  def map[B](f: Nothing => B) = this
+}
+case class NoSuchRowToDelete[CV](id: CV) extends Failure[CV] {
+  def map[B](f: CV => B) = NoSuchRowToDelete(f(id))
+}
+case class NoSuchRowToUpdate[CV](id: CV) extends Failure[CV] {
+  def map[B](f: CV => B) = NoSuchRowToUpdate(f(id))
+}
+case object NoPrimaryKey extends Failure[Nothing] {
+  def map[B](f: Nothing => B) = this
+}
 
