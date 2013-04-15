@@ -338,6 +338,7 @@ object DatasetMutator {
             catch { case _: DatasetAlreadyExistsException => return f(None) }
           val logger = llCtx.logger(firstVersion.datasetInfo)
           val schemaLoader = llCtx.schemaLoader(logger)
+          schemaLoader.create(firstVersion)
           val state = new S(new DatasetCopyContext(firstVersion, ColumnIdMap.empty).thaw(), llCtx, logger, schemaLoader)
           val result = f(Some(state))
           llCtx.finishDatasetTransaction(as, state.copyInfo)

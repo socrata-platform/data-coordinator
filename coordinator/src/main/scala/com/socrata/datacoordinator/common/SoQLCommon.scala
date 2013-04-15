@@ -67,6 +67,7 @@ class SoQLCommon(dataSource: DataSource,
     def flatMap[B](f: PostgresUniverse[CT, CV] => B): B = {
       val conn = dataSource.getConnection()
       try {
+        conn.setAutoCommit(false)
         val u = new PostgresUniverse(conn, PostgresUniverseCommon)
         val result = f(u)
         conn.commit()
