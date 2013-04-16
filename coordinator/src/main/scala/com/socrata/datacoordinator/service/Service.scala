@@ -42,7 +42,7 @@ import com.rojoma.json.io.TokenIdentifier
 import com.rojoma.json.io.TokenString
 import com.socrata.datacoordinator.truth.loader.{NoSuchRowToUpdate, NoSuchRowToDelete, NullPrimaryKey, NoPrimaryKey}
 import com.netflix.curator.framework.CuratorFrameworkFactory
-import com.netflix.curator.{RetrySleeper, RetryPolicy}
+import com.netflix.curator.retry
 import com.netflix.curator.x.discovery.{ServiceDiscoveryBuilder, ServiceDiscovery}
 import com.socrata.http.server.curator.CuratorBroker
 import org.apache.log4j.{BasicConfigurator, PropertyConfigurator}
@@ -351,11 +351,14 @@ object Service extends App { self =>
 
   val port = serviceConfig.getInt("network.port")
 
-  case class Zookeeper(ensemble: String, sessionTimeout: Duration, connectTimeout: Duration)
+  case class Zookeeper(ensemble: String, sessionTimeout: Duration, connectTimeout: Duration, maxRetries: Int, baseRetryWait: Duration, maxRetryWait: Duration)
   val zk = Zookeeper(
     serviceConfig.getString("zookeeper.ensemble"),
     serviceConfig.getMilliseconds("zookeeper.session-timeout").longValue.millis,
-    serviceConfig.getMilliseconds("zookeeper.connect-timeout").longValue.millis
+    serviceConfig.getMilliseconds("zookeeper.connect-timeout").longValue.millis,
+    serviceConfig.getInt("zookeeper.max-retries"),
+    serviceConfig.getMilliseconds("zookeeper.base-retry-wait").longValue.millis,
+    serviceConfig.getMilliseconds("zookeeper.max-retry-wait").longValue.millis
   )
   case class ServiceAdvertisement(basePath: String, name: String, address: String)
   val advertisement = ServiceAdvertisement(
@@ -450,10 +453,8 @@ object Service extends App { self =>
       secondariesOfDataset)
 
     for {
-      curator <- managed(CuratorFrameworkFactory.newClient(zk.ensemble, zk.sessionTimeout.toMillis.toInt, zk.connectTimeout.toMillis.toInt, new RetryPolicy {
-        def allowRetry(retryCount: Int, elapsedTimeMs: Long, sleeper: RetrySleeper) =
-          true
-      }))
+      curator <- managed(CuratorFrameworkFactory.newClient(zk.ensemble, zk.sessionTimeout.toMillis.toInt, zk.connectTimeout.toMillis.toInt,
+        new retry.BoundedExponentialBackoffRetry(zk.baseRetryWait.toMillis.toInt, zk.maxRetryWait.toMillis.toInt, zk.maxRetries)))
       discovery <- managed(ServiceDiscoveryBuilder.builder(classOf[Void]).
         client(curator).
         basePath(advertisement.basePath).
