@@ -1,10 +1,12 @@
 package com.socrata.datacoordinator.service
 
+import scala.concurrent.duration._
+
 import java.io._
 import javax.servlet.http.HttpServletRequest
 
 import com.socrata.http.server.implicits._
-import com.socrata.http.server.{HttpResponse, SocrataServerJetty, HttpService}
+import com.socrata.http.server.{ServerBroker, HttpResponse, SocrataServerJetty, HttpService}
 import com.socrata.http.server.responses._
 import com.socrata.http.routing.{ExtractingRouter, RouterSet}
 import com.rojoma.json.util.{JsonArrayIterator, AutomaticJsonCodecBuilder, JsonKey, JsonUtil}
@@ -39,6 +41,11 @@ import com.socrata.datacoordinator.truth.Snapshot
 import com.rojoma.json.io.TokenIdentifier
 import com.rojoma.json.io.TokenString
 import com.socrata.datacoordinator.truth.loader.{NoSuchRowToUpdate, NoSuchRowToDelete, NullPrimaryKey, NoPrimaryKey}
+import com.netflix.curator.framework.CuratorFrameworkFactory
+import com.netflix.curator.{RetrySleeper, RetryPolicy}
+import com.netflix.curator.x.discovery.{ServiceDiscoveryBuilder, ServiceDiscovery}
+import com.socrata.http.server.curator.CuratorBroker
+import org.apache.log4j.{BasicConfigurator, PropertyConfigurator}
 
 case class Field(name: String, @JsonKey("type") typ: String)
 object Field {
@@ -325,13 +332,15 @@ class Service(processMutation: Iterator[JValue] => Unit,
     }
   }
 
-  def run(port: Int) {
-    val server = new SocrataServerJetty(handler, port = port)
+  def run(port: Int, broker: ServerBroker) {
+    val server = new SocrataServerJetty(handler, port = port, broker = broker)
     server.run()
   }
 }
 
 object Service extends App { self =>
+  BasicConfigurator.configure()
+
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
 
   val config = ConfigFactory.load()
@@ -341,6 +350,19 @@ object Service extends App { self =>
   val secondaries = SecondaryLoader.load(serviceConfig.getConfig("secondary.configs"), new File(serviceConfig.getString("secondary.path")))
 
   val port = serviceConfig.getInt("network.port")
+
+  case class Zookeeper(ensemble: String, sessionTimeout: Duration, connectTimeout: Duration)
+  val zk = Zookeeper(
+    serviceConfig.getString("zookeeper.ensemble"),
+    serviceConfig.getMilliseconds("zookeeper.session-timeout").longValue.millis,
+    serviceConfig.getMilliseconds("zookeeper.connect-timeout").longValue.millis
+  )
+  case class ServiceAdvertisement(basePath: String, name: String, address: String)
+  val advertisement = ServiceAdvertisement(
+    serviceConfig.getString("service-advertisement.base-path"),
+    serviceConfig.getString("service-advertisement.name"),
+    serviceConfig.getString("service-advertisement.address")
+  )
 
   val executorService = Executors.newCachedThreadPool()
   try {
@@ -426,7 +448,21 @@ object Service extends App { self =>
     val serv = new Service(processMutation, exporter,
       secondaries.keySet, datasetsInStore, versionInStore, updateVersionInStore,
       secondariesOfDataset)
-    serv.run(port)
+
+    for {
+      curator <- managed(CuratorFrameworkFactory.newClient(zk.ensemble, zk.sessionTimeout.toMillis.toInt, zk.connectTimeout.toMillis.toInt, new RetryPolicy {
+        def allowRetry(retryCount: Int, elapsedTimeMs: Long, sleeper: RetrySleeper) =
+          true
+      }))
+      discovery <- managed(ServiceDiscoveryBuilder.builder(classOf[Void]).
+        client(curator).
+        basePath(advertisement.basePath).
+        build())
+    } {
+      curator.start()
+      discovery.start()
+      serv.run(port, new CuratorBroker(discovery, advertisement.address, advertisement.name))
+    }
 
     secondaries.values.foreach(_.shutdown())
   } finally {
