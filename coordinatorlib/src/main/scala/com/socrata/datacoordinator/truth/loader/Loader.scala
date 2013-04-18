@@ -6,6 +6,8 @@ import scala.{collection => sc}
 import java.io.Closeable
 import com.socrata.datacoordinator.util.collection.ColumnIdSet
 import com.socrata.datacoordinator.util.RowIdProvider
+import com.rojoma.json.ast.{JObject, JString, JValue}
+import com.rojoma.json.codec.JsonCodec
 
 trait Loader[CV] extends Closeable {
   def upsert(jobId: Int, row: Row[CV])
@@ -49,6 +51,37 @@ trait Report[CV] {
 
 sealed abstract class Failure[+CV] {
   def map[B](f: CV => B): Failure[B]
+}
+object Failure {
+  private val NullPK = JString("null_primary_key")
+  private val NoPK = JString("no_primary_key")
+  private val NoSuchRowToDeleteTag = "no_such_row_to_delete"
+  private val NoSuchRowToUpdateTag = "no_such_row_to_update"
+  implicit def jCodec[CV](implicit cvCodec: JsonCodec[CV]): JsonCodec[Failure[CV]] = new JsonCodec[Failure[CV]] {
+    def encode(x: Failure[CV]) = x match {
+      case NullPrimaryKey => NullPK
+      case NoPrimaryKey => NoPK
+      case NoSuchRowToDelete(id) => JObject(Map(NoSuchRowToDeleteTag -> cvCodec.encode(id)))
+      case NoSuchRowToUpdate(id) => JObject(Map(NoSuchRowToUpdateTag -> cvCodec.encode(id)))
+    }
+    def decode(x: JValue) = x match {
+      case NullPK => Some(NullPrimaryKey)
+      case NoPK => Some(NoPrimaryKey)
+      case JObject(fs) =>
+        fs.get(NoSuchRowToDeleteTag) match {
+          case Some(jValue) =>
+            cvCodec.decode(jValue).map(NoSuchRowToDelete(_))
+          case None =>
+            fs.get(NoSuchRowToUpdateTag) match {
+              case Some(jValue) =>
+                cvCodec.decode(jValue).map(NoSuchRowToUpdate(_))
+              case None =>
+                None
+            }
+        }
+      case _ => None
+    }
+  }
 }
 case object NullPrimaryKey extends Failure[Nothing] {
   def map[B](f: Nothing => B) = this

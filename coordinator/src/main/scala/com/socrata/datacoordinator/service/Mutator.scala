@@ -4,17 +4,15 @@ package service
 import com.rojoma.json.ast._
 import com.socrata.datacoordinator.truth.universe.{DatasetMutatorProvider, Universe}
 import com.socrata.datacoordinator.truth.{DatasetIdInUseByWriterException, DatasetMutator}
-import com.socrata.datacoordinator.truth.metadata.{LifecycleStage, DatasetInfo, AbstractColumnInfoLike, ColumnInfo}
-import com.socrata.datacoordinator.truth.json.{JsonColumnRep, JsonColumnReadRep}
+import com.socrata.datacoordinator.truth.metadata.{LifecycleStage, ColumnInfo}
+import com.socrata.datacoordinator.truth.json.JsonColumnRep
 import com.rojoma.json.codec.JsonCodec
 import com.socrata.datacoordinator.truth.loader._
 import scala.collection.immutable.VectorBuilder
 import com.socrata.soql.environment.{TypeName, ColumnName}
-import com.socrata.datacoordinator.util.Counter
+import com.socrata.datacoordinator.util.{BuiltUpIterator, Counter}
 import com.ibm.icu.util.ULocale
-import com.socrata.datacoordinator.truth.loader.NoSuchRowToDelete
-import com.rojoma.json.ast.JString
-import com.socrata.datacoordinator.truth.metadata.ColumnInfo
+import com.rojoma.json.io._
 
 object Mutator {
   sealed abstract class StreamType {
@@ -214,14 +212,67 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
       new CommandStream(streamType, dataset, user, remainingCommands.buffered)
     }
 
-  def apply(u: Universe[CT, CV] with DatasetMutatorProvider, commandStream: Iterator[JValue]) {
+  def mapToEvents[T](m: collection.Map[Int,T])(implicit codec: JsonCodec[T]): Iterator[JsonEvent] = {
+    def elemToStream(kv: (Int, T)) =
+      new BuiltUpIterator(Iterator.single(FieldEvent(kv._1.toString)), JValueEventIterator(codec.encode(kv._2)))
+    new BuiltUpIterator(
+      Iterator.single(StartOfObjectEvent()),
+      m.iterator.flatMap(elemToStream),
+      Iterator.single(EndOfObjectEvent()))
+  }
+
+  def toEventStream(inserted: collection.Map[Int, JValue],
+                    updated: collection.Map[Int, JValue],
+                    deleted: collection.Map[Int, JValue],
+                    elided: collection.Map[Int, (JValue, Int)],
+                    errors: collection.Map[Int, Failure[JValue]]) = {
+    new BuiltUpIterator(
+      Iterator(StartOfObjectEvent(), FieldEvent("inserted")),
+      mapToEvents(inserted),
+      Iterator.single(FieldEvent("updated")),
+      mapToEvents(updated),
+      Iterator.single(FieldEvent("deleted")),
+      mapToEvents(deleted),
+      Iterator.single(FieldEvent("elided")),
+      mapToEvents(elided),
+      Iterator.single(FieldEvent("errors")),
+      mapToEvents(errors),
+      Iterator.single(EndOfObjectEvent()))
+  }
+
+  def apply(u: Universe[CT, CV] with DatasetMutatorProvider, commandStream: Iterator[JValue]): Iterator[JsonEvent] = {
     if(commandStream.isEmpty) throw EmptyCommandStream()(0L)
     val commands = createCommandStream(0L, commandStream.next(), commandStream)
     def user = commands.user
 
-    def doProcess(ctx: DatasetMutator[CT, CV]#MutationContext) = {
+    def doProcess(ctx: DatasetMutator[CT, CV]#MutationContext): Iterator[JsonEvent] = {
       val processor = new Processor(jsonRepFor)
-      processor.carryOutCommands(ctx, commands)
+      val events = processor.carryOutCommands(ctx, commands).map { r =>
+        val pk = ctx.schema.values.find(_.isUserPrimaryKey).orElse(ctx.schema.values.find(_.isSystemPrimaryKey)).getOrElse {
+          sys.error("No primary key on this dataset?")
+        }
+        val repify = jsonRepFor(pk).toJValue _
+        val interim = new Report[JValue] {
+          def inserted: collection.Map[Int, JValue] = r.inserted.mapValues(repify)
+
+          /** Map from job number to the identifier of the row that was updated. */
+          def updated: collection.Map[Int, JValue] = r.updated.mapValues(repify)
+
+          /** Map from job number to the identifier of the row that was deleted. */
+          def deleted: collection.Map[Int, JValue] = r.deleted.mapValues(repify)
+
+          /** Map from job number to the identifier of the row that was merged with another job, and the job it was merged with. */
+          def elided: collection.Map[Int, (JValue, Int)] = r.elided.mapValues { case (v, i) => (repify(v), i) }
+
+          /** Map from job number to a value explaining the cause of the problem.. */
+          def errors: collection.Map[Int, Failure[JValue]] = r.errors.mapValues(_.map(repify))
+        }
+        toEventStream(interim.inserted, interim.updated, interim.deleted, interim.elided, interim.errors)
+      }
+      new BuiltUpIterator(
+        Iterator.single(StartOfArrayEvent()),
+        new BuiltUpIterator(events: _*),
+        Iterator.single(EndOfArrayEvent()))
     }
 
     def process(index: Long, datasetName: String, mutator: DatasetMutator[CT, CV])(maybeCtx: mutator.CopyContext) = maybeCtx match {
@@ -237,12 +288,12 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
       val mutator = u.datasetMutator
       commands.streamType match {
         case NormalMutation(idx) =>
-          for(ctxOpt <- mutator.openDataset(user)(commands.datasetName)) {
+          for(ctxOpt <- mutator.openDataset(user)(commands.datasetName)) yield {
             val ctx = ctxOpt.getOrElse { throw NoSuchDataset(commands.datasetName)(idx) }
             doProcess(ctx)
           }
         case CreateDatasetMutation(idx, localeName) =>
-          for(ctxOpt <- u.datasetMutator.createDataset(user)(commands.datasetName, "t", localeName)) {
+          for(ctxOpt <- u.datasetMutator.createDataset(user)(commands.datasetName, "t", localeName)) yield {
             val ctx = ctxOpt.getOrElse { throw DatasetAlreadyExists(commands.datasetName)(idx) }
             for((col, typ) <- systemSchema) {
               val ci = ctx.addColumn(col, typ, physicalColumnBaseBase(col, systemColumn = true))

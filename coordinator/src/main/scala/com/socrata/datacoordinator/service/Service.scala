@@ -46,13 +46,16 @@ import com.netflix.curator.retry
 import com.netflix.curator.x.discovery.{ServiceDiscoveryBuilder, ServiceDiscovery}
 import com.socrata.http.server.curator.CuratorBroker
 import org.apache.log4j.{BasicConfigurator, PropertyConfigurator}
+import java.io.{UnsupportedEncodingException, BufferedWriter}
+import com.rojoma.json.io.TokenIdentifier
+import com.rojoma.json.io.TokenString
 
 case class Field(name: String, @JsonKey("type") typ: String)
 object Field {
   implicit val jCodec = AutomaticJsonCodecBuilder[Field]
 }
 
-class Service(processMutation: Iterator[JValue] => Unit,
+class Service(processMutation: Iterator[JValue] => Iterator[JsonEvent],
               datasetContents: (String, CopySelector, Option[Set[ColumnName]], Option[Long], Option[Long]) => (Iterator[JObject] => Unit) => Boolean,
               secondaries: Set[String],
               datasetsInStore: (String) => DatasetIdMap[Long],
@@ -214,9 +217,13 @@ class Service(processMutation: Iterator[JValue] => Unit,
             return err(BadRequest, "req.body.not-json-array")
           }
 
-          processMutation(iterator)
+          val result = processMutation(iterator)
 
-          OK
+          OK ~> ContentType("application/json; charset=utf-8") ~> Write { w =>
+            val bw = new BufferedWriter(w)
+            EventTokenIterator(result).foreach { t => bw.write(t.asFragment) }
+            bw.flush()
+          }
         } catch {
           case r: JsonReaderException =>
             return err(BadRequest, "req.body.malformed-json",
@@ -423,7 +430,7 @@ object Service extends App { self =>
     val mutator = new Mutator(common.Mutator)
 
     def processMutation(input: Iterator[JValue]) = {
-      for(u <- common.universe) {
+      for(u <- common.universe) yield {
         mutator(u, input)
       }
     }
