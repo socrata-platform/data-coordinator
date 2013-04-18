@@ -450,7 +450,7 @@ object Service extends App { self =>
     } {
       curator.start()
       discovery.start()
-      serv.run(serviceConfig.network.port, new CuratorBroker(discovery, serviceConfig.advertisement.address, serviceConfig.advertisement.name))
+      serv.run(serviceConfig.network.port, new CuratorBroker(discovery, serviceConfig.advertisement.address, serviceConfig.advertisement.name + "." + serviceConfig.advertisement.instance))
     }
 
     secondaries.values.foreach(_.shutdown())
