@@ -7,7 +7,7 @@ import java.net.URLClassLoader
 import com.rojoma.json.util.{JsonUtil, AutomaticJsonCodecBuilder, JsonKey}
 import com.rojoma.json.io.JsonReaderException
 import scala.util.control.ControlThrowable
-import com.typesafe.config.{ConfigParseOptions, ConfigFactory, ConfigException, Config}
+import com.typesafe.config._
 import scala.io.{Codec, Source}
 
 case class SecondaryDescription(@JsonKey("class") className: String, name: String)
@@ -92,7 +92,7 @@ class SecondaryLoader(parentClassLoader: ClassLoader, secondaryConfigRoot: Confi
 }
 
 object SecondaryLoader {
-  def load(secondaryConfigs: Config, dir: File): Map[String, Secondary[_,_]] =
-    new SecondaryLoader(Thread.currentThread.getContextClassLoader, secondaryConfigs).loadSecondaries(dir)
+  def load(secondaryConfigs: ConfigObject, dir: File): Map[String, Secondary[_,_]] =
+    new SecondaryLoader(Thread.currentThread.getContextClassLoader, secondaryConfigs.toConfig).loadSecondaries(dir)
 }
 

@@ -6,7 +6,7 @@ import com.rojoma.simplearm.{SimpleArm, Managed}
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.secondary.sql.SqlSecondaryConfig
 import com.typesafe.config.ConfigFactory
-import com.socrata.datacoordinator.common.{SoQLCommon, StandardObfuscationKeyGenerator, DataSourceFromConfig}
+import com.socrata.datacoordinator.common.{DataSourceConfig, SoQLCommon, StandardObfuscationKeyGenerator, DataSourceFromConfig}
 import java.io.File
 import com.socrata.soql.types.{SoQLValue, SoQLType}
 import org.slf4j.LoggerFactory
@@ -110,8 +110,8 @@ object SecondaryWatcher extends App { self =>
   val rootConfig = ConfigFactory.load()
   val config = rootConfig.getConfig("com.socrata.secondary-watcher")
   println(config.root.render())
-  val (dataSource, copyIn) = DataSourceFromConfig(config)
-  val secondaries = SecondaryLoader.load(config.getConfig("secondary.configs"), new File(config.getString("secondary.path"))).asInstanceOf[Map[String, Secondary[SoQLType, SoQLValue]]]
+  val (dataSource, copyIn) = DataSourceFromConfig(new DataSourceConfig(config.getConfig("database")))
+  val secondaries = SecondaryLoader.load(config.getObject("secondary.configs"), new File(config.getString("secondary.path"))).asInstanceOf[Map[String, Secondary[SoQLType, SoQLValue]]]
 
   val executor = Executors.newCachedThreadPool()
 

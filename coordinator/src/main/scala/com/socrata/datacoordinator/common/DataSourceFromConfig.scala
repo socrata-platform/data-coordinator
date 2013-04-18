@@ -7,14 +7,22 @@ import java.io.Reader
 import org.postgresql.ds.PGSimpleDataSource
 import org.postgresql.PGConnection
 
+class DataSourceConfig(config: Config) {
+  val host = config.getString("host")
+  val port = config.getInt("port")
+  val database = config.getString("database")
+  val username = config.getString("username")
+  val password = config.getString("password")
+}
+
 object DataSourceFromConfig {
-  def apply(config: Config): (DataSource, (Connection, String, Reader) => Long) = {
+  def apply(config: DataSourceConfig): (DataSource, (Connection, String, Reader) => Long) = {
     val dataSource = new PGSimpleDataSource
-    dataSource.setServerName(config.getString("database.host"))
-    dataSource.setPortNumber(config.getInt("database.port"))
-    dataSource.setDatabaseName(config.getString("database.database"))
-    dataSource.setUser(config.getString("database.username"))
-    dataSource.setPassword(config.getString("database.password"))
+    dataSource.setServerName(config.host)
+    dataSource.setPortNumber(config.port)
+    dataSource.setDatabaseName(config.database)
+    dataSource.setUser(config.username)
+    dataSource.setPassword(config.password)
     (dataSource, pgCopyIn)
   }
 

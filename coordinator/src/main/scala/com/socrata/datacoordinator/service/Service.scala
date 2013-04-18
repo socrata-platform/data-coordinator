@@ -1,8 +1,5 @@
 package com.socrata.datacoordinator.service
 
-import scala.concurrent.duration._
-
-import java.io._
 import javax.servlet.http.HttpServletRequest
 
 import com.socrata.http.server.implicits._
@@ -13,42 +10,31 @@ import com.rojoma.json.util.{JsonArrayIterator, AutomaticJsonCodecBuilder, JsonK
 import com.rojoma.json.io._
 import com.rojoma.json.ast._
 import com.ibm.icu.text.Normalizer
-import com.socrata.datacoordinator.common.soql.{SoQLTypeContext, SoQLRep, SoQLRowLogCodec}
 import java.util.concurrent.{TimeUnit, Executors}
-import org.postgresql.ds.PGSimpleDataSource
 import com.socrata.datacoordinator.truth._
-import com.typesafe.config.ConfigFactory
-import com.socrata.datacoordinator.common.{SoQLCommon, StandardObfuscationKeyGenerator, DataSourceFromConfig, StandardDatasetMapLimits}
-import java.sql.Connection
+import com.typesafe.config._
+import com.socrata.datacoordinator.common.{SoQLCommon, DataSourceFromConfig, StandardDatasetMapLimits}
 import com.rojoma.simplearm.util._
-import scala.concurrent.duration.Duration
-import com.socrata.datacoordinator.secondary.{Secondary, PlaybackToSecondary, SecondaryLoader}
+import com.socrata.datacoordinator.secondary.{Secondary, SecondaryLoader}
 import com.socrata.datacoordinator.util.collection.DatasetIdMap
-import com.socrata.datacoordinator.id.RowId
-import com.socrata.datacoordinator.secondary.sql.SqlSecondaryManifest
-import com.socrata.datacoordinator.truth.metadata.sql.PostgresDatasetMapReader
-import com.socrata.datacoordinator.truth.loader.sql.SqlDelogger
 import java.net.URLDecoder
 import com.socrata.datacoordinator.util.{StackedTimingReport, LoggedTimingReport}
 import javax.activation.{MimeTypeParseException, MimeType}
-import com.socrata.datacoordinator.secondary.NamedSecondary
-import com.socrata.datacoordinator.truth.universe.sql.{PostgresCopyIn, PostgresUniverse}
-import com.rojoma.simplearm.SimpleArm
-import com.socrata.soql.types.{SoQLValue, SoQLType}
 import com.socrata.soql.environment.ColumnName
 import com.socrata.datacoordinator.secondary.NamedSecondary
 import com.socrata.datacoordinator.truth.Snapshot
-import com.rojoma.json.io.TokenIdentifier
-import com.rojoma.json.io.TokenString
-import com.socrata.datacoordinator.truth.loader.{NoSuchRowToUpdate, NoSuchRowToDelete, NullPrimaryKey, NoPrimaryKey}
+import com.socrata.datacoordinator.truth.loader.{NullPrimaryKey, NoPrimaryKey}
 import com.netflix.curator.framework.CuratorFrameworkFactory
 import com.netflix.curator.retry
-import com.netflix.curator.x.discovery.{ServiceDiscoveryBuilder, ServiceDiscovery}
+import com.netflix.curator.x.discovery.ServiceDiscoveryBuilder
 import com.socrata.http.server.curator.CuratorBroker
-import org.apache.log4j.{BasicConfigurator, PropertyConfigurator}
+import org.apache.log4j.PropertyConfigurator
 import java.io.{UnsupportedEncodingException, BufferedWriter}
+import com.socrata.datacoordinator.truth.loader.NoSuchRowToDelete
 import com.rojoma.json.io.TokenIdentifier
 import com.rojoma.json.io.TokenString
+import com.socrata.datacoordinator.truth.loader.NoSuchRowToUpdate
+import com.socrata.util.config.Propertizer
 
 case class Field(name: String, @JsonKey("type") typ: String)
 object Field {
@@ -346,38 +332,26 @@ class Service(processMutation: Iterator[JValue] => Iterator[JsonEvent],
 }
 
 object Service extends App { self =>
-  BasicConfigurator.configure()
+  val serviceConfig = try {
+    new ServiceConfig(ConfigFactory.load().getConfig("com.socrata.coordinator-service"))
+  } catch {
+    case e: Exception =>
+      Console.err.println(e)
+      sys.exit(1)
+  }
+
+  PropertyConfigurator.configure(Propertizer("log4j", serviceConfig.logProperties))
 
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
 
-  val config = ConfigFactory.load()
-  val serviceConfig = config.getConfig("com.socrata.coordinator-service")
-  println(config.root.render)
+  println(serviceConfig.config.root.render)
 
-  val secondaries = SecondaryLoader.load(serviceConfig.getConfig("secondary.configs"), new File(serviceConfig.getString("secondary.path")))
-
-  val port = serviceConfig.getInt("network.port")
-
-  case class Zookeeper(ensemble: String, sessionTimeout: Duration, connectTimeout: Duration, maxRetries: Int, baseRetryWait: Duration, maxRetryWait: Duration)
-  val zk = Zookeeper(
-    serviceConfig.getString("zookeeper.ensemble"),
-    serviceConfig.getMilliseconds("zookeeper.session-timeout").longValue.millis,
-    serviceConfig.getMilliseconds("zookeeper.connect-timeout").longValue.millis,
-    serviceConfig.getInt("zookeeper.max-retries"),
-    serviceConfig.getMilliseconds("zookeeper.base-retry-wait").longValue.millis,
-    serviceConfig.getMilliseconds("zookeeper.max-retry-wait").longValue.millis
-  )
-  case class ServiceAdvertisement(basePath: String, name: String, address: String)
-  val advertisement = ServiceAdvertisement(
-    serviceConfig.getString("service-advertisement.base-path"),
-    serviceConfig.getString("service-advertisement.name"),
-    serviceConfig.getString("service-advertisement.address")
-  )
+  val secondaries = SecondaryLoader.load(serviceConfig.secondary.configs, serviceConfig.secondary.path)
 
   val executorService = Executors.newCachedThreadPool()
   try {
     val common = locally {
-      val (dataSource, copyInForDataSource) = DataSourceFromConfig(serviceConfig)
+      val (dataSource, copyInForDataSource) = DataSourceFromConfig(serviceConfig.dataSource)
 
       com.rojoma.simplearm.util.using(dataSource.getConnection()) { conn =>
         com.socrata.datacoordinator.truth.sql.DatabasePopulator.populate(conn, StandardDatasetMapLimits)
@@ -460,16 +434,23 @@ object Service extends App { self =>
       secondariesOfDataset)
 
     for {
-      curator <- managed(CuratorFrameworkFactory.newClient(zk.ensemble, zk.sessionTimeout.toMillis.toInt, zk.connectTimeout.toMillis.toInt,
-        new retry.BoundedExponentialBackoffRetry(zk.baseRetryWait.toMillis.toInt, zk.maxRetryWait.toMillis.toInt, zk.maxRetries)))
+      curator <- managed(CuratorFrameworkFactory.builder.
+        connectString(serviceConfig.curator.ensemble).
+        sessionTimeoutMs(serviceConfig.curator.sessionTimeout.toMillis.toInt).
+        connectionTimeoutMs(serviceConfig.curator.connectTimeout.toMillis.toInt).
+        retryPolicy(new retry.BoundedExponentialBackoffRetry(serviceConfig.curator.baseRetryWait.toMillis.toInt,
+                                                             serviceConfig.curator.maxRetryWait.toMillis.toInt,
+                                                             serviceConfig.curator.maxRetries)).
+        namespace(serviceConfig.curator.namespace).
+        build())
       discovery <- managed(ServiceDiscoveryBuilder.builder(classOf[Void]).
         client(curator).
-        basePath(advertisement.basePath).
+        basePath(serviceConfig.advertisement.basePath).
         build())
     } {
       curator.start()
       discovery.start()
-      serv.run(port, new CuratorBroker(discovery, advertisement.address, advertisement.name))
+      serv.run(serviceConfig.network.port, new CuratorBroker(discovery, serviceConfig.advertisement.address, serviceConfig.advertisement.name))
     }
 
     secondaries.values.foreach(_.shutdown())
