@@ -21,7 +21,7 @@ class MutableDatasetCopyContext[CT](var _copyInfo: CopyInfo, private var schema:
   var _currentSchema: ColumnIdMap[ColumnInfo[CT]] = null
   def copyInfo = _copyInfo
   def copyInfo_=(newCopyInfo: CopyInfo) {
-    require(_copyInfo.systemId == newCopyInfo.systemId)
+    require(_copyInfo.datasetInfo.systemId == newCopyInfo.datasetInfo.systemId)
     val newSchema = new MutableColumnIdMap(schema)
     for(col <- schema.values) {
       newSchema(col.systemId) = col.copy(copyInfo = newCopyInfo)(col.typeNamespace, null)

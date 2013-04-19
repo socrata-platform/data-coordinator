@@ -54,7 +54,7 @@ object ChicagoCrimesLoadScript extends App {
       com.socrata.datacoordinator.truth.sql.DatabasePopulator.populate(conn, StandardDatasetMapLimits)
     }
 
-    val datasetCreator = new DatasetCreator(common.universe, common.systemSchema, common.physicalColumnBaseBase)
+    val datasetCreator = new DatasetCreator(common.universe, common.systemSchema, common.SystemColumnNames.id, common.physicalColumnBaseBase)
 
     val columnAdder = new ColumnAdder(common.universe, common.physicalColumnBaseBase)
 
@@ -108,7 +108,7 @@ object ChicagoCrimesLoadScript extends App {
       val start = System.nanoTime()
       upserter.upsert(datasetName, user) { _ =>
         val plan = rowDecodePlan(schema, headers, SoQLRep.csvRep)
-        it.take(10).map { row =>
+        it.map { row =>
           val result = plan(row)
           if(result._1.nonEmpty) throw new Exception("Error decoding row; unable to decode columns: " + result._1.mkString(", "))
           result._2

@@ -6,6 +6,7 @@ import com.rojoma.simplearm.Managed
 
 class DatasetCreator[CT](universe: Managed[Universe[CT, _] with DatasetMutatorProvider],
                          systemSchema: Map[ColumnName, CT],
+                         systemColumnIdName: ColumnName,
                          physicalColumnBaseBase: (ColumnName, Boolean) => String) {
   def createDataset(datasetId: String, username: String, localeName: String) {
     for {
@@ -14,7 +15,8 @@ class DatasetCreator[CT](universe: Managed[Universe[CT, _] with DatasetMutatorPr
       ctx <- ctxOpt
     } {
       systemSchema.foreach { case (name, typ) =>
-        ctx.addColumn(name, typ, physicalColumnBaseBase(name, true))
+        val col = ctx.addColumn(name, typ, physicalColumnBaseBase(name, true))
+        if(name == systemColumnIdName) ctx.makeSystemPrimaryKey(col)
       }
     }
   }
