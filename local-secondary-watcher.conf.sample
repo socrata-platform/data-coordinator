@@ -1,0 +1,13 @@
+# Copy this to local-secondary-watcher.conf, customize it as appropriate,
+# and then add -Dconfig.file=/path/to/local-secondary-watcher.conf to your
+# JVM arguments when launching the secondary watcher.
+
+com.socrata.secondary-watcher {
+  database {
+    host = "localhost"
+    port = 5432
+    database = "datacoordinator"
+    username = "blist"
+    password = "blist"
+  }
+}

@@ -1,0 +1,17 @@
+# Copy this to local-truth-backup-transmitter.conf, customize it as appropriate,
+# and then add -Dconfig.file=/path/to/local-truth-backup-transmitter.conf to your
+# JVM arguments when launching the backup transmitter.
+
+com.socrata.backup.transmitter {
+  database {
+    host = "localhost"
+    port = 5432
+    database = "datacoordinator"
+    username = "blist"
+    password = "blist"
+  }
+
+  network {
+    backup-host = "localhost"
+  }
+}

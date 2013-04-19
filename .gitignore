@@ -3,3 +3,7 @@
 /project/project/target/
 /.idea/
 /.idea_modules/
+local-data-coordinator.conf
+local-secondary-watcher.conf
+local-truth-backup-receiver.conf
+local-truth-backup-transmitter.conf

@@ -1,0 +1,21 @@
+# Copy this to local-data-coordinator.conf, customize it as appropriate,
+# and then add -Dconfig.file=/path/to/local-data-coordinator.conf to your
+# JVM arguments when launching the data coordinator.
+
+com.socrata.coordinator-service {
+  database {
+    host = "localhost"
+    port = 5432
+    database = "datacoordinator"
+    username = "blist"
+    password = "blist"
+  }
+
+  service-advertisement {
+    address = "127.0.0.1"
+    instance = 0
+  }
+
+  curator.ensemble = ["localhost:2181"]
+  network.port = 6001
+}
