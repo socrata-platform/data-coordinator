@@ -3,7 +3,7 @@ package service
 
 import com.rojoma.json.ast._
 import com.socrata.datacoordinator.truth.universe.{DatasetMutatorProvider, Universe}
-import com.socrata.datacoordinator.truth.{DatasetIdInUseByWriterException, DatasetMutator}
+import com.socrata.datacoordinator.truth.{DatasetInUseByWriterException, DatasetIdInUseByWriterException, DatasetMutator}
 import com.socrata.datacoordinator.truth.metadata.{LifecycleStage, ColumnInfo}
 import com.socrata.datacoordinator.truth.json.JsonColumnRep
 import com.rojoma.json.codec.JsonCodec
@@ -311,8 +311,8 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
           mutator.dropCopy(user)(commands.datasetName).map(process(idx, commands.datasetName, mutator))
       }
     } catch {
-      case e: DatasetIdInUseByWriterException =>
-        throw CannotAcquireDatasetWriteLock(e.datasetId)(commands.streamType.index)
+      case e: DatasetInUseByWriterException =>
+        throw CannotAcquireDatasetWriteLock(commands.datasetName)(commands.streamType.index)
     }
   }
 
