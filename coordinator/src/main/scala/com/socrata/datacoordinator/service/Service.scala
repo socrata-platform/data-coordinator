@@ -34,7 +34,7 @@ import com.socrata.datacoordinator.truth.loader.NoSuchRowToDelete
 import com.rojoma.json.io.TokenIdentifier
 import com.rojoma.json.io.TokenString
 import com.socrata.datacoordinator.truth.loader.NoSuchRowToUpdate
-import com.socrata.util.config.Propertizer
+import com.socrata.thirdparty.typesafeconfig.Propertizer
 
 case class Field(name: String, @JsonKey("type") typ: String)
 object Field {

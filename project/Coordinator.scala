@@ -9,8 +9,9 @@ object Coordinator {
     libraryDependencies <++= (scalaVersion) { (scalaVersion) =>
       Seq(
         "com.sun.jna" % "jna" % "3.0.9",
-        "com.socrata" %% "config-utils" % "[1.0.0,2.0.0)",
-        "com.socrata" %% "socrata-csv" % "[1.1.1,2.0.0)",
+        "com.socrata" %% "socrata-thirdparty-utils" % "[2.0.0,3.0.0)",
+        "net.sf.opencsv" % "opencsv" % "2.3",
+        "com.typesafe" % "config" % "1.0.0",
         "com.socrata" %% "socrata-http-curator-broker" % "[1.3.0,2.0.0)",
         "org.bouncycastle" % "bcprov-jdk15on" % "1.48",
         "org.slf4j" % "slf4j-log4j12" % BuildSettings.slf4jVersion,

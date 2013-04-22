@@ -2,7 +2,7 @@ package com.socrata.datacoordinator.primary
 
 import java.io.File
 
-import com.socrata.csv.CSVIterator
+import com.socrata.thirdparty.opencsv.CSVIterator
 
 import org.postgresql.ds._
 import com.rojoma.simplearm.util._
