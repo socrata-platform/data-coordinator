@@ -10,4 +10,5 @@ class ServiceConfig(val config: Config) {
   val advertisement = new AdvertisementConfig(config.getConfig("service-advertisement"))
   val dataSource = new DataSourceConfig(config.getConfig("database"))
   val logProperties = config.getConfig("log4j")
+  val commandReadLimit = config.getBytes("command-read-limit").longValue
 }

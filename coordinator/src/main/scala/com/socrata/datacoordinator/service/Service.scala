@@ -29,7 +29,7 @@ import com.netflix.curator.retry
 import com.netflix.curator.x.discovery.ServiceDiscoveryBuilder
 import com.socrata.http.server.curator.CuratorBroker
 import org.apache.log4j.PropertyConfigurator
-import java.io.{UnsupportedEncodingException, BufferedWriter}
+import java.io.{Reader, UnsupportedEncodingException, BufferedWriter}
 import com.socrata.datacoordinator.truth.loader.NoSuchRowToDelete
 import com.rojoma.json.io.TokenIdentifier
 import com.rojoma.json.io.TokenString
@@ -47,7 +47,8 @@ class Service(processMutation: Iterator[JValue] => Iterator[JsonEvent],
               datasetsInStore: (String) => DatasetIdMap[Long],
               versionInStore: (String, String) => Option[Long],
               updateVersionInStore: (String, String) => Unit,
-              secondariesOfDataset: String => Option[Map[String, Long]])
+              secondariesOfDataset: String => Option[Map[String, Long]],
+              commandReadLimit: Long)
 {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
 
@@ -160,7 +161,36 @@ class Service(processMutation: Iterator[JValue] => Iterator[JsonEvent],
     }
   }
 
-  def jsonStream(req: HttpServletRequest): Either[HttpResponse, JsonEventIterator] = {
+  class ReaderExceededBound(val bytesRead: Long) extends Exception
+  class BoundedReader(underlying: Reader, bound: Long) extends Reader {
+    private var count = 0L
+    private def inc(n: Int) {
+      count += n
+      if(count > bound) throw new ReaderExceededBound(count)
+    }
+
+    override def read() =
+      underlying.read() match {
+        case -1 => -1
+        case n => inc(1); n
+      }
+
+    def read(cbuf: Array[Char], off: Int, len: Int): Int =
+      underlying.read(cbuf, off, len) match {
+        case -1 => -1
+        case n => inc(n); n
+      }
+
+    def close() {
+      underlying.close()
+    }
+
+    def resetCount() {
+      count = 0
+    }
+  }
+
+  def jsonStream(req: HttpServletRequest, approximateMaxDatumBound: Long): Either[HttpResponse, (JsonEventIterator, () => Unit)] = {
     val nullableContentType = req.getContentType
     if(nullableContentType == null)
       return Left(err(BadRequest, "req.content-type.missing"))
@@ -180,7 +210,8 @@ class Service(processMutation: Iterator[JValue] => Iterator[JsonEvent],
         return Left(err(UnsupportedMediaType, "req.content-type.unknown-charset",
           "content-type" -> JString(req.getContentType.toString)))
       }
-    Right(new JsonEventIterator(new BlockJsonTokenIterator(reader).map(normalizeJson)))
+    val boundedReader = new BoundedReader(reader, approximateMaxDatumBound)
+    Right(new JsonEventIterator(new BlockJsonTokenIterator(boundedReader).map(normalizeJson)), boundedReader.resetCount _)
   }
 
   def err(codeSetter: HttpResponse, errorCode: String, data: (String, JValue)*): HttpResponse = {
@@ -194,8 +225,8 @@ class Service(processMutation: Iterator[JValue] => Iterator[JsonEvent],
   }
 
   def doMutation()(req: HttpServletRequest): HttpResponse = {
-    jsonStream(req) match {
-      case Right(events) =>
+    jsonStream(req, commandReadLimit) match {
+      case Right((events, boundResetter)) =>
         try {
           val iterator = try {
             JsonArrayIterator[JValue](events)
@@ -203,7 +234,7 @@ class Service(processMutation: Iterator[JValue] => Iterator[JsonEvent],
             return err(BadRequest, "req.body.not-json-array")
           }
 
-          val result = processMutation(iterator)
+          val result = processMutation(iterator.map { ev => boundResetter(); ev })
 
           OK ~> ContentType("application/json; charset=utf-8") ~> Write { w =>
             val bw = new BufferedWriter(w)
@@ -211,6 +242,9 @@ class Service(processMutation: Iterator[JValue] => Iterator[JsonEvent],
             bw.flush()
           }
         } catch {
+          case e: ReaderExceededBound =>
+            return err(RequestEntityTooLarge, "req.body.command-too-large",
+              "bytes-without-full-datum" -> JNumber(e.bytesRead))
           case r: JsonReaderException =>
             return err(BadRequest, "req.body.malformed-json",
               "row" -> JNumber(r.row),
@@ -431,7 +465,7 @@ object Service extends App { self =>
 
     val serv = new Service(processMutation, exporter,
       secondaries.keySet, datasetsInStore, versionInStore, updateVersionInStore,
-      secondariesOfDataset)
+      secondariesOfDataset, serviceConfig.commandReadLimit)
 
     for {
       curator <- managed(CuratorFrameworkFactory.builder.
