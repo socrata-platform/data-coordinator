@@ -51,8 +51,8 @@ trait BaseDatasetMapWriter[CT] extends BaseDatasetMapReader[CT] {
 
   /** Delete this copy of the dataset.
     * @note Does not drop the actual tables or even queue them for dropping; this just updates the bookkeeping.
-    * @throws IllegalArgumentException if the copy does not name a snapshot or unpublished copy, or if
-    *                                  the dataset has not yet been published for the first time. */
+    * @throws CopyInWrongStateForDropException if the copy does not name a snapshot or unpublished copy
+    * @throws CannotDropInitialWorkingCopyException if the dataset has not yet been published for the first time. */
   def dropCopy(copyInfo: CopyInfo)
 
   /** Removes a column from this dataset-copy.

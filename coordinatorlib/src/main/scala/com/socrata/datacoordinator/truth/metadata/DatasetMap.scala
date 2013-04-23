@@ -12,6 +12,9 @@ trait DatasetMapReader[CT] extends DatasetMapBase[CT] {
   def datasetInfo(datasetId: DatasetId): Option[DatasetInfo]
 }
 
+class CopyInWrongStateForDropException(val copyInfo: CopyInfo, val acceptableStates: Set[LifecycleStage]) extends Exception
+class CannotDropInitialWorkingCopyException(val copyInfo: CopyInfo) extends Exception
+
 trait DatasetMapWriter[CT] extends DatasetMapBase[CT] with `-impl`.BaseDatasetMapWriter[CT] {
   /** Looks up a dataset record by its system ID.
     * @param timeout Amount of time to block before throwing.

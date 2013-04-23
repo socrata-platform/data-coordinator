@@ -38,7 +38,8 @@ object Mutator {
   case class DatasetAlreadyExists(name: String)(val index: Long) extends MutationException
   case class NoSuchDataset(name: String)(val index: Long) extends MutationException
   case class CannotAcquireDatasetWriteLock(name: String)(val index: Long) extends MutationException
-  case class IncorrectLifecycleStage(name: String, currentLifecycleStage: LifecycleStage, expected: LifecycleStage)(val index: Long) extends MutationException
+  case class IncorrectLifecycleStage(name: String, currentLifecycleStage: LifecycleStage, expected: Set[LifecycleStage])(val index: Long) extends MutationException
+  case class InitialCopyDrop(name: String)(val index: Long) extends MutationException
   case class IllegalColumnName(name: ColumnName)(val index: Long) extends MutationException
   case class NoSuchColumn(dataset: String, name: ColumnName)(val index: Long) extends MutationException
   case class NoSuchType(name: TypeName)(val index: Long) extends MutationException
@@ -278,8 +279,8 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
     def process(index: Long, datasetName: String, mutator: DatasetMutator[CT, CV])(maybeCtx: mutator.CopyContext) = maybeCtx match {
       case mutator.CopyOperationComplete(ctx) =>
         doProcess(ctx)
-      case mutator.IncorrectLifecycleStage(currentStage, expectedStage) =>
-        throw IncorrectLifecycleStage(datasetName, currentStage, expectedStage)(index)
+      case mutator.IncorrectLifecycleStage(currentStage, expectedStages) =>
+        throw IncorrectLifecycleStage(datasetName, currentStage, expectedStages)(index)
       case mutator.DatasetDidNotExist =>
         throw NoSuchDataset(commands.datasetName)(index)
     }
@@ -308,7 +309,12 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
         case PublishWorkingCopyMutation(idx, keepingSnapshotCount) =>
           mutator.publishCopy(user)(commands.datasetName, keepingSnapshotCount).map(process(idx, commands.datasetName, mutator))
         case DropWorkingCopyMutation(idx) =>
-          mutator.dropCopy(user)(commands.datasetName).map(process(idx, commands.datasetName, mutator))
+          mutator.dropCopy(user)(commands.datasetName).map {
+            case cc: mutator.CopyContext =>
+              process(idx, commands.datasetName, mutator)(cc)
+            case mutator.InitialWorkingCopy =>
+              throw InitialCopyDrop(commands.datasetName)(idx)
+          }
       }
     } catch {
       case e: DatasetInUseByWriterException =>

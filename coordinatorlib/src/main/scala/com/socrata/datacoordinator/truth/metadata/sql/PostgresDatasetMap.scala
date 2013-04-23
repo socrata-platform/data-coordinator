@@ -14,7 +14,7 @@ import com.socrata.datacoordinator.id._
 import com.socrata.datacoordinator.util.{TimingReport, PostgresUniqueViolation}
 import com.socrata.datacoordinator.util.collection.MutableColumnIdMap
 import com.socrata.datacoordinator.truth.metadata.CopyPair
-import com.socrata.datacoordinator.truth.metadata.`-impl`.Tag
+import com.socrata.datacoordinator.truth.metadata.`-impl`._
 import scala.concurrent.duration.Duration
 import com.socrata.soql.environment.{ColumnName, TypeName}
 import com.socrata.datacoordinator.truth.metadata.DatasetInfo
@@ -559,11 +559,12 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
 
   def dropCopyQuery = "UPDATE copy_map SET lifecycle_stage = 'Discarded' WHERE system_id = ? AND lifecycle_stage = CAST(? AS dataset_lifecycle_stage)"
   def dropCopy(copyInfo: CopyInfo) {
-    if(copyInfo.lifecycleStage != LifecycleStage.Snapshotted && copyInfo.lifecycleStage != LifecycleStage.Unpublished) {
-      throw new IllegalArgumentException("Can only drop a snapshot or an unpublished copy of a dataset.")
+    val validStages = Set(LifecycleStage.Snapshotted, LifecycleStage.Unpublished)
+    if(!validStages(copyInfo.lifecycleStage)) {
+      throw new CopyInWrongStateForDropException(copyInfo, validStages)
     }
     if(copyInfo.lifecycleStage == LifecycleStage.Unpublished && copyInfo.copyNumber == 1) {
-      throw new IllegalArgumentException("Cannot drop the initial version")
+      throw new CannotDropInitialWorkingCopyException(copyInfo)
     }
 
     using(conn.prepareStatement(dropCopyQuery)) { stmt =>

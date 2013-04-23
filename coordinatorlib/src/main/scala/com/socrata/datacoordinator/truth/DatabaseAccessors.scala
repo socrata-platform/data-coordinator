@@ -128,14 +128,16 @@ trait DatasetMutator[CT, CV] {
 
   def openDataset(as: String)(datasetName: String): Managed[Option[TrueMutationContext]]
 
-  sealed trait CopyContext
+  sealed trait DropCopyContext
+  sealed trait CopyContext extends DropCopyContext
   case object DatasetDidNotExist extends CopyContext
-  case class IncorrectLifecycleStage(currentLifecycleStage: LifecycleStage, expectedLifecycleStage: LifecycleStage) extends CopyContext
+  case class IncorrectLifecycleStage(currentLifecycleStage: LifecycleStage, expectedLifecycleStages: Set[LifecycleStage]) extends CopyContext
   case class CopyOperationComplete(mutationContext: TrueMutationContext) extends CopyContext
+  case object InitialWorkingCopy extends DropCopyContext
 
   def createCopy(as: String)(datasetName: String, copyData: Boolean): Managed[CopyContext]
   def publishCopy(as: String)(datasetName: String, snapshotsToKeep: Option[Int]): Managed[CopyContext]
-  def dropCopy(as: String)(datasetName: String): Managed[CopyContext]
+  def dropCopy(as: String)(datasetName: String): Managed[DropCopyContext]
 }
 
 object DatasetMutator {
@@ -356,7 +358,7 @@ object DatasetMutator {
               op(ctx)
               f(CopyOperationComplete(ctx))
             } else {
-              f(IncorrectLifecycleStage(ctx.copyInfo.lifecycleStage, targetStage))
+              f(IncorrectLifecycleStage(ctx.copyInfo.lifecycleStage, Set(targetStage)))
             }
         })
     }
@@ -383,8 +385,23 @@ object DatasetMutator {
         }
       }
 
-    def dropCopy(as: String)(datasetName: String): Managed[CopyContext] =
-      firstOp(as, datasetName, LifecycleStage.Unpublished, _.drop())
+    def dropCopy(as: String)(datasetName: String): Managed[DropCopyContext] = new SimpleArm[DropCopyContext] {
+      def flatMap[A](f: DropCopyContext => A): A =
+        go(as, datasetName, {
+          case None =>
+            f(DatasetDidNotExist)
+          case Some(ctx) =>
+            try {
+              ctx.drop()
+            } catch {
+              case e: CopyInWrongStateForDropException =>
+                return f(IncorrectLifecycleStage(ctx.copyInfo.lifecycleStage, e.acceptableStates))
+              case _: CannotDropInitialWorkingCopyException =>
+                return f(InitialWorkingCopy)
+            }
+            f(CopyOperationComplete(ctx))
+        })
+    }
   }
 
   def apply[CT, CV](lowLevelMutator: LowLevelDatabaseMutator[CT, CV], lockTimeout: Duration): DatasetMutator[CT, CV] =

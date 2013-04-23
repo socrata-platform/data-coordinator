@@ -285,7 +285,10 @@ class Service(processMutation: Iterator[JValue] => Iterator[JsonEvent],
                 err(Conflict, "update.dataset.invalid-state",
                   "dataset" -> JString(name),
                   "actual-state" -> JString(currentStage.name),
-                  "expected-state" -> JString(expectedStage.name))
+                  "expected-state" -> JArray(expectedStage.toSeq.map(_.name).map(JString)))
+              case Mutator.InitialCopyDrop(name) =>
+                err(Conflict, "update.dataset.initial-copy-drop",
+                  "dataset" -> JString(name))
               case e: Mutator.ColumnAlreadyExists =>
                 colErr("update.column.exists", e, Conflict)
               case Mutator.IllegalColumnName(columnName) =>
