@@ -42,12 +42,12 @@ object DatabasePopulator {
   }
 }
 
-case class DatasetMapLimits(maximumDatasetIdLength: Int = 20,
-                            maximumUserIdLength: Int = 20,
-                            maximumLogicalColumnNameLength: Int = 20,
-                            maximumPhysicalColumnBaseLength: Int = 20,
-                            maximumPhysicalTableBaseLength: Int = 20,
-                            maximumTypeNameLength: Int = 20,
-                            maximumStoreIdLength: Int = 20,
-                            maximumLocaleNameLength: Int = 20,
-                            maximumPhysicalTableNameLength: Int = 60)
+case class DatasetMapLimits(maximumDatasetIdLength: Int = 40,
+                            maximumUserIdLength: Int = 40,
+                            maximumLogicalColumnNameLength: Int = 40,
+                            maximumPhysicalColumnBaseLength: Int = 40,
+                            maximumPhysicalTableBaseLength: Int = 40,
+                            maximumTypeNameLength: Int = 40,
+                            maximumStoreIdLength: Int = 40,
+                            maximumLocaleNameLength: Int = 40,
+                            maximumPhysicalTableNameLength: Int = 80)
