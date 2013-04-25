@@ -41,7 +41,10 @@ object Field {
   implicit val jCodec = AutomaticJsonCodecBuilder[Field]
 }
 
+case class Schema(hash: String, schema: JObject, pk: ColumnName)
+
 class Service(processMutation: Iterator[JValue] => Iterator[JsonEvent],
+              getSchema: String => Option[Schema],
               datasetContents: (String, CopySelector, Option[Set[ColumnName]], Option[Long], Option[Long]) => (Iterator[JObject] => Unit) => Boolean,
               secondaries: Set[String],
               datasetsInStore: (String) => DatasetIdMap[Long],
@@ -343,8 +346,25 @@ class Service(processMutation: Iterator[JValue] => Iterator[JsonEvent],
     }
   }
 
+  def doGetSchema(datasetIdRaw: String)(req: HttpServletRequest): HttpResponse = {
+    val datasetId = norm(datasetIdRaw)
+    getSchema(datasetId) match {
+      case Some(schema) =>
+        OK ~> ContentType("application/json; charset=utf-8") ~> Write { w =>
+          JsonUtil.writeJson(w, JObject(Map(
+            "hash" -> JString(schema.hash),
+            "schema" -> schema.schema,
+            "pk" -> JString(schema.pk.name)
+          )))
+        }
+      case None =>
+        NotFound
+    }
+  }
+
   val router = RouterSet(
     ExtractingRouter[HttpService]("POST", "/mutate")(doMutation _),
+    ExtractingRouter[HttpService]("GET", "/schema/?")(doGetSchema _),
     ExtractingRouter[HttpService]("GET", "/export/?")(doExportFile _),
     ExtractingRouter[HttpService]("GET", "/secondary-manifest")(doGetSecondaries _),
     ExtractingRouter[HttpService]("GET", "/secondary-manifest/?")(doGetSecondaryManifest _),
@@ -466,7 +486,9 @@ object Service extends App { self =>
       res.isDefined
     }
 
-    val serv = new Service(processMutation, exporter,
+    val schemaFinder = new SchemaFinder(common.universe, common.typeContext.typeNamespace.nameForType)
+
+    val serv = new Service(processMutation, schemaFinder.getSchema, exporter,
       secondaries.keySet, datasetsInStore, versionInStore, updateVersionInStore,
       secondariesOfDataset, serviceConfig.commandReadLimit)
 
