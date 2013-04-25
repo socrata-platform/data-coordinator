@@ -3,7 +3,7 @@ package com.socrata.datacoordinator.service
 import com.rojoma.simplearm.Managed
 
 import com.socrata.datacoordinator.truth.universe.{DatasetMapReaderProvider, Universe}
-import com.socrata.datacoordinator.truth.metadata.ColumnInfo
+import com.socrata.datacoordinator.truth.metadata.{DatasetCopyContext, ColumnInfo}
 import scala.collection.mutable
 import com.rojoma.json.ast.{JString, JObject, JValue}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
@@ -17,17 +17,23 @@ class SchemaFinder[CT, CV](universe: Managed[Universe[CT, CV] with DatasetMapRea
     JObject(m)
   }
 
-  def getSchema(datasetName: String): Option[Schema] = {
+  def getSchema(datasetName: String): Option[Schema] =
     for {
       u <- universe
       dsid <- u.datasetMapReader.datasetId(datasetName)
       dsInfo <- u.datasetMapReader.datasetInfo(dsid)
     } yield {
       val schema = u.datasetMapReader.schema(u.datasetMapReader.latest(dsInfo))
-      val schemaHash = SchemaHash.computeHash(schema, typeSerializer)
-      Schema(schemaHash, jsonify(schema), schema.values.find(_.isUserPrimaryKey).orElse(schema.values.find(_.isSystemPrimaryKey)).getOrElse {
-        sys.error("No system primary key column?")
-      }.logicalName)
+      getSchema(schema)
     }
+
+  def schemaHash(schema: ColumnIdMap[ColumnInfo[CT]]) =
+    SchemaHash.computeHash(schema, typeSerializer)
+
+  def getSchema(schema: ColumnIdMap[ColumnInfo[CT]]): Schema = {
+    val hash = schemaHash(schema)
+    Schema(hash, jsonify(schema), schema.values.find(_.isUserPrimaryKey).orElse(schema.values.find(_.isSystemPrimaryKey)).getOrElse {
+      sys.error("No system primary key column?")
+    }.logicalName)
   }
 }

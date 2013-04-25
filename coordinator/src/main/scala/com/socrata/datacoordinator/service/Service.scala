@@ -270,6 +270,10 @@ class Service(processMutation: Iterator[JValue] => Iterator[JsonEvent],
                 err(BadRequest, "req.script.command.missing-field",
                   "object" -> obj,
                   "field" -> JString(field))
+              case Mutator.MismatchedSchemaHash(name, schema) =>
+                err(Conflict, "req.script.header.mismatched-schema",
+                  "dataset" -> JString(name),
+                  "schema" -> jsonifySchema(schema))
               case Mutator.InvalidCommandFieldValue(obj, field, value) =>
                 err(BadRequest, "req.script.command.invalid-field",
                   "object" -> obj,
@@ -346,16 +350,21 @@ class Service(processMutation: Iterator[JValue] => Iterator[JsonEvent],
     }
   }
 
+  def jsonifySchema(schemaObj: Schema) = {
+    val Schema(hash, schema, pk) = schemaObj
+    JObject(Map(
+      "hash" -> JString(hash),
+      "schema" -> schema,
+      "pk" -> JString(pk.name)
+    ))
+  }
+
   def doGetSchema(datasetIdRaw: String)(req: HttpServletRequest): HttpResponse = {
     val datasetId = norm(datasetIdRaw)
     getSchema(datasetId) match {
       case Some(schema) =>
         OK ~> ContentType("application/json; charset=utf-8") ~> Write { w =>
-          JsonUtil.writeJson(w, JObject(Map(
-            "hash" -> JString(schema.hash),
-            "schema" -> schema.schema,
-            "pk" -> JString(schema.pk.name)
-          )))
+          JsonUtil.writeJson(w, jsonifySchema(schema))
         }
       case None =>
         NotFound
@@ -486,9 +495,7 @@ object Service extends App { self =>
       res.isDefined
     }
 
-    val schemaFinder = new SchemaFinder(common.universe, common.typeContext.typeNamespace.nameForType)
-
-    val serv = new Service(processMutation, schemaFinder.getSchema, exporter,
+    val serv = new Service(processMutation, common.Mutator.schemaFinder.getSchema, exporter,
       secondaries.keySet, datasetsInStore, versionInStore, updateVersionInStore,
       secondariesOfDataset, serviceConfig.commandReadLimit)
 

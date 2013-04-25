@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator.common
 
 import com.socrata.datacoordinator.{Row, MutableRow}
-import com.socrata.datacoordinator.service.MutatorCommon
+import com.socrata.datacoordinator.service.{SchemaFinder, MutatorCommon}
 import com.socrata.soql.types.{SoQLFixedTimestamp, SoQLID, SoQLValue, SoQLType}
 import com.socrata.soql.environment.{ColumnName, TypeName}
 import com.socrata.soql.brita.{AsciiIdentifierFilter, IdentifierFilter}
@@ -147,5 +147,7 @@ class SoQLCommon(dataSource: DataSource,
 
     def jsonRepFor(columnInfo: ColumnInfo[CT]): JsonColumnRep[CT, CV] =
       common.jsonRepFor(columnInfo)
+
+    val schemaFinder = new SchemaFinder[CT, CV](universe, typeNameFor(_).name)
   }
 }

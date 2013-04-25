@@ -34,6 +34,7 @@ object Mutator {
   case class CommandIsNotAnObject(value: JValue)(val index: Long) extends InvalidCommandStreamException
   case class MissingCommandField(obj: JObject, field: String)(val index: Long) extends InvalidCommandStreamException
   case class InvalidCommandFieldValue(obj: JObject, field: String, value: JValue)(val index: Long) extends InvalidCommandStreamException
+  case class MismatchedSchemaHash(name: String, schema: Schema)(val index: Long) extends InvalidCommandStreamException
 
   case class DatasetAlreadyExists(name: String)(val index: Long) extends MutationException
   case class NoSuchDataset(name: String)(val index: Long) extends MutationException
@@ -127,7 +128,7 @@ object Mutator {
   val DropRowIdOp = "drop row id"
   val RowDataOp = "row data"
 
-  class CommandStream(val streamType: StreamType, val datasetName: String, val user: String, val rawCommandStream: BufferedIterator[JValue]) {
+  class CommandStream(val streamType: StreamType, val datasetName: String, val user: String, val schemaHash: Option[String], val rawCommandStream: BufferedIterator[JValue]) {
     private var idx = 1L
     private def nextIdx() = {
       val res = idx
@@ -181,6 +182,7 @@ trait MutatorCommon[CT, CV] {
   def typeNameFor(typ: CT): TypeName
   def nameForTypeOpt(name: TypeName): Option[CT]
   def jsonRepFor(columnInfo: ColumnInfo[CT]): JsonColumnRep[CT, CV]
+  def schemaFinder: SchemaFinder[CT, CV]
 }
 
 class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
@@ -193,6 +195,7 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
       val command = get[String]("c")
       val dataset = get[String]("dataset")
       val user = get[String]("user")
+      val schemaHash = getOption[String]("schema")
       val streamType = command match {
         case "create" =>
           val locale = ULocale.createCanonical(getWithDefault("locale", "en_US"))
@@ -210,7 +213,7 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
         case other =>
           throw InvalidCommandFieldValue(originalObject, "c", JString(other))(index)
       }
-      new CommandStream(streamType, dataset, user, remainingCommands.buffered)
+      new CommandStream(streamType, dataset, user, schemaHash, remainingCommands.buffered)
     }
 
   def mapToEvents[T](m: collection.Map[Int,T])(implicit codec: JsonCodec[T]): Iterator[JsonEvent] = {
@@ -276,8 +279,18 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
         Iterator.single(EndOfArrayEvent()))
     }
 
+    def checkHash(index: Long, ctx: DatasetMutator[CT, CV]#MutationContext) {
+      for(givenSchemaHash <- commands.schemaHash) {
+        val realSchemaHash = schemaFinder.schemaHash(ctx.schema)
+        if(givenSchemaHash != realSchemaHash) {
+          throw MismatchedSchemaHash(commands.datasetName, schemaFinder.getSchema(ctx.schema))(index)
+        }
+      }
+    }
+
     def process(index: Long, datasetName: String, mutator: DatasetMutator[CT, CV])(maybeCtx: mutator.CopyContext) = maybeCtx match {
       case mutator.CopyOperationComplete(ctx) =>
+        checkHash(index, ctx)
         doProcess(ctx)
       case mutator.IncorrectLifecycleStage(currentStage, expectedStages) =>
         throw IncorrectLifecycleStage(datasetName, currentStage, expectedStages)(index)
@@ -291,11 +304,13 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
         case NormalMutation(idx) =>
           for(ctxOpt <- mutator.openDataset(user)(commands.datasetName)) yield {
             val ctx = ctxOpt.getOrElse { throw NoSuchDataset(commands.datasetName)(idx) }
+            checkHash(idx, ctx)
             doProcess(ctx)
           }
         case CreateDatasetMutation(idx, localeName) =>
           for(ctxOpt <- u.datasetMutator.createDataset(user)(commands.datasetName, "t", localeName)) yield {
             val ctx = ctxOpt.getOrElse { throw DatasetAlreadyExists(commands.datasetName)(idx) }
+            checkHash(idx, ctx)
             for((col, typ) <- systemSchema) {
               val ci = ctx.addColumn(col, typ, physicalColumnBaseBase(col, systemColumn = true))
               if(col == systemIdColumnName) {
