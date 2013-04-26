@@ -148,6 +148,6 @@ class SoQLCommon(dataSource: DataSource,
     def jsonRepFor(columnInfo: ColumnInfo[CT]): JsonColumnRep[CT, CV] =
       common.jsonRepFor(columnInfo)
 
-    val schemaFinder = new SchemaFinder[CT, CV](universe, typeNameFor(_).name)
+    val schemaFinder = new SchemaFinder[CT, CV](universe, typeNameFor)
   }
 }

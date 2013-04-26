@@ -20,7 +20,7 @@ import com.socrata.datacoordinator.util.collection.DatasetIdMap
 import java.net.URLDecoder
 import com.socrata.datacoordinator.util.{StackedTimingReport, LoggedTimingReport}
 import javax.activation.{MimeTypeParseException, MimeType}
-import com.socrata.soql.environment.ColumnName
+import com.socrata.soql.environment.{TypeName, ColumnName}
 import com.socrata.datacoordinator.secondary.NamedSecondary
 import com.socrata.datacoordinator.truth.Snapshot
 import com.socrata.datacoordinator.truth.loader.{NullPrimaryKey, NoPrimaryKey}
@@ -41,7 +41,7 @@ object Field {
   implicit val jCodec = AutomaticJsonCodecBuilder[Field]
 }
 
-case class Schema(hash: String, schema: JObject, pk: ColumnName)
+case class Schema(hash: String, schema: Map[ColumnName, TypeName], pk: ColumnName)
 
 class Service(processMutation: Iterator[JValue] => Iterator[JsonEvent],
               getSchema: String => Option[Schema],
@@ -352,9 +352,10 @@ class Service(processMutation: Iterator[JValue] => Iterator[JsonEvent],
 
   def jsonifySchema(schemaObj: Schema) = {
     val Schema(hash, schema, pk) = schemaObj
+    val jsonSchema = JObject(schema.map { case (k,v) => k.name -> JString(v.name) })
     JObject(Map(
       "hash" -> JString(hash),
-      "schema" -> schema,
+      "schema" -> jsonSchema,
       "pk" -> JString(pk.name)
     ))
   }
