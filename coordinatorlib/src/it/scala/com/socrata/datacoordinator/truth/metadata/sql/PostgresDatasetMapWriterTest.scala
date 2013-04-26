@@ -205,7 +205,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       val vi2 = tables.publish(vi1)
 
       vi2.lifecycleStage must be (LifecycleStage.Published)
-      evaluating { tables.dropCopy(vi2) } must produce [IllegalArgumentException]
+      evaluating { tables.dropCopy(vi2) } must produce [CopyInWrongStateForDropException]
     }
   }
 
@@ -214,7 +214,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID)
       val vi = tables.create("hello", "world", "en_US")
       vi.lifecycleStage must be (LifecycleStage.Unpublished)
-      evaluating { tables.dropCopy(vi) } must produce [IllegalArgumentException]
+      evaluating { tables.dropCopy(vi) } must produce [CannotDropInitialWorkingCopyException]
     }
   }
 
