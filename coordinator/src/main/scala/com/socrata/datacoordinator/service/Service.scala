@@ -43,7 +43,7 @@ object Field {
 
 case class Schema(hash: String, schema: Map[ColumnName, TypeName], pk: ColumnName)
 
-class Service(processMutation: Iterator[JValue] => Iterator[JsonEvent],
+class Service(processMutation: (String, Iterator[JValue]) => Iterator[JsonEvent],
               getSchema: String => Option[Schema],
               datasetContents: (String, CopySelector, Option[Set[ColumnName]], Option[Long], Option[Long]) => (Iterator[JObject] => Unit) => Boolean,
               secondaries: Set[String],
@@ -227,7 +227,8 @@ class Service(processMutation: Iterator[JValue] => Iterator[JsonEvent],
     }
   }
 
-  def doMutation()(req: HttpServletRequest): HttpResponse = {
+  def doMutation(datasetNameRaw: String)(req: HttpServletRequest): HttpResponse = {
+    val datasetName = norm(datasetNameRaw)
     jsonStream(req, commandReadLimit) match {
       case Right((events, boundResetter)) =>
         try {
@@ -237,7 +238,7 @@ class Service(processMutation: Iterator[JValue] => Iterator[JsonEvent],
             return err(BadRequest, "req.body.not-json-array")
           }
 
-          val result = processMutation(iterator.map { ev => boundResetter(); ev })
+          val result = processMutation(datasetName, iterator.map { ev => boundResetter(); ev })
 
           OK ~> ContentType("application/json; charset=utf-8") ~> Write { w =>
             val bw = new BufferedWriter(w)
@@ -373,9 +374,10 @@ class Service(processMutation: Iterator[JValue] => Iterator[JsonEvent],
   }
 
   val router = RouterSet(
-    ExtractingRouter[HttpService]("POST", "/mutate")(doMutation _),
-    ExtractingRouter[HttpService]("GET", "/schema/?")(doGetSchema _),
-    ExtractingRouter[HttpService]("GET", "/export/?")(doExportFile _),
+    ExtractingRouter[HttpService]("POST", "/dataset/?")(doMutation _),
+    ExtractingRouter[HttpService]("GET", "/dataset/?/schema")(doGetSchema _),
+    // ExtractingRouter[HttpService]("DELETE", "/dataset/?")(doDeleteDataset _),
+    ExtractingRouter[HttpService]("GET", "/dataset/?")(doExportFile _),
     ExtractingRouter[HttpService]("GET", "/secondary-manifest")(doGetSecondaries _),
     ExtractingRouter[HttpService]("GET", "/secondary-manifest/?")(doGetSecondaryManifest _),
     ExtractingRouter[HttpService]("GET", "/secondary-manifest/?/?")(doGetDataVersionInSecondary _),
@@ -470,9 +472,9 @@ object Service extends App { self =>
 
     val mutator = new Mutator(common.Mutator)
 
-    def processMutation(input: Iterator[JValue]) = {
+    def processMutation(datasetId: String, input: Iterator[JValue]) = {
       for(u <- common.universe) yield {
-        mutator(u, input)
+        mutator(u, datasetId, input)
       }
     }
 

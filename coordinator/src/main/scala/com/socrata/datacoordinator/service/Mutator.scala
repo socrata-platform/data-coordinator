@@ -190,11 +190,10 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
   import Mutator._
   import common._
 
-  def createCommandStream(index: Long, value: JValue, remainingCommands: Iterator[JValue]) =
+  def createCommandStream(index: Long, value: JValue, dataset: String, remainingCommands: Iterator[JValue]) =
     withObjectFields(index, value) { accessor =>
       import accessor._
       val command = get[String]("c")
-      val dataset = get[String]("dataset")
       val user = get[String]("user")
       val streamType = command match {
         case "create" =>
@@ -248,9 +247,9 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
       Iterator.single(EndOfObjectEvent()))
   }
 
-  def apply(u: Universe[CT, CV] with DatasetMutatorProvider, commandStream: Iterator[JValue]): Iterator[JsonEvent] = {
+  def apply(u: Universe[CT, CV] with DatasetMutatorProvider, datasetId: String, commandStream: Iterator[JValue]): Iterator[JsonEvent] = {
     if(commandStream.isEmpty) throw EmptyCommandStream()(0L)
-    val commands = createCommandStream(0L, commandStream.next(), commandStream)
+    val commands = createCommandStream(0L, commandStream.next(), datasetId, commandStream)
     def user = commands.user
 
     def doProcess(ctx: DatasetMutator[CT, CV]#MutationContext): Iterator[JsonEvent] = {
