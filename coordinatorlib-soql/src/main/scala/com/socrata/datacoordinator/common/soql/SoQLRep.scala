@@ -18,10 +18,10 @@ object SoQLRep {
     SoQLFloatingTimestamp -> (ci => new sqlreps.FloatingTimestampRep(ci.physicalColumnBase)),
     SoQLDate -> (ci => new sqlreps.DateRep(ci.physicalColumnBase)),
     SoQLTime -> (ci => new sqlreps.TimeRep(ci.physicalColumnBase)),
-    SoQLLocation -> (ci => new sqlreps.LocationRep(ci.physicalColumnBase)) /*,
-    SoQLDouble -> doubleRepFactory,
-    SoQLObject -> objectRepFactory,
-    SoQLArray -> arrayRepFactory */
+    SoQLLocation -> (ci => new sqlreps.LocationRep(ci.physicalColumnBase)),
+    SoQLDouble -> (ci => new sqlreps.DoubleRep(ci.physicalColumnBase)),
+    SoQLObject -> (ci => new sqlreps.ObjectRep(ci.physicalColumnBase)),
+    SoQLArray -> (ci => new sqlreps.ArrayRep(ci.physicalColumnBase))
   )
 
   def sqlRep(columnInfo: ColumnInfo[SoQLType]): SqlColumnRep[SoQLType, SoQLValue] =
@@ -54,7 +54,9 @@ object SoQLRep {
     SoQLDate -> (ci => new jsonreps.DateRep(ci.logicalName)),
     SoQLTime -> (ci => new jsonreps.TimeRep(ci.logicalName)),
     SoQLLocation -> (ci => new jsonreps.LocationRep(ci.logicalName)),
-    SoQLDouble -> (ci => new jsonreps.DoubleRep(ci.logicalName))
+    SoQLDouble -> (ci => new jsonreps.DoubleRep(ci.logicalName)),
+    SoQLArray -> (ci => new jsonreps.ArrayRep(ci.logicalName)),
+    SoQLObject -> (ci => new jsonreps.ObjectRep(ci.logicalName))
   )
 
   trait IdObfuscationContext {
