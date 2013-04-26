@@ -10,7 +10,7 @@ class PrimaryKeySetter[CT](universe: Managed[Universe[CT, _] with DatasetMutator
     finish(dataset) {
       for {
         u <- universe
-        ctxOpt <- u.datasetMutator.openDataset(as = username)(dataset)
+        ctxOpt <- u.datasetMutator.openDataset(as = username)(dataset, _ => ())
         ctx <- ctxOpt
       } yield {
         import ctx._

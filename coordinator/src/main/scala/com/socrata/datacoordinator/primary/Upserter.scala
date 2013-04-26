@@ -13,7 +13,7 @@ class Upserter[CT, CV](universe: Managed[Universe[CT, CV] with DatasetMutatorPro
     finish(dataset) {
       for {
         u <- universe
-        ctxOpt <- u.datasetMutator.openDataset(as = username)(dataset)
+        ctxOpt <- u.datasetMutator.openDataset(as = username)(dataset, _ => ())
         ctx <- ctxOpt
       } yield {
         ctx.upsert(inputGenerator(ctx.schema).zipWithIndex.map {

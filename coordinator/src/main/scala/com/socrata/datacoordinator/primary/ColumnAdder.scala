@@ -19,7 +19,7 @@ class ColumnAdder[CT](universe: Managed[Universe[CT, _] with DatasetMutatorProvi
     finish(dataset) {
       for {
         u <- universe
-        ctxOpt <- u.datasetMutator.openDataset(as = username)(dataset)
+        ctxOpt <- u.datasetMutator.openDataset(as = username)(dataset, _ => ())
         ctx <- ctxOpt
       } yield {
         columnCreations(ctx).foldLeft(Map.empty[ColumnName, ColumnInfo[CT]]) { (acc, ci) =>

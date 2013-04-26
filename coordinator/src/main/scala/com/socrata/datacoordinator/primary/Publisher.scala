@@ -10,7 +10,7 @@ class Publisher(universe: Managed[Universe[_, _] with DatasetMutatorProvider]) e
     finish(dataset) {
       for {
         u <- universe
-        ctxOpt <- u.datasetMutator.publishCopy(as = username)(dataset, snapshotsToKeep)
+        ctxOpt <- u.datasetMutator.publishCopy(as = username)(dataset, snapshotsToKeep, _ => ())
       } yield ctxOpt match {
         case u.datasetMutator.CopyOperationComplete(ctx) =>
           Some(ctx.copyInfo.unanchored)

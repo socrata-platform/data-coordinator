@@ -10,7 +10,7 @@ class WorkingCopyCreator(universe: Managed[Universe[_, _] with DatasetMutatorPro
     finish(dataset) {
       for {
         u <- universe
-        ctx <- u.datasetMutator.createCopy(as = username)(dataset, copyData)
+        ctx <- u.datasetMutator.createCopy(as = username)(dataset, copyData, _ => ())
       } yield ctx match {
         case u.datasetMutator.CopyOperationComplete(ctx) =>
           Some(ctx.copyInfo.unanchored)

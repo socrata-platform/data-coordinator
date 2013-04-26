@@ -120,7 +120,7 @@ object ChicagoCrimesLoadScript extends App {
       workingCopyCreator.copyDataset(datasetName, user, copyData = true)
       val ci = for {
         u <- common.universe
-        u.datasetMutator.CopyOperationComplete(ctx) <- u.datasetMutator.dropCopy(user)(datasetName)
+        u.datasetMutator.CopyOperationComplete(ctx) <- u.datasetMutator.dropCopy(user)(datasetName, _ => ())
       } yield {
         ctx.copyInfo.unanchored
       }

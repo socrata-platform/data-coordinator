@@ -4,7 +4,7 @@ package service
 import com.rojoma.json.ast._
 import com.socrata.datacoordinator.truth.universe.{DatasetMutatorProvider, Universe}
 import com.socrata.datacoordinator.truth.{DatasetInUseByWriterException, DatasetIdInUseByWriterException, DatasetMutator}
-import com.socrata.datacoordinator.truth.metadata.{LifecycleStage, ColumnInfo}
+import com.socrata.datacoordinator.truth.metadata.{DatasetCopyContext, LifecycleStage, ColumnInfo}
 import com.socrata.datacoordinator.truth.json.JsonColumnRep
 import com.rojoma.json.codec.JsonCodec
 import com.socrata.datacoordinator.truth.loader._
@@ -13,17 +13,18 @@ import com.socrata.soql.environment.{TypeName, ColumnName}
 import com.socrata.datacoordinator.util.{BuiltUpIterator, Counter}
 import com.ibm.icu.util.ULocale
 import com.rojoma.json.io._
+import com.socrata.datacoordinator.util.collection.ColumnIdMap
 
 object Mutator {
   sealed abstract class StreamType {
     def index: Long
   }
 
-  case class NormalMutation(index: Long) extends StreamType
+  case class NormalMutation(index: Long, schemaHash: Option[String]) extends StreamType
   case class CreateDatasetMutation(index: Long, localeName: String) extends StreamType
-  case class CreateWorkingCopyMutation(index: Long, copyData: Boolean) extends StreamType
-  case class PublishWorkingCopyMutation(index: Long, keepingSnapshotCount: Option[Int]) extends StreamType
-  case class DropWorkingCopyMutation(index: Long) extends StreamType
+  case class CreateWorkingCopyMutation(index: Long, copyData: Boolean, schemaHash: Option[String]) extends StreamType
+  case class PublishWorkingCopyMutation(index: Long, keepingSnapshotCount: Option[Int], schemaHash: Option[String]) extends StreamType
+  case class DropWorkingCopyMutation(index: Long, schemaHash: Option[String]) extends StreamType
 
   sealed abstract class MutationException(msg: String = null, cause: Throwable = null) extends Exception(msg, cause) {
     def index: Long
@@ -128,7 +129,7 @@ object Mutator {
   val DropRowIdOp = "drop row id"
   val RowDataOp = "row data"
 
-  class CommandStream(val streamType: StreamType, val datasetName: String, val user: String, val schemaHash: Option[String], val rawCommandStream: BufferedIterator[JValue]) {
+  class CommandStream(val streamType: StreamType, val datasetName: String, val user: String, val rawCommandStream: BufferedIterator[JValue]) {
     private var idx = 1L
     private def nextIdx() = {
       val res = idx
@@ -195,25 +196,28 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
       val command = get[String]("c")
       val dataset = get[String]("dataset")
       val user = get[String]("user")
-      val schemaHash = getOption[String]("schema")
       val streamType = command match {
         case "create" =>
           val locale = ULocale.createCanonical(getWithDefault("locale", "en_US"))
           CreateDatasetMutation(index, locale.getName)
         case "copy" =>
           val copyData = get[Boolean]("copy_data")
-          CreateWorkingCopyMutation(index, copyData)
+          val schemaHash = getOption[String]("schema")
+          CreateWorkingCopyMutation(index, copyData, schemaHash)
         case "publish" =>
           val snapshotLimit = getOption[Int]("snapshot_limit")
-          PublishWorkingCopyMutation(index, snapshotLimit)
+          val schemaHash = getOption[String]("schema")
+          PublishWorkingCopyMutation(index, snapshotLimit, schemaHash)
         case "drop" =>
-          DropWorkingCopyMutation(index)
+          val schemaHash = getOption[String]("schema")
+          DropWorkingCopyMutation(index, schemaHash)
         case "normal" =>
-          NormalMutation(index)
+          val schemaHash = getOption[String]("schema")
+          NormalMutation(index, schemaHash)
         case other =>
           throw InvalidCommandFieldValue(originalObject, "c", JString(other))(index)
       }
-      new CommandStream(streamType, dataset, user, schemaHash, remainingCommands.buffered)
+      new CommandStream(streamType, dataset, user, remainingCommands.buffered)
     }
 
   def mapToEvents[T](m: collection.Map[Int,T])(implicit codec: JsonCodec[T]): Iterator[JsonEvent] = {
@@ -279,8 +283,8 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
         Iterator.single(EndOfArrayEvent()))
     }
 
-    def checkHash(index: Long, ctx: DatasetMutator[CT, CV]#MutationContext) {
-      for(givenSchemaHash <- commands.schemaHash) {
+    def checkHash(index: Long, schemaHash: Option[String], ctx: DatasetCopyContext[CT]) {
+      for(givenSchemaHash <- schemaHash) {
         val realSchemaHash = schemaFinder.schemaHash(ctx.schema)
         if(givenSchemaHash != realSchemaHash) {
           throw MismatchedSchemaHash(commands.datasetName, schemaFinder.getSchema(ctx.schema))(index)
@@ -290,7 +294,6 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
 
     def process(index: Long, datasetName: String, mutator: DatasetMutator[CT, CV])(maybeCtx: mutator.CopyContext) = maybeCtx match {
       case mutator.CopyOperationComplete(ctx) =>
-        checkHash(index, ctx)
         doProcess(ctx)
       case mutator.IncorrectLifecycleStage(currentStage, expectedStages) =>
         throw IncorrectLifecycleStage(datasetName, currentStage, expectedStages)(index)
@@ -301,16 +304,14 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
     try {
       val mutator = u.datasetMutator
       commands.streamType match {
-        case NormalMutation(idx) =>
-          for(ctxOpt <- mutator.openDataset(user)(commands.datasetName)) yield {
+        case NormalMutation(idx, schemaHash) =>
+          for(ctxOpt <- mutator.openDataset(user)(commands.datasetName, checkHash(idx, schemaHash, _))) yield {
             val ctx = ctxOpt.getOrElse { throw NoSuchDataset(commands.datasetName)(idx) }
-            checkHash(idx, ctx)
             doProcess(ctx)
           }
         case CreateDatasetMutation(idx, localeName) =>
           for(ctxOpt <- u.datasetMutator.createDataset(user)(commands.datasetName, "t", localeName)) yield {
             val ctx = ctxOpt.getOrElse { throw DatasetAlreadyExists(commands.datasetName)(idx) }
-            checkHash(idx, ctx)
             for((col, typ) <- systemSchema) {
               val ci = ctx.addColumn(col, typ, physicalColumnBaseBase(col, systemColumn = true))
               if(col == systemIdColumnName) {
@@ -319,12 +320,12 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
             }
             doProcess(ctx)
           }
-        case CreateWorkingCopyMutation(idx, copyData) =>
-          mutator.createCopy(user)(commands.datasetName, copyData = copyData).map(process(idx, commands.datasetName, mutator))
-        case PublishWorkingCopyMutation(idx, keepingSnapshotCount) =>
-          mutator.publishCopy(user)(commands.datasetName, keepingSnapshotCount).map(process(idx, commands.datasetName, mutator))
-        case DropWorkingCopyMutation(idx) =>
-          mutator.dropCopy(user)(commands.datasetName).map {
+        case CreateWorkingCopyMutation(idx, copyData, schemaHash) =>
+          mutator.createCopy(user)(commands.datasetName, copyData = copyData, checkHash(idx, schemaHash, _)).map(process(idx, commands.datasetName, mutator))
+        case PublishWorkingCopyMutation(idx, keepingSnapshotCount, schemaHash) =>
+          mutator.publishCopy(user)(commands.datasetName, keepingSnapshotCount, checkHash(idx, schemaHash, _)).map(process(idx, commands.datasetName, mutator))
+        case DropWorkingCopyMutation(idx, schemaHash) =>
+          mutator.dropCopy(user)(commands.datasetName, checkHash(idx, schemaHash, _)).map {
             case cc: mutator.CopyContext =>
               process(idx, commands.datasetName, mutator)(cc)
             case mutator.InitialWorkingCopy =>
