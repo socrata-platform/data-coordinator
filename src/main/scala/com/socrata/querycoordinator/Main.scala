@@ -4,16 +4,31 @@ import com.typesafe.config.ConfigFactory
 import org.apache.log4j.PropertyConfigurator
 import com.rojoma.simplearm.util._
 
-import com.socrata.util.config.Propertizer
+import com.socrata.thirdparty.typesafeconfig.Propertizer
 import com.netflix.curator.framework.CuratorFrameworkFactory
 import com.netflix.curator.retry
 import com.netflix.curator.x.discovery.ServiceDiscoveryBuilder
+import com.netflix.curator.x.discovery.strategies
 import com.socrata.http.server.curator.CuratorBroker
 import com.socrata.http.server.SocrataServerJetty
+import com.ning.http.client.{AsyncHttpClient, AsyncHttpClientConfig}
+import com.ning.http.client.providers.grizzly.{GrizzlyAsyncHttpProvider, GrizzlyAsyncHttpProviderConfig}
+import com.socrata.soql.types.SoQLAnalysisType
+import com.socrata.soql.{AnalysisSerializer, SoQLAnalyzer}
+import com.socrata.soql.functions.{SoQLFunctionInfo, SoQLTypeInfo}
+import com.google.protobuf.CodedOutputStream
 
 final abstract class Main
 
+object evidences {
+  implicit def httpResource[A <: dispatch.Http] = new com.rojoma.simplearm.Resource[A] {
+    def close(a: A) { a.shutdown() }
+  }
+}
+
 object Main extends App {
+  import evidences._
+
   val config = try {
     new QueryCoordinatorConfig(ConfigFactory.load().getConfig("com.socrata.query-coordinator"))
   } catch {
@@ -26,7 +41,17 @@ object Main extends App {
 
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Main])
 
+  val analyzer = new SoQLAnalyzer(SoQLTypeInfo, SoQLFunctionInfo)
+  def typeSerializer(out: CodedOutputStream, typ: SoQLAnalysisType) {
+    out.writeStringNoTag(typ.canonical.name.name)
+  }
+  val analysisSerializer = new AnalysisSerializer[SoQLAnalysisType](typeSerializer)
+
   for {
+    dispatchHttp <- managed(dispatch.Http)
+    http <- managed(dispatchHttp.configure { builder =>
+      builder.setMaxRequestRetry(0)
+    })
     curator <- managed(CuratorFrameworkFactory.builder.
       connectString(config.curator.ensemble).
       sessionTimeoutMs(config.curator.sessionTimeout.toMillis.toInt).
@@ -40,11 +65,27 @@ object Main extends App {
       client(curator).
       basePath(config.advertisement.basePath).
       build())
+    dataCoordinatorProviderProvider <- managed(new ServiceProviderProvider(
+      discovery,
+      new strategies.RoundRobinStrategy,
+      "data-coordinator"))
   } {
     curator.start()
     discovery.start()
+
+    val handler = new Service(
+      http,
+      dataCoordinatorProviderProvider,
+      config.schemaTimeout,
+      config.initialResponseTimeout,
+      config.responseDataTimeout,
+      analyzer,
+      analysisSerializer,
+      (_, _) => (),
+      _ => None)
+
     val serv = new SocrataServerJetty(
-      handler = new Service,
+      handler = handler,
       port = config.network.port,
       broker = new CuratorBroker(discovery, config.advertisement.address, config.advertisement.name)
     )
