@@ -5,7 +5,6 @@ import scala.{collection => sc}
 
 import java.io.Closeable
 import com.socrata.datacoordinator.util.collection.ColumnIdSet
-import com.socrata.datacoordinator.util.RowIdProvider
 import com.rojoma.json.ast.{JObject, JString, JValue}
 import com.rojoma.json.codec.JsonCodec
 
