@@ -4,9 +4,10 @@ import com.rojoma.simplearm.Managed
 
 import com.socrata.soql.environment.ColumnName
 import com.socrata.datacoordinator.truth.universe.{DatasetMutatorProvider, Universe}
+import com.socrata.datacoordinator.id.DatasetId
 
 class PrimaryKeySetter[CT](universe: Managed[Universe[CT, _] with DatasetMutatorProvider]) extends ExistingDatasetMutator {
-  def makePrimaryKey(dataset: String, column: ColumnName, username: String) {
+  def makePrimaryKey(dataset: DatasetId, column: ColumnName, username: String) {
     finish(dataset) {
       for {
         u <- universe

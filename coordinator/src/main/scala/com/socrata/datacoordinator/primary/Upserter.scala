@@ -7,9 +7,10 @@ import com.socrata.datacoordinator.truth.loader.Report
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.universe.{DatasetMutatorProvider, Universe}
+import com.socrata.datacoordinator.id.DatasetId
 
 class Upserter[CT, CV](universe: Managed[Universe[CT, CV] with DatasetMutatorProvider]) extends ExistingDatasetMutator {
-  def upsert(dataset: String, username: String)(inputGenerator: ColumnIdMap[ColumnInfo[CT]] => Iterator[Either[CV, Row[CV]]]): Report[CV] =
+  def upsert(dataset: DatasetId, username: String)(inputGenerator: ColumnIdMap[ColumnInfo[CT]] => Iterator[Either[CV, Row[CV]]]): Report[CV] =
     finish(dataset) {
       for {
         u <- universe

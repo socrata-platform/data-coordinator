@@ -6,7 +6,7 @@ import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
-import com.socrata.datacoordinator.id.ColumnId
+import com.socrata.datacoordinator.id.{DatasetId, ColumnId}
 import java.sql.Connection
 import com.rojoma.simplearm.SimpleArm
 import com.socrata.datacoordinator.truth.loader.sql.RepBasedDatasetExtractor
@@ -22,10 +22,9 @@ class PostgresDatabaseReader[CT, CV](conn: Connection,
   private class S(conn: Connection) extends ReadContext {
     val datasetMap = PostgresDatabaseReader.this.datasetMap
 
-    def loadDataset(datasetName: String, copySelector: CopySelector): Option[DatasetCopyContext[CT]] = {
+    def loadDataset(datasetId: DatasetId, copySelector: CopySelector): Option[DatasetCopyContext[CT]] = {
       val map = datasetMap
       for {
-        datasetId <- map.datasetId(datasetName)
         datasetInfo <- map.datasetInfo(datasetId)
         copyInfo <- copySelector match {
           case LatestCopy => Some(map.latest(datasetInfo))

@@ -27,10 +27,8 @@ trait DatasetMapWriter[CT] extends DatasetMapBase[CT] with `-impl`.BaseDatasetMa
 
   /** Creates a new dataset in the truthstore.
     * @note Does not actually create any tables; this just updates the bookkeeping.
-    * @note `datasetId` needs to be globally unique; if you have namespacing do it yourself.
-    * @throws DatasetAlreadyExistsException if `datasetId` is already in use.
     * @return A `CopyInfo` that refers to an unpublished copy. */
-  def create(datasetId: String, tableBaseBase: String, localeName: String): CopyInfo
+  def create(tableBaseBase: String, localeName: String): CopyInfo
 
   /** Ensures that an "unpublished" table exists, creating it if necessary.
     * @note Does not copy the actual tables; this just updates the bookkeeping.
@@ -56,11 +54,9 @@ trait DatasetMapWriter[CT] extends DatasetMapBase[CT] with `-impl`.BaseDatasetMa
 trait BackupDatasetMap[CT] extends DatasetMapWriter[CT] with `-impl`.BaseDatasetMapWriter[CT] {
   /** Creates a new dataset in the truthstore.
     * @note Does not actually create any tables; this just updates the bookkeeping.
-    * @note `datasetId` needs to be globally unique; if you have namespacing do it yourself.
-    * @throws DatasetAlreadyExistsException if `datasetId` is already in use.
     * @throws DatasetSystemIdAlreadyInUse if `systemId` is already in use.
     * @return A `CopyInfo` that refers to an unpublished copy with system id `systemId`. */
-  def createWithId(systemId: DatasetId, datasetId: String, tableBaseBase: String, initialCopySystemId: CopyId, localeName: String, obfuscationKey: Array[Byte]): CopyInfo
+  def createWithId(systemId: DatasetId, tableBaseBase: String, initialCopySystemId: CopyId, localeName: String, obfuscationKey: Array[Byte]): CopyInfo
 
   /** Ensures that an "unpublished" table exists, creating it if necessary.
     * @note Does not copy the actual tables; this just updates the bookkeeping.
@@ -86,7 +82,6 @@ trait BackupDatasetMap[CT] extends DatasetMapWriter[CT] with `-impl`.BaseDataset
     * @note Using this carelessly can get you into trouble.  In particular, this
     *       newly created dataset will have NO copies attached. */
   def unsafeCreateDataset(systemId: DatasetId,
-                          datasetId: String,
                           tableBaseBase: String,
                           nextCounterValue: Long,
                           localeName: String,
@@ -96,7 +91,6 @@ trait BackupDatasetMap[CT] extends DatasetMapWriter[CT] with `-impl`.BaseDataset
     * @note Using this carelessly can get you into trouble.  It is intended to be used
     *       for resyncing only.  The resulting dataset object will have NO copies. */
   def unsafeReloadDataset(datasetInfo: DatasetInfo,
-                          datasetId: String,
                           tableBaseBase: String,
                           nextCounterValue: Long,
                           localeName: String,

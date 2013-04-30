@@ -8,7 +8,6 @@ import com.rojoma.json.ast.{JString, JValue}
 
 trait DatasetInfoLike extends Product {
   val systemId: DatasetId
-  val datasetName: String
   val tableBaseBase: String
   val nextCounterValue: Long
   val localeName: String
@@ -19,13 +18,12 @@ trait DatasetInfoLike extends Product {
 }
 
 case class UnanchoredDatasetInfo(@JsonKey("sid") systemId: DatasetId,
-                                 @JsonKey("name") datasetName: String,
                                  @JsonKey("tbase") tableBaseBase: String,
                                  @JsonKey("ctr") nextCounterValue: Long,
                                  @JsonKey("locale") localeName: String,
                                  @JsonKey("obfkey") obfuscationKey: Array[Byte]) extends DatasetInfoLike
 
-object UnanchoredDatasetInfo extends ((DatasetId, String, String, Long, String, Array[Byte]) => UnanchoredDatasetInfo) {
+object UnanchoredDatasetInfo extends ((DatasetId, String, Long, String, Array[Byte]) => UnanchoredDatasetInfo) {
   override def toString = "DatasetInfo"
   private implicit val byteCodec = new JsonCodec[Array[Byte]] {
     def encode(x: Array[Byte]): JValue =
@@ -46,13 +44,12 @@ object UnanchoredDatasetInfo extends ((DatasetId, String, String, Long, String, 
   * or [[com.socrata.datacoordinator.truth.metadata.DatasetMapWriter]].
   * @param tag Guard against a non-map accidentially instantiating this.
   */
-case class DatasetInfo(systemId: DatasetId, datasetName: String, tableBaseBase: String, nextCounterValue: Long, localeName: String, obfuscationKey: Array[Byte])(implicit tag: com.socrata.datacoordinator.truth.metadata.`-impl`.Tag) extends DatasetInfoLike {
-  def unanchored: UnanchoredDatasetInfo = UnanchoredDatasetInfo(systemId, datasetName, tableBaseBase, nextCounterValue, localeName, obfuscationKey)
+case class DatasetInfo(systemId: DatasetId, tableBaseBase: String, nextCounterValue: Long, localeName: String, obfuscationKey: Array[Byte])(implicit tag: com.socrata.datacoordinator.truth.metadata.`-impl`.Tag) extends DatasetInfoLike {
+  def unanchored: UnanchoredDatasetInfo = UnanchoredDatasetInfo(systemId, tableBaseBase, nextCounterValue, localeName, obfuscationKey)
 
   override def equals(o: Any) = o match {
     case that: DatasetInfo =>
       this.systemId == that.systemId &&
-        this.datasetName == that.datasetName &&
         this.tableBaseBase == that.tableBaseBase &&
         this.nextCounterValue == that.nextCounterValue &&
         this.localeName == that.localeName &&

@@ -29,7 +29,6 @@ object ChicagoCrimesLoadScript extends App {
   // "lof9afw3"
     "blist"
 
-  val datasetName =  args.lift(1).getOrElse("crimes")
   val inputFile = args.lift(2).getOrElse("/home/robertm/chicagocrime.csv")
 
   val ds = new PGSimpleDataSource
@@ -70,8 +69,8 @@ object ChicagoCrimesLoadScript extends App {
 
     val user = "robertm"
 
-    try { datasetCreator.createDataset(datasetName, user, "en_US") }
-    catch { case _: DatasetAlreadyExistsException => /* pass */ }
+    val datasetId = datasetCreator.createDataset(user, "en_US")
+    println("Created " + datasetId)
     using(CSVIterator.fromFile(new File(inputFile))) { it =>
       val NumberT = common.typeContext.typeNamespace.typeForUserType(TypeName("number")).get
       val TextT = common.typeContext.typeNamespace.typeForUserType(TypeName("text")).get
@@ -103,10 +102,10 @@ object ChicagoCrimesLoadScript extends App {
         ColumnName("location") -> LocationT
       )
       val headers = it.next().map { t => ColumnName(IdentifierFilter(t)) }
-      val schema = columnAdder.addToSchema(datasetName, headers.map { x => x -> types(x) }.toMap, user)
-      primaryKeySetter.makePrimaryKey(datasetName, ColumnName("id"), user)
+      val schema = columnAdder.addToSchema(datasetId, headers.map { x => x -> types(x) }.toMap, user)
+      primaryKeySetter.makePrimaryKey(datasetId, ColumnName("id"), user)
       val start = System.nanoTime()
-      upserter.upsert(datasetName, user) { _ =>
+      upserter.upsert(datasetId, user) { _ =>
         val plan = rowDecodePlan(schema, headers, SoQLRep.csvRep)
         it.map { row =>
           val result = plan(row)
@@ -116,15 +115,15 @@ object ChicagoCrimesLoadScript extends App {
       }
       val end = System.nanoTime()
       println(s"Upsert took ${(end - start) / 1000000L}ms")
-      publisher.publish(datasetName, None, user)
-      workingCopyCreator.copyDataset(datasetName, user, copyData = true)
+      publisher.publish(datasetId, None, user)
+      workingCopyCreator.copyDataset(datasetId, user, copyData = true)
       val ci = for {
         u <- common.universe
-        u.datasetMutator.CopyOperationComplete(ctx) <- u.datasetMutator.dropCopy(user)(datasetName, _ => ())
+        u.datasetMutator.CopyOperationComplete(ctx) <- u.datasetMutator.dropCopy(user)(datasetId, _ => ())
       } yield {
         ctx.copyInfo.unanchored
       }
-      workingCopyCreator.copyDataset(datasetName, user, copyData = true)
+      workingCopyCreator.copyDataset(datasetId, user, copyData = true)
       println(ci)
     }
   } finally {

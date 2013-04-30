@@ -4,9 +4,10 @@ import com.rojoma.simplearm.Managed
 
 import com.socrata.datacoordinator.truth.metadata.UnanchoredCopyInfo
 import com.socrata.datacoordinator.truth.universe.{Universe, DatasetMutatorProvider}
+import com.socrata.datacoordinator.id.DatasetId
 
 class Publisher(universe: Managed[Universe[_, _] with DatasetMutatorProvider]) extends ExistingDatasetMutator {
-  def publish(dataset: String, snapshotsToKeep: Option[Int], username: String): UnanchoredCopyInfo = {
+  def publish(dataset: DatasetId, snapshotsToKeep: Option[Int], username: String): UnanchoredCopyInfo = {
     finish(dataset) {
       for {
         u <- universe

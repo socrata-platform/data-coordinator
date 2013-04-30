@@ -6,9 +6,6 @@ import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.soql.environment.ColumnName
 
 trait BaseDatasetMapReader[CT] {
-  /** Looks up a dataset record by its ID. */
-  def datasetId(datasetId: String): Option[DatasetId]
-
   /** Gets the newest copy, no matter what the lifecycle stage is. */
   def latest(datasetInfo: DatasetInfo): CopyInfo
 

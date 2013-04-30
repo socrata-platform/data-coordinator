@@ -4,9 +4,10 @@ import com.rojoma.simplearm.Managed
 
 import com.socrata.datacoordinator.truth.metadata.UnanchoredCopyInfo
 import com.socrata.datacoordinator.truth.universe.{DatasetMutatorProvider, Universe}
+import com.socrata.datacoordinator.id.DatasetId
 
 class WorkingCopyCreator(universe: Managed[Universe[_, _] with DatasetMutatorProvider]) extends ExistingDatasetMutator {
-  def copyDataset(dataset: String, username: String, copyData: Boolean): UnanchoredCopyInfo = {
+  def copyDataset(dataset: DatasetId, username: String, copyData: Boolean): UnanchoredCopyInfo = {
     finish(dataset) {
       for {
         u <- universe

@@ -29,7 +29,7 @@ class PlaybackToSecondary[CT, CV](conn: Connection, secondaryManifest: Secondary
   def apply(datasetId: DatasetId, secondary: NamedSecondary[CT, CV], datasetMapReader: DatasetMapReader[CT], delogger: Delogger[CV]) {
     datasetMapReader.datasetInfo(datasetId) match {
       case Some(datasetInfo) =>
-        log.info("Found dataset " + datasetInfo.datasetName + " in truth")
+        log.info("Found dataset " + datasetInfo.systemId + " in truth")
         try {
           if(secondary.store.wantsWorkingCopies) {
             log.info("Secondary store wants working copies")

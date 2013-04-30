@@ -14,7 +14,6 @@ object DatabasePopulator {
     TemplateReplacer(
       load("metadata.tmpl.sql"),
       Map(
-        "dataset_id_len" -> maximumDatasetIdLength.toString,
         "user_uid_len" -> maximumUserIdLength.toString,
         "logical_name_len" -> maximumLogicalColumnNameLength.toString,
         "physcol_base_len" -> maximumPhysicalColumnBaseLength.toString,
@@ -42,8 +41,7 @@ object DatabasePopulator {
   }
 }
 
-case class DatasetMapLimits(maximumDatasetIdLength: Int = 40,
-                            maximumUserIdLength: Int = 40,
+case class DatasetMapLimits(maximumUserIdLength: Int = 40,
                             maximumLogicalColumnNameLength: Int = 40,
                             maximumPhysicalColumnBaseLength: Int = 40,
                             maximumPhysicalTableBaseLength: Int = 40,

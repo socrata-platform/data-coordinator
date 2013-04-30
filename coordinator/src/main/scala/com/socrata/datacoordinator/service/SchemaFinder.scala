@@ -7,13 +7,13 @@ import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.util.RotateSchema
 import com.socrata.soql.environment.TypeName
+import com.socrata.datacoordinator.id.DatasetId
 
 class SchemaFinder[CT, CV](universe: Managed[Universe[CT, CV] with DatasetMapReaderProvider], typeSerializer: CT => TypeName) {
-  def getSchema(datasetName: String): Option[Schema] =
+  def getSchema(datasetId: DatasetId): Option[Schema] =
     for {
       u <- universe
-      dsid <- u.datasetMapReader.datasetId(datasetName)
-      dsInfo <- u.datasetMapReader.datasetInfo(dsid)
+      dsInfo <- u.datasetMapReader.datasetInfo(datasetId)
     } yield {
       val schema = u.datasetMapReader.schema(u.datasetMapReader.latest(dsInfo))
       getSchema(schema)
