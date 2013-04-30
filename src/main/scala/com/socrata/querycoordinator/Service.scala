@@ -15,18 +15,21 @@ import com.socrata.thirdparty.asynchttpclient.{FAsyncHandler, BodyHandler}
 import com.socrata.soql.environment.DatasetContext
 import com.socrata.soql.types.SoQLAnalysisType
 import com.socrata.soql.{SoQLAnalysis, SoQLAnalyzer}
-import com.socrata.soql.exceptions.{TypecheckException, NoSuchColumn, DuplicateAlias, SoQLException}
+import com.socrata.soql.exceptions._
 import com.socrata.soql.collection.OrderedMap
 import com.netflix.curator.x.discovery.ServiceInstance
 import scala.util.control.ControlThrowable
 import com.rojoma.json.io.{CompactJsonWriter, JsonReaderException, JsonReader}
 import com.rojoma.json.codec.JsonCodec
-import com.rojoma.json.ast.{JValue, JString, JObject}
+import com.rojoma.json.ast.{JNumber, JValue, JString, JObject}
 import scala.annotation.unchecked.uncheckedVariance
 import javax.activation.{MimeTypeParseException, MimeType}
 import java.util.concurrent.atomic.{AtomicBoolean, AtomicLong}
 import scala.annotation.tailrec
 import java.nio.charset.{UnsupportedCharsetException, Charset}
+import com.socrata.soql.exceptions.NoSuchColumn
+import com.socrata.soql.exceptions.DuplicateAlias
+import com.socrata.soql.SoQLAnalysis
 
 sealed abstract class TimedFutureResult[+T]
 case object FutureTimedOut extends TimedFutureResult[Nothing]
@@ -75,9 +78,64 @@ class Service(http: Http,
 {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
 
-  def soqlErrorResponse(e: SoQLException): HttpResponse = {
-    BadRequest
+  // FIXME: don't use this internal rojoma-json API.
+  def soqlErrorCode(e: SoQLException) =
+    "query.soql." + com.rojoma.`json-impl`.util.CamelSplit(e.getClass.getSimpleName).map(_.toLowerCase).mkString("-")
+
+  def soqlErrorData(e: SoQLException): Map[String, JValue] = e match {
+    case AggregateInUngroupedContext(func, clause, _) =>
+      Map(
+        "function" -> JString(func.name),
+        "clause" -> JString(clause))
+    case ColumnNotInGroupBys(column, _) =>
+      Map("column" -> JString(column.name))
+    case RepeatedException(column, _) =>
+      Map("column" -> JString(column.name))
+    case DuplicateAlias(name, _) =>
+      Map("name" -> JString(name.name))
+    case NoSuchColumn(column, _) =>
+      Map("column" -> JString(column.name))
+    case CircularAliasDefinition(name, _) =>
+      Map("name" -> JString(name.name))
+    case UnexpectedEscape(c, _) =>
+      Map("character" -> JString(c.toString))
+    case BadUnicodeEscapeCharacter(c, _) =>
+      Map("character" -> JString(c.toString))
+    case UnicodeCharacterOutOfRange(x, _) =>
+      Map("number" -> JNumber(x))
+    case UnexpectedCharacter(c, _) =>
+      Map("character" -> JString(c.toString))
+    case UnexpectedEOF(_) =>
+      Map.empty
+    case UnterminatedString(_) =>
+      Map.empty
+    case BadParse(msg, _) =>
+      // TODO: this needs to be machine-readable
+      Map("message" -> JString(msg))
+    case NoSuchFunction(name, arity, _) =>
+      Map(
+        "function" -> JString(name.name),
+        "arity" -> JNumber(arity))
+    case TypeMismatch(name, actual, _) =>
+      Map(
+        "function" -> JString(name.name),
+        "type" -> JString(actual.name))
+    case AmbiguousCall(name, _) =>
+      Map("function" -> JString(name.name))
   }
+
+  def soqlErrorResponse(dataset: String, e: SoQLException): HttpResponse = BadRequest ~> errContent(
+    soqlErrorCode(e),
+    "data" -> JObject(soqlErrorData(e) ++ Map(
+      "dataset" -> JString(dataset),
+      "position" -> JObject(Map(
+        "row" -> JNumber(e.position.line),
+        "column" -> JNumber(e.position.column),
+        "line" -> JString(e.position.longString)
+      ))
+    ))
+  )
+
 
   case class FinishRequest(response: HttpResponse) extends ControlThrowable
   def finishRequest(response: HttpResponse): Nothing = throw new FinishRequest(response)
@@ -127,7 +185,7 @@ class Service(http: Http,
       case FutureCompleted(response) if response.getStatusCode == HttpServletResponse.SC_NOT_FOUND =>
         None
       case FutureCompleted(response) =>
-        log.error("Unexpected response code {} from request for schema of dataset {} from {}", response.getStatusCode.asInstanceOf[AnyRef], dataset, secondary.buildUriSpec)
+        log.error("Unexpected response code {} from request for schema of dataset {} from {}", response.getStatusCode.asInstanceOf[AnyRef], dataset.asInstanceOf[AnyRef], secondary.buildUriSpec)
         finishRequest(internalServerError)
       case FutureTimedOut =>
         future.cancel(true)
@@ -336,7 +394,7 @@ class Service(http: Http,
           case (_: DuplicateAlias | _: NoSuchColumn | _: TypecheckException) if !isFresh =>
             None
           case e: SoQLException =>
-            finishRequest(soqlErrorResponse(e))
+            finishRequest(soqlErrorResponse(dataset, e))
         }) match {
           case Some(analysis) =>
             val lastDataReceived = new AtomicLong(System.nanoTime())
