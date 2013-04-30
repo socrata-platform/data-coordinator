@@ -8,14 +8,14 @@ import java.sql.Connection
 
 import com.rojoma.simplearm.util._
 
-import com.socrata.datacoordinator.util.{RowIdProvider, Counter}
+import com.socrata.datacoordinator.util.{RowDataProvider, Counter}
 import com.socrata.datacoordinator.id.RowId
 
 class StupidSqlLoader[CT, CV](val connection: Connection,
                               val rowPreparer: RowPreparer[CV],
                               val sqlizer: DataSqlizer[CT, CV],
                               val dataLogger: DataLogger[CV],
-                              val idProvider: RowIdProvider)
+                              val idProvider: RowDataProvider)
   extends Loader[CV]
 {
   val datasetContext = sqlizer.datasetContext
@@ -49,7 +49,7 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
                 dataLogger.update(sid, updateRow)
                 updated.put(job, id)
               case None =>
-                val sid = idProvider.allocate()
+                val sid = idProvider.allocateId()
                 val row = rowPreparer.prepareForInsert(unpreparedRow, sid)
                 val result = sqlizer.insertBatch(connection) { inserter =>
                   inserter.insert(row)
@@ -73,7 +73,7 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
                 errors.put(job, NoSuchRowToUpdate(typeContext.makeValueFromSystemId(id)))
             }
           case None =>
-            val sid = idProvider.allocate()
+            val sid = idProvider.allocateId()
             val row = rowPreparer.prepareForInsert(unpreparedRow, sid)
             val result = sqlizer.insertBatch(connection) { inserter =>
               inserter.insert(row)

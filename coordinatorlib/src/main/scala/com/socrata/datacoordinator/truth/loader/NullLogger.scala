@@ -33,7 +33,7 @@ class NullLogger[CT, CV] extends Logger[CT, CV] {
 
   def delete(systemID: RowId) {}
 
-  def rowIdCounterUpdated(nextRowId: RowId) {}
+  def counterUpdated(nextCtr: Long) {}
 
   def close() {}
 

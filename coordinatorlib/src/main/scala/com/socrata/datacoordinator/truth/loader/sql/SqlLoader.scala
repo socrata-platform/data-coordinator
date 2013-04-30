@@ -21,7 +21,7 @@ abstract class SqlLoader[CT, CV](val connection: Connection,
                                  val rowPreparer: RowPreparer[CV],
                                  val sqlizer: DataSqlizer[CT, CV],
                                  val dataLogger: DataLogger[CV],
-                                 val idProvider: RowIdProvider,
+                                 val idProvider: RowDataProvider,
                                  val executor: Executor,
                                  val timingReport: TransferrableContextTimingReport)
   extends Loader[CV]
@@ -70,7 +70,7 @@ abstract class SqlLoader[CT, CV](val connection: Connection,
 }
 
 object SqlLoader {
-  def apply[CT, CV](connection: Connection, preparer: RowPreparer[CV], sqlizer: DataSqlizer[CT, CV], dataLogger: DataLogger[CV], idProvider: RowIdProvider, executor: Executor, timingReport: TransferrableContextTimingReport): SqlLoader[CT,CV] = {
+  def apply[CT, CV](connection: Connection, preparer: RowPreparer[CV], sqlizer: DataSqlizer[CT, CV], dataLogger: DataLogger[CV], idProvider: RowDataProvider, executor: Executor, timingReport: TransferrableContextTimingReport): SqlLoader[CT,CV] = {
     if(sqlizer.datasetContext.hasUserPrimaryKey)
       new UserPKSqlLoader(connection, preparer, sqlizer, dataLogger, idProvider, executor, timingReport)
     else

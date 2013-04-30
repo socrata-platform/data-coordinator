@@ -12,7 +12,7 @@ import org.scalatest.matchers.MustMatchers
 import org.scalatest.prop.PropertyChecks
 import com.rojoma.simplearm.util._
 
-import com.socrata.datacoordinator.util.{RowIdProvider, NoopTimingReport}
+import com.socrata.datacoordinator.util.{RowDataProvider, NoopTimingReport}
 import com.socrata.datacoordinator.id.{RowId, ColumnId}
 import com.socrata.datacoordinator.util.collection.{ColumnIdSet, MutableColumnIdMap, ColumnIdMap}
 
@@ -23,7 +23,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     executor.shutdownNow()
   }
 
-  def idProvider(initial: Int) = new RowIdProvider(new RowId(initial))
+  def idProvider(initial: Long) = new RowDataProvider(initial)
 
   def withDB[T]()(f: Connection => T): T = {
     using(DriverManager.getConnection("jdbc:h2:mem:")) { conn =>
@@ -164,7 +164,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       }
       conn.commit()
 
-      ids.finish() must be (new RowId(16))
+      ids.finish() must be (16L)
 
       query(conn, rawSelect) must equal (Seq(Map(idColName -> 15L, numName -> 2L, strName -> "b")))
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq(
@@ -258,7 +258,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       }
       conn.commit()
 
-      ids.finish() must be (new RowId(13))
+      ids.finish() must be (13L)
 
       query(conn, rawSelect) must equal (Seq(
         Map(idColName -> 7L, numName -> 44L, strName -> "q")
@@ -294,7 +294,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       }
       conn.commit()
 
-      ids.finish() must equal (new RowId(16))
+      ids.finish() must equal (16L)
 
       query(conn, rawSelect) must equal (Seq(
         Map(idColName -> 15L, numName -> 1L, strName -> "a")
@@ -330,7 +330,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       }
       conn.commit()
 
-      ids.finish() must equal (new RowId(22))
+      ids.finish() must equal (22L)
 
       query(conn, rawSelect) must equal (Seq.empty)
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq.empty)
@@ -362,7 +362,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       }
       conn.commit()
 
-      ids.finish() must equal (new RowId(22))
+      ids.finish() must equal (22L)
 
       query(conn, rawSelect) must equal (Seq.empty)
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq.empty)
@@ -396,7 +396,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       }
       conn.commit()
 
-      ids.finish() must be (new RowId(13))
+      ids.finish() must be (13L)
 
       query(conn, rawSelect) must equal (Seq(
         Map(idColName -> 7L, numName -> 44L, strName -> "q")
@@ -433,7 +433,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       }
       conn.commit()
 
-      ids.finish() must be (new RowId(16))
+      ids.finish() must be (16L)
 
       query(conn, rawSelect) must equal (Seq(
         Map(idColName -> 15L, numName -> 2L, strName -> "q")
@@ -469,7 +469,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       }
       conn.commit()
 
-      ids.finish() must be (new RowId(16))
+      ids.finish() must be (16L)
 
       query(conn, rawSelect) must equal (Seq(
         Map(idColName -> 15L, numName -> 1L, strName -> "q")
@@ -506,7 +506,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       }
       conn.commit()
 
-      ids.finish() must be (new RowId(15)) // and it never even allocated a sid for it
+      ids.finish() must be (15L) // and it never even allocated a sid for it
 
       query(conn, rawSelect) must equal (Seq.empty)
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq.empty)
@@ -541,7 +541,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       }
       conn.commit()
 
-      ids.finish() must be (new RowId(16))
+      ids.finish() must be (16L)
 
       query(conn, rawSelect) must equal (Seq.empty)
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq.empty)

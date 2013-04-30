@@ -46,7 +46,7 @@ class TestDataLogger(conn: Connection, logTableName: String) extends DataLogger[
     list += JObject(Map("d" -> JNumber(systemID.underlying)))
   }
 
-  def rowIdCounterUpdated(nextRowId: RowId) {
+  def counterUpdated(nextCtr: Long) {
     sys.error("Shouldn't call this")
   }
 

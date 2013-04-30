@@ -190,13 +190,13 @@ class PostgresDatasetMapReader[CT](val conn: Connection, tns: TypeNamespace[CT],
   implicit def typeNamespace = tns
   def t = timingReport
 
-  def datasetInfoBySystemIdQuery = "SELECT system_id, dataset_name, table_base_base, next_row_id, locale_name, obfuscation_key FROM dataset_map WHERE system_id = ?"
+  def datasetInfoBySystemIdQuery = "SELECT system_id, dataset_name, table_base_base, next_counter_value, locale_name, obfuscation_key FROM dataset_map WHERE system_id = ?"
   def datasetInfo(datasetId: DatasetId) =
     using(conn.prepareStatement(datasetInfoBySystemIdQuery)) { stmt =>
       stmt.setLong(1, datasetId.underlying)
       using(t("lookup-dataset", "dataset_id" -> datasetId)(stmt.executeQuery())) { rs =>
         if(rs.next()) {
-          Some(DatasetInfo(new DatasetId(rs.getLong("system_id")), rs.getString("dataset_name"), rs.getString("table_base_base"), new RowId(rs.getLong("next_row_id")), rs.getString("locale_name"), rs.getBytes("obfuscation_key")))
+          Some(DatasetInfo(new DatasetId(rs.getLong("system_id")), rs.getString("dataset_name"), rs.getString("table_base_base"), rs.getLong("next_counter_value"), rs.getString("locale_name"), rs.getBytes("obfuscation_key")))
         } else {
           None
         }
@@ -206,16 +206,16 @@ class PostgresDatasetMapReader[CT](val conn: Connection, tns: TypeNamespace[CT],
 
 trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] with `-impl`.BaseDatasetMapWriter[CT] {
   val obfuscationKeyGenerator: () => Array[Byte]
-  val initialRowId: RowId
+  val initialCounterValue: Long
 
-  def createQuery_tableMap = "INSERT INTO dataset_map (dataset_name, table_base_base, next_row_id, locale_name, obfuscation_key) VALUES (?, ?, ?, ?, ?) RETURNING system_id"
+  def createQuery_tableMap = "INSERT INTO dataset_map (dataset_name, table_base_base, next_counter_value, locale_name, obfuscation_key) VALUES (?, ?, ?, ?, ?) RETURNING system_id"
   def createQuery_copyMap = "INSERT INTO copy_map (dataset_system_id, copy_number, lifecycle_stage, data_version) VALUES (?, ?, CAST(? AS dataset_lifecycle_stage), ?) RETURNING system_id"
   def create(datasetId: String, tableBaseBase: String, localeName: String): CopyInfo = {
     val datasetInfo = using(conn.prepareStatement(createQuery_tableMap)) { stmt =>
-      val datasetInfoNoSystemId = DatasetInfo(new DatasetId(-1), datasetId, tableBaseBase, initialRowId, localeName, obfuscationKeyGenerator())
+      val datasetInfoNoSystemId = DatasetInfo(new DatasetId(-1), datasetId, tableBaseBase, initialCounterValue, localeName, obfuscationKeyGenerator())
       stmt.setString(1, datasetInfoNoSystemId.datasetName)
       stmt.setString(2, datasetInfoNoSystemId.tableBaseBase)
-      stmt.setLong(3, datasetInfoNoSystemId.nextRowId.underlying)
+      stmt.setLong(3, datasetInfoNoSystemId.nextCounterValue)
       stmt.setString(4, datasetInfoNoSystemId.localeName)
       stmt.setBytes(5, datasetInfoNoSystemId.obfuscationKey)
       try {
@@ -247,7 +247,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
 
   def createQuery_copyMapWithSystemId = "INSERT INTO copy_map (system_id, dataset_system_id, copy_number, lifecycle_stage, data_version) VALUES (?, ?, ?, CAST(? AS dataset_lifecycle_stage), ?)"
   def createWithId(systemId: DatasetId, datasetId: String, tableBaseBase: String, initialCopyId: CopyId, localeName: String, obfuscationKey: Array[Byte]): CopyInfo = {
-    val datasetInfo = unsafeCreateDataset(systemId, datasetId, tableBaseBase, initialRowId, localeName, obfuscationKey)
+    val datasetInfo = unsafeCreateDataset(systemId, datasetId, tableBaseBase, initialCounterValue, localeName, obfuscationKey)
 
     using(conn.prepareStatement(createQuery_copyMapWithSystemId)) { stmt =>
       val copyInfo = CopyInfo(datasetInfo, initialCopyId, 1, LifecycleStage.Unpublished, 0)
@@ -382,15 +382,15 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
     }
   }
 
-  def unsafeCreateDatasetQuery = "INSERT INTO dataset_map (system_id, dataset_name, table_base_base, next_row_id, locale_name, obfuscation_key) VALUES (?, ?, ?, ?, ?, ?)"
-  def unsafeCreateDataset(systemId: DatasetId, datasetId: String, tableBaseBase: String, nextRowId: RowId, localeName: String, obfuscationKey: Array[Byte]): DatasetInfo = {
-    val datasetInfo = DatasetInfo(systemId, datasetId, tableBaseBase, nextRowId, localeName, obfuscationKey)
+  def unsafeCreateDatasetQuery = "INSERT INTO dataset_map (system_id, dataset_name, table_base_base, next_counter_value, locale_name, obfuscation_key) VALUES (?, ?, ?, ?, ?, ?)"
+  def unsafeCreateDataset(systemId: DatasetId, datasetId: String, tableBaseBase: String, nextCounterValue: Long, localeName: String, obfuscationKey: Array[Byte]): DatasetInfo = {
+    val datasetInfo = DatasetInfo(systemId, datasetId, tableBaseBase, nextCounterValue, localeName, obfuscationKey)
 
     using(conn.prepareStatement(unsafeCreateDatasetQuery)) { stmt =>
       stmt.setLong(1, datasetInfo.systemId.underlying)
       stmt.setString(2, datasetInfo.datasetName)
       stmt.setString(3, datasetInfo.tableBaseBase)
-      stmt.setLong(4, datasetInfo.nextRowId.underlying)
+      stmt.setLong(4, datasetInfo.nextCounterValue)
       stmt.setString(5, datasetInfo.localeName)
       stmt.setBytes(6, datasetInfo.obfuscationKey)
       try {
@@ -407,18 +407,18 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
     datasetInfo
   }
 
-  val unsafeReloadDatasetQuery = "UPDATE dataset_map SET dataset_name = ?, table_base_base = ?, next_row_id = ?, locale_name = ?, obfuscation_key = ? WHERE system_id = ?"
+  val unsafeReloadDatasetQuery = "UPDATE dataset_map SET dataset_name = ?, table_base_base = ?, next_counter_value = ?, locale_name = ?, obfuscation_key = ? WHERE system_id = ?"
   def unsafeReloadDataset(datasetInfo: DatasetInfo,
                           datasetId: String,
                           tableBaseBase: String,
-                          nextRowId: RowId,
+                          nextCounterValue: Long,
                           localeName: String,
                           obfuscationKey: Array[Byte]): DatasetInfo = {
-    val newDatasetInfo = DatasetInfo(datasetInfo.systemId, datasetId, tableBaseBase, nextRowId, localeName, obfuscationKey)
+    val newDatasetInfo = DatasetInfo(datasetInfo.systemId, datasetId, tableBaseBase, nextCounterValue, localeName, obfuscationKey)
     using(conn.prepareStatement(unsafeReloadDatasetQuery)) { stmt =>
       stmt.setString(1, newDatasetInfo.datasetName)
       stmt.setString(2, newDatasetInfo.tableBaseBase)
-      stmt.setLong(3, newDatasetInfo.nextRowId.underlying)
+      stmt.setLong(3, newDatasetInfo.nextCounterValue)
       stmt.setLong(4, newDatasetInfo.systemId.underlying)
       stmt.setString(5, newDatasetInfo.localeName)
       stmt.setBytes(6, newDatasetInfo.obfuscationKey)
@@ -526,23 +526,23 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
     columnInfo.copy(isUserPrimaryKey = false)
   }
 
-  def updateNextRowIdQuery = "UPDATE dataset_map SET next_row_id = ? WHERE system_id = ?"
-  def updateNextRowId(datasetInfo: DatasetInfo, newNextRowId: RowId): DatasetInfo = {
-    assert(newNextRowId.underlying >= datasetInfo.nextRowId.underlying)
-    if(newNextRowId != datasetInfo.nextRowId) {
-      using(conn.prepareStatement(updateNextRowIdQuery)) { stmt =>
-        stmt.setLong(1, newNextRowId.underlying)
+  def updateNextCounterValueQuery = "UPDATE dataset_map SET next_counter_value = ? WHERE system_id = ?"
+  def updateNextCounterValue(datasetInfo: DatasetInfo, newNextCounterValue: Long): DatasetInfo = {
+    assert(newNextCounterValue >= datasetInfo.nextCounterValue)
+    if(newNextCounterValue != datasetInfo.nextCounterValue) {
+      using(conn.prepareStatement(updateNextCounterValueQuery)) { stmt =>
+        stmt.setLong(1, newNextCounterValue)
         stmt.setLong(2, datasetInfo.systemId.underlying)
         t("update-next-row-id", "dataset_id" -> datasetInfo.systemId)(stmt.executeUpdate())
       }
-      datasetInfo.copy(nextRowId = newNextRowId)
+      datasetInfo.copy(nextCounterValue = newNextCounterValue)
     } else {
       datasetInfo
     }
   }
 
-  def updateNextRowId(copyInfo: CopyInfo, newNextRowId: RowId): CopyInfo =
-    copyInfo.copy(datasetInfo = updateNextRowId(copyInfo.datasetInfo, newNextRowId))
+  def updateNextCounterValue(copyInfo: CopyInfo, newNextCounterValue: Long): CopyInfo =
+    copyInfo.copy(datasetInfo = updateNextCounterValue(copyInfo.datasetInfo, newNextCounterValue))
 
   def updateDataVersionQuery = "UPDATE copy_map SET data_version = ? WHERE system_id = ?"
   def updateDataVersion(copyInfo: CopyInfo, newDataVersion: Long): CopyInfo = {
@@ -667,7 +667,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
   }
 }
 
-class PostgresDatasetMapWriter[CT](val conn: Connection, tns: TypeNamespace[CT], timingReport: TimingReport, val obfuscationKeyGenerator: () => Array[Byte], val initialRowId: RowId) extends DatasetMapWriter[CT] with BasePostgresDatasetMapWriter[CT] with BackupDatasetMap[CT] {
+class PostgresDatasetMapWriter[CT](val conn: Connection, tns: TypeNamespace[CT], timingReport: TimingReport, val obfuscationKeyGenerator: () => Array[Byte], val initialCounterValue: Long) extends DatasetMapWriter[CT] with BasePostgresDatasetMapWriter[CT] with BackupDatasetMap[CT] {
   implicit def typeNamespace = tns
   require(!conn.getAutoCommit, "Connection is in auto-commit mode")
 
@@ -682,7 +682,7 @@ class PostgresDatasetMapWriter[CT](val conn: Connection, tns: TypeNamespace[CT],
   def setTimeout(timeoutMs: Int) =
     s"SET LOCAL statement_timeout TO $timeoutMs"
   def datasetInfoBySystemIdQuery =
-    "SELECT system_id, dataset_name, table_base_base, next_row_id, locale_name, obfuscation_key FROM dataset_map WHERE system_id = ? FOR UPDATE"
+    "SELECT system_id, dataset_name, table_base_base, next_counter_value, locale_name, obfuscation_key FROM dataset_map WHERE system_id = ? FOR UPDATE"
   def resetTimeout = "SET LOCAL statement_timeout TO DEFAULT"
   def datasetInfo(datasetId: DatasetId, timeout: Duration) = {
     // For now we assume that we're the only one setting the statement_timeout
@@ -749,7 +749,7 @@ class PostgresDatasetMapWriter[CT](val conn: Connection, tns: TypeNamespace[CT],
   def getInfoResult(stmt: Statement) =
     using(stmt.getResultSet) { rs =>
       if(rs.next()) {
-        Some(DatasetInfo(new DatasetId(rs.getLong("system_id")), rs.getString("dataset_name"), rs.getString("table_base_base"), new RowId(rs.getLong("next_row_id")), rs.getString("locale_name"), rs.getBytes("obfuscation_key")))
+        Some(DatasetInfo(new DatasetId(rs.getLong("system_id")), rs.getString("dataset_name"), rs.getString("table_base_base"), rs.getLong("next_counter_value"), rs.getString("locale_name"), rs.getBytes("obfuscation_key")))
       } else {
         None
       }

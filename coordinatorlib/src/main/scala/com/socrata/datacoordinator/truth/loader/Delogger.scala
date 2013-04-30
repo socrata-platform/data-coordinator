@@ -56,8 +56,8 @@ object Delogger {
 
   case object WorkingCopyPublished extends LogEvent[Nothing] with LogEventCompanion
 
-  case class RowIdCounterUpdated(nextRowId: RowId) extends LogEvent[Nothing]
-  object RowIdCounterUpdated extends LogEventCompanion
+  case class CounterUpdated(nextCounter: Long) extends LogEvent[Nothing]
+  object CounterUpdated extends LogEventCompanion
 
   case object EndTransaction extends LogEvent[Nothing] with LogEventCompanion
 
@@ -98,7 +98,7 @@ object Delogger {
   val allLogEventCompanions: Set[LogEventCompanion] =
     Set(Truncated, ColumnCreated, ColumnRemoved, RowIdentifierSet, RowIdentifierCleared,
       SystemRowIdentifierChanged, WorkingCopyCreated, DataCopied, WorkingCopyPublished,
-      WorkingCopyDropped, SnapshotDropped, ColumnLogicalNameChanged, RowDataUpdated, RowIdCounterUpdated, EndTransaction)
+      WorkingCopyDropped, SnapshotDropped, ColumnLogicalNameChanged, RowDataUpdated, CounterUpdated, EndTransaction)
 
   // Note: the Delogger test checks that this is exhaustive.  It is not intended
   // to be used outside of this object and that test.
@@ -118,7 +118,7 @@ object Delogger {
         case SnapshotDropped => "SnapshotDropped"
         case ColumnLogicalNameChanged => "ColumnLogicalNameChanged"
         case RowDataUpdated => "RowDataUpdated"
-        case RowIdCounterUpdated => "RowIdCounterUpdated"
+        case CounterUpdated => "CounterUpdated"
         case EndTransaction => "EndTransaction"
       }
       acc + (n -> obj)

@@ -29,7 +29,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
     def userTypeForType(typ: TypeName): TypeName = typ
   }
-  val ZeroID = new RowId(0)
+  val ZeroID = 0L
 
   def populateDatabase(conn: Connection) {
     val sql = DatabasePopulator.metadataTablesCreate(DatasetMapLimits())

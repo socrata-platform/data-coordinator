@@ -238,10 +238,10 @@ class SqlLogger[CT, CV](connection: Connection,
     maybeFlushRowData()
   }
 
-  def rowIdCounterUpdated(nextRowId: RowId) {
+  def counterUpdated(nextCounter: Long) {
     checkTxn()
     flushRowData()
-    logLine(SqlLogger.RowIdCounterUpdated, nextRowId.underlying.toString)
+    logLine(SqlLogger.CounterUpdated, nextCounter.toString)
   }
 
   def close() {
@@ -258,7 +258,7 @@ object SqlLogger {
   // all of these must be at most 8 characters long and consist of
   // nothing but lower-case ASCII letters.
   val RowDataUpdated = "rowdata"
-  val RowIdCounterUpdated = "rowcnter"
+  val CounterUpdated = "cnterup"
 
   val Truncated = "truncate"
   val ColumnCreated = "colcreat"

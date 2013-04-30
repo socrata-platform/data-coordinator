@@ -2,7 +2,7 @@ package com.socrata.datacoordinator.common
 
 import com.socrata.datacoordinator.{Row, MutableRow}
 import com.socrata.datacoordinator.service.{SchemaFinder, MutatorCommon}
-import com.socrata.soql.types.{SoQLFixedTimestamp, SoQLID, SoQLValue, SoQLType}
+import com.socrata.soql.types._
 import com.socrata.soql.environment.{ColumnName, TypeName}
 import com.socrata.soql.brita.{AsciiIdentifierFilter, IdentifierFilter}
 import com.socrata.datacoordinator.common.soql.{SoQLRowLogCodec, SoQLRep, SoQLTypeContext}
@@ -14,12 +14,13 @@ import com.socrata.datacoordinator.truth.universe.sql.{PostgresUniverse, Postgre
 import org.joda.time.DateTime
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.loader.RowPreparer
-import com.socrata.datacoordinator.id.RowId
+import com.socrata.datacoordinator.id.{RowVersion, RowId}
 import java.sql.Connection
 import java.io.Reader
-import com.socrata.datacoordinator.util.TransferrableContextTimingReport
+import com.socrata.datacoordinator.util.{RowDataProvider, TransferrableContextTimingReport}
 import javax.sql.DataSource
 import com.rojoma.simplearm.{SimpleArm, Managed}
+import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 
 class SoQLCommon(dataSource: DataSource,
                  copyInProvider: (Connection, String, Reader) => Long,
@@ -36,10 +37,12 @@ class SoQLCommon(dataSource: DataSource,
     val id = ColumnName(":id")
     val createdAt = ColumnName(":created_at")
     val updatedAt = ColumnName(":updated_at")
+    val version = ColumnName(":version")
   }
 
   val systemSchema = Map(
     SystemColumnNames.id -> SoQLID,
+    SystemColumnNames.version -> SoQLVersion,
     SystemColumnNames.createdAt -> SoQLFixedTimestamp,
     SystemColumnNames.updatedAt -> SoQLFixedTimestamp
   )
@@ -47,7 +50,7 @@ class SoQLCommon(dataSource: DataSource,
 
   def obfuscationContextFor(key: Array[Byte]) = new RowIdObfuscator(key)
   def generateObfuscationKey() = RowIdObfuscator.generateKey()
-  val initialRowId = new RowId(0L)
+  val initialCounterValue = 0L
 
   val sqlRepFor = SoQLRep.sqlRep _
   val jsonRepFor = SoQLRep.jsonRep { di => obfuscationContextFor(di.obfuscationKey) }
@@ -88,7 +91,7 @@ class SoQLCommon(dataSource: DataSource,
     def isSystemColumn(ci: AbstractColumnInfoLike): Boolean =
       isSystemColumnName(ci.logicalName)
 
-    def rowPreparer(transactionStart: DateTime, schema: ColumnIdMap[AbstractColumnInfoLike]): RowPreparer[SoQLValue] =
+    def rowPreparer(transactionStart: DateTime, schema: ColumnIdMap[AbstractColumnInfoLike], idProvider: RowDataProvider): RowPreparer[SoQLValue] =
       new RowPreparer[SoQLValue] {
         def findCol(name: ColumnName) =
           schema.values.find(_.logicalName == name).getOrElse(sys.error(s"No $name column?")).systemId
@@ -96,12 +99,14 @@ class SoQLCommon(dataSource: DataSource,
         val idColumn = findCol(SystemColumnNames.id)
         val createdAtColumn = findCol(SystemColumnNames.createdAt)
         val updatedAtColumn = findCol(SystemColumnNames.updatedAt)
+        val versionColumn = findCol(SystemColumnNames.version)
 
         def prepareForInsert(row: Row[SoQLValue], sid: RowId) = {
           val tmp = new MutableRow(row)
           tmp(idColumn) = SoQLID(sid.underlying)
           tmp(createdAtColumn) = SoQLFixedTimestamp(transactionStart)
           tmp(updatedAtColumn) = SoQLFixedTimestamp(transactionStart)
+          tmp(versionColumn) = SoQLVersion(idProvider.allocateVersion().underlying)
           tmp.freeze()
         }
 
@@ -110,13 +115,14 @@ class SoQLCommon(dataSource: DataSource,
           tmp -= idColumn
           tmp -= createdAtColumn
           tmp(updatedAtColumn) = SoQLFixedTimestamp(transactionStart)
+          tmp(versionColumn) = SoQLVersion(idProvider.allocateVersion().underlying)
           tmp.freeze()
         }
       }
 
     val executor: ExecutorService = common.executorService
     val obfuscationKeyGenerator: () => Array[Byte] = common.generateObfuscationKey _
-    val initialRowId: RowId = common.initialRowId
+    val initialCounterValue: Long = common.initialCounterValue
     val tablespace: (String) => Option[String] = common.tableSpace
     val copyInProvider: (Connection, String, Reader) => Long = common.copyInProvider
     val timingReport = common.timingReport

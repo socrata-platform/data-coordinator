@@ -88,7 +88,7 @@ trait BackupDatasetMap[CT] extends DatasetMapWriter[CT] with `-impl`.BaseDataset
   def unsafeCreateDataset(systemId: DatasetId,
                           datasetId: String,
                           tableBaseBase: String,
-                          nextRowId: RowId,
+                          nextCounterValue: Long,
                           localeName: String,
                           obfuscationKey: Array[Byte]): DatasetInfo
 
@@ -98,7 +98,7 @@ trait BackupDatasetMap[CT] extends DatasetMapWriter[CT] with `-impl`.BaseDataset
   def unsafeReloadDataset(datasetInfo: DatasetInfo,
                           datasetId: String,
                           tableBaseBase: String,
-                          nextRowId: RowId,
+                          nextCounterValue: Long,
                           localeName: String,
                           obfuscationKey: Array[Byte]): DatasetInfo
 

@@ -34,7 +34,7 @@ trait LowLevelDatabaseMutator[CT, CV] {
     def logger(info: DatasetInfo): Logger[CT, CV]
     def schemaLoader(logger: Logger[CT, CV]): SchemaLoader[CT]
     def datasetContentsCopier(logger: Logger[CT, CV]): DatasetContentsCopier[CT]
-    def withDataLoader[A](copyCtx: DatasetCopyContext[CT], logger: Logger[CT, CV])(f: Loader[CV] => A): (Report[CV], RowId, A)
+    def withDataLoader[A](copyCtx: DatasetCopyContext[CT], logger: Logger[CT, CV])(f: Loader[CV] => A): (Report[CV], Long, A)
     def truncate(table: CopyInfo, logger: Logger[CT, CV])
 
     def globalLog: GlobalLog
@@ -285,13 +285,13 @@ object DatasetMutator {
         checkDoingRows()
         try {
           doingRows = true
-          val (report, nextRowId, _) = llCtx.withDataLoader(copyCtx.frozenCopy(), logger) { loader =>
+          val (report, nextCounterValue, _) = llCtx.withDataLoader(copyCtx.frozenCopy(), logger) { loader =>
             inputGenerator.foreach {
               case UpsertJob(jobNum, row) => loader.upsert(jobNum, row)
               case DeleteJob(jobNum, id) => loader.delete(jobNum, id)
             }
           }
-          copyCtx.copyInfo = datasetMap.updateNextRowId(copyInfo, nextRowId)
+          copyCtx.copyInfo = datasetMap.updateNextCounterValue(copyInfo, nextCounterValue)
           report
         } finally {
           doingRows = false

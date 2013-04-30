@@ -38,7 +38,7 @@ class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingRe
   val typeContext = SoQLTypeContext
   val logger: Logger[SoQLType, SoQLValue] = NullLogger[SoQLType, SoQLValue]
   val typeNamespace = SoQLTypeContext.typeNamespace
-  val datasetMap: BackupDatasetMap[SoQLType] = new PostgresDatasetMapWriter(conn, typeNamespace, timingReport, () => sys.error("Backup should never generate obfuscation keys"), new RowId(0L))
+  val datasetMap: BackupDatasetMap[SoQLType] = new PostgresDatasetMapWriter(conn, typeNamespace, timingReport, () => sys.error("Backup should never generate obfuscation keys"), 0L)
   def tablespace(s: String) = None
 
   def genericRepFor(columnInfo: ColumnInfo[SoQLType]): SqlColumnRep[SoQLType, SoQLValue] =
@@ -208,9 +208,9 @@ class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingRe
     currentVersionInfo
   }
 
-  def rowIdCounterUpdated(currentVersionInfo: CopyInfo, rid: RowId): CopyInfo = {
-    logger.rowIdCounterUpdated(rid)
-    datasetMap.updateNextRowId(currentVersionInfo, rid)
+  def counterUpdated(currentVersionInfo: CopyInfo, ctr: Long): CopyInfo = {
+    logger.counterUpdated(ctr)
+    datasetMap.updateNextCounterValue(currentVersionInfo, ctr)
   }
 
   def publish(currentVersionInfo: CopyInfo): CopyInfo =
@@ -235,8 +235,8 @@ class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingRe
         dropPrimaryKey(versionInfo, info)
       case r@RowDataUpdated(_) =>
         populateData(versionInfo, r.operations)
-      case RowIdCounterUpdated(rid) =>
-        rowIdCounterUpdated(versionInfo, rid)
+      case CounterUpdated(ctr) =>
+        counterUpdated(versionInfo, ctr)
       case WorkingCopyPublished =>
         publish(versionInfo)
       case DataCopied =>

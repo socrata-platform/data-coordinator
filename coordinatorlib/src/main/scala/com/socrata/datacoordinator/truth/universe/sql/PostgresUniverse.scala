@@ -17,7 +17,7 @@ import com.socrata.datacoordinator.secondary.{SecondaryManifest, PlaybackToSecon
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.loader.sql._
 import com.socrata.datacoordinator.secondary.sql.{SqlSecondaryConfig, SqlSecondaryManifest}
-import com.socrata.datacoordinator.util.{RowIdProvider, TransferrableContextTimingReport}
+import com.socrata.datacoordinator.util.{RowDataProvider, TransferrableContextTimingReport}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import scala.concurrent.duration.Duration
 import com.socrata.datacoordinator.truth.metadata.DatasetInfo
@@ -33,12 +33,12 @@ trait PostgresCommonSupport[CT, CV] {
   def isSystemColumn(ci: AbstractColumnInfoLike): Boolean
 
   val obfuscationKeyGenerator: () => Array[Byte]
-  val initialRowId: RowId
+  val initialCounterValue: Long
   val tablespace: String => Option[String]
   val copyInProvider: (Connection, String, Reader) => Long
   val timingReport: TransferrableContextTimingReport
 
-  def rowPreparer(transactionStart: DateTime, schema: ColumnIdMap[AbstractColumnInfoLike]): RowPreparer[CV]
+  def rowPreparer(transactionStart: DateTime, schema: ColumnIdMap[AbstractColumnInfoLike], rowDataProvider: RowDataProvider): RowPreparer[CV]
 
   lazy val loaderProvider = new AbstractSqlLoaderProvider(executor, typeContext, repFor, isSystemColumn) with PostgresSqlLoaderProvider[CT, CV] {
     def copyIn(conn: Connection, sql: String, reader: Reader): Long =
@@ -126,7 +126,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
     new PostgresDatasetMapReader(conn, typeContext.typeNamespace, timingReport)
 
   lazy val datasetMapWriter: DatasetMapWriter[CT] =
-    new PostgresDatasetMapWriter(conn, typeContext.typeNamespace, timingReport, obfuscationKeyGenerator, initialRowId)
+    new PostgresDatasetMapWriter(conn, typeContext.typeNamespace, timingReport, obfuscationKeyGenerator, initialCounterValue)
 
   lazy val globalLogPlayback: GlobalLogPlayback =
     new PostgresGlobalLogPlayback(conn)
@@ -153,8 +153,8 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
   def prevettedLoader(copyCtx: DatasetCopyContext[CT], logger: Logger[CT, CV]) =
     new SqlPrevettedLoader(conn, sqlizerFactory(copyCtx.copyInfo, datasetContextFactory(copyCtx.schema)), logger)
 
-  def loader(copyCtx: DatasetCopyContext[CT], rowIdProvider: RowIdProvider, logger: Logger[CT, CV]) =
-    managed(loaderProvider(conn, copyCtx, rowPreparer(transactionStart, copyCtx.schema), rowIdProvider, logger, timingReport))
+  def loader(copyCtx: DatasetCopyContext[CT], rowDataProvider: RowDataProvider, logger: Logger[CT, CV]) =
+    managed(loaderProvider(conn, copyCtx, rowPreparer(transactionStart, copyCtx.schema, rowDataProvider), rowDataProvider, logger, timingReport))
 
   lazy val lowLevelDatabaseReader = new PostgresDatabaseReader(conn, datasetMapReader, repFor)
 

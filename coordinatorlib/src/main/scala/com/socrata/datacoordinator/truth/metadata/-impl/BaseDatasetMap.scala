@@ -87,12 +87,12 @@ trait BaseDatasetMapWriter[CT] extends BaseDatasetMapReader[CT] {
     * @note Does not change the actual table; this just updates the bookkeeping. */
   def clearUserPrimaryKey(columnInfo: ColumnInfo[CT]): ColumnInfo[CT]
 
-  /** Stores the next available row ID for this dataset. */
-  def updateNextRowId(datasetInfo: DatasetInfo, newNextRowId: RowId): DatasetInfo
+  /** Stores the next available counter for this dataset. */
+  def updateNextCounterValue(datasetInfo: DatasetInfo, newNextCounterValue: Long): DatasetInfo
 
   /** Convenience overload which updates the provided `CopyInfo` with the
     * updated `DatasetInfo`. */
-  def updateNextRowId(copyInfo: CopyInfo, newNextRowId: RowId): CopyInfo
+  def updateNextCounterValue(copyInfo: CopyInfo, newNextCounterValue: Long): CopyInfo
 
   def updateDataVersion(copyInfo: CopyInfo, newDataVersion: Long): CopyInfo
 }

@@ -59,6 +59,9 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[SoQLValue] {
       case SoQLObject(j) =>
         target.writeRawByte(13)
         target.writeStringNoTag(CompactJsonWriter.toString(j))
+      case SoQLVersion(ver) =>
+        target.writeRawByte(14)
+        target.writeInt64NoTag(ver)
       case SoQLNull =>
         target.writeRawByte(-1)
     }
@@ -107,6 +110,8 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[SoQLValue] {
         SoQLObject(JsonUtil.parseJson[JObject](source.readString()).getOrElse {
           sys.error("Unable to parse object from log!")
         })
+      case 14 =>
+        SoQLVersion(source.readInt64())
       case -1 =>
         SoQLNull
     }

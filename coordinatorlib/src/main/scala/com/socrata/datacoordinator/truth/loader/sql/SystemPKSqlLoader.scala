@@ -10,9 +10,9 @@ import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.util.collection.MutableRowIdMap
 import com.socrata.datacoordinator.id.RowId
-import com.socrata.datacoordinator.util.{TransferrableContextTimingReport, RowIdProvider, TimingReport}
+import com.socrata.datacoordinator.util.{TransferrableContextTimingReport, RowDataProvider}
 
-final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: DataSqlizer[CT, CV], _l: DataLogger[CV], _i: RowIdProvider, _e: Executor, _tr: TransferrableContextTimingReport)
+final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: DataSqlizer[CT, CV], _l: DataLogger[CV], _i: RowDataProvider, _e: Executor, _tr: TransferrableContextTimingReport)
   extends
 {
   // all these are early because they are all potential sources of exceptions, and I want all
@@ -75,7 +75,7 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
           }
         }
       case None => // insert
-        val systemId = idProvider.allocate()
+        val systemId = idProvider.allocateId()
         val insert = Insert(systemId, rowPreparer.prepareForInsert(row, systemId), job, sqlizer.sizeofInsert(row))
         jobs.get(systemId) match {
           case None =>

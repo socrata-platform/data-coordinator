@@ -126,8 +126,8 @@ class SqlDelogger[CV](connection: Connection,
       nextResult = op match {
         case SqlLogger.RowDataUpdated =>
           decodeRowDataUpdated(aux)
-        case SqlLogger.RowIdCounterUpdated =>
-          decodeRowIdCounterUpdated(aux)
+        case SqlLogger.CounterUpdated =>
+          decodeCounterUpdated(aux)
         case SqlLogger.ColumnCreated =>
           decodeColumnCreated(aux)
         case SqlLogger.ColumnRemoved =>
@@ -163,11 +163,11 @@ class SqlDelogger[CV](connection: Connection,
     def decodeRowDataUpdated(aux: Array[Byte]) =
       Delogger.RowDataUpdated(aux)(rowCodecFactory())
 
-    def decodeRowIdCounterUpdated(aux: Array[Byte]) = {
-      val rid = fromJson[RowId](aux).getOrElse {
-        sys.error("Parameter for `row id counter updated' was not a number")
+    def decodeCounterUpdated(aux: Array[Byte]) = {
+      val ctr = fromJson[Long](aux).getOrElse {
+        sys.error("Parameter for `counter updated' was not a number")
       }
-      Delogger.RowIdCounterUpdated(rid)
+      Delogger.CounterUpdated(ctr)
     }
 
     def decodeColumnCreated(aux: Array[Byte]) = {

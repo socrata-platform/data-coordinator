@@ -9,14 +9,14 @@ import com.socrata.datacoordinator.truth.sql.{RepBasedSqlDatasetContext, SqlColu
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.loader.{Loader, Logger, RowPreparer}
 import java.io.Reader
-import com.socrata.datacoordinator.util.{TransferrableContextTimingReport, RowIdProvider}
+import com.socrata.datacoordinator.util.{TransferrableContextTimingReport, RowDataProvider}
 
 abstract class AbstractSqlLoaderProvider[CT, CV](val executor: ExecutorService, typeContext: TypeContext[CT, CV], repFor: ColumnInfo[CT] => SqlColumnRep[CT, CV], isSystemColumn: ColumnInfo[CT] => Boolean)
-  extends ((Connection, DatasetCopyContext[CT], RowPreparer[CV], RowIdProvider, Logger[CT, CV], TransferrableContextTimingReport) => Loader[CV])
+  extends ((Connection, DatasetCopyContext[CT], RowPreparer[CV], RowDataProvider, Logger[CT, CV], TransferrableContextTimingReport) => Loader[CV])
 {
   def produce(tableName: String, datasetContext: RepBasedSqlDatasetContext[CT, CV]): DataSqlizer[CT, CV]
 
-  def apply(conn: Connection, copyCtx: DatasetCopyContext[CT], rowPreparer: RowPreparer[CV], idProvider: RowIdProvider, logger: Logger[CT, CV], timingReport: TransferrableContextTimingReport) = {
+  def apply(conn: Connection, copyCtx: DatasetCopyContext[CT], rowPreparer: RowPreparer[CV], idProvider: RowDataProvider, logger: Logger[CT, CV], timingReport: TransferrableContextTimingReport) = {
     val tableName = copyCtx.copyInfo.dataTableName
 
     val repSchema = copyCtx.schema.mapValuesStrict(repFor)

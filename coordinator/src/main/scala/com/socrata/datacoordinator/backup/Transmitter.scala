@@ -184,7 +184,7 @@ object Transmitter extends App {
 
   def handleResyncRequest(client: Packets, conn: Connection, datasetId: DatasetId) {
     conn.setAutoCommit(false) // We'll be taking a lock and so we want transactions too
-    val datasetMap: DatasetMapWriter[SoQLType] = new PostgresDatasetMapWriter(conn, typeContext.typeNamespace, timingReport, () => sys.error("Transmitter should never be generating obfuscation keys"), new RowId(0L))
+    val datasetMap: DatasetMapWriter[SoQLType] = new PostgresDatasetMapWriter(conn, typeContext.typeNamespace, timingReport, () => sys.error("Transmitter should never be generating obfuscation keys"), 0L)
     datasetMap.datasetInfo(datasetId, Duration.Inf) match {
       case Some(info) =>
         client.send(WillResync(info.unanchored))

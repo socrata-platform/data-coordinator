@@ -5,7 +5,7 @@ import com.rojoma.simplearm.Managed
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth._
-import com.socrata.datacoordinator.util.{TransferrableContextTimingReport, RowIdProvider, TimingReport}
+import com.socrata.datacoordinator.util.{TransferrableContextTimingReport, RowDataProvider, TimingReport}
 import com.socrata.datacoordinator.secondary.{SecondaryConfig, PlaybackToSecondary, SecondaryManifest}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import org.joda.time.DateTime
@@ -62,7 +62,7 @@ trait PrevettedLoaderProvider { this: TypeUniverse =>
 }
 
 trait LoaderProvider { this: TypeUniverse =>
-  def loader(copyCtx: DatasetCopyContext[CT], rowIdProvider: RowIdProvider, logger: Logger[CT, CV]): Managed[Loader[CV]]
+  def loader(copyCtx: DatasetCopyContext[CT], rowIdProvider: RowDataProvider, logger: Logger[CT, CV]): Managed[Loader[CV]]
 }
 
 trait DatasetDecsvifierProvider {

@@ -58,7 +58,7 @@ class PlaybackToSecondary[CT, CV](conn: Connection, secondaryManifest: Secondary
 
   def resync(datasetId: DatasetId, secondary: NamedSecondary[CT, CV], delogger: Delogger[CV]) {
     timingReport("resync", "dataset" -> datasetId) {
-      val w = new PostgresDatasetMapWriter(conn, typeNamespace, timingReport, () => sys.error("Secondary should not be generating obfuscation keys"), new RowId(0))
+      val w = new PostgresDatasetMapWriter(conn, typeNamespace, timingReport, () => sys.error("Secondary should not be generating obfuscation keys"), 0L)
       w.datasetInfo(datasetId, datasetLockTimeout) match {
         case Some(datasetInfo) =>
           val allCopies = w.allCopies(datasetInfo)

@@ -56,7 +56,7 @@ object LogDataCodec {
 
   private val eventMap = Map[LogEventCompanion, EventCodec](
     Delogger.RowDataUpdated -> RowDataUpdatedCodec,
-    Delogger.RowIdCounterUpdated -> RowIdCounterUpdatedCodec,
+    Delogger.CounterUpdated -> CounterUpdatedCodec,
     Delogger.WorkingCopyCreated -> WorkingCopyCreatedCodec,
     Delogger.WorkingCopyPublished -> WorkingCopyPublishedCodec,
     Delogger.DataCopied -> DataCopiedCodec,
@@ -90,15 +90,15 @@ object LogDataCodec {
     }
   }
 
-  private object RowIdCounterUpdatedCodec extends EventCodec {
+  private object CounterUpdatedCodec extends EventCodec {
     def encode(stream: DataOutputStream, eventRaw: Delogger.LogEvent[Any]) {
-      val Delogger.RowIdCounterUpdated(rid) = eventRaw
-      stream.writeLong(rid.underlying)
+      val Delogger.CounterUpdated(ctr) = eventRaw
+      stream.writeLong(ctr)
     }
 
     def decode[CV](stream: DataInputStream, rowLogCodecFactory: () => RowLogCodec[CV]) = {
-      val rid = new RowId(stream.readLong())
-      Delogger.RowIdCounterUpdated(rid)
+      val ctr = stream.readLong()
+      Delogger.CounterUpdated(ctr)
     }
   }
 

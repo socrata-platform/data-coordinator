@@ -10,6 +10,7 @@ import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, DatasetInfo}
 object SoQLRep {
   private val sqlRepFactories = Map[SoQLType, ColumnInfo[SoQLType] => SqlColumnRep[SoQLType, SoQLValue]](
     SoQLID -> (ci => new sqlreps.IDRep(ci.physicalColumnBase)),
+    SoQLVersion -> (ci => new sqlreps.VersionRep(ci.physicalColumnBase)),
     SoQLText -> (ci => new sqlreps.TextRep(ci.physicalColumnBase)),
     SoQLBoolean -> (ci => new sqlreps.BooleanRep(ci.physicalColumnBase)),
     SoQLNumber -> (ci => new sqlreps.NumberLikeRep(SoQLNumber, _.asInstanceOf[SoQLNumber].value, SoQLNumber(_), ci.physicalColumnBase)),
@@ -65,7 +66,10 @@ object SoQLRep {
   }
 
   private def jsonRepFactories(obfuscationContext: DatasetInfo => IdObfuscationContext) =
-    jsonRepFactoriesMinusId + (SoQLID -> ((ci: ColumnInfo[SoQLType]) => new jsonreps.IDRep(ci.logicalName, obfuscationContext(ci.copyInfo.datasetInfo))))
+    jsonRepFactoriesMinusId ++ Seq(
+      SoQLID -> ((ci: ColumnInfo[SoQLType]) => new jsonreps.IDRep(ci.logicalName, obfuscationContext(ci.copyInfo.datasetInfo))),
+      SoQLVersion -> ((ci: ColumnInfo[SoQLType]) => new jsonreps.VersionRep(ci.logicalName, obfuscationContext(ci.copyInfo.datasetInfo)))
+    )
 
   def jsonRep(obfuscationContext: DatasetInfo => IdObfuscationContext): (ColumnInfo[SoQLType] => JsonColumnRep[SoQLType, SoQLValue]) = {
     val factories = jsonRepFactories(obfuscationContext);
