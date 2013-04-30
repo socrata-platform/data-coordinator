@@ -481,7 +481,8 @@ object Service extends App { self =>
     def exporter(id: String, copy: CopySelector, columns: Option[Set[ColumnName]], limit: Option[Long], offset: Option[Long])(f: Iterator[JObject] => Unit): Boolean = {
       val res = for(u <- common.universe) yield {
         Exporter.export(u, id, copy, columns, limit, offset) { (copyCtx, it) =>
-          val jsonSchema = copyCtx.schema.mapValuesStrict(common.jsonRepFor)
+          val jsonReps = common.jsonReps(copyCtx.datasetInfo)
+          val jsonSchema = copyCtx.schema.mapValuesStrict(jsonReps)
           f(it.map { row =>
             val res = new scala.collection.mutable.HashMap[String, JValue]
             row.foreach { case (cid, value) =>

@@ -5,9 +5,9 @@ import com.socrata.soql.types.{SoQLNull, SoQLValue, SoQLVersion, SoQLType}
 import com.socrata.soql.environment.ColumnName
 import com.rojoma.json.ast.{JNull, JString, JValue}
 import com.socrata.datacoordinator.common.soql.SoQLRep
-import com.socrata.datacoordinator.id.RowId
+import com.socrata.datacoordinator.id.RowVersion
 
-class VersionRep(val name: ColumnName, obfuscationContext: SoQLRep.IdObfuscationContext) extends JsonColumnRep[SoQLType, SoQLValue] {
+class VersionRep(val name: ColumnName, obfuscationContext: SoQLRep.VersionObfuscationContext) extends JsonColumnRep[SoQLType, SoQLValue] {
   def fromJValue(input: JValue): Option[SoQLVersion] = input match {
     case JString(obfuscated) =>
       obfuscationContext.deobfuscate(obfuscated).map { r => SoQLVersion(r.underlying) }
@@ -16,7 +16,7 @@ class VersionRep(val name: ColumnName, obfuscationContext: SoQLRep.IdObfuscation
   }
 
   def toJValue(value: SoQLValue): JValue = value match {
-    case SoQLVersion(rowId) => JString(obfuscationContext.obfuscate(new RowId(rowId)))
+    case SoQLVersion(rowId) => JString(obfuscationContext.obfuscate(new RowVersion(rowId)))
     case SoQLNull => JNull
     case _ => stdBadValue
   }

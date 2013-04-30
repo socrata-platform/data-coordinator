@@ -4,7 +4,7 @@ package service
 import com.rojoma.json.ast._
 import com.socrata.datacoordinator.truth.universe.{DatasetMutatorProvider, Universe}
 import com.socrata.datacoordinator.truth.{DatasetInUseByWriterException, DatasetIdInUseByWriterException, DatasetMutator}
-import com.socrata.datacoordinator.truth.metadata.{DatasetCopyContext, LifecycleStage, ColumnInfo}
+import com.socrata.datacoordinator.truth.metadata.{DatasetInfo, DatasetCopyContext, LifecycleStage, ColumnInfo}
 import com.socrata.datacoordinator.truth.json.JsonColumnRep
 import com.rojoma.json.codec.JsonCodec
 import com.socrata.datacoordinator.truth.loader._
@@ -182,7 +182,7 @@ trait MutatorCommon[CT, CV] {
   def systemIdColumnName: ColumnName
   def typeNameFor(typ: CT): TypeName
   def nameForTypeOpt(name: TypeName): Option[CT]
-  def jsonRepFor(columnInfo: ColumnInfo[CT]): JsonColumnRep[CT, CV]
+  def jsonReps(di: DatasetInfo): ColumnInfo[CT] => JsonColumnRep[CT, CV]
   def schemaFinder: SchemaFinder[CT, CV]
 }
 
@@ -253,6 +253,7 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
     def user = commands.user
 
     def doProcess(ctx: DatasetMutator[CT, CV]#MutationContext): Iterator[JsonEvent] = {
+      val jsonRepFor = jsonReps(ctx.copyInfo.datasetInfo)
       val processor = new Processor(jsonRepFor)
       val events = processor.carryOutCommands(ctx, commands).map { r =>
         val pk = ctx.schema.values.find(_.isUserPrimaryKey).orElse(ctx.schema.values.find(_.isSystemPrimaryKey)).getOrElse {

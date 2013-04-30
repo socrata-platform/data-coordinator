@@ -4,7 +4,7 @@ import com.socrata.soql.types._
 import com.socrata.datacoordinator.truth.sql.SqlColumnRep
 import com.socrata.datacoordinator.truth.csv.CsvColumnRep
 import com.socrata.datacoordinator.truth.json.JsonColumnRep
-import com.socrata.datacoordinator.id.RowId
+import com.socrata.datacoordinator.id.{RowVersion, RowId}
 import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, DatasetInfo}
 
 object SoQLRep {
@@ -65,14 +65,19 @@ object SoQLRep {
     def deobfuscate(obfuscatedRowId: String): Option[RowId]
   }
 
-  private def jsonRepFactories(obfuscationContext: DatasetInfo => IdObfuscationContext) =
+  trait VersionObfuscationContext {
+    def obfuscate(version: RowVersion): String
+    def deobfuscate(obfuscatedRowVersion: String): Option[RowVersion]
+  }
+
+  private def jsonRepFactories(idObfuscationContext: IdObfuscationContext, versionObfuscationContext: VersionObfuscationContext) =
     jsonRepFactoriesMinusId ++ Seq(
-      SoQLID -> ((ci: ColumnInfo[SoQLType]) => new jsonreps.IDRep(ci.logicalName, obfuscationContext(ci.copyInfo.datasetInfo))),
-      SoQLVersion -> ((ci: ColumnInfo[SoQLType]) => new jsonreps.VersionRep(ci.logicalName, obfuscationContext(ci.copyInfo.datasetInfo)))
+      SoQLID -> ((ci: ColumnInfo[SoQLType]) => new jsonreps.IDRep(ci.logicalName, idObfuscationContext)),
+      SoQLVersion -> ((ci: ColumnInfo[SoQLType]) => new jsonreps.VersionRep(ci.logicalName, versionObfuscationContext))
     )
 
-  def jsonRep(obfuscationContext: DatasetInfo => IdObfuscationContext): (ColumnInfo[SoQLType] => JsonColumnRep[SoQLType, SoQLValue]) = {
-    val factories = jsonRepFactories(obfuscationContext);
+  def jsonRep(idObfuscationContext: IdObfuscationContext, versionObfuscationContext: VersionObfuscationContext): (ColumnInfo[SoQLType] => JsonColumnRep[SoQLType, SoQLValue]) = {
+    val factories = jsonRepFactories(idObfuscationContext, versionObfuscationContext);
     { ci => factories(ci.typ)(ci) }
   }
 }

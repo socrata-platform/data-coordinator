@@ -6,8 +6,8 @@ import com.socrata.soql.types._
 import com.socrata.soql.environment.{ColumnName, TypeName}
 import com.socrata.soql.brita.{AsciiIdentifierFilter, IdentifierFilter}
 import com.socrata.datacoordinator.common.soql.{SoQLRowLogCodec, SoQLRep, SoQLTypeContext}
-import com.socrata.datacoordinator.common.util.RowIdObfuscator
-import com.socrata.datacoordinator.truth.metadata.{AbstractColumnInfoLike, ColumnInfo}
+import com.socrata.datacoordinator.common.util.{RowVersionObfuscator, CryptProvider, RowIdObfuscator}
+import com.socrata.datacoordinator.truth.metadata.{DatasetInfo, AbstractColumnInfoLike, ColumnInfo}
 import com.socrata.datacoordinator.truth.json.{JsonColumnRep, JsonColumnReadRep}
 import java.util.concurrent.ExecutorService
 import com.socrata.datacoordinator.truth.universe.sql.{PostgresUniverse, PostgresCommonSupport}
@@ -20,7 +20,6 @@ import java.io.Reader
 import com.socrata.datacoordinator.util.{RowDataProvider, TransferrableContextTimingReport}
 import javax.sql.DataSource
 import com.rojoma.simplearm.{SimpleArm, Managed}
-import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 
 class SoQLCommon(dataSource: DataSource,
                  copyInProvider: (Connection, String, Reader) => Long,
@@ -48,12 +47,16 @@ class SoQLCommon(dataSource: DataSource,
   )
   val typeContext = SoQLTypeContext
 
-  def obfuscationContextFor(key: Array[Byte]) = new RowIdObfuscator(key)
-  def generateObfuscationKey() = RowIdObfuscator.generateKey()
+  def idObfuscationContextFor(cryptProvider: CryptProvider) = new RowIdObfuscator(cryptProvider)
+  def versionObfuscationContextFor(cryptProvider: CryptProvider) = new RowVersionObfuscator(cryptProvider)
+  def generateObfuscationKey() = CryptProvider.generateKey()
   val initialCounterValue = 0L
 
   val sqlRepFor = SoQLRep.sqlRep _
-  val jsonRepFor = SoQLRep.jsonRep { di => obfuscationContextFor(di.obfuscationKey) }
+  def jsonReps(datasetInfo: DatasetInfo) = {
+    val cp = new CryptProvider(datasetInfo.obfuscationKey)
+    SoQLRep.jsonRep(idObfuscationContextFor(cp), versionObfuscationContextFor(cp))
+  }
 
   def newRowLogCodec() = SoQLRowLogCodec
 
@@ -151,8 +154,7 @@ class SoQLCommon(dataSource: DataSource,
     def nameForTypeOpt(name: TypeName): Option[CT] =
       typeContext.typeNamespace.typeForUserType(name)
 
-    def jsonRepFor(columnInfo: ColumnInfo[CT]): JsonColumnRep[CT, CV] =
-      common.jsonRepFor(columnInfo)
+    def jsonReps(di: DatasetInfo): ColumnInfo[CT] => JsonColumnRep[CT, CV] = common.jsonReps(di)
 
     val schemaFinder = new SchemaFinder[CT, CV](universe, typeNameFor)
   }
