@@ -48,7 +48,7 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
           jobs.get(systemId) match {
             case None => // first job of this type
               maybeFlush()
-              val op = Update(systemId, rowPreparer.prepareForUpdate(row), job, sqlizer.sizeofUpdate(row))
+              val op = Update(systemId, row, job, sqlizer.sizeofUpdate(row))
               jobs(systemId) = op
               updateSize += op.size
             case Some(oldJob) =>
@@ -76,7 +76,7 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
         }
       case None => // insert
         val systemId = idProvider.allocateId()
-        val insert = Insert(systemId, rowPreparer.prepareForInsert(row, systemId), job, sqlizer.sizeofInsert(row))
+        val insert = Insert(systemId, row, job, sqlizer.sizeofInsert(row))
         jobs.get(systemId) match {
           case None =>
             maybeFlush()
@@ -246,6 +246,7 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
           val it = updates.iterator()
           while(it.hasNext) {
             val op = it.next()
+            op.row = rowPreparer.prepareForUpdate(op.row)
             val sql = sqlizer.sqlizeSystemIdUpdate(op.id, op.row)
             stmt.addBatch(sql)
             updateSize -= op.size
@@ -284,6 +285,7 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
           var i = 0
           do {
             val op = inserts.get(i)
+            op.row = rowPreparer.prepareForInsert(op.row, op.id)
             inserter.insert(op.row)
             insertSize -= op.size
             i += 1
@@ -331,7 +333,7 @@ object SystemPKSqlLoader {
     def job: Int
   }
 
-  case class Insert[CV](id: RowId, row: Row[CV], job: Int, size: Int) extends Operation[CV]
-  case class Update[CV](id: RowId, row: Row[CV], job: Int, size: Int) extends Operation[CV]
+  case class Insert[CV](id: RowId, var row: Row[CV], job: Int, size: Int) extends Operation[CV]
+  case class Update[CV](id: RowId, var row: Row[CV], job: Int, size: Int) extends Operation[CV]
   case class Delete(id: RowId, job: Int) extends Operation[Nothing]
 }

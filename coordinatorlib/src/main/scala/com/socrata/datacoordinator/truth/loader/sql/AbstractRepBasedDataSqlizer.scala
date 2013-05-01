@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator
 package truth.loader.sql
 
-import java.sql.{Connection, PreparedStatement}
+import java.sql.{ResultSet, Connection, PreparedStatement}
 
 import com.rojoma.simplearm.util._
 
@@ -76,49 +76,71 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
     sb
   }
 
-  def sqlizeUserIdUpdate(row: Row[CV]) =
-    updatePrefix(row).append(pkRep sql_== row(logicalPKColumnName)).toString
-
-  val findSystemIdsPrefix = "SELECT " + sidRep.physColumns.mkString(",") + "," + pkRep.physColumns.mkString(",") + " FROM " + dataTableName + " WHERE "
-
-  def findSystemIds(conn: Connection, ids: Iterator[CV]): CloseableIterator[Seq[IdPair[CV]]] = {
-    require(datasetContext.hasUserPrimaryKey, "findSystemIds called without a user primary key")
-    class SystemIdIterator extends CloseableIterator[Seq[IdPair[CV]]] {
+  def blockQueryById[T](conn: Connection, ids: Iterator[CV], prefix: String)(decode: ResultSet => T): CloseableIterator[Seq[T]] = {
+    class ResultIterator extends CloseableIterator[Seq[T]] {
       val blockSize = 100
       val grouped = new FastGroupedIterator(ids, blockSize)
-      val stmt = conn.prepareStatement(findSystemIdsPrefix + pkRep.templateForMultiLookup(blockSize))
+      var _fullStmt: PreparedStatement = null
+
+      def fullStmt = {
+        if(_fullStmt == null) _fullStmt = conn.prepareStatement(prefix + pkRep.templateForMultiLookup(blockSize))
+        _fullStmt
+      }
+
+      def close() {
+        if(_fullStmt != null) _fullStmt.close()
+      }
 
       def hasNext = grouped.hasNext
 
-      def next(): Seq[IdPair[CV]] = {
+      def next(): Seq[T] = {
         val block = grouped.next()
         if(block.size != blockSize) {
-          using(conn.prepareStatement(findSystemIdsPrefix + pkRep.templateForMultiLookup(block.size))) { stmt2 =>
+          using(conn.prepareStatement(prefix + pkRep.templateForMultiLookup(block.size))) { stmt2 =>
             fillAndResult(stmt2, block)
           }
         } else {
-          fillAndResult(stmt, block)
+          fillAndResult(fullStmt, block)
         }
       }
 
-      def fillAndResult(stmt: PreparedStatement, block: Seq[CV]): Seq[IdPair[CV]] = {
+      def fillAndResult(stmt: PreparedStatement, block: Seq[CV]): Seq[T] = {
         var i = 1
         for(cv <- block) {
           i = pkRep.prepareMultiLookup(stmt, cv, i)
         }
         using(stmt.executeQuery()) { rs =>
-          val result = new scala.collection.mutable.ArrayBuffer[IdPair[CV]](block.length)
+          val result = new scala.collection.mutable.ArrayBuffer[T](block.length)
           while(rs.next()) {
-            val sid = typeContext.makeSystemIdFromValue(sidRep.fromResultSet(rs, 1))
-            val uid = pkRep.fromResultSet(rs, 1 + sidRep.physColumns.length)
-            result += IdPair(sid, uid)
+            result += decode(rs)
           }
           result
         }
       }
-
-      def close() { stmt.close() }
     }
-    new SystemIdIterator with LeakDetect
+    new ResultIterator with LeakDetect
+  }
+
+  val findRowsPrefix = "SELECT " + repSchema.values.flatMap(_.physColumns).mkString(",") + " FROM " + dataTableName + " WHERE "
+
+  def findRows(conn: Connection, ids: Iterator[CV]): CloseableIterator[Seq[RowWithId[CV]]] =
+    blockQueryById(conn, ids, findRowsPrefix) { rs =>
+      val row = new MutableRow[CV]
+      var i = 1
+      for((cid, rep) <- repSchema) {
+        row(cid) = rep.fromResultSet(rs, i)
+        i += rep.physColumns.length
+      }
+      RowWithId(typeContext.makeSystemIdFromValue(row(datasetContext.systemIdColumn)), row.freeze())
+    }
+
+  val findSystemIdsPrefix = "SELECT " + sidRep.physColumns.mkString(",") + "," + pkRep.physColumns.mkString(",") + " FROM " + dataTableName + " WHERE "
+  def findSystemIds(conn: Connection, ids: Iterator[CV]): CloseableIterator[Seq[IdPair[CV]]] = {
+    require(datasetContext.hasUserPrimaryKey, "findSystemIds called without a user primary key")
+    blockQueryById(conn, ids, findSystemIdsPrefix) { rs =>
+      val sid = typeContext.makeSystemIdFromValue(sidRep.fromResultSet(rs, 1))
+      val uid = pkRep.fromResultSet(rs, 1 + sidRep.physColumns.length)
+      IdPair(sid, uid)
+    }
   }
 }

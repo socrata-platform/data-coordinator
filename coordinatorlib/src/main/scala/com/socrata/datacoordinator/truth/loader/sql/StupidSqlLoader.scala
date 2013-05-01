@@ -39,9 +39,9 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
       case Some(pkCol) =>
         datasetContext.userPrimaryKey(unpreparedRow) match {
           case Some(id) =>
-            val updateRow = rowPreparer.prepareForUpdate(unpreparedRow)
-            findSid(id) match {
-              case Some(sid) =>
+            findRow(id) match {
+              case Some(RowWithId(sid, oldRow)) =>
+                val updateRow = rowPreparer.prepareForUpdate(unpreparedRow)
                 val updatedCount = using(connection.createStatement()) { stmt =>
                   stmt.executeUpdate(sqlizer.sqlizeSystemIdUpdate(sid, updateRow))
                 }
@@ -85,9 +85,17 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
     }
   }
 
-  def findSid(id: CV): Option[RowId] = {
+  def findRow(id: CV): Option[RowWithId[CV]] = {
+    using(sqlizer.findRows(connection, Iterator.single(id))) { blocks =>
+      val sids = blocks.flatten.toSeq
+      assert(sids.length < 2)
+      sids.headOption
+    }
+  }
+
+  def findRowId(id: CV): Option[IdPair[CV]] = {
     using(sqlizer.findSystemIds(connection, Iterator.single(id))) { blocks =>
-      val sids = blocks.flatten.map(_.systemId).toSeq
+      val sids = blocks.flatten.toSeq
       assert(sids.length < 2)
       sids.headOption
     }
@@ -97,8 +105,8 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
     checkJob(job)
     datasetContext.userPrimaryKeyColumn match {
       case Some(pkCol) =>
-        findSid(id) match {
-          case Some(sid) =>
+        findRowId(id) match {
+          case Some(IdPair(sid, _)) =>
             using(connection.prepareStatement(sqlizer.prepareSystemIdDeleteStatement)) { stmt =>
               sqlizer.prepareSystemIdDelete(stmt, sid)
               val result = stmt.executeUpdate()

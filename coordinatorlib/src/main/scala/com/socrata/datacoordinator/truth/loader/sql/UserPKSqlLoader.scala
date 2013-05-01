@@ -144,7 +144,8 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: Dat
                 try {
                   started.release()
 
-                  val sidsForUpdateAndDelete = findSids(currentJobs.valuesIterator)
+                  val sidsForDelete = findSids(currentJobs.valuesIterator.filter(_.hasDeleteJob))
+                  val rowsForUpdate = findRows(currentJobs.valuesIterator.filter(_.hasUpsertJob))
 
                   val deletes = new java.util.ArrayList[OperationLog[CV]]
                   val inserts = new java.util.ArrayList[OperationLog[CV]]
@@ -155,7 +156,7 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: Dat
                   currentJobs.foreach { (_, op) =>
                     if(op.hasDeleteJob) { deletes.add(op) }
                     if(op.hasUpsertJob) {
-                      if(sidsForUpdateAndDelete.contains(op.id) && !op.forceInsert) {
+                      if(rowsForUpdate.contains(op.id) && !op.forceInsert) {
                         remainingInsertSize -= op.upsertSize
                         updates.add(op)
                       } else {
@@ -165,9 +166,9 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: Dat
                   }
 
                   val errors = new TIntObjectHashMap[Failure[CV]]
-                  pendingDeleteResults = processDeletes(sidsForUpdateAndDelete, currentDeleteSize, deletes, errors)
+                  pendingDeleteResults = processDeletes(sidsForDelete, currentDeleteSize, deletes, errors)
                   pendingInsertResults = processInserts(remainingInsertSize, inserts)
-                  pendingUpdateResults = processUpdates(sidsForUpdateAndDelete, updates)
+                  pendingUpdateResults = processUpdates(rowsForUpdate, updates)
                   if(!errors.isEmpty) pendingErrors = errors
                 } catch {
                   case e: Throwable =>
@@ -205,6 +206,16 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: Dat
       using(sqlizer.findSystemIds(connection, ops.map(_.id))) { blocks =>
         val target = datasetContext.makeIdMap[RowId]()
         for(idPair <- blocks.flatten) target.put(idPair.userId, idPair.systemId)
+        target
+      }
+    }
+  }
+
+  def findRows(ops: Iterator[OperationLog[CV]]): RowUserIdMap[CV, RowWithId[CV]] = {
+    timingReport("findrows") {
+      using(sqlizer.findRows(connection, ops.map(_.id))) { blocks =>
+        val target = datasetContext.makeIdMap[RowWithId[CV]]()
+        for(rowWithId <- blocks.flatten) target.put(rowWithId.row(datasetContext.primaryKeyColumn), rowWithId)
         target
       }
     }
@@ -302,7 +313,7 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: Dat
     resultMap
   }
 
-  def processUpdates(sidSource: RowUserIdMap[CV, RowId], updates: java.util.ArrayList[OperationLog[CV]]): TIntObjectHashMap[CV] = {
+  def processUpdates(rowSource: RowUserIdMap[CV, RowWithId[CV]], updates: java.util.ArrayList[OperationLog[CV]]): TIntObjectHashMap[CV] = {
     var resultMap: TIntObjectHashMap[CV] = null
     if(!updates.isEmpty) {
       timingReport("process-updates", "jobs" -> updates.size) {
@@ -312,10 +323,10 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: Dat
             val op = updates.get(i)
             assert(op.hasUpsertJob, "No upsert job?")
 
-            sidSource.get(op.id) match {
-              case Some(sid) =>
+            rowSource.get(op.id) match {
+              case Some(rowWithId) =>
                 op.upsertedRow = rowPreparer.prepareForUpdate(op.upsertedRow)
-                val sql = sqlizer.sqlizeSystemIdUpdate(sidSource(op.id), op.upsertedRow)
+                val sql = sqlizer.sqlizeSystemIdUpdate(rowWithId.rowId, op.upsertedRow)
                 stmt.addBatch(sql)
               case None =>
                 sys.error("Update requested but no system id found?")
@@ -332,8 +343,8 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: Dat
           do {
             val op = updates.get(i)
             if(results(i) == 1) {
-              val sid = sidSource.get(op.id).getOrElse(sys.error("Successfully updated row, but no sid found for it?"))
-              dataLogger.update(sid, op.upsertedRow)
+              val rowWithId = rowSource.get(op.id).getOrElse(sys.error("Successfully updated row, but no sid found for it?"))
+              dataLogger.update(rowWithId.rowId, op.upsertedRow)
               resultMap.put(op.upsertJob, op.id)
             } else if(results(i) == 0) {
               sys.error("Expected update to succeed")

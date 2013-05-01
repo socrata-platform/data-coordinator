@@ -31,11 +31,14 @@ trait DataSqlizer[CT, CV] {
   def prepareSystemIdDelete(stmt: PreparedStatement, sid: RowId)
   def sqlizeSystemIdUpdate(sid: RowId, row: Row[CV]): String
 
+  def findRows(conn: Connection, ids: Iterator[CV]): CloseableIterator[Seq[RowWithId[CV]]]
+
   // THIS MUST ONLY BE CALLED IF THIS DATASET HAS A USER PK COLUMN!
   def findSystemIds(conn: Connection, ids: Iterator[CV]): CloseableIterator[Seq[IdPair[CV]]]
 }
 
-case class IdPair[+CV](systemId: RowId, userId: CV)
+case class RowWithId[CV](rowId: RowId, row: Row[CV])
+case class IdPair[CV](systemId: RowId, userId: CV)
 
 trait SchemaSqlizer[CT, CV] {
   // all these include log-generation statements in their output
