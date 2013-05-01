@@ -237,7 +237,7 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
         def colErr(msg: String, dataset: DatasetId, name: ColumnName, resp: HttpResponse = BadRequest) = {
           import scala.language.reflectiveCalls
           err(resp, msg,
-            "dataset" -> JNumber(dataset.underlying),
+            "dataset" -> JString(dataset.underlying.toString),
             "column" -> JString(name.name))
         }
         e match {
@@ -252,7 +252,7 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
               "field" -> JString(field))
           case Mutator.MismatchedSchemaHash(name, schema) =>
             err(Conflict, "req.script.header.mismatched-schema",
-              "dataset" -> JNumber(name.underlying),
+              "dataset" -> JString(name.underlying.toString),
               "schema" -> jsonifySchema(schema))
           case Mutator.InvalidCommandFieldValue(obj, field, value) =>
             err(BadRequest, "req.script.command.invalid-field",
@@ -261,18 +261,18 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
               "value" -> value)
           case Mutator.NoSuchDataset(name) =>
             err(NotFound, "update.dataset.does-not-exist",
-              "dataset" -> JNumber(name.underlying))
+              "dataset" -> JString(name.underlying.toString))
           case Mutator.CannotAcquireDatasetWriteLock(name) =>
             err(Conflict, "update.dataset.temporarily-not-writable",
-              "dataset" -> JNumber(name.underlying))
+              "dataset" -> JString(name.underlying.toString))
           case Mutator.IncorrectLifecycleStage(name, currentStage, expectedStage) =>
             err(Conflict, "update.dataset.invalid-state",
-              "dataset" -> JNumber(name.underlying),
+              "dataset" -> JString(name.underlying.toString),
               "actual-state" -> JString(currentStage.name),
               "expected-state" -> JArray(expectedStage.toSeq.map(_.name).map(JString)))
           case Mutator.InitialCopyDrop(name) =>
             err(Conflict, "update.dataset.initial-copy-drop",
-              "dataset" -> JNumber(name.underlying))
+              "dataset" -> JString(name.underlying.toString))
           case Mutator.ColumnAlreadyExists(dataset, name) =>
             colErr("update.column.exists", dataset, name, Conflict)
           case Mutator.IllegalColumnName(columnName) =>
@@ -287,12 +287,12 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
             colErr("update.column.system", dataset, name)
           case Mutator.PrimaryKeyAlreadyExists(datasetName, columnName, existingColumn) =>
             err(BadRequest, "update.row-identifier.already-set",
-              "dataset" -> JNumber(datasetName.underlying),
+              "dataset" -> JString(datasetName.underlying.toString),
               "column" -> JString(columnName.name),
               "existing-column" -> JString(existingColumn.name))
           case Mutator.InvalidTypeForPrimaryKey(datasetName, columnName, typeName) =>
             err(BadRequest, "update.row-identifier.invalid-type",
-              "dataset" -> JNumber(datasetName.underlying),
+              "dataset" -> JString(datasetName.underlying.toString),
               "column" -> JString(columnName.name),
               "type" -> JString(typeName.name))
           case Mutator.DuplicateValuesInColumn(dataset, name) =>
@@ -311,14 +311,14 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
               "value" -> value)
           case Mutator.UpsertError(datasetName, NoPrimaryKey | NullPrimaryKey) =>
             err(BadRequest, "update.row.no-id",
-              "dataset" -> JNumber(datasetName.underlying))
+              "dataset" -> JString(datasetName.underlying.toString))
           case Mutator.UpsertError(datasetName, NoSuchRowToDelete(id)) =>
             err(BadRequest, "update.row.no-such-id",
-              "dataset" -> JNumber(datasetName.underlying),
+              "dataset" -> JString(datasetName.underlying.toString),
               "value" -> id)
           case Mutator.UpsertError(datasetName, NoSuchRowToUpdate(id)) =>
             err(BadRequest, "update.row.no-such-id",
-              "dataset" -> JNumber(datasetName.underlying),
+              "dataset" -> JString(datasetName.underlying.toString),
               "value" -> id)
         }
     }
@@ -339,7 +339,7 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
           OK ~> ContentType("application/json; charset=utf-8") ~> Write { w =>
             val bw = new BufferedWriter(w)
             bw.write('[')
-            bw.write(dataset.underlying.toString)
+            bw.write(JString(dataset.underlying.toString).toString)
             bw.write(',')
             EventTokenIterator(result).foreach { t => bw.write(t.asFragment) }
             bw.write(']')
