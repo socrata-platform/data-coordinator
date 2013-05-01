@@ -7,19 +7,20 @@ import com.socrata.soql.environment.{ColumnName, TypeName}
 import com.socrata.soql.brita.{AsciiIdentifierFilter, IdentifierFilter}
 import com.socrata.datacoordinator.common.soql.{SoQLRowLogCodec, SoQLRep, SoQLTypeContext}
 import com.socrata.datacoordinator.common.util.{RowVersionObfuscator, CryptProvider, RowIdObfuscator}
-import com.socrata.datacoordinator.truth.metadata.{DatasetInfo, AbstractColumnInfoLike, ColumnInfo}
-import com.socrata.datacoordinator.truth.json.{JsonColumnRep, JsonColumnReadRep}
+import com.socrata.datacoordinator.truth.metadata.{DatasetCopyContext, DatasetInfo, AbstractColumnInfoLike, ColumnInfo}
+import com.socrata.datacoordinator.truth.json.{JsonColumnWriteRep, JsonColumnRep, JsonColumnReadRep}
 import java.util.concurrent.ExecutorService
 import com.socrata.datacoordinator.truth.universe.sql.{PostgresUniverse, PostgresCommonSupport}
 import org.joda.time.DateTime
 import com.socrata.datacoordinator.util.collection.{ColumnIdSet, ColumnIdMap}
-import com.socrata.datacoordinator.truth.loader.RowPreparer
+import com.socrata.datacoordinator.truth.loader.{RowPreparerDeclinedUpsert, VersionMismatch, RowPreparer}
 import com.socrata.datacoordinator.id.{RowVersion, RowId}
 import java.sql.Connection
 import java.io.Reader
 import com.socrata.datacoordinator.util.{RowDataProvider, TransferrableContextTimingReport}
 import javax.sql.DataSource
 import com.rojoma.simplearm.{SimpleArm, Managed}
+import com.socrata.datacoordinator.truth.DatasetContext
 
 object SoQLSystemColumns { sc =>
   val id = ColumnName(":id")
@@ -99,8 +100,11 @@ class SoQLCommon(dataSource: DataSource,
     def isSystemColumn(ci: AbstractColumnInfoLike): Boolean =
       isSystemColumnName(ci.logicalName)
 
-    def rowPreparer(transactionStart: DateTime, schema: ColumnIdMap[AbstractColumnInfoLike], idProvider: RowDataProvider): RowPreparer[SoQLValue] =
+    def rowPreparer(transactionStart: DateTime, ctx: DatasetCopyContext[CT], idProvider: RowDataProvider): RowPreparer[SoQLValue] =
       new RowPreparer[SoQLValue] {
+        val schema = ctx.schema
+        lazy val jsonRepFor = jsonReps(ctx.datasetInfo)
+
         def findCol(name: ColumnName) =
           schema.values.find(_.logicalName == name).getOrElse(sys.error(s"No $name column?")).systemId
 
@@ -108,6 +112,13 @@ class SoQLCommon(dataSource: DataSource,
         val createdAtColumn = findCol(SystemColumns.createdAt)
         val updatedAtColumn = findCol(SystemColumns.updatedAt)
         val versionColumn = findCol(SystemColumns.version)
+
+        val primaryKeyColumn = schema.values.find(_.isUserPrimaryKey).orElse(schema.values.find(_.isSystemPrimaryKey)).getOrElse {
+          sys.error("No system primary key?")
+        }
+
+        assert(schema(versionColumn).typeName == typeContext.typeNamespace.nameForType(SoQLVersion))
+        def versionRep = jsonRepFor(SoQLVersion)
 
         val allSystemColumns = ColumnIdSet(SystemColumns.allSystemColumnNames.toSeq.map(findCol) : _*)
 
@@ -117,10 +128,14 @@ class SoQLCommon(dataSource: DataSource,
           tmp(createdAtColumn) = SoQLFixedTimestamp(transactionStart)
           tmp(updatedAtColumn) = SoQLFixedTimestamp(transactionStart)
           tmp(versionColumn) = SoQLVersion(idProvider.allocateVersion().underlying)
-          tmp.freeze()
+          Right(tmp.freeze())
         }
 
-        def prepareForUpdate(row: Row[SoQLValue], oldRow: Row[SoQLValue]) = {
+        def prepareForUpdate(row: Row[SoQLValue], oldRow: Row[SoQLValue]): Either[RowPreparerDeclinedUpsert[CV], Row[CV]] = {
+          for {
+            oldVer <- oldRow.get(versionColumn) if SoQLNull != oldVer
+            newVer <- row.get(versionColumn) if SoQLNull != newVer
+          } if(oldVer != newVer) return Left(VersionMismatch(row(primaryKeyColumn.systemId), versionRep.toJValue(oldVer), versionRep.toJValue(newVer)))
           val tmp = new MutableRow[SoQLValue](oldRow)
           val rowIt = row.iterator
           while(rowIt.hasNext) {
@@ -129,7 +144,7 @@ class SoQLCommon(dataSource: DataSource,
           }
           tmp(updatedAtColumn) = SoQLFixedTimestamp(transactionStart)
           tmp(versionColumn) = SoQLVersion(idProvider.allocateVersion().underlying)
-          tmp.freeze()
+          Right(tmp.freeze())
         }
       }
 
@@ -164,7 +179,7 @@ class SoQLCommon(dataSource: DataSource,
     def nameForTypeOpt(name: TypeName): Option[CT] =
       typeContext.typeNamespace.typeForUserType(name)
 
-    def jsonReps(di: DatasetInfo): ColumnInfo[CT] => JsonColumnRep[CT, CV] = common.jsonReps(di)
+    def jsonReps(di: DatasetInfo): CT => JsonColumnRep[CT, CV] = common.jsonReps(di)
 
     val schemaFinder = new SchemaFinder[CT, CV](universe, typeNameFor)
   }

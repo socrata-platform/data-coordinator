@@ -41,23 +41,31 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
           case Some(id) =>
             findRow(id) match {
               case Some(RowWithId(sid, oldRow)) =>
-                val updateRow = rowPreparer.prepareForUpdate(unpreparedRow, oldRow = oldRow)
-                val updatedCount = using(connection.prepareStatement(sqlizer.prepareSystemIdUpdateStatement)) { stmt =>
-                  sqlizer.prepareSystemIdUpdate(stmt, sid, updateRow)
-                  stmt.executeUpdate()
+                rowPreparer.prepareForUpdate(unpreparedRow, oldRow = oldRow) match {
+                  case Right(updateRow) =>
+                    val updatedCount = using(connection.prepareStatement(sqlizer.prepareSystemIdUpdateStatement)) { stmt =>
+                      sqlizer.prepareSystemIdUpdate(stmt, sid, updateRow)
+                      stmt.executeUpdate()
+                    }
+                    assert(updatedCount == 1)
+                    dataLogger.update(sid, updateRow)
+                    updated.put(job, id)
+                  case Left(err) =>
+                    errors.put(job, err)
                 }
-                assert(updatedCount == 1)
-                dataLogger.update(sid, updateRow)
-                updated.put(job, id)
               case None =>
                 val sid = idProvider.allocateId()
-                val row = rowPreparer.prepareForInsert(unpreparedRow, sid)
-                val result = sqlizer.insertBatch(connection) { inserter =>
-                  inserter.insert(row)
+                rowPreparer.prepareForInsert(unpreparedRow, sid) match {
+                  case Right(insertRow) =>
+                    val result = sqlizer.insertBatch(connection) { inserter =>
+                      inserter.insert(insertRow)
+                    }
+                    assert(result == 1, "From insert: " + result)
+                    dataLogger.insert(sid, insertRow)
+                    inserted.put(job, id)
+                  case Left(err) =>
+                    errors.put(job, err)
                 }
-                assert(result == 1, "From insert: " + result)
-                dataLogger.insert(sid, row)
-                inserted.put(job, id)
             }
           case None =>
             errors.put(job, NoPrimaryKey)
@@ -68,27 +76,35 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
             using(connection.createStatement()) { stmt =>
               findRow(id) match {
                 case Some(RowWithId(sid, oldRow)) =>
-                  val updateRow = rowPreparer.prepareForUpdate(unpreparedRow, oldRow = oldRow)
-                  using(connection.prepareStatement(sqlizer.prepareSystemIdUpdateStatement)) { stmt =>
-                    sqlizer.prepareSystemIdUpdate(stmt, sid, updateRow)
-                    val result = stmt.executeUpdate()
-                    assert(result == 1, "From update: " + updated)
+                  rowPreparer.prepareForUpdate(unpreparedRow, oldRow = oldRow) match {
+                    case Right(updateRow) =>
+                      using(connection.prepareStatement(sqlizer.prepareSystemIdUpdateStatement)) { stmt =>
+                        sqlizer.prepareSystemIdUpdate(stmt, sid, updateRow)
+                        val result = stmt.executeUpdate()
+                        assert(result == 1, "From update: " + updated)
+                      }
+                      updated.put(job, id)
+                      dataLogger.update(sid, updateRow)
+                    case Left(err) =>
+                      errors.put(job, err)
                   }
-                  updated.put(job, id)
-                  dataLogger.update(sid, updateRow)
                 case None =>
                   errors.put(job, NoSuchRowToUpdate(id))
               }
             }
           case None =>
             val sid = idProvider.allocateId()
-            val row = rowPreparer.prepareForInsert(unpreparedRow, sid)
-            val result = sqlizer.insertBatch(connection) { inserter =>
-              inserter.insert(row)
+            rowPreparer.prepareForInsert(unpreparedRow, sid) match {
+              case Right(insertRow) =>
+                val result = sqlizer.insertBatch(connection) { inserter =>
+                  inserter.insert(insertRow)
+                }
+                assert(result == 1, "From insert: " + result)
+                dataLogger.insert(sid, insertRow)
+                inserted.put(job, typeContext.makeValueFromSystemId(sid))
+              case Left(err) =>
+                errors.put(job, err)
             }
-            assert(result == 1, "From insert: " + result)
-            dataLogger.insert(sid, row)
-            inserted.put(job, typeContext.makeValueFromSystemId(sid))
         }
     }
   }

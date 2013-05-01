@@ -7,6 +7,7 @@ import java.io.Closeable
 import com.socrata.datacoordinator.util.collection.ColumnIdSet
 import com.rojoma.json.ast.{JObject, JString, JValue}
 import com.rojoma.json.codec.JsonCodec
+import com.rojoma.json.util.{AutomaticJsonCodecBuilder, TagToValue, SimpleHierarchyCodecBuilder}
 
 trait Loader[CV] extends Closeable {
   def upsert(jobId: Int, row: Row[CV])
@@ -51,37 +52,45 @@ trait Report[CV] {
 sealed abstract class Failure[+CV] {
   def map[B](f: CV => B): Failure[B]
 }
+
 object Failure {
   private val NullPK = JString("null_primary_key")
   private val NoPK = JString("no_primary_key")
   private val NoSuchRowToDeleteTag = "no_such_row_to_delete"
   private val NoSuchRowToUpdateTag = "no_such_row_to_update"
+  private val VersionMismatchTag = "version_mismatch"
   implicit def jCodec[CV](implicit cvCodec: JsonCodec[CV]): JsonCodec[Failure[CV]] = new JsonCodec[Failure[CV]] {
+    implicit val noSuchRowToDeleteCodec = new JsonCodec[NoSuchRowToDelete[CV]] {
+      def encode(x: NoSuchRowToDelete[CV]) = cvCodec.encode(x.id)
+      def decode(x: JValue) = cvCodec.decode(x).map(NoSuchRowToDelete(_))
+    }
+
+    implicit val noSuchRowToUpdateCodec = new JsonCodec[NoSuchRowToUpdate[CV]] {
+      def encode(x: NoSuchRowToUpdate[CV]) = cvCodec.encode(x.id)
+      def decode(x: JValue) = cvCodec.decode(x).map(NoSuchRowToUpdate(_))
+    }
+
+    implicit val versionMismatchCodec = AutomaticJsonCodecBuilder[VersionMismatch[CV]]
+
+    val cb = SimpleHierarchyCodecBuilder[Failure[CV]](TagToValue).
+      branch[NoSuchRowToDelete[CV]](NoSuchRowToDeleteTag).
+      branch[NoSuchRowToUpdate[CV]](NoSuchRowToUpdateTag).
+      branch[VersionMismatch[CV]](VersionMismatchTag).
+      build
+
     def encode(x: Failure[CV]) = x match {
       case NullPrimaryKey => NullPK
       case NoPrimaryKey => NoPK
-      case NoSuchRowToDelete(id) => JObject(Map(NoSuchRowToDeleteTag -> cvCodec.encode(id)))
-      case NoSuchRowToUpdate(id) => JObject(Map(NoSuchRowToUpdateTag -> cvCodec.encode(id)))
+      case other => cb.encode(other)
     }
     def decode(x: JValue) = x match {
       case NullPK => Some(NullPrimaryKey)
       case NoPK => Some(NoPrimaryKey)
-      case JObject(fs) =>
-        fs.get(NoSuchRowToDeleteTag) match {
-          case Some(jValue) =>
-            cvCodec.decode(jValue).map(NoSuchRowToDelete(_))
-          case None =>
-            fs.get(NoSuchRowToUpdateTag) match {
-              case Some(jValue) =>
-                cvCodec.decode(jValue).map(NoSuchRowToUpdate(_))
-              case None =>
-                None
-            }
-        }
-      case _ => None
+      case other => cb.decode(other)
     }
   }
 }
+
 case object NullPrimaryKey extends Failure[Nothing] {
   def map[B](f: Nothing => B) = this
 }
@@ -95,3 +104,7 @@ case object NoPrimaryKey extends Failure[Nothing] {
   def map[B](f: Nothing => B) = this
 }
 
+sealed abstract class RowPreparerDeclinedUpsert[CV] extends Failure[CV]
+case class VersionMismatch[CV](id: CV, expected: JValue, actual: JValue) extends RowPreparerDeclinedUpsert[CV] {
+  def map[B](f: CV => B) = VersionMismatch(f(id), expected, actual)
+}

@@ -45,19 +45,19 @@ object SoQLRep {
   def csvRep(columnInfo: ColumnInfo[SoQLType]): CsvColumnRep[SoQLType, SoQLValue] =
     csvRepFactories(columnInfo.typ)
 
-  private val jsonRepFactoriesMinusId = Map[SoQLType, ColumnInfo[SoQLType] => JsonColumnRep[SoQLType, SoQLValue]](
-    SoQLText -> (ci => new jsonreps.TextRep(ci.logicalName)),
-    SoQLBoolean -> (ci => new jsonreps.BooleanRep(ci.logicalName)),
-    SoQLNumber -> (ci => new jsonreps.NumberLikeRep(ci.logicalName, SoQLNumber, _.asInstanceOf[SoQLNumber].value, SoQLNumber(_))),
-    SoQLMoney -> (ci => new jsonreps.NumberLikeRep(ci.logicalName, SoQLMoney, _.asInstanceOf[SoQLMoney].value, SoQLMoney(_))),
-    SoQLFixedTimestamp -> (ci => new jsonreps.FixedTimestampRep(ci.logicalName)),
-    SoQLFloatingTimestamp -> (ci => new jsonreps.FloatingTimestampRep(ci.logicalName)),
-    SoQLDate -> (ci => new jsonreps.DateRep(ci.logicalName)),
-    SoQLTime -> (ci => new jsonreps.TimeRep(ci.logicalName)),
-    SoQLLocation -> (ci => new jsonreps.LocationRep(ci.logicalName)),
-    SoQLDouble -> (ci => new jsonreps.DoubleRep(ci.logicalName)),
-    SoQLArray -> (ci => new jsonreps.ArrayRep(ci.logicalName)),
-    SoQLObject -> (ci => new jsonreps.ObjectRep(ci.logicalName))
+  private val jsonRepFactoriesMinusId = Map[SoQLType, JsonColumnRep[SoQLType, SoQLValue]](
+    SoQLText -> jsonreps.TextRep,
+    SoQLBoolean -> jsonreps.BooleanRep,
+    SoQLNumber -> new jsonreps.NumberLikeRep(SoQLNumber, _.asInstanceOf[SoQLNumber].value, SoQLNumber(_)),
+    SoQLMoney -> new jsonreps.NumberLikeRep(SoQLMoney, _.asInstanceOf[SoQLMoney].value, SoQLMoney(_)),
+    SoQLFixedTimestamp -> jsonreps.FixedTimestampRep,
+    SoQLFloatingTimestamp -> jsonreps.FloatingTimestampRep,
+    SoQLDate -> jsonreps.DateRep,
+    SoQLTime -> jsonreps.TimeRep,
+    SoQLLocation -> jsonreps.LocationRep,
+    SoQLDouble -> jsonreps.DoubleRep,
+    SoQLArray -> jsonreps.ArrayRep,
+    SoQLObject -> jsonreps.ObjectRep
   )
 
   trait IdObfuscationContext {
@@ -72,12 +72,12 @@ object SoQLRep {
 
   private def jsonRepFactories(idObfuscationContext: IdObfuscationContext, versionObfuscationContext: VersionObfuscationContext) =
     jsonRepFactoriesMinusId ++ Seq(
-      SoQLID -> ((ci: ColumnInfo[SoQLType]) => new jsonreps.IDRep(ci.logicalName, idObfuscationContext)),
-      SoQLVersion -> ((ci: ColumnInfo[SoQLType]) => new jsonreps.VersionRep(ci.logicalName, versionObfuscationContext))
+      SoQLID -> new jsonreps.IDRep(idObfuscationContext),
+      SoQLVersion -> new jsonreps.VersionRep(versionObfuscationContext)
     )
 
-  def jsonRep(idObfuscationContext: IdObfuscationContext, versionObfuscationContext: VersionObfuscationContext): (ColumnInfo[SoQLType] => JsonColumnRep[SoQLType, SoQLValue]) = {
+  def jsonRep(idObfuscationContext: IdObfuscationContext, versionObfuscationContext: VersionObfuscationContext): (SoQLType => JsonColumnRep[SoQLType, SoQLValue]) = {
     val factories = jsonRepFactories(idObfuscationContext, versionObfuscationContext);
-    { ci => factories(ci.typ)(ci) }
+    { typ => factories(typ) }
   }
 }

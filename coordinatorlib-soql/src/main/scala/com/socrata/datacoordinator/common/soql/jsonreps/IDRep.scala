@@ -7,7 +7,7 @@ import com.rojoma.json.ast.{JNull, JString, JValue}
 import com.socrata.datacoordinator.common.soql.SoQLRep
 import com.socrata.datacoordinator.id.RowId
 
-class IDRep(val name: ColumnName, obfuscationContext: SoQLRep.IdObfuscationContext) extends JsonColumnRep[SoQLType, SoQLValue] {
+class IDRep(obfuscationContext: SoQLRep.IdObfuscationContext) extends JsonColumnRep[SoQLType, SoQLValue] {
   def fromJValue(input: JValue): Option[SoQLID] = input match {
     case JString(obfuscated) =>
       obfuscationContext.deobfuscate(obfuscated).map { r => SoQLID(r.underlying) }

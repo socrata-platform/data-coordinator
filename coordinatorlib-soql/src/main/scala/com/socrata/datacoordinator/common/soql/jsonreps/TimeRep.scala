@@ -7,7 +7,7 @@ import com.socrata.datacoordinator.truth.json.JsonColumnRep
 import com.socrata.soql.types.{SoQLNull, SoQLValue, SoQLTime, SoQLType}
 import com.socrata.soql.environment.ColumnName
 
-class TimeRep(val name: ColumnName) extends JsonColumnRep[SoQLType, SoQLValue] {
+object TimeRep extends JsonColumnRep[SoQLType, SoQLValue] {
   val representedType = SoQLTime
 
   private def tryParseTimestamp(s: String): Option[SoQLTime] = s match {

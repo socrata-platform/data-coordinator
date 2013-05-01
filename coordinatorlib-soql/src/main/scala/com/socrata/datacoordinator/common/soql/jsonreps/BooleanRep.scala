@@ -8,7 +8,7 @@ import com.socrata.soql.environment.ColumnName
 
 // This can't be a codec-based rep because of some weirdness involving
 // pattern matching with an implicit ClassTag in scope + a boxed primitive
-class BooleanRep(val name: ColumnName) extends JsonColumnRep[SoQLType, SoQLValue] {
+object BooleanRep extends JsonColumnRep[SoQLType, SoQLValue] {
   val representedType = SoQLBoolean
 
   def fromJValue(input: JValue) = input match {

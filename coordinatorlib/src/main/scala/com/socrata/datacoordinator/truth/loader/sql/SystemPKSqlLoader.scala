@@ -262,10 +262,15 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
             val op = it.next()
             oldRows.get(op.id) match {
               case Some(oldRow) =>
-                op.row = rowPreparer.prepareForUpdate(op.row, oldRow = oldRow)
-                sqlizer.prepareSystemIdUpdate(stmt, op.id, op.row)
-                stmt.addBatch()
-                updatesRun.add(op)
+                rowPreparer.prepareForUpdate(op.row, oldRow = oldRow) match {
+                  case Right(updateRow) =>
+                    op.row = updateRow
+                    sqlizer.prepareSystemIdUpdate(stmt, op.id, op.row)
+                    stmt.addBatch()
+                    updatesRun.add(op)
+                  case Left(err) =>
+                    errors.put(op.job, err)
+                }
               case None =>
                 errors.put(op.job, NoSuchRowToUpdate(typeContext.makeValueFromSystemId(op.id)))
             }
@@ -299,28 +304,35 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
     var resultMap: TIntObjectHashMap[CV] = null
     if(!inserts.isEmpty) {
       timingReport("process-inserts", "jobs" -> inserts.size) {
+        val inserted = new java.util.ArrayList[Insert[CV]]
         val insertCount = sqlizer.insertBatch(connection) { inserter =>
           var i = 0
           do {
             val op = inserts.get(i)
-            op.row = rowPreparer.prepareForInsert(op.row, op.id)
-            inserter.insert(op.row)
-            insertSize -= op.size
+            rowPreparer.prepareForInsert(op.row, op.id) match {
+              case Right(insertRow) =>
+                op.row = insertRow
+                inserter.insert(op.row)
+                inserted.add(op)
+                insertSize -= op.size
+              case Left(err) =>
+                errors.put(op.job, err)
+            }
             i += 1
           } while(i != inserts.size)
         }
 
-        assert(insertCount == inserts.size, "Expected " + inserts.size + " results for inserts; got " + insertCount)
+        assert(insertCount == inserted.size, "Expected " + inserted.size + " results for inserts; got " + insertCount)
 
         var i = 0
         resultMap = new TIntObjectHashMap[CV]
-        do {
-          val op = inserts.get(i)
+        while(i != insertCount) {
+          val op = inserted.get(i)
           val idValue = typeContext.makeValueFromSystemId(op.id)
           dataLogger.insert(op.id, op.row)
           resultMap.put(op.job, idValue)
           i += 1
-        } while(i != insertCount)
+        }
       }
     }
     assert(insertSize == 0, "No inserts, but insert size is not 0?")

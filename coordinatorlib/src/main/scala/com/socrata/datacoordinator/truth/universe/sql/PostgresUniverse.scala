@@ -24,6 +24,7 @@ import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
 import com.socrata.datacoordinator.id.RowId
+import com.socrata.datacoordinator.truth.json.JsonColumnWriteRep
 
 trait PostgresCommonSupport[CT, CV] {
   val executor: ExecutorService
@@ -38,7 +39,7 @@ trait PostgresCommonSupport[CT, CV] {
   val copyInProvider: (Connection, String, Reader) => Long
   val timingReport: TransferrableContextTimingReport
 
-  def rowPreparer(transactionStart: DateTime, schema: ColumnIdMap[AbstractColumnInfoLike], rowDataProvider: RowDataProvider): RowPreparer[CV]
+  def rowPreparer(transactionStart: DateTime, ctx: DatasetCopyContext[CT], rowDataProvider: RowDataProvider): RowPreparer[CV]
 
   lazy val loaderProvider = new AbstractSqlLoaderProvider(executor, typeContext, repFor, isSystemColumn) with PostgresSqlLoaderProvider[CT, CV] {
     def copyIn(conn: Connection, sql: String, reader: Reader): Long =
@@ -154,7 +155,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
     new SqlPrevettedLoader(conn, sqlizerFactory(copyCtx.copyInfo, datasetContextFactory(copyCtx.schema)), logger)
 
   def loader(copyCtx: DatasetCopyContext[CT], rowDataProvider: RowDataProvider, logger: Logger[CT, CV]) =
-    managed(loaderProvider(conn, copyCtx, rowPreparer(transactionStart, copyCtx.schema, rowDataProvider), rowDataProvider, logger, timingReport))
+    managed(loaderProvider(conn, copyCtx, rowPreparer(transactionStart, copyCtx, rowDataProvider), rowDataProvider, logger, timingReport))
 
   lazy val lowLevelDatabaseReader = new PostgresDatabaseReader(conn, datasetMapReader, repFor)
 

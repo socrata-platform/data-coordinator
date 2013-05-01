@@ -6,7 +6,7 @@ import com.socrata.datacoordinator.truth.json.JsonColumnRep
 import com.socrata.soql.types._
 import com.socrata.soql.environment.ColumnName
 
-class DoubleRep(val name: ColumnName) extends JsonColumnRep[SoQLType, SoQLValue] {
+object DoubleRep extends JsonColumnRep[SoQLType, SoQLValue] {
   val representedType = SoQLDouble
 
   def fromJValue(input: JValue) = input match {

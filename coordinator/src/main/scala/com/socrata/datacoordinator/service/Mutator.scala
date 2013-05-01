@@ -181,7 +181,7 @@ trait MutatorCommon[CT, CV] {
   def systemIdColumnName: ColumnName
   def typeNameFor(typ: CT): TypeName
   def nameForTypeOpt(name: TypeName): Option[CT]
-  def jsonReps(di: DatasetInfo): ColumnInfo[CT] => JsonColumnRep[CT, CV]
+  def jsonReps(di: DatasetInfo): CT => JsonColumnRep[CT, CV]
   def schemaFinder: SchemaFinder[CT, CV]
 }
 
@@ -279,7 +279,7 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
         val pk = ctx.schema.values.find(_.isUserPrimaryKey).orElse(ctx.schema.values.find(_.isSystemPrimaryKey)).getOrElse {
           sys.error("No primary key on this dataset?")
         }
-        val repify = jsonRepFor(pk).toJValue _
+        val repify = jsonRepFor(pk.typ).toJValue _
         val interim = new Report[JValue] {
           def inserted: collection.Map[Int, JValue] = r.inserted.mapValues(repify)
 
@@ -358,7 +358,7 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
     }
   }
 
-  class Processor(jsonRepFor: ColumnInfo[CT] => JsonColumnRep[CT, CV]) {
+  class Processor(jsonRepFor: CT => JsonColumnRep[CT, CV]) {
     def carryOutCommands(mutator: DatasetMutator[CT, CV]#MutationContext, commands: CommandStream): Seq[Report[CV]] = {
       val reports = new VectorBuilder[Report[CV]]
       def loop() {
@@ -465,7 +465,7 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
           val pk = schema.values.find(_.isUserPrimaryKey).orElse(schema.values.find(_.isSystemPrimaryKey)).getOrElse {
             sys.error("No primary key on this dataset?")
           }
-          val trueError = result.errors.minBy(_._1)._2.map(jsonRepFor(pk).toJValue)
+          val trueError = result.errors.minBy(_._1)._2.map(jsonRepFor(pk.typ).toJValue)
           throw UpsertError(mutator.copyInfo.datasetInfo.systemId, trueError)(idx)
         }
         result

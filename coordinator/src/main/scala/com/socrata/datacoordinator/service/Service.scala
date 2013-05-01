@@ -23,19 +23,24 @@ import javax.activation.{MimeTypeParseException, MimeType}
 import com.socrata.soql.environment.{TypeName, ColumnName}
 import com.socrata.datacoordinator.secondary.NamedSecondary
 import com.socrata.datacoordinator.truth.Snapshot
-import com.socrata.datacoordinator.truth.loader.{NullPrimaryKey, NoPrimaryKey}
+import com.socrata.datacoordinator.truth.loader._
 import com.netflix.curator.framework.CuratorFrameworkFactory
 import com.netflix.curator.retry
 import com.netflix.curator.x.discovery.ServiceDiscoveryBuilder
 import com.socrata.http.server.curator.CuratorBroker
 import org.apache.log4j.PropertyConfigurator
 import java.io.{Reader, UnsupportedEncodingException, BufferedWriter}
+import com.rojoma.json.io.TokenIdentifier
+import com.rojoma.json.io.TokenString
+import com.socrata.thirdparty.typesafeconfig.Propertizer
+import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.truth.loader.NoSuchRowToDelete
+import com.rojoma.json.ast.JString
+import com.socrata.datacoordinator.truth.Snapshot
+import com.socrata.datacoordinator.secondary.NamedSecondary
 import com.rojoma.json.io.TokenIdentifier
 import com.rojoma.json.io.TokenString
 import com.socrata.datacoordinator.truth.loader.NoSuchRowToUpdate
-import com.socrata.thirdparty.typesafeconfig.Propertizer
-import com.socrata.datacoordinator.id.DatasetId
 
 case class Field(name: String, @JsonKey("type") typ: String)
 object Field {
@@ -320,6 +325,12 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
             err(BadRequest, "update.row.no-such-id",
               "dataset" -> JString(datasetName.underlying.toString),
               "value" -> id)
+          case Mutator.UpsertError(datasetName, VersionMismatch(id, expected, actual)) =>
+            err(BadRequest, "update.row-version-mismatch",
+              "dataset" -> JString(datasetName.underlying.toString),
+              "value" -> id,
+              "expected" -> expected,
+              "actual" -> actual)
         }
     }
   }
@@ -515,14 +526,15 @@ object Service extends App { self =>
       val res = for(u <- common.universe) yield {
         Exporter.export(u, id, copy, columns, limit, offset) { (copyCtx, it) =>
           val jsonReps = common.jsonReps(copyCtx.datasetInfo)
-          val jsonSchema = copyCtx.schema.mapValuesStrict(jsonReps)
+          val jsonSchema = copyCtx.schema.mapValuesStrict { ci => jsonReps(ci.typ) }
+          val schema = copyCtx.schema
           f(it.map { row =>
             val res = new scala.collection.mutable.HashMap[String, JValue]
             row.foreach { case (cid, value) =>
               if(jsonSchema.contains(cid)) {
                 val rep = jsonSchema(cid)
                 val v = rep.toJValue(value)
-                if(JNull != v) res(rep.name.name) = v
+                if(JNull != v) res(schema(cid).logicalName.name) = v
               }
             }
             JObject(res)

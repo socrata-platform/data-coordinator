@@ -5,7 +5,6 @@ import com.rojoma.json.codec._
 import com.socrata.soql.environment.ColumnName
 
 trait JsonColumnCommonRep[CT, CV] {
-  val name: ColumnName
   val representedType: CT
 }
 
@@ -20,7 +19,7 @@ trait JsonColumnWriteRep[CT, CV] extends JsonColumnCommonRep[CT, CV] {
 
 trait JsonColumnRep[CT, CV] extends JsonColumnReadRep[CT, CV] with JsonColumnWriteRep[CT, CV]
 
-class CodecBasedJsonColumnRep[CT, CV, TrueCV : JsonCodec](val name: ColumnName, val representedType: CT, unwrapper: CV => TrueCV, wrapper: TrueCV => CV, NullValue: CV) extends JsonColumnRep[CT, CV] {
+class CodecBasedJsonColumnRep[CT, CV, TrueCV : JsonCodec](val representedType: CT, unwrapper: CV => TrueCV, wrapper: TrueCV => CV, NullValue: CV) extends JsonColumnRep[CT, CV] {
   def fromJValue(input: JValue) =
     if(input == JNull) Some(NullValue)
     else JsonCodec[TrueCV].decode(input).map(wrapper)

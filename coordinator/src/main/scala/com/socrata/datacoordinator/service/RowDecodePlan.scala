@@ -8,7 +8,7 @@ import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, AbstractColumnInf
 import com.socrata.datacoordinator.id.ColumnId
 import com.socrata.soql.environment.{TypeName, ColumnName}
 
-class RowDecodePlan[CT, CV](schema: ColumnIdMap[ColumnInfo[CT]], repFor: ColumnInfo[CT] => JsonColumnReadRep[CT, CV], typeNameFor: CT => TypeName)
+class RowDecodePlan[CT, CV](schema: ColumnIdMap[ColumnInfo[CT]], repFor: CT => JsonColumnReadRep[CT, CV], typeNameFor: CT => TypeName)
   extends (JValue => Either[CV, Row[CV]])
 {
   sealed abstract class BadDataException(msg: String) extends Exception(msg)
@@ -18,10 +18,10 @@ class RowDecodePlan[CT, CV](schema: ColumnIdMap[ColumnInfo[CT]], repFor: ColumnI
   val pkCol = schema.values.find(_.isUserPrimaryKey).orElse(schema.values.find(_.isSystemPrimaryKey)).getOrElse {
     sys.error("No system primary key in the schema?")
   }
-  val pkRep = repFor(pkCol)
+  val pkRep = repFor(pkCol.typ)
   val cookedSchema: Array[(ColumnName, ColumnId, JsonColumnReadRep[CT, CV])] =
     schema.iterator.map { case (systemId, ci) =>
-      (ci.logicalName, systemId, repFor(ci))
+      (ci.logicalName, systemId, repFor(ci.typ))
     }.toArray
 
   def cook(row: scala.collection.Map[String, JValue]): Map[ColumnName, JValue] = {

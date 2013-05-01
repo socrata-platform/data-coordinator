@@ -99,10 +99,11 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     def prepareForInsert(row: Row[TestColumnValue], sid: RowId) = {
       val newRow = new MutableColumnIdMap(row)
       newRow(idCol) = LongValue(sid.underlying)
-      newRow.freeze()
+      Right(newRow.freeze())
     }
 
-    def prepareForUpdate(row: Row[TestColumnValue], oldRow: Row[TestColumnValue]) = oldRow ++ row
+    def prepareForUpdate(row: Row[TestColumnValue], oldRow: Row[TestColumnValue]) =
+      Right(oldRow ++ row)
   }
 
   test("adding a new row with system PK succeeds") {

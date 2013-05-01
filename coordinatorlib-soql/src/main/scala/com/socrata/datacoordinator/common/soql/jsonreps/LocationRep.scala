@@ -6,11 +6,12 @@ import com.socrata.soql.environment.ColumnName
 import com.rojoma.json.codec.JsonCodec
 import com.rojoma.json.ast.{JNumber, JObject, JValue}
 
-class LocationRep(name: ColumnName)
-  extends CodecBasedJsonColumnRep[SoQLType, SoQLValue, SoQLLocation](name, SoQLLocation, _.asInstanceOf[SoQLLocation], identity, SoQLNull)(LocationRep.codec)
+object LocationRep
+  extends CodecBasedJsonColumnRep[SoQLType, SoQLValue, SoQLLocation](SoQLLocation, _.asInstanceOf[SoQLLocation], identity, SoQLNull)(LocationRepCodec.codec) {
+}
 
-object LocationRep {
-  private val codec = new JsonCodec[SoQLLocation] {
+object LocationRepCodec {
+  val codec = new JsonCodec[SoQLLocation] {
     def encode(x: SoQLLocation): JValue =
       JObject(Map(
         "lat" -> JNumber(x.latitude),

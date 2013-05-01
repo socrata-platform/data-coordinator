@@ -283,30 +283,35 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: Dat
     var resultMap: TIntObjectHashMap[CV] = null
     if(!inserts.isEmpty) {
       timingReport("process-inserts", "jobs" -> inserts.size) {
-        val sids = new Array[RowId](inserts.size)
+        val inserted = new java.util.ArrayList[(RowId, OperationLog[CV])]
         val insertedCount = sqlizer.insertBatch(connection) { inserter =>
           var i = 0
           do {
             val op = inserts.get(i)
             assert(op.hasUpsertJob, "No upsert job?")
             val sid = idProvider.allocateId()
-            sids(i) = sid
-            op.upsertedRow = rowPreparer.prepareForInsert(op.upsertedRow, sid)
-            inserter.insert(op.upsertedRow)
-            insertSize -= op.upsertSize
+            rowPreparer.prepareForInsert(op.upsertedRow, sid) match {
+              case Right(insertRow) =>
+                op.upsertedRow = insertRow
+                inserter.insert(op.upsertedRow)
+                insertSize -= op.upsertSize
+                inserted.add((sid, op))
+              case Left(err) =>
+                errors.put(op.upsertJob, err)
+            }
             i += 1
           } while(i != inserts.size)
         }
-        assert(insertedCount == inserts.size, "Expected " + inserts.size + " results for inserts; got " + insertedCount)
+        assert(insertedCount == inserted.size, "Expected " + inserted.size + " results for inserts; got " + insertedCount)
 
-        var i = inserts.size
+        var i = 0
         resultMap = new TIntObjectHashMap[CV]
-        do {
-          i -= 1
-          val op = inserts.get(i)
-          dataLogger.insert(sids(i), op.upsertedRow)
+        while(i != inserted.size) {
+          val (sid, op) = inserted.get(i)
+          dataLogger.insert(sid, op.upsertedRow)
           resultMap.put(op.upsertJob, op.id)
-        } while(i != 0)
+          i += 1
+        }
       }
     }
     assert(insertSize == 0, "No inserts, but insert size is not 0?  Instead it's " + insertSize)
@@ -319,15 +324,22 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: Dat
       timingReport("process-updates", "jobs" -> updates.size) {
         using(connection.prepareStatement(sqlizer.prepareSystemIdUpdateStatement)) { stmt =>
           var i = 0
+          val updated = new java.util.ArrayList[OperationLog[CV]](updates.size)
           do {
             val op = updates.get(i)
             assert(op.hasUpsertJob, "No upsert job?")
 
             rowSource.get(op.id) match {
               case Some(rowWithId) =>
-                op.upsertedRow = rowPreparer.prepareForUpdate(op.upsertedRow, oldRow = rowWithId.row)
-                sqlizer.prepareSystemIdUpdate(stmt, rowWithId.rowId, op.upsertedRow)
-                stmt.addBatch()
+                rowPreparer.prepareForUpdate(op.upsertedRow, oldRow = rowWithId.row) match {
+                  case Right(updateRow) =>
+                    op.upsertedRow = updateRow
+                    sqlizer.prepareSystemIdUpdate(stmt, rowWithId.rowId, op.upsertedRow)
+                    stmt.addBatch()
+                    updated.add(op)
+                  case Left(err) =>
+                    errors.put(op.upsertJob, err)
+                }
               case None =>
                 sys.error("Update requested but no system id found?")
             }
@@ -336,12 +348,12 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: Dat
           } while(i != updates.size)
 
           val results = stmt.executeBatch()
-          assert(results.length == updates.size, "Expected " + updates.size + " results for updates; got " + results.length)
+          assert(results.length == updated.size, "Expected " + updated.size + " results for updates; got " + results.length)
 
           i = 0
           resultMap = new TIntObjectHashMap[CV]
-          do {
-            val op = updates.get(i)
+          while(i != results.length) {
+            val op = updated.get(i)
             if(results(i) == 1) {
               val rowWithId = rowSource.get(op.id).getOrElse(sys.error("Successfully updated row, but no sid found for it?"))
               dataLogger.update(rowWithId.rowId, op.upsertedRow)
@@ -351,7 +363,7 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: Dat
             } else sys.error("Unexpected result code from update: " + results(i))
 
             i += 1
-          } while(i != results.size)
+          }
         }
       }
     }
