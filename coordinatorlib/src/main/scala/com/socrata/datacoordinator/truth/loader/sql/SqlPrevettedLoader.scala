@@ -41,9 +41,10 @@ class SqlPrevettedLoader[CT, CV](val conn: Connection, sqlizer: DataSqlizer[CT, 
   def flushUpdates() {
     if(updateBatch.nonEmpty) {
       try {
-        for(stmt <- managed(conn.createStatement())) {
+        for(stmt <- managed(conn.prepareStatement(sqlizer.prepareSystemIdUpdateStatement))) {
           for(update <- updateBatch) {
-            stmt.addBatch(sqlizer.sqlizeSystemIdUpdate(update.systemId, update.data))
+            sqlizer.prepareSystemIdUpdate(stmt, update.systemId, update.data)
+            stmt.addBatch()
           }
           checkResults(stmt.executeBatch(), 1)
         }

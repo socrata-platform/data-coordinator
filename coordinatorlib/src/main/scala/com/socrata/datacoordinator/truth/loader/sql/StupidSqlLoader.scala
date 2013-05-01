@@ -42,8 +42,9 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
             findRow(id) match {
               case Some(RowWithId(sid, oldRow)) =>
                 val updateRow = rowPreparer.prepareForUpdate(unpreparedRow, oldRow = oldRow)
-                val updatedCount = using(connection.createStatement()) { stmt =>
-                  stmt.executeUpdate(sqlizer.sqlizeSystemIdUpdate(sid, updateRow))
+                val updatedCount = using(connection.prepareStatement(sqlizer.prepareSystemIdUpdateStatement)) { stmt =>
+                  sqlizer.prepareSystemIdUpdate(stmt, sid, updateRow)
+                  stmt.executeUpdate()
                 }
                 assert(updatedCount == 1)
                 dataLogger.update(sid, updateRow)
@@ -68,8 +69,11 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
               findRow(id) match {
                 case Some(RowWithId(sid, oldRow)) =>
                   val updateRow = rowPreparer.prepareForUpdate(unpreparedRow, oldRow = oldRow)
-                  val result = stmt.executeUpdate(sqlizer.sqlizeSystemIdUpdate(sid, updateRow))
-                  assert(result == 1, "From update: " + updated)
+                  using(connection.prepareStatement(sqlizer.prepareSystemIdUpdateStatement)) { stmt =>
+                    sqlizer.prepareSystemIdUpdate(stmt, sid, updateRow)
+                    val result = stmt.executeUpdate()
+                    assert(result == 1, "From update: " + updated)
+                  }
                   updated.put(job, id)
                   dataLogger.update(sid, updateRow)
                 case None =>

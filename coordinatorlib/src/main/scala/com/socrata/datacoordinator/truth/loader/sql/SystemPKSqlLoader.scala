@@ -255,7 +255,7 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
     if(!updates.isEmpty) {
       val oldRows = loadOldRows(updates.iterator.asScala.map { u => typeContext.makeValueFromSystemId(u.id) })
       timingReport("process-updates", "jobs" -> updates.size) {
-        using(connection.createStatement()) { stmt =>
+        using(connection.prepareStatement(sqlizer.prepareSystemIdUpdateStatement)) { stmt =>
           val it = updates.iterator()
           val updatesRun = new java.util.ArrayList[Update[CV]](updates.size)
           while(it.hasNext) {
@@ -263,8 +263,8 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
             oldRows.get(op.id) match {
               case Some(oldRow) =>
                 op.row = rowPreparer.prepareForUpdate(op.row, oldRow = oldRow)
-                val sql = sqlizer.sqlizeSystemIdUpdate(op.id, op.row)
-                stmt.addBatch(sql)
+                sqlizer.prepareSystemIdUpdate(stmt, op.id, op.row)
+                stmt.addBatch()
                 updatesRun.add(op)
               case None =>
                 errors.put(op.job, NoSuchRowToUpdate(typeContext.makeValueFromSystemId(op.id)))

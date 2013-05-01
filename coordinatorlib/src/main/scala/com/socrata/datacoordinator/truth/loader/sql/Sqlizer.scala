@@ -27,9 +27,10 @@ trait DataSqlizer[CT, CV] {
 
   // TODO: Remove all this delete code in favor of batched system ID deletes
   def prepareSystemIdDeleteStatement: String
-
   def prepareSystemIdDelete(stmt: PreparedStatement, sid: RowId)
-  def sqlizeSystemIdUpdate(sid: RowId, row: Row[CV]): String
+
+  def prepareSystemIdUpdateStatement: String
+  def prepareSystemIdUpdate(stmt: PreparedStatement, sid: RowId, row: Row[CV])
 
   def findRows(conn: Connection, ids: Iterator[CV]): CloseableIterator[Seq[RowWithId[CV]]]
 

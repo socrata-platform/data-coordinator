@@ -55,25 +55,16 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
     sidRep.prepareSingleLookup(stmt, typeContext.makeValueFromSystemId(sid), 1)
   }
 
-  def sqlizeSystemIdUpdate(sid: RowId, row: Row[CV]) = {
-    updatePrefix(row).append(sidRep sql_== typeContext.makeValueFromSystemId(sid)).toString
-  }
+  def prepareSystemIdUpdateStatement: String =
+    "UPDATE " + dataTableName + " SET " + repSchema.values.flatMap(_.physColumns).map(_ + " = ?").mkString(",") + " WHERE " + sidRep.templateForSingleLookup
 
-  def updatePrefix(row: Row[CV]) = {
-    val sb = new java.lang.StringBuilder("UPDATE ").append(dataTableName).append(" SET ")
-    var didOne = false
-    val it = row.iterator
-    while(it.hasNext) {
-      val (k,v) = it.next()
-
-      if(didOne) sb.append(',')
-      else didOne = true
-
-      val rep = repSchema(k)
-      rep.SETsForUpdate(sb, v)
+  def prepareSystemIdUpdate(stmt: PreparedStatement, sid: RowId, row: Row[CV]) {
+    var i = 1
+    for((cid, rep) <- repSchema) {
+      val v = row.getOrElseStrict(cid, typeContext.nullValue)
+      i = rep.prepareUpdate(stmt, v, i)
     }
-    sb.append(" WHERE ")
-    sb
+    sidRep.prepareUpdate(stmt, typeContext.makeValueFromSystemId(sid), i)
   }
 
   def blockQueryById[T](conn: Connection, ids: Iterator[CV], prefix: String)(decode: ResultSet => T): CloseableIterator[Seq[T]] = {

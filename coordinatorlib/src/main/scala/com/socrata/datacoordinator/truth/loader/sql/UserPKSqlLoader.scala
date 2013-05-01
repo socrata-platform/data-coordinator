@@ -317,7 +317,7 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: Dat
     var resultMap: TIntObjectHashMap[CV] = null
     if(!updates.isEmpty) {
       timingReport("process-updates", "jobs" -> updates.size) {
-        using(connection.createStatement()) { stmt =>
+        using(connection.prepareStatement(sqlizer.prepareSystemIdUpdateStatement)) { stmt =>
           var i = 0
           do {
             val op = updates.get(i)
@@ -326,8 +326,8 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: Dat
             rowSource.get(op.id) match {
               case Some(rowWithId) =>
                 op.upsertedRow = rowPreparer.prepareForUpdate(op.upsertedRow, oldRow = rowWithId.row)
-                val sql = sqlizer.sqlizeSystemIdUpdate(rowWithId.rowId, op.upsertedRow)
-                stmt.addBatch(sql)
+                sqlizer.prepareSystemIdUpdate(stmt, rowWithId.rowId, op.upsertedRow)
+                stmt.addBatch()
               case None =>
                 sys.error("Update requested but no system id found?")
             }
