@@ -325,7 +325,7 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: Dat
 
             rowSource.get(op.id) match {
               case Some(rowWithId) =>
-                op.upsertedRow = rowPreparer.prepareForUpdate(op.upsertedRow)
+                op.upsertedRow = rowPreparer.prepareForUpdate(op.upsertedRow, oldRow = rowWithId.row)
                 val sql = sqlizer.sqlizeSystemIdUpdate(rowWithId.rowId, op.upsertedRow)
                 stmt.addBatch(sql)
               case None =>

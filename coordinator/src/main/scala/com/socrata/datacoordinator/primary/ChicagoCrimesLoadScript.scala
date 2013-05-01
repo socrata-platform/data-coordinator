@@ -53,7 +53,7 @@ object ChicagoCrimesLoadScript extends App {
       com.socrata.datacoordinator.truth.sql.DatabasePopulator.populate(conn, StandardDatasetMapLimits)
     }
 
-    val datasetCreator = new DatasetCreator(common.universe, common.systemSchema, common.SystemColumnNames.id, common.physicalColumnBaseBase)
+    val datasetCreator = new DatasetCreator(common.universe, common.SystemColumns.schemaFragment, common.SystemColumns.id, common.physicalColumnBaseBase)
 
     val columnAdder = new ColumnAdder(common.universe, common.physicalColumnBaseBase)
 

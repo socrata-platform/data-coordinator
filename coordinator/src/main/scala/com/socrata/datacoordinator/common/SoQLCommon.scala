@@ -12,7 +12,7 @@ import com.socrata.datacoordinator.truth.json.{JsonColumnRep, JsonColumnReadRep}
 import java.util.concurrent.ExecutorService
 import com.socrata.datacoordinator.truth.universe.sql.{PostgresUniverse, PostgresCommonSupport}
 import org.joda.time.DateTime
-import com.socrata.datacoordinator.util.collection.ColumnIdMap
+import com.socrata.datacoordinator.util.collection.{ColumnIdSet, ColumnIdMap}
 import com.socrata.datacoordinator.truth.loader.RowPreparer
 import com.socrata.datacoordinator.id.{RowVersion, RowId}
 import java.sql.Connection
@@ -20,6 +20,22 @@ import java.io.Reader
 import com.socrata.datacoordinator.util.{RowDataProvider, TransferrableContextTimingReport}
 import javax.sql.DataSource
 import com.rojoma.simplearm.{SimpleArm, Managed}
+
+object SoQLSystemColumns { sc =>
+  val id = ColumnName(":id")
+  val createdAt = ColumnName(":created_at")
+  val updatedAt = ColumnName(":updated_at")
+  val version = ColumnName(":version")
+
+  val schemaFragment = Map(
+    id -> SoQLID,
+    version -> SoQLVersion,
+    createdAt -> SoQLFixedTimestamp,
+    updatedAt -> SoQLFixedTimestamp
+  )
+
+  val allSystemColumnNames = schemaFragment.keySet
+}
 
 class SoQLCommon(dataSource: DataSource,
                  copyInProvider: (Connection, String, Reader) => Long,
@@ -32,19 +48,8 @@ class SoQLCommon(dataSource: DataSource,
 
   val datasetMapLimits = StandardDatasetMapLimits
 
-  object SystemColumnNames {
-    val id = ColumnName(":id")
-    val createdAt = ColumnName(":created_at")
-    val updatedAt = ColumnName(":updated_at")
-    val version = ColumnName(":version")
-  }
+  val SystemColumns = SoQLSystemColumns
 
-  val systemSchema = Map(
-    SystemColumnNames.id -> SoQLID,
-    SystemColumnNames.version -> SoQLVersion,
-    SystemColumnNames.createdAt -> SoQLFixedTimestamp,
-    SystemColumnNames.updatedAt -> SoQLFixedTimestamp
-  )
   val typeContext = SoQLTypeContext
 
   def idObfuscationContextFor(cryptProvider: CryptProvider) = new RowIdObfuscator(cryptProvider)
@@ -99,10 +104,12 @@ class SoQLCommon(dataSource: DataSource,
         def findCol(name: ColumnName) =
           schema.values.find(_.logicalName == name).getOrElse(sys.error(s"No $name column?")).systemId
 
-        val idColumn = findCol(SystemColumnNames.id)
-        val createdAtColumn = findCol(SystemColumnNames.createdAt)
-        val updatedAtColumn = findCol(SystemColumnNames.updatedAt)
-        val versionColumn = findCol(SystemColumnNames.version)
+        val idColumn = findCol(SystemColumns.id)
+        val createdAtColumn = findCol(SystemColumns.createdAt)
+        val updatedAtColumn = findCol(SystemColumns.updatedAt)
+        val versionColumn = findCol(SystemColumns.version)
+
+        val allSystemColumns = ColumnIdSet(SystemColumns.allSystemColumnNames.toSeq.map(findCol) : _*)
 
         def prepareForInsert(row: Row[SoQLValue], sid: RowId) = {
           val tmp = new MutableRow(row)
@@ -113,10 +120,13 @@ class SoQLCommon(dataSource: DataSource,
           tmp.freeze()
         }
 
-        def prepareForUpdate(row: Row[SoQLValue]) = {
-          val tmp = new MutableRow[SoQLValue](row)
-          tmp -= idColumn
-          tmp -= createdAtColumn
+        def prepareForUpdate(row: Row[SoQLValue], oldRow: Row[SoQLValue]) = {
+          val tmp = new MutableRow[SoQLValue](oldRow)
+          val rowIt = row.iterator
+          while(rowIt.hasNext) {
+            rowIt.advance()
+            if(!allSystemColumns(rowIt.key)) tmp(rowIt.key) = rowIt.value
+          }
           tmp(updatedAtColumn) = SoQLFixedTimestamp(transactionStart)
           tmp(versionColumn) = SoQLVersion(idProvider.allocateVersion().underlying)
           tmp.freeze()
@@ -143,10 +153,10 @@ class SoQLCommon(dataSource: DataSource,
     def isSystemColumnName(identifier: ColumnName): Boolean =
       common.isSystemColumnName(identifier)
 
-    val systemSchema: Map[ColumnName, CT] = common.systemSchema
+    val systemSchema: Map[ColumnName, CT] = common.SystemColumns.schemaFragment
 
     val systemIdColumnName: ColumnName =
-      SystemColumnNames.id
+      SystemColumns.id
 
     def typeNameFor(typ: CT): TypeName =
       typeContext.typeNamespace.userTypeForType(typ)

@@ -2,13 +2,15 @@ package com.socrata.datacoordinator
 package truth.loader
 package sql
 
+import scala.collection.JavaConverters._
+
 import java.sql.Connection
 import java.util.concurrent.Executor
 
 import gnu.trove.map.hash.TIntObjectHashMap
 import com.rojoma.simplearm.util._
 
-import com.socrata.datacoordinator.util.collection.MutableRowIdMap
+import com.socrata.datacoordinator.util.collection.{RowIdMap, MutableRowIdMap}
 import com.socrata.datacoordinator.id.RowId
 import com.socrata.datacoordinator.util.{TransferrableContextTimingReport, RowDataProvider}
 
@@ -237,38 +239,54 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
     resultMap
   }
 
+  def loadOldRows(ids: Iterator[CV]): RowIdMap[Row[CV]] = {
+    timingReport("loadOldRows") {
+      using(sqlizer.findRows(connection, ids)) { blocks =>
+        val target = new MutableRowIdMap[Row[CV]]
+        for(rowWithId <- blocks.flatten) target(rowWithId.rowId) = rowWithId.row
+        target.freeze()
+      }
+    }
+  }
+
   def processUpdates(updateSizeX: Int, updates: java.util.ArrayList[Update[CV]], errors: TIntObjectHashMap[Failure[CV]]): TIntObjectHashMap[CV] = {
     var updateSize = updateSizeX
     var resultMap: TIntObjectHashMap[CV] = null
     if(!updates.isEmpty) {
+      val oldRows = loadOldRows(updates.iterator.asScala.map { u => typeContext.makeValueFromSystemId(u.id) })
       timingReport("process-updates", "jobs" -> updates.size) {
         using(connection.createStatement()) { stmt =>
           val it = updates.iterator()
+          val updatesRun = new java.util.ArrayList[Update[CV]](updates.size)
           while(it.hasNext) {
             val op = it.next()
-            op.row = rowPreparer.prepareForUpdate(op.row)
-            val sql = sqlizer.sqlizeSystemIdUpdate(op.id, op.row)
-            stmt.addBatch(sql)
+            oldRows.get(op.id) match {
+              case Some(oldRow) =>
+                op.row = rowPreparer.prepareForUpdate(op.row, oldRow = oldRow)
+                val sql = sqlizer.sqlizeSystemIdUpdate(op.id, op.row)
+                stmt.addBatch(sql)
+                updatesRun.add(op)
+              case None =>
+                errors.put(op.job, NoSuchRowToUpdate(typeContext.makeValueFromSystemId(op.id)))
+            }
             updateSize -= op.size
           }
 
           val results = stmt.executeBatch()
-          assert(results.length == updates.size, "Expected " + updates.size + " results for updates; got " + results.length)
+          assert(results.length == updatesRun.size, "Expected " + updatesRun.size() + " results for updates; got " + results.length)
 
           var i = 0
           resultMap = new TIntObjectHashMap[CV]
-          do {
-            val op = updates.get(i)
+          while(i != results.length) {
+            val op = updatesRun.get(i)
             val idValue = typeContext.makeValueFromSystemId(op.id)
             if(results(i) == 1) {
               dataLogger.update(op.id, op.row)
               resultMap.put(op.job, idValue)
-            } else if(results(i) == 0) {
-              errors.put(op.job, NoSuchRowToUpdate(idValue))
             } else sys.error("Unexpected result code from update: " + results(i))
 
             i += 1
-          } while(i != results.length)
+          }
         }
       }
     }

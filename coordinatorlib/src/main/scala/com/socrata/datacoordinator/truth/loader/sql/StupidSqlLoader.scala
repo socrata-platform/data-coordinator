@@ -41,7 +41,7 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
           case Some(id) =>
             findRow(id) match {
               case Some(RowWithId(sid, oldRow)) =>
-                val updateRow = rowPreparer.prepareForUpdate(unpreparedRow)
+                val updateRow = rowPreparer.prepareForUpdate(unpreparedRow, oldRow = oldRow)
                 val updatedCount = using(connection.createStatement()) { stmt =>
                   stmt.executeUpdate(sqlizer.sqlizeSystemIdUpdate(sid, updateRow))
                 }
@@ -62,15 +62,19 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
             errors.put(job, NoPrimaryKey)
         }
       case None =>
-        datasetContext.systemId(unpreparedRow) match {
+        datasetContext.systemIdAsValue(unpreparedRow) match {
           case Some(id) =>
             using(connection.createStatement()) { stmt =>
-              val updateRow = rowPreparer.prepareForUpdate(unpreparedRow)
-              if(stmt.executeUpdate(sqlizer.sqlizeSystemIdUpdate(id, updateRow)) == 1) {
-                updated.put(job, typeContext.makeValueFromSystemId(id))
-                dataLogger.update(id, updateRow)
-              } else
-                errors.put(job, NoSuchRowToUpdate(typeContext.makeValueFromSystemId(id)))
+              findRow(id) match {
+                case Some(RowWithId(sid, oldRow)) =>
+                  val updateRow = rowPreparer.prepareForUpdate(unpreparedRow, oldRow = oldRow)
+                  val result = stmt.executeUpdate(sqlizer.sqlizeSystemIdUpdate(sid, updateRow))
+                  assert(result == 1, "From update: " + updated)
+                  updated.put(job, id)
+                  dataLogger.update(sid, updateRow)
+                case None =>
+                  errors.put(job, NoSuchRowToUpdate(id))
+              }
             }
           case None =>
             val sid = idProvider.allocateId()

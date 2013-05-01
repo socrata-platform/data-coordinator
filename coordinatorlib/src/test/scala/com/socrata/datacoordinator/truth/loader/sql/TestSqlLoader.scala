@@ -102,7 +102,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       newRow.freeze()
     }
 
-    def prepareForUpdate(row: Row[TestColumnValue]) = row
+    def prepareForUpdate(row: Row[TestColumnValue], oldRow: Row[TestColumnValue]) = oldRow ++ row
   }
 
   test("adding a new row with system PK succeeds") {
@@ -264,7 +264,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         Map(idColName -> 7L, numName -> 44L, strName -> "q")
       ))
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq(
-        Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"u":{"""" + idCol.underlying + """":7,"""" + num.underlying + """":44}}]"""), "who" -> "hello")
+        Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"u":{"""" + idCol.underlying + """":7,"""" + num.underlying + """":44,"""" + str.underlying + """":"q"}}]"""), "who" -> "hello")
       ))
     }
   }
@@ -402,7 +402,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         Map(idColName -> 7L, numName -> 44L, strName -> "q")
       ))
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq(
-        Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"u":{"""" + num.underlying + """":44,"""" + str.underlying + """":"q"}}]"""), "who" -> "hello")
+        Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"u":{"""" + idCol.underlying + """":7,"""" +  + num.underlying + """":44,"""" + str.underlying + """":"q"}}]"""), "who" -> "hello")
       ))
     }
   }
