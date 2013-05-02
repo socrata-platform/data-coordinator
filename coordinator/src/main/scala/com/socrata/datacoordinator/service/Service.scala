@@ -1,6 +1,6 @@
 package com.socrata.datacoordinator.service
 
-import javax.servlet.http.HttpServletRequest
+import javax.servlet.http.{HttpServletResponse, HttpServletRequest}
 
 import com.socrata.http.server.implicits._
 import com.socrata.http.server.{ServerBroker, HttpResponse, SocrataServerJetty, HttpService}
@@ -436,10 +436,57 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
     }
   }
 
+  private val errorHandlingHandler = new ErrorAdapter(handler) {
+    type Tag = String
+    def onException(tag: Tag): HttpResponse = {
+      InternalServerError ~> ContentType("application/json; charset=utf-8") ~> Write { w =>
+        w.write(s"""{"errorCode":"internal","data":{"tag":"$tag"}}""")
+      }
+    }
+
+    def errorEncountered(ex: Exception): Tag = {
+      val uuid = java.util.UUID.randomUUID().toString
+      log.error("Unhandled error; tag = " + uuid, ex)
+      uuid
+    }
+  }
+
   def run(port: Int, broker: ServerBroker) {
-    val server = new SocrataServerJetty(handler, port = port, broker = broker)
+    val server = new SocrataServerJetty(errorHandlingHandler, port = port, broker = broker)
     server.run()
   }
+}
+
+abstract class ErrorAdapter(service: HttpServletRequest => HttpResponse) extends (HttpServletRequest => HttpResponse) {
+  type Tag
+
+  def apply(req: HttpServletRequest): HttpResponse = {
+    val response = try {
+      service(req)
+    } catch {
+      case e: Exception =>
+        return handleError(_, e)
+    }
+
+    (resp: HttpServletResponse) => try {
+      response(resp)
+    } catch {
+      case e: Exception =>
+        handleError(resp, e)
+    }
+  }
+
+  private def handleError(resp: HttpServletResponse, ex: Exception) {
+    val tag = errorEncountered(ex)
+    if(!resp.isCommitted) {
+      resp.reset()
+      onException(tag)(resp)
+    }
+  }
+
+  def errorEncountered(ex: Exception): Tag
+
+  def onException(tag: Tag): HttpResponse
 }
 
 object Service extends App { self =>
