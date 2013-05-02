@@ -16,7 +16,6 @@ import com.typesafe.config._
 import com.socrata.datacoordinator.common.{SoQLCommon, DataSourceFromConfig, StandardDatasetMapLimits}
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.secondary.{Secondary, SecondaryLoader}
-import com.socrata.datacoordinator.util.collection.DatasetIdMap
 import java.net.URLDecoder
 import com.socrata.datacoordinator.util.{StackedTimingReport, LoggedTimingReport}
 import javax.activation.{MimeTypeParseException, MimeType}
@@ -54,7 +53,7 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
               getSchema: DatasetId => Option[Schema],
               datasetContents: (DatasetId, CopySelector, Option[Set[ColumnName]], Option[Long], Option[Long]) => (Iterator[JObject] => Unit) => Boolean,
               secondaries: Set[String],
-              datasetsInStore: (String) => DatasetIdMap[Long],
+              datasetsInStore: (String) => Map[DatasetId, Long],
               versionInStore: (String, DatasetId) => Option[Long],
               updateVersionInStore: (String, DatasetId) => Unit,
               secondariesOfDataset: DatasetId => Map[String, Long],
@@ -478,7 +477,7 @@ object Service extends App { self =>
       )
     }
 
-    def datasetsInStore(storeId: String): DatasetIdMap[Long] =
+    def datasetsInStore(storeId: String): Map[DatasetId, Long] =
       for(u <- common.universe) yield {
         u.secondaryManifest.datasets(storeId)
       }

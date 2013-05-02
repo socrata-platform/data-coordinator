@@ -331,7 +331,7 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
             doProcess(ctx)
           }
         case CreateDatasetMutation(idx, localeName) =>
-          for(ctx <- u.datasetMutator.createDataset(user)("t", localeName)) yield {
+          for(ctx <- u.datasetMutator.createDataset(user)(localeName)) yield {
             for((col, typ) <- systemSchema) {
               val ci = ctx.addColumn(col, typ, physicalColumnBaseBase(col, systemColumn = true))
               if(col == systemIdColumnName) {

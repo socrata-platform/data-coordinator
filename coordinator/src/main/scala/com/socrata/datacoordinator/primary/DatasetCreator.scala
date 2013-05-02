@@ -12,7 +12,7 @@ class DatasetCreator[CT](universe: Managed[Universe[CT, _] with DatasetMutatorPr
   def createDataset(username: String, localeName: String): DatasetId = {
     for {
       u <- universe
-      ctx <- u.datasetMutator.createDataset(as = username)("t", localeName)
+      ctx <- u.datasetMutator.createDataset(as = username)(localeName)
     } yield {
       systemSchema.foreach { case (name, typ) =>
         val col = ctx.addColumn(name, typ, physicalColumnBaseBase(name, true))

@@ -11,6 +11,7 @@ import com.socrata.soql.types.{SoQLValue, SoQLType}
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.id.{RowId, DatasetId}
+import com.socrata.datacoordinator.id.sql._
 import com.socrata.datacoordinator.truth.sql.{RepBasedSqlDatasetContext, SqlColumnRep, DatabasePopulator}
 import com.socrata.datacoordinator.truth.loader.sql._
 import com.socrata.datacoordinator.common.soql.{SoQLRowLogCodec, SoQLRep, SoQLTypeContext}
@@ -81,7 +82,7 @@ class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingRe
     require(prototypeVersionInfo.lifecycleStage == LifecycleStage.Unpublished, "Bad lifecycle stage")
     require(prototypeVersionInfo.copyNumber == 1, "Bad lifecycle version")
 
-    val vi = datasetMap.createWithId(prototypeDatasetInfo.systemId, prototypeDatasetInfo.tableBaseBase, prototypeVersionInfo.systemId, prototypeDatasetInfo.localeName, prototypeDatasetInfo.obfuscationKey)
+    val vi = datasetMap.createWithId(prototypeDatasetInfo.systemId, prototypeVersionInfo.systemId, prototypeDatasetInfo.localeName, prototypeDatasetInfo.obfuscationKey)
     assert(vi.datasetInfo.unanchored == prototypeDatasetInfo)
     assert(vi.unanchored == prototypeVersionInfo)
     schemaLoader.create(vi)
@@ -326,7 +327,7 @@ object Backup extends App {
           globalLogRS <- managed(globalLogStmt.executeQuery())
         } {
           while(globalLogRS.next()) {
-            val datasetSystemId = new DatasetId(globalLogRS.getLong("dataset_system_id"))
+            val datasetSystemId = globalLogRS.getDatasetId("dataset_system_id")
             val version = globalLogRS.getLong("version")
             playback(primaryConn, bkp, datasetSystemId, version)
             backupConn.commit()

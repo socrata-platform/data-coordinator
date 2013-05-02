@@ -15,4 +15,6 @@ object DatasetId {
       case _ => None
     }
   }
+
+  val Invalid = new DatasetId(-1)
 }

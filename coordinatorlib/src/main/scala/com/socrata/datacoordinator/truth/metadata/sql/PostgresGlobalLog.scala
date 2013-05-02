@@ -9,6 +9,7 @@ import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.util.CloseableIterator
 import scala.collection.immutable.VectorBuilder
 import com.socrata.datacoordinator.id.{DatasetId, GlobalLogEntryId}
+import com.socrata.datacoordinator.id.sql._
 import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 
 class PostgresGlobalLog(conn: Connection) extends GlobalLog {
@@ -22,7 +23,7 @@ class PostgresGlobalLog(conn: Connection) extends GlobalLog {
     }
 
     using(conn.prepareStatement("INSERT INTO global_log (id, dataset_system_id, version, updated_at, updated_by) SELECT COALESCE(max(id), 0) + 1, ?, ?, ?, ? FROM global_log")) { stmt =>
-      stmt.setLong(1, tableInfo.systemId.underlying)
+      stmt.setDatasetId(1, tableInfo.systemId)
       stmt.setLong(2, version)
       stmt.setTimestamp(3, new Timestamp(updatedAt.getMillis))
       stmt.setString(4, updatedBy)
@@ -111,7 +112,7 @@ class PostgresGlobalLogPlayback(conn: Connection, blockSize: Int = 500) extends 
     while(rs.next()) {
       result += Job(
         new GlobalLogEntryId(rs.getLong("id")),
-        new DatasetId(rs.getLong("dataset_system_id")),
+        rs.getDatasetId("dataset_system_id"),
         rs.getLong("version")
       )
     }
