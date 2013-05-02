@@ -520,7 +520,8 @@ object Service extends App { self =>
         copyInForDataSource,
         executorService,
         _ => Some("pg_default"),
-        new LoggedTimingReport(org.slf4j.LoggerFactory.getLogger("timing-report")) with StackedTimingReport
+        new LoggedTimingReport(org.slf4j.LoggerFactory.getLogger("timing-report")) with StackedTimingReport,
+        allowDdlOnPublishedCopies = serviceConfig.allowDdlOnPublishedCopies
       )
     }
 

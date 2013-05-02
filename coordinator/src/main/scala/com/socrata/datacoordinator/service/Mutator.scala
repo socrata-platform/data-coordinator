@@ -183,6 +183,7 @@ trait MutatorCommon[CT, CV] {
   def nameForTypeOpt(name: TypeName): Option[CT]
   def jsonReps(di: DatasetInfo): CT => JsonColumnRep[CT, CV]
   def schemaFinder: SchemaFinder[CT, CV]
+  def allowDdlOnPublishedCopies: Boolean
 }
 
 class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
@@ -374,7 +375,7 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
     def carryOutCommand(mutator: DatasetMutator[CT, CV]#MutationContext, commands: CommandStream, cmd: Command): Option[Report[CV]] = {
       def datasetId = mutator.copyInfo.datasetInfo.systemId
       def checkDDL(idx: Long) {
-        if(mutator.copyInfo.lifecycleStage != LifecycleStage.Unpublished)
+        if(!allowDdlOnPublishedCopies && mutator.copyInfo.lifecycleStage != LifecycleStage.Unpublished)
           throw IncorrectLifecycleStage(datasetId, mutator.copyInfo.lifecycleStage, Set(LifecycleStage.Unpublished))(idx)
       }
       cmd match {

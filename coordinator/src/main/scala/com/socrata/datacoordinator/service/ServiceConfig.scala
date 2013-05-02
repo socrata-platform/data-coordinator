@@ -11,4 +11,5 @@ class ServiceConfig(val config: Config) {
   val dataSource = new DataSourceConfig(config.getConfig("database"))
   val logProperties = config.getConfig("log4j")
   val commandReadLimit = config.getBytes("command-read-limit").longValue
+  val allowDdlOnPublishedCopies = config.getBoolean("allow-ddl-on-published-copies")
 }

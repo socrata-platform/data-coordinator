@@ -46,7 +46,8 @@ object ChicagoCrimesLoadScript extends App {
       PostgresCopyIn,
       executor,
       Function.const(None),
-      new LoggedTimingReport(LoggerFactory.getLogger("timing-report")) with StackedTimingReport
+      new LoggedTimingReport(LoggerFactory.getLogger("timing-report")) with StackedTimingReport,
+      allowDdlOnPublishedCopies = false
     )
 
     com.rojoma.simplearm.util.using(ds.getConnection()) { conn =>

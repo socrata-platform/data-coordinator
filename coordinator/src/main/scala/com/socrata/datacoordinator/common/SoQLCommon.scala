@@ -42,7 +42,8 @@ class SoQLCommon(dataSource: DataSource,
                  copyInProvider: (Connection, String, Reader) => Long,
                  executorService: ExecutorService,
                  tableSpace: String => Option[String],
-                 val timingReport: TransferrableContextTimingReport)
+                 val timingReport: TransferrableContextTimingReport,
+                 allowDdlOnPublishedCopies: Boolean)
 { common =>
   type CT = SoQLType
   type CV = SoQLValue
@@ -182,5 +183,7 @@ class SoQLCommon(dataSource: DataSource,
     def jsonReps(di: DatasetInfo): CT => JsonColumnRep[CT, CV] = common.jsonReps(di)
 
     val schemaFinder = new SchemaFinder[CT, CV](universe, typeNameFor)
+
+    val allowDdlOnPublishedCopies = common.allowDdlOnPublishedCopies
   }
 }
