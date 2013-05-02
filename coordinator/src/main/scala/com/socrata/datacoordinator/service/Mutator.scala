@@ -373,6 +373,10 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
 
     def carryOutCommand(mutator: DatasetMutator[CT, CV]#MutationContext, commands: CommandStream, cmd: Command): Option[Report[CV]] = {
       def datasetId = mutator.copyInfo.datasetInfo.systemId
+      def checkDDL(idx: Long) {
+        if(mutator.copyInfo.lifecycleStage != LifecycleStage.Unpublished)
+          throw IncorrectLifecycleStage(datasetId, mutator.copyInfo.lifecycleStage, Set(LifecycleStage.Unpublished))(idx)
+      }
       cmd match {
         case AddColumn(idx, name, typName) =>
           if(!isLegalLogicalName(name)) throw IllegalColumnName(name)(idx)
@@ -381,6 +385,7 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
               val typ = nameForTypeOpt(typName).getOrElse {
                 throw NoSuchType(typName)(idx)
               }
+              checkDDL(idx)
               mutator.addColumn(name, typ, physicalColumnBaseBase(name))
               None
             case Some(_) =>
@@ -390,6 +395,7 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
           mutator.columnInfo(name) match {
             case Some(colInfo) =>
               if(isSystemColumnName(name)) throw InvalidSystemColumnOperation(datasetId, name, DropColumnOp)(idx)
+              checkDDL(idx)
               mutator.dropColumn(colInfo)
             case None =>
               throw NoSuchColumn(datasetId, name)(idx)
@@ -401,6 +407,7 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
               if(isSystemColumnName(from)) throw InvalidSystemColumnOperation(datasetId, from, RenameColumnOp)(idx)
               if(!isLegalLogicalName(to)) throw IllegalColumnName(to)(idx)
               if(mutator.columnInfo(to).isDefined) throw ColumnAlreadyExists(datasetId, to)(idx)
+              checkDDL(idx)
               mutator.renameColumn(colInfo, to)
             case None =>
               throw NoSuchColumn(datasetId, from)(idx)
@@ -413,6 +420,7 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
                 throw PrimaryKeyAlreadyExists(datasetId, name, pkCol.logicalName)(idx)
               if(isSystemColumnName(name)) throw InvalidSystemColumnOperation(datasetId, name, SetRowIdOp)(idx)
               try {
+                checkDDL(idx)
                 mutator.makeUserPrimaryKey(colInfo)
               } catch {
                 case e: mutator.PrimaryKeyCreationException => e match {
@@ -432,6 +440,7 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
           mutator.columnInfo(name) match {
             case Some(colInfo) =>
               if(!colInfo.isUserPrimaryKey) throw NotPrimaryKey(datasetId, name)(idx)
+              checkDDL(idx)
               mutator.unmakeUserPrimaryKey(colInfo)
             case None =>
               throw NoSuchColumn(datasetId, name)(idx)
