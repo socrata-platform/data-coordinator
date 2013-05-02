@@ -272,8 +272,7 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
               "field" -> JString(field),
               "value" -> value)
           case Mutator.NoSuchDataset(name) =>
-            err(NotFound, "update.dataset.does-not-exist",
-              "dataset" -> JString(name.underlying.toString))
+            notFoundError(name.underlying.toString)
           case Mutator.CannotAcquireDatasetWriteLock(name) =>
             err(Conflict, "update.dataset.temporarily-not-writable",
               "dataset" -> JString(name.underlying.toString))
