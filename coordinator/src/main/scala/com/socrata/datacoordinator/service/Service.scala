@@ -77,8 +77,15 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
     }
   }
 
-  def doExportFile(id: String)(req: HttpServletRequest): HttpResponse = {
-    val datasetId = parseDatasetId(id).getOrElse { return NotFound }
+  def notFoundError(datasetId: String) =
+    err(NotFound, "update.dataset.does-not-exist",
+      "dataset" -> JString(datasetId))
+
+  def doExportFile(idRaw: String)(req: HttpServletRequest): HttpResponse = {
+    val normalizedId = norm(idRaw)
+    val datasetId = parseDatasetId(normalizedId).getOrElse {
+      return notFoundError(normalizedId)
+    }
     val onlyColumns = Option(req.getParameterValues("c")).map(_.flatMap { c => norm(c).split(',').map(ColumnName) }.toSet)
     val limit = Option(req.getParameter("limit")).map { limStr =>
       try {
@@ -122,8 +129,9 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
         out.write(']')
         out.flush()
       }
-      if(!found)
-        NotFound(resp)
+      if(!found) {
+        notFoundError(normalizedId)
+      }
     }
   }
 
@@ -362,7 +370,10 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
   }
 
   def doMutation(datasetIdRaw: String)(req: HttpServletRequest): HttpResponse = {
-    val datasetId = parseDatasetId(datasetIdRaw).getOrElse { return NotFound }
+    val normalizedId = norm(datasetIdRaw)
+    val datasetId = parseDatasetId(normalizedId).getOrElse {
+      return notFoundError(normalizedId)
+    }
     withMutationScriptResults {
       jsonStream(req, commandReadLimit) match {
         case Right((events, boundResetter)) =>
