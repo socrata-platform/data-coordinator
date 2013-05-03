@@ -131,27 +131,25 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
       case Some(pkCol) =>
         findRowId(id) match {
           case Some(IdPair(sid, _)) =>
-            using(connection.prepareStatement(sqlizer.prepareSystemIdDeleteStatement)) { stmt =>
-              sqlizer.prepareSystemIdDelete(stmt, sid)
-              val result = stmt.executeUpdate()
-              assert(result == 1)
-              deleted.put(job, id)
-              dataLogger.delete(sid)
+            val result = sqlizer.deleteBatch(connection) { deleter =>
+              deleter.delete(sid)
             }
+            assert(result == 1)
+            deleted.put(job, id)
+            dataLogger.delete(sid)
           case None =>
             errors.put(job, NoSuchRowToDelete(id))
         }
       case None =>
         val sid = typeContext.makeSystemIdFromValue(id)
-        using(connection.prepareStatement(sqlizer.prepareSystemIdDeleteStatement)) { stmt =>
-          sqlizer.prepareSystemIdDelete(stmt, sid)
-          val result = stmt.executeUpdate()
-          if(result != 1) {
-            errors.put(job, NoSuchRowToDelete(id))
-          } else {
-            deleted.put(job, id)
-            dataLogger.delete(sid)
-          }
+        val result = sqlizer.deleteBatch(connection) { deleter =>
+          deleter.delete(sid)
+        }
+        if(result != 1) {
+          errors.put(job, NoSuchRowToDelete(id))
+        } else {
+          deleted.put(job, id)
+          dataLogger.delete(sid)
         }
     }
   }

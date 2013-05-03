@@ -564,11 +564,21 @@ class """ + targetClassName + """(private var _underlying: TLongSet) extends (""
     def next() = new """ + sourceType + """(it.next())
   }
 
+  @inline
+  def foreach[U](f: """ + sourceType + """ => U): Unit = {
+    val it = underlying.iterator
+    while(it.hasNext) f(new """ + sourceType + """(it.next()))
+  }
+
   def freeze() = {
     if(underlying == null) throw new NullPointerException
     val result = new """ + sourceClass + """Set(underlying)
     _underlying = null
     result
+  }
+
+  def ++=(x: """ + sourceClass + """Set) {
+    underlying.addAll(x.unsafeUnderlying)
   }
 
   def +=(x: """ + sourceType + """) {
@@ -583,6 +593,10 @@ class """ + targetClassName + """(private var _underlying: TLongSet) extends (""
 
   def isEmpty = underlying.isEmpty
   def nonEmpty = !underlying.isEmpty
+
+  def clear() {
+    underlying.clear()
+  }
 
   def toSet = {
     val b = Set.newBuilder[""" + sourceType + """]

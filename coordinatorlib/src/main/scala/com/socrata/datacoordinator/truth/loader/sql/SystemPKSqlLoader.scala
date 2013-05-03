@@ -10,9 +10,10 @@ import java.util.concurrent.Executor
 import gnu.trove.map.hash.TIntObjectHashMap
 import com.rojoma.simplearm.util._
 
-import com.socrata.datacoordinator.util.collection.{RowIdMap, MutableRowIdMap}
+import com.socrata.datacoordinator.util.collection.{MutableRowIdSet, RowIdSet, RowIdMap, MutableRowIdMap}
 import com.socrata.datacoordinator.id.RowId
 import com.socrata.datacoordinator.util.{TransferrableContextTimingReport, RowDataProvider}
+import com.socrata.datacoordinator.truth.RowUserIdMap
 
 final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: DataSqlizer[CT, CV], _l: DataLogger[CV], _i: RowDataProvider, _e: Executor, _tr: TransferrableContextTimingReport)
   extends
@@ -203,36 +204,40 @@ final class SystemPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: D
     }
   }
 
+  def loadOldIds(ids: Iterator[RowId]): RowIdSet = {
+    timingReport("loadOldRows") {
+      using(sqlizer.collectSystemIds(connection, ids)) { blocks =>
+        val target = MutableRowIdSet()
+        for(rowIds <- blocks) target ++= rowIds
+        target.freeze()
+      }
+    }
+  }
+
   def processDeletes(deleteSizeX: Int, deletes: java.util.ArrayList[Delete], errors: TIntObjectHashMap[Failure[CV]]): TIntObjectHashMap[CV] = {
     var deleteSize = deleteSizeX
     var resultMap: TIntObjectHashMap[CV] = null
     if(!deletes.isEmpty) {
+      val oldIds = loadOldIds(deletes.iterator.asScala.map { _.id })
       timingReport("process-deletes", "jobs" -> deletes.size) {
-        using(connection.prepareStatement(sqlizer.prepareSystemIdDeleteStatement)) { stmt =>
+        resultMap = new TIntObjectHashMap[CV]
+        var skipped = 0
+        val deleted = sqlizer.deleteBatch(connection) { deleter =>
           val it = deletes.iterator()
           while(it.hasNext) {
             val op = it.next()
-            sqlizer.prepareSystemIdDelete(stmt, op.id)
-            stmt.addBatch()
+            if(oldIds(op.id)) {
+              deleter.delete(op.id)
+              dataLogger.delete(op.id)
+              resultMap.put(op.job, typeContext.makeValueFromSystemId(op.id))
+            } else {
+              errors.put(op.job, NoSuchRowToDelete(typeContext.makeValueFromSystemId(op.id)))
+              skipped += 1
+            }
             deleteSize -= sqlizer.sizeofDelete
           }
-
-          val results = stmt.executeBatch()
-          assert(results.length == deletes.size, "Expected " + deletes.size + " results for deletes; got " + results.length)
-
-          var i = 0
-          resultMap = new TIntObjectHashMap[CV]
-          do {
-            val op = deletes.get(i)
-            val idValue = typeContext.makeValueFromSystemId(op.id)
-            if(results(i) == 1) {
-              dataLogger.delete(op.id)
-              resultMap.put(op.job, idValue)
-            } else if(results(i) == 0) errors.put(op.job, NoSuchRowToDelete(idValue))
-            else sys.error("Unexpected result code from delete: " + results(i))
-            i += 1
-          } while(i != results.length)
         }
+        assert(deleted == deletes.size - skipped, "Expected " + (deletes.size - skipped) + " results for deletes; got " + deleted)
       }
     }
     assert(deleteSize == 0, "No deletes, but delete size is not 0?")

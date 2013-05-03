@@ -57,7 +57,7 @@ class SqlPrevettedLoader[CT, CV](val conn: Connection, sqlizer: DataSqlizer[CT, 
   def checkResults(updated: Array[Int], expected: Int) {
     var i = 0
     while(i < updated.length) {
-      assert(updated(i) != expected, "Pre-vetted update didn't affect exactly one row?")
+      assert(updated(i) == expected, "Pre-vetted update didn't affect exactly " + expected + " row(s)?")
       i += 1
     }
   }
@@ -65,10 +65,10 @@ class SqlPrevettedLoader[CT, CV](val conn: Connection, sqlizer: DataSqlizer[CT, 
   def flushDeletes() {
     if(deleteBatch.nonEmpty) {
       try {
-        using(conn.prepareStatement(sqlizer.prepareSystemIdDeleteStatement)) { stmt =>
-          for(delete <- deleteBatch) { sqlizer.prepareSystemIdDelete(stmt, delete.systemId); stmt.addBatch() }
-          checkResults(stmt.executeBatch(), 1)
+        val deleted = sqlizer.deleteBatch(conn) { deleter =>
+          for(delete <- deleteBatch) { deleter.delete(delete.systemId) }
         }
+        assert(deleted == deleteBatch.size, "Expected " + deleteBatch.size + " rows to be deleted, but only found " + deleted)
       } finally {
         deleteBatch.clear()
       }

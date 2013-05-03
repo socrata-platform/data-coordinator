@@ -7,6 +7,7 @@ import java.sql.{Connection, PreparedStatement}
 import com.socrata.datacoordinator.util.CloseableIterator
 import com.socrata.datacoordinator.truth.{DatasetContext, TypeContext}
 import com.socrata.datacoordinator.id.RowId
+import com.socrata.datacoordinator.util.collection.RowIdSet
 
 /** Generates SQL for execution. */
 trait DataSqlizer[CT, CV] {
@@ -25,9 +26,10 @@ trait DataSqlizer[CT, CV] {
     def insert(row: Row[CV])
   }
 
-  // TODO: Remove all this delete code in favor of batched system ID deletes
-  def prepareSystemIdDeleteStatement: String
-  def prepareSystemIdDelete(stmt: PreparedStatement, sid: RowId)
+  def deleteBatch(conn: Connection)(f: Deleter => Unit): Long
+  trait Deleter {
+    def delete(sid: RowId)
+  }
 
   def prepareSystemIdUpdateStatement: String
   def prepareSystemIdUpdate(stmt: PreparedStatement, sid: RowId, row: Row[CV])
@@ -36,6 +38,8 @@ trait DataSqlizer[CT, CV] {
 
   // THIS MUST ONLY BE CALLED IF THIS DATASET HAS A USER PK COLUMN!
   def findSystemIds(conn: Connection, ids: Iterator[CV]): CloseableIterator[Seq[IdPair[CV]]]
+
+  def collectSystemIds(conn: Connection, ids: Iterator[RowId]): CloseableIterator[RowIdSet]
 }
 
 case class RowWithId[CV](rowId: RowId, row: Row[CV])

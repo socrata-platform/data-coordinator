@@ -226,52 +226,28 @@ final class UserPKSqlLoader[CT, CV](_c: Connection, _p: RowPreparer[CV], _s: Dat
     var resultMap: TIntObjectHashMap[CV] = null
     if(!deletes.isEmpty) {
       timingReport("process-deletes", "jobs" -> deletes.size) {
-        using(connection.prepareStatement(sqlizer.prepareSystemIdDeleteStatement)) { stmt =>
-          val actuallyExecutedDelete = new Array[Boolean](deletes.size)
+        resultMap = new TIntObjectHashMap[CV]
+        var skipped = 0
+        val deleted = sqlizer.deleteBatch(connection) { deleter =>
           var i = 0
-          var skipped = 0
           do {
             val op = deletes.get(i)
             assert(op.hasDeleteJob, "No delete job?")
             sidSource.get(op.id) match {
               case Some(sid) =>
-                sqlizer.prepareSystemIdDelete(stmt, sid)
-                stmt.addBatch()
-                actuallyExecutedDelete(i) = true
-              case _ =>
+                deleter.delete(sid)
+                dataLogger.delete(sid)
+                resultMap.put(op.deleteJob, op.id)
+              case None =>
+                if(op.forceDeleteSuccess) resultMap.put(op.deleteJob, op.id)
+                else errors.put(op.deleteJob, NoSuchRowToDelete(op.id))
                 skipped += 1
             }
             deleteSize -= sqlizer.sizeofDelete
             i += 1
-          } while(i != deletes.size)
-
-          val results = stmt.executeBatch()
-          assert(results.length == deletes.size - skipped, "Expected " + (deletes.size - skipped) + " results for deletes; got " + results.length)
-
-          i = 0
-          var resultIdx = 0
-          resultMap = new TIntObjectHashMap[CV]
-          do {
-            val op = deletes.get(i)
-            if(actuallyExecutedDelete(i)) {
-              if(results(resultIdx) == 1 || op.forceDeleteSuccess) {
-                sidSource.get(op.id) match {
-                  case Some(sid) => dataLogger.delete(sid)
-                  case None if op.forceDeleteSuccess => // ok
-                  case None => sys.error("Successfully deleted row, but no sid found for it?")
-                }
-                resultMap.put(op.deleteJob, op.id)
-              } else if(results(resultIdx) == 0) errors.put(op.deleteJob, NoSuchRowToDelete(op.id))
-              else sys.error("Unexpected result code from delete: " + results(i))
-
-              resultIdx += 1
-            } else {
-              if(op.forceDeleteSuccess) resultMap.put(op.deleteJob, op.id)
-              else errors.put(op.deleteJob, NoSuchRowToDelete(op.id))
-            }
-            i += 1
-          } while(i != deletes.size)
+          } while(i != deletes.size())
         }
+        assert(deleted == deletes.size - skipped, "Deleted incorrect number of rows; expected " + (deletes.size - skipped) + " but got " + deleted)
       }
     }
     assert(deleteSize == 0, "No deletes, but delete size is not 0?")
