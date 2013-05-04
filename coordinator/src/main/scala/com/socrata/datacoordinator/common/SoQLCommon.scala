@@ -135,10 +135,8 @@ class SoQLCommon(dataSource: DataSource,
         def baseRow(oldRow: Row[SoQLValue]): MutableRow[SoQLValue] =
           if(replaceUpdatedRows) {
             val blank = new MutableRow[SoQLValue]
-            val it = oldRow.iterator
-            while(it.hasNext) {
-              it.advance()
-              if(allSystemColumns(it.key)) blank(it.key) = it.value
+            for(cid <- allSystemColumns.iterator) {
+              if(oldRow.contains(cid)) blank(cid) = oldRow(cid)
             }
             blank
           } else {
