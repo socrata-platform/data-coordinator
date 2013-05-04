@@ -62,7 +62,7 @@ trait PrevettedLoaderProvider { this: TypeUniverse =>
 }
 
 trait LoaderProvider { this: TypeUniverse =>
-  def loader(copyCtx: DatasetCopyContext[CT], rowIdProvider: RowDataProvider, logger: Logger[CT, CV]): Managed[Loader[CV]]
+  def loader(copyCtx: DatasetCopyContext[CT], rowIdProvider: RowDataProvider, logger: Logger[CT, CV], replaceUpdatedRows: Boolean): Managed[Loader[CV]]
 }
 
 trait DatasetDecsvifierProvider {

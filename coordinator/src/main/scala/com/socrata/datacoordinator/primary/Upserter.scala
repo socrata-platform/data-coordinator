@@ -10,7 +10,7 @@ import com.socrata.datacoordinator.truth.universe.{DatasetMutatorProvider, Unive
 import com.socrata.datacoordinator.id.DatasetId
 
 class Upserter[CT, CV](universe: Managed[Universe[CT, CV] with DatasetMutatorProvider]) extends ExistingDatasetMutator {
-  def upsert(dataset: DatasetId, username: String)(inputGenerator: ColumnIdMap[ColumnInfo[CT]] => Iterator[Either[CV, Row[CV]]]): Report[CV] =
+  def upsert(dataset: DatasetId, username: String)(inputGenerator: ColumnIdMap[ColumnInfo[CT]] => Iterator[Either[CV, Row[CV]]], replaceUpdatedRows: Boolean = true): Report[CV] =
     finish(dataset) {
       for {
         u <- universe
@@ -20,7 +20,8 @@ class Upserter[CT, CV](universe: Managed[Universe[CT, CV] with DatasetMutatorPro
         ctx.upsert(inputGenerator(ctx.schema).zipWithIndex.map {
           case (Left(id), num) => ctx.DeleteJob(num, id)
           case (Right(row), num) => ctx.UpsertJob(num, row)
-        })
+        },
+        replaceUpdatedRows)
       }
     }
 }

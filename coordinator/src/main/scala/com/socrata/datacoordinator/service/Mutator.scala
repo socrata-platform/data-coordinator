@@ -277,9 +277,7 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
       val jsonRepFor = jsonReps(ctx.copyInfo.datasetInfo)
       val processor = new Processor(jsonRepFor)
       val events = processor.carryOutCommands(ctx, commands).map { r =>
-        val pk = ctx.schema.values.find(_.isUserPrimaryKey).orElse(ctx.schema.values.find(_.isSystemPrimaryKey)).getOrElse {
-          sys.error("No primary key on this dataset?")
-        }
+        val pk = ctx.primaryKey
         val repify = jsonRepFor(pk.typ).toJValue _
         val interim = new Report[JValue] {
           def inserted: collection.Map[Int, JValue] = r.inserted.mapValues(repify)
@@ -448,13 +446,12 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
           }
           None
         case RowData(idx, truncate, mergeReplace, fatalRowErrors) =>
-          if(mergeReplace == Replace) ??? // TODO: implement this
           if(truncate) mutator.truncate()
-          Some(processRowData(idx, commands.rawCommandStream, fatalRowErrors, mutator))
+          Some(processRowData(idx, commands.rawCommandStream, fatalRowErrors, mutator, mergeReplace))
       }
     }
 
-    def processRowData(idx: Long, rows: BufferedIterator[JValue], fatalRowErrors: Boolean, mutator: DatasetMutator[CT,CV]#MutationContext): Report[CV] = {
+    def processRowData(idx: Long, rows: BufferedIterator[JValue], fatalRowErrors: Boolean, mutator: DatasetMutator[CT,CV]#MutationContext, mergeReplace: MergeReplace): Report[CV] = {
       import mutator._
       val plan = new RowDecodePlan(schema, jsonRepFor, typeNameFor)
       val counter = new Counter(1)
@@ -469,7 +466,7 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
             }
           }
         }
-        val result = mutator.upsert(it)
+        val result = mutator.upsert(it, replaceUpdatedRows = mergeReplace == Replace)
         if(rows.hasNext && JNull == rows.head) rows.next()
         if(fatalRowErrors && result.errors.nonEmpty) {
           val pk = schema.values.find(_.isUserPrimaryKey).orElse(schema.values.find(_.isSystemPrimaryKey)).getOrElse {

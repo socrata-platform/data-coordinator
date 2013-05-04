@@ -34,7 +34,7 @@ trait LowLevelDatabaseMutator[CT, CV] {
     def logger(info: DatasetInfo): Logger[CT, CV]
     def schemaLoader(logger: Logger[CT, CV]): SchemaLoader[CT]
     def datasetContentsCopier(logger: Logger[CT, CV]): DatasetContentsCopier[CT]
-    def withDataLoader[A](copyCtx: DatasetCopyContext[CT], logger: Logger[CT, CV])(f: Loader[CV] => A): (Report[CV], Long, A)
+    def withDataLoader[A](copyCtx: DatasetCopyContext[CT], logger: Logger[CT, CV], replaceUpdatedRows: Boolean)(f: Loader[CV] => A): (Report[CV], Long, A)
     def truncate(table: CopyInfo, logger: Logger[CT, CV])
 
     def globalLog: GlobalLog
@@ -93,6 +93,7 @@ trait DatasetMutator[CT, CV] {
   trait MutationContext {
     def copyInfo: CopyInfo
     def schema: ColumnIdMap[ColumnInfo[CT]]
+    def primaryKey: ColumnInfo[CT]
     def columnInfo(id: ColumnId): Option[ColumnInfo[CT]]
     def columnInfo(name: ColumnName): Option[ColumnInfo[CT]]
 
@@ -119,7 +120,7 @@ trait DatasetMutator[CT, CV] {
     case class DeleteJob(jobNumber: Int, id: CV) extends RowDataUpdateJob
     case class UpsertJob(jobNumber: Int, row: Row[CV]) extends RowDataUpdateJob
 
-    def upsert(inputGenerator: Iterator[RowDataUpdateJob]): Report[CV]
+    def upsert(inputGenerator: Iterator[RowDataUpdateJob], replaceUpdatedRows: Boolean): Report[CV]
   }
 
   type TrueMutationContext <: MutationContext
@@ -146,6 +147,9 @@ object DatasetMutator {
     class S(var copyCtx: MutableDatasetCopyContext[CT], llCtx: databaseMutator.MutationContext, logger: Logger[CT, CV], val schemaLoader: SchemaLoader[CT]) extends MutationContext {
       def copyInfo = copyCtx.copyInfo
       def schema = copyCtx.currentSchema
+      def primaryKey = schema.values.find(_.isUserPrimaryKey).orElse(schema.values.find(_.isSystemPrimaryKey)).getOrElse {
+        sys.error("No primary key on this dataset?")
+      }
       def columnInfo(id: ColumnId) = copyCtx.columnInfoOpt(id)
       def columnInfo(name: ColumnName) = copyCtx.columnInfoOpt(name)
 
@@ -281,11 +285,11 @@ object DatasetMutator {
         llCtx.truncate(copyInfo, logger)
       }
 
-      def upsert(inputGenerator: Iterator[RowDataUpdateJob]): Report[CV] = {
+      def upsert(inputGenerator: Iterator[RowDataUpdateJob], replaceUpdatedRows: Boolean): Report[CV] = {
         checkDoingRows()
         try {
           doingRows = true
-          val (report, nextCounterValue, _) = llCtx.withDataLoader(copyCtx.frozenCopy(), logger) { loader =>
+          val (report, nextCounterValue, _) = llCtx.withDataLoader(copyCtx.frozenCopy(), logger, replaceUpdatedRows) { loader =>
             inputGenerator.foreach {
               case UpsertJob(jobNum, row) => loader.upsert(jobNum, row)
               case DeleteJob(jobNum, id) => loader.delete(jobNum, id)

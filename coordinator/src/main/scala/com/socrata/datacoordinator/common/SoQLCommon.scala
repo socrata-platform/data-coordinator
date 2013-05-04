@@ -101,7 +101,7 @@ class SoQLCommon(dataSource: DataSource,
     def isSystemColumn(ci: AbstractColumnInfoLike): Boolean =
       isSystemColumnName(ci.logicalName)
 
-    def rowPreparer(transactionStart: DateTime, ctx: DatasetCopyContext[CT], idProvider: RowDataProvider): RowPreparer[SoQLValue] =
+    def rowPreparer(transactionStart: DateTime, ctx: DatasetCopyContext[CT], idProvider: RowDataProvider, replaceUpdatedRows: Boolean): RowPreparer[SoQLValue] =
       new RowPreparer[SoQLValue] {
         val schema = ctx.schema
         lazy val jsonRepFor = jsonReps(ctx.datasetInfo)
@@ -132,12 +132,25 @@ class SoQLCommon(dataSource: DataSource,
           Right(tmp.freeze())
         }
 
+        def baseRow(oldRow: Row[SoQLValue]): MutableRow[SoQLValue] =
+          if(replaceUpdatedRows) {
+            val blank = new MutableRow[SoQLValue]
+            val it = oldRow.iterator
+            while(it.hasNext) {
+              it.advance()
+              if(allSystemColumns(it.key)) blank(it.key) = it.value
+            }
+            blank
+          } else {
+            new MutableRow[SoQLValue](oldRow)
+          }
+
         def prepareForUpdate(row: Row[SoQLValue], oldRow: Row[SoQLValue]): Either[RowPreparerDeclinedUpsert[CV], Row[CV]] = {
           for {
             oldVer <- oldRow.get(versionColumn) if SoQLNull != oldVer
             newVer <- row.get(versionColumn) if SoQLNull != newVer
           } if(oldVer != newVer) return Left(VersionMismatch(row(primaryKeyColumn.systemId), versionRep.toJValue(oldVer), versionRep.toJValue(newVer)))
-          val tmp = new MutableRow[SoQLValue](oldRow)
+          val tmp = baseRow(oldRow)
           val rowIt = row.iterator
           while(rowIt.hasNext) {
             rowIt.advance()
