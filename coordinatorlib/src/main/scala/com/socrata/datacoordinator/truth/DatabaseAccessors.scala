@@ -70,7 +70,7 @@ object DatasetReader {
   private class Impl[CT, CV](val databaseReader: LowLevelDatabaseReader[CT, CV]) extends DatasetReader[CT, CV] {
     class S(val copyCtx: DatasetCopyContext[CT], llCtx: databaseReader.ReadContext) extends ReadContext {
       def withRows[A](keySet: ColumnIdSet, limit: Option[Long], offset: Option[Long])(f: Iterator[ColumnIdMap[CV]] => A): A =
-        llCtx.withRows(copyCtx.verticalSlice { col => keySet.contains(col.systemId) }, schema.values.find(_.isSystemPrimaryKey).getOrElse(sys.error("No system PK in this dataset?")).systemId, f, limit, offset)
+        llCtx.withRows(copyCtx.verticalSlice { col => keySet.contains(col.systemId) }, copyCtx.pkCol_!.systemId, f, limit, offset)
     }
 
     def openDataset(datasetId: DatasetId, copySelector: CopySelector): Managed[Option[ReadContext]] =

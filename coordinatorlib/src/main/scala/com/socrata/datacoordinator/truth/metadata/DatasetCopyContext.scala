@@ -10,6 +10,12 @@ class DatasetCopyContext[CT](val copyInfo: CopyInfo, val schema: ColumnIdMap[Col
   def datasetInfo = copyInfo.datasetInfo
 
   lazy val schemaByLogicalName = RotateSchema(schema)
+  lazy val userIdCol = schema.values.find(_.isUserPrimaryKey)
+  lazy val systemIdCol = schema.values.find(_.isSystemPrimaryKey)
+  lazy val pkCol = userIdCol.orElse(systemIdCol)
+  def pkCol_! : ColumnInfo[CT] = pkCol.getOrElse {
+    sys.error("No system PK defined on this dataset?")
+  }
 
   def verticalSlice(f: ColumnInfo[CT] => Boolean) = new DatasetCopyContext(copyInfo, schema.filter { case (_, col) => f(col) })
 

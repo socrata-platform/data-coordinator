@@ -2,7 +2,7 @@ package com.socrata.datacoordinator
 package service
 
 import com.socrata.datacoordinator.truth.universe.{DatasetReaderProvider, Universe}
-import com.socrata.datacoordinator.util.collection.ColumnIdMap
+import com.socrata.datacoordinator.util.collection.{MutableColumnIdMap, ColumnIdMap}
 import com.socrata.datacoordinator.truth.metadata.{DatasetCopyContext, CopyInfo, ColumnInfo}
 import com.socrata.soql.environment.ColumnName
 import com.socrata.datacoordinator.truth.CopySelector
@@ -14,15 +14,27 @@ object Exporter {
       ctxOpt <- u.datasetReader.openDataset(id, copy)
       ctx <- ctxOpt
     } yield {
-      import ctx. _
+      import ctx._
 
       val selectedSchema = columns match {
         case Some(set) => schema.filter { case (_, ci) => set(ci.logicalName) }
         case None => schema
       }
+      val properSchema = (copyCtx.userIdCol ++ copyCtx.systemIdCol).foldLeft(selectedSchema) { (ss, idCol) =>
+        ss + (idCol.systemId -> idCol)
+      }
 
-      withRows(selectedSchema.keySet, limit, offset) { it =>
-        f(copyCtx, it)
+      withRows(properSchema.keySet, limit, offset) { it =>
+        val toRemove = properSchema.keySet -- selectedSchema.keySet
+        if(toRemove.isEmpty) it
+        else it.map { row =>
+          val m = new MutableColumnIdMap(row)
+          toRemove.foreach(m -= _)
+          m.freeze()
+        }
+        f(copyCtx.verticalSlice { ci => selectedSchema.keySet(ci.systemId) },
+          if(selectedSchema.contains(copyCtx.pkCol_!.systemId)) it
+          else it.map(_ - copyCtx.pkCol_!.systemId))
       }
     }
   }

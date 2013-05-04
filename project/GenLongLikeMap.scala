@@ -469,6 +469,21 @@ class """ + targetClassName + """(val unsafeUnderlying: TLongSet) extends (""" +
     new """ + targetClassName + """(copy)
   }
 
+  def --(xs: """ + targetClassName + """) = {
+    val copy = new TLongHashSet(unsafeUnderlying)
+    copy.removeAll(xs.unsafeUnderlying)
+    new """ + targetClassName + """(copy)
+  }
+
+  def foreach[U](f: """ + sourceType + """ => U) {
+    unsafeUnderlying.forEach(new TLongProcedure {
+      def execute(l: Long) = {
+        f(new """ + sourceType + """(l))
+        true
+      }
+    })
+  }
+
   def size = unsafeUnderlying.size
 
   def isEmpty = unsafeUnderlying.isEmpty
