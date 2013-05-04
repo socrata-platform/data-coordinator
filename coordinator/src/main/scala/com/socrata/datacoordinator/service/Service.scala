@@ -42,8 +42,9 @@ import com.rojoma.json.io.TokenIdentifier
 import com.rojoma.json.io.TokenString
 import com.socrata.datacoordinator.truth.loader.NoSuchRowToUpdate
 import scala.collection.mutable
+import com.rojoma.json.codec.JsonCodec
 
-case class Field(name: String, @JsonKey("type") typ: String)
+case class Field(@JsonKey("c") name: String, @JsonKey("t") typ: String)
 object Field {
   implicit val jCodec = AutomaticJsonCodecBuilder[Field]
 }
@@ -53,7 +54,7 @@ case class Schema(hash: String, schema: Map[ColumnName, TypeName], pk: ColumnNam
 class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEvent],
               processCreation: (Iterator[JValue]) => (DatasetId, Iterator[JsonEvent]),
               getSchema: DatasetId => Option[Schema],
-              datasetContents: (DatasetId, CopySelector, Option[Set[ColumnName]], Option[Long], Option[Long]) => ((sc.Map[ColumnName, TypeName], Option[ColumnName], String, Iterator[Array[JValue]]) => Unit) => Boolean,
+              datasetContents: (DatasetId, CopySelector, Option[Set[ColumnName]], Option[Long], Option[Long]) => ((Seq[Field], Option[ColumnName], String, Iterator[Array[JValue]]) => Unit) => Boolean,
               secondaries: Set[String],
               datasetsInStore: (String) => Map[DatasetId, Long],
               versionInStore: (String, DatasetId) => Option[Long],
@@ -127,16 +128,9 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
           out.write("\n ,\"row_id\":")
           jsonWriter.write(JString(rid.name))
         }
-        out.write("\n ,\"schema\":{")
-        var didOne = false
-        for((k,v) <- schema) {
-          if(didOne) out.write(',')
-          else didOne = true
-          jsonWriter.write(JString(k.name))
-          out.write(':')
-          jsonWriter.write(JString(v.name))
-        }
-        out.write("}\n }")
+        out.write("\n ,\"schema\":")
+        jsonWriter.write(JsonCodec.toJValue(schema))
+        out.write("\n }")
         while(rows.hasNext) {
           out.write("\n,")
           jsonWriter.write(JArray(rows.next()))
@@ -594,20 +588,16 @@ object Service extends App { self =>
       }
     }
 
-    def exporter(id: DatasetId, copy: CopySelector, columns: Option[Set[ColumnName]], limit: Option[Long], offset: Option[Long])(f: (sc.Map[ColumnName, TypeName], Option[ColumnName], String, Iterator[Array[JValue]]) => Unit): Boolean = {
+    def exporter(id: DatasetId, copy: CopySelector, columns: Option[Set[ColumnName]], limit: Option[Long], offset: Option[Long])(f: (Seq[Field], Option[ColumnName], String, Iterator[Array[JValue]]) => Unit): Boolean = {
       val res = for(u <- common.universe) yield {
         Exporter.export(u, id, copy, columns, limit, offset) { (copyCtx, it) =>
           val jsonReps = common.jsonReps(copyCtx.datasetInfo)
           val jsonSchema = copyCtx.schema.mapValuesStrict { ci => jsonReps(ci.typ) }
           val unwrappedCids = copyCtx.schema.values.toSeq.filter { ci => jsonSchema.contains(ci.systemId) }.sortBy(_.logicalName).map(_.systemId.underlying).toArray
           val pkColName = copyCtx.pkCol.map(_.logicalName)
-          val orderedSchema = locally {
-            val m = new mutable.LinkedHashMap[ColumnName, TypeName]
-            unwrappedCids.foreach { rawCid =>
-              val col = copyCtx.schema(new ColumnId(rawCid))
-              m(col.logicalName) = col.typ.name
-            }
-            m
+          val orderedSchema = unwrappedCids.map { cidRaw =>
+            val col = copyCtx.schema(new ColumnId(cidRaw))
+            Field(col.logicalName.name, col.typ.name.name)
           }
           f(orderedSchema,
             pkColName,
