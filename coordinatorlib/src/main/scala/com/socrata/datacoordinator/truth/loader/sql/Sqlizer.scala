@@ -7,15 +7,26 @@ import java.sql.{Connection, PreparedStatement}
 import com.socrata.datacoordinator.util.CloseableIterator
 import com.socrata.datacoordinator.truth.{DatasetContext, TypeContext}
 import com.socrata.datacoordinator.id.RowId
-import com.socrata.datacoordinator.util.collection.RowIdSet
+import com.socrata.datacoordinator.util.collection.{ColumnIdSet, RowIdSet}
 
-/** Generates SQL for execution. */
-trait DataSqlizer[CT, CV] {
+trait ReadDataSqlizer[CT, CV] {
   def datasetContext: DatasetContext[CT, CV]
   def typeContext: TypeContext[CT, CV]
 
   def dataTableName: String
 
+  def findRowsSubset(conn: Connection, cols: ColumnIdSet, ids: Iterator[CV]): CloseableIterator[Seq[RowWithId[CV]]]
+  // convenience method; like calling findRowsSubset with all column IDs in the
+  // dataset.
+  def findRows(conn: Connection, ids: Iterator[CV]): CloseableIterator[Seq[RowWithId[CV]]]
+  // Not sure this will survive the row version feature
+  def collectSystemIds(conn: Connection, ids: Iterator[RowId]): CloseableIterator[RowIdSet]
+  // THIS MUST ONLY BE CALLED IF THIS DATASET HAS A USER PK COLUMN!
+  def findSystemIds(conn: Connection, ids: Iterator[CV]): CloseableIterator[Seq[IdPair[CV]]]
+}
+
+/** Generates SQL for execution. */
+trait DataSqlizer[CT, CV] extends ReadDataSqlizer[CT, CV] {
   def softMaxBatchSize: Int
   def sizeofDelete: Int
   def sizeofInsert(row: Row[CV]): Int
@@ -33,13 +44,6 @@ trait DataSqlizer[CT, CV] {
 
   def prepareSystemIdUpdateStatement: String
   def prepareSystemIdUpdate(stmt: PreparedStatement, sid: RowId, row: Row[CV])
-
-  def findRows(conn: Connection, ids: Iterator[CV]): CloseableIterator[Seq[RowWithId[CV]]]
-
-  // THIS MUST ONLY BE CALLED IF THIS DATASET HAS A USER PK COLUMN!
-  def findSystemIds(conn: Connection, ids: Iterator[CV]): CloseableIterator[Seq[IdPair[CV]]]
-
-  def collectSystemIds(conn: Connection, ids: Iterator[RowId]): CloseableIterator[RowIdSet]
 }
 
 case class RowWithId[CV](rowId: RowId, row: Row[CV])

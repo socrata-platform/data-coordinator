@@ -7,8 +7,8 @@ import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.truth.sql.{RepBasedSqlDatasetContext, SqlPKableColumnRep, SqlColumnRep}
 import com.socrata.datacoordinator.util.{CloseableIterator, FastGroupedIterator, LeakDetect}
-import com.socrata.datacoordinator.id.RowId
-import com.socrata.datacoordinator.util.collection.{RowIdSet, MutableRowIdSet}
+import com.socrata.datacoordinator.id.{ColumnId, RowId}
+import com.socrata.datacoordinator.util.collection.{ColumnIdSet, RowIdSet, MutableRowIdSet}
 import java.io.Closeable
 
 abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
@@ -169,8 +169,26 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
         row(cid) = rep.fromResultSet(rs, i)
         i += rep.physColumns.length
       }
-      RowWithId(typeContext.makeSystemIdFromValue(row(datasetContext.systemIdColumn)), row.freeze())
+      val sid = row(datasetContext.systemIdColumn)
+      RowWithId(typeContext.makeSystemIdFromValue(sid), row.freeze())
     }
+
+  def findRowsSubset(conn: Connection, cols: ColumnIdSet, ids: Iterator[CV]): CloseableIterator[Seq[RowWithId[CV]]] = {
+    val baseSubschema = cols.iterator.map { cid => cid -> repSchema(cid) }.toList
+    val subschema =
+      if(cols(datasetContext.systemIdColumn)) baseSubschema
+      else (datasetContext.systemIdColumn -> sidRep) :: baseSubschema
+    blockQueryById(conn, ids, "SELECT " + subschema.flatMap(_._2.physColumns).mkString(",") + " FROM " + dataTableName + " WHERE ") { rs =>
+      val row = new MutableRow[CV]
+      var i = 1
+      for((cid, rep) <- subschema) {
+        row(cid) = rep.fromResultSet(rs, i)
+        i += rep.physColumns.length
+      }
+      val sid = row(datasetContext.systemIdColumn)
+      RowWithId(typeContext.makeSystemIdFromValue(sid), row.freeze())
+    }
+  }
 
   lazy val findSystemIdsPrefix = "SELECT " + sidRep.physColumns.mkString(",") + "," + pkRep.physColumns.mkString(",") + " FROM " + dataTableName + " WHERE "
   def findSystemIds(conn: Connection, ids: Iterator[CV]): CloseableIterator[Seq[IdPair[CV]]] = {

@@ -114,9 +114,9 @@ class SoQLCommon(dataSource: DataSource,
         val updatedAtColumn = findCol(SystemColumns.updatedAt)
         val versionColumn = findCol(SystemColumns.version)
 
-        val primaryKeyColumn = schema.values.find(_.isUserPrimaryKey).orElse(schema.values.find(_.isSystemPrimaryKey)).getOrElse {
-          sys.error("No system primary key?")
-        }
+        val columnsRequiredForDelete = ColumnIdSet(versionColumn)
+
+        val primaryKeyColumn = ctx.pkCol_!
 
         assert(schema(versionColumn).typeName == typeContext.typeNamespace.nameForType(SoQLVersion))
         def versionRep = jsonRepFor(SoQLVersion)
@@ -145,8 +145,8 @@ class SoQLCommon(dataSource: DataSource,
 
         def prepareForUpdate(row: Row[SoQLValue], oldRow: Row[SoQLValue]): Either[RowPreparerDeclinedUpsert[CV], Row[CV]] = {
           for {
-            oldVer <- oldRow.get(versionColumn) if SoQLNull != oldVer
-            newVer <- row.get(versionColumn) if SoQLNull != newVer
+            oldVer <- oldRow.get(versionColumn)
+            newVer <- row.get(versionColumn)
           } if(oldVer != newVer) return Left(VersionMismatch(row(primaryKeyColumn.systemId), versionRep.toJValue(oldVer), versionRep.toJValue(newVer)))
           val tmp = baseRow(oldRow)
           val rowIt = row.iterator
@@ -158,6 +158,13 @@ class SoQLCommon(dataSource: DataSource,
           tmp(versionColumn) = SoQLVersion(idProvider.allocateVersion().underlying)
           Right(tmp.freeze())
         }
+
+        def prepareForDelete(row: Row[CV], sid: RowId, version: Option[CV]): Option[RowPreparerDeclinedUpsert[CV]] =
+          for {
+            oldVer <- row.get(versionColumn)
+            newVer <- version
+            if oldVer != newVer
+          } yield VersionMismatch(row(primaryKeyColumn.systemId), versionRep.toJValue(oldVer), versionRep.toJValue(newVer))
       }
 
     val executor: ExecutorService = common.executorService
