@@ -49,7 +49,7 @@ class EnrichedFuture[+A](val underlyingFuture: java.util.concurrent.Future[A @un
 
   def apply(duration: FiniteDuration): TimedFutureResult[A] =
     try {
-      FutureCompleted(underlyingFuture.get(duration.toMillis min 1L, TimeUnit.MILLISECONDS))
+      FutureCompleted(underlyingFuture.get(duration.toMillis max 1L, TimeUnit.MILLISECONDS))
     } catch {
       case _: TimeoutException =>
         FutureTimedOut
