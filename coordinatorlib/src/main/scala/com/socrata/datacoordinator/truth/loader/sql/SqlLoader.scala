@@ -155,10 +155,14 @@ final class SqlLoader[CT, CV](val connection: Connection,
   }
 
   def maybeFlush() {
-    if(currentBatch.isSufficientlyLarge) flush()
+    if(currentBatch.isSufficientlyLarge) {
+      log.debug("Flushing sufficiently-large batch of commands")
+      flush()
+    }
   }
 
   def report: Report[CV] = {
+    log.debug("Flushing batch due to a request for a report")
     flush()
 
     connectionMutex.synchronized {
