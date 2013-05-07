@@ -5,10 +5,11 @@ import com.rojoma.simplearm.Managed
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth._
-import com.socrata.datacoordinator.util.{TransferrableContextTimingReport, RowDataProvider, TimingReport}
+import com.socrata.datacoordinator.util._
 import com.socrata.datacoordinator.secondary.{SecondaryConfig, PlaybackToSecondary, SecondaryManifest}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import org.joda.time.DateTime
+import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 
 // Not sure I'll need all of these!  Certainly not all of them are implemented.
 // The idea behind these traits is that they encapsulate "things which need a Connection".
@@ -62,7 +63,7 @@ trait PrevettedLoaderProvider { this: TypeUniverse =>
 }
 
 trait LoaderProvider { this: TypeUniverse =>
-  def loader(copyCtx: DatasetCopyContext[CT], rowIdProvider: RowDataProvider, logger: Logger[CT, CV], replaceUpdatedRows: Boolean): Managed[Loader[CV]]
+  def loader(copyCtx: DatasetCopyContext[CT], rowIdProvider: RowIdProvider, rowVersionProvider: RowVersionProvider, logger: Logger[CT, CV], replaceUpdatedRows: Boolean): Managed[Loader[CV]]
 }
 
 trait DatasetDecsvifierProvider {

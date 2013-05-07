@@ -99,8 +99,6 @@ case class NoSuchRowToUpdate[CV](id: CV) extends Failure[CV] {
 case object NoPrimaryKey extends Failure[Nothing] {
   def map[B](f: Nothing => B) = this
 }
-
-sealed abstract class RowPreparerDeclinedUpsert[CV] extends Failure[CV]
-case class VersionMismatch[CV](id: CV, expected: Option[RowVersion], actual: Option[RowVersion]) extends RowPreparerDeclinedUpsert[CV] {
+case class VersionMismatch[CV](id: CV, expected: Option[RowVersion], actual: Option[RowVersion]) extends Failure[CV] {
   def map[B](f: CV => B) = VersionMismatch(f(id), expected, actual)
 }

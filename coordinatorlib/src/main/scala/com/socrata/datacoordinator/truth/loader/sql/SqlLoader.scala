@@ -14,7 +14,6 @@ import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.util._
 import com.socrata.datacoordinator.util.TIntObjectHashMapWrapper
 import com.socrata.datacoordinator.id.{RowVersion, ColumnId, RowId}
-import com.socrata.datacoordinator.util.collection.MutableRowIdSet
 import com.socrata.datacoordinator.truth.RowUserIdMap
 import scala.collection.mutable
 
@@ -27,7 +26,8 @@ final class SqlLoader[CT, CV](val connection: Connection,
                               val rowPreparer: RowPreparer[CV],
                               val sqlizer: DataSqlizer[CT, CV],
                               val dataLogger: DataLogger[CV],
-                              val idProvider: RowDataProvider,
+                              val idProvider: RowIdProvider,
+                              val versionProvider: RowVersionProvider,
                               val executor: Executor,
                               val timingReport: TransferrableContextTimingReport)
   extends Loader[CV]
@@ -41,12 +41,12 @@ final class SqlLoader[CT, CV](val connection: Connection,
 
   val softMaxBatchSizeInBytes = sqlizer.softMaxBatchSize
 
-  private case class DeleteOp(job: Int, id: CV, version: Option[Option[RowVersion]])
+  private case class DeleteOp(job: Int, id: CV, version: Option[RowVersion])
   private sealed abstract class UpsertLike {
-    def job: Int
-    def row: Row[CV]
+    val job: Int
+    val row: Row[CV]
   }
-  private case class KnownToBeInsertOp(job: Int, id: RowId, row: Row[CV]) extends UpsertLike
+  private case class KnownToBeInsertOp(job: Int, id: RowId, newVersion: RowVersion, row: Row[CV]) extends UpsertLike
   private case class UpsertOp(job: Int, id: CV, row: Row[CV]) extends UpsertLike
   private case class UpdateOp(job: Int, sid: RowId, id: CV, newPreparedRow: Row[CV])
   private class Queues {
@@ -187,8 +187,13 @@ final class SqlLoader[CT, CV](val connection: Connection,
   def idOf(row: Row[CV]): Option[CV] = // None if null or not present
     getRejectingNull(row, datasetContext.primaryKeyColumn)
 
-  def versionOf(row: Row[CV]): Option[RowVersion] = // None if null or not present
-    getRejectingNull(row, datasetContext.versionColumn).map(typeContext.makeRowVersionFromValue)
+  def versionOf(row: Row[CV]): Option[Option[RowVersion]] =
+    row.get(datasetContext.versionColumn) match {
+      case Some(v) =>
+        if(typeContext.isNull(v)) Some(None)
+        else Some(Some(typeContext.makeRowVersionFromValue(v)))
+      case None => None
+    }
 
   def upsert(jobId: Int, row: Row[CV]) {
     checkJob(jobId)
@@ -197,10 +202,11 @@ final class SqlLoader[CT, CV](val connection: Connection,
         currentBatch += UpsertOp(jobId, id, row)
       case None if isSystemPK =>
         versionOf(row) match {
-          case None =>
-            val newSid = idProvider.allocateId()
-            currentBatch += KnownToBeInsertOp(jobId, newSid, row)
-          case Some(v) =>
+          case None | Some(None) =>
+            val newSid = idProvider.allocate()
+            val newVersion = versionProvider.allocate()
+            currentBatch += KnownToBeInsertOp(jobId, newSid, newVersion, row)
+          case Some(Some(_)) =>
             errors.put(jobId, VersionOnNewRow)
         }
       case None =>
@@ -215,7 +221,7 @@ final class SqlLoader[CT, CV](val connection: Connection,
       log.debug("Delete forced a flush; potential pipeline stall")
       flush()
     }
-    currentBatch += DeleteOp(jobId, id, version.map(Some(_)))
+    currentBatch += DeleteOp(jobId, id, version)
     maybeFlush()
   }
 
@@ -251,13 +257,10 @@ final class SqlLoader[CT, CV](val connection: Connection,
         for(delete <- deletes) {
           existingIdsAndVersions.get(delete.id) match {
             case Some(InspectedRowless(_, sid, version)) =>
-              rowPreparer.prepareForDelete(delete.id, delete.version, version) match {
-                case None =>
-                  deleter.delete(sid)
-                  completedDeletions += ((sid, delete.job, delete.id))
-                  existingIdsAndVersions.remove(delete.id)
-                case Some(err) =>
-                  pendingErrors.put(delete.job, err)
+              checkVersion(delete.job, delete.id, delete.version.map(Some(_)), Some(version)) {
+                deleter.delete(sid)
+                completedDeletions += ((sid, delete.job, delete.id))
+                existingIdsAndVersions.remove(delete.id)
               }
             case None =>
               pendingErrors.put(delete.job, NoSuchRowToDelete(delete.id))
@@ -272,6 +275,15 @@ final class SqlLoader[CT, CV](val connection: Connection,
     }
   }
 
+  def checkVersion[T](job: Int, id: CV, newVersion: Option[Option[RowVersion]], oldVersion: Option[RowVersion])(f: => T) {
+    newVersion match {
+      case None => f
+      case Some(v) if v == oldVersion => f
+      case Some(other) =>
+        pendingErrors.put(job, VersionMismatch(id, oldVersion, other))
+    }
+  }
+
   private def processInserts(upserts: Seq[UpsertLike], knownInserts: Boolean): Vector[UpdateOp] = {
     val knownUpdates = new VectorBuilder[UpdateOp]
     if(upserts.nonEmpty) {
@@ -283,35 +295,28 @@ final class SqlLoader[CT, CV](val connection: Connection,
           if(knownInserts) {
             assert(isSystemPK, "Has known inserts but not a system PK dataset?")
             val possiblyUpdates = datasetContext.makeIdMap[VectorBuilder[UpsertOp]]()
-            var foundKnownToBeInsert = false
             upserts foreach {
-              case KnownToBeInsertOp(job, sid, row) =>
-                foundKnownToBeInsert = true
-                rowPreparer.prepareForInsert(row, sid) match {
-                  case Right(preparedRow) =>
-                    val sidValue = preparedRow(datasetContext.systemIdColumn)
-                    assert(typeContext.makeSystemIdFromValue(sidValue) == sid, "preparing the row for insert put the wrong sid in?")
-                    val version = typeContext.makeRowVersionFromValue(preparedRow(datasetContext.versionColumn))
+              case KnownToBeInsertOp(job, sid, version, row) =>
+                val preparedRow = rowPreparer.prepareForInsert(row, sid, version)
+                val sidValue = preparedRow(datasetContext.systemIdColumn)
+                assert(typeContext.makeSystemIdFromValue(sidValue) == sid, "preparing the row for insert put the wrong sid in?")
 
-                    inserter.insert(preparedRow)
-                    believedInserted += 1
+                inserter.insert(preparedRow)
+                believedInserted += 1
 
-                    val inspectedRow = InspectedRow(sidValue, sid, version, preparedRow)
-                    completedInserts += job -> inspectedRow
-                    knownRows.put(sidValue, inspectedRow)
+                val inspectedRow = InspectedRow(sidValue, sid, version, preparedRow)
+                completedInserts += job -> inspectedRow
+                knownRows.put(sidValue, inspectedRow)
 
-                    possiblyUpdates.get(sidValue) match {
-                      case Some(updates) =>
-                        // These updates happened before the relevant insert.  Kill 'em!
-                        for(update <- updates.result()) {
-                          pendingErrors.put(update.job, NoSuchRowToUpdate(update.id))
-                        }
-                        possiblyUpdates.remove(sidValue)
-                      case None =>
-                        // ok good
+                possiblyUpdates.get(sidValue) match {
+                  case Some(updates) =>
+                    // These updates happened before the relevant insert.  Kill 'em!
+                    for(update <- updates.result()) {
+                      pendingErrors.put(update.job, NoSuchRowToUpdate(update.id))
                     }
-                  case Left(err) =>
-                    pendingErrors.put(job, err)
+                    possiblyUpdates.remove(sidValue)
+                  case None =>
+                    // ok good
                 }
               case u@UpsertOp(_, id, _) =>
                 val updatesForId = possiblyUpdates.get(id) match {
@@ -334,43 +339,38 @@ final class SqlLoader[CT, CV](val connection: Connection,
       val preExistingRows = lookupRows(remainingUpsertsToTry.iterator.map(_.id).filterNot(knownRows.contains))
       val (secondaryInsertedCount, ()) = sqlizer.insertBatch(connection) { inserter =>
         for(update <- remainingUpsertsToTry) {
+          def doInsert(oldRow: InspectedRow[CV]) {
+            val newVersion = versionProvider.allocate()
+            val preparedRow = rowPreparer.prepareForUpdate(update.row, oldRow = oldRow.row, newVersion = newVersion)
+            knownUpdates += UpdateOp(update.job, oldRow.rowId, update.id, preparedRow)
+            knownRows.put(update.id, InspectedRow(update.id, oldRow.rowId, newVersion, preparedRow))
+          }
+
           knownRows.get(update.id) match {
             case Some(previouslyInserted) => // An update, because we just inserted it.
-              rowPreparer.prepareForUpdate(update.row, oldRow = previouslyInserted.row) match {
-                case Right(preparedRow) =>
-                  knownUpdates += UpdateOp(update.job, previouslyInserted.rowId, update.id, preparedRow)
-                  val version = typeContext.makeRowVersionFromValue(preparedRow(datasetContext.versionColumn))
-                  knownRows.put(update.id, InspectedRow(update.id, previouslyInserted.rowId, version, preparedRow))
-                case Left(err) =>
-                  pendingErrors.put(update.job, err)
+              checkVersion(update.job, update.id, versionOf(update.row), Some(previouslyInserted.version)) {
+                doInsert(previouslyInserted)
               }
             case None =>
               preExistingRows.get(update.id) match {
                 case Some(existing) =>
-                  rowPreparer.prepareForUpdate(update.row, oldRow = existing.row) match {
-                    case Right(preparedRow) =>
-                      knownUpdates += UpdateOp(update.job, existing.rowId, update.id, preparedRow)
-                      val version = typeContext.makeRowVersionFromValue(preparedRow(datasetContext.versionColumn))
-                      knownRows.put(update.id, InspectedRow(update.id, existing.rowId, version, preparedRow))
-                    case Left(err) =>
-                      pendingErrors.put(update.job, err)
+                  checkVersion(update.job, update.id, versionOf(update.row), Some(existing.version)) {
+                    doInsert(existing)
                   }
                 case None if isSystemPK =>
                   pendingErrors.put(update.job, NoSuchRowToUpdate(update.id))
                 case None =>
                   // yay it's actually an insert
-                  val sid = idProvider.allocateId()
-                  rowPreparer.prepareForInsert(update.row, sid) match {
-                    case Right(preparedRow) =>
-                      inserter.insert(preparedRow)
-                      believedInserted += 1
+                  checkVersion(update.job, update.id, versionOf(update.row), None) {
+                    val sid = idProvider.allocate()
+                    val version = versionProvider.allocate()
+                    val preparedRow = rowPreparer.prepareForInsert(update.row, sid, version)
+                    inserter.insert(preparedRow)
+                    believedInserted += 1
 
-                      val version = typeContext.makeRowVersionFromValue(preparedRow(datasetContext.versionColumn))
-                      val inspectedRow = InspectedRow(update.id, sid, version, preparedRow)
-                      knownRows.put(update.id, inspectedRow)
-                      completedInserts += update.job -> inspectedRow
-                    case Left(err) =>
-                      pendingErrors.put(update.job, err)
+                    val inspectedRow = InspectedRow(update.id, sid, version, preparedRow)
+                    knownRows.put(update.id, inspectedRow)
+                    completedInserts += update.job -> inspectedRow
                   }
               }
           }
@@ -409,8 +409,8 @@ final class SqlLoader[CT, CV](val connection: Connection,
 }
 
 object SqlLoader {
-  def apply[CT, CV](connection: Connection, preparer: RowPreparer[CV], sqlizer: DataSqlizer[CT, CV], dataLogger: DataLogger[CV], idProvider: RowDataProvider, executor: Executor, timingReport: TransferrableContextTimingReport): SqlLoader[CT,CV] = {
-    new SqlLoader(connection, preparer, sqlizer, dataLogger, idProvider, executor, timingReport)
+  def apply[CT, CV](connection: Connection, preparer: RowPreparer[CV], sqlizer: DataSqlizer[CT, CV], dataLogger: DataLogger[CV], idProvider: RowIdProvider, versionProvider: RowVersionProvider, executor: Executor, timingReport: TransferrableContextTimingReport): SqlLoader[CT,CV] = {
+    new SqlLoader(connection, preparer, sqlizer, dataLogger, idProvider, versionProvider, executor, timingReport)
   }
 
   case class JobReport[CV](inserted: sc.Map[Int, IdAndVersion[CV]], updated: sc.Map[Int, IdAndVersion[CV]], deleted: sc.Map[Int, CV], errors: sc.Map[Int, Failure[CV]]) extends Report[CV]

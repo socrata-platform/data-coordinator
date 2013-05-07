@@ -17,7 +17,7 @@ import com.socrata.datacoordinator.secondary.{SecondaryManifest, PlaybackToSecon
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.loader.sql._
 import com.socrata.datacoordinator.secondary.sql.{SqlSecondaryConfig, SqlSecondaryManifest}
-import com.socrata.datacoordinator.util.{RowDataProvider, TransferrableContextTimingReport}
+import com.socrata.datacoordinator.util.{RowIdProvider, RowVersionProvider, RowDataProvider, TransferrableContextTimingReport}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import scala.concurrent.duration.Duration
 import com.socrata.datacoordinator.truth.metadata.DatasetInfo
@@ -39,7 +39,7 @@ trait PostgresCommonSupport[CT, CV] {
   val copyInProvider: (Connection, String, Reader) => Long
   val timingReport: TransferrableContextTimingReport
 
-  def rowPreparer(transactionStart: DateTime, ctx: DatasetCopyContext[CT], rowDataProvider: RowDataProvider, replaceUpdatedRows: Boolean): RowPreparer[CV]
+  def rowPreparer(transactionStart: DateTime, ctx: DatasetCopyContext[CT], replaceUpdatedRows: Boolean): RowPreparer[CV]
 
   lazy val loaderProvider = new AbstractSqlLoaderProvider(executor, typeContext, repFor, isSystemColumn) with PostgresSqlLoaderProvider[CT, CV] {
     def copyIn(conn: Connection, sql: String, reader: Reader): Long =
@@ -155,8 +155,8 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
   def prevettedLoader(copyCtx: DatasetCopyContext[CT], logger: Logger[CT, CV]) =
     new SqlPrevettedLoader(conn, sqlizerFactory(copyCtx.copyInfo, datasetContextFactory(copyCtx.schema)), logger)
 
-  def loader(copyCtx: DatasetCopyContext[CT], rowDataProvider: RowDataProvider, logger: Logger[CT, CV], replaceUpdatedRows: Boolean) =
-    managed(loaderProvider(conn, copyCtx, rowPreparer(transactionStart, copyCtx, rowDataProvider, replaceUpdatedRows), rowDataProvider, logger, timingReport))
+  def loader(copyCtx: DatasetCopyContext[CT], rowIdProvider: RowIdProvider, rowVersionProvider: RowVersionProvider, logger: Logger[CT, CV], replaceUpdatedRows: Boolean) =
+    managed(loaderProvider(conn, copyCtx, rowPreparer(transactionStart, copyCtx, replaceUpdatedRows), rowIdProvider, rowVersionProvider, logger, timingReport))
 
   lazy val lowLevelDatabaseReader = new PostgresDatabaseReader(conn, datasetMapReader, repFor)
 

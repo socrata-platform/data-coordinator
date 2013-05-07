@@ -13,7 +13,7 @@ import java.util.concurrent.ExecutorService
 import com.socrata.datacoordinator.truth.universe.sql.{PostgresUniverse, PostgresCommonSupport}
 import org.joda.time.DateTime
 import com.socrata.datacoordinator.util.collection.{ColumnIdSet, ColumnIdMap}
-import com.socrata.datacoordinator.truth.loader.{RowPreparerDeclinedUpsert, VersionMismatch, RowPreparer}
+import com.socrata.datacoordinator.truth.loader.RowPreparer
 import com.socrata.datacoordinator.id.{RowVersion, RowId}
 import java.sql.Connection
 import java.io.Reader
@@ -101,7 +101,7 @@ class SoQLCommon(dataSource: DataSource,
     def isSystemColumn(ci: AbstractColumnInfoLike): Boolean =
       isSystemColumnName(ci.logicalName)
 
-    def rowPreparer(transactionStart: DateTime, ctx: DatasetCopyContext[CT], idProvider: RowDataProvider, replaceUpdatedRows: Boolean): RowPreparer[SoQLValue] =
+    def rowPreparer(transactionStart: DateTime, ctx: DatasetCopyContext[CT], replaceUpdatedRows: Boolean): RowPreparer[SoQLValue] =
       new RowPreparer[SoQLValue] {
         val schema = ctx.schema
         lazy val jsonRepFor = jsonReps(ctx.datasetInfo)
@@ -122,19 +122,13 @@ class SoQLCommon(dataSource: DataSource,
 
         val allSystemColumns = ColumnIdSet(SystemColumns.allSystemColumnNames.toSeq.map(findCol) : _*)
 
-        def prepareForInsert(row: Row[SoQLValue], sid: RowId) = {
+        def prepareForInsert(row: Row[SoQLValue], sid: RowId, version: RowVersion) = {
           val tmp = new MutableRow(row)
           tmp(idColumn) = SoQLID(sid.underlying)
           tmp(createdAtColumn) = SoQLFixedTimestamp(transactionStart)
           tmp(updatedAtColumn) = SoQLFixedTimestamp(transactionStart)
-          tmp(versionColumn) = SoQLVersion(idProvider.allocateVersion().underlying)
-          val result = tmp.freeze()
-          checkVersion(result(primaryKeyColumn.systemId), None, versionOf(row)) match {
-            case None =>
-              Right(result)
-            case Some(err) =>
-              Left(err)
-          }
+          tmp(versionColumn) = SoQLVersion(version.underlying)
+          tmp.freeze()
         }
 
         def baseRow(oldRow: Row[SoQLValue]): MutableRow[SoQLValue] =
@@ -148,41 +142,17 @@ class SoQLCommon(dataSource: DataSource,
             new MutableRow[SoQLValue](oldRow)
           }
 
-        def versionOf(row: Row[SoQLValue]): Option[Option[RowVersion]] =
-          row.get(versionColumn) match {
-            case Some(SoQLVersion(v)) => Some(Some(new RowVersion(v)))
-            case Some(SoQLNull) => Some(None)
-            case Some(other) => sys.error("Bad type in version column: " + other.typ)
-            case None => None
+        def prepareForUpdate(row: Row[SoQLValue], oldRow: Row[SoQLValue], newVersion: RowVersion): Row[CV] = {
+          val tmp = baseRow(oldRow)
+          val rowIt = row.iterator
+          while(rowIt.hasNext) {
+            rowIt.advance()
+            if(!allSystemColumns(rowIt.key)) tmp(rowIt.key) = rowIt.value
           }
-
-        def checkVersion(id: CV, oldVersion: Option[RowVersion], newVersion: Option[Option[RowVersion]]): Option[RowPreparerDeclinedUpsert[CV]] =
-          newVersion match {
-            case None => None // No version filter provided at all; allow it
-            case Some(other) if other == oldVersion =>
-              None
-            case Some(other) =>
-              Some(VersionMismatch(id, oldVersion, other))
-          }
-
-        def prepareForUpdate(row: Row[SoQLValue], oldRow: Row[SoQLValue]): Either[RowPreparerDeclinedUpsert[CV], Row[CV]] =
-          checkVersion(row(primaryKeyColumn.systemId), versionOf(oldRow).get, versionOf(row)) match {
-            case None =>
-              val tmp = baseRow(oldRow)
-              val rowIt = row.iterator
-              while(rowIt.hasNext) {
-                rowIt.advance()
-                if(!allSystemColumns(rowIt.key)) tmp(rowIt.key) = rowIt.value
-              }
-              tmp(updatedAtColumn) = SoQLFixedTimestamp(transactionStart)
-              tmp(versionColumn) = SoQLVersion(idProvider.allocateVersion().underlying)
-              Right(tmp.freeze())
-            case Some(err) =>
-              Left(err)
-          }
-
-        def prepareForDelete(id: CV, requestedVersion: Option[Option[RowVersion]], existingVersion: RowVersion): Option[RowPreparerDeclinedUpsert[CV]] =
-          checkVersion(id, Some(existingVersion), requestedVersion)
+          tmp(updatedAtColumn) = SoQLFixedTimestamp(transactionStart)
+          tmp(versionColumn) = SoQLVersion(newVersion.underlying)
+          tmp.freeze()
+        }
       }
 
     val executor: ExecutorService = common.executorService
