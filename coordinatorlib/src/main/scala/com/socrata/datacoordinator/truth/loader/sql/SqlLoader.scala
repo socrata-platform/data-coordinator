@@ -41,21 +41,54 @@ final class SqlLoader[CT, CV](val connection: Connection,
 
   val softMaxBatchSizeInBytes = sqlizer.softMaxBatchSize
 
-  private case class DeleteOp(job: Int, id: CV, version: Option[RowVersion])
-  private sealed abstract class UpsertLike
+  private case class DeleteOp(job: Int, id: CV, version: Option[Option[RowVersion]])
+  private sealed abstract class UpsertLike {
+    def job: Int
+    def row: Row[CV]
+  }
   private case class KnownToBeInsertOp(job: Int, id: RowId, row: Row[CV]) extends UpsertLike
   private case class UpsertOp(job: Int, id: CV, row: Row[CV]) extends UpsertLike
   private case class UpdateOp(job: Int, sid: RowId, id: CV, newPreparedRow: Row[CV])
   private class Queues {
-    val deletions = new VectorBuilder[DeleteOp]
-    var deleteSize = 0L
+    private var empty = true
+    private var knownInserts = false
 
-    val upserts = new VectorBuilder[UpsertLike]
-    val upsertIds = datasetContext.makeIdMap[AnyRef]()
-    var upsertSize = 0L
+    private val deletionBuilder = new VectorBuilder[DeleteOp]
+    private var deleteSize = 0L
+
+    private val upsertBuilder = new VectorBuilder[UpsertLike]
+    private val upsertIds = datasetContext.makeIdMap[AnyRef]()
+    private var upsertSize = 0L
+
+    def += (op: DeleteOp) {
+      deletionBuilder += op
+      deleteSize += sqlizer.sizeofDelete(op.id)
+      empty = false
+    }
+
+    def += (op: UpsertOp) {
+      addUpsert(op.id, op)
+    }
+
+    def += (op: KnownToBeInsertOp) {
+      addUpsert(typeContext.makeValueFromSystemId(op.id), op)
+      knownInserts = true
+    }
+
+    private def addUpsert(id: CV, op: UpsertLike) {
+      upsertBuilder += op
+      upsertIds.put(id, this)
+      upsertSize += sqlizer.sizeof(op.row)
+      empty = false
+    }
 
     def isSufficientlyLarge = deleteSize + upsertSize > softMaxBatchSizeInBytes
-    var isEmpty = true
+    def isEmpty = empty
+    def hasKnownInserts = knownInserts
+
+    def hasUpsertFor(id: CV) = upsertIds.contains(id)
+    def upserts = upsertBuilder.result()
+    def deletions = deletionBuilder.result()
   }
 
   private var currentBatch = new Queues
@@ -161,18 +194,12 @@ final class SqlLoader[CT, CV](val connection: Connection,
     checkJob(jobId)
     idOf(row) match {
       case Some(id) =>
-        currentBatch.upserts += UpsertOp(jobId, id, row)
-        currentBatch.upsertSize += sqlizer.sizeof(row)
-        currentBatch.upsertIds.put(id, this)
-        currentBatch.isEmpty = false
+        currentBatch += UpsertOp(jobId, id, row)
       case None if isSystemPK =>
         versionOf(row) match {
           case None =>
             val newSid = idProvider.allocateId()
-            currentBatch.upserts += KnownToBeInsertOp(jobId, newSid, row)
-            currentBatch.upsertSize += sqlizer.sizeof(row)
-            currentBatch.upsertIds.put(typeContext.makeValueFromSystemId(newSid), this)
-            currentBatch.isEmpty = false
+            currentBatch += KnownToBeInsertOp(jobId, newSid, row)
           case Some(v) =>
             errors.put(jobId, VersionOnNewRow)
         }
@@ -184,19 +211,17 @@ final class SqlLoader[CT, CV](val connection: Connection,
 
   def delete(jobId: Int, id: CV, version: Option[RowVersion]) {
     checkJob(jobId)
-    if(currentBatch.upsertIds.contains(id)) {
+    if(currentBatch.hasUpsertFor(id)) {
       log.debug("Delete forced a flush; potential pipeline stall")
       flush()
     }
-    currentBatch.deletions += DeleteOp(jobId, id, version)
-    currentBatch.deleteSize += sqlizer.sizeofDelete(id)
-    currentBatch.isEmpty = false
+    currentBatch += DeleteOp(jobId, id, version.map(Some(_)))
     maybeFlush()
   }
 
   private def process(batch: Queues) {
-    processDeletes(batch.deletions.result())
-    val updates = processInserts(batch.upserts.result())
+    processDeletes(batch.deletions)
+    val updates = processInserts(batch.upserts, batch.hasKnownInserts)
     processUpdates(updates)
   }
 
@@ -247,7 +272,7 @@ final class SqlLoader[CT, CV](val connection: Connection,
     }
   }
 
-  private def processInserts(upserts: Seq[UpsertLike]): Vector[UpdateOp] = {
+  private def processInserts(upserts: Seq[UpsertLike], knownInserts: Boolean): Vector[UpdateOp] = {
     val knownUpdates = new VectorBuilder[UpdateOp]
     if(upserts.nonEmpty) {
       val completedInserts = new mutable.ArrayBuffer[(Int, InspectedRow[CV])]
@@ -255,7 +280,8 @@ final class SqlLoader[CT, CV](val connection: Connection,
       var believedInserted = 0
       val (insertedCount, remainingUpsertsToTry) =
         sqlizer.insertBatch(connection) { inserter =>
-          if(isSystemPK) {
+          if(knownInserts) {
+            assert(isSystemPK, "Has known inserts but not a system PK dataset?")
             val possiblyUpdates = datasetContext.makeIdMap[VectorBuilder[UpsertOp]]()
             var foundKnownToBeInsert = false
             upserts foreach {
@@ -298,11 +324,7 @@ final class SqlLoader[CT, CV](val connection: Connection,
                 }
                 updatesForId += u
             }
-            if(foundKnownToBeInsert) possiblyUpdates.valuesIterator.flatMap(_.result().iterator).toVector
-            else {
-              assert(upserts.forall(_.isInstanceOf[UpsertOp]), "Found non-UpsertOp in upserts, but there were no KnownToBeInserts?")
-              upserts.asInstanceOf[Seq[UpsertOp]]
-            }
+            possiblyUpdates.valuesIterator.flatMap(_.result().iterator).toVector
           } else {
             assert(upserts.forall(_.isInstanceOf[UpsertOp]), "Found non-UpsertOp in upserts, but it's not a system PK dataset?")
             upserts.asInstanceOf[Seq[UpsertOp]]
