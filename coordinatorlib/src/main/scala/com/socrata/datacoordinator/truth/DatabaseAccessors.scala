@@ -11,7 +11,7 @@ import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.metadata.CopyPair
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
-import com.socrata.datacoordinator.id.{ColumnId, DatasetId}
+import com.socrata.datacoordinator.id.{RowVersion, ColumnId, DatasetId}
 import scala.concurrent.duration.Duration
 import com.socrata.soql.environment.ColumnName
 
@@ -119,7 +119,7 @@ trait DatasetMutator[CT, CV] {
     sealed trait RowDataUpdateJob {
       def jobNumber: Int
     }
-    case class DeleteJob(jobNumber: Int, id: CV) extends RowDataUpdateJob
+    case class DeleteJob(jobNumber: Int, id: CV, version: Option[Option[RowVersion]]) extends RowDataUpdateJob
     case class UpsertJob(jobNumber: Int, row: Row[CV]) extends RowDataUpdateJob
 
     def upsert(inputGenerator: Iterator[RowDataUpdateJob], replaceUpdatedRows: Boolean): Report[CV]
@@ -305,7 +305,7 @@ object DatasetMutator {
           val (report, nextCounterValue, _) = llCtx.withDataLoader(copyCtx.frozenCopy(), logger, replaceUpdatedRows) { loader =>
             inputGenerator.foreach {
               case UpsertJob(jobNum, row) => loader.upsert(jobNum, row)
-              case DeleteJob(jobNum, id) => loader.delete(jobNum, id)
+              case DeleteJob(jobNum, id, ver) => loader.delete(jobNum, id, ver)
             }
           }
           copyCtx.copyInfo = datasetMap.updateNextCounterValue(copyInfo, nextCounterValue)

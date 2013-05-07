@@ -558,7 +558,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         txn <- managed(SqlLoader(conn, rowPreparer(str), dataSqlizer, dataLogger, ids, vers, executor, NoopTimingReport))
       } {
         txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q")))
-        txn.delete(1, StringValue("q"))
+        txn.delete(1, StringValue("q"), None)
         val report = txn.report
         dataLogger.finish()
 
@@ -599,7 +599,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, NoopTimingReport))
       } {
         txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q")))
-        txn.delete(1, LongValue(15))
+        txn.delete(1, LongValue(15), None)
         val report = txn.report
         dataLogger.finish()
 
@@ -677,7 +677,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
     def applyOps(txn: Loader[TestColumnValue], ops: List[Op]) {
       for((op, job) <- ops.zipWithIndex) op match {
-        case Delete(id) => txn.delete(job, LongValue(id))
+        case Delete(id) => txn.delete(job, LongValue(id), None)
         case Upsert(id, numV, data) => txn.upsert(job, Row(
           userIdCol -> LongValue(id),
           num -> numV.map(LongValue(_)).getOrElse(NullValue),
@@ -793,7 +793,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
     def applyOps(txn: Loader[TestColumnValue], ops: List[Op]) {
       for((op, job) <- ops.zipWithIndex) op match {
-        case Delete(id) => txn.delete(job, LongValue(id))
+        case Delete(id) => txn.delete(job, LongValue(id), None)
         case Upsert(id, numV, data) =>
           val baseRow = Row[TestColumnValue](
             num -> numV.map(LongValue(_)).getOrElse(NullValue),

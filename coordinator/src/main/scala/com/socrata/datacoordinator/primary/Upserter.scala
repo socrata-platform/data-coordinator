@@ -18,7 +18,7 @@ class Upserter[CT, CV](universe: Managed[Universe[CT, CV] with DatasetMutatorPro
         ctx <- ctxOpt
       } yield {
         ctx.upsert(inputGenerator(ctx.schema).zipWithIndex.map {
-          case (Left(id), num) => ctx.DeleteJob(num, id)
+          case (Left(id), num) => ctx.DeleteJob(num, id, None)
           case (Right(row), num) => ctx.UpsertJob(num, row)
         },
         replaceUpdatedRows)

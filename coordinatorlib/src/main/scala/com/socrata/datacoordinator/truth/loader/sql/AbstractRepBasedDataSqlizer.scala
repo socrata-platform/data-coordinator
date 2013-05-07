@@ -174,7 +174,7 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
     def processBlockNoUid(rs: ResultSet) = {
       val uid = pkRep.fromResultSet(rs, 1)
       val sid = typeContext.makeSystemIdFromValue(uid)
-      val ver = typeContext.makeRowVersionFromValue(versionRep.fromResultSet(rs, pkRep.physColumns.length))
+      val ver = typeContext.makeRowVersionFromValue(versionRep.fromResultSet(rs, 1 + pkRep.physColumns.length))
       InspectedRowless(uid, sid, ver)
     }
     def processBlockWithUid(rs: ResultSet) = {

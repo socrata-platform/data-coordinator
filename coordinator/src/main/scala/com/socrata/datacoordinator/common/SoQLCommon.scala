@@ -183,18 +183,11 @@ class SoQLCommon(dataSource: DataSource,
     val versionColumnName: ColumnName =
       SystemColumns.version
 
-    def typeNameFor(typ: CT): TypeName =
-      typeContext.typeNamespace.userTypeForType(typ)
-
-    def nameForTypeOpt(name: TypeName): Option[CT] =
-      typeContext.typeNamespace.typeForUserType(name)
-
     def jsonReps(di: DatasetInfo): CT => JsonColumnRep[CT, CV] = common.jsonReps(di)
 
-    val schemaFinder = new SchemaFinder[CT, CV](universe, typeNameFor)
+    val typeContext = common.typeContext
 
-    def makeValueFromRowVersion(rv: RowVersion) =
-      typeContext.makeValueFromRowVersion(rv)
+    val schemaFinder = new SchemaFinder[CT, CV](universe, typeContext.typeNamespace.userTypeForType)
 
     val allowDdlOnPublishedCopies = common.allowDdlOnPublishedCopies
   }

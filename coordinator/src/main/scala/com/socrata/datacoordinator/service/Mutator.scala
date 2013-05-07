@@ -3,7 +3,7 @@ package service
 
 import com.rojoma.json.ast._
 import com.socrata.datacoordinator.truth.universe.{DatasetMutatorProvider, Universe}
-import com.socrata.datacoordinator.truth.{DatasetIdInUseByWriterException, DatasetMutator}
+import com.socrata.datacoordinator.truth.{TypeContext, DatasetIdInUseByWriterException, DatasetMutator}
 import com.socrata.datacoordinator.truth.metadata.{DatasetInfo, DatasetCopyContext, LifecycleStage, ColumnInfo}
 import com.socrata.datacoordinator.truth.json.JsonColumnRep
 import com.rojoma.json.codec.JsonCodec
@@ -180,17 +180,21 @@ trait MutatorCommon[CT, CV] {
   def systemSchema: Map[ColumnName, CT]
   def systemIdColumnName: ColumnName
   def versionColumnName: ColumnName
-  def typeNameFor(typ: CT): TypeName
-  def nameForTypeOpt(name: TypeName): Option[CT]
   def jsonReps(di: DatasetInfo): CT => JsonColumnRep[CT, CV]
   def schemaFinder: SchemaFinder[CT, CV]
   def allowDdlOnPublishedCopies: Boolean
-  def makeValueFromRowVersion(v: RowVersion): CV
+  def typeContext: TypeContext[CT, CV]
 }
 
 class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
   import Mutator._
   import common._
+
+  def typeNameFor(typ: CT): TypeName =
+    typeContext.typeNamespace.userTypeForType(typ)
+
+  def nameForTypeOpt(name: TypeName): Option[CT] =
+    typeContext.typeNamespace.typeForUserType(name)
 
   def createCreateStream(index: Long, value: JValue, remainingCommands: Iterator[JValue]) =
     withObjectFields(index, value) { accessor =>
@@ -244,7 +248,7 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
   def toEventStream(inserted: collection.Map[Int, JValue],
                     updated: collection.Map[Int, JValue],
                     deleted: collection.Map[Int, JValue],
-                    errors: collection.Map[Int, Failure[JValue]]) = {
+                    errors: collection.Map[Int, JValue]) = {
     new BuiltUpIterator(
       Iterator(StartOfObjectEvent(), FieldEvent("inserted")),
       mapToEvents(inserted),
@@ -278,16 +282,40 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
       val events = processor.carryOutCommands(ctx, commands).map { r =>
         val pkRep = jsonRepFor(ctx.primaryKey.typ)
         val verRep = jsonRepFor(ctx.versionColumn.typ)
+        def jsonifyId(id: CV) = pkRep.toJValue(id)
+        def jsonifyVersion(v: RowVersion) =
+          verRep.toJValue(typeContext.makeValueFromRowVersion(v))
         def repify(idAndVersion: IdAndVersion[CV]) = {
           JObject(Map(
-            "id" -> pkRep.toJValue(idAndVersion.id),
-            "ver" -> verRep.toJValue(makeValueFromRowVersion(idAndVersion.version))
+            "id" -> jsonifyId(idAndVersion.id),
+            "ver" -> jsonifyVersion(idAndVersion.version)
           ))
         }
         val inserted = r.inserted.mapValues(repify)
         val updated = r.updated.mapValues(repify)
         val deleted = r.deleted.mapValues(pkRep.toJValue)
-        val errors = r.errors.mapValues(_.map(pkRep.toJValue))
+        val errors = r.errors.mapValues {
+          case NoPrimaryKey =>
+            JString("no_primary_key")
+          case NoSuchRowToDelete(id) =>
+            JObject(Map(
+              "no_such_row_to_delete" -> jsonifyId(id)
+            ))
+          case NoSuchRowToUpdate(id) =>
+            JObject(Map(
+              "no_such_row_to_update" -> jsonifyId(id)
+            ))
+          case VersionMismatch(id, expected, actual) =>
+            JObject(Map(
+              "version_mismatch" -> JObject(Map(
+                "id" -> jsonifyId(id),
+                "expected" -> expected.map(jsonifyVersion).getOrElse(JNull),
+                "actual" -> actual.map(jsonifyVersion).getOrElse(JNull)
+              ))
+            ))
+          case VersionOnNewRow =>
+            JString("version_on_new_row")
+        }
         toEventStream(inserted, updated, deleted, errors)
       }
       (ctx.copyInfo.datasetInfo.systemId,
@@ -448,7 +476,7 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
 
     def processRowData(idx: Long, rows: BufferedIterator[JValue], fatalRowErrors: Boolean, mutator: DatasetMutator[CT,CV]#MutationContext, mergeReplace: MergeReplace): Report[CV] = {
       import mutator._
-      val plan = new RowDecodePlan(schema, jsonRepFor, typeNameFor)
+      val plan = new RowDecodePlan(schema, jsonRepFor, typeNameFor, (v: CV) => if(typeContext.isNull(v)) None else Some(typeContext.makeRowVersionFromValue(v)))
       val counter = new Counter(1)
       try {
         val it = new Iterator[RowDataUpdateJob] {
@@ -457,7 +485,7 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
             if(!hasNext) throw new NoSuchElementException
             plan(rows.next()) match {
               case Right(row) => UpsertJob(counter(), row)
-              case Left(id) => DeleteJob(counter(), id)
+              case Left((id, version)) => DeleteJob(counter(), id, version)
             }
           }
         }
@@ -469,8 +497,9 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
           }
           val trueError = result.errors.minBy(_._1)._2.map(jsonRepFor(pk.typ).toJValue)
           val jsonizer = { (rv: RowVersion) =>
-            jsonRepFor(mutator.versionColumn.typ).toJValue(makeValueFromRowVersion(rv))
+            jsonRepFor(mutator.versionColumn.typ).toJValue(typeContext.makeValueFromRowVersion(rv))
           }
+          println(jsonizer(new RowVersion(10)))
           throw UpsertError(mutator.copyInfo.datasetInfo.systemId, trueError, jsonizer)(idx)
         }
         result

@@ -145,7 +145,7 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
     }
   }
 
-  def delete(job: Int, id: CV, version: Option[RowVersion]) {
+  def delete(job: Int, id: CV, version: Option[Option[RowVersion]]) {
     checkJob(job)
     datasetContext.userPrimaryKeyColumn match {
       case Some(pkCol) =>
@@ -161,10 +161,8 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
             }
             version match {
               case None => doDelete()
-              case Some(v) if v == oldVersion => doDelete()
-              case other =>
-                println(oldVersion, other)
-                errors.put(job, VersionMismatch(id, Some(oldVersion), other))
+              case Some(Some(v)) if v == oldVersion => doDelete()
+              case Some(other) => errors.put(job, VersionMismatch(id, Some(oldVersion), other))
             }
           case None =>
             errors.put(job, NoSuchRowToDelete(id))

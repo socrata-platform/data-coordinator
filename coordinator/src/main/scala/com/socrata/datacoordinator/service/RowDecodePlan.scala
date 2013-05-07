@@ -5,11 +5,11 @@ import com.socrata.datacoordinator.truth.json.JsonColumnReadRep
 import com.rojoma.json.ast.{JArray, JBoolean, JObject, JValue}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, AbstractColumnInfoLike}
-import com.socrata.datacoordinator.id.ColumnId
+import com.socrata.datacoordinator.id.{RowVersion, ColumnId}
 import com.socrata.soql.environment.{TypeName, ColumnName}
 
-class RowDecodePlan[CT, CV](schema: ColumnIdMap[ColumnInfo[CT]], repFor: CT => JsonColumnReadRep[CT, CV], typeNameFor: CT => TypeName)
-  extends (JValue => Either[CV, Row[CV]])
+class RowDecodePlan[CT, CV](schema: ColumnIdMap[ColumnInfo[CT]], repFor: CT => JsonColumnReadRep[CT, CV], typeNameFor: CT => TypeName, versionOf: CV => Option[RowVersion])
+  extends (JValue => Either[(CV, Option[Option[RowVersion]]), Row[CV]])
 {
   sealed abstract class BadDataException(msg: String) extends Exception(msg)
   case class BadUpsertCommandException(value: JValue) extends BadDataException("Upsert command not an object or a singleton list")
@@ -19,6 +19,10 @@ class RowDecodePlan[CT, CV](schema: ColumnIdMap[ColumnInfo[CT]], repFor: CT => J
     sys.error("No system primary key in the schema?")
   }
   val pkRep = repFor(pkCol.typ)
+  val versionCol = schema.values.find(_.isVersion).getOrElse {
+    sys.error("No version column in the schema?")
+  }
+  val versionRep = repFor(versionCol.typ)
   val cookedSchema: Array[(ColumnName, ColumnId, JsonColumnReadRep[CT, CV])] =
     schema.iterator.map { case (systemId, ci) =>
       (ci.logicalName, systemId, repFor(ci.typ))
@@ -34,7 +38,7 @@ class RowDecodePlan[CT, CV](schema: ColumnIdMap[ColumnInfo[CT]], repFor: CT => J
     * if it is upsert.
     * @throws RowDecodePlan.BadDataException if the data is uninterpretable
     */
-  def apply(json: JValue): Either[CV, Row[CV]] = json match {
+  def apply(json: JValue): Either[(CV, Option[Option[RowVersion]]), Row[CV]] = json match {
     case JObject(rawRow) =>
       val row = cook(rawRow)
       val result = new MutableRow[CV]
@@ -55,10 +59,24 @@ class RowDecodePlan[CT, CV](schema: ColumnIdMap[ColumnInfo[CT]], repFor: CT => J
     case JArray(Seq(value)) =>
       pkRep.fromJValue(value) match {
         case Some(trueValue) =>
-          Left(trueValue)
+          Left((trueValue, None))
         case None =>
           throw new UninterpretableFieldValue(pkCol.logicalName, value, pkRep.representedType)
       }
+    case JArray(Seq(value, version)) =>
+      val id = pkRep.fromJValue(value) match {
+        case Some(trueValue) =>
+          trueValue
+        case None =>
+          throw new UninterpretableFieldValue(pkCol.logicalName, value, pkRep.representedType)
+      }
+      val v = versionRep.fromJValue(version) match {
+        case Some(trueVersion) =>
+          trueVersion
+        case None =>
+          throw new UninterpretableFieldValue(versionCol.logicalName, value, versionRep.representedType)
+      }
+      Left((id, Some(versionOf(v))))
     case other =>
       throw new BadUpsertCommandException(other)
   }

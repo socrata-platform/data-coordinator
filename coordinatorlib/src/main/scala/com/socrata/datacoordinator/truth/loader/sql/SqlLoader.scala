@@ -41,7 +41,7 @@ final class SqlLoader[CT, CV](val connection: Connection,
 
   val softMaxBatchSizeInBytes = sqlizer.softMaxBatchSize
 
-  private case class DeleteOp(job: Int, id: CV, version: Option[RowVersion])
+  private case class DeleteOp(job: Int, id: CV, version: Option[Option[RowVersion]])
   private sealed abstract class UpsertLike {
     val job: Int
     val row: Row[CV]
@@ -215,7 +215,7 @@ final class SqlLoader[CT, CV](val connection: Connection,
     maybeFlush()
   }
 
-  def delete(jobId: Int, id: CV, version: Option[RowVersion]) {
+  def delete(jobId: Int, id: CV, version: Option[Option[RowVersion]]) {
     checkJob(jobId)
     if(currentBatch.hasUpsertFor(id)) {
       log.debug("Delete forced a flush; potential pipeline stall")
@@ -257,7 +257,7 @@ final class SqlLoader[CT, CV](val connection: Connection,
         for(delete <- deletes) {
           existingIdsAndVersions.get(delete.id) match {
             case Some(InspectedRowless(_, sid, version)) =>
-              checkVersion(delete.job, delete.id, delete.version.map(Some(_)), Some(version)) {
+              checkVersion(delete.job, delete.id, delete.version, Some(version)) {
                 deleter.delete(sid)
                 completedDeletions += ((sid, delete.job, delete.id))
                 existingIdsAndVersions.remove(delete.id)
