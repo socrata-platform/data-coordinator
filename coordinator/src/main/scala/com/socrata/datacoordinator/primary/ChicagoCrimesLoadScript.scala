@@ -17,8 +17,17 @@ import com.socrata.soql.environment.{ColumnName, TypeName}
 import com.socrata.datacoordinator.truth.universe.sql.PostgresCopyIn
 import com.socrata.datacoordinator.truth.csv.CsvColumnReadRep
 import com.socrata.datacoordinator.common.soql.SoQLRep
+import org.apache.log4j.PropertyConfigurator
 
 object ChicagoCrimesLoadScript extends App {
+  val loggingProps = new java.util.Properties
+  loggingProps.put("log4j.rootLogger","INFO,console")
+  loggingProps.put("log4j.logger.com.socrata","TRACE")
+  loggingProps.put("log4j.appender.console","org.apache.log4j.ConsoleAppender")
+  loggingProps.put("log4j.appender.console.layout","org.apache.log4j.PatternLayout")
+  loggingProps.put("log4j.appender.console.layout.ConversionPattern","[%t] %d %c %m%n")
+  PropertyConfigurator.configure(loggingProps)
+
   val url =
   // "jdbc:postgresql://10.0.5.104:5432/robertm"
     "jdbc:postgresql://localhost:5432/robertm"
