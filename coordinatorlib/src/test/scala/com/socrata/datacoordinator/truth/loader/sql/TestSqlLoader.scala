@@ -623,16 +623,383 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     }
   }
 
-  test("inserting a row with an explicitly null version succeeds (system PK)")(pending)
-  test("inserting a row with an explicitly null version succeeds (user PK)")(pending)
-  test("inserting a row with an not-null version fails (system PK)")(pending)
-  test("inserting a row with an not-null version fails (user PK)")(pending)
-  test("updating a row with an explicitly null version fails (system PK)")(pending)
-  test("updating a row with an explicitly null version fails (user PK)")(pending)
-  test("updating a row with an incorrect not-null version fails (system PK)")(pending)
-  test("updating a row with an incorrect not-null version fails (user PK)")(pending)
-  test("updating a row with a correct not-null version succeeds (system PK)")(pending)
-  test("updating a row with a correct not-null version succeeds (user PK)")(pending)
+  test("inserting a row with an explicitly null version succeeds (system PK)") {
+    val ids = idProvider(15)
+    val vers = versionProvider(64)
+    val dsContext = new TestDatasetContext(standardSchema, idCol, None, versionCol)
+    val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
+
+    withDB() { conn =>
+      makeTables(conn, dataSqlizer, standardLogTableName)
+      conn.commit()
+
+      for {
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
+        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, NoopTimingReport))
+      } {
+        txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> NullValue))
+        val report = txn.report
+        dataLogger.finish()
+
+        report.inserted must equal (Map(0 -> IdAndVersion(LongValue(15), new RowVersion(64))))
+        report.updated must be ('empty)
+        report.deleted must be ('empty)
+        report.errors must be ('empty)
+      }
+      conn.commit()
+
+      ids.underlying.finish() must be (16L)
+      vers.underlying.finish() must be (65L)
+
+      query(conn, rawSelect) must equal (Seq(
+        Map(idColName -> 15L, versionColName -> 64L, numName -> 1L, strName -> "q")
+      ))
+      query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq(
+        locally {
+          val op = logMap(idCol -> JNumber(15), versionCol -> JNumber(64), num -> JNumber(1), str -> JString("q"))
+          Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"i":""" + op + """}]"""), "who" -> "hello")
+        }
+      ))
+    }
+  }
+
+  test("inserting a row with an explicitly null version succeeds (user PK)") {
+    val ids = idProvider(15)
+    val vers = versionProvider(72)
+    val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str), versionCol)
+    val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
+
+    withDB() { conn =>
+      makeTables(conn, dataSqlizer, standardLogTableName)
+      conn.commit()
+
+      for {
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
+        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, NoopTimingReport))
+      } {
+        txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> NullValue))
+        val report = txn.report
+        dataLogger.finish()
+
+        report.inserted must equal (Map(0 -> IdAndVersion(StringValue("q"), new RowVersion(72))))
+        report.updated must be ('empty)
+        report.deleted must be ('empty)
+        report.errors must be ('empty)
+      }
+      conn.commit()
+
+      ids.underlying.finish() must be (16L)
+      vers.underlying.finish() must be (73L)
+
+      query(conn, rawSelect) must equal (Seq(
+        Map(idColName -> 15L, versionColName -> 72L, numName -> 1L, strName -> "q")
+      ))
+      query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq(
+        locally {
+          val op = logMap(idCol -> JNumber(15), versionCol -> JNumber(72), num -> JNumber(1), str -> JString("q"))
+          Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"i":""" + op + """}]"""), "who" -> "hello")
+        }
+      ))
+    }
+  }
+
+  test("inserting a row with a not-null version fails (system PK)") {
+    val ids = idProvider(15)
+    val vers = versionProvider(80)
+    val dsContext = new TestDatasetContext(standardSchema, idCol, None, versionCol)
+    val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
+
+    withDB() { conn =>
+      makeTables(conn, dataSqlizer, standardLogTableName)
+      conn.commit()
+
+      for {
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
+        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, NoopTimingReport))
+      } {
+        txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> LongValue(0)))
+        val report = txn.report
+        dataLogger.finish()
+
+        report.inserted must be ('empty)
+        report.updated must be ('empty)
+        report.deleted must be ('empty)
+        report.errors must be (Map(0 -> VersionOnNewRow))
+      }
+      conn.commit()
+
+      ids.underlying.finish() must be (15L)
+      vers.underlying.finish() must be (80L)
+
+      query(conn, rawSelect) must equal (Seq.empty)
+      query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq.empty)
+    }
+  }
+
+  test("inserting a row with a not-null version fails (user PK)") {
+    val ids = idProvider(15)
+    val vers = versionProvider(88)
+    val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str), versionCol)
+    val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
+
+    withDB() { conn =>
+      makeTables(conn, dataSqlizer, standardLogTableName)
+      conn.commit()
+
+      for {
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
+        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, NoopTimingReport))
+      } {
+        txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> LongValue(0)))
+        val report = txn.report
+        dataLogger.finish()
+
+        report.inserted must be ('empty)
+        report.updated must be ('empty)
+        report.deleted must be ('empty)
+        report.errors must be (Map(0 -> VersionMismatch(StringValue("q"), None, Some(new RowVersion(0)))))
+      }
+      conn.commit()
+
+      ids.underlying.finish() must be (15L)
+      vers.underlying.finish() must be (88L)
+
+      query(conn, rawSelect) must equal (Seq.empty)
+      query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq.empty)
+    }
+  }
+
+  test("updating a row with an explicitly null version fails (system PK)") {
+    val ids = idProvider(15)
+    val vers = versionProvider(96)
+    val dsContext = new TestDatasetContext(standardSchema, idCol, None, versionCol)
+    val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
+
+    withDB() { conn =>
+      preload(conn, dataSqlizer, standardLogTableName)(
+        Row(idCol -> LongValue(1), versionCol -> LongValue(0), str -> StringValue("q"), num -> LongValue(2))
+      )
+      conn.commit()
+
+      for {
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
+        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, NoopTimingReport))
+      } {
+        txn.upsert(0, Row(idCol -> LongValue(1), num -> LongValue(1), str -> StringValue("q"), versionCol -> NullValue))
+        val report = txn.report
+        dataLogger.finish()
+
+        report.inserted must be ('empty)
+        report.updated must be ('empty)
+        report.deleted must be ('empty)
+        report.errors must be (Map(0 -> VersionMismatch(LongValue(1), Some(new RowVersion(0)), None)))
+      }
+      conn.commit()
+
+      ids.underlying.finish() must be (15L)
+      vers.underlying.finish() must be (96L)
+
+      query(conn, rawSelect) must equal (Seq(
+        Map(idColName -> 1L, versionColName -> 0L, numName -> 2L, strName -> "q")
+      ))
+      query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq.empty)
+    }
+  }
+
+  test("updating a row with an explicitly null version fails (user PK)") {
+    val ids = idProvider(15)
+    val vers = versionProvider(104)
+    val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str), versionCol)
+    val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
+
+    withDB() { conn =>
+      preload(conn, dataSqlizer, standardLogTableName)(
+        Row(idCol -> LongValue(1), versionCol -> LongValue(0), str -> StringValue("q"), num -> LongValue(2))
+      )
+      conn.commit()
+
+      for {
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
+        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, NoopTimingReport))
+      } {
+        txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> NullValue))
+        val report = txn.report
+        dataLogger.finish()
+
+        report.inserted must be ('empty)
+        report.updated must be ('empty)
+        report.deleted must be ('empty)
+        report.errors must be (Map(0 -> VersionMismatch(StringValue("q"), Some(new RowVersion(0)), None)))
+      }
+      conn.commit()
+
+      ids.underlying.finish() must be (15L)
+      vers.underlying.finish() must be (104L)
+
+      query(conn, rawSelect) must equal (Seq(
+        Map(idColName -> 1L, versionColName -> 0L, numName -> 2L, strName -> "q")
+      ))
+      query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq.empty)
+    }
+  }
+
+  test("updating a row with an incorrect not-null version fails (system PK)") {
+    val ids = idProvider(15)
+    val vers = versionProvider(112)
+    val dsContext = new TestDatasetContext(standardSchema, idCol, None, versionCol)
+    val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
+
+    withDB() { conn =>
+      preload(conn, dataSqlizer, standardLogTableName)(
+        Row(idCol -> LongValue(1), versionCol -> LongValue(0), str -> StringValue("q"), num -> LongValue(2))
+      )
+      conn.commit()
+
+      for {
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
+        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, NoopTimingReport))
+      } {
+        txn.upsert(0, Row(idCol -> LongValue(1), num -> LongValue(1), str -> StringValue("q"), versionCol -> LongValue(1)))
+        val report = txn.report
+        dataLogger.finish()
+
+        report.inserted must be ('empty)
+        report.updated must be ('empty)
+        report.deleted must be ('empty)
+        report.errors must be (Map(0 -> VersionMismatch(LongValue(1), Some(new RowVersion(0)), Some(new RowVersion(1)))))
+      }
+      conn.commit()
+
+      ids.underlying.finish() must be (15L)
+      vers.underlying.finish() must be (112L)
+
+      query(conn, rawSelect) must equal (Seq(
+        Map(idColName -> 1L, versionColName -> 0L, numName -> 2L, strName -> "q")
+      ))
+      query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq.empty)
+    }
+  }
+
+  test("updating a row with an incorrect not-null version fails (user PK)") {
+    val ids = idProvider(15)
+    val vers = versionProvider(120)
+    val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str), versionCol)
+    val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
+
+    withDB() { conn =>
+      preload(conn, dataSqlizer, standardLogTableName)(
+        Row(idCol -> LongValue(1), versionCol -> LongValue(0), str -> StringValue("q"), num -> LongValue(2))
+      )
+      conn.commit()
+
+      for {
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
+        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, NoopTimingReport))
+      } {
+        txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> LongValue(1)))
+        val report = txn.report
+        dataLogger.finish()
+
+        report.inserted must be ('empty)
+        report.updated must be ('empty)
+        report.deleted must be ('empty)
+        report.errors must be (Map(0 -> VersionMismatch(StringValue("q"), Some(new RowVersion(0)), Some(new RowVersion(1)))))
+      }
+      conn.commit()
+
+      ids.underlying.finish() must be (15L)
+      vers.underlying.finish() must be (120L)
+
+      query(conn, rawSelect) must equal (Seq(
+        Map(idColName -> 1L, versionColName -> 0L, numName -> 2L, strName -> "q")
+      ))
+      query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq.empty)
+    }
+  }
+
+  test("updating a row with a correct not-null version succeeds (system PK)") {
+    val ids = idProvider(15)
+    val vers = versionProvider(128)
+    val dsContext = new TestDatasetContext(standardSchema, idCol, None, versionCol)
+    val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
+
+    withDB() { conn =>
+      preload(conn, dataSqlizer, standardLogTableName)(
+        Row(idCol -> LongValue(1), versionCol -> LongValue(0), str -> StringValue("q"), num -> LongValue(2))
+      )
+      conn.commit()
+
+      for {
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
+        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, NoopTimingReport))
+      } {
+        txn.upsert(0, Row(idCol -> LongValue(1), num -> LongValue(1), str -> StringValue("w"), versionCol -> LongValue(0)))
+        val report = txn.report
+        dataLogger.finish()
+
+        report.inserted must be ('empty)
+        report.updated must equal (Map(0 -> IdAndVersion(LongValue(1), new RowVersion(128))))
+        report.deleted must be ('empty)
+        report.errors must be ('empty)
+      }
+      conn.commit()
+
+      ids.underlying.finish() must be (15L)
+      vers.underlying.finish() must be (129L)
+
+      query(conn, rawSelect) must equal (Seq(
+        Map(idColName -> 1L, versionColName -> 128L, numName -> 1L, strName -> "w")
+      ))
+      query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq(
+        locally {
+          val op = logMap(idCol -> JNumber(1), versionCol -> JNumber(128), num -> JNumber(1), str -> JString("w"))
+          Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"u":""" + op + """}]"""), "who" -> "hello")
+        }
+      ))
+    }
+  }
+
+  test("updating a row with a correct not-null version succeeds (user PK)") {
+    val ids = idProvider(15)
+    val vers = versionProvider(136)
+    val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str), versionCol)
+    val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
+
+    withDB() { conn =>
+      preload(conn, dataSqlizer, standardLogTableName)(
+        Row(idCol -> LongValue(1), versionCol -> LongValue(0), str -> StringValue("q"), num -> LongValue(2))
+      )
+      conn.commit()
+
+      for {
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
+        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, NoopTimingReport))
+      } {
+        txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> LongValue(0)))
+        val report = txn.report
+        dataLogger.finish()
+
+        report.inserted must be ('empty)
+        report.updated must equal (Map(0 -> IdAndVersion(StringValue("q"), new RowVersion(136))))
+        report.deleted must be ('empty)
+        report.errors must be ('empty)
+      }
+      conn.commit()
+
+      ids.underlying.finish() must be (15L)
+      vers.underlying.finish() must be (137L)
+
+      query(conn, rawSelect) must equal (Seq(
+        Map(idColName -> 1L, versionColName -> 136L, numName -> 1L, strName -> "q")
+      ))
+      query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq(
+        locally {
+          val op = logMap(idCol -> JNumber(1), versionCol -> JNumber(136), num -> JNumber(1), str -> JString("q"))
+          Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"u":""" + op + """}]"""), "who" -> "hello")
+        }
+      ))
+    }
+  }
 
   test("must contain the same data as a table manipulated by a StupidPostgresTransaction when using user IDs", Tag("Slow")) {
     import org.scalacheck.{Gen, Arbitrary}
