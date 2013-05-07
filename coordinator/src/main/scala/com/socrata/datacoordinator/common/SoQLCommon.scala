@@ -119,7 +119,6 @@ class SoQLCommon(dataSource: DataSource,
         val primaryKeyColumn = ctx.pkCol_!
 
         assert(schema(versionColumn).typeName == typeContext.typeNamespace.nameForType(SoQLVersion))
-        def versionRep = jsonRepFor(SoQLVersion)
 
         val allSystemColumns = ColumnIdSet(SystemColumns.allSystemColumnNames.toSeq.map(findCol) : _*)
 
@@ -143,11 +142,19 @@ class SoQLCommon(dataSource: DataSource,
             new MutableRow[SoQLValue](oldRow)
           }
 
+        def versionOf(row: Row[SoQLValue]): Option[RowVersion] =
+          row.get(versionColumn) match {
+            case Some(SoQLVersion(v)) => Some(new RowVersion(v))
+            case Some(SoQLNull) => None
+            case Some(other) => sys.error("Bad type in version column: " + other.typ)
+            case None => None
+          }
+
         def prepareForUpdate(row: Row[SoQLValue], oldRow: Row[SoQLValue]): Either[RowPreparerDeclinedUpsert[CV], Row[CV]] = {
           for {
-            oldVer <- oldRow.get(versionColumn)
-            newVer <- row.get(versionColumn)
-          } if(oldVer != newVer) return Left(VersionMismatch(row(primaryKeyColumn.systemId), versionRep.toJValue(oldVer), versionRep.toJValue(newVer)))
+            oldVer <- versionOf(oldRow)
+            newVer <- versionOf(row)
+          } if(oldVer != newVer) return Left(VersionMismatch(row(primaryKeyColumn.systemId), oldVer, newVer))
           val tmp = baseRow(oldRow)
           val rowIt = row.iterator
           while(rowIt.hasNext) {
@@ -159,12 +166,11 @@ class SoQLCommon(dataSource: DataSource,
           Right(tmp.freeze())
         }
 
-        def prepareForDelete(row: Row[CV], sid: RowId, version: Option[CV]): Option[RowPreparerDeclinedUpsert[CV]] =
+        def prepareForDelete(id: CV, requestedVersion: Option[RowVersion], existingVersion: RowVersion): Option[RowPreparerDeclinedUpsert[CV]] =
           for {
-            oldVer <- row.get(versionColumn)
-            newVer <- version
-            if oldVer != newVer
-          } yield VersionMismatch(row(primaryKeyColumn.systemId), versionRep.toJValue(oldVer), versionRep.toJValue(newVer))
+            newVer <- requestedVersion
+            if existingVersion != newVer
+          } yield VersionMismatch(id, existingVersion, newVer)
       }
 
     val executor: ExecutorService = common.executorService
@@ -192,6 +198,9 @@ class SoQLCommon(dataSource: DataSource,
     val systemIdColumnName: ColumnName =
       SystemColumns.id
 
+    val versionColumnName: ColumnName =
+      SystemColumns.version
+
     def typeNameFor(typ: CT): TypeName =
       typeContext.typeNamespace.userTypeForType(typ)
 
@@ -201,6 +210,9 @@ class SoQLCommon(dataSource: DataSource,
     def jsonReps(di: DatasetInfo): CT => JsonColumnRep[CT, CV] = common.jsonReps(di)
 
     val schemaFinder = new SchemaFinder[CT, CV](universe, typeNameFor)
+
+    def makeValueFromRowVersion(rv: RowVersion) =
+      typeContext.makeValueFromRowVersion(rv)
 
     val allowDdlOnPublishedCopies = common.allowDdlOnPublishedCopies
   }

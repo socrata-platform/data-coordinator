@@ -34,21 +34,9 @@ class LocationRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType,
     start + 2
   }
 
-  def estimateInsertSize(v: SoQLValue): Int =
+  def estimateSize(v: SoQLValue): Int =
     if(SoQLNull == v) standardNullInsertSize
     else 40
-
-  def SETsForUpdate(sb: StringBuilder, v: SoQLValue) {
-    if(SoQLNull == v) {
-      sb.append(physColumns(0)).append("=NULL,").append(physColumns(1)).append("=NULL")
-    } else {
-      val ll = v.asInstanceOf[SoQLLocation]
-      sb.append(physColumns(0)).append('=').append(ll.latitude).append(',').append(physColumns(1)).append('=').append(ll.longitude)
-    }
-  }
-
-  def estimateUpdateSize(v: SoQLValue): Int =
-    physColumns(0).length + physColumns(1).length + 40
 
   def fromResultSet(rs: ResultSet, start: Int): SoQLValue = {
     val lat = rs.getDouble(start)

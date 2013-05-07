@@ -40,6 +40,8 @@ class NullLogger[CT, CV] extends Logger[CT, CV] {
   def truncated() {}
 
   def logicalNameChanged(info: ColumnInfo[CT]) {}
+
+  def versionColumnSet(info: ColumnInfo[CT]) {}
 }
 
 object NullLogger extends NullLogger[Any, Any] {

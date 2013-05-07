@@ -329,23 +329,26 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
               "column" -> JString(columnName.name),
               "type" -> JString(typeName.name),
               "value" -> value)
-          case Mutator.UpsertError(datasetName, NoPrimaryKey | NullPrimaryKey) =>
+          case Mutator.UpsertError(datasetName, NoPrimaryKey, _) =>
             err(BadRequest, "update.row.no-id",
               "dataset" -> JString(datasetName.underlying.toString))
-          case Mutator.UpsertError(datasetName, NoSuchRowToDelete(id)) =>
+          case Mutator.UpsertError(datasetName, NoSuchRowToDelete(id), _) =>
             err(BadRequest, "update.row.no-such-id",
               "dataset" -> JString(datasetName.underlying.toString),
               "value" -> id)
-          case Mutator.UpsertError(datasetName, NoSuchRowToUpdate(id)) =>
+          case Mutator.UpsertError(datasetName, NoSuchRowToUpdate(id),_ ) =>
             err(BadRequest, "update.row.no-such-id",
               "dataset" -> JString(datasetName.underlying.toString),
               "value" -> id)
-          case Mutator.UpsertError(datasetName, VersionMismatch(id, expected, actual)) =>
+          case Mutator.UpsertError(datasetName, VersionMismatch(id, expected, actual), rowVersionToJson) =>
             err(BadRequest, "update.row-version-mismatch",
               "dataset" -> JString(datasetName.underlying.toString),
               "value" -> id,
-              "expected" -> expected,
-              "actual" -> actual)
+              "expected" -> rowVersionToJson(expected),
+              "actual" -> rowVersionToJson(actual))
+          case Mutator.UpsertError(datasetName, VersionOnNewRow, _) =>
+            err(BadRequest, "update.version-on-new-row",
+              "dataset" -> JString(datasetName.underlying.toString))
         }
     }
   }

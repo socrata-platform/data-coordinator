@@ -1,7 +1,8 @@
 package com.socrata.datacoordinator
 package truth.loader.sql
 
-import scala.collection.immutable.{SortedMap, VectorBuilder}
+import scala.collection.immutable.VectorBuilder
+import scala.collection.mutable.LinkedHashMap
 
 import java.sql.Connection
 
@@ -34,12 +35,20 @@ class TestDataLogger(conn: Connection, logTableName: String) extends DataLogger[
     }
   }
 
+  def sortRow(row: Row[TestColumnValue]) = {
+    val r = new LinkedHashMap[String, TestColumnValue]
+    row.toSeq.sortBy(_._1).foreach { case (k, v) =>
+      r(k.underlying.toString) = v
+    }
+    r
+  }
+
   def insert(systemID: RowId, row: Row[TestColumnValue]) {
-    list += JObject(Map("i" -> JsonCodec.toJValue(SortedMap(row.toSeq : _*).map { kv => kv._1.underlying.toString -> kv._2 })))
+    list += JObject(Map("i" -> JsonCodec.toJValue(sortRow(row))))
   }
 
   def update(sid: RowId, row: Row[TestColumnValue]) {
-    list += JObject(Map("u" -> JsonCodec.toJValue(SortedMap(row.toSeq : _*).map { kv => kv._1.underlying.toString -> kv._2 })))
+    list += JObject(Map("u" -> JsonCodec.toJValue(sortRow(row))))
   }
 
   def delete(systemID: RowId) {

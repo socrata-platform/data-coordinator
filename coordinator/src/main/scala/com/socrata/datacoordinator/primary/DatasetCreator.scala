@@ -7,7 +7,8 @@ import com.socrata.datacoordinator.id.DatasetId
 
 class DatasetCreator[CT](universe: Managed[Universe[CT, _] with DatasetMutatorProvider],
                          systemSchema: Map[ColumnName, CT],
-                         systemColumnIdName: ColumnName,
+                         systemIdColumnName: ColumnName,
+                         versionColumnName: ColumnName,
                          physicalColumnBaseBase: (ColumnName, Boolean) => String) {
   def createDataset(username: String, localeName: String): DatasetId = {
     for {
@@ -16,7 +17,10 @@ class DatasetCreator[CT](universe: Managed[Universe[CT, _] with DatasetMutatorPr
     } yield {
       systemSchema.foreach { case (name, typ) =>
         val col = ctx.addColumn(name, typ, physicalColumnBaseBase(name, true))
-        if(name == systemColumnIdName) ctx.makeSystemPrimaryKey(col)
+        val col2 =
+          if(name == systemIdColumnName) ctx.makeSystemPrimaryKey(col)
+          else col
+        if(name == versionColumnName) ctx.makeVersion(col2)
       }
       ctx.copyInfo.datasetInfo.systemId
     }

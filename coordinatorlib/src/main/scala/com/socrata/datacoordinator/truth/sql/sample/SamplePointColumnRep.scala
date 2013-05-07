@@ -37,20 +37,7 @@ class SamplePointColumnRep(val base: String) extends SqlColumnRep[SampleType, Sa
     }
   }
 
-  def estimateInsertSize(v: SampleValue) = 16
-
-  def SETsForUpdate(sb: java.lang.StringBuilder, v: SampleValue) {
-    v match {
-      case SamplePoint(px, py) =>
-        sb.append(x).append('=').append(px).append(',').append(y).append('=').append(py)
-      case SampleNull =>
-        sb.append(x).append("=NULL,").append(y).append("=NULL")
-      case _ =>
-        sys.error("Illegal value for point column")
-    }
-  }
-
-  def estimateUpdateSize(v: SampleValue) = x.length + y.length + estimateInsertSize(v)
+  def estimateSize(v: SampleValue) = 16
 
   def fromResultSet(rs: ResultSet, start: Int) = {
     val x = rs.getDouble(start)

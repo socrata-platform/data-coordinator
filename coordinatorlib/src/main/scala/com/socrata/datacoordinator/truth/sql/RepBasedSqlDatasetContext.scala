@@ -19,19 +19,13 @@ object RepBasedSqlDatasetContext {
                              val schema: ColumnIdMap[SqlColumnRep[CT, CV]],
                              val userPrimaryKeyColumn: Option[ColumnId],
                              val systemIdColumn: ColumnId,
+                             val versionColumn: ColumnId,
                              val systemColumnIds: ColumnIdSet)
     extends RepBasedSqlDatasetContext[CT, CV]
   {
     val userPrimaryKeyType: Option[CT] = userPrimaryKeyColumn.map(schema(_).representedType)
-
-    def userPrimaryKey(row: Row[CV]): Option[CV] =
-      row.get(userPrimaryKeyColumn.get)
-
-    def systemId(row: Row[CV]): Option[RowId] =
-      row.get(systemIdColumn).map(typeContext.makeSystemIdFromValue)
-
-    def systemIdAsValue(row: Row[CV]): Option[CV] =
-      row.get(systemIdColumn)
+    val primaryKeyColumn = userPrimaryKeyColumn.getOrElse(systemIdColumn)
+    val primaryKeyType = schema(primaryKeyColumn).representedType
 
     def mergeRows(base: Row[CV], overlay: Row[CV]): Row[CV] = base ++ overlay
   }
@@ -40,6 +34,7 @@ object RepBasedSqlDatasetContext {
                     schema: ColumnIdMap[SqlColumnRep[CT, CV]],
                     userPrimaryKeyColumn: Option[ColumnId],
                     systemIdColumn: ColumnId,
+                    versionColumn: ColumnId,
                     systemColumnIds: ColumnIdSet): RepBasedSqlDatasetContext[CT, CV] =
-    new Impl(typeContext, schema, userPrimaryKeyColumn, systemIdColumn, systemColumnIds)
+    new Impl(typeContext, schema, userPrimaryKeyColumn, systemIdColumn, versionColumn, systemColumnIds)
 }

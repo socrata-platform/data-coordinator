@@ -48,15 +48,8 @@ class IDRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType,
     start + 1
   }
 
-  def estimateInsertSize(v: SoQLValue): Int =
+  def estimateSize(v: SoQLValue): Int =
     30
-
-  def SETsForUpdate(sb: StringBuilder, v: SoQLValue) {
-    sb.append(base).append('=').append(v.asInstanceOf[SoQLID].value)
-  }
-
-  def estimateUpdateSize(v: SoQLValue): Int =
-    base.length + 30
 
   def fromResultSet(rs: ResultSet, start: Int): SoQLID =
     SoQLID(rs.getLong(start))

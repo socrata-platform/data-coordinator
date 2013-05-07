@@ -45,22 +45,11 @@ class SampleTextColumnRep(val base: String) extends SqlPKableColumnRep[SampleTyp
 
   def prepareInsert(stmt: PreparedStatement, v: SampleValue, n: Int) = prepareMultiLookup(stmt, v, n)
 
-  def estimateInsertSize(v: SampleValue) = v match {
+  def estimateSize(v: SampleValue) = v match {
     case SampleText(text) => text.length
     case SampleNull => 0
     case _ => sys.error("Illegal value for text column")
   }
-
-  def SETsForUpdate(sb: java.lang.StringBuilder, v: SampleValue) {
-    sb.append(base).append("=")
-    v match {
-      case SampleText(text) => sqlizeStringLiteral(sb, text)
-      case SampleNull => sb.append("NULL")
-      case _ => sys.error("Illegal value for text column")
-    }
-  }
-
-  def estimateUpdateSize(v: SampleValue) = estimateInsertSize(v) + base.length
 
   def sql_in(literals: Iterable[SampleValue]) = {
     val sb = new java.lang.StringBuilder("(lower(").append(base).append(") IN (")

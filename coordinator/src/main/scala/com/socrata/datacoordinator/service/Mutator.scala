@@ -13,7 +13,7 @@ import com.socrata.soql.environment.{TypeName, ColumnName}
 import com.socrata.datacoordinator.util.{BuiltUpIterator, Counter}
 import com.ibm.icu.util.ULocale
 import com.rojoma.json.io._
-import com.socrata.datacoordinator.id.DatasetId
+import com.socrata.datacoordinator.id.{RowVersion, DatasetId}
 
 object Mutator {
   sealed abstract class StreamType {
@@ -57,7 +57,7 @@ object Mutator {
   }
   case class InvalidUpsertCommand(value: JValue)(val index: Long, val subindex: Int) extends RowDataException
   case class InvalidValue(column: ColumnName, typ: TypeName, value: JValue)(val index: Long, val subindex: Int) extends RowDataException
-  case class UpsertError(dataset: DatasetId, failure: Failure[JValue])(val index: Long) extends MutationException
+  case class UpsertError(dataset: DatasetId, failure: Failure[JValue], versionToJson: RowVersion => JValue)(val index: Long) extends MutationException
 
   sealed abstract class MergeReplace
   object MergeReplace {
@@ -179,11 +179,13 @@ trait MutatorCommon[CT, CV] {
   def isSystemColumnName(identifier: ColumnName): Boolean
   def systemSchema: Map[ColumnName, CT]
   def systemIdColumnName: ColumnName
+  def versionColumnName: ColumnName
   def typeNameFor(typ: CT): TypeName
   def nameForTypeOpt(name: TypeName): Option[CT]
   def jsonReps(di: DatasetInfo): CT => JsonColumnRep[CT, CV]
   def schemaFinder: SchemaFinder[CT, CV]
   def allowDdlOnPublishedCopies: Boolean
+  def makeValueFromRowVersion(v: RowVersion): CV
 }
 
 class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
@@ -242,7 +244,6 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
   def toEventStream(inserted: collection.Map[Int, JValue],
                     updated: collection.Map[Int, JValue],
                     deleted: collection.Map[Int, JValue],
-                    elided: collection.Map[Int, (JValue, Int)],
                     errors: collection.Map[Int, Failure[JValue]]) = {
     new BuiltUpIterator(
       Iterator(StartOfObjectEvent(), FieldEvent("inserted")),
@@ -251,8 +252,6 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
       mapToEvents(updated),
       Iterator.single(FieldEvent("deleted")),
       mapToEvents(deleted),
-      Iterator.single(FieldEvent("elided")),
-      mapToEvents(elided),
       Iterator.single(FieldEvent("errors")),
       mapToEvents(errors),
       Iterator.single(EndOfObjectEvent()))
@@ -277,24 +276,19 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
       val jsonRepFor = jsonReps(ctx.copyInfo.datasetInfo)
       val processor = new Processor(jsonRepFor)
       val events = processor.carryOutCommands(ctx, commands).map { r =>
-        val pk = ctx.primaryKey
-        val repify = jsonRepFor(pk.typ).toJValue _
-        val interim = new Report[JValue] {
-          def inserted: collection.Map[Int, JValue] = r.inserted.mapValues(repify)
-
-          /** Map from job number to the identifier of the row that was updated. */
-          def updated: collection.Map[Int, JValue] = r.updated.mapValues(repify)
-
-          /** Map from job number to the identifier of the row that was deleted. */
-          def deleted: collection.Map[Int, JValue] = r.deleted.mapValues(repify)
-
-          /** Map from job number to the identifier of the row that was merged with another job, and the job it was merged with. */
-          def elided: collection.Map[Int, (JValue, Int)] = r.elided.mapValues { case (v, i) => (repify(v), i) }
-
-          /** Map from job number to a value explaining the cause of the problem.. */
-          def errors: collection.Map[Int, Failure[JValue]] = r.errors.mapValues(_.map(repify))
+        val pkRep = jsonRepFor(ctx.primaryKey.typ)
+        val verRep = jsonRepFor(ctx.versionColumn.typ)
+        def repify(idAndVersion: IdAndVersion[CV]) = {
+          JObject(Map(
+            "id" -> pkRep.toJValue(idAndVersion.id),
+            "ver" -> verRep.toJValue(makeValueFromRowVersion(idAndVersion.version))
+          ))
         }
-        toEventStream(interim.inserted, interim.updated, interim.deleted, interim.elided, interim.errors)
+        val inserted = r.inserted.mapValues(repify)
+        val updated = r.updated.mapValues(repify)
+        val deleted = r.deleted.mapValues(pkRep.toJValue)
+        val errors = r.errors.mapValues(_.map(pkRep.toJValue))
+        toEventStream(inserted, updated, deleted, errors)
       }
       (ctx.copyInfo.datasetInfo.systemId,
         new BuiltUpIterator(
@@ -333,9 +327,10 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
           for(ctx <- u.datasetMutator.createDataset(user)(localeName)) yield {
             for((col, typ) <- systemSchema) {
               val ci = ctx.addColumn(col, typ, physicalColumnBaseBase(col, systemColumn = true))
-              if(col == systemIdColumnName) {
-                ctx.makeSystemPrimaryKey(ci)
-              }
+              val ci2 =
+                if(col == systemIdColumnName) ctx.makeSystemPrimaryKey(ci)
+                else ci
+              if(col == versionColumnName) ctx.makeVersion(ci2)
             }
             doProcess(ctx)
           }
@@ -473,7 +468,10 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
             sys.error("No primary key on this dataset?")
           }
           val trueError = result.errors.minBy(_._1)._2.map(jsonRepFor(pk.typ).toJValue)
-          throw UpsertError(mutator.copyInfo.datasetInfo.systemId, trueError)(idx)
+          val jsonizer = { (rv: RowVersion) =>
+            jsonRepFor(mutator.versionColumn.typ).toJValue(makeValueFromRowVersion(rv))
+          }
+          throw UpsertError(mutator.copyInfo.datasetInfo.systemId, trueError, jsonizer)(idx)
         }
         result
       } catch {

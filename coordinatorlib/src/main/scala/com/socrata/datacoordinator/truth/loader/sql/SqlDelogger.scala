@@ -138,6 +138,8 @@ class SqlDelogger[CV](connection: Connection,
           decodeRowIdentifierCleared(aux)
         case SqlLogger.SystemRowIdentifierChanged =>
           decodeSystemRowIdentifierChanged(aux)
+        case SqlLogger.VersionColumnChanged =>
+          decodeVersionColumnChanged(aux)
         case SqlLogger.WorkingCopyCreated =>
           decodeWorkingCopyCreated(aux)
         case SqlLogger.DataCopied =>
@@ -204,6 +206,13 @@ class SqlDelogger[CV](connection: Connection,
         sys.error("Parameter for `system row identifier changed' was not an object")
       }
       Delogger.SystemRowIdentifierChanged(ci)
+    }
+
+    def decodeVersionColumnChanged(aux: Array[Byte]) = {
+      val ci = fromJson[UnanchoredColumnInfo](aux).getOrElse {
+        sys.error("Parameter for `system row identifier changed' was not an object")
+      }
+      Delogger.VersionColumnChanged(ci)
     }
 
     def decodeWorkingCopyCreated(aux: Array[Byte]) = {

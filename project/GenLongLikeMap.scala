@@ -404,6 +404,10 @@ class """ + targetClassName + """[V](private var _underlying: TLongObjectHashMap
     seed
   }
 
+  def clear() {
+    underlying.clear()
+  }
+
   override def toString = underlying.toString
 
   def toSeq = iterator.toSeq

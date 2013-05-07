@@ -48,18 +48,9 @@ class DoubleRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLT
     start + 1
   }
 
-  def estimateInsertSize(v: SoQLValue): Int =
+  def estimateSize(v: SoQLValue): Int =
     if(SoQLNull == v) standardNullInsertSize
     else dbl(v).toString.length //ick
-
-  def SETsForUpdate(sb: StringBuilder, v: SoQLValue) {
-    sb.append(base).append('=')
-    if(SoQLNull == v) sb.append("NULL")
-    else sb.append(dbl(v))
-  }
-
-  def estimateUpdateSize(v: SoQLValue): Int =
-    base.length + estimateInsertSize(v)
 
   def fromResultSet(rs: ResultSet, start: Int): SoQLValue = {
     val v = rs.getDouble(start)

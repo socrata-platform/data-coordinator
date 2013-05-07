@@ -73,6 +73,13 @@ trait BaseDatasetMapWriter[CT] extends BaseDatasetMapReader[CT] {
     * @throws If there is a different primary key already defined. */
   def setSystemPrimaryKey(systemPrimaryKey: ColumnInfo[CT]): ColumnInfo[CT]
 
+  /** Changes the version column for this dataset-copy.
+    * @note Does not change the actual table (or verify it is a valid column to use as a version); this just updates
+    *       the bookkeeping.
+    * @return The new column info.
+    * @throws If there is a different version column already defined. */
+  def setVersion(version: ColumnInfo[CT]): ColumnInfo[CT]
+
   /** Changes the user primary key column for this dataset-copy.
     * @note Does not change the actual table (or verify it is a valid column to use as a PK); this just updates
     *       the bookkeeping.

@@ -144,6 +144,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
       schema.mapValuesStrict(repFor),
       schema.values.find(_.isUserPrimaryKey).map(_.systemId),
       schema.values.find(_.isSystemPrimaryKey).getOrElse(sys.error("No system primary key?")).systemId,
+      schema.values.find(_.isVersion).getOrElse(sys.error("No version column?")).systemId,
       schema.keySet.filter { cid => isSystemColumn(schema(cid)) }
     )
   }

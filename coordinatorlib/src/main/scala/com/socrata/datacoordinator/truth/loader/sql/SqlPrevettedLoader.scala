@@ -65,7 +65,7 @@ class SqlPrevettedLoader[CT, CV](val conn: Connection, sqlizer: DataSqlizer[CT, 
   def flushDeletes() {
     if(deleteBatch.nonEmpty) {
       try {
-        val deleted = sqlizer.deleteBatch(conn) { deleter =>
+        val (deleted, ()) = sqlizer.deleteBatch(conn) { deleter =>
           for(delete <- deleteBatch) { deleter.delete(delete.systemId) }
         }
         assert(deleted == deleteBatch.size, "Expected " + deleteBatch.size + " rows to be deleted, but only found " + deleted)

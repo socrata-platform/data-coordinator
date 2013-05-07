@@ -14,10 +14,10 @@ class StandardRepBasedDataSqlizer[CT, CV](tableName: String,
                                           datasetContext: RepBasedSqlDatasetContext[CT, CV])
   extends AbstractRepBasedDataSqlizer(tableName, datasetContext)
 {
-  def insertBatch(conn: Connection)(f: Inserter => Unit): Long = {
+  def insertBatch[T](conn: Connection)(f: Inserter => T): (Long, T) = {
     using(new InserterImpl(conn)) { inserter =>
-      f(inserter)
-      inserter.stmt.executeBatch().foldLeft(0L)(_+_)
+      val fResult = f(inserter)
+      (inserter.stmt.executeBatch().foldLeft(0L)(_+_), fResult)
     }
   }
 

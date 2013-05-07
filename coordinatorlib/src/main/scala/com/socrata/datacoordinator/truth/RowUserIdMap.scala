@@ -6,6 +6,7 @@ trait RowUserIdMap[CV, T] {
   def put(x: CV, v: T)
   def apply(x: CV): T
   def get(x: CV): Option[T]
+  def remove(x: CV)
   def clear()
   def contains(x: CV): Boolean
   def isEmpty: Boolean
@@ -27,6 +28,10 @@ class SimpleRowUserIdMap[CV, T] extends RowUserIdMap[CV, T] {
   def get(x: CV): Option[T] =
     if(!map.containsKey(x)) None
     else Some(map.get(x))
+
+  def remove(x: CV) {
+    map.remove(x)
+  }
 
   def clear() { map.clear() }
 

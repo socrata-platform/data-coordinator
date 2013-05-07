@@ -94,12 +94,14 @@ trait DatasetMutator[CT, CV] {
     def copyInfo: CopyInfo
     def schema: ColumnIdMap[ColumnInfo[CT]]
     def primaryKey: ColumnInfo[CT]
+    def versionColumn: ColumnInfo[CT]
     def columnInfo(id: ColumnId): Option[ColumnInfo[CT]]
     def columnInfo(name: ColumnName): Option[ColumnInfo[CT]]
 
     def addColumn(logicalName: ColumnName, typ: CT, physicalColumnBaseBase: String): ColumnInfo[CT]
     def renameColumn(col: ColumnInfo[CT], newName: ColumnName): ColumnInfo[CT]
     def makeSystemPrimaryKey(ci: ColumnInfo[CT]): ColumnInfo[CT]
+    def makeVersion(ci: ColumnInfo[CT]): ColumnInfo[CT]
 
     /**
      * @throws PrimaryKeyCreationException
@@ -150,6 +152,9 @@ object DatasetMutator {
       def primaryKey = schema.values.find(_.isUserPrimaryKey).orElse(schema.values.find(_.isSystemPrimaryKey)).getOrElse {
         sys.error("No primary key on this dataset?")
       }
+      def versionColumn = schema.values.find(_.isVersion).getOrElse {
+        sys.error("No version column on this dataset?")
+      }
       def columnInfo(id: ColumnId) = copyCtx.columnInfoOpt(id)
       def columnInfo(name: ColumnName) = copyCtx.columnInfoOpt(name)
 
@@ -195,6 +200,14 @@ object DatasetMutator {
           case e: schemaLoader.PrimaryKeyCreationException =>
             sys.error("Unable to create system primary key? " + e)
         }
+        copyCtx.addColumn(result)
+        result
+      }
+
+      def makeVersion(ci: ColumnInfo[CT]): ColumnInfo[CT] = {
+        checkDoingRows()
+        val result = datasetMap.setVersion(ci)
+        schemaLoader.makeVersion(result)
         copyCtx.addColumn(result)
         result
       }

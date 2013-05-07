@@ -72,6 +72,10 @@ class RepBasedPostgresSchemaLoader[CT, CV](conn: Connection, logger: Logger[CT, 
     logger.systemIdColumnSet(columnInfo)
   }
 
+  def makeVersion(columnInfo: ColumnInfo[CT]) {
+    logger.versionColumnSet(columnInfo)
+  }
+
   def makePrimaryKeyWithoutLogging(columnInfo: ColumnInfo[CT]) {
     repFor(columnInfo) match {
       case rep: SqlPKableColumnRep[CT, CV] =>

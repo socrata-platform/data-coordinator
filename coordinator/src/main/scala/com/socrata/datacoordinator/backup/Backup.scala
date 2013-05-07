@@ -56,12 +56,14 @@ class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingRe
     val schemaInfo = datasetMap.schema(version)
     val schema = schemaInfo.mapValuesStrict(genericRepFor)
     val idCol = schemaInfo.values.find(_.isSystemPrimaryKey).getOrElse(sys.error("No system ID column?")).systemId
+    val versionCol = schemaInfo.values.find(_.isVersion).getOrElse(sys.error("No version column?")).systemId
     val systemIds = schemaInfo.filter { (_, ci) => ci.logicalName.name.startsWith(":") }.keySet
     val datasetContext = RepBasedSqlDatasetContext(
       typeContext,
       schema,
       schemaInfo.values.find(_.isUserPrimaryKey).map(_.systemId),
       idCol,
+      versionCol,
       systemIds)
     val sqlizer = new PostgresRepBasedDataSqlizer(version.dataTableName, datasetContext, executor, extractCopier)
     new SqlPrevettedLoader(conn, sqlizer, logger)
@@ -136,6 +138,16 @@ class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingRe
     val ci2 = datasetMap.setSystemPrimaryKey(ci)
     Resync.unless(ci2, ci2.unanchored == columnInfo, "Column infos differ:\n" + ci2.unanchored + "\n" + columnInfo)
     schemaLoader.makeSystemPrimaryKey(ci2)
+    currentVersionInfo
+  }
+
+  def versionColumnChanged(currentVersionInfo: CopyInfo, columnInfo: UnanchoredColumnInfo): currentVersionInfo.type = {
+    // TODO: Re-paranoid this
+    // Resync.unless(currentVersionInfo, currentVersionInfo == columnInfo.copyInfo, "Version infos differ")
+    val ci = datasetMap.schema(currentVersionInfo)(columnInfo.systemId)
+    val ci2 = datasetMap.setVersion(ci)
+    Resync.unless(ci2, ci2.unanchored == columnInfo, "Column infos differ:\n" + ci2.unanchored + "\n" + columnInfo)
+    schemaLoader.makeVersion(ci2)
     currentVersionInfo
   }
 
@@ -232,6 +244,8 @@ class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingRe
         makePrimaryKey(versionInfo, info)
       case SystemRowIdentifierChanged(info) =>
         makeSystemPrimaryKey(versionInfo, info)
+      case VersionColumnChanged(info) =>
+        versionColumnChanged(versionInfo, info)
       case RowIdentifierCleared(info) =>
         dropPrimaryKey(versionInfo, info)
       case r@RowDataUpdated(_) =>

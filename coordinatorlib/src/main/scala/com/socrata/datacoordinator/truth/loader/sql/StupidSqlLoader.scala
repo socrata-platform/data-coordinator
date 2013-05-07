@@ -9,7 +9,7 @@ import java.sql.Connection
 import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.util.{RowDataProvider, Counter}
-import com.socrata.datacoordinator.id.RowId
+import com.socrata.datacoordinator.id.{RowVersion, RowId}
 
 class StupidSqlLoader[CT, CV](val connection: Connection,
                               val rowPreparer: RowPreparer[CV],
@@ -21,9 +21,8 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
   val datasetContext = sqlizer.datasetContext
   val typeContext = sqlizer.typeContext
 
-  val inserted = new java.util.HashMap[Int, CV]
-  val elided = new java.util.HashMap[Int, (CV, Int)]
-  val updated = new java.util.HashMap[Int, CV]
+  val inserted = new java.util.HashMap[Int, IdAndVersion[CV]]
+  val updated = new java.util.HashMap[Int, IdAndVersion[CV]]
   val deleted = new java.util.HashMap[Int, CV]
   val errors = new java.util.HashMap[Int, Failure[CV]]
 
@@ -37,10 +36,10 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
     checkJob(job)
     datasetContext.userPrimaryKeyColumn match {
       case Some(pkCol) =>
-        datasetContext.userPrimaryKey(unpreparedRow) match {
+        unpreparedRow.get(pkCol) match {
           case Some(id) =>
             findRow(id) match {
-              case Some(RowWithId(sid, oldRow)) =>
+              case Some(InspectedRow(_, sid, _, oldRow)) =>
                 rowPreparer.prepareForUpdate(unpreparedRow, oldRow = oldRow) match {
                   case Right(updateRow) =>
                     val updatedCount = using(connection.prepareStatement(sqlizer.prepareSystemIdUpdateStatement)) { stmt =>
@@ -49,7 +48,7 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
                     }
                     assert(updatedCount == 1)
                     dataLogger.update(sid, updateRow)
-                    updated.put(job, id)
+                    updated.put(job, IdAndVersion(id, typeContext.makeRowVersionFromValue(updateRow(datasetContext.versionColumn))))
                   case Left(err) =>
                     errors.put(job, err)
                 }
@@ -57,12 +56,12 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
                 val sid = idProvider.allocateId()
                 rowPreparer.prepareForInsert(unpreparedRow, sid) match {
                   case Right(insertRow) =>
-                    val result = sqlizer.insertBatch(connection) { inserter =>
+                    val (result, ()) = sqlizer.insertBatch(connection) { inserter =>
                       inserter.insert(insertRow)
                     }
                     assert(result == 1, "From insert: " + result)
                     dataLogger.insert(sid, insertRow)
-                    inserted.put(job, id)
+                    inserted.put(job, IdAndVersion(id, typeContext.makeRowVersionFromValue(insertRow(datasetContext.versionColumn))))
                   case Left(err) =>
                     errors.put(job, err)
                 }
@@ -71,11 +70,11 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
             errors.put(job, NoPrimaryKey)
         }
       case None =>
-        datasetContext.systemIdAsValue(unpreparedRow) match {
+        unpreparedRow.get(datasetContext.systemIdColumn) match {
           case Some(id) =>
             using(connection.createStatement()) { stmt =>
               findRow(id) match {
-                case Some(RowWithId(sid, oldRow)) =>
+                case Some(InspectedRow(_, sid, _, oldRow)) =>
                   rowPreparer.prepareForUpdate(unpreparedRow, oldRow = oldRow) match {
                     case Right(updateRow) =>
                       using(connection.prepareStatement(sqlizer.prepareSystemIdUpdateStatement)) { stmt =>
@@ -83,8 +82,8 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
                         val result = stmt.executeUpdate()
                         assert(result == 1, "From update: " + updated)
                       }
-                      updated.put(job, id)
                       dataLogger.update(sid, updateRow)
+                      updated.put(job, IdAndVersion(id, typeContext.makeRowVersionFromValue(updateRow(datasetContext.versionColumn))))
                     case Left(err) =>
                       errors.put(job, err)
                   }
@@ -96,12 +95,12 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
             val sid = idProvider.allocateId()
             rowPreparer.prepareForInsert(unpreparedRow, sid) match {
               case Right(insertRow) =>
-                val result = sqlizer.insertBatch(connection) { inserter =>
+                val (result, ()) = sqlizer.insertBatch(connection) { inserter =>
                   inserter.insert(insertRow)
                 }
                 assert(result == 1, "From insert: " + result)
                 dataLogger.insert(sid, insertRow)
-                inserted.put(job, typeContext.makeValueFromSystemId(sid))
+                inserted.put(job, IdAndVersion(insertRow(datasetContext.systemIdColumn), typeContext.makeRowVersionFromValue(insertRow(datasetContext.versionColumn))))
               case Left(err) =>
                 errors.put(job, err)
             }
@@ -109,7 +108,7 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
     }
   }
 
-  def findRow(id: CV): Option[RowWithId[CV]] = {
+  def findRow(id: CV): Option[InspectedRow[CV]] = {
     using(sqlizer.findRows(connection, Iterator.single(id))) { blocks =>
       val sids = blocks.flatten.toSeq
       assert(sids.length < 2)
@@ -117,26 +116,31 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
     }
   }
 
-  def findRowId(id: CV): Option[IdPair[CV]] = {
-    using(sqlizer.findSystemIds(connection, Iterator.single(id))) { blocks =>
+  def findRowId(id: CV): Option[InspectedRowless[CV]] = {
+    using(sqlizer.findIdsAndVersions(connection, Iterator.single(id))) { blocks =>
       val sids = blocks.flatten.toSeq
       assert(sids.length < 2)
       sids.headOption
     }
   }
 
-  def delete(job: Int, id: CV) {
+  def delete(job: Int, id: CV, version: Option[RowVersion]) {
     checkJob(job)
     datasetContext.userPrimaryKeyColumn match {
       case Some(pkCol) =>
         findRowId(id) match {
-          case Some(IdPair(sid, _)) =>
-            val result = sqlizer.deleteBatch(connection) { deleter =>
-              deleter.delete(sid)
+          case Some(InspectedRowless(_, sid, oldVersion)) =>
+            rowPreparer.prepareForDelete(id, version, oldVersion) match {
+              case None =>
+                val (result, ()) = sqlizer.deleteBatch(connection) { deleter =>
+                  deleter.delete(sid)
+                }
+                assert(result == 1)
+                deleted.put(job, id)
+                dataLogger.delete(sid)
+              case Some(err) =>
+                errors.put(job, err)
             }
-            assert(result == 1)
-            deleted.put(job, id)
-            dataLogger.delete(sid)
           case None =>
             errors.put(job, NoSuchRowToDelete(id))
         }
@@ -155,7 +159,7 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
   }
 
   def report = {
-    SqlLoader.JobReport(inserted.asScala, updated.asScala, deleted.asScala, elided.asScala, errors.asScala)
+    SqlLoader.JobReport(inserted.asScala, updated.asScala, deleted.asScala, errors.asScala)
   }
 
   def close() {

@@ -66,18 +66,9 @@ class TimeRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
     start + 1
   }
 
-  def estimateInsertSize(v: SoQLValue): Int =
+  def estimateSize(v: SoQLValue): Int =
     if(SoQLNull == v) standardNullInsertSize
     else 30
-
-  def SETsForUpdate(sb: StringBuilder, v: SoQLValue) {
-    sb.append(base).append('=')
-    if(SoQLNull == v) sb.append("NULL")
-    else sb.append(literalize(v.asInstanceOf[SoQLTime].value))
-  }
-
-  def estimateUpdateSize(v: SoQLValue): Int =
-    base.length + 30
 
   def fromResultSet(rs: ResultSet, start: Int): SoQLValue = {
     val ts = rs.getString(start)

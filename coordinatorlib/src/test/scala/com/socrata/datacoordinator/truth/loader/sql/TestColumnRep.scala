@@ -63,15 +63,7 @@ class LongRep(columnId: ColumnId) extends TestColumnRep(columnId) {
     start + 1
   }
 
-  def estimateInsertSize(v: TestColumnValue) = 8
-
-  def SETsForUpdate(sb: StringBuilder, v: TestColumnValue) {
-    sb.append(base).append('=')
-    if(v == NullValue) sb.append("NULL")
-    else sb.append(v.asInstanceOf[LongValue].value)
-  }
-
-  def estimateUpdateSize(v: TestColumnValue) = base.length + 8
+  def estimateSize(v: TestColumnValue) = 8
 
   def fromResultSet(rs: ResultSet, start: Int) = {
     val l = rs.getLong(start)
@@ -114,19 +106,9 @@ class StringRep(columnId: ColumnId) extends TestColumnRep(columnId) {
     start + 1
   }
 
-  def estimateInsertSize(v: TestColumnValue) =
+  def estimateSize(v: TestColumnValue) =
     if(v == NullValue) 8
     else v.asInstanceOf[StringValue].value.length
-
-  def SETsForUpdate(sb: StringBuilder, v: TestColumnValue) {
-    sb.append(base).append('=')
-    if(v == NullValue) sb.append("NULL")
-    else sb.append(escape('\'', v.asInstanceOf[StringValue].value))
-  }
-
-  def estimateUpdateSize(v: TestColumnValue) =
-    if(v == NullValue) base.length + 5
-    else base.length + v.asInstanceOf[StringValue].value.length
 
   def fromResultSet(rs: ResultSet, start: Int) = {
     val s = rs.getString(start)

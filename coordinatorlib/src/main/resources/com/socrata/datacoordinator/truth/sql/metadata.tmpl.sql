@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS column_map (
   physical_column_base_base VARCHAR(%PHYSCOL_BASE_LEN%) NOT NULL, -- the true PCB is p_c_b_b + "_" + system_id
   is_system_primary_key     unit                        NULL, -- evil "unique" hack
   is_user_primary_key       unit                        NULL, -- evil "unique" hack
+  is_version                unit                        NULL, -- evil "unique" hack
   -- Making a copy preserves the system_id of columns.  Therefore, we need a two-part primary key
   -- in order to uniquely identify a column.
   -- It's in the order table-id-then-column-id so the implied index can (I think!) be used for
@@ -75,7 +76,8 @@ CREATE TABLE IF NOT EXISTS column_map (
   PRIMARY KEY (copy_system_id, system_id),
   UNIQUE (copy_system_id, logical_column_folded),
   UNIQUE (copy_system_id, is_system_primary_key), -- hack hack hack
-  UNIQUE (copy_system_id, is_user_primary_key) -- hack hack hack
+  UNIQUE (copy_system_id, is_user_primary_key), -- hack hack hack
+  UNIQUE (copy_system_id, is_version) -- hack hack hack
 );
 
 CREATE TABLE IF NOT EXISTS pending_table_drops (

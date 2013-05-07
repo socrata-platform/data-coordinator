@@ -133,7 +133,7 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
       }
     }
 
-  def schemaQuery = "SELECT system_id, logical_column_orig, logical_column_folded, type_name, physical_column_base_base, (is_system_primary_key IS NOT NULL) is_system_primary_key, (is_user_primary_key IS NOT NULL) is_user_primary_key FROM column_map WHERE copy_system_id = ?"
+  def schemaQuery = "SELECT system_id, logical_column_orig, logical_column_folded, type_name, physical_column_base_base, (is_system_primary_key IS NOT NULL) is_system_primary_key, (is_user_primary_key IS NOT NULL) is_user_primary_key, (is_version IS NOT NULL) is_version FROM column_map WHERE copy_system_id = ?"
   def schema(copyInfo: CopyInfo) = {
     using(conn.prepareStatement(schemaQuery)) { stmt =>
       stmt.setLong(1, copyInfo.systemId.underlying)
@@ -150,7 +150,8 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
             typeNamespace.typeForName(copyInfo.datasetInfo, rs.getString("type_name")),
             rs.getString("physical_column_base_base"),
             rs.getBoolean("is_system_primary_key"),
-            rs.getBoolean("is_user_primary_key"))
+            rs.getBoolean("is_user_primary_key"),
+            rs.getBoolean("is_version"))
         }
         result.freeze()
       }
@@ -344,7 +345,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
   def addColumnQuery = "INSERT INTO column_map (system_id, copy_system_id, logical_column_orig, logical_column_folded, type_name, physical_column_base_base) VALUES (?, ?, ?, ?, ?, ?)"
   def addColumnWithId(systemId: ColumnId, copyInfo: CopyInfo, logicalName: ColumnName, typ: CT, physicalColumnBaseBase: String): ColumnInfo[CT] = {
     using(conn.prepareStatement(addColumnQuery)) { stmt =>
-      val columnInfo = ColumnInfo[CT](copyInfo, systemId, logicalName, typ, physicalColumnBaseBase, isSystemPrimaryKey = false, isUserPrimaryKey = false)
+      val columnInfo = ColumnInfo[CT](copyInfo, systemId, logicalName, typ, physicalColumnBaseBase, isSystemPrimaryKey = false, isUserPrimaryKey = false, isVersion = false)
 
       stmt.setLong(1, columnInfo.systemId.underlying)
       stmt.setLong(2, columnInfo.copyInfo.systemId.underlying)
@@ -473,6 +474,16 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
       val count = t("set-system-primary-key", "dataset_id" -> columnInfo.copyInfo.datasetInfo.systemId, "copy_num" -> columnInfo.copyInfo.copyNumber, "column_id" -> columnInfo.systemId)(stmt.executeUpdate())
       assert(count == 1, "Column did not exist to have it set as primary key?")
       columnInfo.copy(isSystemPrimaryKey = true)
+    }
+
+  def setVersionQuery = "UPDATE column_map SET is_version = 'Unit' WHERE copy_system_id = ? AND system_id = ?"
+  def setVersion(columnInfo: ColumnInfo[CT]) =
+    using(conn.prepareStatement(setVersionQuery)) { stmt =>
+      stmt.setLong(1, columnInfo.copyInfo.systemId.underlying)
+      stmt.setLong(2, columnInfo.systemId.underlying)
+      val count = t("set-version", "dataset_id" -> columnInfo.copyInfo.datasetInfo.systemId, "copy_num" -> columnInfo.copyInfo.copyNumber, "column_id" -> columnInfo.systemId)(stmt.executeUpdate())
+      assert(count == 1, "Column did not exist to have it set as version?")
+      columnInfo.copy(isVersion = true)
     }
 
   def setUserPrimaryKeyQuery = "UPDATE column_map SET is_user_primary_key = 'Unit' WHERE copy_system_id = ? AND system_id = ?"
@@ -607,7 +618,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
         }
     }
 
-  def ensureUnpublishedCopyQuery_columnMap = "INSERT INTO column_map (copy_system_id, system_id, logical_column_orig, logical_column_folded, type_name, physical_column_base_base, is_system_primary_key, is_user_primary_key) SELECT ?, system_id, logical_column_orig, logical_column_folded, type_name, physical_column_base_base, null, null FROM column_map WHERE copy_system_id = ?"
+  def ensureUnpublishedCopyQuery_columnMap = "INSERT INTO column_map (copy_system_id, system_id, logical_column_orig, logical_column_folded, type_name, physical_column_base_base, is_system_primary_key, is_user_primary_key, is_version) SELECT ?, system_id, logical_column_orig, logical_column_folded, type_name, physical_column_base_base, null, null, null FROM column_map WHERE copy_system_id = ?"
   def copySchemaIntoUnpublishedCopy(oldCopy: CopyInfo, newCopy: CopyInfo) {
     using(conn.prepareStatement(ensureUnpublishedCopyQuery_columnMap)) { stmt =>
       stmt.setLong(1, newCopy.systemId.underlying)

@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator.truth.reader.sql
 
 import com.socrata.datacoordinator.truth.{RowUserIdMap, TypeContext}
-import com.socrata.datacoordinator.id.RowId
+import com.socrata.datacoordinator.id.{RowVersion, RowId}
 import com.socrata.soql.environment.TypeName
 
 object TestTypeContext extends TypeContext[TestColumnType, TestColumnValue] {
@@ -10,6 +10,10 @@ object TestTypeContext extends TypeContext[TestColumnType, TestColumnValue] {
   def makeValueFromSystemId(id: RowId) = IdValue(id)
 
   def makeSystemIdFromValue(id: TestColumnValue) = id.asInstanceOf[IdValue].value
+
+  def makeValueFromRowVersion(v: RowVersion) = VersionValue(v)
+
+  def makeRowVersionFromValue(v: TestColumnValue) = v.asInstanceOf[VersionValue].value
 
   def nullValue = NullValue
 
@@ -43,5 +47,9 @@ object TestTypeContext extends TypeContext[TestColumnType, TestColumnValue] {
     }
 
     def valuesIterator = underlying.valuesIterator
+
+    def remove(x: TestColumnValue) {
+      underlying.remove(s(x))
+    }
   }
 }

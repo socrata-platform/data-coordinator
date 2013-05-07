@@ -68,18 +68,9 @@ class FixedTimestampRep(val base: String) extends RepUtils with SqlPKableColumnR
     start + 1
   }
 
-  def estimateInsertSize(v: SoQLValue): Int =
+  def estimateSize(v: SoQLValue): Int =
     if(SoQLNull == v) standardNullInsertSize
     else 30
-
-  def SETsForUpdate(sb: StringBuilder, v: SoQLValue) {
-    sb.append(base).append('=')
-    if(SoQLNull == v) sb.append("NULL")
-    else literalizeTo(sb, v.asInstanceOf[SoQLFixedTimestamp].value)
-  }
-
-  def estimateUpdateSize(v: SoQLValue): Int =
-    base.length + 30
 
   def fromResultSet(rs: ResultSet, start: Int): SoQLValue = {
     val ts = rs.getTimestamp(start)

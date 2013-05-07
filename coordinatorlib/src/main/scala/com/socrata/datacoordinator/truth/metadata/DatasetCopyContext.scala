@@ -12,6 +12,7 @@ class DatasetCopyContext[CT](val copyInfo: CopyInfo, val schema: ColumnIdMap[Col
   lazy val schemaByLogicalName = RotateSchema(schema)
   lazy val userIdCol = schema.values.find(_.isUserPrimaryKey)
   lazy val systemIdCol = schema.values.find(_.isSystemPrimaryKey)
+  lazy val versionCol = schema.values.find(_.isVersion)
   lazy val pkCol = userIdCol.orElse(systemIdCol)
   def pkCol_! : ColumnInfo[CT] = pkCol.getOrElse {
     sys.error("No system PK defined on this dataset?")

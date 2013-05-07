@@ -6,8 +6,7 @@ import java.sql.{Connection, PreparedStatement}
 
 import com.socrata.datacoordinator.util.CloseableIterator
 import com.socrata.datacoordinator.truth.{DatasetContext, TypeContext}
-import com.socrata.datacoordinator.id.RowId
-import com.socrata.datacoordinator.util.collection.{ColumnIdSet, RowIdSet}
+import com.socrata.datacoordinator.id.{RowVersion, RowId}
 
 trait ReadDataSqlizer[CT, CV] {
   def datasetContext: DatasetContext[CT, CV]
@@ -15,29 +14,25 @@ trait ReadDataSqlizer[CT, CV] {
 
   def dataTableName: String
 
-  def findRowsSubset(conn: Connection, cols: ColumnIdSet, ids: Iterator[CV]): CloseableIterator[Seq[RowWithId[CV]]]
   // convenience method; like calling findRowsSubset with all column IDs in the
   // dataset.
-  def findRows(conn: Connection, ids: Iterator[CV]): CloseableIterator[Seq[RowWithId[CV]]]
+  def findRows(conn: Connection, ids: Iterator[CV]): CloseableIterator[Seq[InspectedRow[CV]]]
   // Not sure this will survive the row version feature
-  def collectSystemIds(conn: Connection, ids: Iterator[RowId]): CloseableIterator[RowIdSet]
-  // THIS MUST ONLY BE CALLED IF THIS DATASET HAS A USER PK COLUMN!
-  def findSystemIds(conn: Connection, ids: Iterator[CV]): CloseableIterator[Seq[IdPair[CV]]]
+  def findIdsAndVersions(conn: Connection, ids: Iterator[CV]): CloseableIterator[Seq[InspectedRowless[CV]]]
 }
 
 /** Generates SQL for execution. */
 trait DataSqlizer[CT, CV] extends ReadDataSqlizer[CT, CV] {
   def softMaxBatchSize: Int
-  def sizeofDelete: Int
-  def sizeofInsert(row: Row[CV]): Int
-  def sizeofUpdate(row: Row[CV]): Int
+  def sizeofDelete(id: CV): Int
+  def sizeof(row: Row[CV]): Int
 
-  def insertBatch(conn: Connection)(t: Inserter => Unit): Long
+  def insertBatch[T](conn: Connection)(t: Inserter => T): (Long, T)
   trait Inserter {
     def insert(row: Row[CV])
   }
 
-  def deleteBatch(conn: Connection)(f: Deleter => Unit): Long
+  def deleteBatch[T](conn: Connection)(f: Deleter => T): (Long, T)
   trait Deleter {
     def delete(sid: RowId)
   }
@@ -46,8 +41,8 @@ trait DataSqlizer[CT, CV] extends ReadDataSqlizer[CT, CV] {
   def prepareSystemIdUpdate(stmt: PreparedStatement, sid: RowId, row: Row[CV])
 }
 
-case class RowWithId[CV](rowId: RowId, row: Row[CV])
-case class IdPair[CV](systemId: RowId, userId: CV)
+case class InspectedRow[CV](id: CV, rowId: RowId, version: RowVersion, row: Row[CV])
+case class InspectedRowless[CV](id: CV, rowId: RowId, version: RowVersion)
 
 trait SchemaSqlizer[CT, CV] {
   // all these include log-generation statements in their output

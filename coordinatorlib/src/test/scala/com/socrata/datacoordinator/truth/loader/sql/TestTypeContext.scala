@@ -5,7 +5,7 @@ package sql
 import scala.collection.JavaConverters._
 
 import com.socrata.datacoordinator.truth.{RowUserIdMap, TypeContext}
-import com.socrata.datacoordinator.id.RowId
+import com.socrata.datacoordinator.id.{RowVersion, RowId}
 import com.socrata.soql.environment.TypeName
 import com.socrata.datacoordinator.truth.metadata.{DatasetInfo, TypeNamespace}
 
@@ -14,6 +14,12 @@ object TestTypeContext extends TypeContext[TestColumnType, TestColumnValue] {
   def makeSystemIdFromValue(id: TestColumnValue) = {
     require(id.isInstanceOf[LongValue], "Not an id")
     new RowId(id.asInstanceOf[LongValue].value)
+  }
+
+  def makeValueFromRowVersion(v: RowVersion) = LongValue(v.underlying)
+  def makeRowVersionFromValue(v: TestColumnValue) = {
+    require(v.isInstanceOf[LongValue], "Not a version: " + v.getClass)
+    new RowVersion(v.asInstanceOf[LongValue].value)
   }
 
   def isNull(v: TestColumnValue) = v == NullValue
@@ -64,6 +70,10 @@ object TestTypeContext extends TypeContext[TestColumnType, TestColumnValue] {
       }
 
       def valuesIterator = m.values().iterator.asScala
+
+      def remove(x: TestColumnValue) {
+        m.remove(x)
+      }
     }
   }
 }

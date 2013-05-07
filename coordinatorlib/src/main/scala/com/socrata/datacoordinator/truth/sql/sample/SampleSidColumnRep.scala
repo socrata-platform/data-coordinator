@@ -36,13 +36,7 @@ class SampleSidColumnRep(val base: String) extends SqlPKableColumnRep[SampleType
 
   def prepareInsert(stmt: PreparedStatement, v: SampleValue, start: Int): Int = prepareMultiLookup(stmt, v, start)
 
-  def estimateInsertSize(v: SampleValue) = 10
-
-  def SETsForUpdate(sb: java.lang.StringBuilder, v: SampleValue) {
-    sb.append(base).append("=").append(extract(v))
-  }
-
-  def estimateUpdateSize(v: SampleValue) = base.length + estimateInsertSize(v)
+  def estimateSize(v: SampleValue) = 10
 
   def sql_in(literals: Iterable[SampleValue]) = {
     literals.iterator.map(extract).mkString("(" + base + " IN (", ",", "))")

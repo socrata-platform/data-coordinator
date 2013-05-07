@@ -44,6 +44,9 @@ object Delogger {
   case class SystemRowIdentifierChanged(info: UnanchoredColumnInfo) extends LogEvent[Nothing]
   object SystemRowIdentifierChanged extends LogEventCompanion
 
+  case class VersionColumnChanged(info: UnanchoredColumnInfo) extends LogEvent[Nothing]
+  object VersionColumnChanged extends LogEventCompanion
+
   case class WorkingCopyCreated(datasetInfo: UnanchoredDatasetInfo, copyInfo: UnanchoredCopyInfo) extends LogEvent[Nothing]
   object WorkingCopyCreated extends LogEventCompanion
 
@@ -97,7 +100,7 @@ object Delogger {
   // Note: the Delogger test checks that this is exhaustive
   val allLogEventCompanions: Set[LogEventCompanion] =
     Set(Truncated, ColumnCreated, ColumnRemoved, RowIdentifierSet, RowIdentifierCleared,
-      SystemRowIdentifierChanged, WorkingCopyCreated, DataCopied, WorkingCopyPublished,
+      SystemRowIdentifierChanged, VersionColumnChanged, WorkingCopyCreated, DataCopied, WorkingCopyPublished,
       WorkingCopyDropped, SnapshotDropped, ColumnLogicalNameChanged, RowDataUpdated, CounterUpdated, EndTransaction)
 
   // Note: the Delogger test checks that this is exhaustive.  It is not intended
@@ -111,6 +114,7 @@ object Delogger {
         case RowIdentifierSet => "RowIdentifierSet"
         case RowIdentifierCleared => "RowIdentifierCleared"
         case SystemRowIdentifierChanged => "SystemRowIdentifierChanged"
+        case VersionColumnChanged => "VersionColumnChanged"
         case WorkingCopyCreated => "WorkingCopyCreated"
         case DataCopied => "DataCopied"
         case WorkingCopyPublished => "WorkingCopyPublished"

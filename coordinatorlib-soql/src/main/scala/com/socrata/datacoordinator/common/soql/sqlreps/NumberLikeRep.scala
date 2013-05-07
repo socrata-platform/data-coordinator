@@ -47,18 +47,9 @@ class NumberLikeRep(repType: SoQLType, num: SoQLValue => java.math.BigDecimal, v
     start + 1
   }
 
-  def estimateInsertSize(v: SoQLValue): Int =
+  def estimateSize(v: SoQLValue): Int =
     if(SoQLNull == v) standardNullInsertSize
     else num(v).toString.length //ick
-
-  def SETsForUpdate(sb: StringBuilder, v: SoQLValue) {
-    sb.append(base).append('=')
-    if(SoQLNull == v) sb.append("NULL")
-    else sb.append(num(v))
-  }
-
-  def estimateUpdateSize(v: SoQLValue): Int =
-    base.length + estimateInsertSize(v)
 
   def fromResultSet(rs: ResultSet, start: Int): SoQLValue = {
     val b = rs.getBigDecimal(start)

@@ -13,6 +13,7 @@ trait SchemaLoader[CT] {
 
   def makePrimaryKey(colInfo: ColumnInfo[CT])
   def makeSystemPrimaryKey(colInfo: ColumnInfo[CT])
+  def makeVersion(colInfo: ColumnInfo[CT])
   def dropPrimaryKey(colInfo: ColumnInfo[CT]): Boolean
 
   sealed abstract class PrimaryKeyCreationException extends Exception

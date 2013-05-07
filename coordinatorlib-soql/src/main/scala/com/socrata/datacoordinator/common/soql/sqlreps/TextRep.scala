@@ -56,18 +56,9 @@ class TextRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
     start + 1
   }
 
-  def estimateInsertSize(v: SoQLValue): Int =
+  def estimateSize(v: SoQLValue): Int =
     if(SoQLNull == v) standardNullInsertSize
     else v.asInstanceOf[SoQLText].value.length
-
-  def SETsForUpdate(sb: StringBuilder, v: SoQLValue) {
-    sb.append(base).append('=')
-    if(SoQLNull == v) sb.append("NULL")
-    else sqlescape(sb, v.asInstanceOf[SoQLText].value)
-  }
-
-  def estimateUpdateSize(v: SoQLValue): Int =
-    base.length + (if(SoQLNull == v) 5 else v.asInstanceOf[SoQLText].value.length)
 
   def fromResultSet(rs: ResultSet, start: Int): SoQLValue = {
     val s = rs.getString(start)

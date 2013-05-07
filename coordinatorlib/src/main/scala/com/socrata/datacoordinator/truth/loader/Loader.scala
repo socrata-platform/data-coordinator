@@ -8,10 +8,11 @@ import com.socrata.datacoordinator.util.collection.ColumnIdSet
 import com.rojoma.json.ast.{JObject, JString, JValue}
 import com.rojoma.json.codec.JsonCodec
 import com.rojoma.json.util.{AutomaticJsonCodecBuilder, TagToValue, SimpleHierarchyCodecBuilder}
+import com.socrata.datacoordinator.id.RowVersion
 
 trait Loader[CV] extends Closeable {
   def upsert(jobId: Int, row: Row[CV])
-  def delete(jobId: Int, id: CV)
+  def delete(jobId: Int, id: CV, version: Option[RowVersion] = None)
 
   /** Flushes any changes which have accumulated in-memory and
     * returns a report summarizing the changes.
@@ -25,6 +26,7 @@ trait Loader[CV] extends Closeable {
   def report: Report[CV]
 }
 
+case class IdAndVersion[CV](id: CV, version: RowVersion)
 /** A report is a collection of maps that inform the caller what
   * the result of each operation performed on the transaction so far was.
   *
@@ -34,16 +36,13 @@ trait Loader[CV] extends Closeable {
   */
 trait Report[CV] {
   /** Map from job number to the identifier of the row that was created. */
-  def inserted: sc.Map[Int, CV]
+  def inserted: sc.Map[Int, IdAndVersion[CV]]
 
   /** Map from job number to the identifier of the row that was updated. */
-  def updated: sc.Map[Int, CV]
+  def updated: sc.Map[Int, IdAndVersion[CV]]
 
   /** Map from job number to the identifier of the row that was deleted. */
   def deleted: sc.Map[Int, CV]
-
-  /** Map from job number to the identifier of the row that was merged with another job, and the job it was merged with. */
-  def elided: sc.Map[Int, (CV, Int)]
 
   /** Map from job number to a value explaining the cause of the problem.. */
   def errors: sc.Map[Int, Failure[CV]]
@@ -54,7 +53,6 @@ sealed abstract class Failure[+CV] {
 }
 
 object Failure {
-  private val NullPK = JString("null_primary_key")
   private val NoPK = JString("no_primary_key")
   private val NoSuchRowToDeleteTag = "no_such_row_to_delete"
   private val NoSuchRowToUpdateTag = "no_such_row_to_update"
@@ -79,19 +77,17 @@ object Failure {
       build
 
     def encode(x: Failure[CV]) = x match {
-      case NullPrimaryKey => NullPK
       case NoPrimaryKey => NoPK
       case other => cb.encode(other)
     }
     def decode(x: JValue) = x match {
-      case NullPK => Some(NullPrimaryKey)
       case NoPK => Some(NoPrimaryKey)
       case other => cb.decode(other)
     }
   }
 }
 
-case object NullPrimaryKey extends Failure[Nothing] {
+case object VersionOnNewRow extends Failure[Nothing] {
   def map[B](f: Nothing => B) = this
 }
 case class NoSuchRowToDelete[CV](id: CV) extends Failure[CV] {
@@ -105,6 +101,6 @@ case object NoPrimaryKey extends Failure[Nothing] {
 }
 
 sealed abstract class RowPreparerDeclinedUpsert[CV] extends Failure[CV]
-case class VersionMismatch[CV](id: CV, expected: JValue, actual: JValue) extends RowPreparerDeclinedUpsert[CV] {
+case class VersionMismatch[CV](id: CV, expected: RowVersion, actual: RowVersion) extends RowPreparerDeclinedUpsert[CV] {
   def map[B](f: CV => B) = VersionMismatch(f(id), expected, actual)
 }

@@ -23,15 +23,8 @@ class VersionRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType, 
     start + 1
   }
 
-  def estimateInsertSize(v: SoQLValue): Int =
+  def estimateSize(v: SoQLValue): Int =
     30
-
-  def SETsForUpdate(sb: StringBuilder, v: SoQLValue) {
-    sb.append(base).append('=').append(v.asInstanceOf[SoQLVersion].value)
-  }
-
-  def estimateUpdateSize(v: SoQLValue): Int =
-    base.length + 30
 
   def fromResultSet(rs: ResultSet, start: Int): SoQLVersion =
     SoQLVersion(rs.getLong(start))

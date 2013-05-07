@@ -19,17 +19,15 @@ class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
     val userPrimaryKeyColumn = if(schema.contains(new ColumnId(100L))) Some(new ColumnId(100L)) else None
     val userPrimaryKeyType = userPrimaryKeyColumn.map(_ => StringType)
 
-    def userPrimaryKey(row: Row[TestColumnValue]) = row.get(userPrimaryKeyColumn.get)
-
-    def systemId(row: Row[TestColumnValue]) = row.get(systemIdColumn).map(_.asInstanceOf[IdValue].value)
-
-    def systemIdAsValue(row: Row[TestColumnValue]) = row.get(systemIdColumn)
-
     val systemIdColumn = new ColumnId(0L)
+    val versionColumn = new ColumnId(1L)
 
     val systemColumnIds = ColumnIdSet(systemIdColumn)
 
     def mergeRows(base: Row[TestColumnValue], overlay: Row[TestColumnValue]) = sys.error("Shouldn't call this")
+
+    val primaryKeyColumn: ColumnId = userPrimaryKeyColumn.getOrElse(systemIdColumn)
+    val primaryKeyType: TestColumnType = schema(primaryKeyColumn).representedType
   }
 
   def managedConn = managed(DriverManager.getConnection("jdbc:h2:mem:"))
@@ -73,6 +71,7 @@ class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
         val sb = new StringBuilder("INSERT INTO ").append(tableName).append(" (").append(row.iterator.map(c => "c_" + c._1).mkString(",")).append(") VALUES (")
         val vals = row.map(_._2).map {
           case IdValue(v) => v.underlying
+          case VersionValue(v) => v.underlying
           case NumberValue(v) => v
           case StringValue(v) => "'" + v.replaceAllLiterally("'","''") + "'"
           case NullValue => "null"

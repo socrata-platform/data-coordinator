@@ -19,18 +19,18 @@ class PostgresRepBasedDataSqlizer[CT, CV](tableName: String,
   val bulkInsertStatement =
     "COPY " + dataTableName + " (" + repSchema.values.flatMap(_.physColumns).mkString(",") + ") from stdin with csv"
 
-  def insertBatch(conn: Connection)(f: (Inserter) => Unit) = {
+  def insertBatch[T](conn: Connection)(f: (Inserter) => T): (Long, T) = {
     val inserter = new InserterImpl
     val result = executor.submit(new Callable[Long] {
       def call() = copyIn(conn, bulkInsertStatement, inserter.rw.reader)
     })
     try {
-      try {
+      val fResult = try {
         f(inserter)
       } finally {
         inserter.rw.writer.close()
       }
-      result.get()
+      (result.get(), fResult)
     } catch {
       case e: Throwable =>
         // Ensure the future has completed before we leave this method.

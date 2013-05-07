@@ -27,18 +27,9 @@ class ArrayRep (val base: String) extends RepUtils with SqlColumnRep[SoQLType, S
     start + 1
   }
 
-  def estimateInsertSize(v: SoQLValue): Int =
+  def estimateSize(v: SoQLValue): Int =
     if(SoQLNull == v) standardNullInsertSize
     else string(v).length //ick
-
-  def SETsForUpdate(sb: StringBuilder, v: SoQLValue) {
-    sb.append(base).append('=')
-    if(SoQLNull == v) sb.append("NULL")
-    else sqlescape(sb, string(v))
-  }
-
-  def estimateUpdateSize(v: SoQLValue): Int =
-    base.length + estimateInsertSize(v)
 
   def fromResultSet(rs: ResultSet, start: Int): SoQLValue = {
     val v = rs.getString(start)

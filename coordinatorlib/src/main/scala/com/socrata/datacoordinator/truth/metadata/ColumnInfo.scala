@@ -12,6 +12,7 @@ sealed trait AbstractColumnInfoLike extends Product {
   val logicalName: ColumnName
   val isSystemPrimaryKey: Boolean
   val isUserPrimaryKey: Boolean
+  val isVersion: Boolean
   val typeName: String
 }
 
@@ -32,9 +33,10 @@ case class UnanchoredColumnInfo(@JsonKey("sid") systemId: ColumnId,
                                 @JsonKey("type") typeName: String,
                                 @JsonKey("base") physicalColumnBaseBase: String,
                                 @JsonKey("spk") isSystemPrimaryKey: Boolean,
-                                @JsonKey("upk") isUserPrimaryKey: Boolean) extends ColumnInfoLike
+                                @JsonKey("upk") isUserPrimaryKey: Boolean,
+                                @JsonKey("ver") isVersion: Boolean) extends ColumnInfoLike
 
-object UnanchoredColumnInfo extends ((ColumnId, ColumnName, String, String, Boolean, Boolean) => UnanchoredColumnInfo) {
+object UnanchoredColumnInfo extends ((ColumnId, ColumnName, String, String, Boolean, Boolean, Boolean) => UnanchoredColumnInfo) {
   override def toString = "UnanchoredColumnInfo"
   implicit val columnNameCodec = new JsonCodec[ColumnName] {
     def encode(x: ColumnName): JValue = JString(x.name)
@@ -51,9 +53,9 @@ object UnanchoredColumnInfo extends ((ColumnId, ColumnName, String, String, Bool
   * or [[com.socrata.datacoordinator.truth.metadata.DatasetMapWriter]].
   * @param tag Guard against a non-map accidentially instantiating this.
   */
-case class ColumnInfo[CT](copyInfo: CopyInfo, systemId: ColumnId, logicalName: ColumnName, typ: CT, physicalColumnBaseBase: String, isSystemPrimaryKey: Boolean, isUserPrimaryKey: Boolean)(implicit val typeNamespace: TypeNamespace[CT], tag: com.socrata.datacoordinator.truth.metadata.`-impl`.Tag)  extends ColumnInfoLike {
+case class ColumnInfo[CT](copyInfo: CopyInfo, systemId: ColumnId, logicalName: ColumnName, typ: CT, physicalColumnBaseBase: String, isSystemPrimaryKey: Boolean, isUserPrimaryKey: Boolean, isVersion: Boolean)(implicit val typeNamespace: TypeNamespace[CT], tag: com.socrata.datacoordinator.truth.metadata.`-impl`.Tag)  extends ColumnInfoLike {
   lazy val typeName = typeNamespace.nameForType(typ)
-  def unanchored: UnanchoredColumnInfo = UnanchoredColumnInfo(systemId, logicalName, typeName, physicalColumnBaseBase, isSystemPrimaryKey, isUserPrimaryKey)
+  def unanchored: UnanchoredColumnInfo = UnanchoredColumnInfo(systemId, logicalName, typeName, physicalColumnBaseBase, isSystemPrimaryKey, isUserPrimaryKey, isVersion)
 }
 
 trait TypeNamespace[CT] {

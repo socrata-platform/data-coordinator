@@ -21,13 +21,18 @@ abstract class AbstractSqlLoaderProvider[CT, CV](val executor: ExecutorService, 
 
     val repSchema = copyCtx.schema.mapValuesStrict(repFor)
 
-    val userPrimaryKeyInfo = copyCtx.schema.values.iterator.find(_.isUserPrimaryKey).map(_.systemId)
+    val userPrimaryKeyInfo = copyCtx.userIdCol.map(_.systemId)
 
-    val systemPrimaryKey = copyCtx.schema.values.find(_.isSystemPrimaryKey).map(_.systemId).getOrElse {
+    val systemPrimaryKey = copyCtx.systemIdCol.getOrElse {
       sys.error(s"No system primary key column?")
-    }
+    }.systemId
 
-    val datasetContext = RepBasedSqlDatasetContext(typeContext, repSchema, userPrimaryKeyInfo, systemPrimaryKey, copyCtx.schema.filter { case (_, ci) => isSystemColumn(ci) }.keySet)
+    val version = copyCtx.versionCol.getOrElse {
+      sys.error(s"No version column?")
+    }.systemId
+
+    val datasetContext =
+      RepBasedSqlDatasetContext(typeContext, repSchema, userPrimaryKeyInfo, systemPrimaryKey, version, copyCtx.schema.filter { case (_, ci) => isSystemColumn(ci) }.keySet)
 
     val sqlizer = produce(tableName, datasetContext)
     SqlLoader(conn, rowPreparer, sqlizer, logger, idProvider, executor, timingReport)
