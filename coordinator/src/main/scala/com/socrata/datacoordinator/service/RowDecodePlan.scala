@@ -28,9 +28,21 @@ class RowDecodePlan[CT, CV](schema: ColumnIdMap[ColumnInfo[CT]], repFor: CT => J
       (ci.logicalName, systemId, repFor(ci.typ))
     }.toArray
 
+  val columnNames = new java.util.HashMap[String, ColumnName]
+  def columnName(name: String): ColumnName =
+    columnNames.get(name) match {
+      case null =>
+        if(columnNames.size > 2000) columnNames.clear() // bad user!
+        val newName = ColumnName(name)
+        columnNames.put(name, newName)
+        newName
+      case existingName =>
+        existingName
+    }
+
   def cook(row: scala.collection.Map[String, JValue]): Map[ColumnName, JValue] = {
     row.foldLeft(Map.empty[ColumnName, JValue]) { (acc, kv) =>
-      acc + (ColumnName(kv._1) -> kv._2)
+      acc + (columnName(kv._1) -> kv._2)
     }
   }
 
