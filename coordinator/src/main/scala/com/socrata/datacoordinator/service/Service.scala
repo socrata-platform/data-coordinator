@@ -344,8 +344,8 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
             err(BadRequest, "update.row-version-mismatch",
               "dataset" -> JString(datasetName.underlying.toString),
               "value" -> id,
-              "expected" -> rowVersionToJson(expected),
-              "actual" -> rowVersionToJson(actual))
+              "expected" -> expected.map(rowVersionToJson).getOrElse(JNull),
+              "actual" -> actual.map(rowVersionToJson).getOrElse(JNull))
           case Mutator.UpsertError(datasetName, VersionOnNewRow, _) =>
             err(BadRequest, "update.version-on-new-row",
               "dataset" -> JString(datasetName.underlying.toString))

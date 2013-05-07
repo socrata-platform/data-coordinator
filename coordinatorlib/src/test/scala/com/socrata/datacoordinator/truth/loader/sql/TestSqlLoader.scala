@@ -98,23 +98,51 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
   val rawSelect = "SELECT " + idColName + ", " + versionColName + ", " + numName + ", " + strName + " from test_data"
 
-  val rowPreparer = new RowPreparer[TestColumnValue] {
+  def rowPreparer(pkCol: ColumnId) = new RowPreparer[TestColumnValue] {
     def prepareForInsert(row: Row[TestColumnValue], sid: RowId) = {
       val newRow = new MutableColumnIdMap(row)
       newRow(idCol) = LongValue(sid.underlying)
       newRow(versionCol) = LongValue(0)
-      Right(newRow.freeze())
+      val result = newRow.freeze()
+      checkVersion(result(pkCol), None, versionOf(row)) match {
+        case None =>
+          Right(result)
+        case Some(err) =>
+          Left(err)
+      }
     }
 
     def prepareForUpdate(row: Row[TestColumnValue], oldRow: Row[TestColumnValue]) = {
-      val m = new MutableRow(oldRow)
-      m ++= row
-      m(versionCol) = LongValue(oldRow(versionCol).asInstanceOf[LongValue].value + 1)
-      Right(m.freeze())
+      checkVersion(row(pkCol), versionOf(oldRow).get, versionOf(row)) match {
+        case None =>
+          val m = new MutableRow(oldRow)
+          m ++= row
+          m(versionCol) = LongValue(oldRow(versionCol).asInstanceOf[LongValue].value + 1)
+          Right(m.freeze())
+        case Some(err) =>
+          Left(err)
+      }
     }
 
-    def prepareForDelete(id: TestColumnValue, requestedVersion: Option[RowVersion], existingVersion: RowVersion): Option[RowPreparerDeclinedUpsert[TestColumnValue]] =
-      for(c <- requestedVersion if c != existingVersion) yield VersionMismatch(id, existingVersion, c)
+    def prepareForDelete(id: TestColumnValue, requestedVersion: Option[Option[RowVersion]], existingVersion: RowVersion): Option[RowPreparerDeclinedUpsert[TestColumnValue]] =
+      checkVersion(id, Some(existingVersion), requestedVersion)
+
+    def versionOf(row: Row[TestColumnValue]): Option[Option[RowVersion]] =
+      row.get(versionCol) match {
+        case Some(LongValue(v)) => Some(Some(new RowVersion(v)))
+        case Some(NullValue) => Some(None)
+        case Some(other) => sys.error("Bad type in version column")
+        case None => None
+      }
+
+    def checkVersion(id: TestColumnValue, oldVersion: Option[RowVersion], newVersion: Option[Option[RowVersion]]): Option[RowPreparerDeclinedUpsert[TestColumnValue]] =
+      newVersion match {
+        case None => None // No version filter provided at all; allow it
+        case Some(other) if other == oldVersion =>
+          None
+        case Some(other) =>
+          Some(VersionMismatch(id, oldVersion, other))
+      }
   }
 
   test("adding a new row with system PK succeeds") {
@@ -127,7 +155,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, idProvider(15), executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, idProvider(15), executor, NoopTimingReport))
       } {
         txn.upsert(0, Row[TestColumnValue](num -> LongValue(1), str -> StringValue("a")))
         val report = txn.report
@@ -171,7 +199,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, ids, executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, executor, NoopTimingReport))
       } {
         txn.upsert(0, Row[TestColumnValue](num -> LongValue(1), str -> StringValue("a")))
         txn.upsert(1, Row[TestColumnValue](idCol -> LongValue(15), num -> LongValue(2), str -> StringValue("b")))
@@ -210,7 +238,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, ids, executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, executor, NoopTimingReport))
       } {
         txn.upsert(0, Row(idCol -> NullValue, num -> LongValue(1), str -> StringValue("a")))
         val report = txn.report
@@ -245,7 +273,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, idProvider(6), executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, idProvider(6), executor, NoopTimingReport))
       } {
         txn.upsert(0, Row(idCol -> LongValue(77), num -> LongValue(1), str -> StringValue("a")))
         val report = txn.report
@@ -276,7 +304,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, ids, executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, executor, NoopTimingReport))
       } {
         txn.upsert(0, Row(idCol -> LongValue(7), num -> LongValue(44)))
         val report = txn.report
@@ -314,7 +342,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, ids, executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(str), dataSqlizer, dataLogger, ids, executor, NoopTimingReport))
       } {
         txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("a")))
         val report = txn.report
@@ -352,7 +380,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, ids, executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(str), dataSqlizer, dataLogger, ids, executor, NoopTimingReport))
       } {
         txn.upsert(0, Row(num -> LongValue(1), str -> NullValue))
         val report = txn.report
@@ -383,7 +411,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, ids, executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(str), dataSqlizer, dataLogger, ids, executor, NoopTimingReport))
       } {
         txn.upsert(0, Row(num -> LongValue(1)))
         val report = txn.report
@@ -416,7 +444,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, ids, executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(str), dataSqlizer, dataLogger, ids, executor, NoopTimingReport))
       } {
         txn.upsert(0, Row(str -> StringValue("q"), num -> LongValue(44)))
         val report = txn.report
@@ -454,7 +482,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, ids, executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(str), dataSqlizer, dataLogger, ids, executor, NoopTimingReport))
       } {
         txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q")))
         txn.upsert(1, Row(num -> LongValue(2), str -> StringValue("q")))
@@ -494,7 +522,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, ids, executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(str), dataSqlizer, dataLogger, ids, executor, NoopTimingReport))
       } {
         txn.upsert(0, Row(idCol -> LongValue(15), num -> LongValue(1), str -> StringValue("q")))
         val report = txn.report
@@ -532,7 +560,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, ids, executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(str), dataSqlizer, dataLogger, ids, executor, NoopTimingReport))
       } {
         txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q")))
         txn.delete(1, StringValue("q"))
@@ -571,7 +599,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer, dataSqlizer, dataLogger, ids, executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, executor, NoopTimingReport))
       } {
         txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q")))
         txn.delete(1, LongValue(15))
@@ -596,6 +624,17 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       ))
     }
   }
+
+  test("inserting a row with an explicitly null version succeeds (system PK)")(pending)
+  test("inserting a row with an explicitly null version succeeds (user PK)")(pending)
+  test("inserting a row with an not-null version fails (system PK)")(pending)
+  test("inserting a row with an not-null version fails (user PK)")(pending)
+  test("updating a row with an explicitly null version fails (system PK)")(pending)
+  test("updating a row with an explicitly null version fails (user PK)")(pending)
+  test("updating a row with an incorrect not-null version fails (system PK)")(pending)
+  test("updating a row with an incorrect not-null version fails (user PK)")(pending)
+  test("updating a row with a correct not-null version succeeds (system PK)")(pending)
+  test("updating a row with a correct not-null version succeeds (user PK)")(pending)
 
   test("must contain the same data as a table manipulated by a StupidPostgresTransaction when using user IDs", Tag("Slow")) {
     import org.scalacheck.{Gen, Arbitrary}
@@ -655,13 +694,13 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
           makeTables(stupidConn, stupidDataSqlizer, "stupid_log")
 
           def runCompareTest(ops: List[Op]) {
-            val smartReport = using(SqlLoader(smartConn, rowPreparer, dataSqlizer, NullLogger[TestColumnType, TestColumnValue], ids, executor, NoopTimingReport)) { txn =>
+            val smartReport = using(SqlLoader(smartConn, rowPreparer(userIdCol), dataSqlizer, NullLogger[TestColumnType, TestColumnValue], ids, executor, NoopTimingReport)) { txn =>
               applyOps(txn, ops)
               txn.report
             }
             smartConn.commit()
 
-            val stupidReport = using(new StupidSqlLoader(stupidConn, rowPreparer, stupidDataSqlizer, NullLogger[TestColumnType, TestColumnValue], ids)) { txn =>
+            val stupidReport = using(new StupidSqlLoader(stupidConn, rowPreparer(userIdCol), stupidDataSqlizer, NullLogger[TestColumnType, TestColumnValue], ids)) { txn =>
               applyOps(txn, ops)
               txn.report
             }
@@ -783,14 +822,14 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
           def runCompareTest(ops: List[Op]) {
             val smartReport =
-              using(SqlLoader(smartConn, rowPreparer, dataSqlizer, NullLogger[TestColumnType, TestColumnValue], smartIds, executor, NoopTimingReport)) { txn =>
+              using(SqlLoader(smartConn, rowPreparer(idCol), dataSqlizer, NullLogger[TestColumnType, TestColumnValue], smartIds, executor, NoopTimingReport)) { txn =>
                 applyOps(txn, ops)
                 txn.report
               }
             smartConn.commit()
 
             val stupidReport =
-              using(new StupidSqlLoader(stupidConn, rowPreparer, stupidDataSqlizer, NullLogger[TestColumnType, TestColumnValue], stupidIds)) { txn =>
+              using(new StupidSqlLoader(stupidConn, rowPreparer(idCol), stupidDataSqlizer, NullLogger[TestColumnType, TestColumnValue], stupidIds)) { txn =>
                 applyOps(txn, ops)
                 txn.report
               }

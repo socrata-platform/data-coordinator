@@ -130,7 +130,7 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
       case Some(pkCol) =>
         findRowId(id) match {
           case Some(InspectedRowless(_, sid, oldVersion)) =>
-            rowPreparer.prepareForDelete(id, version, oldVersion) match {
+            rowPreparer.prepareForDelete(id, version.map(Some(_)), oldVersion) match {
               case None =>
                 val (result, ()) = sqlizer.deleteBatch(connection) { deleter =>
                   deleter.delete(sid)

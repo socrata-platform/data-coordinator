@@ -101,6 +101,6 @@ case object NoPrimaryKey extends Failure[Nothing] {
 }
 
 sealed abstract class RowPreparerDeclinedUpsert[CV] extends Failure[CV]
-case class VersionMismatch[CV](id: CV, expected: RowVersion, actual: RowVersion) extends RowPreparerDeclinedUpsert[CV] {
+case class VersionMismatch[CV](id: CV, expected: Option[RowVersion], actual: Option[RowVersion]) extends RowPreparerDeclinedUpsert[CV] {
   def map[B](f: CV => B) = VersionMismatch(f(id), expected, actual)
 }
