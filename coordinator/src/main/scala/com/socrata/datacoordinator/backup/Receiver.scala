@@ -16,7 +16,7 @@ import com.socrata.datacoordinator.truth.loader.Delogger
 import com.socrata.datacoordinator.id.{ColumnId, DatasetId}
 import com.socrata.datacoordinator.common.soql.{SoQLTypeContext, SoQLRowLogCodec}
 import com.socrata.datacoordinator.truth.sql.DatabasePopulator
-import com.socrata.datacoordinator.common.StandardDatasetMapLimits
+import com.socrata.datacoordinator.common.{DataSourceConfig, DataSourceFromConfig, StandardDatasetMapLimits}
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.util.collection.{MutableColumnIdMap, ColumnIdMap}
 import org.xerial.snappy.SnappyInputStream
@@ -27,6 +27,8 @@ import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
 import com.socrata.datacoordinator.util.NoopTimingReport
 import com.socrata.soql.types.SoQLType
+import org.apache.log4j.PropertyConfigurator
+import com.socrata.thirdparty.typesafeconfig.Propertizer
 
 final abstract class Receiver
 
@@ -35,6 +37,7 @@ object Receiver extends App {
   val config = ConfigFactory.load()
   println(config.root.render)
   val receiverConfig = config.getConfig("com.socrata.backup.receiver")
+  PropertyConfigurator.configure(Propertizer("log4j", receiverConfig.getConfig("log4j")))
 
   val address = new InetSocketAddress(InetAddress.getByName(receiverConfig.getString("network.host")), receiverConfig.getInt("network.port"))
   val reuseAddr = receiverConfig.getBoolean("network.reuse-address")

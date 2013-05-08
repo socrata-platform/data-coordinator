@@ -31,6 +31,9 @@ import com.socrata.datacoordinator.truth.metadata.CopyInfo
 import com.socrata.datacoordinator.util.{NoopTimingReport, TimingReport}
 import scala.Some
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
+import com.socrata.datacoordinator.common.{DataSourceConfig, DataSourceFromConfig}
+import org.apache.log4j.PropertyConfigurator
+import com.socrata.thirdparty.typesafeconfig.Propertizer
 
 final abstract class Transmitter
 
@@ -40,6 +43,7 @@ object Transmitter extends App {
   val config = ConfigFactory.load()
   println(config.root.render)
   val backupConfig = config.getConfig("com.socrata.backup.transmitter")
+  PropertyConfigurator.configure(Propertizer("log4j", backupConfig.getConfig("log4j")))
 
   val address = new InetSocketAddress(InetAddress.getByName(backupConfig.getString("network.host")), backupConfig.getInt("network.port"))
   val maxPacketSize = backupConfig.getInt("network.max-packet-size")
