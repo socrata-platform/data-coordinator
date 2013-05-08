@@ -35,7 +35,7 @@ import com.socrata.datacoordinator.truth.loader.Insert
 import com.socrata.datacoordinator.util.{NoopTimingReport, TimingReport}
 import scala.concurrent.duration.Duration
 
-class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingReport, paranoid: Boolean) {
+class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingReport, paranoid: Boolean, copyIn: (Connection, String, Reader) => Long) {
   val typeContext = SoQLTypeContext
   val logger: Logger[SoQLType, SoQLValue] = NullLogger[SoQLType, SoQLValue]
   val typeNamespace = SoQLTypeContext.typeNamespace
@@ -45,7 +45,7 @@ class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingRe
   def genericRepFor(columnInfo: ColumnInfo[SoQLType]): SqlColumnRep[SoQLType, SoQLValue] =
     SoQLRep.sqlRep(columnInfo)
 
-  def extractCopier(conn: Connection, sql: String, input: Reader): Long = conn.asInstanceOf[PGConnection].getCopyAPI.copyIn(sql, input)
+  def extractCopier(conn: Connection, sql: String, input: Reader): Long = copyIn(conn, sql, input)
 
   val schemaLoader: SchemaLoader[SoQLType] = new RepBasedPostgresSchemaLoader(conn, logger, genericRepFor, tablespace)
   val contentsCopier: DatasetContentsCopier[SoQLType] = new RepBasedSqlDatasetContentsCopier(conn, logger, genericRepFor, timingReport)
@@ -323,6 +323,8 @@ object Backup extends App {
 
   val executor = Executors.newCachedThreadPool()
 
+  def copyIn(conn: Connection, sql: String, reader: Reader) = conn.asInstanceOf[PGConnection].getCopyAPI.copyIn(sql, reader)
+
   val timingReport = NoopTimingReport
   try {
     for {
@@ -334,7 +336,7 @@ object Backup extends App {
       try {
         DatabasePopulator.populate(backupConn, datasetMapLimits)
 
-        val bkp = new Backup(backupConn, executor, timingReport, paranoid = true)
+        val bkp = new Backup(backupConn, executor, timingReport, paranoid = true, copyIn = copyIn)
 
         for {
           globalLogStmt <- managed(primaryConn.prepareStatement("SELECT id, dataset_system_id, version FROM global_log ORDER BY id"))

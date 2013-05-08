@@ -56,7 +56,9 @@ object Receiver extends App {
   val protocol = new Protocol(codec)
   import protocol._
 
-  using(openConnection()) { conn =>
+  val (dataSource, copyIn) = DataSourceFromConfig(new DataSourceConfig(receiverConfig.getConfig("database")))
+
+  using(dataSource.getConnection()) { conn =>
     conn.setAutoCommit(false)
     DatabasePopulator.populate(conn, datasetMapLimits)
     conn.commit()
@@ -94,13 +96,10 @@ object Receiver extends App {
     }
   }
 
-  def openConnection(): Connection =
-    DriverManager.getConnection(receiverConfig.getString("database.url"), receiverConfig.getString("database.username"), receiverConfig.getString("database.password"))
-
   def datasetUpdateRequested(datasetId: DatasetId, version: Long, client: Packets) {
-    using(openConnection()) { conn =>
+    using(dataSource.getConnection()) { conn =>
       conn.setAutoCommit(false)
-      val backup = new Backup(conn, executor, timingReport, paranoid = true)
+      val backup = new Backup(conn, executor, timingReport, paranoid = true, copyIn = copyIn)
 
       try {
         backup.datasetMap.datasetInfo(datasetId, Duration.Inf) match {

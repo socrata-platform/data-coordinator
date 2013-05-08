@@ -53,8 +53,7 @@ object Transmitter extends App {
 
   val provider = SelectorProvider.provider
 
-  def openConnection(): Connection =
-    DriverManager.getConnection(backupConfig.getString("database.url"), backupConfig.getString("database.username"), backupConfig.getString("database.password"))
+  val (dataSource, _) = DataSourceFromConfig(new DataSourceConfig(backupConfig.getConfig("database")))
 
   val rowCodecFactory = () => SoQLRowLogCodec
   val protocol = new Protocol(new LogDataCodec(rowCodecFactory))
@@ -74,7 +73,7 @@ object Transmitter extends App {
     val client = new NetworkPackets(socket, maxPacketSize)
 
     while(true) {
-      using(openConnection()) { conn =>
+      using(dataSource.getConnection()) { conn =>
         val playback = new PostgresGlobalLogPlayback(conn)
         val backupMfst = new PostgresBackupPlaybackManifest(conn)
         val lastJob = backupMfst.lastJobId()
