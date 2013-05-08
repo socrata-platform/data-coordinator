@@ -23,7 +23,7 @@ import scala.concurrent.duration.Duration
 import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
-import com.socrata.datacoordinator.id.RowId
+import com.socrata.datacoordinator.id.{DatasetId, RowId}
 import com.socrata.datacoordinator.truth.json.JsonColumnWriteRep
 
 trait PostgresCommonSupport[CT, CV] {
@@ -38,6 +38,8 @@ trait PostgresCommonSupport[CT, CV] {
   val tablespace: String => Option[String]
   val copyInProvider: (Connection, String, Reader) => Long
   val timingReport: TransferrableContextTimingReport
+
+  val datasetIdFormatter: DatasetId => String
 
   def rowPreparer(transactionStart: DateTime, ctx: DatasetCopyContext[CT], replaceUpdatedRows: Boolean): RowPreparer[CV]
 
@@ -100,7 +102,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
     new PostgresSecondaryPlaybackManifest(conn, storeId)
 
   lazy val playbackToSecondary: PlaybackToSecondary[CT, CV] =
-    new PlaybackToSecondary(conn, secondaryManifest, typeContext.typeNamespace, repFor, timingReport)
+    new PlaybackToSecondary(conn, secondaryManifest, typeContext.typeNamespace, repFor, datasetIdFormatter, timingReport)
 
   def logger(datasetInfo: DatasetInfo): Logger[CT, CV] = {
     val logName = datasetInfo.logTableName

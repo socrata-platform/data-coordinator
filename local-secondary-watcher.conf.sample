@@ -10,4 +10,7 @@ com.socrata.secondary-watcher {
     username = "blist"
     password = "blist"
   }
+
+  # Must be the correct instance name for the data coordinator
+  instance = alpha
 }

@@ -60,7 +60,10 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
               versionInStore: (String, DatasetId) => Option[Long],
               updateVersionInStore: (String, DatasetId) => Unit,
               secondariesOfDataset: DatasetId => Map[String, Long],
-              commandReadLimit: Long)
+              datasets: () => Seq[DatasetId],
+              commandReadLimit: Long,
+              formatDatasetId: DatasetId => String,
+              parseDatasetId: String => Option[DatasetId])
 {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
 
@@ -258,7 +261,7 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
         def colErr(msg: String, dataset: DatasetId, name: ColumnName, resp: HttpResponse = BadRequest) = {
           import scala.language.reflectiveCalls
           err(resp, msg,
-            "dataset" -> JString(dataset.underlying.toString),
+            "dataset" -> JString(formatDatasetId(dataset)),
             "column" -> JString(name.name))
         }
         e match {
@@ -273,7 +276,7 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
               "field" -> JString(field))
           case Mutator.MismatchedSchemaHash(name, schema) =>
             err(Conflict, "req.script.header.mismatched-schema",
-              "dataset" -> JString(name.underlying.toString),
+              "dataset" -> JString(formatDatasetId(name)),
               "schema" -> jsonifySchema(schema))
           case Mutator.InvalidCommandFieldValue(obj, field, value) =>
             err(BadRequest, "req.script.command.invalid-field",
@@ -281,18 +284,18 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
               "field" -> JString(field),
               "value" -> value)
           case Mutator.NoSuchDataset(name) =>
-            notFoundError(name.underlying.toString)
+            notFoundError(formatDatasetId(name))
           case Mutator.CannotAcquireDatasetWriteLock(name) =>
             err(Conflict, "update.dataset.temporarily-not-writable",
-              "dataset" -> JString(name.underlying.toString))
+              "dataset" -> JString(formatDatasetId(name)))
           case Mutator.IncorrectLifecycleStage(name, currentStage, expectedStage) =>
             err(Conflict, "update.dataset.invalid-state",
-              "dataset" -> JString(name.underlying.toString),
+              "dataset" -> JString(formatDatasetId(name)),
               "actual-state" -> JString(currentStage.name),
               "expected-state" -> JArray(expectedStage.toSeq.map(_.name).map(JString)))
           case Mutator.InitialCopyDrop(name) =>
             err(Conflict, "update.dataset.initial-copy-drop",
-              "dataset" -> JString(name.underlying.toString))
+              "dataset" -> JString(formatDatasetId(name)))
           case Mutator.ColumnAlreadyExists(dataset, name) =>
             colErr("update.column.exists", dataset, name, Conflict)
           case Mutator.IllegalColumnName(columnName) =>
@@ -307,12 +310,12 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
             colErr("update.column.system", dataset, name)
           case Mutator.PrimaryKeyAlreadyExists(datasetName, columnName, existingColumn) =>
             err(BadRequest, "update.row-identifier.already-set",
-              "dataset" -> JString(datasetName.underlying.toString),
+              "dataset" -> JString(formatDatasetId(datasetName)),
               "column" -> JString(columnName.name),
               "existing-column" -> JString(existingColumn.name))
           case Mutator.InvalidTypeForPrimaryKey(datasetName, columnName, typeName) =>
             err(BadRequest, "update.row-identifier.invalid-type",
-              "dataset" -> JString(datasetName.underlying.toString),
+              "dataset" -> JString(formatDatasetId(datasetName)),
               "column" -> JString(columnName.name),
               "type" -> JString(typeName.name))
           case Mutator.DuplicateValuesInColumn(dataset, name) =>
@@ -331,24 +334,24 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
               "value" -> value)
           case Mutator.UpsertError(datasetName, NoPrimaryKey, _) =>
             err(BadRequest, "update.row.no-id",
-              "dataset" -> JString(datasetName.underlying.toString))
+              "dataset" -> JString(formatDatasetId(datasetName)))
           case Mutator.UpsertError(datasetName, NoSuchRowToDelete(id), _) =>
             err(BadRequest, "update.row.no-such-id",
-              "dataset" -> JString(datasetName.underlying.toString),
+              "dataset" -> JString(formatDatasetId(datasetName)),
               "value" -> id)
           case Mutator.UpsertError(datasetName, NoSuchRowToUpdate(id),_ ) =>
             err(BadRequest, "update.row.no-such-id",
-              "dataset" -> JString(datasetName.underlying.toString),
+              "dataset" -> JString(formatDatasetId(datasetName)),
               "value" -> id)
           case Mutator.UpsertError(datasetName, VersionMismatch(id, expected, actual), rowVersionToJson) =>
             err(BadRequest, "update.row-version-mismatch",
-              "dataset" -> JString(datasetName.underlying.toString),
+              "dataset" -> JString(formatDatasetId(datasetName)),
               "value" -> id,
               "expected" -> expected.map(rowVersionToJson).getOrElse(JNull),
               "actual" -> actual.map(rowVersionToJson).getOrElse(JNull))
           case Mutator.UpsertError(datasetName, VersionOnNewRow, _) =>
             err(BadRequest, "update.version-on-new-row",
-              "dataset" -> JString(datasetName.underlying.toString))
+              "dataset" -> JString(formatDatasetId(datasetName)))
         }
     }
   }
@@ -368,7 +371,7 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
           OK ~> ContentType("application/json; charset=utf-8") ~> Write { w =>
             val bw = new BufferedWriter(w)
             bw.write('[')
-            bw.write(JString(dataset.underlying.toString).toString)
+            bw.write(JString(formatDatasetId(dataset)).toString)
             bw.write(',')
             EventTokenIterator(result).foreach { t => bw.write(t.asFragment) }
             bw.write(']')
@@ -417,13 +420,6 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
     ))
   }
 
-  def parseDatasetId(raw: String): Option[DatasetId] =
-    try {
-      Some(new DatasetId(raw.toLong))
-    } catch {
-      case _: NumberFormatException => None
-    }
-
   def doGetSchema(datasetIdRaw: String)(req: HttpServletRequest): HttpResponse = {
     val result = for {
       datasetId <- parseDatasetId(datasetIdRaw)
@@ -436,12 +432,30 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
     result.getOrElse(NotFound)
   }
 
+  def doListDatasets()(req: HttpServletRequest): HttpResponse = {
+    val ds = datasets()
+    OK ~> ContentType("application/json; charset=utf-8") ~> Write { w =>
+      val bw = new BufferedWriter(w)
+      val jw = new CompactJsonWriter(bw)
+      bw.write('[')
+      var didOne = false
+      for(dsid <- ds) {
+        if(didOne) bw.write(',')
+        else didOne = true
+        jw.write(JString(formatDatasetId(dsid)))
+      }
+      bw.write(']')
+      bw.flush()
+    }
+  }
+
   val router = RouterSet(
     ExtractingRouter[HttpService]("POST", "/dataset")(doCreation _),
     ExtractingRouter[HttpService]("POST", "/dataset/?")(doMutation _),
     ExtractingRouter[HttpService]("GET", "/dataset/?/schema")(doGetSchema _),
     // ExtractingRouter[HttpService]("DELETE", "/dataset/?")(doDeleteDataset _),
     ExtractingRouter[HttpService]("GET", "/dataset/?")(doExportFile _),
+    ExtractingRouter[HttpService]("GET", "/datasets")(doListDatasets _),
     ExtractingRouter[HttpService]("GET", "/secondary-manifest")(doGetSecondaries _),
     ExtractingRouter[HttpService]("GET", "/secondary-manifest/?")(doGetSecondaryManifest _),
     ExtractingRouter[HttpService]("GET", "/secondary-manifest/?/?")(doGetDataVersionInSecondary _),
@@ -543,7 +557,8 @@ object Service extends App { self =>
         executorService,
         _ => Some("pg_default"),
         new LoggedTimingReport(org.slf4j.LoggerFactory.getLogger("timing-report")) with StackedTimingReport,
-        allowDdlOnPublishedCopies = serviceConfig.allowDdlOnPublishedCopies
+        allowDdlOnPublishedCopies = serviceConfig.allowDdlOnPublishedCopies,
+        serviceConfig.instance
       )
     }
 
@@ -621,9 +636,16 @@ object Service extends App { self =>
       res.isDefined
     }
 
+    def listDatasets(): Seq[DatasetId] = {
+      for(u <- common.universe) yield {
+        u.datasetMapReader.allDatasetIds()
+      }
+    }
+
     val serv = new Service(processMutation, processCreation, common.Mutator.schemaFinder.getSchema, exporter,
       secondaries.keySet, datasetsInStore, versionInStore, updateVersionInStore,
-      secondariesOfDataset, serviceConfig.commandReadLimit)
+      secondariesOfDataset, listDatasets, serviceConfig.commandReadLimit,
+      common.internalNameFromDatasetId, common.datasetIdFromInternalName)
 
     for {
       curator <- managed(CuratorFrameworkFactory.builder.
@@ -642,7 +664,7 @@ object Service extends App { self =>
     } {
       curator.start()
       discovery.start()
-      serv.run(serviceConfig.network.port, new CuratorBroker(discovery, serviceConfig.advertisement.address, serviceConfig.advertisement.name + "." + serviceConfig.advertisement.instance))
+      serv.run(serviceConfig.network.port, new CuratorBroker(discovery, serviceConfig.advertisement.address, serviceConfig.advertisement.name + "." + serviceConfig.instance))
     }
 
     secondaries.values.foreach(_.shutdown())

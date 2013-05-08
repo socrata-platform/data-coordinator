@@ -18,7 +18,7 @@ import com.socrata.datacoordinator.truth.sql.SqlColumnReadRep
 import org.slf4j.LoggerFactory
 import com.socrata.datacoordinator.util.TimingReport
 
-class PlaybackToSecondary[CT, CV](conn: Connection, secondaryManifest: SecondaryManifest, typeNamespace: TypeNamespace[CT], repFor: ColumnInfo[CT] => SqlColumnReadRep[CT, CV], timingReport: TimingReport) {
+class PlaybackToSecondary[CT, CV](conn: Connection, secondaryManifest: SecondaryManifest, typeNamespace: TypeNamespace[CT], repFor: ColumnInfo[CT] => SqlColumnReadRep[CT, CV], datasetIdFormatter: DatasetId => String, timingReport: TimingReport) {
   require(!conn.getAutoCommit, "Connection must not be in auto-commit mode")
 
   val log = LoggerFactory.getLogger(classOf[PlaybackToSecondary[_,_]])
@@ -51,7 +51,7 @@ class PlaybackToSecondary[CT, CV](conn: Connection, secondaryManifest: Secondary
 
   def drop(secondary: NamedSecondary[CT, CV], datasetId: DatasetId) {
     timingReport("drop", "dataset" -> datasetId) {
-      secondary.store.dropDataset(datasetId, getCookie(secondary, datasetId))
+      secondary.store.dropDataset(datasetIdFormatter(datasetId), getCookie(secondary, datasetId))
       dropFromSecondaryMap(secondary, datasetId)
     }
   }
@@ -108,7 +108,7 @@ class PlaybackToSecondary[CT, CV](conn: Connection, secondaryManifest: Secondary
     timingReport("playback-all", "secondary" -> secondary.storeId, "dataset" -> datasetInfo.systemId) {
       val latest = datasetMapReader.latest(datasetInfo)
       var currentCookie = getCookie(secondary, datasetInfo.systemId)
-      val currentVersion = secondary.store.currentVersion(datasetInfo.systemId, currentCookie)
+      val currentVersion = secondary.store.currentVersion(datasetIdFormatter(datasetInfo.systemId), currentCookie)
 
       if(latest.dataVersion > currentVersion) { // ok, we certainly need to do SOMETHING
         for(v <- (currentVersion + 1) to latest.dataVersion) {
@@ -147,7 +147,7 @@ class PlaybackToSecondary[CT, CV](conn: Connection, secondaryManifest: Secondary
   def playbackPublished(datasetInfo: DatasetInfo, secondary: NamedSecondary[CT, CV], datasetMapReader: DatasetMapReader[CT], delogger: Delogger[CV]) {
     timingReport("playback-published", "secondary" -> secondary.storeId, "dataset" -> datasetInfo.systemId) {
       var currentCookie = getCookie(secondary, datasetInfo.systemId)
-      val currentVersion = secondary.store.currentVersion(datasetInfo.systemId, currentCookie)
+      val currentVersion = secondary.store.currentVersion(datasetIdFormatter(datasetInfo.systemId), currentCookie)
       log.info("Secondary store currently has {}", currentVersion)
       datasetMapReader.published(datasetInfo) match {
         case Some(publishedVersion) =>

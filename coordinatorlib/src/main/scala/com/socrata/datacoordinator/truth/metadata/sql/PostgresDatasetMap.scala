@@ -133,6 +133,19 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
       }
     }
 
+  def allDatasetsQuery = "SELECT system_id FROM dataset_map order by system_id"
+  def allDatasetIds(): Seq[DatasetId] = {
+    using(conn.prepareStatement(allDatasetsQuery)) { stmt =>
+      using(t("all-datasets")(stmt.executeQuery())) { rs =>
+        val res = new VectorBuilder[DatasetId]
+        while(rs.next()) {
+          res += rs.getDatasetId(1)
+        }
+        res.result()
+      }
+    }
+  }
+
   def schemaQuery = "SELECT system_id, logical_column_orig, logical_column_folded, type_name, physical_column_base_base, (is_system_primary_key IS NOT NULL) is_system_primary_key, (is_user_primary_key IS NOT NULL) is_user_primary_key, (is_version IS NOT NULL) is_version FROM column_map WHERE copy_system_id = ?"
   def schema(copyInfo: CopyInfo) = {
     using(conn.prepareStatement(schemaQuery)) { stmt =>

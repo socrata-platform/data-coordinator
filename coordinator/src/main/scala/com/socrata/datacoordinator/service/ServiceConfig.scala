@@ -12,4 +12,7 @@ class ServiceConfig(val config: Config) {
   val logProperties = config.getConfig("log4j")
   val commandReadLimit = config.getBytes("command-read-limit").longValue
   val allowDdlOnPublishedCopies = config.getBoolean("allow-ddl-on-published-copies")
+  val instance = config.getString("instance")
+
+  require(instance.matches("[a-zA-Z0-9._]+"), "Instance names must consist of only ASCII letters, numbers, periods, and underscores")
 }

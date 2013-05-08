@@ -121,7 +121,8 @@ object SecondaryWatcher extends App { self =>
     executor,
     _ => None,
     new LoggedTimingReport(log) with StackedTimingReport,
-    allowDdlOnPublishedCopies = false // don't care
+    allowDdlOnPublishedCopies = false, // don't care
+    config.getString("instance")
   )
 
   val w = new SecondaryWatcher(common.universe)

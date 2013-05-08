@@ -14,7 +14,7 @@ import com.socrata.datacoordinator.truth.universe.sql.{PostgresUniverse, Postgre
 import org.joda.time.DateTime
 import com.socrata.datacoordinator.util.collection.{ColumnIdSet, ColumnIdMap}
 import com.socrata.datacoordinator.truth.loader.RowPreparer
-import com.socrata.datacoordinator.id.{RowVersion, RowId}
+import com.socrata.datacoordinator.id.{DatasetId, RowVersion, RowId}
 import java.sql.Connection
 import java.io.Reader
 import com.socrata.datacoordinator.util.{RowDataProvider, TransferrableContextTimingReport}
@@ -43,10 +43,26 @@ class SoQLCommon(dataSource: DataSource,
                  executorService: ExecutorService,
                  tableSpace: String => Option[String],
                  val timingReport: TransferrableContextTimingReport,
-                 allowDdlOnPublishedCopies: Boolean)
+                 allowDdlOnPublishedCopies: Boolean,
+                 instance: String)
 { common =>
   type CT = SoQLType
   type CV = SoQLValue
+
+  private val internalNamePrefix = instance + "."
+  def datasetIdFromInternalName(internalName: String): Option[DatasetId] = {
+    if(internalName.startsWith(instance)) {
+      try {
+        Some(new DatasetId(internalName.substring(internalNamePrefix.length).toLong))
+      } catch {
+        case _: NumberFormatException => None
+      }
+    } else {
+      None
+    }
+  }
+  def internalNameFromDatasetId(datasetId: DatasetId) =
+    internalNamePrefix + datasetId.underlying
 
   val datasetMapLimits = StandardDatasetMapLimits
 
@@ -100,6 +116,8 @@ class SoQLCommon(dataSource: DataSource,
 
     def isSystemColumn(ci: AbstractColumnInfoLike): Boolean =
       isSystemColumnName(ci.logicalName)
+
+    val datasetIdFormatter = internalNameFromDatasetId _
 
     def rowPreparer(transactionStart: DateTime, ctx: DatasetCopyContext[CT], replaceUpdatedRows: Boolean): RowPreparer[SoQLValue] =
       new RowPreparer[SoQLValue] {

@@ -39,6 +39,8 @@ trait BaseDatasetMapReader[CT] {
     * @param copyNumber The copy number to look up.
     */
   def copyNumber(datasetInfo: DatasetInfo, copyNumber: Long): Option[CopyInfo]
+
+  def allDatasetIds(): Seq[DatasetId]
 }
 
 trait BaseDatasetMapWriter[CT] extends BaseDatasetMapReader[CT] {

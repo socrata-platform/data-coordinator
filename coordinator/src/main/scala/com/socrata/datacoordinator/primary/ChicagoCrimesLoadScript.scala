@@ -56,7 +56,8 @@ object ChicagoCrimesLoadScript extends App {
       executor,
       Function.const(None),
       new LoggedTimingReport(LoggerFactory.getLogger("timing-report")) with StackedTimingReport,
-      allowDdlOnPublishedCopies = false
+      allowDdlOnPublishedCopies = false,
+      "dummy instance"
     )
 
     com.rojoma.simplearm.util.using(ds.getConnection()) { conn =>
