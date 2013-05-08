@@ -45,7 +45,7 @@ object Transmitter extends App {
   val backupConfig = config.getConfig("com.socrata.backup.transmitter")
   PropertyConfigurator.configure(Propertizer("log4j", backupConfig.getConfig("log4j")))
 
-  val address = new InetSocketAddress(InetAddress.getByName(backupConfig.getString("network.host")), backupConfig.getInt("network.port"))
+  val address = new InetSocketAddress(InetAddress.getByName(backupConfig.getString("network.backup-host")), backupConfig.getInt("network.port"))
   val maxPacketSize = backupConfig.getInt("network.max-packet-size")
   val connectTimeout = backupConfig.getMilliseconds("network.connect-timeout").longValue.milliseconds
   val newTaskAcknowledgementTimeout = backupConfig.getMilliseconds("network.new-task-acknowledgement-timeout").longValue.milliseconds

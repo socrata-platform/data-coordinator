@@ -390,7 +390,6 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
       stmt.setBytes(4, datasetInfo.obfuscationKey)
       try {
         t("unsafe-create-dataset", "dataset_id" -> systemId)(stmt.execute())
-        stmt.execute()
       } catch {
         case PostgresUniqueViolation("system_id") =>
           throw new DatasetSystemIdAlreadyInUse(systemId)
