@@ -130,7 +130,7 @@ CREATE OR REPLACE FUNCTION update_backup_log() RETURNS trigger as $update_backup
     IF (last_data_version <> NEW.data_version AND last_data_version + 1 <> NEW.data_version) THEN
       RAISE EXCEPTION 'New data version was not within appropriate bounds: (old: %, new: %)', last_data_version, NEW.data_version;
     END IF;
-    UPDATE backup_log SET latest_data_version = NEW.data_version, updated_at = now() WHERE backup_log.dataset_system_id = NEW.dataset_system_id;
+    UPDATE backup_log SET latest_data_version = NEW.data_version, updated_at = CURRENT_TIMESTAMP WHERE backup_log.dataset_system_id = NEW.dataset_system_id;
     RETURN NEW;
   END;
 $update_backup_log$ LANGUAGE PLPGSQL;
