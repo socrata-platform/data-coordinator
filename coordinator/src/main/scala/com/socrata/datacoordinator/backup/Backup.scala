@@ -168,7 +168,7 @@ class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingRe
     if(paranoid) {
       val oldSchema = datasetMap.schema(oldVersion)
       Resync.unless(currentVersion,
-        oldSchema.mapValuesStrict(_.unanchored.copy(isSystemPrimaryKey = false, isUserPrimaryKey = false)) == newSchema.mapValuesStrict(_.unanchored),
+        oldSchema.mapValuesStrict(_.unanchored.copy(isSystemPrimaryKey = false, isUserPrimaryKey = false, isVersion = false)) == newSchema.mapValuesStrict(_.unanchored),
         "published and unpublished schemas differ:\n" + oldSchema.mapValuesStrict(_.unanchored) + "\n" + newSchema.mapValuesStrict(_.unanchored))
     }
 

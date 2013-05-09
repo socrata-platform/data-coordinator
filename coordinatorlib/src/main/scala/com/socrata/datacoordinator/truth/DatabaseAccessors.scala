@@ -278,7 +278,15 @@ object DatasetMutator {
                 maybeSystemIdCol
               }
 
-              if(maybeUserIdCol ne ci) newCopyCtx.addColumn(maybeUserIdCol)
+              val maybeVersioncol = if(copyCtx.columnInfo(maybeUserIdCol.systemId).isVersion) {
+                val verified = datasetMap.setVersion(maybeUserIdCol)
+                schemaLoader.makeVersion(verified)
+                verified
+              } else {
+                maybeUserIdCol
+              }
+
+              if(maybeVersioncol ne ci) newCopyCtx.addColumn(maybeVersioncol)
             }
 
             copyCtx = newCopyCtx
