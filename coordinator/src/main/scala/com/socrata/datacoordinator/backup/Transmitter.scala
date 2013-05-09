@@ -34,6 +34,8 @@ import com.socrata.datacoordinator.truth.metadata.CopyInfo
 import com.socrata.datacoordinator.common.{DataSourceConfig, DataSourceFromConfig}
 import org.apache.log4j.PropertyConfigurator
 import com.socrata.thirdparty.typesafeconfig.Propertizer
+import com.socrata.datacoordinator.truth.backuplog.sql.SqlBackupLog
+import com.socrata.datacoordinator.truth.backuplog.{BackupLog, BackupRecord}
 
 final abstract class Transmitter
 
@@ -74,12 +76,12 @@ object Transmitter extends App {
 
     while(true) {
       using(dataSource.getConnection()) { conn =>
-        val playback = new PostgresGlobalLogPlayback(conn)
-        val backupMfst = new PostgresBackupPlaybackManifest(conn)
-        val lastJob = backupMfst.lastJobId()
-        val tasks = playback.pendingJobs(lastJob).buffered
-        if(tasks.nonEmpty) {
-          send(client, conn, lastJob, backupMfst, tasks, timingReport)
+        val backupLog = new SqlBackupLog(conn)
+        val datasets = backupLog.findDatasetsNeedingBackup()
+        if(datasets.nonEmpty) {
+          for(backupJob <- datasets) {
+            send(client, conn, backupJob, backupLog, timingReport)
+          }
         } else {
           client.send(NothingYet())
           client.receive() match {
@@ -96,22 +98,20 @@ object Transmitter extends App {
     }
   }
 
-  def send(socket: Packets, conn: Connection, initialLastJobId: GlobalLogEntryId, backupMfst: PlaybackManifest, tasks: TraversableOnce[GlobalLogPlayback#Job], timingReport: TimingReport) {
-    var lastJobId = initialLastJobId
-    for(job <- tasks) {
-      assert(job.id.underlying == lastJobId.underlying + 1, "MISSING JOBS IN GLOBAL QUEUE!!!!")
-      lastJobId = job.id
-
+  def send(socket: Packets, conn: Connection, backupJob: BackupRecord, backupLog: BackupLog, timingReport: TimingReport) {
+    val datasetId = backupJob.datasetId
+    for(version <- backupJob.startingDataVersion to backupJob.endingDataVersion) {
+      def finishedJob() { backupLog.completedBackupTo(datasetId, version) }
       val datasetMap = new PostgresDatasetMapReader(conn, typeContext.typeNamespace, timingReport)
-      log.info("Sending dataset {}'s version {}", job.datasetId.underlying, job.version)
+      log.info("Sending dataset {}'s version {}", datasetId.underlying, version)
       try {
-        datasetMap.datasetInfo(job.datasetId) match {
+        datasetMap.datasetInfo(datasetId) match {
           case Some(datasetInfo) =>
-            socket.send(DatasetUpdated(job.datasetId, job.version))
+            socket.send(DatasetUpdated(datasetId, version))
             val delogger = new SqlDelogger(conn, datasetInfo.logTableName, rowCodecFactory)
             try {
               for {
-                it <- managed(delogger.delog(job.version))
+                it <- managed(delogger.delog(version))
                 event <- it
               } {
                 log.info("Sending LogData({})", event)
@@ -120,7 +120,7 @@ object Transmitter extends App {
                   case Some(AlreadyHaveThat()) =>
                     log.info("Backup says it already has this version.  Abandoning the send.")
                     socket.send(DataDone())
-                    backupMfst.finishedJob(job.id)
+                    finishedJob()
                     throw new AbortJobButDontResync
                   case Some(ResyncRequired()) =>
                     log.warn("Backup signalled that it wants a resync; abandoning logdata send")
@@ -137,10 +137,10 @@ object Transmitter extends App {
               socket.receive() match {
                 case Some(AcknowledgeReceipt()) =>
                   log.info("Backup has acknowledged receipt and committed to its store.")
-                  backupMfst.finishedJob(job.id)
+                  finishedJob()
                 case Some(AlreadyHaveThat()) =>
                   log.info("Backup says it already has this version.  Oh well, sent it unnecessarily.")
-                  backupMfst.finishedJob(job.id)
+                  finishedJob()
                 case Some(ResyncRequired()) =>
                   log.warn("Backup signalled that it wants a resync")
                   throw new ResyncRequested
@@ -151,13 +151,13 @@ object Transmitter extends App {
               case _: AbortJobButDontResync => // ok
             }
           case None =>
-            log.warn(s"Dataset ${job.datasetId.underlying} is in the global log but there is no record of it.  It must have been deleted.")
+            log.warn(s"Dataset ${datasetId.underlying} is in the global log but there is no record of it.  It must have been deleted.")
             // TODO: Send "delete this dataset" message...
         }
       } catch {
         case _: ResyncRequested =>
-          handleResyncRequest(socket, conn, job.datasetId)
-          backupMfst.finishedJob(job.id)
+          handleResyncRequest(socket, conn, datasetId)
+          finishedJob()
       }
     }
   }
