@@ -9,7 +9,14 @@ import com.socrata.datacoordinator.id.RowId
 import com.socrata.datacoordinator.truth.RowLogCodec
 import scala.collection.immutable.VectorBuilder
 
+sealed abstract class CorruptLogException(val version: Long, msg: String) extends Exception(msg)
+class MissingVersion(version: Long, msg: String) extends CorruptLogException(version, msg)
+class NoEndOfTransactionMarker(version: Long, msg: String) extends CorruptLogException(version, msg)
+class SkippedSubversion(version: Long, val expectedSubversion: Long, val foundSubversion: Long, msg: String) extends CorruptLogException(version, msg)
+class UnknownEvent(version: Long, val event: String, msg: String) extends CorruptLogException(version, msg)
+
 trait Delogger[CV] extends Closeable {
+  @throws(classOf[MissingVersion])
   def delog(version: Long): CloseableIterator[Delogger.LogEvent[CV]]
   def findPublishEvent(fromVersion: Long, toVersion: Long): Option[Long]
   def lastWorkingCopyCreatedVersion: Option[Long]

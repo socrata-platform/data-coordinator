@@ -12,7 +12,7 @@ import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.packets.network.NetworkPackets
 import com.socrata.datacoordinator.packets.{PacketsInputStream, Packets}
-import com.socrata.datacoordinator.truth.loader.Delogger
+import com.socrata.datacoordinator.truth.loader.{SchemaLoader, Delogger}
 import com.socrata.datacoordinator.id.{ColumnId, DatasetId}
 import com.socrata.datacoordinator.common.soql.{SoQLTypeContext, SoQLRowLogCodec}
 import com.socrata.datacoordinator.truth.sql.DatabasePopulator
@@ -86,6 +86,9 @@ object Receiver extends App {
             log.info("Dataset {} updated to version {}", id.underlying, version)
             datasetUpdateRequested(id, version, client)
             loop()
+          case Some(ForceResync(datasetId)) =>
+            forcedResyncRequested(datasetId, client)
+            loop()
           case Some(_) =>
             ??? // TODO: Unexpected packet received
           case None =>
@@ -120,6 +123,18 @@ object Receiver extends App {
           resync(conn, backup, datasetId, client)
       } finally {
         conn.rollback() // If we got a full response, we committed it earlier.  This SHOULD be a no-op.  No way to actually tell though.
+      }
+    }
+  }
+
+  def forcedResyncRequested(datasetId: DatasetId, client: Packets) {
+    using(dataSource.getConnection()) { conn =>
+      conn.setAutoCommit(false)
+      val backup = new Backup(conn, executor, timingReport, paranoid = true, copyIn = copyIn)
+      try {
+        resync(conn, backup, datasetId, client)
+      } finally {
+        conn.rollback()
       }
     }
   }
@@ -247,22 +262,40 @@ object Receiver extends App {
       client.send(AwaitingNextCopy())
       client.receive() match {
         case Some(NextResyncCopy(copyInfo, columns)) =>
-          val copy = backup.datasetMap.unsafeCreateCopy(clearedDatasetInfo, copyInfo.systemId, copyInfo.copyNumber, copyInfo.lifecycleStage, copyInfo.dataVersion)
+          val datasetMap = backup.datasetMap
+          val copy = datasetMap.unsafeCreateCopy(clearedDatasetInfo, copyInfo.systemId, copyInfo.copyNumber, copyInfo.lifecycleStage, copyInfo.dataVersion)
+          val actuallyDoDataOps = copy.lifecycleStage != LifecycleStage.Discarded
+          val schemaLoader: SchemaLoader[SoQLType] = if(actuallyDoDataOps) backup.schemaLoader else noopSchemaLoader
+
+          schemaLoader.create(copy)
 
           val schema = locally {
             val createdColumns = new MutableColumnIdMap[ColumnInfo[SoQLType]]
-            for(col <- columns) {
-              val colInfo = backup.datasetMap.addColumnWithId(col.systemId, copy, col.logicalName, typeNamespace.typeForName(copy.datasetInfo, col.typeName), col.physicalColumnBaseBase)
-              createdColumns(colInfo.systemId) = colInfo
+            for(col0 <- columns) {
+              val col1 = datasetMap.addColumnWithId(col0.systemId, copy, col0.logicalName, typeNamespace.typeForName(copy.datasetInfo, col0.typeName), col0.physicalColumnBaseBase)
+              schemaLoader.addColumn(col1)
+
+              def make[CT](col: ColumnInfo[CT])(cond: Boolean, mapOp: (ColumnInfo[CT]) => ColumnInfo[CT], op: (ColumnInfo[CT]) => Unit): ColumnInfo[CT] = {
+                if(cond) {
+                  val newCol = mapOp(col)
+                  op(newCol)
+                  newCol
+                } else {
+                  col
+                }
+              }
+              val col2 = make(col1)(col0.isSystemPrimaryKey, datasetMap.setSystemPrimaryKey, schemaLoader.makeSystemPrimaryKey)
+              val col3 = make(col2)(col0.isUserPrimaryKey, datasetMap.setUserPrimaryKey, schemaLoader.makePrimaryKey)
+              val col4 = make(col3)(col0.isVersion, datasetMap.setVersion, schemaLoader.makeVersion)
+              val colLast = col4
+
+              createdColumns(col4.systemId) = colLast
             }
             createdColumns.freeze()
           }
 
-          if(copy.lifecycleStage != LifecycleStage.Discarded) {
-            backup.schemaLoader.create(copy)
-            for(colInfo <- schema.values) backup.schemaLoader.addColumn(colInfo)
-            copyDataForResync(backup, client)(copy, schema, columns.map(_.systemId))
-          }
+          if(actuallyDoDataOps) copyDataForResync(backup, client)(copy, schema, columns.map(_.systemId))
+
           loop()
         case Some(NoMoreCopies()) =>
           // done
@@ -287,6 +320,24 @@ object Receiver extends App {
     } {
       decsvifier.importFromCsv(reader, columns)
     }
+  }
+
+  def noopSchemaLoader[CT] = new SchemaLoader[CT] {
+    def create(copyInfo: CopyInfo) {}
+
+    def drop(copyInfo: CopyInfo) {}
+
+    def addColumn(colInfo: ColumnInfo[CT]) {}
+
+    def dropColumn(colInfo: ColumnInfo[CT]) {}
+
+    def makePrimaryKey(colInfo: ColumnInfo[CT]) {}
+
+    def makeSystemPrimaryKey(colInfo: ColumnInfo[CT]) {}
+
+    def makeVersion(colInfo: ColumnInfo[CT]) {}
+
+    def dropPrimaryKey(colInfo: ColumnInfo[CT]): Boolean = true
   }
 }
 

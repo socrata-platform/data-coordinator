@@ -12,9 +12,14 @@ import com.socrata.datacoordinator.truth.metadata.{UnanchoredDatasetInfo, Unanch
 class Protocol[LogData](logDataCodec: Codec[LogData]) {
   import Packet.{SimplePacket, LabelledPacket}
 
+  // Top-level flow:
+  //   Primary sends one of NothingYet, ForceResync, or DatasetUpdated
+  //   If it was "NothingYet", wait for OkStillWaiting and then loop
+  //   If it was "ForceResync", enter the resync flow (below) then loop
+  //   If it was "DatasetUpdated", do the dataset update flow (below) then loop
+
   // primary -> backup
   object NothingYet extends SimplePacket("nothing yet")
-  object DataDone extends SimplePacket("data done")
 
   object DatasetUpdated extends LabelledPacket("dataset updated") {
     def apply(id: DatasetId, version: Long) =
@@ -34,6 +39,28 @@ class Protocol[LogData](logDataCodec: Codec[LogData]) {
       }
   }
 
+  object ForceResync extends LabelledPacket("forceresync") {
+    def apply(id: DatasetId) =
+      create { os =>
+        val dos = new DataOutputStream(os)
+        dos.writeLong(id.underlying)
+        dos.flush()
+      }
+    def unapply(packet: Packet): Option[DatasetId] =
+      extract(packet) map { data =>
+        if(data.remaining != 8) throw new PacketDecodeException("ForceResync packet does not contain 8 bytes of payload")
+        val id = new DatasetId(data.getLong)
+        id
+      }
+  }
+
+  // Dataset update flow:
+  //   Server sends LogData objects as quickly as it can, finished by DataDone.
+  //   Client sends (at any time!) AlreadyHaveThat or ResyncRequired.
+  //   If server receives AlreadyHaveThat, it sends data done and exits the flow
+  //   If server receives ResyncRequired it stops sending and enters the resync flow
+  //   Otherwise when done it awaits the AcknowledgeReceipt message
+
   object LogData extends LabelledPacket("log data") {
     def apply(event: LogData) = create { os =>
       val dos = new DataOutputStream(os)
@@ -46,6 +73,7 @@ class Protocol[LogData](logDataCodec: Codec[LogData]) {
       logDataCodec.decode(stream)
     }
   }
+  object DataDone extends SimplePacket("data done")
 
   // backup -> primary
   object OkStillWaiting extends SimplePacket("ok still waiting")

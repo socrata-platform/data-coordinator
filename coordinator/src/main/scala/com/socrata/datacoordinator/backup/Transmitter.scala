@@ -36,6 +36,7 @@ import org.apache.log4j.PropertyConfigurator
 import com.socrata.thirdparty.typesafeconfig.Propertizer
 import com.socrata.datacoordinator.truth.backuplog.sql.SqlBackupLog
 import com.socrata.datacoordinator.truth.backuplog.{BackupLog, BackupRecord}
+import com.socrata.datacoordinator.truth.loader.MissingVersion
 
 final abstract class Transmitter
 
@@ -100,65 +101,77 @@ object Transmitter extends App {
 
   def send(socket: Packets, conn: Connection, backupJob: BackupRecord, backupLog: BackupLog, timingReport: TimingReport) {
     val datasetId = backupJob.datasetId
-    for(version <- backupJob.startingDataVersion to backupJob.endingDataVersion) {
-      def finishedJob() { backupLog.completedBackupTo(datasetId, version) }
-      val datasetMap = new PostgresDatasetMapReader(conn, typeContext.typeNamespace, timingReport)
-      log.info("Sending dataset {}'s version {}", datasetId.underlying, version)
-      try {
+    try {
+      for(version <- backupJob.startingDataVersion to backupJob.endingDataVersion) {
+        def finishedJob() { backupLog.completedBackupTo(datasetId, version) }
+        val datasetMap = new PostgresDatasetMapReader(conn, typeContext.typeNamespace, timingReport)
+        log.info("Sending dataset {}'s version {}", datasetId.underlying, version)
         datasetMap.datasetInfo(datasetId) match {
           case Some(datasetInfo) =>
-            socket.send(DatasetUpdated(datasetId, version))
-            val delogger = new SqlDelogger(conn, datasetInfo.logTableName, rowCodecFactory)
             try {
-              for {
-                it <- managed(delogger.delog(version))
-                event <- it
-              } {
-                log.info("Sending LogData({})", event)
-                socket.send(LogData(event))
-                socket.poll() match {
-                  case Some(AlreadyHaveThat()) =>
-                    log.info("Backup says it already has this version.  Abandoning the send.")
-                    socket.send(DataDone())
+              val delogger = new SqlDelogger(conn, datasetInfo.logTableName, rowCodecFactory)
+              using(delogger.delog(version)) { it =>
+                socket.send(DatasetUpdated(datasetId, version))
+                for(event <- it) {
+                  log.info("Sending LogData({})", event)
+                  socket.send(LogData(event))
+                  socket.poll() match {
+                    case Some(AlreadyHaveThat()) =>
+                      log.info("Backup says it already has this version.  Abandoning the send.")
+                      socket.send(DataDone())
+                      finishedJob()
+                      throw new AbortJobButDontResync
+                    case Some(ResyncRequired()) =>
+                      log.warn("Backup signalled that it wants a resync; abandoning logdata send")
+                      throw new ResyncRequested
+                    case Some(_) =>
+                      log.error("Received unexpected packet from backup")
+                      ??? // TODO: unexpected packet
+                    case None =>
+                    // ok, just keep on sending
+                  }
+                }
+                log.info("Sending DataDone")
+                socket.send(DataDone())
+                socket.receive() match {
+                  case Some(AcknowledgeReceipt()) =>
+                    log.info("Backup has acknowledged receipt and committed to its store.")
                     finishedJob()
-                    throw new AbortJobButDontResync
+                  case Some(AlreadyHaveThat()) =>
+                    log.info("Backup says it already has this version.  Oh well, sent it unnecessarily.")
+                    finishedJob()
                   case Some(ResyncRequired()) =>
-                    log.warn("Backup signalled that it wants a resync; abandoning logdata send")
+                    log.warn("Backup signalled that it wants a resync")
+                    throw new ResyncRequested
+                  case None =>
+                    ??? // TODO: EOF
+                }
+              }
+            } catch {
+              case _: MissingVersion =>
+                log.warn(s"Dataset ${datasetId.underlying}'s log does not contain version $version; forcing a resync")
+                socket.send(ForceResync(datasetId))
+                socket.receive() match {
+                  case Some(ResyncRequired()) =>
                     throw new ResyncRequested
                   case Some(_) =>
                     log.error("Received unexpected packet from backup")
-                    ??? // TODO: unexpected packet
+                    ???
                   case None =>
-                  // ok, just keep on sending
+                    ??? // TODO: EOF
                 }
-              }
-              log.info("Sending DataDone")
-              socket.send(DataDone())
-              socket.receive() match {
-                case Some(AcknowledgeReceipt()) =>
-                  log.info("Backup has acknowledged receipt and committed to its store.")
-                  finishedJob()
-                case Some(AlreadyHaveThat()) =>
-                  log.info("Backup says it already has this version.  Oh well, sent it unnecessarily.")
-                  finishedJob()
-                case Some(ResyncRequired()) =>
-                  log.warn("Backup signalled that it wants a resync")
-                  throw new ResyncRequested
-                case None =>
-                  ??? // TODO: EOF
-              }
-            } catch {
               case _: AbortJobButDontResync => // ok
             }
           case None =>
             log.warn(s"Dataset ${datasetId.underlying} is in the global log but there is no record of it.  It must have been deleted.")
-            // TODO: Send "delete this dataset" message...
+          // TODO: Send "delete this dataset" message...
         }
-      } catch {
-        case _: ResyncRequested =>
-          handleResyncRequest(socket, conn, datasetId)
-          finishedJob()
       }
+    } catch {
+      case _: ResyncRequested =>
+        handleResyncRequest(socket, conn, datasetId)
+        // We've now copied at least as much as the jobset said was there...
+        backupLog.completedBackupTo(datasetId, backupJob.endingDataVersion)
     }
   }
 

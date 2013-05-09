@@ -11,10 +11,12 @@ import com.rojoma.json.codec.JsonCodec
 import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.truth.RowLogCodec
-import com.socrata.datacoordinator.truth.loader.Delogger
+import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.util.{CloseableIterator, LeakDetect}
 import com.socrata.datacoordinator.truth.metadata.{UnanchoredDatasetInfo, UnanchoredCopyInfo, UnanchoredColumnInfo}
 import com.socrata.datacoordinator.id.RowId
+import com.socrata.datacoordinator.truth.loader.Delogger.EndTransaction
+import scala.Some
 
 class SqlDelogger[CV](connection: Connection,
                       logTableName: String,
@@ -62,7 +64,15 @@ class SqlDelogger[CV](connection: Connection,
     }
 
   def delog(version: Long) = {
-    new LogIterator(version) with LeakDetect
+    val it = new LogIterator(version) with LeakDetect
+    try {
+      it.advance()
+    } catch {
+      case _: NoEndOfTransactionMarker =>
+        it.close()
+        throw new MissingVersion(version, "Version " + version + " not found in log " + logTableName)
+    }
+    it
   }
 
   class LogIterator(version: Long) extends CloseableIterator[Delogger.LogEvent[CV]] {
@@ -71,6 +81,8 @@ class SqlDelogger[CV](connection: Connection,
     var nextResult: Delogger.LogEvent[CV] = null
     var done = false
     val UTF8 = Codec.UTF8.charSet
+
+    def errMsg(m: String) = m + " in version " + version + " of log " + logTableName
 
     override def toString() = {
       // this exists because otherwise Iterator#toString calls hasNext.
@@ -87,7 +99,7 @@ class SqlDelogger[CV](connection: Connection,
         query.setLong(1, version)
         rs = query.executeQuery()
       }
-      if(rs.next()) decode()
+      decodeNext()
       done = nextResult == null
     }
 
@@ -115,9 +127,12 @@ class SqlDelogger[CV](connection: Connection,
       }
     }
 
-    def decode() {
+    def decodeNext() {
+      if(!rs.next()) throw new NoEndOfTransactionMarker(version, errMsg("No end of transaction"))
       val subversion = rs.getLong("subversion")
-      assert(subversion == lastSubversion + 1, s"subversion skipped?  Got $subversion expected ${lastSubversion + 1}")
+      if(subversion != lastSubversion + 1)
+        throw new SkippedSubversion(version, lastSubversion + 1, subversion,
+          errMsg(s"subversion skipped?  Got $subversion expected ${lastSubversion + 1}"))
       lastSubversion = subversion
 
       val op = rs.getString("what")
@@ -158,7 +173,7 @@ class SqlDelogger[CV](connection: Connection,
           assert(!rs.next(), "there was data after TransactionEnded?")
           null
         case other =>
-          sys.error("Unknown operation " + op)
+          throw new UnknownEvent(version, op, errMsg(s"Unknown event $op"))
       }
     }
 
