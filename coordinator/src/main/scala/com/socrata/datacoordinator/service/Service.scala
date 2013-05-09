@@ -58,7 +58,7 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
               secondaries: Set[String],
               datasetsInStore: (String) => Map[DatasetId, Long],
               versionInStore: (String, DatasetId) => Option[Long],
-              updateVersionInStore: (String, DatasetId) => Unit,
+              ensureInSecondary: (String, DatasetId) => Unit,
               secondariesOfDataset: DatasetId => Map[String, Long],
               datasets: () => Seq[DatasetId],
               commandReadLimit: Long,
@@ -173,7 +173,7 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
   def doUpdateVersionInSecondary(storeId: String, datasetIdRaw: String)(req: HttpServletRequest): HttpResponse = {
     if(!secondaries(storeId)) return NotFound
     val datasetId = parseDatasetId(datasetIdRaw).getOrElse { return NotFound }
-    updateVersionInStore(storeId, datasetId)
+    ensureInSecondary(storeId, datasetId)
     OK
   }
 
@@ -574,17 +574,9 @@ object Service extends App { self =>
         } yield result._1
       }
 
-    def updateVersionInStore(storeId: String, datasetId: DatasetId): Unit =
+    def ensureInSecondary(storeId: String, datasetId: DatasetId): Unit =
       for(u <- common.universe) {
-        val secondary = secondaries(storeId).asInstanceOf[Secondary[u.CT, u.CV]]
-        val pb = u.playbackToSecondary
-        val mapReader = u.datasetMapReader
-        for {
-          datasetInfo <- mapReader.datasetInfo(datasetId)
-        } yield {
-          val delogger = u.delogger(datasetInfo)
-          pb(datasetId, NamedSecondary(storeId, secondary), mapReader, delogger)
-        }
+        u.secondaryManifest.lastDataInfo(storeId, datasetId)
       }
     def secondariesOfDataset(datasetId: DatasetId): Map[String, Long] =
       for(u <- common.universe) yield {
@@ -643,7 +635,7 @@ object Service extends App { self =>
     }
 
     val serv = new Service(processMutation, processCreation, common.Mutator.schemaFinder.getSchema, exporter,
-      secondaries.keySet, datasetsInStore, versionInStore, updateVersionInStore,
+      secondaries.keySet, datasetsInStore, versionInStore, ensureInSecondary,
       secondariesOfDataset, listDatasets, serviceConfig.commandReadLimit,
       common.internalNameFromDatasetId, common.datasetIdFromInternalName)
 

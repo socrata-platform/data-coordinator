@@ -87,30 +87,30 @@ CREATE TABLE IF NOT EXISTS pending_table_drops (
 );
 
 CREATE TABLE IF NOT EXISTS secondary_manifest (
-  store_id          VARCHAR(64) NOT NULL,
-  dataset_system_id BIGINT NOT NULL REFERENCES dataset_map(system_id),
-  version           BIGINT NOT NULL, -- data log version.  0 if never fed anything in
-  cookie            TEXT NULL,
+  store_id                       VARCHAR(64) NOT NULL,
+  dataset_system_id              BIGINT NOT NULL REFERENCES dataset_map(system_id),
+  latest_secondary_data_version  BIGINT NOT NULL DEFAULT 0,
+  latest_data_version            BIGINT NOT NULL DEFAULT 0,
+  went_out_of_sync_at            TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), -- used to order processing
+  cookie                         TEXT NULL,
   PRIMARY KEY (store_id, dataset_system_id)
 );
 
--- Potential new logging approach: instead of maintaining a giant unbounded global_log,
--- maintain (via triggers) a list of what datasets have been copied and how far.  Then
--- "playing back the log" is a simple matter of doing:
---   SELECT * FROM backup_log WHERE latest_data_version > latest_backup_data_version ORDER BY updated_at
--- and for each result, in a separate txn:
---   SELECT * FROM t${dataset_id}_log WHERE version > latest_backup_data_version AND version <= latest_data_version ORDER BY version, subversion
---   ... copy it all to the secondary ...
---   UPDATE backup_log SET latest_backup_data_verison = ${old_latest_data_version} WHERE dataset_system_id = ${dataset_id}
+DROP INDEX IF EXISTS secondary_manifest_dataset_system_id;
+CREATE INDEX secondary_manifest_dataset_system_id ON secondary_manifest(dataset_system_id);
+
+DROP INDEX IF EXISTS secondary_manifest_order;
+CREATE INDEX secondary_manifest_order ON secondary_manifest (store_id, (latest_data_version > latest_secondary_data_version), went_out_of_sync_at);
 
 CREATE TABLE IF NOT EXISTS backup_log (
   dataset_system_id          BIGINT                   NOT NULL UNIQUE,
   latest_backup_data_version BIGINT                   NOT NULL DEFAULT 0,
   latest_data_version        BIGINT                   NOT NULL DEFAULT 0,
-  updated_at                 TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
+  went_out_of_sync_at        TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now() -- used to order processing
 );
+
 DROP INDEX IF EXISTS backup_log_order;
-CREATE INDEX backup_log_order ON backup_log ((latest_data_version > latest_backup_data_version), updated_at);
+CREATE INDEX backup_log_order ON backup_log ((latest_data_version > latest_backup_data_version), went_out_of_sync_at);
 
 CREATE OR REPLACE FUNCTION add_to_backup_log() RETURNS trigger AS $add_to_backup_log$
   BEGIN
@@ -126,11 +126,27 @@ CREATE OR REPLACE FUNCTION update_backup_log() RETURNS trigger as $update_backup
   DECLARE
     last_data_version BIGINT;
   BEGIN
-    SELECT latest_data_version INTO STRICT last_data_version FROM backup_log WHERE backup_log.dataset_system_id = NEW.dataset_system_id;
+    SELECT latest_data_version INTO STRICT last_data_version FROM backup_log WHERE dataset_system_id = NEW.dataset_system_id;
     IF (last_data_version <> NEW.data_version AND last_data_version + 1 <> NEW.data_version) THEN
       RAISE EXCEPTION 'New data version was not within appropriate bounds: (old: %, new: %)', last_data_version, NEW.data_version;
     END IF;
-    UPDATE backup_log SET latest_data_version = NEW.data_version, updated_at = CURRENT_TIMESTAMP WHERE backup_log.dataset_system_id = NEW.dataset_system_id;
+
+    -- First, we update the timestamp only if this is the first change since the last time
+    -- the backup was run.  This is to keep things fair, otherwise a fast-changing dataset
+    -- could keep knocking itself down the queue.
+    UPDATE backup_log
+      SET went_out_of_sync_at = CURRENT_TIMESTAMP
+      WHERE dataset_system_id = NEW.dataset_system_id AND latest_data_version = latest_backup_data_version;
+    -- Then unconditionally bump the latest data version.
+    UPDATE backup_log SET latest_data_version = NEW.data_version WHERE dataset_system_id = NEW.dataset_system_id;
+
+    -- Same thing for all secondaries to which this is attached.
+    UPDATE secondary_manifest
+      SET went_out_of_sync_at = CURRENT_TIMESTAMP
+      WHERE dataset_system_id = NEW.dataset_system_id AND latest_data_version = latest_secondary_data_version;
+    UPDATE secondary_manifest
+      SET latest_data_version = NEW.data_version
+      WHERE secondary_manifest.dataset_system_id = NEW.dataset_system_id;
     RETURN NEW;
   END;
 $update_backup_log$ LANGUAGE PLPGSQL;
