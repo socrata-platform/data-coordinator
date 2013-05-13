@@ -1,48 +1,48 @@
 package com.socrata.datacoordinator.secondary
 package sql
 
-import java.sql.Connection
+import java.sql.{Types, Connection}
 
 import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.id.sql._
 import scala.collection.immutable.VectorBuilder
+import com.socrata.datacoordinator.truth.metadata.{LifecycleStage, CopyInfo}
+import com.socrata.datacoordinator.util.PostgresUniqueViolation
 
 class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
   def readLastDatasetInfo(storeId: String, datasetId: DatasetId): Option[(Long, Option[String])] =
-    using(conn.prepareStatement("SELECT version, cookie FROM secondary_manifest WHERE store_id = ? AND dataset_system_id = ?")) { stmt =>
+    using(conn.prepareStatement("SELECT latest_secondary_data_version, cookie FROM secondary_manifest WHERE store_id = ? AND dataset_system_id = ?")) { stmt =>
       stmt.setString(1, storeId)
       stmt.setDatasetId(2, datasetId)
       using(stmt.executeQuery()) { rs =>
         if(rs.next()) {
-          Some((rs.getLong("version"), Option(rs.getString("cookie"))))
+          Some((rs.getLong("latest_secondary_data_version"), Option(rs.getString("cookie"))))
         } else {
           None
         }
       }
     }
 
-  def lastDataInfo(storeId: String, datasetId: DatasetId): (Long, Option[String]) =
-    readLastDatasetInfo(storeId, datasetId).getOrElse {
-      using(conn.prepareStatement("INSERT INTO secondary_manifest (store_id, dataset_system_id) VALUES (?, ?)")) { stmt =>
+  def addDataset(storeId: String, datasetId: DatasetId) {
+    try {
+      using(conn.prepareStatement(
+        """INSERT INTO secondary_manifest (store_id, dataset_system_id, latest_data_version)
+          | SELECT ?, dataset_system_id, data_version
+          |   FROM copy_map
+          |   WHERE dataset_system_id = ? AND lifecycle_stage <> CAST(? AS dataset_lifecycle_stage)
+          |   ORDER BY copy_number DESC
+          |   LIMIT 1""".stripMargin)) { stmt =>
         stmt.setString(1, storeId)
         stmt.setDatasetId(2, datasetId)
+        stmt.setLifecycleStage(3, LifecycleStage.Discarded)
         stmt.execute()
         (0L, None)
       }
-    }
-
-  def updateDataInfo(storeId: String, datasetId: DatasetId, dataVersion: Long, cookie: Option[String]) {
-    using(conn.prepareStatement("UPDATE secondary_manifest SET latest_secondary_data_version = ?, cookie = ? WHERE store_id = ? AND dataset_system_id = ?")) { stmt =>
-      stmt.setLong(1, dataVersion)
-      cookie match {
-        case Some(c) => stmt.setString(2, c)
-        case None => stmt.setNull(2, java.sql.Types.VARCHAR)
-      }
-      stmt.setString(3, storeId)
-      stmt.setDatasetId(4, datasetId)
-      stmt.execute()
+    } catch {
+      case PostgresUniqueViolation(_*) =>
+        throw new DatasetAlreadyInSecondary(storeId, datasetId)
     }
   }
 
@@ -94,9 +94,9 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
   }
 
   def findDatasetsNeedingReplication(storeId: String, limit: Int): Seq[SecondaryRecord] =
-    using(conn.prepareStatement("SELECT dataset_system_id, latest_secondary_data_version, latest_data_version FROM secondary_manifest WHERE store_id = ? AND latest_data_version > latest_secondary_data_version ORDER BY went_out_of_sync_at LIMIT ?")) { stmt =>
+    using(conn.prepareStatement("SELECT dataset_system_id, latest_secondary_data_version, latest_secondary_lifecycle_stage, latest_data_version, cookie FROM secondary_manifest WHERE store_id = ? AND latest_data_version > latest_secondary_data_version ORDER BY went_out_of_sync_at LIMIT ?")) { stmt =>
       stmt.setString(1, storeId)
-      stmt.setInt(1, limit)
+      stmt.setInt(2, limit)
       using(stmt.executeQuery()) { rs =>
         val results = new VectorBuilder[SecondaryRecord]
         while(rs.next()) {
@@ -104,18 +104,31 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
             storeId,
             rs.getDatasetId("dataset_system_id"),
             startingDataVersion = rs.getLong("latest_secondary_data_version") + 1,
-            endingDataVersion = rs.getLong("latest_data_version")
+            startingLifecycleStage = rs.getLifecycleStage("latest_secondary_lifecycle_stage"),
+            endingDataVersion = rs.getLong("latest_data_version"),
+            initialCookie = Option(rs.getString("cookie"))
           )
         }
         results.result()
       }
     }
 
-  def completedReplicationTo(storeId: String, datasetId: DatasetId, dataVersion: Long) {
-    using(conn.prepareStatement("UPDATE secondary_manifest SET latest_secondary_data_version = ?, went_out_of_sync_at = CURRENT_TIMESTAMP WHERE store_id = ? AND dataset_system_id = ?")) { stmt =>
+  def completedReplicationTo(storeId: String, datasetId: DatasetId, dataVersion: Long, lifecycleStage: LifecycleStage, cookie: Option[String]) {
+    using(conn.prepareStatement(
+      """UPDATE secondary_manifest
+        | SET latest_secondary_data_version = ?,
+        |     latest_secondary_lifecycle_stage = CAST(? AS dataset_lifecycle_stage),
+        |     cookie = ?,
+        |     went_out_of_sync_at = CURRENT_TIMESTAMP
+        | WHERE store_id = ? AND dataset_system_id = ?""".stripMargin)) { stmt =>
       stmt.setLong(1, dataVersion)
-      stmt.setString(2, storeId)
-      stmt.setDatasetId(3, datasetId)
+      stmt.setLifecycleStage(2, lifecycleStage)
+      cookie match {
+        case Some(c) => stmt.setString(3, c)
+        case None => stmt.setNull(3, Types.VARCHAR)
+      }
+      stmt.setString(4, storeId)
+      stmt.setDatasetId(5, datasetId)
       stmt.executeUpdate()
     }
   }

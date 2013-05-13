@@ -2,12 +2,17 @@ package com.socrata.datacoordinator.id
 
 import java.sql.{ResultSet, Types, PreparedStatement}
 import java.util.UUID
+import com.socrata.datacoordinator.truth.metadata.LifecycleStage
 
 package object sql {
   implicit class DatasetIdSetter(val __underlying: PreparedStatement) extends AnyVal {
     def setDatasetId(idx: Int, value: DatasetId) {
       val x: Long = value.underlying
       __underlying.setObject(idx, x, Types.OTHER)
+    }
+    def setLifecycleStage(idx: Int, value: LifecycleStage) {
+      val x = value.name()
+      __underlying.setString(idx, x)
     }
   }
 
@@ -19,5 +24,13 @@ package object sql {
       datasetIdify(__underlying.getLong(col))
     def getDatasetId(idx: Int): DatasetId =
       datasetIdify(__underlying.getLong(idx))
+
+    private def lifecycleStageify(x: String) =
+      if(x == null) null
+      else LifecycleStage.valueOf(x)
+    def getLifecycleStage(col: String): LifecycleStage =
+      lifecycleStageify(__underlying.getString(col))
+    def getLifecycleStage(idx: Int): LifecycleStage =
+      lifecycleStageify(__underlying.getString(idx))
   }
 }

@@ -18,6 +18,8 @@ import com.socrata.datacoordinator.truth.universe._
 import java.sql.Connection
 import com.socrata.datacoordinator.truth.universe.sql.{PostgresCopyIn, PostgresUniverse}
 import com.socrata.datacoordinator.id.RowId
+import org.apache.log4j.PropertyConfigurator
+import com.socrata.thirdparty.typesafeconfig.Propertizer
 
 class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseType[CT, CV]]) {
   import SecondaryWatcher.log
@@ -25,29 +27,22 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
   def run(u: Universe[CT, CV] with DatasetMapReaderProvider with GlobalLogPlaybackProvider with SecondaryManifestProvider with SecondaryPlaybackManifestProvider with PlaybackToSecondaryProvider with DeloggerProvider, secondary: NamedSecondary[CT, CV]) {
     import u._
 
-    val globalLog = globalLogPlayback
-    val playbackMfst = secondaryPlaybackManifest(secondary.storeId)
     val pb = playbackToSecondary
     val dsmr = datasetMapReader
-    var lastJobId = playbackMfst.lastJobId()
-    val datasetsInStore = secondaryManifest.datasets(secondary.storeId)
-    for(job <- globalLog.pendingJobs(lastJobId)) {
-      assert(lastJobId.underlying + 1 == job.id.underlying, "Missing backup ID in global log??")
-      lastJobId = job.id
 
-      if(datasetsInStore.contains(job.datasetId)) {
-        dsmr.datasetInfo(job.datasetId) match {
-          case Some(datasetInfo) =>
-            log.info("Syncing {} into {}", job.datasetId, secondary.storeId)
-            pb(job.datasetId, secondary, dsmr, delogger(datasetInfo))
-          case None =>
-            log.info("Dropping {} from {}", job.datasetId, secondary.storeId)
-            pb.drop(secondary, job.datasetId)
-            secondaryManifest.dropDataset(secondary.storeId, job.datasetId)
-        }
+    val jobs = secondaryManifest.findDatasetsNeedingReplication(secondary.storeId)
+    for(job <- jobs) {
+      dsmr.datasetInfo(job.datasetId) match {
+        case Some(datasetInfo) =>
+          log.info("Syncing {} into {}", job.datasetId, secondary.storeId)
+          pb(job.datasetId, secondary, job, delogger(datasetInfo))
+          // the playback will have committed
+        case None =>
+          log.info("Dropping {} from {}", job.datasetId, secondary.storeId)
+          pb.drop(secondary, job.datasetId, job.initialCookie)
+          secondaryManifest.dropDataset(secondary.storeId, job.datasetId)
+          commit()
       }
-      playbackMfst.finishedJob(job.id)
-      commit()
     }
   }
 
@@ -103,13 +98,15 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
 }
 
 object SecondaryWatcher extends App { self =>
-  val log = LoggerFactory.getLogger(classOf[SecondaryWatcher[_,_]])
-
   type UniverseType[CT, CV] = Universe[CT, CV] with DatasetMapReaderProvider with GlobalLogPlaybackProvider with SecondaryManifestProvider with SecondaryPlaybackManifestProvider with PlaybackToSecondaryProvider with DeloggerProvider with SecondaryConfigProvider
 
   val rootConfig = ConfigFactory.load()
   val config = rootConfig.getConfig("com.socrata.secondary-watcher")
   println(config.root.render())
+  PropertyConfigurator.configure(Propertizer("log4j", config.getConfig("log4j")))
+
+  val log = LoggerFactory.getLogger(classOf[SecondaryWatcher[_,_]])
+
   val (dataSource, copyIn) = DataSourceFromConfig(new DataSourceConfig(config.getConfig("database")))
   val secondaries = SecondaryLoader.load(config.getObject("secondary.configs"), new File(config.getString("secondary.path"))).asInstanceOf[Map[String, Secondary[SoQLType, SoQLValue]]]
 

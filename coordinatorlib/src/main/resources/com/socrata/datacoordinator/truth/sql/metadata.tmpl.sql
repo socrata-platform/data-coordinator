@@ -87,12 +87,13 @@ CREATE TABLE IF NOT EXISTS pending_table_drops (
 );
 
 CREATE TABLE IF NOT EXISTS secondary_manifest (
-  store_id                       VARCHAR(64) NOT NULL,
-  dataset_system_id              BIGINT NOT NULL REFERENCES dataset_map(system_id),
-  latest_secondary_data_version  BIGINT NOT NULL DEFAULT 0,
-  latest_data_version            BIGINT NOT NULL DEFAULT 0,
-  went_out_of_sync_at            TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), -- used to order processing
-  cookie                         TEXT NULL,
+  store_id                         VARCHAR(64) NOT NULL,
+  dataset_system_id                BIGINT NOT NULL REFERENCES dataset_map(system_id),
+  latest_secondary_data_version    BIGINT NOT NULL DEFAULT 0,
+  latest_secondary_lifecycle_stage dataset_lifecycle_stage NOT NULL DEFAULT 'Unpublished',
+  latest_data_version              BIGINT NOT NULL,
+  went_out_of_sync_at              TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), -- used to order processing
+  cookie                           TEXT NULL,
   PRIMARY KEY (store_id, dataset_system_id)
 );
 

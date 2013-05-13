@@ -32,22 +32,22 @@ trait Secondary[CT, CV] {
   /**
    * @return The `copyNumber`s of all snapshot copies in this secondary.
    */
-  def snapshots(datasetInternalName: DatasetId, cookie: Cookie): Set[Long]
+  def snapshots(datasetInternalName: String, cookie: Cookie): Set[Long]
 
   /**
    * Order this secondary to drop a snapshot.  This should ignore the request
    * if the snapshot is already gone (but it should signal an error if the
    * copyNumber does not name a snapshot).
    */
-  def dropCopy(datasetInternalName: DatasetId, copyNumber: Long, cookie: Cookie): Cookie
+  def dropCopy(datasetInternalName: String, copyNumber: Long, cookie: Cookie): Cookie
 
   /** Provide the current copy an update.  The secondary should ignore it if it
     * already has this dataVersion.
     * @return a new cookie to store in the secondary map
     */
-  def version(datasetInternalName: DatasetId, dataVersion: Long, cookie: Cookie, events: Iterator[Delogger.LogEvent[CV]]): Cookie
+  def version(datasetInternalName: String, dataVersion: Long, cookie: Cookie, events: Iterator[Delogger.LogEvent[CV]]): Cookie
 
-  def resync(copyContext: DatasetCopyContext[CT], cookie: Cookie, rows: Managed[Iterator[Row[CV]]]): Cookie
+  def resync(datasetInternalName: String, copyContext: DatasetCopyContext[CT], cookie: Cookie, rows: Managed[Iterator[Row[CV]]]): Cookie
 }
 
 object Secondary {

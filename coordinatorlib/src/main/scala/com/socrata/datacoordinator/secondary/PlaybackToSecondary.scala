@@ -3,7 +3,7 @@ package secondary
 
 import com.rojoma.simplearm.util._
 
-import com.socrata.datacoordinator.truth.loader.Delogger
+import com.socrata.datacoordinator.truth.loader.{MissingVersion, Delogger}
 import com.socrata.datacoordinator.id.{RowId, DatasetId}
 import com.socrata.datacoordinator.truth.metadata._
 import scala.util.control.ControlThrowable
@@ -17,6 +17,7 @@ import com.rojoma.simplearm.SimpleArm
 import com.socrata.datacoordinator.truth.sql.SqlColumnReadRep
 import org.slf4j.LoggerFactory
 import com.socrata.datacoordinator.util.TimingReport
+import com.socrata.datacoordinator.truth.loader.Delogger.{WorkingCopyPublished, WorkingCopyDropped, WorkingCopyCreated}
 
 class PlaybackToSecondary[CT, CV](conn: Connection, secondaryManifest: SecondaryManifest, typeNamespace: TypeNamespace[CT], repFor: ColumnInfo[CT] => SqlColumnReadRep[CT, CV], datasetIdFormatter: DatasetId => String, timingReport: TimingReport) {
   require(!conn.getAutoCommit, "Connection must not be in auto-commit mode")
@@ -26,58 +27,145 @@ class PlaybackToSecondary[CT, CV](conn: Connection, secondaryManifest: Secondary
 
   val datasetLockTimeout = Duration.Inf
 
-  def apply(datasetId: DatasetId, secondary: NamedSecondary[CT, CV], datasetMapReader: DatasetMapReader[CT], delogger: Delogger[CV]) {
+  class LifecycleStageTrackingIterator(underlying: Iterator[Delogger.LogEvent[CV]], initialStage: LifecycleStage) extends BufferedIterator[Delogger.LogEvent[CV]] {
+    private var currentStage = initialStage
+    private var lookahead: Delogger.LogEvent[CV] = null
+
+    def stageBeforeNextEvent = currentStage
+
+    def stageAfterNextEvent = computeNextStage(head)
+
+    def hasNext = lookahead != null || underlying.hasNext
+
+    def head = {
+      if(lookahead == null) lookahead = advance()
+      lookahead
+    }
+
+    private def advance() = underlying.next()
+
+    def next() = {
+      val ev =
+        if(lookahead == null) {
+          advance()
+        } else {
+          val peeked = lookahead
+          lookahead = null
+          peeked
+        }
+      currentStage = computeNextStage(ev)
+      ev
+    }
+
+    def finalLifecycleStage() = {
+      while(hasNext) next()
+      currentStage
+    }
+
+    private def computeNextStage(ev: Delogger.LogEvent[CV]) =
+      ev match {
+        case WorkingCopyCreated(_, _) =>
+          LifecycleStage.Unpublished
+        case WorkingCopyDropped | WorkingCopyPublished =>
+          LifecycleStage.Published
+        case _ =>
+          currentStage
+      }
+  }
+
+  // This is guaranteed to consume no more than necessary out of the iterator.
+  // In particular, when it is done, the underlying iterator will either be empty
+  // or positioned so that next() is a stage-changing event.
+  class StageLimitedIterator(underlying: LifecycleStageTrackingIterator) extends Iterator[Delogger.LogEvent[CV]] {
+    private val wantedStage = underlying.stageBeforeNextEvent
+
+    def hasNext = underlying.hasNext && underlying.stageAfterNextEvent == wantedStage
+    def next() =
+      if(hasNext) underlying.next()
+      else Iterator.empty.next()
+
+    def finish() = while(hasNext) next()
+  }
+
+
+  def apply(datasetId: DatasetId, secondary: NamedSecondary[CT, CV], job: SecondaryRecord, delogger: Delogger[CV]) {
+    val internalName = datasetIdFormatter(datasetId)
+    var currentCookie = job.initialCookie
+    var currentLifecycleStage = job.startingLifecycleStage
     datasetMapReader.datasetInfo(datasetId) match {
       case Some(datasetInfo) =>
         log.info("Found dataset " + datasetInfo.systemId + " in truth")
         try {
-          if(secondary.store.wantsWorkingCopies) {
-            log.info("Secondary store wants working copies")
-            playbackAll(datasetInfo, secondary, datasetMapReader, delogger)
-          } else {
-            log.info("Secondary store wants doesn't want working copies")
-            playbackPublished(datasetInfo, secondary, datasetMapReader, delogger)
+          (job.startingDataVersion to job.endingDataVersion).foreach { dataVersion =>
+            using(delogger.delog(dataVersion)) { rawIt =>
+              val it = new LifecycleStageTrackingIterator(rawIt, currentLifecycleStage)
+              if(secondary.store.wantsWorkingCopies) {
+                currentCookie = secondary.store.version(internalName, dataVersion, currentCookie, it)
+              } else {
+                while(it.hasNext) {
+                  if(currentLifecycleStage != LifecycleStage.Published) {
+                    // skip until it IS published, then resync
+                    while(it.hasNext && it.stageAfterNextEvent != LifecycleStage.Published) it.next()
+                    if(it.hasNext) throw new ResyncForPickySecondary
+                  } else {
+                    val publishedIt = new StageLimitedIterator(it)
+                    if(publishedIt.hasNext) {
+                      currentCookie = secondary.store.version(internalName, dataVersion, currentCookie, publishedIt)
+                      publishedIt.finish()
+                    }
+                  }
+                }
+              }
+              currentLifecycleStage = it.finalLifecycleStage()
+              updateSecondaryMap(secondary, datasetId, dataVersion, currentLifecycleStage, currentCookie)
+            }
           }
         } catch {
+          case e: MissingVersion =>
+            log.info("Couldn't find version " + e.version + " in log; resyncing")
+            resync(datasetId, secondary, currentCookie, delogger)
           case _: ResyncException =>
             log.info("Incremental update requested full resync")
-            resync(datasetId, secondary, delogger)
+            resync(datasetId, secondary, currentCookie, delogger)
+          case _: ResyncForPickySecondary =>
+            log.info("Resyncing because secondary only wants published copies and we just got a publish event")
+            resync(datasetId, secondary, currentCookie, delogger)
         }
       case None =>
-        log.info("Didn't find the dataset in truth")
-        drop(secondary, datasetId)
+        drop(secondary, datasetId, currentCookie)
     }
   }
 
-  def drop(secondary: NamedSecondary[CT, CV], datasetId: DatasetId) {
+  def drop(secondary: NamedSecondary[CT, CV], datasetId: DatasetId, cookie: Option[String]) {
     timingReport("drop", "dataset" -> datasetId) {
-      secondary.store.dropDataset(datasetIdFormatter(datasetId), getCookie(secondary, datasetId))
+      secondary.store.dropDataset(datasetIdFormatter(datasetId), cookie)
       dropFromSecondaryMap(secondary, datasetId)
     }
   }
 
-  def resync(datasetId: DatasetId, secondary: NamedSecondary[CT, CV], delogger: Delogger[CV]) {
+  def resync(datasetId: DatasetId, secondary: NamedSecondary[CT, CV], initialCookie: Option[String], delogger: Delogger[CV]) {
     timingReport("resync", "dataset" -> datasetId) {
       val w = new PostgresDatasetMapWriter(conn, typeNamespace, timingReport, () => sys.error("Secondary should not be generating obfuscation keys"), 0L)
       w.datasetInfo(datasetId, datasetLockTimeout) match {
         case Some(datasetInfo) =>
+          val internalName = datasetIdFormatter(datasetId)
           val allCopies = w.allCopies(datasetInfo)
-          var currentCookie = getCookie(secondary, datasetId)
-          val newLastDataVersion =
-            if(secondary.store.wantsWorkingCopies) delogger.lastVersion.getOrElse(0L)
-            else lastPublishedDataVersion(delogger)
+          var currentCookie = initialCookie
+          val latest = w.latest(datasetInfo)
+          val latestDataVersion = latest.dataVersion
+          val latestLifecycleStage = latest.lifecycleStage
           for(copy <- allCopies) {
             timingReport("copy", "number" -> copy.copyNumber) {
               currentCookie =
-                if(copy.lifecycleStage == LifecycleStage.Discarded) secondary.store.dropCopy(datasetId, copy.copyNumber, currentCookie)
-                else if(copy.lifecycleStage != LifecycleStage.Unpublished) syncCopy(secondary, new DatasetCopyContext(copy, w.schema(copy)), currentCookie)
-                else if(secondary.store.wantsWorkingCopies) syncCopy(secondary, new DatasetCopyContext(copy, w.schema(copy)), currentCookie)
+                if(copy.lifecycleStage == LifecycleStage.Discarded) secondary.store.dropCopy(internalName, copy.copyNumber, currentCookie)
+                else if(copy.lifecycleStage != LifecycleStage.Unpublished) syncCopy(secondary, internalName, new DatasetCopyContext(copy, w.schema(copy)), currentCookie)
+                else if(secondary.store.wantsWorkingCopies) syncCopy(secondary, internalName, new DatasetCopyContext(copy, w.schema(copy)), currentCookie)
                 else currentCookie
             }
           }
-          updateSecondaryMap(secondary, datasetInfo.systemId, newLastDataVersion, currentCookie)
+          updateSecondaryMap(secondary, datasetInfo.systemId, latestDataVersion, latestLifecycleStage, currentCookie)
         case None =>
-          drop(secondary, datasetId)
+          drop(secondary, datasetId, initialCookie)
       }
     }
   }
@@ -92,9 +180,9 @@ class PlaybackToSecondary[CT, CV](conn: Connection, secondaryManifest: Secondary
     }
   }
 
-  def syncCopy(secondary: NamedSecondary[CT, CV], copyCtx: DatasetCopyContext[CT], cookie: Secondary.Cookie): Secondary.Cookie =
+  def syncCopy(secondary: NamedSecondary[CT, CV], internalName: String, copyCtx: DatasetCopyContext[CT], cookie: Secondary.Cookie): Secondary.Cookie =
     timingReport("sync-copy", "secondary" -> secondary.storeId, "dataset" -> copyCtx.datasetInfo.systemId, "copy" -> copyCtx.copyInfo.copyNumber) {
-      secondary.store.resync(copyCtx, cookie, new SimpleArm[Iterator[Row[CV]]] {
+      secondary.store.resync(internalName, copyCtx, cookie, new SimpleArm[Iterator[Row[CV]]] {
         def flatMap[A](f: Iterator[Row[CV]] => A): A =
           new RepBasedDatasetExtractor(
             conn,
@@ -104,98 +192,16 @@ class PlaybackToSecondary[CT, CV](conn: Connection, secondaryManifest: Secondary
       })
     }
 
-  def playbackAll(datasetInfo: DatasetInfo, secondary: NamedSecondary[CT, CV], datasetMapReader: DatasetMapReader[CT], delogger: Delogger[CV]) {
-    timingReport("playback-all", "secondary" -> secondary.storeId, "dataset" -> datasetInfo.systemId) {
-      val latest = datasetMapReader.latest(datasetInfo)
-      var currentCookie = getCookie(secondary, datasetInfo.systemId)
-      val currentVersion = secondary.store.currentVersion(datasetIdFormatter(datasetInfo.systemId), currentCookie)
-
-      if(latest.dataVersion > currentVersion) { // ok, we certainly need to do SOMETHING
-        for(v <- (currentVersion + 1) to latest.dataVersion) {
-          timingReport("version", "version" -> v) {
-            using(delogger.delog(v)) { it =>
-              if(!it.hasNext) throw new ResyncException // oops, there is no "next version"?
-              currentCookie = playback(secondary, datasetInfo, v, it, currentCookie)
-            }
-          }
-        }
-      } else if(latest.dataVersion < currentVersion) {
-        throw new ResyncException
-      }
-    }
-  }
-
-  def playback(secondary: NamedSecondary[CT, CV], datasetInfo: DatasetInfo, dataVersion: Long, events: Iterator[Delogger.LogEvent[CV]], cookie: Secondary.Cookie): Secondary.Cookie = {
-    timingReport("playback", "secondary" -> secondary.storeId, "dataset" -> datasetInfo.systemId, "version" -> dataVersion) {
-      val newCookie = secondary.store.version(datasetInfo.systemId, dataVersion, cookie, events)
-      updateSecondaryMap(secondary, datasetInfo.systemId, dataVersion, newCookie)
-      newCookie
-    }
-  }
-
-  def getCookie(secondary: NamedSecondary[CT, CV], datasetId: DatasetId): Secondary.Cookie =
-    secondaryManifest.lastDataInfo(secondary.storeId, datasetId)._2
-
-  def updateSecondaryMap(secondary: NamedSecondary[CT, CV], datasetId: DatasetId, newLastDataVersion: Long, newCookie: Secondary.Cookie) {
-    secondaryManifest.updateDataInfo(secondary.storeId, datasetId, newLastDataVersion, newCookie)
+  def updateSecondaryMap(secondary: NamedSecondary[CT, CV], datasetId: DatasetId, newLastDataVersion: Long, newLifecycleStage: LifecycleStage, newCookie: Secondary.Cookie) {
+    secondaryManifest.completedReplicationTo(secondary.storeId, datasetId, newLastDataVersion, newLifecycleStage, newCookie)
+    conn.commit()
   }
 
   def dropFromSecondaryMap(secondary: NamedSecondary[CT, CV], datasetId: DatasetId) {
     secondaryManifest.dropDataset(secondary.storeId, datasetId)
-  }
-
-  def playbackPublished(datasetInfo: DatasetInfo, secondary: NamedSecondary[CT, CV], datasetMapReader: DatasetMapReader[CT], delogger: Delogger[CV]) {
-    timingReport("playback-published", "secondary" -> secondary.storeId, "dataset" -> datasetInfo.systemId) {
-      var currentCookie = getCookie(secondary, datasetInfo.systemId)
-      val currentVersion = secondary.store.currentVersion(datasetIdFormatter(datasetInfo.systemId), currentCookie)
-      log.info("Secondary store currently has {}", currentVersion)
-      datasetMapReader.published(datasetInfo) match {
-        case Some(publishedVersion) =>
-          log.info("Copy number {} is currently published.  It has data version {}", publishedVersion.copyNumber, publishedVersion.dataVersion)
-          if(publishedVersion.dataVersion > currentVersion) {
-            log.info("Truth is newer than the secondary")
-
-            if(delogger.findPublishEvent(currentVersion + 1, publishedVersion.dataVersion).nonEmpty) {
-              log.info("Found a publish event in between the store's version and truth's; resyncing")
-              throw new ResyncException
-            }
-
-            var inWorkingCopy = false
-            for(v <- (currentVersion + 1) to publishedVersion.dataVersion) {
-              currentCookie = using(delogger.delog(v)) { itRaw =>
-                if(!itRaw.hasNext) throw new ResyncException // oops, there is no "next version"?
-                val it = itRaw.buffered
-                if(inWorkingCopy) {
-                  if(it.head.companion == Delogger.WorkingCopyDropped) {
-                    inWorkingCopy = false
-                    it.next() // skip the drop
-                    playback(secondary, datasetInfo, v, it, currentCookie)
-                  } else {
-                    assert(it.head.companion != Delogger.WorkingCopyPublished)
-                    playback(secondary, datasetInfo, v, Iterator.empty, currentCookie)
-                  }
-                } else {
-                  if(it.head.companion == Delogger.WorkingCopyCreated) {
-                    inWorkingCopy = true
-                    playback(secondary, datasetInfo, v, Iterator.empty, currentCookie)
-                  } else {
-                    playback(secondary, datasetInfo, v, it, currentCookie)
-                  }
-                }
-              }
-            }
-            assert(!inWorkingCopy)
-          } else if(publishedVersion.dataVersion < currentVersion) {
-            log.info("Truth is older than the secondary?")
-            throw new ResyncException
-          } else {
-            log.info("Truth and secondary are at the same version")
-          }
-        case None =>
-          log.info("No published version exists")
-      }
-    }
+    conn.commit()
   }
 
   private class ResyncException extends ControlThrowable
+  private class ResyncForPickySecondary extends ControlThrowable
 }

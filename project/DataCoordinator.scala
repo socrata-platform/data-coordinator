@@ -24,4 +24,7 @@ object DataCoordinator extends Build {
 
   lazy val coordinator = p("coordinator", Coordinator,
     coordinatorLib, coordinatorLibSoql)
+
+  lazy val dummySecondary = p("dummy-secondary", DummySecondary,
+    coordinatorLib % "provided")
 }

@@ -16,13 +16,10 @@ import com.socrata.datacoordinator.truth._
 import com.typesafe.config._
 import com.socrata.datacoordinator.common.{SoQLCommon, DataSourceFromConfig, StandardDatasetMapLimits}
 import com.rojoma.simplearm.util._
-import com.socrata.datacoordinator.secondary.{Secondary, SecondaryLoader}
-import java.net.URLDecoder
+import com.socrata.datacoordinator.secondary._
 import com.socrata.datacoordinator.util.{StackedTimingReport, LoggedTimingReport}
 import javax.activation.{MimeTypeParseException, MimeType}
 import com.socrata.soql.environment.{TypeName, ColumnName}
-import com.socrata.datacoordinator.secondary.NamedSecondary
-import com.socrata.datacoordinator.truth.Snapshot
 import com.socrata.datacoordinator.truth.loader._
 import com.netflix.curator.framework.CuratorFrameworkFactory
 import com.netflix.curator.retry
@@ -30,19 +27,16 @@ import com.netflix.curator.x.discovery.ServiceDiscoveryBuilder
 import com.socrata.http.server.curator.CuratorBroker
 import org.apache.log4j.PropertyConfigurator
 import java.io.{Reader, UnsupportedEncodingException, BufferedWriter}
-import com.rojoma.json.io.TokenIdentifier
-import com.rojoma.json.io.TokenString
 import com.socrata.thirdparty.typesafeconfig.Propertizer
-import com.socrata.datacoordinator.id.{ColumnId, RowId, DatasetId}
+import com.socrata.datacoordinator.id.{ColumnId, DatasetId}
+import com.rojoma.json.codec.JsonCodec
 import com.socrata.datacoordinator.truth.loader.NoSuchRowToDelete
 import com.rojoma.json.ast.JString
 import com.socrata.datacoordinator.truth.Snapshot
-import com.socrata.datacoordinator.secondary.NamedSecondary
 import com.rojoma.json.io.TokenIdentifier
 import com.rojoma.json.io.TokenString
 import com.socrata.datacoordinator.truth.loader.NoSuchRowToUpdate
-import scala.collection.mutable
-import com.rojoma.json.codec.JsonCodec
+import com.socrata.datacoordinator.truth.loader.VersionMismatch
 
 case class Field(@JsonKey("c") name: String, @JsonKey("t") typ: String)
 object Field {
@@ -154,7 +148,7 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
     if(!secondaries(storeId)) return NotFound
     val ds = datasetsInStore(storeId)
     val dsConverted = ds.foldLeft(Map.empty[String, Long]) { (acc, kv) =>
-      acc + (kv._1.toString -> kv._2)
+      acc + (formatDatasetId(kv._1) -> kv._2)
     }
     OK ~> ContentType("application/json; charset=utf-8") ~> Write(JsonUtil.writeJson(_, dsConverted, buffer = true))
   }
@@ -576,7 +570,17 @@ object Service extends App { self =>
 
     def ensureInSecondary(storeId: String, datasetId: DatasetId): Unit =
       for(u <- common.universe) {
-        u.secondaryManifest.lastDataInfo(storeId, datasetId)
+        try {
+          u.datasetMapWriter.datasetInfo(datasetId, scala.concurrent.duration.Duration(10, "s")) match {
+            case Some(_) =>
+              u.secondaryManifest.addDataset(storeId, datasetId)
+            case None =>
+              ??? // TODO: proper error
+          }
+        } catch {
+          case _: DatasetAlreadyInSecondary =>
+            // ok, it's there
+        }
       }
     def secondariesOfDataset(datasetId: DatasetId): Map[String, Long] =
       for(u <- common.universe) yield {
