@@ -187,7 +187,7 @@ class PlaybackToSecondary[CT, CV](conn: Connection, secondaryManifest: Secondary
           new RepBasedDatasetExtractor(
             conn,
             copyCtx.copyInfo.dataTableName,
-            repFor(copyCtx.schema.values.find(_.isSystemPrimaryKey).getOrElse(sys.error("No system PK column?"))).asPKableRep,
+            repFor(copyCtx.systemIdCol_!).asPKableRep,
             copyCtx.schema.mapValuesStrict(repFor)).allRows(None, None).map(f)
       })
     }
