@@ -24,7 +24,7 @@ import com.socrata.thirdparty.typesafeconfig.Propertizer
 class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseType[CT, CV]]) {
   import SecondaryWatcher.log
 
-  def run(u: Universe[CT, CV] with DatasetMapReaderProvider with GlobalLogPlaybackProvider with SecondaryManifestProvider with SecondaryPlaybackManifestProvider with PlaybackToSecondaryProvider with DeloggerProvider, secondary: NamedSecondary[CT, CV]) {
+  def run(u: Universe[CT, CV] with DatasetMapReaderProvider with SecondaryManifestProvider with PlaybackToSecondaryProvider with DeloggerProvider, secondary: NamedSecondary[CT, CV]) {
     import u._
 
     val pb = playbackToSecondary
