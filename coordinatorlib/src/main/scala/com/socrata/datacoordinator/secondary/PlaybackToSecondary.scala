@@ -92,43 +92,67 @@ class PlaybackToSecondary[CT, CV](conn: Connection, secondaryManifest: Secondary
     val internalName = datasetIdFormatter(datasetId)
     var currentCookie = job.initialCookie
     var currentLifecycleStage = job.startingLifecycleStage
+    var currentSecondaryVersion = secondary.store.currentVersion(internalName, currentCookie)
     datasetMapReader.datasetInfo(datasetId) match {
       case Some(datasetInfo) =>
         log.info("Found dataset " + datasetInfo.systemId + " in truth")
         try {
           (job.startingDataVersion to job.endingDataVersion).foreach { dataVersion =>
-            using(delogger.delog(dataVersion)) { rawIt =>
-              val it = new LifecycleStageTrackingIterator(rawIt, currentLifecycleStage)
-              if(secondary.store.wantsWorkingCopies) {
-                currentCookie = secondary.store.version(internalName, dataVersion, currentCookie, it)
-              } else {
-                while(it.hasNext) {
-                  if(currentLifecycleStage != LifecycleStage.Published) {
-                    // skip until it IS published, then resync
-                    while(it.hasNext && it.stageAfterNextEvent != LifecycleStage.Published) it.next()
-                    if(it.hasNext) throw new ResyncForPickySecondary
-                  } else {
-                    val publishedIt = new StageLimitedIterator(it)
-                    if(publishedIt.hasNext) {
-                      currentCookie = secondary.store.version(internalName, dataVersion, currentCookie, publishedIt)
-                      publishedIt.finish()
+            if(currentSecondaryVersion < dataVersion - 1) throw new ResyncForMissedVersion
+            else if(currentSecondaryVersion == dataVersion - 1) {
+              // right on schedule...
+              using(delogger.delog(dataVersion)) { rawIt =>
+                val it = new LifecycleStageTrackingIterator(rawIt, currentLifecycleStage)
+                if(secondary.store.wantsWorkingCopies) {
+                  currentCookie = secondary.store.version(internalName, dataVersion, currentCookie, it)
+                } else {
+                  while(it.hasNext) {
+                    if(currentLifecycleStage != LifecycleStage.Published) {
+                      // skip until it IS published, then resync
+                      while(it.hasNext && it.stageAfterNextEvent != LifecycleStage.Published) it.next()
+                      if(it.hasNext) throw new ResyncForPickySecondary
+                    } else {
+                      val publishedIt = new StageLimitedIterator(it)
+                      if(publishedIt.hasNext) {
+                        currentCookie = secondary.store.version(internalName, dataVersion, currentCookie, publishedIt)
+                        publishedIt.finish()
+                      }
                     }
                   }
                 }
+                currentLifecycleStage = it.finalLifecycleStage()
+                updateSecondaryMap(secondary, datasetId, dataVersion, currentLifecycleStage, currentCookie)
               }
-              currentLifecycleStage = it.finalLifecycleStage()
-              updateSecondaryMap(secondary, datasetId, dataVersion, currentLifecycleStage, currentCookie)
+              currentSecondaryVersion = dataVersion
+            } else if(dataVersion > job.endingDataVersion) {
+              // So far ahead even truth doesn't know about it?  That's impossible!
+              throw new ResyncForBeingTooFarAhead
+            } else {
+              // it's ahead, but not so far ahead that it's completely implausible
+              // hmph, since I need to track lifecycle stage changes I still need to run through the iterator...
+              using(delogger.delog(dataVersion)) { rawIt =>
+                val it = new LifecycleStageTrackingIterator(rawIt, currentLifecycleStage)
+                currentLifecycleStage = it.finalLifecycleStage()
+                updateSecondaryMap(secondary, datasetId, dataVersion, currentLifecycleStage, currentCookie)
+              }
+              currentSecondaryVersion = dataVersion
             }
           }
         } catch {
           case e: MissingVersion =>
             log.info("Couldn't find version " + e.version + " in log; resyncing")
             resync(datasetId, secondary, currentCookie, delogger)
+          case e: ResyncForMissedVersion =>
+            log.info("Secondary reported having a version earlier than what I thought it had; resyncing")
+            resync(datasetId, secondary, currentCookie, delogger)
           case _: ResyncException =>
             log.info("Incremental update requested full resync")
             resync(datasetId, secondary, currentCookie, delogger)
           case _: ResyncForPickySecondary =>
             log.info("Resyncing because secondary only wants published copies and we just got a publish event")
+            resync(datasetId, secondary, currentCookie, delogger)
+          case _: ResyncForBeingTooFarAhead =>
+            log.warn("Resyncing because the secondary is farther ahead than truth!")
             resync(datasetId, secondary, currentCookie, delogger)
         }
       case None =>
@@ -204,4 +228,6 @@ class PlaybackToSecondary[CT, CV](conn: Connection, secondaryManifest: Secondary
 
   private class ResyncException extends ControlThrowable
   private class ResyncForPickySecondary extends ControlThrowable
+  private class ResyncForMissedVersion extends ControlThrowable
+  private class ResyncForBeingTooFarAhead extends ControlThrowable
 }
