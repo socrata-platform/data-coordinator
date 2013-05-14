@@ -24,7 +24,7 @@ object Exporter {
         ss + (idCol.systemId -> idCol)
       }
 
-      withRows(properSchema.keySet, limit, offset) { it =>
+      for(it <- rows(properSchema.keySet, limit = limit, offset = offset)) yield {
         val toRemove = properSchema.keySet -- selectedSchema.keySet
         if(toRemove.isEmpty) it
         else it.map { row =>

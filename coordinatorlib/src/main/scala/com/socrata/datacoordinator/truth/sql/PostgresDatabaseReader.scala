@@ -32,11 +32,14 @@ class PostgresDatabaseReader[CT, CV](conn: Connection,
           case WorkingCopy => map.unpublished(datasetInfo)
           case Snapshot(n) => map.snapshot(datasetInfo, n)
         }
-      } yield new DatasetCopyContext(copyInfo, map.schema(copyInfo))
+      } yield loadDataset(copyInfo)
     }
 
-    def withRows[A](copyCtx: DatasetCopyContext[CT], sidCol: ColumnId, f: (Iterator[ColumnIdMap[CV]]) => A, limit: Option[Long], offset: Option[Long]): A =
-      new RepBasedDatasetExtractor(conn, copyCtx.copyInfo.dataTableName, repFor(copyCtx.schema(sidCol)).asPKableRep, copyCtx.schema.mapValuesStrict(repFor)).allRows(limit, offset).map(f)
+    def loadDataset(copyInfo: CopyInfo) =
+      new DatasetCopyContext(copyInfo, datasetMap.schema(copyInfo))
+
+    def rows(copyCtx: DatasetCopyContext[CT], sidCol: ColumnId, limit: Option[Long], offset: Option[Long]): Managed[Iterator[ColumnIdMap[CV]]] =
+      new RepBasedDatasetExtractor(conn, copyCtx.copyInfo.dataTableName, repFor(copyCtx.schema(sidCol)).asPKableRep, copyCtx.schema.mapValuesStrict(repFor)).allRows(limit, offset)
   }
 
   def openDatabase: Managed[ReadContext] = new SimpleArm[ReadContext] {

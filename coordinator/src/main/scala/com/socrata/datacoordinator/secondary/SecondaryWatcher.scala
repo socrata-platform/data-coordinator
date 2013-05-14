@@ -1,48 +1,32 @@
 package com.socrata.datacoordinator.secondary
 
-import scala.concurrent.duration._
-import com.rojoma.simplearm.{SimpleArm, Managed}
+import com.rojoma.simplearm.Managed
 
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.secondary.sql.SqlSecondaryConfig
 import com.typesafe.config.ConfigFactory
-import com.socrata.datacoordinator.common.{DataSourceConfig, SoQLCommon, StandardObfuscationKeyGenerator, DataSourceFromConfig}
+import com.socrata.datacoordinator.common.{DataSourceConfig, SoQLCommon, DataSourceFromConfig}
 import java.io.File
 import com.socrata.soql.types.{SoQLValue, SoQLType}
 import org.slf4j.LoggerFactory
 import sun.misc.{Signal, SignalHandler}
 import java.util.concurrent.{Executors, TimeUnit, CountDownLatch}
 import org.joda.time.{DateTime, Seconds}
-import com.socrata.datacoordinator.util.{TransferrableContextTimingReport, StackedTimingReport, LoggedTimingReport, TimingReport}
+import com.socrata.datacoordinator.util.{StackedTimingReport, LoggedTimingReport}
 import com.socrata.datacoordinator.truth.universe._
-import java.sql.Connection
-import com.socrata.datacoordinator.truth.universe.sql.{PostgresCopyIn, PostgresUniverse}
-import com.socrata.datacoordinator.id.RowId
 import org.apache.log4j.PropertyConfigurator
 import com.socrata.thirdparty.typesafeconfig.Propertizer
 
 class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseType[CT, CV]]) {
   import SecondaryWatcher.log
 
-  def run(u: Universe[CT, CV] with DatasetMapReaderProvider with SecondaryManifestProvider with PlaybackToSecondaryProvider with DeloggerProvider, secondary: NamedSecondary[CT, CV]) {
+  def run(u: Universe[CT, CV] with SecondaryManifestProvider with PlaybackToSecondaryProvider, secondary: NamedSecondary[CT, CV]) {
     import u._
-
-    val pb = playbackToSecondary
-    val dsmr = datasetMapReader
 
     val jobs = secondaryManifest.findDatasetsNeedingReplication(secondary.storeId)
     for(job <- jobs) {
-      dsmr.datasetInfo(job.datasetId) match {
-        case Some(datasetInfo) =>
-          log.info("Syncing {} into {}", job.datasetId, secondary.storeId)
-          pb(job.datasetId, secondary, job, delogger(datasetInfo))
-          // the playback will have committed
-        case None =>
-          log.info("Dropping {} from {}", job.datasetId, secondary.storeId)
-          pb.drop(secondary, job.datasetId, job.initialCookie)
-          secondaryManifest.dropDataset(secondary.storeId, job.datasetId)
-          commit()
-      }
+      log.info("Syncing {} into {}", job.datasetId, secondary.storeId)
+      playbackToSecondary(secondary, job)
     }
   }
 

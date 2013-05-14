@@ -66,6 +66,7 @@ object C3P0WrappedPostgresCopyIn extends ((Connection, String, Reader) => Long) 
 class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
                                                 commonSupport: PostgresCommonSupport[ColumnType, ColumnValue])
   extends Universe[ColumnType, ColumnValue]
+    with Commitable
     with DatasetMapReaderProvider
     with DatasetMapWriterProvider
     with GlobalLogPlaybackProvider
@@ -89,11 +90,19 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
   private var loggerCache = Map.empty[String, Logger[CT, CV]]
   private var txnStart = DateTime.now()
 
-  def commit() {
+  private def finish(op: Connection => Unit) {
     loggerCache.values.foreach(_.close())
     loggerCache = Map.empty
-    conn.commit()
+    op(conn)
     txnStart = DateTime.now()
+  }
+
+  def commit() {
+    finish(_.commit())
+  }
+
+  def rollback() {
+    finish(_.rollback())
   }
 
   def transactionStart = txnStart
@@ -102,7 +111,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
     new PostgresSecondaryPlaybackManifest(conn, storeId)
 
   lazy val playbackToSecondary: PlaybackToSecondary[CT, CV] =
-    new PlaybackToSecondary(conn, secondaryManifest, typeContext.typeNamespace, repFor, datasetIdFormatter, timingReport)
+    new PlaybackToSecondary(this, repFor, datasetIdFormatter, timingReport)
 
   def logger(datasetInfo: DatasetInfo): Logger[CT, CV] = {
     val logName = datasetInfo.logTableName

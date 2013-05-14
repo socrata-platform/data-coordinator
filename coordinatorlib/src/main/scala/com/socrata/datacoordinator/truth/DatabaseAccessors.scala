@@ -20,8 +20,9 @@ trait LowLevelDatabaseReader[CT, CV] {
     def datasetMap: DatasetMapReader[CT]
 
     def loadDataset(datasetId: DatasetId, latest: CopySelector): Option[DatasetCopyContext[CT]]
+    def loadDataset(latest: CopyInfo): DatasetCopyContext[CT]
 
-    def withRows[A](copyCtx: DatasetCopyContext[CT], sidCol: ColumnId, f: Iterator[ColumnIdMap[CV]] => A, limit: Option[Long], offset: Option[Long]): A
+    def rows(copyCtx: DatasetCopyContext[CT], sidCol: ColumnId, limit: Option[Long], offset: Option[Long]): Managed[Iterator[ColumnIdMap[CV]]]
   }
 
   def openDatabase: Managed[ReadContext]
@@ -60,17 +61,18 @@ trait DatasetReader[CT, CV] {
     val copyCtx: DatasetCopyContext[CT]
     def copyInfo = copyCtx.copyInfo
     def schema = copyCtx.schema
-    def withRows[A](cids: ColumnIdSet, offset: Option[Long], limit: Option[Long])(f: Iterator[ColumnIdMap[CV]] => A): A // TODO: I think this should return a Managed[Iterator...]
+    def rows(cids: ColumnIdSet = schema.keySet, offset: Option[Long] = None, limit: Option[Long] = None): Managed[Iterator[ColumnIdMap[CV]]]
   }
 
   def openDataset(datasetId: DatasetId, copy: CopySelector): Managed[Option[ReadContext]]
+  def openDataset(copy: CopyInfo): Managed[ReadContext]
 }
 
 object DatasetReader {
   private class Impl[CT, CV](val databaseReader: LowLevelDatabaseReader[CT, CV]) extends DatasetReader[CT, CV] {
     class S(val copyCtx: DatasetCopyContext[CT], llCtx: databaseReader.ReadContext) extends ReadContext {
-      def withRows[A](keySet: ColumnIdSet, limit: Option[Long], offset: Option[Long])(f: Iterator[ColumnIdMap[CV]] => A): A =
-        llCtx.withRows(copyCtx.verticalSlice { col => keySet.contains(col.systemId) }, copyCtx.pkCol_!.systemId, f, limit, offset)
+      def rows(keySet: ColumnIdSet, limit: Option[Long], offset: Option[Long]): Managed[Iterator[ColumnIdMap[CV]]] =
+        llCtx.rows(copyCtx.verticalSlice { col => keySet.contains(col.systemId) }, copyCtx.pkCol_!.systemId, limit, offset)
     }
 
     def openDataset(datasetId: DatasetId, copySelector: CopySelector): Managed[Option[ReadContext]] =
@@ -80,6 +82,16 @@ object DatasetReader {
         } yield {
           val ctxOpt = llCtx.loadDataset(datasetId, copySelector).map(new S(_, llCtx))
           f(ctxOpt)
+        }
+      }
+
+    def openDataset(copyInfo: CopyInfo): Managed[ReadContext] =
+      new SimpleArm[ReadContext] {
+        def flatMap[A](f: ReadContext => A): A = for {
+          llCtx <- databaseReader.openDatabase
+        } yield {
+          val ctx = new S(llCtx.loadDataset(copyInfo), llCtx)
+          f(ctx)
         }
       }
   }

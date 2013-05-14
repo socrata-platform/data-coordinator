@@ -38,16 +38,18 @@ trait Universe[ColumnType, ColumnValue] extends TypeUniverse {
   type CT = ColumnType
   type CV = ColumnValue
 
-  /** Commit the current transaction, if this `Universe` is transactional.
-    * Otherwise, does nothing.
+  def transactionStart: DateTime
+}
+
+trait Commitable {
+  /** Commit the current transaction and start a new one.
     * @note If this `Universe` was received via the resource-management system,
     *       that system is responsible for committing on normal completion of
     *       the management block.  As a result, most code should not need to
     *       explicitly call this method.
     */
   def commit()
-
-  def transactionStart: DateTime
+  def rollback()
 }
 
 trait LoggerProvider { this: TypeUniverse =>
