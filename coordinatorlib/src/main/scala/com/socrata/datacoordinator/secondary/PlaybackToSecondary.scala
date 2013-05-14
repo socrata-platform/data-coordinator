@@ -96,7 +96,6 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
     private val internalName = datasetIdFormatter(datasetId)
     private var currentCookie = job.initialCookie
     private var currentLifecycleStage = job.startingLifecycleStage
-    private var currentSecondaryVersion = secondary.store.currentVersion(internalName, currentCookie)
     private val datasetMapReader = u.datasetMapReader
 
     def go() {
@@ -105,33 +104,17 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
           log.info("Found dataset " + datasetInfo.systemId + " in truth")
           try {
             for(dataVersion <- job.startingDataVersion to job.endingDataVersion) {
-              if(currentSecondaryVersion < dataVersion - 1) throw new ResyncForMissedVersion
-              else if(currentSecondaryVersion == dataVersion - 1) {
-                // right on schedule...
-                playbackLog(datasetInfo, dataVersion)
-              } else if(dataVersion > job.endingDataVersion) {
-                // So far ahead even truth doesn't know about it?  That's impossible!
-                throw new ResyncForBeingTooFarAhead
-              } else {
-                // it's ahead, but not so far ahead that it's completely implausible
-                skipLog(datasetInfo, dataVersion)
-              }
+              playbackLog(datasetInfo, dataVersion)
             }
           } catch {
             case e: MissingVersion =>
               log.info("Couldn't find version " + e.version + " in log; resyncing")
-              resync()
-            case e: ResyncForMissedVersion =>
-              log.info("Secondary reported having a version earlier than what I thought it had; resyncing")
               resync()
             case _: ResyncException =>
               log.info("Incremental update requested full resync")
               resync()
             case _: ResyncForPickySecondary =>
               log.info("Resyncing because secondary only wants published copies and we just got a publish event")
-              resync()
-            case _: ResyncForBeingTooFarAhead =>
-              log.warn("Resyncing because the secondary is farther ahead than truth!")
               resync()
           }
         case None =>
@@ -166,21 +149,6 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
       }
       updateSecondaryMap(dataVersion, finalLifecycleStage)
       currentLifecycleStage = finalLifecycleStage
-      currentSecondaryVersion = dataVersion
-    }
-
-    def skipLog(datasetInfo: DatasetInfo, dataVersion: Long) {
-      // hmph, since I need to track lifecycle stage changes I still need to run through the iterator...
-      val finalLifecycleStage = for {
-        delogger <- managed(u.delogger(datasetInfo))
-        rawIt <- managed(delogger.delog(dataVersion))
-      } yield {
-        val it = new LifecycleStageTrackingIterator(rawIt, currentLifecycleStage)
-        it.finalLifecycleStage()
-      }
-      updateSecondaryMap(dataVersion, finalLifecycleStage)
-      currentLifecycleStage = finalLifecycleStage
-      currentSecondaryVersion = dataVersion
     }
 
     def drop() {
@@ -235,7 +203,5 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
 
     private class ResyncException extends ControlThrowable
     private class ResyncForPickySecondary extends ControlThrowable
-    private class ResyncForMissedVersion extends ControlThrowable
-    private class ResyncForBeingTooFarAhead extends ControlThrowable
   }
 }
