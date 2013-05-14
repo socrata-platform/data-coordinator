@@ -82,7 +82,7 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
 }
 
 object SecondaryWatcher extends App { self =>
-  type UniverseType[CT, CV] = Universe[CT, CV] with DatasetMapReaderProvider with GlobalLogPlaybackProvider with SecondaryManifestProvider with SecondaryPlaybackManifestProvider with PlaybackToSecondaryProvider with DeloggerProvider with SecondaryConfigProvider
+  type UniverseType[CT, CV] = Universe[CT, CV] with SecondaryManifestProvider with PlaybackToSecondaryProvider with SecondaryConfigProvider
 
   val rootConfig = ConfigFactory.load()
   val config = rootConfig.getConfig("com.socrata.secondary-watcher")
