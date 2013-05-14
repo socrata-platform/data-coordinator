@@ -127,11 +127,6 @@ CREATE OR REPLACE FUNCTION update_backup_log() RETURNS trigger as $update_backup
   DECLARE
     last_data_version BIGINT;
   BEGIN
-    SELECT latest_data_version INTO STRICT last_data_version FROM backup_log WHERE dataset_system_id = NEW.dataset_system_id;
-    IF (last_data_version <> NEW.data_version AND last_data_version + 1 <> NEW.data_version) THEN
-      RAISE EXCEPTION 'New data version was not within appropriate bounds: (old: %, new: %)', last_data_version, NEW.data_version;
-    END IF;
-
     -- First, we update the timestamp only if this is the first change since the last time
     -- the backup was run.  This is to keep things fair, otherwise a fast-changing dataset
     -- could keep knocking itself down the queue.
