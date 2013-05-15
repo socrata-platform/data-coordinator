@@ -70,6 +70,8 @@ object Main extends App {
 
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Main])
 
+  val secondaryInstance = "primus" // TODO: Better way to find this out!
+
   val analyzer = new SoQLAnalyzer(SoQLTypeInfo, SoQLFunctionInfoWithIds)
   def typeSerializer(out: CodedOutputStream, typ: SoQLAnalysisType) {
     out.writeStringNoTag(typ.canonical.name.name)
@@ -97,7 +99,7 @@ object Main extends App {
     dataCoordinatorProviderProvider <- managed(new ServiceProviderProvider(
       discovery,
       new strategies.RoundRobinStrategy,
-      "data-coordinator"))
+      "es"))
   } {
     curator.start()
     discovery.start()
@@ -111,7 +113,8 @@ object Main extends App {
       analyzer,
       analysisSerializer,
       (_, _) => (),
-      _ => None)
+      _ => None,
+      secondaryInstance)
 
     val serv = new SocrataServerJetty(
       handler = handler,

@@ -1,37 +1,41 @@
 package com.socrata.querycoordinator
 
+import scala.collection.JavaConverters._
 import java.io.Closeable
 import com.netflix.curator.x.discovery.{ProviderStrategy, ServiceProvider, ServiceDiscovery}
-import scala.collection.concurrent
+import java.util.concurrent.ConcurrentHashMap
 
 class ServiceProviderProvider[T](serviceDiscovery: ServiceDiscovery[T], providerStrategy: ProviderStrategy[T], baseName: String) extends Closeable {
-  private val providers = new concurrent.TrieMap[Int, ServiceProvider[T]]
+  private val providers = new ConcurrentHashMap[String, ServiceProvider[T]]
+  private var closed = false
 
-  private def maybeCreateProvider(n: Int): ServiceProvider[T] = synchronized {
-    providers.get(n) match {
+  private def maybeCreateProvider(instance: String): ServiceProvider[T] = synchronized {
+    if(closed) throw new IllegalStateException("ServiceProviderProvider closed")
+    Option(providers.get(instance)) match {
       case None =>
         val provider = serviceDiscovery.serviceProviderBuilder.
           providerStrategy(providerStrategy).
-          serviceName(baseName + "." + n).
+          serviceName(baseName + "." + instance).
           build()
         provider.start()
-        providers(n) = provider
+
+        providers.put(instance, provider)
         provider
       case Some(p) =>
         p
     }
   }
 
-  def provider(n: Int): ServiceProvider[T] = {
-    providers.get(n) match {
+  def provider(instance: String): ServiceProvider[T] = {
+    Option(providers.get(instance)) match {
       case Some(p) => p
-      case None =>
-        maybeCreateProvider(n)
+      case None => maybeCreateProvider(instance)
     }
   }
 
   def close() = synchronized {
-    providers.values.foreach(_.close())
+    providers.values.asScala.foreach(_.close())
     providers.clear()
+    closed = true
   }
 }

@@ -73,7 +73,8 @@ class Service(http: Http,
               analyzer: SoQLAnalyzer[SoQLAnalysisType],
               analysisSerializer: (OutputStream, SoQLAnalysis[SoQLAnalysisType]) => Unit,
               schemaCache: (String, Schema) => Unit,
-              schemaDecache: String => Option[Schema])
+              schemaDecache: String => Option[Schema],
+              secondaryInstance: String)
   extends (HttpServletRequest => HttpResponse)
 {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
@@ -333,7 +334,7 @@ class Service(http: Http,
     }
   }
 
-  def secondary(dataset: String) = Option(secondaryProvider.provider(0).getInstance).getOrElse {
+  def secondary(dataset: String) = Option(secondaryProvider.provider(secondaryInstance).getInstance).getOrElse {
     finishRequest(noSecondaryAvailable(dataset))
   }
 
