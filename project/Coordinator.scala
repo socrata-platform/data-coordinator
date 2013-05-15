@@ -13,7 +13,6 @@ object Coordinator {
         "net.sf.opencsv" % "opencsv" % "2.3",
         "com.typesafe" % "config" % "1.0.0",
         "com.socrata" %% "socrata-http-curator-broker" % "[1.3.0,2.0.0)",
-        "org.bouncycastle" % "bcprov-jdk15on" % "1.48",
         "org.slf4j" % "slf4j-log4j12" % BuildSettings.slf4jVersion,
         "org.scalacheck" %% "scalacheck" % "1.10.0" % "test"
       )

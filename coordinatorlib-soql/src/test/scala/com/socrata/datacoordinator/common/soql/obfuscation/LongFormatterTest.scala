@@ -1,4 +1,4 @@
-package com.socrata.datacoordinator.common.util
+package com.socrata.datacoordinator.common.soql.obfuscation
 
 import org.scalatest.FunSuite
 import org.scalatest.matchers.MustMatchers

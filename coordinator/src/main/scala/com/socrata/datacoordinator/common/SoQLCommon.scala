@@ -6,7 +6,6 @@ import com.socrata.soql.types._
 import com.socrata.soql.environment.{ColumnName, TypeName}
 import com.socrata.soql.brita.{AsciiIdentifierFilter, IdentifierFilter}
 import com.socrata.datacoordinator.common.soql.{SoQLRowLogCodec, SoQLRep, SoQLTypeContext}
-import com.socrata.datacoordinator.common.util.{RowVersionObfuscator, CryptProvider, RowIdObfuscator}
 import com.socrata.datacoordinator.truth.metadata.{DatasetCopyContext, DatasetInfo, AbstractColumnInfoLike, ColumnInfo}
 import com.socrata.datacoordinator.truth.json.{JsonColumnWriteRep, JsonColumnRep, JsonColumnReadRep}
 import java.util.concurrent.ExecutorService
@@ -21,6 +20,7 @@ import com.socrata.datacoordinator.util.{RowDataProvider, TransferrableContextTi
 import javax.sql.DataSource
 import com.rojoma.simplearm.{SimpleArm, Managed}
 import com.socrata.datacoordinator.truth.DatasetContext
+import com.socrata.datacoordinator.common.soql.obfuscation.{RowVersionObfuscator, RowIdObfuscator, CryptProvider}
 
 object SoQLSystemColumns { sc =>
   val id = ColumnName(":id")

@@ -1,4 +1,4 @@
-package com.socrata.datacoordinator.common.util
+package com.socrata.datacoordinator.common.soql.obfuscation
 
 object LongFormatter {
   private val quadifier = Quadifier

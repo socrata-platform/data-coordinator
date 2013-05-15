@@ -1,11 +1,13 @@
-package com.socrata.datacoordinator.common.util
+package com.socrata.datacoordinator.common.soql.obfuscation
+
+import java.security.SecureRandom
+
+import org.bouncycastle.crypto.params.KeyParameter
+import org.bouncycastle.crypto.engines.BlowfishEngine
+import org.bouncycastle.crypto.BlockCipher
 
 import com.socrata.datacoordinator.common.soql.SoQLRep
 import com.socrata.datacoordinator.id.{RowVersion, RowId}
-import org.bouncycastle.crypto.engines.BlowfishEngine
-import org.bouncycastle.crypto.params.KeyParameter
-import org.bouncycastle.crypto.BlockCipher
-import java.security.SecureRandom
 
 class CryptProvider(key: Array[Byte]) {
   private val keyParam = new KeyParameter(key)

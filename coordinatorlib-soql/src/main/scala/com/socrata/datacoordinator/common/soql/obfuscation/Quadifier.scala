@@ -1,4 +1,4 @@
-package com.socrata.datacoordinator.common.util
+package com.socrata.datacoordinator.common.soql.obfuscation
 
 object Quadifier {
   private val digitMask = ~((-1L) << 5)
