@@ -65,13 +65,15 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
 
   def norm(s: String) = Normalizer.normalize(s, normalizationMode)
 
-  def normalizeJson(token: JsonToken): JsonToken = {
-    def position(t: JsonToken) = { t.position = token.position; t }
+  def normalizeJson(token: JsonEvent): JsonEvent = {
+    def position(t: JsonEvent) = { t.position = token.position; t }
     token match {
-      case TokenString(s) =>
-        position(TokenString(norm(s)))
-      case TokenIdentifier(s) =>
-        position(TokenIdentifier(norm(s)))
+      case StringEvent(s) =>
+        position(StringEvent(norm(s)))
+      case FieldEvent(s) =>
+        position(FieldEvent(norm(s)))
+      case IdentifierEvent(s) =>
+        position(IdentifierEvent(norm(s)))
       case other =>
         other
     }
@@ -206,7 +208,7 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
     }
   }
 
-  def jsonStream(req: HttpServletRequest, approximateMaxDatumBound: Long): Either[HttpResponse, (JsonEventIterator, () => Unit)] = {
+  def jsonStream(req: HttpServletRequest, approximateMaxDatumBound: Long): Either[HttpResponse, (Iterator[JsonEvent], () => Unit)] = {
     val nullableContentType = req.getContentType
     if(nullableContentType == null)
       return Left(err(BadRequest, "req.content-type.missing"))
@@ -227,7 +229,7 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
           "content-type" -> JString(req.getContentType.toString)))
       }
     val boundedReader = new BoundedReader(reader, approximateMaxDatumBound)
-    Right(new JsonEventIterator(new BlockJsonTokenIterator(boundedReader).map(normalizeJson)), boundedReader.resetCount _)
+    Right((new FusedBlockJsonEventIterator(boundedReader).map(normalizeJson), boundedReader.resetCount _))
   }
 
   def err(codeSetter: HttpResponse, errorCode: String, data: (String, JValue)*): HttpResponse = {
