@@ -15,7 +15,7 @@ import com.ning.http.client.{AsyncHttpClient, AsyncHttpClientConfig}
 import com.ning.http.client.providers.grizzly.{GrizzlyAsyncHttpProvider, GrizzlyAsyncHttpProviderConfig}
 import com.socrata.soql.types.{SoQLVersion, SoQLID, SoQLTextLiteral, SoQLAnalysisType}
 import com.socrata.soql.{AnalysisSerializer, SoQLAnalyzer}
-import com.socrata.soql.functions.{SoQLFunctions, SoQLFunctionInfo, SoQLTypeInfo}
+import com.socrata.soql.functions.{SoQLTypeConversions, SoQLFunctions, SoQLFunctionInfo, SoQLTypeInfo}
 import com.google.protobuf.CodedOutputStream
 import com.ibm.icu.util.CaseInsensitiveString
 
@@ -24,34 +24,6 @@ final abstract class Main
 object evidences {
   implicit def httpResource[A <: dispatch.Http] = new com.rojoma.simplearm.Resource[A] {
     def close(a: A) { a.shutdown() }
-  }
-}
-
-object SoQLFunctionInfoWithIds extends SoQLFunctionInfo {
-  private val quad = "(?:[2-9a-kmnp-z]{4})"
-  private val punct = "[-._~]"
-
-  object IdStringRep {
-    private val RowIdentifierPattern = ("row-" + quad + punct + quad + punct + quad).r
-    def unapply(text: String): Boolean =
-      RowIdentifierPattern.pattern.matcher(text).matches()
-    def unapply(text: CaseInsensitiveString): Boolean = unapply(text.getString)
-  }
-
-  object VersionStringRep {
-    private val RowVersionPattern = ("rv-" + quad + punct + quad + punct + quad).r
-    def unapply(text: String): Boolean =
-      RowVersionPattern.pattern.matcher(text).matches()
-    def unapply(text: CaseInsensitiveString): Boolean = unapply(text.getString)
-  }
-
-  override def implicitConversions(from: SoQLAnalysisType, to: SoQLAnalysisType) = (from,to) match {
-    case (SoQLTextLiteral(IdStringRep()), SoQLID) =>
-      Some(SoQLFunctions.TextToRowIdentifier.monomorphic.getOrElse(sys.error("Text to row identifier is not monomorphic?")))
-    case (SoQLTextLiteral(VersionStringRep()), SoQLVersion) =>
-      Some(SoQLFunctions.TextToRowVersion.monomorphic.getOrElse(sys.error("Text to row version is not monomorphic?")))
-    case _ =>
-      super.implicitConversions(from, to)
   }
 }
 
@@ -72,7 +44,7 @@ object Main extends App {
 
   val secondaryInstance = "primus" // TODO: Better way to find this out!
 
-  val analyzer = new SoQLAnalyzer(SoQLTypeInfo, SoQLFunctionInfoWithIds)
+  val analyzer = new SoQLAnalyzer(SoQLTypeInfo, SoQLFunctionInfo)
   def typeSerializer(out: CodedOutputStream, typ: SoQLAnalysisType) {
     out.writeStringNoTag(typ.canonical.name.name)
   }
