@@ -16,11 +16,10 @@ import com.socrata.datacoordinator.truth.loader.RowPreparer
 import com.socrata.datacoordinator.id.{DatasetId, RowVersion, RowId}
 import java.sql.Connection
 import java.io.Reader
-import com.socrata.datacoordinator.util.{RowDataProvider, TransferrableContextTimingReport}
+import com.socrata.datacoordinator.util.TransferrableContextTimingReport
 import javax.sql.DataSource
 import com.rojoma.simplearm.{SimpleArm, Managed}
-import com.socrata.datacoordinator.truth.DatasetContext
-import com.socrata.datacoordinator.common.soql.obfuscation.{RowVersionObfuscator, RowIdObfuscator, CryptProvider}
+import com.socrata.soql.types.obfuscation.CryptProvider
 
 object SoQLSystemColumns { sc =>
   val id = ColumnName(":id")
@@ -70,8 +69,8 @@ class SoQLCommon(dataSource: DataSource,
 
   val typeContext = SoQLTypeContext
 
-  def idObfuscationContextFor(cryptProvider: CryptProvider) = new RowIdObfuscator(cryptProvider)
-  def versionObfuscationContextFor(cryptProvider: CryptProvider) = new RowVersionObfuscator(cryptProvider)
+  def idObfuscationContextFor(cryptProvider: CryptProvider) = new SoQLID.StringRep(cryptProvider)
+  def versionObfuscationContextFor(cryptProvider: CryptProvider) = new SoQLVersion.StringRep(cryptProvider)
   def generateObfuscationKey() = CryptProvider.generateKey()
   val initialCounterValue = 0L
 

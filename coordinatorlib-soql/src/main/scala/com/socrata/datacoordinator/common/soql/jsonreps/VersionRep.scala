@@ -7,10 +7,10 @@ import com.rojoma.json.ast.{JNull, JString, JValue}
 import com.socrata.datacoordinator.common.soql.SoQLRep
 import com.socrata.datacoordinator.id.RowVersion
 
-class VersionRep(obfuscationContext: SoQLRep.VersionObfuscationContext) extends JsonColumnRep[SoQLType, SoQLValue] {
+class VersionRep(StringRep: SoQLVersion.StringRep) extends JsonColumnRep[SoQLType, SoQLValue] {
   def fromJValue(input: JValue) = input match {
-    case JString(obfuscated) =>
-      obfuscationContext.deobfuscate(obfuscated).map { r => SoQLVersion(r.underlying) }
+    case JString(StringRep(version)) =>
+      Some(version)
     case JNull =>
       Some(SoQLNull)
     case _ =>
@@ -18,7 +18,7 @@ class VersionRep(obfuscationContext: SoQLRep.VersionObfuscationContext) extends 
   }
 
   def toJValue(value: SoQLValue): JValue = value match {
-    case SoQLVersion(rowId) => JString(obfuscationContext.obfuscate(new RowVersion(rowId)))
+    case version: SoQLVersion => JString(StringRep(version))
     case SoQLNull => JNull
     case _ => stdBadValue
   }

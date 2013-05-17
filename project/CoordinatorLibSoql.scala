@@ -5,7 +5,6 @@ object CoordinatorLibSoql {
   lazy val settings: Seq[Setting[_]] = BuildSettings.projectSettings() ++ Seq(
     libraryDependencies ++= Seq(
       "com.socrata" %% "soql-types" % "0.0.16-SNAPSHOT",
-      "org.bouncycastle" % "bcprov-jdk15on" % "1.48",
       "org.scalacheck" %% "scalacheck" % "1.10.0" % "test"
     )
   )

@@ -70,14 +70,14 @@ object SoQLRep {
     def deobfuscate(obfuscatedRowVersion: String): Option[RowVersion]
   }
 
-  private def jsonRepFactories(idObfuscationContext: IdObfuscationContext, versionObfuscationContext: VersionObfuscationContext) =
+  private def jsonRepFactories(idStringRep: SoQLID.StringRep, versionStringRep: SoQLVersion.StringRep) =
     jsonRepFactoriesMinusId ++ Seq(
-      SoQLID -> new jsonreps.IDRep(idObfuscationContext),
-      SoQLVersion -> new jsonreps.VersionRep(versionObfuscationContext)
+      SoQLID -> new jsonreps.IDRep(idStringRep),
+      SoQLVersion -> new jsonreps.VersionRep(versionStringRep)
     )
 
-  def jsonRep(idObfuscationContext: IdObfuscationContext, versionObfuscationContext: VersionObfuscationContext): (SoQLType => JsonColumnRep[SoQLType, SoQLValue]) = {
-    val factories = jsonRepFactories(idObfuscationContext, versionObfuscationContext);
+  def jsonRep(idStringRep: SoQLID.StringRep, versionStringRep: SoQLVersion.StringRep): (SoQLType => JsonColumnRep[SoQLType, SoQLValue]) = {
+    val factories = jsonRepFactories(idStringRep, versionStringRep);
     { typ => factories(typ) }
   }
 }
