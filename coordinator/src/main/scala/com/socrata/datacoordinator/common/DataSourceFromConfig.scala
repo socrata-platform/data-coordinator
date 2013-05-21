@@ -7,12 +7,13 @@ import java.io.Reader
 import org.postgresql.ds.PGSimpleDataSource
 import org.postgresql.PGConnection
 
-class DataSourceConfig(config: Config) {
-  val host = config.getString("host")
-  val port = config.getInt("port")
-  val database = config.getString("database")
-  val username = config.getString("username")
-  val password = config.getString("password")
+class DataSourceConfig(config: Config, root: String) {
+  private def k(s: String) = root + "." + s
+  val host = config.getString(k("host"))
+  val port = config.getInt(k("port"))
+  val database = config.getString(k("database"))
+  val username = config.getString(k("username"))
+  val password = config.getString(k("password"))
 }
 
 object DataSourceFromConfig {

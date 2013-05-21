@@ -7,7 +7,7 @@ import java.nio.channels.spi.SelectorProvider
 import java.nio.channels.{SelectionKey, SocketChannel}
 import java.sql.{DriverManager, Connection}
 
-import com.typesafe.config.ConfigFactory
+import com.typesafe.config.{Config, ConfigFactory}
 import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.truth.loader.sql.{RepBasedDatasetCsvifier, SqlDelogger}
@@ -40,23 +40,32 @@ import com.socrata.datacoordinator.truth.loader.MissingVersion
 
 final abstract class Transmitter
 
+class BackupConfig(config: Config, root: String) {
+  private def k(s: String) = root + "." + s
+  val log4j = config.getConfig(k("log4j"))
+  val backupHost = config.getString(k("network.backup-host"))
+  val port = config.getInt(k("network.port"))
+  val maxPacketSize = config.getInt(k("network.max-packet-size"))
+  val connectTimeout = config.getMilliseconds(k("network.connect-timeout")).longValue.milliseconds
+  val newTaskAcknowledgementTimeout = config.getMilliseconds(k("network.new-task-acknowledgement-timeout")).longValue.milliseconds
+  val pollInterval = config.getMilliseconds(k("database.poll-interval")).longValue.milliseconds
+  val database = new DataSourceConfig(config, k("database"))
+}
+
 object Transmitter extends App {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Transmitter])
 
   val config = ConfigFactory.load()
   println(config.root.render)
-  val backupConfig = config.getConfig("com.socrata.backup.transmitter")
-  PropertyConfigurator.configure(Propertizer("log4j", backupConfig.getConfig("log4j")))
+  val backupConfig = new BackupConfig(config, "com.socrata.backup.transmitter")
+  import backupConfig.{maxPacketSize, connectTimeout, pollInterval}
+  PropertyConfigurator.configure(Propertizer("log4j", backupConfig.log4j))
 
-  val address = new InetSocketAddress(InetAddress.getByName(backupConfig.getString("network.backup-host")), backupConfig.getInt("network.port"))
-  val maxPacketSize = backupConfig.getInt("network.max-packet-size")
-  val connectTimeout = backupConfig.getMilliseconds("network.connect-timeout").longValue.milliseconds
-  val newTaskAcknowledgementTimeout = backupConfig.getMilliseconds("network.new-task-acknowledgement-timeout").longValue.milliseconds
-  val pollInterval = backupConfig.getMilliseconds("database.poll-interval").longValue.milliseconds
+  val address = new InetSocketAddress(InetAddress.getByName(backupConfig.backupHost), backupConfig.port)
 
   val provider = SelectorProvider.provider
 
-  val (dataSource, _) = DataSourceFromConfig(new DataSourceConfig(backupConfig.getConfig("database")))
+  val (dataSource, _) = DataSourceFromConfig(backupConfig.database)
 
   val rowCodecFactory = () => SoQLRowLogCodec
   val protocol = new Protocol(new LogDataCodec(rowCodecFactory))

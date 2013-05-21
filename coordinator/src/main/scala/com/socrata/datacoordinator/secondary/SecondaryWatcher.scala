@@ -4,7 +4,7 @@ import com.rojoma.simplearm.Managed
 
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.secondary.sql.SqlSecondaryConfig
-import com.typesafe.config.ConfigFactory
+import com.typesafe.config.{Config, ConfigFactory}
 import com.socrata.datacoordinator.common.{DataSourceConfig, SoQLCommon, DataSourceFromConfig}
 import java.io.File
 import com.socrata.soql.types.{SoQLValue, SoQLType}
@@ -81,18 +81,27 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
   }
 }
 
+class SecondaryWatcherConfig(config: Config, root: String) {
+  private def k(s: String) = root + "." + s
+  val log4j = config.getConfig(k("log4j"))
+  val database = new DataSourceConfig(config, k("database"))
+  val secondaryConfigs = config.getObject(k("secondary.configs"))
+  val secondaryPath = new File(config.getString(k("secondary.path")))
+  val instance = config.getString(k("instance"))
+}
+
 object SecondaryWatcher extends App { self =>
   type UniverseType[CT, CV] = Universe[CT, CV] with SecondaryManifestProvider with PlaybackToSecondaryProvider with SecondaryConfigProvider
 
   val rootConfig = ConfigFactory.load()
-  val config = rootConfig.getConfig("com.socrata.secondary-watcher")
-  println(config.root.render())
-  PropertyConfigurator.configure(Propertizer("log4j", config.getConfig("log4j")))
+  println(rootConfig.root.render())
+  val config = new SecondaryWatcherConfig(rootConfig, "com.socrata.secondary-watcher")
+  PropertyConfigurator.configure(Propertizer("log4j", config.log4j))
 
   val log = LoggerFactory.getLogger(classOf[SecondaryWatcher[_,_]])
 
-  val (dataSource, copyIn) = DataSourceFromConfig(new DataSourceConfig(config.getConfig("database")))
-  val secondaries = SecondaryLoader.load(config.getObject("secondary.configs"), new File(config.getString("secondary.path"))).asInstanceOf[Map[String, Secondary[SoQLType, SoQLValue]]]
+  val (dataSource, copyIn) = DataSourceFromConfig(config.database)
+  val secondaries = SecondaryLoader.load(config.secondaryConfigs, config.secondaryPath).asInstanceOf[Map[String, Secondary[SoQLType, SoQLValue]]]
 
   val executor = Executors.newCachedThreadPool()
 
@@ -103,7 +112,7 @@ object SecondaryWatcher extends App { self =>
     _ => None,
     new LoggedTimingReport(log) with StackedTimingReport,
     allowDdlOnPublishedCopies = false, // don't care
-    config.getString("instance")
+    config.instance
   )
 
   val w = new SecondaryWatcher(common.universe)

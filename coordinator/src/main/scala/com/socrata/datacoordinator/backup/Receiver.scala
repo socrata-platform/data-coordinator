@@ -7,7 +7,7 @@ import java.net._
 import java.nio.channels.spi.SelectorProvider
 import java.sql.{DriverManager, Connection}
 
-import com.typesafe.config.ConfigFactory
+import com.typesafe.config.{Config, ConfigFactory}
 import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.packets.network.NetworkPackets
@@ -32,18 +32,27 @@ import com.socrata.thirdparty.typesafeconfig.Propertizer
 
 final abstract class Receiver
 
+class ReceiverConfig(config: Config, root: String) {
+  private def k(s: String) = root + "." + s
+  val log4j = config.getConfig(k("log4j"))
+  val reuseAddr = config.getBoolean(k("network.reuse-address"))
+  val idleTimeout = config.getMilliseconds(k("network.idle-timeout")).longValue.milliseconds
+  val dataTimeout = config.getMilliseconds(k("network.data-timeout")).longValue.milliseconds
+  val maxPacketSize = config.getInt(k("network.max-packet-size"))
+  val host = config.getString(k("network.host"))
+  val port = config.getInt(k("network.port"))
+  val database = new DataSourceConfig(config, k("database"))
+}
+
 object Receiver extends App {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Receiver])
   val config = ConfigFactory.load()
   println(config.root.render)
-  val receiverConfig = config.getConfig("com.socrata.backup.receiver")
-  PropertyConfigurator.configure(Propertizer("log4j", receiverConfig.getConfig("log4j")))
+  val receiverConfig = new ReceiverConfig(config, "com.socrata.backup.receiver")
+  PropertyConfigurator.configure(Propertizer("log4j", receiverConfig.log4j))
+  import receiverConfig.{reuseAddr, idleTimeout, dataTimeout, maxPacketSize}
 
-  val address = new InetSocketAddress(InetAddress.getByName(receiverConfig.getString("network.host")), receiverConfig.getInt("network.port"))
-  val reuseAddr = receiverConfig.getBoolean("network.reuse-address")
-  val idleTimeout = receiverConfig.getMilliseconds("network.idle-timeout").longValue.milliseconds
-  val dataTimeout = receiverConfig.getMilliseconds("network.data-timeout").longValue.milliseconds
-  val maxPacketSize = receiverConfig.getInt("network.max-packet-size")
+  val address = new InetSocketAddress(InetAddress.getByName(receiverConfig.host), receiverConfig.port)
 
   val executor = java.util.concurrent.Executors.newCachedThreadPool()
   val provider = SelectorProvider.provider
@@ -56,7 +65,7 @@ object Receiver extends App {
   val protocol = new Protocol(codec)
   import protocol._
 
-  val (dataSource, copyIn) = DataSourceFromConfig(new DataSourceConfig(receiverConfig.getConfig("database")))
+  val (dataSource, copyIn) = DataSourceFromConfig(receiverConfig.database)
 
   using(dataSource.getConnection()) { conn =>
     conn.setAutoCommit(false)

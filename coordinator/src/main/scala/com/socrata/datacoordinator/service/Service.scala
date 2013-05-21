@@ -523,7 +523,7 @@ abstract class ErrorAdapter(service: HttpServletRequest => HttpResponse) extends
 
 object Service extends App { self =>
   val serviceConfig = try {
-    new ServiceConfig(ConfigFactory.load().getConfig("com.socrata.coordinator-service"))
+    new ServiceConfig(ConfigFactory.load(), "com.socrata.coordinator-service")
   } catch {
     case e: Exception =>
       Console.err.println(e)
