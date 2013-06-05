@@ -22,7 +22,9 @@ class PostgresRepBasedDataSqlizer[CT, CV](tableName: String,
   def insertBatch[T](conn: Connection)(f: (Inserter) => T): (Long, T) = {
     val inserter = new InserterImpl
     val result = executor.submit(new Callable[Long] {
-      def call() = copyIn(conn, bulkInsertStatement, inserter.rw.reader)
+      def call() =
+        try { copyIn(conn, bulkInsertStatement, inserter.rw.reader) }
+        finally { inserter.rw.reader.close() }
     })
     try {
       val fResult = try {
