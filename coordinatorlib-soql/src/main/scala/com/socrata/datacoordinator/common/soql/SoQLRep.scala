@@ -44,6 +44,8 @@ object SoQLRep {
   )
   def csvRep(columnInfo: ColumnInfo[SoQLType]): CsvColumnRep[SoQLType, SoQLValue] =
     csvRepFactories(columnInfo.typ)
+  def csvRep(typ: SoQLType): CsvColumnRep[SoQLType, SoQLValue] =
+    csvRepFactories(typ)
 
   private val jsonRepFactoriesMinusId = Map[SoQLType, JsonColumnRep[SoQLType, SoQLValue]](
     SoQLText -> jsonreps.TextRep,
