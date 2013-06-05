@@ -61,7 +61,7 @@ trait DatasetReader[CT, CV] {
     val copyCtx: DatasetCopyContext[CT]
     def copyInfo = copyCtx.copyInfo
     def schema = copyCtx.schema
-    def rows(cids: ColumnIdSet = schema.keySet, offset: Option[Long] = None, limit: Option[Long] = None): Managed[Iterator[ColumnIdMap[CV]]]
+    def rows(cids: ColumnIdSet = schema.keySet, limit: Option[Long] = None, offset: Option[Long] = None): Managed[Iterator[ColumnIdMap[CV]]]
   }
 
   def openDataset(datasetId: DatasetId, copy: CopySelector): Managed[Option[ReadContext]]
@@ -72,7 +72,7 @@ object DatasetReader {
   private class Impl[CT, CV](val databaseReader: LowLevelDatabaseReader[CT, CV]) extends DatasetReader[CT, CV] {
     class S(val copyCtx: DatasetCopyContext[CT], llCtx: databaseReader.ReadContext) extends ReadContext {
       def rows(keySet: ColumnIdSet, limit: Option[Long], offset: Option[Long]): Managed[Iterator[ColumnIdMap[CV]]] =
-        llCtx.rows(copyCtx.verticalSlice { col => keySet.contains(col.systemId) }, copyCtx.pkCol_!.systemId, limit, offset)
+        llCtx.rows(copyCtx.verticalSlice { col => keySet.contains(col.systemId) }, copyCtx.pkCol_!.systemId, limit = limit, offset = offset)
     }
 
     def openDataset(datasetId: DatasetId, copySelector: CopySelector): Managed[Option[ReadContext]] =
