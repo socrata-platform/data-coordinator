@@ -16,6 +16,7 @@ import com.socrata.datacoordinator.util.{StackedTimingReport, LoggedTimingReport
 import com.socrata.datacoordinator.truth.universe._
 import org.apache.log4j.PropertyConfigurator
 import com.socrata.thirdparty.typesafeconfig.Propertizer
+import scala.concurrent.duration.Duration
 
 class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseType[CT, CV]]) {
   import SecondaryWatcher.log
@@ -111,7 +112,8 @@ object SecondaryWatcher extends App { self =>
     executor,
     _ => None,
     new LoggedTimingReport(log) with StackedTimingReport,
-    allowDdlOnPublishedCopies = false, // don't care
+    allowDdlOnPublishedCopies = false, // don't care,
+    Duration.fromNanos(1L), // don't care
     config.instance
   )
 

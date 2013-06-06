@@ -20,6 +20,7 @@ import com.socrata.datacoordinator.util.TransferrableContextTimingReport
 import javax.sql.DataSource
 import com.rojoma.simplearm.{SimpleArm, Managed}
 import com.socrata.soql.types.obfuscation.CryptProvider
+import scala.concurrent.duration.Duration
 
 object SoQLSystemColumns { sc =>
   val id = ColumnName(":id")
@@ -43,6 +44,7 @@ class SoQLCommon(dataSource: DataSource,
                  tableSpace: String => Option[String],
                  val timingReport: TransferrableContextTimingReport,
                  allowDdlOnPublishedCopies: Boolean,
+                 writeLockTimeout: Duration,
                  instance: String)
 { common =>
   type CT = SoQLType
@@ -117,6 +119,8 @@ class SoQLCommon(dataSource: DataSource,
       isSystemColumnName(ci.logicalName)
 
     val datasetIdFormatter = internalNameFromDatasetId _
+
+    val writeLockTimeout = common.writeLockTimeout
 
     def rowPreparer(transactionStart: DateTime, ctx: DatasetCopyContext[CT], replaceUpdatedRows: Boolean): RowPreparer[SoQLValue] =
       new RowPreparer[SoQLValue] {

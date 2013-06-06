@@ -55,6 +55,7 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
               ensureInSecondary: (String, DatasetId) => Unit,
               secondariesOfDataset: DatasetId => Map[String, Long],
               datasets: () => Seq[DatasetId],
+              deleteDataset: DatasetId => DatasetDropper.Result,
               commandReadLimit: Long,
               formatDatasetId: DatasetId => String,
               parseDatasetId: String => Option[DatasetId])
@@ -82,6 +83,10 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
   def notFoundError(datasetId: String) =
     err(NotFound, "update.dataset.does-not-exist",
       "dataset" -> JString(datasetId))
+
+  def writeLockError(datasetId: DatasetId) =
+    err(Conflict, "update.dataset.temporarily-not-writable",
+      "dataset" -> JString(formatDatasetId(datasetId)))
 
   def doExportFile(idRaw: String)(req: HttpServletRequest): HttpResponse = {
     val normalizedId = norm(idRaw)
@@ -282,8 +287,7 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
           case Mutator.NoSuchDataset(name) =>
             notFoundError(formatDatasetId(name))
           case Mutator.CannotAcquireDatasetWriteLock(name) =>
-            err(Conflict, "update.dataset.temporarily-not-writable",
-              "dataset" -> JString(formatDatasetId(name)))
+            writeLockError(name)
           case Mutator.IncorrectLifecycleStage(name, currentStage, expectedStage) =>
             err(Conflict, "update.dataset.invalid-state",
               "dataset" -> JString(formatDatasetId(name)),
@@ -417,15 +421,16 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
   }
 
   def doGetSchema(datasetIdRaw: String)(req: HttpServletRequest): HttpResponse = {
+    val normalizedId = norm(datasetIdRaw)
     val result = for {
-      datasetId <- parseDatasetId(datasetIdRaw)
+      datasetId <- parseDatasetId(normalizedId)
       schema <- getSchema(datasetId)
     } yield {
       OK ~> ContentType("application/json; charset=utf-8") ~> Write { w =>
         JsonUtil.writeJson(w, jsonifySchema(schema))
       }
     }
-    result.getOrElse(NotFound)
+    result.getOrElse(notFoundError(normalizedId))
   }
 
   def doListDatasets()(req: HttpServletRequest): HttpResponse = {
@@ -445,11 +450,28 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
     }
   }
 
+  def doDeleteDataset(datasetIdRaw: String)(req: HttpServletRequest): HttpResponse = {
+    val normalizedId = norm(datasetIdRaw)
+    val result = for {
+      datasetId <- parseDatasetId(normalizedId)
+    } yield {
+      deleteDataset(datasetId) match {
+        case DatasetDropper.Success =>
+          OK ~> ContentType("application/json; charset=utf-8") ~> Content("[]")
+        case DatasetDropper.FailureNotFound =>
+          notFoundError(normalizedId)
+        case DatasetDropper.FailureWriteLock =>
+          writeLockError(datasetId)
+      }
+    }
+    result.getOrElse(notFoundError(normalizedId))
+  }
+
   val router = RouterSet(
     ExtractingRouter[HttpService]("POST", "/dataset")(doCreation _),
     ExtractingRouter[HttpService]("POST", "/dataset/?")(doMutation _),
     ExtractingRouter[HttpService]("GET", "/dataset/?/schema")(doGetSchema _),
-    // ExtractingRouter[HttpService]("DELETE", "/dataset/?")(doDeleteDataset _),
+    ExtractingRouter[HttpService]("DELETE", "/dataset/?")(doDeleteDataset _),
     ExtractingRouter[HttpService]("GET", "/dataset/?")(doExportFile _),
     ExtractingRouter[HttpService]("GET", "/datasets")(doListDatasets _),
     ExtractingRouter[HttpService]("GET", "/secondary-manifest")(doGetSecondaries _),
@@ -554,6 +576,7 @@ object Service extends App { self =>
         _ => Some("pg_default"),
         new LoggedTimingReport(org.slf4j.LoggerFactory.getLogger("timing-report")) with StackedTimingReport,
         allowDdlOnPublishedCopies = serviceConfig.allowDdlOnPublishedCopies,
+        serviceConfig.writeLockTimeout,
         serviceConfig.instance
       )
     }
@@ -573,7 +596,7 @@ object Service extends App { self =>
     def ensureInSecondary(storeId: String, datasetId: DatasetId): Unit =
       for(u <- common.universe) {
         try {
-          u.datasetMapWriter.datasetInfo(datasetId, scala.concurrent.duration.Duration(10, "s")) match {
+          u.datasetMapWriter.datasetInfo(datasetId, serviceConfig.writeLockTimeout) match {
             case Some(_) =>
               u.secondaryManifest.addDataset(storeId, datasetId)
             case None =>
@@ -640,9 +663,15 @@ object Service extends App { self =>
       }
     }
 
+    def deleteDataset(datasetId: DatasetId) = {
+      for(u <- common.universe) yield {
+        u.datasetDropper.dropDataset(datasetId)
+      }
+    }
+
     val serv = new Service(processMutation, processCreation, common.Mutator.schemaFinder.getSchema, exporter,
       secondaries.keySet, datasetsInStore, versionInStore, ensureInSecondary,
-      secondariesOfDataset, listDatasets, serviceConfig.commandReadLimit,
+      secondariesOfDataset, listDatasets, deleteDataset, serviceConfig.commandReadLimit,
       common.internalNameFromDatasetId, common.datasetIdFromInternalName)
 
     for {

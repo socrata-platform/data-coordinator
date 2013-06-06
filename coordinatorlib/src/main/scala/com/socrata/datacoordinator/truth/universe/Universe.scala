@@ -127,3 +127,7 @@ trait DatasetContentsCopierProvider { this: TypeUniverse =>
 trait GlobalLogProvider {
   val globalLog: GlobalLog
 }
+
+trait DatasetDropperProvider {
+  def datasetDropper: DatasetDropper
+}

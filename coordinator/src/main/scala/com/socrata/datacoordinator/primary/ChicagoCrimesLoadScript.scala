@@ -18,6 +18,8 @@ import com.socrata.datacoordinator.truth.universe.sql.PostgresCopyIn
 import com.socrata.datacoordinator.truth.csv.CsvColumnReadRep
 import com.socrata.datacoordinator.common.soql.SoQLRep
 import org.apache.log4j.PropertyConfigurator
+import scala.concurrent.duration.{FiniteDuration, Duration}
+import java.util.concurrent.TimeUnit
 
 object ChicagoCrimesLoadScript extends App {
   val loggingProps = new java.util.Properties
@@ -57,6 +59,7 @@ object ChicagoCrimesLoadScript extends App {
       Function.const(None),
       new LoggedTimingReport(LoggerFactory.getLogger("timing-report")) with StackedTimingReport,
       allowDdlOnPublishedCopies = false,
+      new FiniteDuration(10, TimeUnit.SECONDS),
       "dummy instance"
     )
 

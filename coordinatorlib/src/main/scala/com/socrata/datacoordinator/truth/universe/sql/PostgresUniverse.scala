@@ -43,6 +43,8 @@ trait PostgresCommonSupport[CT, CV] {
 
   def rowPreparer(transactionStart: DateTime, ctx: DatasetCopyContext[CT], replaceUpdatedRows: Boolean): RowPreparer[CV]
 
+  def writeLockTimeout: Duration
+
   lazy val loaderProvider = new AbstractSqlLoaderProvider(executor, typeContext, repFor, isSystemColumn) with PostgresSqlLoaderProvider[CT, CV] {
     def copyIn(conn: Connection, sql: String, reader: Reader): Long =
       copyInProvider(conn, sql, reader)
@@ -84,6 +86,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
     with GlobalLogProvider
     with DatasetReaderProvider
     with DatasetMutatorProvider
+    with DatasetDropperProvider
 {
   import commonSupport._
 
@@ -180,11 +183,14 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
   )
 
   lazy val datasetMutator: DatasetMutator[CT, CV] =
-    DatasetMutator(lowLevelDatabaseMutator, Duration(10, "s"))
+    DatasetMutator(lowLevelDatabaseMutator, writeLockTimeout)
 
   def schemaLoader(logger: Logger[CT, CV]) =
     new RepBasedPostgresSchemaLoader(conn, logger, repFor, tablespace)
 
   def datasetContentsCopier(logger: Logger[CT, CV]): DatasetContentsCopier[CT] =
     new RepBasedSqlDatasetContentsCopier(conn, logger, repFor, timingReport)
+
+  lazy val datasetDropper =
+    new SqlDatasetDropper(conn, writeLockTimeout, datasetMapWriter)
 }
