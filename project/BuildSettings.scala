@@ -36,6 +36,7 @@ object BuildSettings {
 
   def projectSettings(assembly: Boolean = false): Seq[Setting[_]] =
     BuildSettings.buildSettings ++
+      (if(assembly) sbtassembly.Plugin.assemblySettings else Seq.empty) ++
       Seq(
         fork in test := true,
         test in Test <<= (test in Test) dependsOn (test in IntegrationTest)
