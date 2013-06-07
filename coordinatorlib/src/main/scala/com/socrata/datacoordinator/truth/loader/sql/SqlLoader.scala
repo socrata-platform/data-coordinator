@@ -305,7 +305,13 @@ final class SqlLoader[CT, CV](val connection: Connection,
                 val sidValue = preparedRow(datasetContext.systemIdColumn)
                 assert(typeContext.makeSystemIdFromValue(sidValue) == sid, "preparing the row for insert put the wrong sid in?")
 
-                inserter.insert(preparedRow)
+                try {
+                  inserter.insert(preparedRow)
+                } catch {
+                  case e: ClassCastException =>
+                    e.printStackTrace()
+                    throw e
+                }
                 believedInserted += 1
 
                 val inspectedRow = InspectedRow(sidValue, sid, version, preparedRow)

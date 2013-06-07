@@ -131,3 +131,7 @@ trait GlobalLogProvider {
 trait DatasetDropperProvider {
   def datasetDropper: DatasetDropper
 }
+
+trait TableCleanupProvider {
+  def tableCleanup: TableCleanup
+}

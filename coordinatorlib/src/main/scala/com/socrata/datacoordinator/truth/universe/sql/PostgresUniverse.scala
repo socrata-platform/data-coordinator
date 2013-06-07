@@ -87,6 +87,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
     with DatasetReaderProvider
     with DatasetMutatorProvider
     with DatasetDropperProvider
+    with TableCleanupProvider
 {
   import commonSupport._
 
@@ -193,4 +194,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
 
   lazy val datasetDropper =
     new SqlDatasetDropper(conn, writeLockTimeout, datasetMapWriter)
+
+  lazy val tableCleanup: TableCleanup =
+    new SqlTableCleanup(conn)
 }

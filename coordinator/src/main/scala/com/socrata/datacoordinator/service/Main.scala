@@ -1,0 +1,212 @@
+package com.socrata.datacoordinator.service
+
+import com.rojoma.simplearm.util._
+import com.typesafe.config.ConfigFactory
+import org.apache.log4j.PropertyConfigurator
+import com.socrata.thirdparty.typesafeconfig.Propertizer
+import com.socrata.datacoordinator.secondary.{DatasetAlreadyInSecondary, SecondaryLoader}
+import java.util.concurrent.{CountDownLatch, TimeUnit, Executors}
+import com.socrata.datacoordinator.common.{SoQLCommon, StandardDatasetMapLimits, DataSourceFromConfig}
+import com.socrata.datacoordinator.util.{StackedTimingReport, LoggedTimingReport}
+import com.socrata.datacoordinator.id.{ColumnId, DatasetId}
+import com.rojoma.json.ast.JValue
+import com.socrata.datacoordinator.truth.CopySelector
+import com.socrata.soql.environment.ColumnName
+import com.netflix.curator.retry
+import com.netflix.curator.framework.CuratorFrameworkFactory
+import com.netflix.curator.x.discovery.ServiceDiscoveryBuilder
+import com.socrata.http.server.curator.CuratorBroker
+
+class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
+  def ensureInSecondary(storeId: String, datasetId: DatasetId): Unit =
+    for(u <- common.universe) {
+      try {
+        u.datasetMapWriter.datasetInfo(datasetId, serviceConfig.writeLockTimeout) match {
+          case Some(_) =>
+            u.secondaryManifest.addDataset(storeId, datasetId)
+          case None =>
+            ??? // TODO: proper error
+        }
+      } catch {
+        case _: DatasetAlreadyInSecondary =>
+        // ok, it's there
+      }
+    }
+
+  def datasetsInStore(storeId: String): Map[DatasetId, Long] =
+    for(u <- common.universe) yield {
+      u.secondaryManifest.datasets(storeId)
+    }
+
+  def versionInStore(storeId: String, datasetId: DatasetId): Option[Long] =
+    for(u <- common.universe) yield {
+      for {
+        result <- u.secondaryManifest.readLastDatasetInfo(storeId, datasetId)
+      } yield result._1
+    }
+
+  def secondariesOfDataset(datasetId: DatasetId): Map[String, Long] =
+    for(u <- common.universe) yield {
+      val secondaryManifest = u.secondaryManifest
+      secondaryManifest.stores(datasetId)
+    }
+
+  private val mutator = new Mutator(common.Mutator)
+
+  def processMutation(datasetId: DatasetId, input: Iterator[JValue]) = {
+    for(u <- common.universe) yield {
+      mutator.updateScript(u, datasetId, input)
+    }
+  }
+
+  def processCreation(input: Iterator[JValue]) = {
+    for(u <- common.universe) yield {
+      mutator.createScript(u, input)
+    }
+  }
+
+  def listDatasets(): Seq[DatasetId] = {
+    for(u <- common.universe) yield {
+      u.datasetMapReader.allDatasetIds()
+    }
+  }
+
+  def deleteDataset(datasetId: DatasetId) = {
+    for(u <- common.universe) yield {
+      u.datasetDropper.dropDataset(datasetId)
+    }
+  }
+
+  def exporter(id: DatasetId, copy: CopySelector, columns: Option[Set[ColumnName]], limit: Option[Long], offset: Option[Long])(f: (Seq[Field], Option[ColumnName], String, Iterator[Array[JValue]]) => Unit): Boolean = {
+    val res = for(u <- common.universe) yield {
+      Exporter.export(u, id, copy, columns, limit, offset) { (copyCtx, it) =>
+        val jsonReps = common.jsonReps(copyCtx.datasetInfo)
+        val jsonSchema = copyCtx.schema.mapValuesStrict { ci => jsonReps(ci.typ) }
+        val unwrappedCids = copyCtx.schema.values.toSeq.filter { ci => jsonSchema.contains(ci.systemId) }.sortBy(_.logicalName).map(_.systemId.underlying).toArray
+        val pkColName = copyCtx.pkCol.map(_.logicalName)
+        val orderedSchema = unwrappedCids.map { cidRaw =>
+          val col = copyCtx.schema(new ColumnId(cidRaw))
+          Field(col.logicalName.name, col.typ.name.name)
+        }
+        f(orderedSchema,
+          pkColName,
+          copyCtx.datasetInfo.localeName,
+          it.map { row =>
+            val arr = new Array[JValue](unwrappedCids.length)
+            var i = 0
+            while(i != unwrappedCids.length) {
+              val cid = new ColumnId(unwrappedCids(i))
+              val rep = jsonSchema(cid)
+              arr(i) = rep.toJValue(row(cid))
+              i += 1
+            }
+            arr
+          })
+      }
+    }
+    res.isDefined
+  }
+
+}
+
+object Main {
+  lazy val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
+
+  def main(args: Array[String]) {
+    val serviceConfig = try {
+      new ServiceConfig(ConfigFactory.load(), "com.socrata.coordinator-service")
+    } catch {
+      case e: Exception =>
+        Console.err.println(e)
+        sys.exit(1)
+    }
+
+    PropertyConfigurator.configure(Propertizer("log4j", serviceConfig.logProperties))
+
+    println(serviceConfig.config.root.render)
+
+    val secondaries = SecondaryLoader.load(serviceConfig.secondary.configs, serviceConfig.secondary.path)
+
+    val executorService = Executors.newCachedThreadPool()
+    try {
+      val common = locally {
+        val (dataSource, copyInForDataSource) = DataSourceFromConfig(serviceConfig.dataSource)
+
+        com.rojoma.simplearm.util.using(dataSource.getConnection()) { conn =>
+          com.socrata.datacoordinator.truth.sql.DatabasePopulator.populate(conn, StandardDatasetMapLimits)
+        }
+
+        new SoQLCommon(
+          dataSource,
+          copyInForDataSource,
+          executorService,
+          _ => Some("pg_default"),
+          new LoggedTimingReport(org.slf4j.LoggerFactory.getLogger("timing-report")) with StackedTimingReport,
+          allowDdlOnPublishedCopies = serviceConfig.allowDdlOnPublishedCopies,
+          serviceConfig.writeLockTimeout,
+          serviceConfig.instance
+        )
+      }
+
+      val operations = new Main(common, serviceConfig)
+
+      val serv = new Service(operations.processMutation, operations.processCreation, common.Mutator.schemaFinder.getSchema,
+        operations.exporter, secondaries.keySet, operations.datasetsInStore, operations.versionInStore,
+        operations.ensureInSecondary, operations.secondariesOfDataset, operations.listDatasets, operations.deleteDataset,
+        serviceConfig.commandReadLimit, common.internalNameFromDatasetId, common.datasetIdFromInternalName)
+
+      val finished = new CountDownLatch(1)
+      val tableDropper = new Thread() {
+        setName("table dropper")
+        override def run() {
+          while(!finished.await(30, TimeUnit.SECONDS)) {
+            try {
+              for(u <- common.universe) {
+                while(finished.getCount > 0 && u.tableCleanup.cleanupPendingDrops()) {
+                  u.commit()
+                }
+              }
+            } catch {
+              case e: Exception =>
+                log.error("Unexpected error while dropping tables", e)
+            }
+          }
+        }
+      }
+
+      try {
+        tableDropper.start()
+        for {
+          curator <- managed(CuratorFrameworkFactory.builder.
+            connectString(serviceConfig.curator.ensemble).
+            sessionTimeoutMs(serviceConfig.curator.sessionTimeout.toMillis.toInt).
+            connectionTimeoutMs(serviceConfig.curator.connectTimeout.toMillis.toInt).
+            retryPolicy(new retry.BoundedExponentialBackoffRetry(serviceConfig.curator.baseRetryWait.toMillis.toInt,
+            serviceConfig.curator.maxRetryWait.toMillis.toInt,
+            serviceConfig.curator.maxRetries)).
+            namespace(serviceConfig.curator.namespace).
+            build())
+          discovery <- managed(ServiceDiscoveryBuilder.builder(classOf[Void]).
+            client(curator).
+            basePath(serviceConfig.advertisement.basePath).
+            build())
+        } {
+          curator.start()
+          discovery.start()
+          serv.run(serviceConfig.network.port, new CuratorBroker(discovery, serviceConfig.advertisement.address, serviceConfig.advertisement.name + "." + serviceConfig.instance))
+        }
+
+        log.info("Shutting down secondaries")
+        secondaries.values.foreach(_.shutdown())
+      } finally {
+        finished.countDown()
+      }
+
+      log.info("Waiting for table dropper to terminate")
+      tableDropper.join()
+    } finally {
+      executorService.shutdown()
+    }
+    executorService.awaitTermination(Long.MaxValue, TimeUnit.SECONDS)
+  }
+}
