@@ -1,0 +1,19 @@
+[
+  { c: "normal", user: "testing 123" },
+  { c: "row data" },
+  { 
+    id: 1,
+    text: "smiling smiling smiling!",
+    number: 3.141592654,
+    money: 99.99,
+    fixed: "2001-04-01T00:00:00.001+0000",
+    float:"2001-04-01T00:00:00.001",
+    date: "2001-12-31",
+    time: "12:12:12.12",
+    location: { lat: 45, lon: 180 },
+    double: 3.141592654,
+    arr: ["goodbye world", 3, 2, 1 ],
+    obj: {"gnu":"happy"}
+  },
+  null
+]

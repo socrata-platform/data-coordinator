@@ -1,0 +1,32 @@
+[
+  { c: "create", user: "testing 123" },
+  { c: "add column", name: "id", type: "number" },
+  { c: "set row id", column: "id" },
+  { c: "add column", name: "text", type: "text" },
+  { c: "add column", name: "number", type: "number" },
+  { c: "add column", name: "money", type: "money" },
+  { c: "add column", name: "fixed", type: "fixed_timestamp" },
+  { c: "add column", name: "float", type: "floating_timestamp" },
+  { c: "add column", name: "date", type: "date" },
+  { c: "add column", name: "time", type: "time" },
+  { c: "add column", name: "location", type: "location" },
+  { c: "add column", name: "double", type: "double" },
+  { c: "add column", name: "arr", type: "array" },
+  { c: "add column", name: "obj", type: "object" },
+  { c: "row data" },
+  { 
+    id: 1,
+    text: "gnu gnu gnu!",
+    number: 6.02e+23,
+    money: 9.99,
+    fixed: "2012-01-01T03:03:03.03+0800",
+    float:"2012-01-01T03:03:03.03",
+    date: "2012-01-01",
+    time: "03:03:03.03",
+    location: { lat: 0, lon: 0},
+    double: 6.02e+23,
+    arr: [1,2,3,"hello world"],
+    obj: {"smiling":"gnu"}
+  },
+  null
+]
