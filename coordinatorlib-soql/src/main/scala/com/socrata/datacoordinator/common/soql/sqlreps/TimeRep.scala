@@ -10,13 +10,17 @@ import com.socrata.soql.types.{SoQLNull, SoQLValue, SoQLTime, SoQLType}
 import org.joda.time.format.ISODateTimeFormat
 
 class TimeRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType, SoQLValue] {
+  import TimeRep._
+
   def printer = ISODateTimeFormat.time
   def parser = ISODateTimeFormat.localTimeParser
 
-  override def templateForInsert = "(? :: TIME WITHOUT TIME ZONE)"
+  override def templateForInsert = placeholder
 
   def templateForMultiLookup(n: Int): String =
-    s"($base in (${(1 to n).map(_ => "(? :: TIME WITHOUT TIME ZONE)").mkString(",")}))"
+    s"($base in (${Iterator.fill(n)(placeholder).mkString(",")}))"
+
+  override lazy val templateForUpdate = s"$base = $placeholder"
 
   def prepareMultiLookup(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
     stmt.setString(start, printer.print(v.asInstanceOf[SoQLTime].value))
@@ -26,7 +30,7 @@ class TimeRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
   def literalize(t: LocalTime) =
     literalizeTo(new StringBuilder, t).toString
   def literalizeTo(sb: StringBuilder, t: LocalTime) = {
-    sb.append("(TIME WITHOUT TIME ZONE '")
+    sb.append('(').append(timeType).append(" '")
     printer.printTo(sb, t)
     sb.append("')")
   }
@@ -36,7 +40,7 @@ class TimeRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
       literalize(lit.asInstanceOf[SoQLTime].value)
     }.mkString(s"($base in (", ",", "))")
 
-  def templateForSingleLookup: String = s"($base = (? :: TIME WITHOUT TIME ZONE))"
+  def templateForSingleLookup: String = s"($base = $placeholder)"
 
   def prepareSingleLookup(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = prepareMultiLookup(stmt, v, start)
 
@@ -53,7 +57,7 @@ class TimeRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
 
   val physColumns: Array[String] = Array(base)
 
-  val sqlTypes: Array[String] = Array("TIME WITHOUT TIME ZONE")
+  val sqlTypes: Array[String] = Array(timeType)
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue) {
     if(SoQLNull == v) { /* pass */ }
@@ -75,4 +79,9 @@ class TimeRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
     if(ts == null) SoQLNull
     else SoQLTime(parser.parseLocalTime(ts))
   }
+}
+
+object TimeRep {
+  private val timeType = "TIME (3) WITHOUT TIME ZONE"
+  private val placeholder = s"(? :: $timeType)"
 }

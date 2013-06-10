@@ -10,13 +10,17 @@ import com.socrata.soql.types.{SoQLNull, SoQLValue, SoQLDate, SoQLType}
 import org.joda.time.format.ISODateTimeFormat
 
 class DateRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType, SoQLValue] {
+  import DateRep._
+
   def printer = ISODateTimeFormat.date
   def parser = ISODateTimeFormat.localDateParser
 
-  override def templateForInsert = "(? :: DATE)"
+  override def templateForInsert = placeholder
 
   def templateForMultiLookup(n: Int): String =
-    s"($base in (${(1 to n).map(_ => "(? :: DATE)").mkString(",")}))"
+    s"($base in (${Iterator.fill(n)(placeholder).mkString(",")}))"
+
+  override lazy val templateForUpdate = s"$base = $placeholder"
 
   def prepareMultiLookup(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
     stmt.setString(start, printer.print(v.asInstanceOf[SoQLDate].value))
@@ -26,7 +30,7 @@ class DateRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
   def literalize(t: LocalDate) =
     literalizeTo(new StringBuilder, t)
   def literalizeTo(sb: StringBuilder, t: LocalDate) = {
-    sb.append("(DATE '")
+    sb.append('(').append(dateType).append(" '")
     printer.printTo(sb, t)
     sb.append("')")
   }
@@ -36,7 +40,7 @@ class DateRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
       literalize(lit.asInstanceOf[SoQLDate].value)
     }.mkString(s"($base in (", ",", "))")
 
-  def templateForSingleLookup: String = s"($base = (? :: DATE))"
+  def templateForSingleLookup: String = s"($base = $placeholder)"
 
   def prepareSingleLookup(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = prepareMultiLookup(stmt, v, start)
 
@@ -53,7 +57,7 @@ class DateRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
 
   val physColumns: Array[String] = Array(base)
 
-  val sqlTypes: Array[String] = Array("DATE")
+  val sqlTypes: Array[String] = Array(dateType)
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue) {
     if(SoQLNull == v) { /* pass */ }
@@ -75,4 +79,9 @@ class DateRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
     if(ts == null) SoQLNull
     else SoQLDate(parser.parseLocalDate(ts))
   }
+}
+
+object DateRep {
+  private val dateType = "DATE"
+  private val placeholder = s"(? :: $dateType)"
 }

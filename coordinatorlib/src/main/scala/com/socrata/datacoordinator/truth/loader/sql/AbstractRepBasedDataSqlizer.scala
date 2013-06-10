@@ -94,7 +94,7 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
   }
 
   def prepareSystemIdUpdateStatement: String =
-    "UPDATE " + dataTableName + " SET " + repSchema.values.flatMap(_.physColumns).map(_ + " = ?").mkString(",") + " WHERE " + sidRep.templateForSingleLookup
+    "UPDATE " + dataTableName + " SET " + repSchema.values.map(_.templateForUpdate).mkString(",") + " WHERE " + sidRep.templateForSingleLookup
 
   def prepareSystemIdUpdate(stmt: PreparedStatement, sid: RowId, row: Row[CV]) {
     var i = 1

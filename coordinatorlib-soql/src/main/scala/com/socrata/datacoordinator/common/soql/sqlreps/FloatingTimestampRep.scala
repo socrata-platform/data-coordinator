@@ -12,10 +12,12 @@ import org.joda.time.format.{DateTimeFormatterBuilder, ISODateTimeFormat}
 class FloatingTimestampRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType, SoQLValue] {
   import FloatingTimestampRep._
 
-  override def templateForInsert = "(? :: TIMESTAMP WITHOUT TIME ZONE)"
+  override val templateForInsert = placeholder
 
   def templateForMultiLookup(n: Int): String =
-    s"($base in (${(1 to n).map(_ => "(? :: TIMESTAMP WITHOUT TIME ZONE)").mkString(",")}))"
+    s"($base in (${Iterator.fill(n)(placeholder).mkString(",")}))"
+
+  override lazy val templateForUpdate = s"$base = $placeholder"
 
   def prepareMultiLookup(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
     stmt.setString(start, printer.print(v.asInstanceOf[SoQLFloatingTimestamp].value))
@@ -25,7 +27,7 @@ class FloatingTimestampRep(val base: String) extends RepUtils with SqlPKableColu
   def literalize(t: LocalDateTime) =
     literalizeTo(new StringBuilder, t).toString
   def literalizeTo(sb: StringBuilder, t: LocalDateTime) = {
-    sb.append("(TIMESTAMP WITHOUT TIME ZONE '")
+    sb.append('(').append(timestampType).append(" '")
     printer.printTo(sb, t)
     sb.append("')")
   }
@@ -35,7 +37,7 @@ class FloatingTimestampRep(val base: String) extends RepUtils with SqlPKableColu
       literalize(lit.asInstanceOf[SoQLFloatingTimestamp].value)
     }.mkString(s"($base in (", ",", "))")
 
-  def templateForSingleLookup: String = s"($base = (? :: TIMESTAMP WITHOUT TIME ZONE))"
+  def templateForSingleLookup: String = s"($base = $placeholder)"
 
   def prepareSingleLookup(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = prepareMultiLookup(stmt, v, start)
 
@@ -50,7 +52,7 @@ class FloatingTimestampRep(val base: String) extends RepUtils with SqlPKableColu
 
   val physColumns: Array[String] = Array(base)
 
-  val sqlTypes: Array[String] = Array("TIMESTAMP WITHOUT TIME ZONE")
+  val sqlTypes: Array[String] = Array(timestampType)
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue) {
     if(SoQLNull == v) { /* pass */ }
@@ -88,4 +90,8 @@ object FloatingTimestampRep {
     appendLiteral(' ').
     append(ISODateTimeFormat.timeElementParser).
     toFormatter.withZoneUTC
+
+  private val timestampType = "TIMESTAMP (3) WITHOUT TIME ZONE"
+
+  private val placeholder = s"(? :: $timestampType)"
 }

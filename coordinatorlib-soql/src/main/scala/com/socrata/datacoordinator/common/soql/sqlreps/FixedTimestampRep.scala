@@ -14,7 +14,7 @@ class FixedTimestampRep(val base: String) extends RepUtils with SqlPKableColumnR
   import FixedTimestampRep._
 
   def templateForMultiLookup(n: Int): String =
-    s"($base in (${(1 to n).map(_ => "?").mkString(",")}))"
+    s"($base in (${Iterator.fill(n)("?").mkString(",")}))"
 
   def prepareMultiLookup(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
     stmt.setTimestamp(start, new java.sql.Timestamp(v.asInstanceOf[SoQLFixedTimestamp].value.getMillis))
@@ -28,7 +28,7 @@ class FixedTimestampRep(val base: String) extends RepUtils with SqlPKableColumnR
   }
 
   def literalizeTo(sb: StringBuilder, t: DateTime) {
-    sb.append("(TIMESTAMP WITH TIME ZONE '")
+    sb.append('(').append(timestampType).append(" '")
     printer.printTo(sb, t)
     sb.append("')")
   }
@@ -55,7 +55,7 @@ class FixedTimestampRep(val base: String) extends RepUtils with SqlPKableColumnR
 
   val physColumns: Array[String] = Array(base)
 
-  val sqlTypes: Array[String] = Array("TIMESTAMP WITH TIME ZONE")
+  val sqlTypes: Array[String] = Array(timestampType)
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue) {
     if(SoQLNull == v) { /* pass */ }
@@ -85,4 +85,6 @@ object FixedTimestampRep {
     appendLiteral(' ').
     append(ISODateTimeFormat.time).
     toFormatter.withZoneUTC
+
+  private val timestampType = "TIMESTAMP (3) WITH TIME ZONE"
 }
