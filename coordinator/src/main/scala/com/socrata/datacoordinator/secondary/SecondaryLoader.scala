@@ -2,6 +2,7 @@ package com.socrata.datacoordinator.secondary
 
 import scala.language.existentials
 
+import java.nio.charset.StandardCharsets.UTF_8
 import java.io.{Reader, InputStreamReader, FilenameFilter, File}
 import java.net.URLClassLoader
 import com.rojoma.json.util.{JsonUtil, AutomaticJsonCodecBuilder, JsonKey}
@@ -69,7 +70,7 @@ class SecondaryLoader(parentClassLoader: ClassLoader, secondaryConfigRoot: Confi
     val stream = cl.getResourceAsStream(name)
     if(stream == null) throw Nope("No " + name + " in " + jar.getAbsolutePath)
     try {
-      f(new InputStreamReader(stream, "UTF-8"))
+      f(new InputStreamReader(stream, UTF_8))
     } finally {
       stream.close()
     }

@@ -1,5 +1,6 @@
 package com.socrata.datacoordinator.primary
 
+import java.nio.charset.StandardCharsets.UTF_8
 import com.rojoma.json.util._
 import com.rojoma.json.io.{CompactJsonWriter, BlockJsonTokenIterator, JsonEventIterator}
 import com.rojoma.json.codec.JsonCodec
@@ -8,8 +9,8 @@ import com.rojoma.json.ast.{JArray, JString, JValue}
 import com.rojoma.json.ast.JString
 
 object CJsonToMutationScript extends App {
-  val in = JsonArrayIterator[JValue](new JsonEventIterator(new BlockJsonTokenIterator(new InputStreamReader(new FileInputStream(args(0)), "utf-8"))))
-  val out = new PrintWriter(new BufferedWriter(new OutputStreamWriter(new FileOutputStream(args(1)), "utf-8")))
+  val in = JsonArrayIterator[JValue](new JsonEventIterator(new BlockJsonTokenIterator(new InputStreamReader(new FileInputStream(args(0)), UTF_8))))
+  val out = new PrintWriter(new BufferedWriter(new OutputStreamWriter(new FileOutputStream(args(1)), UTF_8)))
 
   case class Field(@JsonKey("c") column: String, @JsonKey("t") typ: String)
   implicit val fieldCodec = AutomaticJsonCodecBuilder[Field]

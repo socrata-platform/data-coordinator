@@ -1,12 +1,14 @@
 package com.socrata.datacoordinator.truth.sql
 
+import scala.io.{Source, Codec}
+
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.util.TemplateReplacer
 
 object DatabasePopulator {
   private def load(template: String) =
     using(getClass.getResourceAsStream(template)) { stream =>
-      scala.io.Source.fromInputStream(stream, "UTF-8").getLines().mkString("\n")
+      Source.fromInputStream(stream)(Codec.UTF8).getLines().mkString("\n")
     }
 
   def metadataTablesCreate(datasetMapLimits: DatasetMapLimits): String = {

@@ -1,5 +1,6 @@
 package com.socrata.datacoordinator.primary
 
+import java.nio.charset.StandardCharsets.UTF_8
 import com.socrata.thirdparty.opencsv.CSVIterator
 import java.io._
 import com.rojoma.json.ast._
@@ -39,7 +40,7 @@ object CsvToMutationScript extends App {
     val cooked =
       if(compress) new GZIPOutputStream(raw)
       else raw
-    new PrintWriter(new BufferedWriter(new OutputStreamWriter(cooked, "utf-8")))
+    new PrintWriter(new BufferedWriter(new OutputStreamWriter(cooked, UTF_8)))
   }
 
   def typeOf(col: String): String = schema(col).name.name

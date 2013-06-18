@@ -6,6 +6,7 @@ import java.net.{SocketAddress, InetAddress, InetSocketAddress}
 import java.nio.channels.spi.SelectorProvider
 import java.nio.channels.{SelectionKey, SocketChannel}
 import java.sql.{DriverManager, Connection}
+import java.nio.charset.StandardCharsets.UTF_8
 
 import com.typesafe.config.{Config, ConfigFactory}
 import com.rojoma.simplearm.util._
@@ -270,7 +271,7 @@ object Transmitter extends App {
       val postCompressedCounter = new ByteCountingOutputStream(os)
       val sos = new SnappyOutputStream(postCompressedCounter)
       val preCompressedCounter = new ByteCountingOutputStream(sos)
-      val w = new OutputStreamWriter(preCompressedCounter, "UTF-8")
+      val w = new OutputStreamWriter(preCompressedCounter, UTF_8)
       datasetCsvifier.csvify(w, columnInfos.map(_.systemId))
       w.close()
       log.info("Sent {} byte(s) ({} uncompressed)", postCompressedCounter.bytesWritten, preCompressedCounter.bytesWritten)

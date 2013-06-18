@@ -1,6 +1,7 @@
 package com.socrata.datacoordinator.backup
 
 import java.io.{InputStreamReader, OutputStreamWriter, DataInputStream, DataOutputStream}
+import java.nio.charset.StandardCharsets.UTF_8
 
 import com.rojoma.json.util.JsonUtil
 
@@ -95,13 +96,13 @@ class Protocol[LogData](logDataCodec: Codec[LogData]) {
   object WillResync extends LabelledPacket("resync/dataset") {
     def apply(id: UnanchoredDatasetInfo) =
       create { os =>
-        val w = new OutputStreamWriter(os, "UTF-8")
+        val w = new OutputStreamWriter(os, UTF_8)
         JsonUtil.writeJson(w, id)
         w.flush()
       }
     def unapply(packet: Packet): Option[UnanchoredDatasetInfo] =
       extract(packet) map { data =>
-        val r = new InputStreamReader(new ByteBufferInputStream(data), "UTF-8")
+        val r = new InputStreamReader(new ByteBufferInputStream(data), UTF_8)
         JsonUtil.readJson[UnanchoredDatasetInfo](r).getOrElse {
           throw new PacketDecodeException("resyncing dataset packet does not contain a datasetinfo object")
         }
@@ -115,14 +116,14 @@ class Protocol[LogData](logDataCodec: Codec[LogData]) {
     // this schema has to be a Seq; it reflects the order of columns in the following CSV.
     def apply(id: UnanchoredCopyInfo, schema: Seq[UnanchoredColumnInfo]) =
       create { os =>
-        val w = new OutputStreamWriter(os, "UTF-8")
+        val w = new OutputStreamWriter(os, UTF_8)
         JsonUtil.writeJson(w, id)
         JsonUtil.writeJson(w, schema)
         w.flush()
       }
     def unapply(packet: Packet): Option[(UnanchoredCopyInfo, Seq[UnanchoredColumnInfo])] =
       extract(packet) map { data =>
-        val r = new InputStreamReader(new ByteBufferInputStream(data), "UTF-8")
+        val r = new InputStreamReader(new ByteBufferInputStream(data), UTF_8)
         val copyInfo = JsonUtil.readJson[UnanchoredCopyInfo](r).getOrElse {
           throw new PacketDecodeException("resyncing copy packet does not contain a copyinfo object")
         }

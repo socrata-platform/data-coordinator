@@ -1,5 +1,6 @@
 package com.socrata.datacoordinator.service
 
+import java.nio.charset.StandardCharsets.UTF_8
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import java.security.MessageDigest
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
@@ -29,9 +30,9 @@ object SchemaHash {
         a.logicalName compare b.logicalName
     })
     for(col <- cols) {
-      sha1.update(col.logicalName.caseFolded.getBytes("UTF-8"))
+      sha1.update(col.logicalName.caseFolded.getBytes(UTF_8))
       sha1.update(255.toByte)
-      sha1.update(typeSerializer(col.typ).caseFolded.getBytes("UTF-8"))
+      sha1.update(typeSerializer(col.typ).caseFolded.getBytes(UTF_8))
       sha1.update((if(col.isSystemPrimaryKey) 255 else 254).toByte)
       sha1.update((if(col.isUserPrimaryKey) 255 else 254).toByte)
     }

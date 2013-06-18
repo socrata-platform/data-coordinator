@@ -1,3 +1,4 @@
+import java.nio.charset.StandardCharsets.UTF_8
 import java.io.{FileOutputStream, OutputStreamWriter}
 import sbt._
 
@@ -18,7 +19,7 @@ object GenLongLikeMap {
   def writeFile(dir: File, file: String, data: String): File = {
     val target = dir / file
     dir.mkdirs()
-    val w = new OutputStreamWriter(new FileOutputStream(target), "UTF-8")
+    val w = new OutputStreamWriter(new FileOutputStream(target), UTF_8)
     try {
       w.write(data)
     } finally {

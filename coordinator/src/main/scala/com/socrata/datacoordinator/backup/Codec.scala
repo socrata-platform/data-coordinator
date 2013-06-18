@@ -1,6 +1,7 @@
 package com.socrata.datacoordinator.backup
 
 import java.io.{InputStreamReader, InputStream, DataInputStream, DataOutputStream}
+import java.nio.charset.StandardCharsets.UTF_8
 
 import com.rojoma.json.util.JsonUtil
 
@@ -106,13 +107,13 @@ object LogDataCodec {
   private object WorkingCopyCreatedCodec extends EventCodec {
     def encode(stream: DataOutputStream, eventRaw: Delogger.LogEvent[Any]) {
       val Delogger.WorkingCopyCreated(di, ci) = eventRaw
-      stream.write(JsonUtil.renderJson(di).getBytes("UTF-8"))
+      stream.write(JsonUtil.renderJson(di).getBytes(UTF_8))
       stream.write('\n')
-      stream.write(JsonUtil.renderJson(ci).getBytes("UTF-8"))
+      stream.write(JsonUtil.renderJson(ci).getBytes(UTF_8))
     }
 
     def decode[CV](stream: DataInputStream, rowLogCodecFactory: () => RowLogCodec[CV]) = {
-      val r = new InputStreamReader(stream, "UTF-8")
+      val r = new InputStreamReader(stream, UTF_8)
       val di = JsonUtil.readJson[UnanchoredDatasetInfo](r).getOrElse {
         throw new PacketDecodeException("Unable to decode a datasetinfo")
       }
@@ -158,10 +159,10 @@ object LogDataCodec {
   private object SnapshotDroppedCodec extends EventCodec {
     def encode(stream: DataOutputStream, event: Delogger.LogEvent[Any]) {
       val Delogger.SnapshotDropped(ci) = event
-      stream.write(JsonUtil.renderJson(ci).getBytes("UTF-8"))
+      stream.write(JsonUtil.renderJson(ci).getBytes(UTF_8))
     }
     def decode[CV](stream: DataInputStream, rowLogCodecFactory: () => RowLogCodec[CV]) = {
-      val ci = JsonUtil.readJson[UnanchoredCopyInfo](new InputStreamReader(stream, "UTF-8")).getOrElse {
+      val ci = JsonUtil.readJson[UnanchoredCopyInfo](new InputStreamReader(stream, UTF_8)).getOrElse {
         throw new PacketDecodeException("Unable to decode a columnInfo")
       }
       Delogger.SnapshotDropped(ci)
@@ -174,11 +175,11 @@ object LogDataCodec {
 
     def encode(stream: DataOutputStream, event: Delogger.LogEvent[Any]) {
       val col = extractColumn(event)
-      stream.write(JsonUtil.renderJson(col).getBytes("UTF-8"))
+      stream.write(JsonUtil.renderJson(col).getBytes(UTF_8))
     }
 
     def decode[CV](stream: DataInputStream, rowLogCodecFactory: () => RowLogCodec[CV]) = {
-      val ci = JsonUtil.readJson[UnanchoredColumnInfo](new InputStreamReader(stream, "UTF-8")).getOrElse {
+      val ci = JsonUtil.readJson[UnanchoredColumnInfo](new InputStreamReader(stream, UTF_8)).getOrElse {
         throw new PacketDecodeException("Unable to decode a columnInfo")
       }
       packageColumn(ci)
