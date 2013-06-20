@@ -4,6 +4,7 @@ import Keys._
 object BuildSettings {
   val buildSettings: Seq[Setting[_]] =
     Defaults.defaultSettings ++
+      net.virtualvoid.sbt.graph.Plugin.graphSettings ++
       Defaults.itSettings ++
       inConfig(UnitTest)(Defaults.testSettings) ++
       inConfig(ExploratoryTest)(Defaults.testSettings) ++
