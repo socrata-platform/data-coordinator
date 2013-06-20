@@ -145,7 +145,7 @@ trait DatasetMutator[CT, CV] {
 
   sealed trait DropCopyContext
   sealed trait CopyContext extends DropCopyContext
-  case object DatasetDidNotExist extends CopyContext
+  case class DatasetDidNotExist() extends CopyContext // for some reason Scala 2.10.2 thinks a match isn't exhaustive if this is a case object
   case class IncorrectLifecycleStage(currentLifecycleStage: LifecycleStage, expectedLifecycleStages: Set[LifecycleStage]) extends CopyContext
   case class CopyOperationComplete(mutationContext: TrueMutationContext) extends CopyContext
   case object InitialWorkingCopy extends DropCopyContext
@@ -387,7 +387,7 @@ object DatasetMutator {
       def flatMap[A](f: CopyContext => A): A =
         go(as, datasetId, {
           case None =>
-            f(DatasetDidNotExist)
+            f(DatasetDidNotExist())
           case Some(ctx) =>
             check(new DatasetCopyContext(ctx.copyInfo, ctx.schema))
             if(ctx.copyInfo.lifecycleStage == targetStage) {
@@ -425,7 +425,7 @@ object DatasetMutator {
       def flatMap[A](f: DropCopyContext => A): A =
         go(as, datasetId, {
           case None =>
-            f(DatasetDidNotExist)
+            f(DatasetDidNotExist())
           case Some(ctx) =>
             check(new DatasetCopyContext(ctx.copyInfo, ctx.schema))
             try {

@@ -98,7 +98,7 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
 
   def prepareSystemIdUpdate(stmt: PreparedStatement, sid: RowId, row: Row[CV]) {
     var i = 1
-    for((cid, rep) <- repSchema) {
+    repSchema.foreach { (cid, rep) =>
       val v = row.getOrElseStrict(cid, typeContext.nullValue)
       i = rep.prepareUpdate(stmt, v, i)
     }
@@ -156,7 +156,7 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
     blockQueryById(conn, ids, findRowsPrefix) { rs =>
       val row = new MutableRow[CV]
       var i = 1
-      for((cid, rep) <- repSchema) {
+      repSchema.foreach { (cid, rep) =>
         row(cid) = rep.fromResultSet(rs, i)
         i += rep.physColumns.length
       }

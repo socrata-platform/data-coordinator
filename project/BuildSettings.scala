@@ -10,7 +10,7 @@ object BuildSettings {
       Seq(
         organization := "com.socrata",
         version := "0.0.1-SNAPSHOT",
-        scalaVersion := "2.10.0",
+        scalaVersion := "2.10.2",
         testOptions in Test ++= Seq(
           Tests.Argument(TestFrameworks.ScalaTest, "-oFD")
         ),

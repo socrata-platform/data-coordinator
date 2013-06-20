@@ -180,6 +180,14 @@ class """ + targetClassName + """[+V] private[""" + lastElemOf(targetPackage) + 
     }
   }
 
+  def foreach[U](f: (""" + sourceType + """, V) => U) {
+    val it = unsafeUnderlying.iterator
+    while(it.hasNext) {
+      it.advance()
+      f(new """ + sourceType + """(it.key), it.value)
+    }
+  }
+
   def filter(f: (""" + sourceType + """, V) => Boolean) = {
     val x = new TLongObjectHashMap[V]
     val it = unsafeUnderlying.iterator

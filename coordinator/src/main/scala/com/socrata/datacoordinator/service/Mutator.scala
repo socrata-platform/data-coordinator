@@ -339,7 +339,7 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
         doProcess(ctx)
       case mutator.IncorrectLifecycleStage(currentStage, expectedStages) =>
         throw IncorrectLifecycleStage(datasetId, currentStage, expectedStages)(index)
-      case mutator.DatasetDidNotExist =>
+      case mutator.DatasetDidNotExist() =>
         throw NoSuchDataset(datasetId)(index)
     }
 
