@@ -21,6 +21,7 @@ import javax.sql.DataSource
 import com.rojoma.simplearm.{SimpleArm, Managed}
 import com.socrata.soql.types.obfuscation.CryptProvider
 import scala.concurrent.duration.Duration
+import com.google.common.cache.CacheBuilder
 
 object SoQLSystemColumns { sc =>
   val id = ColumnName(":id")
@@ -50,6 +51,8 @@ class SoQLCommon(dataSource: DataSource,
   type CT = SoQLType
   type CV = SoQLValue
 
+  private val log = org.slf4j.LoggerFactory.getLogger(classOf[SoQLCommon])
+
   private val internalNamePrefix = instance + "."
   def datasetIdFromInternalName(internalName: String): Option[DatasetId] = {
     if(internalName.startsWith(instance)) {
@@ -76,9 +79,16 @@ class SoQLCommon(dataSource: DataSource,
   def generateObfuscationKey() = CryptProvider.generateKey()
   val initialCounterValue = 0L
 
+  private[this] val cryptProviderCache = CacheBuilder.newBuilder().maximumSize(10000).build[java.lang.Long, CryptProvider]()
+
   val sqlRepFor = SoQLRep.sqlRep _
   def jsonReps(datasetInfo: DatasetInfo) = {
-    val cp = new CryptProvider(datasetInfo.obfuscationKey)
+    val cp = cryptProviderCache.get(java.lang.Long.valueOf(datasetInfo.systemId.underlying), new java.util.concurrent.Callable[CryptProvider] {
+      def call() = {
+        log.trace("Failed to find crypt provider for {}; creating anew", datasetInfo.systemId)
+        new CryptProvider(datasetInfo.obfuscationKey)
+      }
+    })
     SoQLRep.jsonRep(idObfuscationContextFor(cp), versionObfuscationContextFor(cp))
   }
 

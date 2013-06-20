@@ -14,6 +14,8 @@ object Coordinator {
         "com.typesafe" % "config" % "1.0.1",
         "com.socrata" %% "socrata-http-curator-broker" % "[1.3.0,2.0.0)",
         "org.slf4j" % "slf4j-log4j12" % BuildSettings.slf4jVersion,
+        "com.google.guava" % "guava" % "14.0.1",
+        "com.google.code.findbugs" % "jsr305" % "2.0.1", // for annotations used by guava
         "org.scalacheck" %% "scalacheck" % "1.10.0" % "test"
       )
     },
