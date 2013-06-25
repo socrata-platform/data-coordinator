@@ -489,7 +489,11 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
             }
           }
         }
-        val result = mutator.upsert(it, replaceUpdatedRows = mergeReplace == Replace)
+        val result = locally {
+          val reportWriter = new com.socrata.datacoordinator.truth.loader.SimpleReportWriter[CV]
+          mutator.upsert(it, reportWriter, replaceUpdatedRows = mergeReplace == Replace)
+          reportWriter.report
+        }
         if(rows.hasNext && JNull == rows.head) rows.next()
         if(fatalRowErrors && result.errors.nonEmpty) {
           val pk = schema.values.find(_.isUserPrimaryKey).orElse(schema.values.find(_.isSystemPrimaryKey)).getOrElse {

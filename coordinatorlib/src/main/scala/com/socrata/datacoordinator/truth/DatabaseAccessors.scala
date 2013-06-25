@@ -35,7 +35,7 @@ trait LowLevelDatabaseMutator[CT, CV] {
     def logger(info: DatasetInfo): Logger[CT, CV]
     def schemaLoader(logger: Logger[CT, CV]): SchemaLoader[CT]
     def datasetContentsCopier(logger: Logger[CT, CV]): DatasetContentsCopier[CT]
-    def withDataLoader[A](copyCtx: DatasetCopyContext[CT], logger: Logger[CT, CV], replaceUpdatedRows: Boolean)(f: Loader[CV] => A): (Report[CV], Long, A)
+    def withDataLoader[A](copyCtx: DatasetCopyContext[CT], logger: Logger[CT, CV], reportWriter: ReportWriter[CV], replaceUpdatedRows: Boolean)(f: Loader[CV] => A): (Long, A)
     def truncate(table: CopyInfo, logger: Logger[CT, CV])
 
     def globalLog: GlobalLog
@@ -134,7 +134,7 @@ trait DatasetMutator[CT, CV] {
     case class DeleteJob(jobNumber: Int, id: CV, version: Option[Option[RowVersion]]) extends RowDataUpdateJob
     case class UpsertJob(jobNumber: Int, row: Row[CV]) extends RowDataUpdateJob
 
-    def upsert(inputGenerator: Iterator[RowDataUpdateJob], replaceUpdatedRows: Boolean): Report[CV]
+    def upsert(inputGenerator: Iterator[RowDataUpdateJob], reportWriter: ReportWriter[CV], replaceUpdatedRows: Boolean)
   }
 
   type TrueMutationContext <: MutationContext
@@ -318,18 +318,17 @@ object DatasetMutator {
         llCtx.truncate(copyInfo, logger)
       }
 
-      def upsert(inputGenerator: Iterator[RowDataUpdateJob], replaceUpdatedRows: Boolean): Report[CV] = {
+      def upsert(inputGenerator: Iterator[RowDataUpdateJob], reportWriter: ReportWriter[CV], replaceUpdatedRows: Boolean) {
         checkDoingRows()
         try {
           doingRows = true
-          val (report, nextCounterValue, _) = llCtx.withDataLoader(copyCtx.frozenCopy(), logger, replaceUpdatedRows) { loader =>
+          val (nextCounterValue, _) = llCtx.withDataLoader(copyCtx.frozenCopy(), logger, reportWriter, replaceUpdatedRows) { loader =>
             inputGenerator.foreach {
               case UpsertJob(jobNum, row) => loader.upsert(jobNum, row)
               case DeleteJob(jobNum, id, ver) => loader.delete(jobNum, id, ver)
             }
           }
           copyCtx.copyInfo = datasetMap.updateNextCounterValue(copyInfo, nextCounterValue)
-          report
         } finally {
           doingRows = false
         }

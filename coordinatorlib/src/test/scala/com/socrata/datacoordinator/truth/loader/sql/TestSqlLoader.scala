@@ -115,6 +115,8 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     }
   }
 
+  def simpleReportWriter() = new SimpleReportWriter[TestColumnValue]
+
   test("adding a new row with system PK succeeds") {
     val dsContext = new TestDatasetContext(standardSchema, idCol, None, versionCol)
     val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
@@ -123,13 +125,16 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       makeTables(conn, dataSqlizer, standardLogTableName)
       conn.commit()
 
+      val reportWriter = simpleReportWriter()
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, idProvider(15), versionProvider(53), executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, idProvider(15), versionProvider(53), executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row[TestColumnValue](num -> LongValue(1), str -> StringValue("a")))
-        val report = txn.report
+        txn.finish()
         dataLogger.finish()
+
+        val report = reportWriter.report
 
         report.inserted must equal (Map(0 -> IdAndVersion(LongValue(15), new RowVersion(53))))
         report.updated must be ('empty)
@@ -168,13 +173,15 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       makeTables(conn, dataSqlizer, standardLogTableName)
       conn.commit()
 
+      val reportWriter = simpleReportWriter()
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row[TestColumnValue](num -> LongValue(1), str -> StringValue("a")))
         txn.upsert(1, Row[TestColumnValue](idCol -> LongValue(15), num -> LongValue(2), str -> StringValue("b")))
-        val report = txn.report
+        txn.finish()
+        val report = reportWriter.report
         dataLogger.finish()
 
         report.inserted must equal (Map(0 -> IdAndVersion(LongValue(15), new RowVersion(431))))
@@ -209,12 +216,14 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       val ids = idProvider(22)
       val vers = versionProvider(111)
 
+      val reportWriter = simpleReportWriter()
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(idCol -> NullValue, num -> LongValue(1), str -> StringValue("a")))
-        val report = txn.report
+        txn.finish()
+        val report = reportWriter.report
         dataLogger.finish()
 
         report.inserted must be (Map(0 -> IdAndVersion(LongValue(22), new RowVersion(111))))
@@ -248,12 +257,14 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       val ids = idProvider(6)
       val vers = versionProvider(99)
 
+      val reportWriter = simpleReportWriter()
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(idCol -> LongValue(77), num -> LongValue(1), str -> StringValue("a")))
-        val report = txn.report
+        txn.finish()
+        val report = reportWriter.report
         dataLogger.finish()
 
         report.inserted must be ('empty)
@@ -283,12 +294,14 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       )
       conn.commit()
 
+      val reportWriter = simpleReportWriter()
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(idCol -> LongValue(7), num -> LongValue(44)))
-        val report = txn.report
+        txn.finish()
+        val report = reportWriter.report
         dataLogger.finish()
 
         report.inserted must be ('empty)
@@ -323,12 +336,14 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       makeTables(conn, dataSqlizer, standardLogTableName)
       conn.commit()
 
+      val reportWriter = simpleReportWriter()
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer(str), dataSqlizer, dataLogger, ids, vers, executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(str), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("a")))
-        val report = txn.report
+        txn.finish()
+        val report = reportWriter.report
         dataLogger.finish()
 
         report.inserted must equal (Map(0 -> IdAndVersion(StringValue("a"), new RowVersion(999999))))
@@ -363,12 +378,14 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       makeTables(conn, dataSqlizer, standardLogTableName)
       conn.commit()
 
+      val reportWriter = simpleReportWriter()
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer(str), dataSqlizer, dataLogger, ids, vers, executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(str), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(num -> LongValue(1), str -> NullValue))
-        val report = txn.report
+        txn.finish()
+        val report = reportWriter.report
         dataLogger.finish()
 
         report.inserted must be ('empty)
@@ -396,12 +413,14 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       makeTables(conn, dataSqlizer, standardLogTableName)
       conn.commit()
 
+      val reportWriter = simpleReportWriter()
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer(str), dataSqlizer, dataLogger, ids, vers, executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(str), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(num -> LongValue(1)))
-        val report = txn.report
+        txn.finish()
+        val report = reportWriter.report
         dataLogger.finish()
 
         report.inserted must be ('empty)
@@ -431,12 +450,14 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       )
       conn.commit()
 
+      val reportWriter = simpleReportWriter()
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer(str), dataSqlizer, dataLogger, ids, vers, executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(str), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(str -> StringValue("q"), num -> LongValue(44)))
-        val report = txn.report
+        txn.finish()
+        val report = reportWriter.report
         dataLogger.finish()
 
         report.inserted must be ('empty)
@@ -471,13 +492,15 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       makeTables(conn, dataSqlizer, standardLogTableName)
       conn.commit()
 
+      val reportWriter = simpleReportWriter()
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer(str), dataSqlizer, dataLogger, ids, vers, executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(str), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q")))
         txn.upsert(1, Row(num -> LongValue(2), str -> StringValue("q")))
-        val report = txn.report
+        txn.finish()
+        val report = reportWriter.report
         dataLogger.finish()
 
         report.inserted must equal (Map(0 -> IdAndVersion(StringValue("q"), new RowVersion(32))))
@@ -513,12 +536,14 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       makeTables(conn, dataSqlizer, standardLogTableName)
       conn.commit()
 
+      val reportWriter = simpleReportWriter()
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer(str), dataSqlizer, dataLogger, ids, vers, executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(str), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(idCol -> LongValue(15), num -> LongValue(1), str -> StringValue("q")))
-        val report = txn.report
+        txn.finish()
+        val report = reportWriter.report
         dataLogger.finish()
 
         report.inserted must be (Map(0 -> IdAndVersion(StringValue("q"), new RowVersion(40))))
@@ -553,13 +578,15 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       makeTables(conn, dataSqlizer, standardLogTableName)
       conn.commit()
 
+      val reportWriter = simpleReportWriter()
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer(str), dataSqlizer, dataLogger, ids, vers, executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(str), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q")))
         txn.delete(1, StringValue("q"), None)
-        val report = txn.report
+        txn.finish()
+        val report = reportWriter.report
         dataLogger.finish()
 
         report.inserted must be (Map(0 -> IdAndVersion(StringValue("q"), new RowVersion(48))))
@@ -594,13 +621,15 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       makeTables(conn, dataSqlizer, standardLogTableName)
       conn.commit()
 
+      val reportWriter = simpleReportWriter()
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q")))
         txn.delete(1, LongValue(15), None)
-        val report = txn.report
+        txn.finish()
+        val report = reportWriter.report
         dataLogger.finish()
 
         report.inserted must be (Map(0 -> IdAndVersion(LongValue(15), new RowVersion(56))))
@@ -633,12 +662,14 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       makeTables(conn, dataSqlizer, standardLogTableName)
       conn.commit()
 
+      val reportWriter = simpleReportWriter()
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> NullValue))
-        val report = txn.report
+        txn.finish()
+        val report = reportWriter.report
         dataLogger.finish()
 
         report.inserted must equal (Map(0 -> IdAndVersion(LongValue(15), new RowVersion(64))))
@@ -673,12 +704,14 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       makeTables(conn, dataSqlizer, standardLogTableName)
       conn.commit()
 
+      val reportWriter = simpleReportWriter()
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> NullValue))
-        val report = txn.report
+        txn.finish()
+        val report = reportWriter.report
         dataLogger.finish()
 
         report.inserted must equal (Map(0 -> IdAndVersion(StringValue("q"), new RowVersion(72))))
@@ -713,12 +746,14 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       makeTables(conn, dataSqlizer, standardLogTableName)
       conn.commit()
 
+      val reportWriter = simpleReportWriter()
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> LongValue(0)))
-        val report = txn.report
+        txn.finish()
+        val report = reportWriter.report
         dataLogger.finish()
 
         report.inserted must be ('empty)
@@ -746,12 +781,14 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       makeTables(conn, dataSqlizer, standardLogTableName)
       conn.commit()
 
+      val reportWriter = simpleReportWriter()
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> LongValue(0)))
-        val report = txn.report
+        txn.finish()
+        val report = reportWriter.report
         dataLogger.finish()
 
         report.inserted must be ('empty)
@@ -781,12 +818,14 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       )
       conn.commit()
 
+      val reportWriter = simpleReportWriter()
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(idCol -> LongValue(1), num -> LongValue(1), str -> StringValue("q"), versionCol -> NullValue))
-        val report = txn.report
+        txn.finish()
+        val report = reportWriter.report
         dataLogger.finish()
 
         report.inserted must be ('empty)
@@ -818,12 +857,14 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       )
       conn.commit()
 
+      val reportWriter = simpleReportWriter()
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> NullValue))
-        val report = txn.report
+        txn.finish()
+        val report = reportWriter.report
         dataLogger.finish()
 
         report.inserted must be ('empty)
@@ -855,12 +896,14 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       )
       conn.commit()
 
+      val reportWriter = simpleReportWriter()
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(idCol -> LongValue(1), num -> LongValue(1), str -> StringValue("q"), versionCol -> LongValue(1)))
-        val report = txn.report
+        txn.finish()
+        val report = reportWriter.report
         dataLogger.finish()
 
         report.inserted must be ('empty)
@@ -892,12 +935,14 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       )
       conn.commit()
 
+      val reportWriter = simpleReportWriter()
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> LongValue(1)))
-        val report = txn.report
+        txn.finish()
+        val report = reportWriter.report
         dataLogger.finish()
 
         report.inserted must be ('empty)
@@ -929,12 +974,14 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       )
       conn.commit()
 
+      val reportWriter = simpleReportWriter()
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(idCol -> LongValue(1), num -> LongValue(1), str -> StringValue("w"), versionCol -> LongValue(0)))
-        val report = txn.report
+        txn.finish()
+        val report = reportWriter.report
         dataLogger.finish()
 
         report.inserted must be ('empty)
@@ -971,12 +1018,14 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       )
       conn.commit()
 
+      val reportWriter = simpleReportWriter()
       for {
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
-        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, NoopTimingReport))
+        txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> LongValue(0)))
-        val report = txn.report
+        txn.finish()
+        val report = reportWriter.report
         dataLogger.finish()
 
         report.inserted must be ('empty)
@@ -1060,15 +1109,15 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
           makeTables(stupidConn, stupidDataSqlizer, "stupid_log")
 
           def runCompareTest(ops: List[Op]) {
-            val smartReport = using(SqlLoader(smartConn, rowPreparer(userIdCol), dataSqlizer, NullLogger[TestColumnType, TestColumnValue], ids, vers, executor, NoopTimingReport)) { txn =>
+            using(SqlLoader(smartConn, rowPreparer(userIdCol), dataSqlizer, NullLogger[TestColumnType, TestColumnValue], ids, vers, executor, NoopReportWriter, NoopTimingReport)) { txn =>
               applyOps(txn, ops)
-              txn.report
+              txn.finish()
             }
             smartConn.commit()
 
-            val stupidReport = using(new StupidSqlLoader(stupidConn, rowPreparer(userIdCol), stupidDataSqlizer, NullLogger[TestColumnType, TestColumnValue], ids, vers)) { txn =>
+            using(new StupidSqlLoader(stupidConn, rowPreparer(userIdCol), stupidDataSqlizer, NullLogger[TestColumnType, TestColumnValue], ids, vers, NoopReportWriter)) { txn =>
               applyOps(txn, ops)
-              txn.report
+              txn.finish()
             }
             stupidConn.commit()
 
@@ -1190,18 +1239,16 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
           val stupidVersions = versionProvider(1)
 
           def runCompareTest(ops: List[Op]) {
-            val smartReport =
-              using(SqlLoader(smartConn, rowPreparer(idCol), dataSqlizer, NullLogger[TestColumnType, TestColumnValue], smartIds, smartVersions, executor, NoopTimingReport)) { txn =>
-                applyOps(txn, ops)
-                txn.report
-              }
+            using(SqlLoader(smartConn, rowPreparer(idCol), dataSqlizer, NullLogger[TestColumnType, TestColumnValue], smartIds, smartVersions, executor, NoopReportWriter, NoopTimingReport)) { txn =>
+              applyOps(txn, ops)
+              txn.finish()
+            }
             smartConn.commit()
 
-            val stupidReport =
-              using(new StupidSqlLoader(stupidConn, rowPreparer(idCol), stupidDataSqlizer, NullLogger[TestColumnType, TestColumnValue], stupidIds, stupidVersions)) { txn =>
-                applyOps(txn, ops)
-                txn.report
-              }
+            using(new StupidSqlLoader(stupidConn, rowPreparer(idCol), stupidDataSqlizer, NullLogger[TestColumnType, TestColumnValue], stupidIds, stupidVersions, NoopReportWriter)) { txn =>
+              applyOps(txn, ops)
+              txn.finish()
+            }
             stupidConn.commit()
 
             def q(t: String) = "SELECT " + numName + ", " + strName + " FROM " + t + " ORDER BY " + numName + "," + strName

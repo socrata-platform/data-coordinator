@@ -14,8 +14,7 @@ trait Loader[CV] extends Closeable {
   def upsert(jobId: Int, row: Row[CV])
   def delete(jobId: Int, id: CV, version: Option[Option[RowVersion]])
 
-  /** Flushes any changes which have accumulated in-memory and
-    * returns a report summarizing the changes.
+  /** Flushes any changes which have accumulated in-memory.
     *
     * @note This should be just about the last method on this interface called
     *       before closing it; calling either `upsert` or `delete` after this
@@ -23,10 +22,10 @@ trait Loader[CV] extends Closeable {
     * @note If any changes were made and this method is not called, the database
     *       transaction MUST be rolled back.
     */
-  def report: Report[CV]
+  def finish()
 }
 
-case class IdAndVersion[CV](id: CV, version: RowVersion)
+case class IdAndVersion[+CV](id: CV, version: RowVersion)
 /** A report is a collection of maps that inform the caller what
   * the result of each operation performed on the transaction so far was.
   *

@@ -10,7 +10,7 @@ import com.rojoma.simplearm.Managed
 
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth.metadata.sql.{PostgresGlobalLog, PostgresDatasetMapWriter}
-import com.socrata.datacoordinator.truth.loader.{DatasetContentsCopier, Logger, SchemaLoader, Loader, Report, RowPreparer}
+import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.loader.sql.{RepBasedSqlDatasetContentsCopier, SqlLogger}
 import com.socrata.datacoordinator.truth.{TypeContext, RowLogCodec}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
@@ -20,6 +20,8 @@ import scala.concurrent.duration.Duration
 import com.socrata.datacoordinator.util.{RowIdProvider, RowVersionProvider, RowDataProvider, TimingReport}
 import com.socrata.datacoordinator.truth.universe._
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
+import com.socrata.datacoordinator.truth.metadata.DatasetInfo
+import com.socrata.datacoordinator.truth.metadata.CopyInfo
 import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
 
@@ -65,12 +67,12 @@ class PostgresDatabaseMutator[CT, CV](universe: Managed[Universe[CT, CV] with Lo
 
     def datasetMap = universe.datasetMapWriter
 
-    def withDataLoader[A](copyCtx: DatasetCopyContext[CT], logger: Logger[CT, CV], replaceUpdatedRows: Boolean)(f: (Loader[CV]) => A): (Report[CV], Long, A) = {
+    def withDataLoader[A](copyCtx: DatasetCopyContext[CT], logger: Logger[CT, CV], reportWriter: ReportWriter[CV], replaceUpdatedRows: Boolean)(f: (Loader[CV]) => A): (Long, A) = {
       val dataProvider = new RowDataProvider(copyCtx.datasetInfo.nextCounterValue)
-      for(loader <- universe.loader(copyCtx, new RowIdProvider(dataProvider), new RowVersionProvider(dataProvider), logger, replaceUpdatedRows)) yield {
+      for(loader <- universe.loader(copyCtx, new RowIdProvider(dataProvider), new RowVersionProvider(dataProvider), logger, reportWriter, replaceUpdatedRows)) yield {
         val result = f(loader)
-        val report = loader.report
-        (report, dataProvider.finish(), result)
+        loader.finish()
+        (dataProvider.finish(), result)
       }
     }
   }

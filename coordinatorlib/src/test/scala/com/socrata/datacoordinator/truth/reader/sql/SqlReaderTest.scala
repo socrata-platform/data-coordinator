@@ -34,7 +34,7 @@ class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
 
   def repSchemaBuilder(schema: ColumnIdMap[TestColumnType]): ColumnIdMap[SqlColumnReadRep[TestColumnType, TestColumnValue]] = {
     val res = new MutableColumnIdMap[SqlColumnReadRep[TestColumnType, TestColumnValue]]
-    for((col, typ) <- schema) {
+    schema.foreach { (col, typ) =>
       res(col) = typ match {
         case IdType => sys.error("Shouldn't have an ID col at this point")
         case NumberType => new NumberRep(col)

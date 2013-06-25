@@ -3,7 +3,7 @@ package com.socrata.datacoordinator.primary
 import com.rojoma.simplearm.Managed
 
 import com.socrata.datacoordinator.Row
-import com.socrata.datacoordinator.truth.loader.Report
+import com.socrata.datacoordinator.truth.loader.{SimpleReportWriter, Report}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.universe.{DatasetMutatorProvider, Universe}
@@ -17,11 +17,14 @@ class Upserter[CT, CV](universe: Managed[Universe[CT, CV] with DatasetMutatorPro
         ctxOpt <- u.datasetMutator.openDataset(as = username)(dataset, _ => ())
         ctx <- ctxOpt
       } yield {
+        val reportWriter = new SimpleReportWriter[CV]
         ctx.upsert(inputGenerator(ctx.schema).zipWithIndex.map {
           case (Left(id), num) => ctx.DeleteJob(num, id, None)
           case (Right(row), num) => ctx.UpsertJob(num, row)
         },
+        reportWriter,
         replaceUpdatedRows)
+        reportWriter.report
       }
     }
 }

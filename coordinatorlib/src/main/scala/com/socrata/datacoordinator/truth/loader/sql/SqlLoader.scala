@@ -29,7 +29,8 @@ final class SqlLoader[CT, CV](val connection: Connection,
                               val idProvider: RowIdProvider,
                               val versionProvider: RowVersionProvider,
                               val executor: Executor,
-                              val timingReport: TransferrableContextTimingReport)
+                              val timingReport: TransferrableContextTimingReport,
+                              val reportWriter: ReportWriter[CV])
   extends Loader[CV]
 {
   require(!connection.getAutoCommit, "Connection is in auto-commit mode")
@@ -93,13 +94,7 @@ final class SqlLoader[CT, CV](val connection: Connection,
 
   private var currentBatch = new Queues
 
-  val inserted = new TIntObjectHashMap[IdAndVersion[CV]]
-  val updated = new TIntObjectHashMap[IdAndVersion[CV]]
-  val deleted = new TIntObjectHashMap[CV]
-  val errors = new TIntObjectHashMap[Failure[CV]]
-
   private var pendingException: Throwable = null
-  private var pendingErrors: TIntObjectHashMap[Failure[CV]] = null
   private val connectionMutex = new Object
   def checkAsyncJob() {
     connectionMutex.synchronized {
@@ -108,8 +103,6 @@ final class SqlLoader[CT, CV](val connection: Connection,
         pendingException = null
         throw e
       }
-
-      if(pendingErrors != null) { errors.putAll(pendingErrors); pendingErrors = null }
     }
   }
 
@@ -129,8 +122,6 @@ final class SqlLoader[CT, CV](val connection: Connection,
       connectionMutex.synchronized {
         checkAsyncJob()
 
-        assert(pendingErrors == null, "pendingErrors is set at start of worker queue run?")
-        pendingErrors = new TIntObjectHashMap[Failure[CV]]
         val newBatch = currentBatch
         val ctx = timingReport.context
         executor.execute(new Runnable() {
@@ -161,16 +152,15 @@ final class SqlLoader[CT, CV](val connection: Connection,
     }
   }
 
-  def report: Report[CV] = {
-    log.debug("Flushing batch due to a request for a report")
+  def finish() {
+    log.debug("Flushing batch due to being finished")
     flush()
 
     connectionMutex.synchronized {
       checkAsyncJob()
-
-      def w[T](x: TIntObjectHashMap[T]) = TIntObjectHashMapWrapper(x)
-      new SqlLoader.JobReport[CV](w(inserted), w(updated), w(deleted), w(errors))
     }
+
+    reportWriter.finished = true
   }
 
   def close() {
@@ -211,10 +201,10 @@ final class SqlLoader[CT, CV](val connection: Connection,
             val newVersion = versionProvider.allocate()
             currentBatch += KnownToBeInsertOp(jobId, newSid, newVersion, row)
           case Some(Some(_)) =>
-            errors.put(jobId, VersionOnNewRow)
+            reportWriter.error(jobId, VersionOnNewRow)
         }
       case None =>
-        errors.put(jobId, NoPrimaryKey)
+        reportWriter.error(jobId, NoPrimaryKey)
     }
     maybeFlush()
   }
@@ -267,14 +257,14 @@ final class SqlLoader[CT, CV](val connection: Connection,
                 existingIdsAndVersions.remove(delete.id)
               }
             case None =>
-              pendingErrors.put(delete.job, NoSuchRowToDelete(delete.id))
+              reportWriter.error(delete.job, NoSuchRowToDelete(delete.id))
           }
         }
       }
       assert(deletedCount == completedDeletions.size, "Didn't delete as many rows as I thought it would?")
       for((sid, job, id) <- completedDeletions) {
         dataLogger.delete(sid)
-        deleted.put(job, id)
+        reportWriter.deleted(job, id)
       }
     }
   }
@@ -284,7 +274,7 @@ final class SqlLoader[CT, CV](val connection: Connection,
       case None => f
       case Some(v) if v == oldVersion => f
       case Some(other) =>
-        pendingErrors.put(job, VersionMismatch(id, oldVersion, other))
+        reportWriter.error(job, VersionMismatch(id, oldVersion, other))
     }
   }
 
@@ -322,7 +312,7 @@ final class SqlLoader[CT, CV](val connection: Connection,
                   case Some(updates) =>
                     // These updates happened before the relevant insert.  Kill 'em!
                     for(update <- updates.result()) {
-                      pendingErrors.put(update.job, NoSuchRowToUpdate(update.id))
+                      reportWriter.error(update.job, NoSuchRowToUpdate(update.id))
                     }
                     possiblyUpdates.remove(sidValue)
                   case None =>
@@ -368,7 +358,7 @@ final class SqlLoader[CT, CV](val connection: Connection,
                     doInsert(existing)
                   }
                 case None if isSystemPK =>
-                  pendingErrors.put(update.job, NoSuchRowToUpdate(update.id))
+                  reportWriter.error(update.job, NoSuchRowToUpdate(update.id))
                 case None =>
                   // yay it's actually an insert
                   checkVersion(update.job, update.id, versionOf(update.row), None) {
@@ -390,7 +380,7 @@ final class SqlLoader[CT, CV](val connection: Connection,
 
       for((job, InspectedRow(id, sid, version, row)) <- completedInserts) {
         dataLogger.insert(sid, row)
-        inserted.put(job, IdAndVersion(id, version))
+        reportWriter.inserted(job, IdAndVersion(id, version))
       }
     }
     knownUpdates.result()
@@ -412,16 +402,14 @@ final class SqlLoader[CT, CV](val connection: Connection,
       for(update <- updates) {
         dataLogger.update(update.sid, update.newPreparedRow)
         val version = typeContext.makeRowVersionFromValue(update.newPreparedRow(datasetContext.versionColumn))
-        updated.put(update.job, IdAndVersion(update.id, version))
+        reportWriter.updated(update.job, IdAndVersion(update.id, version))
       }
     }
   }
 }
 
 object SqlLoader {
-  def apply[CT, CV](connection: Connection, preparer: RowPreparer[CV], sqlizer: DataSqlizer[CT, CV], dataLogger: DataLogger[CV], idProvider: RowIdProvider, versionProvider: RowVersionProvider, executor: Executor, timingReport: TransferrableContextTimingReport): SqlLoader[CT,CV] = {
-    new SqlLoader(connection, preparer, sqlizer, dataLogger, idProvider, versionProvider, executor, timingReport)
+  def apply[CT, CV](connection: Connection, preparer: RowPreparer[CV], sqlizer: DataSqlizer[CT, CV], dataLogger: DataLogger[CV], idProvider: RowIdProvider, versionProvider: RowVersionProvider, executor: Executor, reportWriter: ReportWriter[CV], timingReport: TransferrableContextTimingReport): SqlLoader[CT,CV] = {
+    new SqlLoader(connection, preparer, sqlizer, dataLogger, idProvider, versionProvider, executor, timingReport, reportWriter)
   }
-
-  case class JobReport[CV](inserted: sc.Map[Int, IdAndVersion[CV]], updated: sc.Map[Int, IdAndVersion[CV]], deleted: sc.Map[Int, CV], errors: sc.Map[Int, Failure[CV]]) extends Report[CV]
 }

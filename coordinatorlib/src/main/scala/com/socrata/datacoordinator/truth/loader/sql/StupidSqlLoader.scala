@@ -2,30 +2,24 @@ package com.socrata.datacoordinator
 package truth.loader
 package sql
 
-import scala.collection.JavaConverters._
-
 import java.sql.Connection
 
 import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.util.{RowIdProvider, RowVersionProvider}
-import com.socrata.datacoordinator.id.{RowVersion, RowId}
+import com.socrata.datacoordinator.id.RowVersion
 
 class StupidSqlLoader[CT, CV](val connection: Connection,
                               val rowPreparer: RowPreparer[CV],
                               val sqlizer: DataSqlizer[CT, CV],
                               val dataLogger: DataLogger[CV],
                               val idProvider: RowIdProvider,
-                              val versionProvider: RowVersionProvider)
+                              val versionProvider: RowVersionProvider,
+                              val reportWriter: ReportWriter[CV])
   extends Loader[CV]
 {
   val datasetContext = sqlizer.datasetContext
   val typeContext = sqlizer.typeContext
-
-  val inserted = new java.util.HashMap[Int, IdAndVersion[CV]]
-  val updated = new java.util.HashMap[Int, IdAndVersion[CV]]
-  val deleted = new java.util.HashMap[Int, CV]
-  val errors = new java.util.HashMap[Int, Failure[CV]]
 
   var lastJobNum: Int = -1
   def checkJob(job: Int) {
@@ -58,12 +52,12 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
                   }
                   assert(updatedCount == 1)
                   dataLogger.update(sid, updateRow)
-                  updated.put(job, IdAndVersion(id, newVersion))
+                  reportWriter.updated(job, IdAndVersion(id, newVersion))
                 }
                 versionOf(unpreparedRow) match {
                   case None => doUpdate()
                   case Some(Some(v)) if v == oldVersion => doUpdate()
-                  case Some(other) => errors.put(job, VersionMismatch(id, Some(oldVersion), other))
+                  case Some(other) => reportWriter.error(job, VersionMismatch(id, Some(oldVersion), other))
                 }
               case None =>
                 versionOf(unpreparedRow) match {
@@ -76,13 +70,13 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
                     }
                     assert(result == 1, "From insert: " + result)
                     dataLogger.insert(sid, insertRow)
-                    inserted.put(job, IdAndVersion(id, version))
+                    reportWriter.inserted(job, IdAndVersion(id, version))
                   case Some(other) =>
-                    errors.put(job, VersionMismatch(id, None, other))
+                    reportWriter.error(job, VersionMismatch(id, None, other))
                 }
             }
           case None =>
-            errors.put(job, NoPrimaryKey)
+            reportWriter.error(job, NoPrimaryKey)
         }
       case None =>
         unpreparedRow.get(datasetContext.systemIdColumn) match {
@@ -96,18 +90,18 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
                     using(connection.prepareStatement(sqlizer.prepareSystemIdUpdateStatement)) { stmt =>
                       sqlizer.prepareSystemIdUpdate(stmt, sid, updateRow)
                       val result = stmt.executeUpdate()
-                      assert(result == 1, "From update: " + updated)
+                      assert(result == 1, "From update: " + result)
                     }
                     dataLogger.update(sid, updateRow)
-                    updated.put(job, IdAndVersion(id, newVersion))
+                    reportWriter.updated(job, IdAndVersion(id, newVersion))
                   }
                   versionOf(unpreparedRow) match {
                     case None => doUpdate()
                     case Some(Some(v)) if v == oldVersion => doUpdate()
-                    case Some(other) => errors.put(job, VersionMismatch(id, None, other))
+                    case Some(other) => reportWriter.error(job, VersionMismatch(id, None, other))
                   }
                 case None =>
-                  errors.put(job, NoSuchRowToUpdate(id))
+                  reportWriter.error(job, NoSuchRowToUpdate(id))
               }
             }
           case None =>
@@ -121,9 +115,9 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
                 }
                 assert(result == 1, "From insert: " + result)
                 dataLogger.insert(sid, insertRow)
-                inserted.put(job, IdAndVersion(insertRow(datasetContext.systemIdColumn), typeContext.makeRowVersionFromValue(insertRow(datasetContext.versionColumn))))
+                reportWriter.inserted(job, IdAndVersion(insertRow(datasetContext.systemIdColumn), typeContext.makeRowVersionFromValue(insertRow(datasetContext.versionColumn))))
               case Some(Some(_)) =>
-                errors.put(job, VersionOnNewRow)
+                reportWriter.error(job, VersionOnNewRow)
             }
         }
     }
@@ -156,16 +150,16 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
                 deleter.delete(sid)
               }
               assert(result == 1)
-              deleted.put(job, id)
+              reportWriter.deleted(job, id)
               dataLogger.delete(sid)
             }
             version match {
               case None => doDelete()
               case Some(Some(v)) if v == oldVersion => doDelete()
-              case Some(other) => errors.put(job, VersionMismatch(id, Some(oldVersion), other))
+              case Some(other) => reportWriter.error(job, VersionMismatch(id, Some(oldVersion), other))
             }
           case None =>
-            errors.put(job, NoSuchRowToDelete(id))
+            reportWriter.error(job, NoSuchRowToDelete(id))
         }
       case None =>
         val sid = typeContext.makeSystemIdFromValue(id)
@@ -173,16 +167,16 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
           deleter.delete(sid)
         }
         if(result != 1) {
-          errors.put(job, NoSuchRowToDelete(id))
+          reportWriter.error(job, NoSuchRowToDelete(id))
         } else {
-          deleted.put(job, id)
+          reportWriter.deleted(job, id)
           dataLogger.delete(sid)
         }
     }
   }
 
-  def report = {
-    SqlLoader.JobReport(inserted.asScala, updated.asScala, deleted.asScala, errors.asScala)
+  def finish() {
+    reportWriter.finished = true
   }
 
   def close() {
