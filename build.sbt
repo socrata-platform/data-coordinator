@@ -1,3 +1,7 @@
+import AssemblyKeys._
+
+assemblySettings
+
 net.virtualvoid.sbt.graph.Plugin.graphSettings
 
 organization := "com.socrata"
