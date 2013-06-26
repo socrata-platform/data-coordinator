@@ -17,7 +17,7 @@ import com.typesafe.config._
 import com.socrata.datacoordinator.common.{SoQLCommon, DataSourceFromConfig, StandardDatasetMapLimits}
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.secondary._
-import com.socrata.datacoordinator.util.{StackedTimingReport, LoggedTimingReport}
+import com.socrata.datacoordinator.util.{IndexedTempFile, StackedTimingReport, LoggedTimingReport}
 import javax.activation.{MimeTypeParseException, MimeType}
 import com.socrata.soql.environment.{TypeName, ColumnName}
 import com.socrata.datacoordinator.truth.loader._
@@ -45,8 +45,8 @@ object Field {
 
 case class Schema(hash: String, schema: Map[ColumnName, TypeName], pk: ColumnName)
 
-class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEvent],
-              processCreation: (Iterator[JValue]) => (DatasetId, Iterator[JsonEvent]),
+class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) => Iterator[JsonEvent],
+              processCreation: (Iterator[JValue], IndexedTempFile) => (DatasetId, Iterator[JsonEvent]),
               getSchema: DatasetId => Option[Schema],
               datasetContents: (DatasetId, CopySelector, Option[Set[ColumnName]], Option[Long], Option[Long]) => ((Seq[Field], Option[ColumnName], String, Iterator[Array[JValue]]) => Unit) => Boolean,
               secondaries: Set[String],
@@ -356,57 +356,80 @@ class Service(processMutation: (DatasetId, Iterator[JValue]) => Iterator[JsonEve
     }
   }
 
-  def doCreation()(req: HttpServletRequest): HttpResponse = {
-    withMutationScriptResults {
-      jsonStream(req, commandReadLimit) match {
-        case Right((events, boundResetter)) =>
-          val iterator = try {
-            JsonArrayIterator[JValue](events)
-          } catch { case _: JsonBadParse =>
-            return err(BadRequest, "req.body.not-json-array")
-          }
+  def doCreation()(req: HttpServletRequest)(resp: HttpServletResponse) {
+    using(new IndexedTempFile(100000, 100000)) { tmp =>
+      val responseBuilder = withMutationScriptResults {
+        jsonStream(req, commandReadLimit) match {
+          case Right((events, boundResetter)) =>
+            val iteratorOrError = try {
+              Right(JsonArrayIterator[JValue](events))
+            } catch { case _: JsonBadParse =>
+              Left(err(BadRequest, "req.body.not-json-array"))
+            }
 
-          val (dataset, result) = processCreation(iterator.map { ev => boundResetter(); ev })
+            iteratorOrError match {
+              case Right(iterator) =>
+                val (dataset, result) = processCreation(iterator.map { ev => boundResetter(); ev }, tmp)
 
-          OK ~> ContentType("application/json; charset=utf-8") ~> Write { w =>
-            val bw = new BufferedWriter(w)
-            bw.write('[')
-            bw.write(JString(formatDatasetId(dataset)).toString)
-            bw.write(',')
-            EventTokenIterator(result).foreach { t => bw.write(t.asFragment) }
-            bw.write(']')
-            bw.flush()
-          }
-        case Left(response) =>
-          response
+                OK ~> ContentType("application/json; charset=utf-8") ~> Write { w =>
+                  val bw = new BufferedWriter(w)
+                  bw.write('[')
+                  bw.write(JString(formatDatasetId(dataset)).toString)
+                  // result is a list-of-lists; we want to flatten this.
+                  val tokens = EventTokenIterator(result).buffered
+                  tokens.next() // skip '['
+                  if(!tokens.head.isInstanceOf[TokenCloseBracket]) {
+                    // there's at least one element; we've already written
+                    // one, so we need to add a comma.
+                    bw.write(',')
+                  }
+                  tokens.foreach { t => bw.write(t.asFragment) }
+                  bw.flush()
+                }
+              case Left(error) =>
+                error
+            }
+          case Left(response) =>
+            response
+        }
       }
+      responseBuilder(resp)
     }
   }
 
-  def doMutation(datasetIdRaw: String)(req: HttpServletRequest): HttpResponse = {
+  def doMutation(datasetIdRaw: String)(req: HttpServletRequest)(resp: HttpServletResponse) {
     val normalizedId = norm(datasetIdRaw)
     val datasetId = parseDatasetId(normalizedId).getOrElse {
-      return notFoundError(normalizedId)
+      notFoundError(normalizedId)(resp)
+      return
     }
-    withMutationScriptResults {
-      jsonStream(req, commandReadLimit) match {
-        case Right((events, boundResetter)) =>
-          val iterator = try {
-            JsonArrayIterator[JValue](events)
-          } catch { case _: JsonBadParse =>
-            return err(BadRequest, "req.body.not-json-array")
-          }
+    using(new IndexedTempFile(100000, 100000)) { tmp =>
+      val responseBuilder = withMutationScriptResults {
+        jsonStream(req, commandReadLimit) match {
+          case Right((events, boundResetter)) =>
+            val iteratorOrError = try {
+              Right(JsonArrayIterator[JValue](events))
+            } catch { case _: JsonBadParse =>
+              Left(err(BadRequest, "req.body.not-json-array"))
+            }
 
-          val result = processMutation(datasetId, iterator.map { ev => boundResetter(); ev })
+            iteratorOrError match {
+              case Right(iterator) =>
+                val result = processMutation(datasetId, iterator.map { ev => boundResetter(); ev }, tmp)
 
-          OK ~> ContentType("application/json; charset=utf-8") ~> Write { w =>
-            val bw = new BufferedWriter(w)
-            EventTokenIterator(result).foreach { t => bw.write(t.asFragment) }
-            bw.flush()
-          }
-        case Left(response) =>
-          response
+                OK ~> ContentType("application/json; charset=utf-8") ~> Write { w =>
+                  val bw = new BufferedWriter(w)
+                  EventTokenIterator(result).foreach { t => bw.write(t.asFragment) }
+                  bw.flush()
+                }
+              case Left(error) =>
+                error
+            }
+          case Left(response) =>
+            response
+        }
       }
+      responseBuilder(resp)
     }
   }
 

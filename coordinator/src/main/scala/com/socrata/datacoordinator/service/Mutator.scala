@@ -10,10 +10,12 @@ import com.rojoma.json.codec.JsonCodec
 import com.socrata.datacoordinator.truth.loader._
 import scala.collection.immutable.VectorBuilder
 import com.socrata.soql.environment.{TypeName, ColumnName}
-import com.socrata.datacoordinator.util.{BuiltUpIterator, Counter}
+import com.socrata.datacoordinator.util.{IndexedTempFile, BuiltUpIterator, Counter}
 import com.ibm.icu.util.ULocale
 import com.rojoma.json.io._
 import com.socrata.datacoordinator.id.{RowVersion, DatasetId}
+import java.nio.charset.StandardCharsets.UTF_8
+import java.io.InputStreamReader
 
 object Mutator {
   sealed abstract class StreamType {
@@ -186,7 +188,7 @@ trait MutatorCommon[CT, CV] {
   def typeContext: TypeContext[CT, CV]
 }
 
-class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
+class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT, CV]) {
   import Mutator._
   import common._
 
@@ -273,50 +275,115 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
     runScript(u, commands)._2
   }
 
+  val jobCounter = new Counter(1)
+
+  class JsonReportWriter(ctx: DatasetMutator[CT, CV]#MutationContext, val firstJob: Long, tmpFile: IndexedTempFile) extends ReportWriter[CV] {
+    val jsonRepFor = jsonReps(ctx.copyInfo.datasetInfo)
+    val pkRep = jsonRepFor(ctx.primaryKey.typ)
+    val verRep = jsonRepFor(ctx.versionColumn.typ)
+    var firstError: Option[Failure[CV]] = None
+    var jobLimit = firstJob
+
+    def jsonifyId(id: CV) = pkRep.toJValue(id)
+    def jsonifyVersion(v: RowVersion) =
+      verRep.toJValue(typeContext.makeValueFromRowVersion(v))
+
+    def writeJson(job: Int, value: JValue) = synchronized {
+      val stream = new java.io.OutputStreamWriter(tmpFile.newRecord(job), UTF_8)
+      CompactJsonWriter.toWriter(stream, value)
+      stream.close()
+      jobLimit = Math.max(jobLimit, job)
+    }
+
+    def jsonifyUpsert(idAndVersion: IdAndVersion[CV], typ: String) = {
+      JObject(Map(
+        "typ" -> JString(typ),
+        "id" -> jsonifyId(idAndVersion.id),
+        "ver" -> jsonifyVersion(idAndVersion.version)
+      ))
+    }
+
+    def jsonifyDelete(result: CV) = {
+      JObject(Map(
+        "typ" -> JString("delete"),
+        "id" -> jsonifyId(result)
+      ))
+    }
+
+    def jsonifyError(err: Failure[CV]) = err match {
+      case NoPrimaryKey =>
+        JObject(Map(
+          "typ" -> JString("error"),
+          "err" -> JString("no_primary_key")
+        ))
+      case NoSuchRowToDelete(id) =>
+        JObject(Map(
+          "typ" -> JString("error"),
+          "err" -> JString("no_such_row_to_delete"),
+          "id" -> jsonifyId(id)
+        ))
+      case NoSuchRowToUpdate(id) =>
+        JObject(Map(
+          "typ" -> JString("error"),
+          "err" -> JString("no_such_row_to_update"),
+          "id" -> jsonifyId(id)
+        ))
+      case VersionMismatch(id, expected, actual) =>
+        JObject(Map(
+          "typ" -> JString("error"),
+          "err" -> JString("version_mismatch"),
+          "id" -> jsonifyId(id),
+          "expected" -> expected.map(jsonifyVersion).getOrElse(JNull),
+          "actual" -> actual.map(jsonifyVersion).getOrElse(JNull)
+        ))
+      case VersionOnNewRow =>
+        JObject(Map(
+          "typ" -> JString("error"),
+          "err" -> JString("version_on_new_row")
+        ))
+    }
+
+    def inserted(job: Int, result: IdAndVersion[CV]) {
+      writeJson(job, jsonifyUpsert(result, "insert"))
+    }
+
+    def updated(job: Int, result: IdAndVersion[CV]) {
+      writeJson(job, jsonifyUpsert(result, "update"))
+    }
+
+    def deleted(job: Int, result: CV) {
+      writeJson(job, jsonifyDelete(result))
+    }
+
+    def error(job: Int, result: Failure[CV]) {
+      if(None == firstError) firstError = Some(result)
+      writeJson(job, jsonifyError(result))
+    }
+
+    def toEventStream: Iterator[JsonEvent] =
+      (firstJob until jobLimit).iterator.flatMap { job =>
+        tmpFile.readRecord(job) match {
+          case Some(stream) =>
+            // no need to close this stream; it'll be closed when the tmpFile is or when the next record is
+            // opened, whichever comes first.
+            new FusedBlockJsonEventIterator(new InputStreamReader(stream, UTF_8))
+          case None =>
+            sys.error("Missing entry for job " + job)
+        }
+      }
+  }
+
   private def runScript(u: Universe[CT, CV] with DatasetMutatorProvider, commands: CommandStream): (DatasetId, Iterator[JsonEvent]) = {
     def user = commands.user
 
     def doProcess(ctx: DatasetMutator[CT, CV]#MutationContext): (DatasetId, Iterator[JsonEvent]) = {
       val jsonRepFor = jsonReps(ctx.copyInfo.datasetInfo)
       val processor = new Processor(jsonRepFor)
-      val events = processor.carryOutCommands(ctx, commands).map { r =>
-        val pkRep = jsonRepFor(ctx.primaryKey.typ)
-        val verRep = jsonRepFor(ctx.versionColumn.typ)
-        def jsonifyId(id: CV) = pkRep.toJValue(id)
-        def jsonifyVersion(v: RowVersion) =
-          verRep.toJValue(typeContext.makeValueFromRowVersion(v))
-        def repify(idAndVersion: IdAndVersion[CV]) = {
-          JObject(Map(
-            "id" -> jsonifyId(idAndVersion.id),
-            "ver" -> jsonifyVersion(idAndVersion.version)
-          ))
-        }
-        val inserted = r.inserted.mapValues(repify)
-        val updated = r.updated.mapValues(repify)
-        val deleted = r.deleted.mapValues(pkRep.toJValue)
-        val errors = r.errors.mapValues {
-          case NoPrimaryKey =>
-            JString("no_primary_key")
-          case NoSuchRowToDelete(id) =>
-            JObject(Map(
-              "no_such_row_to_delete" -> jsonifyId(id)
-            ))
-          case NoSuchRowToUpdate(id) =>
-            JObject(Map(
-              "no_such_row_to_update" -> jsonifyId(id)
-            ))
-          case VersionMismatch(id, expected, actual) =>
-            JObject(Map(
-              "version_mismatch" -> JObject(Map(
-                "id" -> jsonifyId(id),
-                "expected" -> expected.map(jsonifyVersion).getOrElse(JNull),
-                "actual" -> actual.map(jsonifyVersion).getOrElse(JNull)
-              ))
-            ))
-          case VersionOnNewRow =>
-            JString("version_on_new_row")
-        }
-        toEventStream(inserted, updated, deleted, errors)
+      val events = processor.carryOutCommands(ctx, commands).map { report =>
+        new BuiltUpIterator(
+          Iterator.single(StartOfArrayEvent()),
+          report.toEventStream,
+          Iterator.single(EndOfArrayEvent()))
       }
       (ctx.copyInfo.datasetInfo.systemId,
         new BuiltUpIterator(
@@ -381,8 +448,8 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
   }
 
   class Processor(jsonRepFor: CT => JsonColumnRep[CT, CV]) {
-    def carryOutCommands(mutator: DatasetMutator[CT, CV]#MutationContext, commands: CommandStream): Seq[Report[CV]] = {
-      val reports = new VectorBuilder[Report[CV]]
+    def carryOutCommands(mutator: DatasetMutator[CT, CV]#MutationContext, commands: CommandStream): Seq[JsonReportWriter] = {
+      val reports = new VectorBuilder[JsonReportWriter]
       def loop() {
         commands.nextCommand() match {
           case Some(cmd) => reports ++= carryOutCommand(mutator, commands, cmd); loop()
@@ -393,7 +460,7 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
       reports.result()
     }
 
-    def carryOutCommand(mutator: DatasetMutator[CT, CV]#MutationContext, commands: CommandStream, cmd: Command): Option[Report[CV]] = {
+    def carryOutCommand(mutator: DatasetMutator[CT, CV]#MutationContext, commands: CommandStream, cmd: Command): Option[JsonReportWriter] = {
       def datasetId = mutator.copyInfo.datasetInfo.systemId
       def checkDDL(idx: Long) {
         if(!allowDdlOnPublishedCopies && mutator.copyInfo.lifecycleStage != LifecycleStage.Unpublished)
@@ -474,45 +541,40 @@ class Mutator[CT, CV](common: MutatorCommon[CT, CV]) {
       }
     }
 
-    def processRowData(idx: Long, rows: BufferedIterator[JValue], fatalRowErrors: Boolean, mutator: DatasetMutator[CT,CV]#MutationContext, mergeReplace: MergeReplace): Report[CV] = {
+    def processRowData(idx: Long, rows: BufferedIterator[JValue], fatalRowErrors: Boolean, mutator: DatasetMutator[CT,CV]#MutationContext, mergeReplace: MergeReplace): JsonReportWriter = {
       import mutator._
       val plan = new RowDecodePlan(schema, jsonRepFor, typeNameFor, (v: CV) => if(typeContext.isNull(v)) None else Some(typeContext.makeRowVersionFromValue(v)))
-      val counter = new Counter(1)
       try {
+        val reportWriter = new JsonReportWriter(mutator, jobCounter.peek, indexedTempFile)
         val it = new Iterator[RowDataUpdateJob] {
           def hasNext = rows.hasNext && JNull != rows.head
           def next() = {
             if(!hasNext) throw new NoSuchElementException
             plan(rows.next()) match {
-              case Right(row) => UpsertJob(counter(), row)
-              case Left((id, version)) => DeleteJob(counter(), id, version)
+              case Right(row) => UpsertJob(jobCounter(), row)
+              case Left((id, version)) => DeleteJob(jobCounter(), id, version)
             }
           }
         }
-        val result = locally {
-          val reportWriter = new com.socrata.datacoordinator.truth.loader.SimpleReportWriter[CV]
-          mutator.upsert(it, reportWriter, replaceUpdatedRows = mergeReplace == Replace)
-          reportWriter.report
-        }
+        mutator.upsert(it, reportWriter, replaceUpdatedRows = mergeReplace == Replace)
         if(rows.hasNext && JNull == rows.head) rows.next()
-        if(fatalRowErrors && result.errors.nonEmpty) {
+        for(error <- reportWriter.firstError if fatalRowErrors) {
           val pk = schema.values.find(_.isUserPrimaryKey).orElse(schema.values.find(_.isSystemPrimaryKey)).getOrElse {
             sys.error("No primary key on this dataset?")
           }
-          val trueError = result.errors.minBy(_._1)._2.map(jsonRepFor(pk.typ).toJValue)
+          val trueError = error.map(jsonRepFor(pk.typ).toJValue)
           val jsonizer = { (rv: RowVersion) =>
             jsonRepFor(mutator.versionColumn.typ).toJValue(typeContext.makeValueFromRowVersion(rv))
           }
-          println(jsonizer(new RowVersion(10)))
           throw UpsertError(mutator.copyInfo.datasetInfo.systemId, trueError, jsonizer)(idx)
         }
-        result
+        reportWriter
       } catch {
         case e: plan.BadDataException => e match {
           case plan.BadUpsertCommandException(value) =>
-            throw InvalidUpsertCommand(value)(idx, counter.lastValue)
+            throw InvalidUpsertCommand(value)(idx, jobCounter.lastValue)
           case plan.UninterpretableFieldValue(column, value, columnType)  =>
-            throw InvalidValue(column, typeNameFor(columnType), value)(idx, counter.lastValue)
+            throw InvalidValue(column, typeNameFor(columnType), value)(idx, jobCounter.lastValue)
         }
       }
     }

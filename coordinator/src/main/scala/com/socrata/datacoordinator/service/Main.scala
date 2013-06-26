@@ -7,7 +7,7 @@ import com.socrata.thirdparty.typesafeconfig.Propertizer
 import com.socrata.datacoordinator.secondary.{DatasetAlreadyInSecondary, SecondaryLoader}
 import java.util.concurrent.{CountDownLatch, TimeUnit, Executors}
 import com.socrata.datacoordinator.common.{SoQLCommon, StandardDatasetMapLimits, DataSourceFromConfig}
-import com.socrata.datacoordinator.util.{StackedTimingReport, LoggedTimingReport}
+import com.socrata.datacoordinator.util.{IndexedTempFile, StackedTimingReport, LoggedTimingReport}
 import com.socrata.datacoordinator.id.{ColumnId, DatasetId}
 import com.rojoma.json.ast.JValue
 import com.socrata.datacoordinator.truth.CopySelector
@@ -16,6 +16,7 @@ import com.netflix.curator.retry
 import com.netflix.curator.framework.CuratorFrameworkFactory
 import com.netflix.curator.x.discovery.ServiceDiscoveryBuilder
 import com.socrata.http.server.curator.CuratorBroker
+import com.rojoma.simplearm.SimpleArm
 
 class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
   def ensureInSecondary(storeId: String, datasetId: DatasetId): Unit =
@@ -51,17 +52,17 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
       secondaryManifest.stores(datasetId)
     }
 
-  private val mutator = new Mutator(common.Mutator)
+  private def mutator(tmp: IndexedTempFile) = new Mutator(tmp, common.Mutator)
 
-  def processMutation(datasetId: DatasetId, input: Iterator[JValue]) = {
+  def processMutation(datasetId: DatasetId, input: Iterator[JValue], tmp: IndexedTempFile) = {
     for(u <- common.universe) yield {
-      mutator.updateScript(u, datasetId, input)
+      mutator(tmp).updateScript(u, datasetId, input)
     }
   }
 
-  def processCreation(input: Iterator[JValue]) = {
+  def processCreation(input: Iterator[JValue], tmp: IndexedTempFile) = {
     for(u <- common.universe) yield {
-      mutator.createScript(u, input)
+      mutator(tmp).createScript(u, input)
     }
   }
 
