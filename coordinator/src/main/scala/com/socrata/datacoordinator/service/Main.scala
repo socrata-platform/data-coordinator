@@ -108,6 +108,11 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
     res.isDefined
   }
 
+  def makeReportTemporaryFile() =
+    new IndexedTempFile(
+      indexBufSizeHint = serviceConfig.reports.indexBlockSize,
+      dataBufSizeHint = serviceConfig.reports.dataBlockSize,
+      tmpDir = serviceConfig.reports.directory)
 }
 
 object Main {
@@ -154,7 +159,7 @@ object Main {
       val serv = new Service(operations.processMutation, operations.processCreation, common.Mutator.schemaFinder.getSchema,
         operations.exporter, secondaries.keySet, operations.datasetsInStore, operations.versionInStore,
         operations.ensureInSecondary, operations.secondariesOfDataset, operations.listDatasets, operations.deleteDataset,
-        serviceConfig.commandReadLimit, common.internalNameFromDatasetId, common.datasetIdFromInternalName)
+        serviceConfig.commandReadLimit, common.internalNameFromDatasetId, common.datasetIdFromInternalName, operations.makeReportTemporaryFile)
 
       val finished = new CountDownLatch(1)
       val tableDropper = new Thread() {

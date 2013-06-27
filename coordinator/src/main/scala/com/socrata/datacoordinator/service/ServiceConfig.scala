@@ -17,6 +17,7 @@ class ServiceConfig(val config: Config, root: String) {
   val allowDdlOnPublishedCopies = config.getBoolean(k("allow-ddl-on-published-copies"))
   val instance = config.getString(k("instance"))
   val writeLockTimeout = new FiniteDuration(config.getMilliseconds(k("write-lock-timeout")), TimeUnit.MILLISECONDS)
+  val reports = new ReportsConfig(config, k("reports"))
 
   require(instance.matches("[a-zA-Z0-9._]+"), "Instance names must consist of only ASCII letters, numbers, periods, and underscores")
 }

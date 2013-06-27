@@ -58,7 +58,8 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
               deleteDataset: DatasetId => DatasetDropper.Result,
               commandReadLimit: Long,
               formatDatasetId: DatasetId => String,
-              parseDatasetId: String => Option[DatasetId])
+              parseDatasetId: String => Option[DatasetId],
+              tempFileProvider: () => IndexedTempFile)
 {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
 
@@ -357,7 +358,7 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
   }
 
   def doCreation()(req: HttpServletRequest)(resp: HttpServletResponse) {
-    using(new IndexedTempFile(100000, 100000)) { tmp =>
+    using(tempFileProvider()) { tmp =>
       val responseBuilder = withMutationScriptResults {
         jsonStream(req, commandReadLimit) match {
           case Right((events, boundResetter)) =>
@@ -403,7 +404,7 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
       notFoundError(normalizedId)(resp)
       return
     }
-    using(new IndexedTempFile(100000, 100000)) { tmp =>
+    using(tempFileProvider()) { tmp =>
       val responseBuilder = withMutationScriptResults {
         jsonStream(req, commandReadLimit) match {
           case Right((events, boundResetter)) =>
