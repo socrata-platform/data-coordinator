@@ -371,8 +371,10 @@ class IndexedTempFile(indexBufSizeHint: Int, dataBufSizeHint: Int, tmpDir: File 
     }
 
     override def close() {
-      if(lastStream eq this) lastStream = null
-      recordLengthOfRecord(recordId, recordSize)
+      if(lastStream eq this) {
+        lastStream = null
+        recordLengthOfRecord(recordId, recordSize)
+      }
     }
   }
 
@@ -392,10 +394,12 @@ class IndexedTempFile(indexBufSizeHint: Int, dataBufSizeHint: Int, tmpDir: File 
     override def markSupported = true
 
     override def mark(readlimit: Int) {
+      checkClosed(this)
       markPos = startPos + (recordSize - recordRemaining)
     }
 
     override def reset() {
+      checkClosed(this)
       ensureDataBlockContaining(markPos)
       recordRemaining = recordSize - (markPos - startPos)
       blockReadIdx = (markPos - dataBufPos).toInt
@@ -411,8 +415,10 @@ class IndexedTempFile(indexBufSizeHint: Int, dataBufSizeHint: Int, tmpDir: File 
       result & 0xff
     }
 
-    override def available =
+    override def available = {
+      checkClosed(this)
       Math.min(Int.MaxValue, recordRemaining).toInt
+    }
 
     private def refill() {
       advanceToNextBlock()
