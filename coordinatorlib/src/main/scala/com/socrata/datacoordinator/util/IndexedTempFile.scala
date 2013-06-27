@@ -189,30 +189,26 @@ class IndexedTempFile(indexBufSizeHint: Int, dataBufSizeHint: Int, tmpDir: File 
     result
   }
 
+  private def storeLongAt(bs: Array[Byte], writePtr: Int, x: Long) {
+    bs(writePtr) = (x >> 56).toByte
+    bs(writePtr + 1) = (x >> 48).toByte
+    bs(writePtr + 2) = (x >> 40).toByte
+    bs(writePtr + 3) = (x >> 32).toByte
+    bs(writePtr + 4) = (x >> 24).toByte
+    bs(writePtr + 5) = (x >> 16).toByte
+    bs(writePtr + 6) = (x >> 8).toByte
+    bs(writePtr + 7) = x.toByte
+  }
+
   private def recordStartOfRecord(id: Long) {
     val writePtr = ensureIndexBlockContaining(id)
-    val offset = count
-    indexBuf(writePtr) = (offset >> 56).toByte
-    indexBuf(writePtr + 1) = (offset >> 48).toByte
-    indexBuf(writePtr + 2) = (offset >> 40).toByte
-    indexBuf(writePtr + 3) = (offset >> 32).toByte
-    indexBuf(writePtr + 4) = (offset >> 24).toByte
-    indexBuf(writePtr + 5) = (offset >> 16).toByte
-    indexBuf(writePtr + 6) = (offset >> 8).toByte
-    indexBuf(writePtr + 7) = offset.toByte
+    storeLongAt(indexBuf, writePtr, count)
     indexDirty = true
   }
 
   private def recordLengthOfRecord(id: Long, length: Long) {
     val writePtr = ensureIndexBlockContaining(id)
-    indexBuf(writePtr + 8) = (length >> 56).toByte
-    indexBuf(writePtr + 9) = (length >> 48).toByte
-    indexBuf(writePtr + 10) = (length >> 40).toByte
-    indexBuf(writePtr + 11) = (length >> 32).toByte
-    indexBuf(writePtr + 12) = (length >> 24).toByte
-    indexBuf(writePtr + 13) = (length >> 16).toByte
-    indexBuf(writePtr + 14) = (length >> 8).toByte
-    indexBuf(writePtr + 15) = length.toByte
+    storeLongAt(indexBuf, writePtr+8, length)
     indexDirty = true
   }
 
