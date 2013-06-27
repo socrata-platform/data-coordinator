@@ -361,7 +361,7 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
     }
 
     def toEventStream: Iterator[JsonEvent] =
-      (firstJob until jobLimit).iterator.flatMap { job =>
+      (firstJob to jobLimit).iterator.flatMap { job =>
         tmpFile.readRecord(job) match {
           case Some(stream) =>
             // no need to close this stream; it'll be closed when the tmpFile is or when the next record is
