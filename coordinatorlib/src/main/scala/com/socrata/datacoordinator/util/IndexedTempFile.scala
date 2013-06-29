@@ -71,7 +71,7 @@ object BlockBasedRandomAccessFile {
   val fillHoles = System.getProperty("os.name") != "Linux"
 }
 
-case class IndexedTempFileStats(indexReads: Long, indexWrites: Long, indexMisses: Long, dataReads: Long, dataWrites: Long, dataMisses: Long)
+case class IndexedTempFileStats(indexReads: Long, indexWrites: Long, nonLinearIndexSeeks: Long, dataReads: Long, dataWrites: Long, nonLinearDataSeeks: Long)
 
 /** A file of records, optimized for "mostly linear" reading and writing */
 class IndexedTempFile(indexBufSizeHint: Int, dataBufSizeHint: Int, tmpDir: File = new File(System.getProperty("java.io.tmpdir"))) extends Closeable {
@@ -108,8 +108,8 @@ class IndexedTempFile(indexBufSizeHint: Int, dataBufSizeHint: Int, tmpDir: File 
   private[this] var dataBufPos = 0L // position of the start of dataBuf within this logical file
   private[this] var dataDirty = false
 
-  private[this] var indexMisses = 0L
-  private[this] var dataMisses = 0L
+  private[this] var nonLinearIndexSeeks = 0L
+  private[this] var nonLinearDataSeeks = 0L
   private[this] var recordBound = 0L
 
   def recordCount = recordBound
@@ -130,10 +130,10 @@ class IndexedTempFile(indexBufSizeHint: Int, dataBufSizeHint: Int, tmpDir: File 
     IndexedTempFileStats(
       if(physicalIndexFile == null) 0 else physicalIndexFile.reads,
       if(physicalIndexFile == null) 0 else physicalIndexFile.writes,
-      indexMisses,
+      nonLinearIndexSeeks,
       if(physicalDataFile == null) 0 else physicalDataFile.reads,
       if(physicalDataFile == null) 0 else physicalDataFile.writes,
-      dataMisses
+      nonLinearDataSeeks
     )
 
   /** Get an input stream associated with the given record, if it has
@@ -215,7 +215,6 @@ class IndexedTempFile(indexBufSizeHint: Int, dataBufSizeHint: Int, tmpDir: File 
   private def ensureIndexBlockContaining(id: Long): Int = {
     val targetPos = id << 4
     if(indexBufPos > targetPos || targetPos >= indexBufPos + indexBufSize) {
-      indexMisses += 1
       loadIndexBlockContaining(targetPos)
     }
     (targetPos - indexBufPos).toInt
@@ -223,7 +222,6 @@ class IndexedTempFile(indexBufSizeHint: Int, dataBufSizeHint: Int, tmpDir: File 
 
   private def ensureDataBlockContaining(targetPos: Long): Int = {
     if(dataBufPos > targetPos || targetPos >= dataBufPos + dataBufSize) {
-      dataMisses += 1
       loadDataBlockContaining(targetPos)
     }
     (targetPos - dataBufPos).toInt

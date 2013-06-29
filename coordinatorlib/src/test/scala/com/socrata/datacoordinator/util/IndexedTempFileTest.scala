@@ -5,6 +5,7 @@ import org.scalatest.prop.PropertyChecks
 import org.scalatest.matchers.MustMatchers
 import java.io.{InputStream, ByteArrayOutputStream}
 import org.scalacheck.{Arbitrary, Gen}
+import com.rojoma.simplearm.util._
 
 class IndexedTempFileTest extends FunSuite with MustMatchers with PropertyChecks {
   val lowerBound = 0xf
@@ -34,22 +35,23 @@ class IndexedTempFileTest extends FunSuite with MustMatchers with PropertyChecks
     forAll(Arbitrary.arbitrary[Long], Arbitrary.arbitrary[List[List[Array[Byte]]]], bound, bound) { (seed, streams, indexBufSize, dataBufSize) =>
       whenever(indexBufSize >= lowerBound && dataBufSize >= lowerBound && indexBufSize <= upperBound && dataBufSize <= upperBound ) {
         val rng = new scala.util.Random(seed)
-        val file = new IndexedTempFile(indexBufSizeHint = indexBufSize, dataBufSizeHint = dataBufSize)
 
         def writes = if(shuffleWrites) rng.shuffle(streams.zipWithIndex) else streams.zipWithIndex
         def reads = if(shuffleReads) rng.shuffle(streams.zipWithIndex) else streams.zipWithIndex
 
-        writes.foreach { case (stream, idx) =>
-          val s = file.newRecord(idx)
-          for(chunk <- stream) s.write(chunk)
-        }
-
-        reads.foreach { case (stream, idx) =>
-          val allBytes = flattenToArray(stream)
-          val s = file.readRecord(idx).getOrElse {
-            fail("Cannot find record " + idx)
+        using(new IndexedTempFile(indexBufSizeHint = indexBufSize, dataBufSizeHint = dataBufSize)) { file =>
+          writes.foreach { case (stream, idx) =>
+            val s = file.newRecord(idx)
+            for(chunk <- stream) s.write(chunk)
           }
-          readAllFrom(s) must equal (allBytes)
+
+          reads.foreach { case (stream, idx) =>
+            val allBytes = flattenToArray(stream)
+            val s = file.readRecord(idx).getOrElse {
+              fail("Cannot find record " + idx)
+            }
+            readAllFrom(s) must equal (allBytes)
+          }
         }
       }
     }
