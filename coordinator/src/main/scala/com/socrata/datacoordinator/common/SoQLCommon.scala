@@ -15,7 +15,7 @@ import com.socrata.datacoordinator.util.collection.{ColumnIdSet, ColumnIdMap}
 import com.socrata.datacoordinator.truth.loader.RowPreparer
 import com.socrata.datacoordinator.id.{DatasetId, RowVersion, RowId}
 import java.sql.Connection
-import java.io.Reader
+import java.io.{OutputStream, Reader}
 import com.socrata.datacoordinator.util.TransferrableContextTimingReport
 import javax.sql.DataSource
 import com.rojoma.simplearm.{SimpleArm, Managed}
@@ -39,7 +39,7 @@ object SoQLSystemColumns { sc =>
 }
 
 class SoQLCommon(dataSource: DataSource,
-                 copyInProvider: (Connection, String, Reader) => Long,
+                 copyInProvider: (Connection, String, OutputStream => Unit) => Long,
                  executorService: ExecutorService,
                  tableSpace: String => Option[String],
                  val timingReport: TransferrableContextTimingReport,
@@ -180,7 +180,7 @@ class SoQLCommon(dataSource: DataSource,
     val obfuscationKeyGenerator: () => Array[Byte] = common.generateObfuscationKey _
     val initialCounterValue: Long = common.initialCounterValue
     val tablespace: (String) => Option[String] = common.tableSpace
-    val copyInProvider: (Connection, String, Reader) => Long = common.copyInProvider
+    val copyInProvider: (Connection, String, OutputStream => Unit) => Long = common.copyInProvider
     val timingReport = common.timingReport
   }
 

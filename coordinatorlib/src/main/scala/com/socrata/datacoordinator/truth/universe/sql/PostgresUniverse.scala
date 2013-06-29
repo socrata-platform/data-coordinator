@@ -3,7 +3,7 @@ package sql
 
 import java.util.concurrent.ExecutorService
 import java.sql.Connection
-import java.io.Reader
+import java.io.{Reader, OutputStream}
 
 import org.joda.time.DateTime
 import com.rojoma.simplearm.SimpleArm
@@ -36,7 +36,7 @@ trait PostgresCommonSupport[CT, CV] {
   val obfuscationKeyGenerator: () => Array[Byte]
   val initialCounterValue: Long
   val tablespace: String => Option[String]
-  val copyInProvider: (Connection, String, Reader) => Long
+  val copyInProvider: (Connection, String, OutputStream => Unit) => Long
   val timingReport: TransferrableContextTimingReport
 
   val datasetIdFormatter: DatasetId => String
@@ -46,23 +46,23 @@ trait PostgresCommonSupport[CT, CV] {
   def writeLockTimeout: Duration
 
   lazy val loaderProvider = new AbstractSqlLoaderProvider(executor, typeContext, repFor, isSystemColumn) with PostgresSqlLoaderProvider[CT, CV] {
-    def copyIn(conn: Connection, sql: String, reader: Reader): Long =
-      copyInProvider(conn, sql, reader)
+    def copyIn(conn: Connection, sql: String, output: OutputStream => Unit): Long =
+      copyInProvider(conn, sql, output)
   }
 }
 
-object PostgresCopyIn extends ((Connection, String, Reader) => Long) {
-  def apply(conn: Connection, sql: String, csv: Reader): Long =
-    conn.asInstanceOf[org.postgresql.PGConnection].getCopyAPI.copyIn(sql, csv)
+object PostgresCopyIn extends ((Connection, String, OutputStream => Unit) => Long) {
+  def apply(conn: Connection, sql: String, output: OutputStream => Unit): Long =
+    PostgresRepBasedDataSqlizer.pgCopyManager(conn, sql, output)
 }
 
-object C3P0WrappedPostgresCopyIn extends ((Connection, String, Reader) => Long) {
+object C3P0WrappedPostgresCopyIn extends ((Connection, String, OutputStream => Unit) => Long) {
   import com.mchange.v2.c3p0.C3P0ProxyConnection
 
-  private val method = PostgresCopyIn.getClass.getMethod("apply", classOf[Connection], classOf[String], classOf[Reader])
+  private val method = PostgresCopyIn.getClass.getMethod("apply", classOf[Connection], classOf[String], classOf[OutputStream => Unit])
 
-  def apply(conn: Connection, sql: String, csv: Reader): Long =
-    conn.asInstanceOf[C3P0ProxyConnection].rawConnectionOperation(method, PostgresCopyIn, Array(C3P0ProxyConnection.RAW_CONNECTION, sql, csv)).asInstanceOf[java.lang.Long].longValue
+  def apply(conn: Connection, sql: String, output: OutputStream => Unit): Long =
+    conn.asInstanceOf[C3P0ProxyConnection].rawConnectionOperation(method, PostgresCopyIn, Array(C3P0ProxyConnection.RAW_CONNECTION, sql, output)).asInstanceOf[java.lang.Long].longValue
 }
 
 class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
@@ -165,7 +165,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
   }
 
   def sqlizerFactory(copyInfo: CopyInfo, datasetContext: RepBasedSqlDatasetContext[CT, CV]) =
-    new PostgresRepBasedDataSqlizer(copyInfo.dataTableName, datasetContext, executor, copyInProvider)
+    new PostgresRepBasedDataSqlizer(copyInfo.dataTableName, datasetContext, copyInProvider)
 
   def prevettedLoader(copyCtx: DatasetCopyContext[CT], logger: Logger[CT, CV]) =
     new SqlPrevettedLoader(conn, sqlizerFactory(copyCtx.copyInfo, datasetContextFactory(copyCtx.schema)), logger)

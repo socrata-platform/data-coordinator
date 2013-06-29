@@ -24,7 +24,7 @@ import com.socrata.datacoordinator.truth.loader.Insert
 import com.socrata.datacoordinator.common.StandardDatasetMapLimits
 import org.postgresql.PGConnection
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
-import java.io.Reader
+import java.io.{OutputStream, Reader}
 import com.socrata.datacoordinator.truth.loader.Update
 import scala.Some
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
@@ -35,7 +35,7 @@ import com.socrata.datacoordinator.truth.loader.Insert
 import com.socrata.datacoordinator.util.{NoopTimingReport, TimingReport}
 import scala.concurrent.duration.Duration
 
-class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingReport, paranoid: Boolean, copyIn: (Connection, String, Reader) => Long) {
+class Backup(conn: Connection, /*executor: ExecutorService, */ timingReport: TimingReport, paranoid: Boolean, copyIn: (Connection, String, OutputStream => Unit) => Long) {
   val typeContext = SoQLTypeContext
   val logger: Logger[SoQLType, SoQLValue] = NullLogger[SoQLType, SoQLValue]
   val typeNamespace = SoQLTypeContext.typeNamespace
@@ -45,7 +45,7 @@ class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingRe
   def genericRepFor(columnInfo: ColumnInfo[SoQLType]): SqlColumnRep[SoQLType, SoQLValue] =
     SoQLRep.sqlRep(columnInfo)
 
-  def extractCopier(conn: Connection, sql: String, input: Reader): Long = copyIn(conn, sql, input)
+  def extractCopier(conn: Connection, sql: String, output: OutputStream => Unit): Long = copyIn(conn, sql, output)
 
   val schemaLoader: SchemaLoader[SoQLType] = new RepBasedPostgresSchemaLoader(conn, logger, genericRepFor, tablespace)
   val contentsCopier: DatasetContentsCopier[SoQLType] = new RepBasedSqlDatasetContentsCopier(conn, logger, genericRepFor, timingReport)
@@ -65,7 +65,7 @@ class Backup(conn: Connection, executor: ExecutorService, timingReport: TimingRe
       idCol,
       versionCol,
       systemIds)
-    val sqlizer = new PostgresRepBasedDataSqlizer(version.dataTableName, datasetContext, executor, extractCopier)
+    val sqlizer = new PostgresRepBasedDataSqlizer(version.dataTableName, datasetContext, extractCopier)
     new SqlPrevettedLoader(conn, sqlizer, logger)
   }
 
@@ -321,41 +321,36 @@ object Backup extends App {
 
   val datasetMapLimits = StandardDatasetMapLimits
 
-  val executor = Executors.newCachedThreadPool()
-
-  def copyIn(conn: Connection, sql: String, reader: Reader) = conn.asInstanceOf[PGConnection].getCopyAPI.copyIn(sql, reader)
+  def copyIn(conn: Connection, sql: String, output: OutputStream => Unit) =
+    PostgresRepBasedDataSqlizer.pgCopyManager(conn, sql, output)
 
   val timingReport = NoopTimingReport
-  try {
-    for {
-      primaryConn <- managed(DriverManager.getConnection("jdbc:postgresql://localhost:5432/robertm", "blist", "blist"))
-      backupConn <- managed(DriverManager.getConnection("jdbc:postgresql://localhost:5432/robertm2", "blist", "blist"))
-    } {
-      primaryConn.setAutoCommit(false)
-      backupConn.setAutoCommit(false)
-      try {
-        DatabasePopulator.populate(backupConn, datasetMapLimits)
+  for {
+    primaryConn <- managed(DriverManager.getConnection("jdbc:postgresql://localhost:5432/robertm", "blist", "blist"))
+    backupConn <- managed(DriverManager.getConnection("jdbc:postgresql://localhost:5432/robertm2", "blist", "blist"))
+  } {
+    primaryConn.setAutoCommit(false)
+    backupConn.setAutoCommit(false)
+    try {
+      DatabasePopulator.populate(backupConn, datasetMapLimits)
 
-        val bkp = new Backup(backupConn, executor, timingReport, paranoid = true, copyIn = copyIn)
+      val bkp = new Backup(backupConn, timingReport, paranoid = true, copyIn = copyIn)
 
-        for {
-          globalLogStmt <- managed(primaryConn.prepareStatement("SELECT id, dataset_system_id, version FROM global_log ORDER BY id"))
-          globalLogRS <- managed(globalLogStmt.executeQuery())
-        } {
-          while(globalLogRS.next()) {
-            val datasetSystemId = globalLogRS.getDatasetId("dataset_system_id")
-            val version = globalLogRS.getLong("version")
-            playback(primaryConn, bkp, datasetSystemId, version)
-            backupConn.commit()
-          }
+      for {
+        globalLogStmt <- managed(primaryConn.prepareStatement("SELECT id, dataset_system_id, version FROM global_log ORDER BY id"))
+        globalLogRS <- managed(globalLogStmt.executeQuery())
+      } {
+        while(globalLogRS.next()) {
+          val datasetSystemId = globalLogRS.getDatasetId("dataset_system_id")
+          val version = globalLogRS.getLong("version")
+          playback(primaryConn, bkp, datasetSystemId, version)
+          backupConn.commit()
         }
-        primaryConn.commit()
-      } finally {
-        backupConn.rollback()
-        primaryConn.rollback()
       }
+      primaryConn.commit()
+    } finally {
+      backupConn.rollback()
+      primaryConn.rollback()
     }
-  } finally {
-    executor.shutdown()
   }
 }

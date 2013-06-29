@@ -4,11 +4,10 @@ import java.util.concurrent.ExecutorService
 import java.sql.Connection
 
 import com.socrata.datacoordinator.truth.TypeContext
-import com.socrata.datacoordinator.truth.metadata.{DatasetCopyContext, CopyInfo, ColumnInfo}
+import com.socrata.datacoordinator.truth.metadata.{DatasetCopyContext, ColumnInfo}
 import com.socrata.datacoordinator.truth.sql.{RepBasedSqlDatasetContext, SqlColumnRep}
-import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.truth.loader.{ReportWriter, Loader, Logger, RowPreparer}
-import java.io.Reader
+import java.io.OutputStream
 import com.socrata.datacoordinator.util.{RowIdProvider, RowVersionProvider, TransferrableContextTimingReport, RowDataProvider}
 
 abstract class AbstractSqlLoaderProvider[CT, CV](val executor: ExecutorService, typeContext: TypeContext[CT, CV], repFor: ColumnInfo[CT] => SqlColumnRep[CT, CV], isSystemColumn: ColumnInfo[CT] => Boolean)
@@ -45,8 +44,8 @@ trait StandardSqlLoaderProvider[CT, CV] { this: AbstractSqlLoaderProvider[CT, CV
 }
 
 trait PostgresSqlLoaderProvider[CT, CV] { this: AbstractSqlLoaderProvider[CT, CV] =>
-  def copyIn(conn: Connection, sql: String, reader: Reader): Long
+  def copyIn(conn: Connection, sql: String, output: OutputStream => Unit): Long
 
   def produce(tableName: String, datasetContext: RepBasedSqlDatasetContext[CT, CV]) =
-    new PostgresRepBasedDataSqlizer(tableName, datasetContext, executor, copyIn)
+    new PostgresRepBasedDataSqlizer(tableName, datasetContext, copyIn)
 }

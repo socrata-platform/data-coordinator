@@ -20,7 +20,7 @@ import com.socrata.datacoordinator.common.{DataSourceConfig, DataSourceFromConfi
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.util.collection.{MutableColumnIdMap, ColumnIdMap}
 import org.xerial.snappy.SnappyInputStream
-import java.io.InputStreamReader
+import java.io.{BufferedWriter, OutputStream, InputStreamReader}
 import util.control.ControlThrowable
 import scala.Some
 import com.socrata.datacoordinator.truth.metadata.DatasetInfo
@@ -29,6 +29,7 @@ import com.socrata.datacoordinator.util.NoopTimingReport
 import com.socrata.soql.types.SoQLType
 import org.apache.log4j.PropertyConfigurator
 import com.socrata.thirdparty.typesafeconfig.Propertizer
+import java.nio.charset.StandardCharsets
 
 final abstract class Receiver
 
@@ -54,7 +55,6 @@ object Receiver extends App {
 
   val address = new InetSocketAddress(InetAddress.getByName(receiverConfig.host), receiverConfig.port)
 
-  val executor = java.util.concurrent.Executors.newCachedThreadPool()
   val provider = SelectorProvider.provider
 
   val datasetMapLimits = StandardDatasetMapLimits
@@ -111,7 +111,7 @@ object Receiver extends App {
   def datasetUpdateRequested(datasetId: DatasetId, version: Long, client: Packets) {
     using(dataSource.getConnection()) { conn =>
       conn.setAutoCommit(false)
-      val backup = new Backup(conn, executor, timingReport, paranoid = true, copyIn = copyIn)
+      val backup = new Backup(conn, timingReport, paranoid = true, copyIn = copyIn)
 
       try {
         backup.datasetMap.datasetInfo(datasetId, Duration.Inf) match {
@@ -139,7 +139,7 @@ object Receiver extends App {
   def forcedResyncRequested(datasetId: DatasetId, client: Packets) {
     using(dataSource.getConnection()) { conn =>
       conn.setAutoCommit(false)
-      val backup = new Backup(conn, executor, timingReport, paranoid = true, copyIn = copyIn)
+      val backup = new Backup(conn, timingReport, paranoid = true, copyIn = copyIn)
       try {
         resync(conn, backup, datasetId, client)
       } finally {
@@ -325,9 +325,18 @@ object Receiver extends App {
     for {
       is <- managed(new PacketsInputStream(client, ResyncStreamDataLabel, ResyncStreamEndLabel, dataTimeout))
       decompressed <- managed(new SnappyInputStream(is))
-      reader <- managed(new InputStreamReader(decompressed, "UTF-8"))
     } {
-      decsvifier.importFromCsv(reader, columns)
+      def writer(out: OutputStream) {
+        val buf = new Array[Byte](10240)
+        def loop() {
+          decompressed.read(buf) match {
+            case -1 => // done
+            case n => out.write(buf, 0, n); loop()
+          }
+        }
+        loop()
+      }
+      decsvifier.importFromCsv(writer, columns)
     }
   }
 

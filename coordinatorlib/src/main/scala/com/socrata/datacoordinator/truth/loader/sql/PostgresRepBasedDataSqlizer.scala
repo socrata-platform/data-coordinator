@@ -6,48 +6,35 @@ import java.sql.Connection
 import org.postgresql.PGConnection
 
 import com.socrata.datacoordinator.truth.sql.RepBasedSqlDatasetContext
-import com.socrata.datacoordinator.util.ReaderWriterPair
-import java.util.concurrent.{Callable, ExecutorService}
-import java.io.Reader
+import java.io.{OutputStreamWriter, BufferedWriter, OutputStream}
+import java.nio.charset.StandardCharsets
+import org.postgresql.copy.CopyIn
 
 class PostgresRepBasedDataSqlizer[CT, CV](tableName: String,
                                           datasetContext: RepBasedSqlDatasetContext[CT, CV],
-                                          executor: ExecutorService,
-                                          copyIn: (Connection, String, Reader) => Long = PostgresRepBasedDataSqlizer.pgCopyManager)
+                                          copyIn: (Connection, String, OutputStream => Unit) => Long = PostgresRepBasedDataSqlizer.pgCopyManager)
   extends AbstractRepBasedDataSqlizer(tableName, datasetContext)
 {
   val bulkInsertStatement =
-    "COPY " + dataTableName + " (" + repSchema.values.flatMap(_.physColumns).mkString(",") + ") from stdin with csv"
+    "COPY " + dataTableName + " (" + repSchema.values.flatMap(_.physColumns).mkString(",") + ") from stdin with (format csv, encoding 'utf-8')"
 
   def insertBatch[T](conn: Connection)(f: (Inserter) => T): (Long, T) = {
-    val inserter = new InserterImpl
-    val result = executor.submit(new Callable[Long] {
-      def call() =
-        try { copyIn(conn, bulkInsertStatement, inserter.rw.reader) }
-        finally { inserter.rw.reader.close() }
-    })
-    try {
-      val fResult = try {
-        f(inserter)
-      } finally {
-        inserter.rw.writer.close()
-      }
-      (result.get(), fResult)
-    } catch {
-      case e: Throwable =>
-        // Ensure the future has completed before we leave this method.
-        // We don't actually care if it failed, because we're exiting
-        // abnormally.
-        try { result.get() }
-        catch { case e: Exception => /* ok */ }
-        throw e
+    var result: T = null.asInstanceOf[T]
+    def writeF(w: OutputStream) {
+      val inserter = new InserterImpl(w)
+      result = f(inserter)
+      inserter.close()
     }
+    val count = copyIn(conn, bulkInsertStatement, writeF)
+    (count, result)
   }
 
-  class InserterImpl extends Inserter {
-    val rw = new ReaderWriterPair(100000, 1)
+  class InserterImpl(out: OutputStream) extends Inserter {
+    val writer = new BufferedWriter(new OutputStreamWriter(out, StandardCharsets.UTF_8))
+    val sb = new java.lang.StringBuilder
+
     def insert(row: Row[CV]) {
-      val sb = new java.lang.StringBuilder
+      sb.setLength(0)
       var didOne = false
       val it = repSchema.iterator
       while(it.hasNext) {
@@ -59,14 +46,33 @@ class PostgresRepBasedDataSqlizer[CT, CV](tableName: String,
         v.csvifyForInsert(sb, value)
       }
       sb.append('\n')
-      rw.writer.append(sb)
+      writer.append(sb)
     }
 
-    def close() {}
+    def close() {
+      writer.close()
+    }
   }
 }
 
 object PostgresRepBasedDataSqlizer {
-  def pgCopyManager(conn: Connection, sql: String, input: Reader): Long =
-    conn.asInstanceOf[PGConnection].getCopyAPI.copyIn(sql, input)
+  def pgCopyManager(conn: Connection, sql: String, output: OutputStream => Unit): Long = {
+    val copyIn = conn.asInstanceOf[PGConnection].getCopyAPI.copyIn(sql)
+    try {
+      output(new CopyInOutputStream(copyIn))
+      copyIn.endCopy()
+    } finally {
+      if(copyIn.isActive) copyIn.cancelCopy()
+    }
+  }
+
+  class CopyInOutputStream(copyIn: CopyIn) extends OutputStream {
+    def write(b: Int) {
+      copyIn.writeToCopy(new Array[Byte](b.toByte), 0, 1)
+    }
+
+    override def write(bs: Array[Byte], start: Int, length: Int) {
+      copyIn.writeToCopy(bs, start, length)
+    }
+  }
 }
