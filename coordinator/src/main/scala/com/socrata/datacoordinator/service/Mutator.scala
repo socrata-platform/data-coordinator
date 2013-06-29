@@ -8,7 +8,7 @@ import com.socrata.datacoordinator.truth.metadata.{DatasetInfo, DatasetCopyConte
 import com.socrata.datacoordinator.truth.json.JsonColumnRep
 import com.rojoma.json.codec.JsonCodec
 import com.socrata.datacoordinator.truth.loader._
-import scala.collection.immutable.VectorBuilder
+import scala.collection.immutable.{NumericRange, VectorBuilder}
 import com.socrata.soql.environment.{TypeName, ColumnName}
 import com.socrata.datacoordinator.util.{IndexedTempFile, BuiltUpIterator, Counter}
 import com.ibm.icu.util.ULocale
@@ -263,19 +263,19 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
       Iterator.single(EndOfObjectEvent()))
   }
 
-  def createScript(u: Universe[CT, CV] with DatasetMutatorProvider, commandStream: Iterator[JValue]): (DatasetId, Iterator[JsonEvent]) = {
+  def createScript(u: Universe[CT, CV] with DatasetMutatorProvider, commandStream: Iterator[JValue]): (DatasetId, Iterator[NumericRange[Long]]) = {
     if(commandStream.isEmpty) throw EmptyCommandStream()(0L)
     val commands = createCreateStream(0L, commandStream.next(), commandStream)
     runScript(u, commands)
   }
 
-  def updateScript(u: Universe[CT, CV] with DatasetMutatorProvider, datasetId: DatasetId, commandStream: Iterator[JValue]): Iterator[JsonEvent] = {
+  def updateScript(u: Universe[CT, CV] with DatasetMutatorProvider, datasetId: DatasetId, commandStream: Iterator[JValue]): Iterator[NumericRange[Long]] = {
     if(commandStream.isEmpty) throw EmptyCommandStream()(0L)
     val commands = createCommandStream(0L, commandStream.next(), datasetId, commandStream)
     runScript(u, commands)._2
   }
 
-  val jobCounter = new Counter(1)
+  val jobCounter = new Counter(0)
 
   class JsonReportWriter(ctx: DatasetMutator[CT, CV]#MutationContext, val firstJob: Long, tmpFile: IndexedTempFile) extends ReportWriter[CV] {
     val jsonRepFor = jsonReps(ctx.copyInfo.datasetInfo)
@@ -360,36 +360,18 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
       writeJson(job, jsonifyError(result))
     }
 
-    def toEventStream: Iterator[JsonEvent] =
-      (firstJob to jobLimit).iterator.flatMap { job =>
-        tmpFile.readRecord(job) match {
-          case Some(stream) =>
-            // no need to close this stream; it'll be closed when the tmpFile is or when the next record is
-            // opened, whichever comes first.
-            new FusedBlockJsonEventIterator(new InputStreamReader(stream, UTF_8))
-          case None =>
-            sys.error("Missing entry for job " + job)
-        }
-      }
+    def toJobRange: NumericRange[Long] =
+      firstJob to jobLimit
   }
 
-  private def runScript(u: Universe[CT, CV] with DatasetMutatorProvider, commands: CommandStream): (DatasetId, Iterator[JsonEvent]) = {
+  private def runScript(u: Universe[CT, CV] with DatasetMutatorProvider, commands: CommandStream): (DatasetId, Iterator[NumericRange[Long]]) = {
     def user = commands.user
 
-    def doProcess(ctx: DatasetMutator[CT, CV]#MutationContext): (DatasetId, Iterator[JsonEvent]) = {
+    def doProcess(ctx: DatasetMutator[CT, CV]#MutationContext): (DatasetId, Iterator[NumericRange[Long]]) = {
       val jsonRepFor = jsonReps(ctx.copyInfo.datasetInfo)
       val processor = new Processor(jsonRepFor)
-      val events = processor.carryOutCommands(ctx, commands).map { report =>
-        new BuiltUpIterator(
-          Iterator.single(StartOfArrayEvent()),
-          report.toEventStream,
-          Iterator.single(EndOfArrayEvent()))
-      }
-      (ctx.copyInfo.datasetInfo.systemId,
-        new BuiltUpIterator(
-          Iterator.single(StartOfArrayEvent()),
-          new BuiltUpIterator(events: _*),
-          Iterator.single(EndOfArrayEvent())))
+      val events = processor.carryOutCommands(ctx, commands).map(_.toJobRange)
+      (ctx.copyInfo.datasetInfo.systemId, events.iterator)
     }
 
     def checkHash(index: Long, schemaHash: Option[String], ctx: DatasetCopyContext[CT]) {

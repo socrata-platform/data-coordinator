@@ -145,7 +145,7 @@ class IndexedTempFile(indexBufSizeHint: Int, dataBufSizeHint: Int, tmpDir: File 
     * number of bytes remaining in the record or `Int.MaxValue` if there is more
     * than fits in an `Int`.  It will also have an unbounded capacity for marking.
     */
-  def readRecord(id: Long): Option[InputStream] = {
+  def readRecord(id: Long): Option[InputStreamWithWriteTo] = {
     if(lastStream != null) lastStream.close()
     ensureIndexBlockContaining(id)
     val idxPos = (id * 16 - indexBufPos).toInt
@@ -155,8 +155,8 @@ class IndexedTempFile(indexBufSizeHint: Int, dataBufSizeHint: Int, tmpDir: File 
 
     if(pos == 0) None
     else {
-      ensureDataBlockContaining(pos)
-      val result = new RecordInputStream(pos, recordSize, (pos - dataBufPos).toInt)
+      val blockStartIdx = ensureDataBlockContaining(pos)
+      val result = new RecordInputStream(pos, recordSize, blockStartIdx)
       lastStream = result
       Some(result)
     }
@@ -182,8 +182,8 @@ class IndexedTempFile(indexBufSizeHint: Int, dataBufSizeHint: Int, tmpDir: File 
   def newRecord(id: Long): OutputStream = {
     if(lastStream != null) lastStream.close()
     recordStartOfRecord(id)
-    ensureDataBlockContaining(count)
-    val result = new RecordOutputStream(id)
+    val startIdx = ensureDataBlockContaining(count)
+    val result = new RecordOutputStream(id, startIdx)
     lastStream = result
     recordBound = Math.max(recordBound, id + 1)
     result
@@ -236,6 +236,7 @@ class IndexedTempFile(indexBufSizeHint: Int, dataBufSizeHint: Int, tmpDir: File 
   private def loadIndexBlockContaining(targetPos: Long) {
     flushIndices()
     val targetBlock = targetPos >>> indexBufSizeShift
+    if(targetBlock != physicalIndexFile.blockNumber + 1) nonLinearIndexSeeks += 1
     physicalIndexFile.readBlock(targetBlock)
     indexBufPos = targetBlock << indexBufSizeShift
   }
@@ -243,6 +244,7 @@ class IndexedTempFile(indexBufSizeHint: Int, dataBufSizeHint: Int, tmpDir: File 
   private def loadDataBlockContaining(targetPos: Long) {
     flushData()
     val targetBlock = targetPos >>> dataBufSizeShift
+    if(targetBlock != physicalDataFile.blockNumber + 1) nonLinearDataSeeks += 1
     physicalDataFile.readBlock(targetBlock)
     dataBufPos = targetBlock << dataBufSizeShift
   }
@@ -348,9 +350,9 @@ class IndexedTempFile(indexBufSizeHint: Int, dataBufSizeHint: Int, tmpDir: File 
     if(lastStream ne stream) throw new IOException("Stream is closed")
   }
 
-  private final class RecordOutputStream(recordId: Long) extends OutputStream {
+  private final class RecordOutputStream(recordId: Long, startIdx: Int) extends OutputStream {
     recordSize = 0L
-    dataBufWritePtr = (count - dataBufPos).toInt
+    dataBufWritePtr = startIdx
 
     def write(b: Int) {
       doWrite(this, b)
@@ -375,7 +377,7 @@ class IndexedTempFile(indexBufSizeHint: Int, dataBufSizeHint: Int, tmpDir: File 
   private class RecordInputStream(startPos: Long,
                                   recordSize: Long,
                                   private[this] var blockReadIdx: Int)
-    extends InputStream
+    extends InputStreamWithWriteTo
   {
     private[this] val blockSize = dataBufSize
     private[this] var recordRemaining = recordSize
@@ -394,9 +396,19 @@ class IndexedTempFile(indexBufSizeHint: Int, dataBufSizeHint: Int, tmpDir: File 
 
     override def reset() {
       checkClosed(this)
-      ensureDataBlockContaining(markPos)
+      blockReadIdx = ensureDataBlockContaining(markPos)
       recordRemaining = recordSize - (markPos - startPos)
-      blockReadIdx = (markPos - dataBufPos).toInt
+    }
+
+    def writeTo(that: OutputStream): Long = {
+      val willHaveWritten = recordRemaining
+      while(recordRemaining > 0) {
+        if(blockReadIdx == blockSize) refill()
+        val blockRemaining = Math.min(recordRemaining, blockSize - blockReadIdx).toInt
+        that.write(dataBuf, blockReadIdx, blockRemaining)
+        recordRemaining -= blockRemaining
+      }
+      willHaveWritten
     }
 
     def read(): Int = {
@@ -504,4 +516,8 @@ object Test extends App {
   dump(1)
   dump(3)
   f.close()
+}
+
+abstract class InputStreamWithWriteTo extends InputStream {
+  def writeTo(that: OutputStream): Long
 }

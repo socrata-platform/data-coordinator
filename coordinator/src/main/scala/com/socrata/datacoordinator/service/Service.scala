@@ -26,7 +26,7 @@ import com.netflix.curator.retry
 import com.netflix.curator.x.discovery.ServiceDiscoveryBuilder
 import com.socrata.http.server.curator.CuratorBroker
 import org.apache.log4j.PropertyConfigurator
-import java.io.{Reader, UnsupportedEncodingException, BufferedWriter}
+import java.io.{BufferedOutputStream, Reader, UnsupportedEncodingException, BufferedWriter}
 import com.socrata.thirdparty.typesafeconfig.Propertizer
 import com.socrata.datacoordinator.id.{ColumnId, DatasetId}
 import com.rojoma.json.codec.JsonCodec
@@ -37,6 +37,8 @@ import com.rojoma.json.io.TokenIdentifier
 import com.rojoma.json.io.TokenString
 import com.socrata.datacoordinator.truth.loader.NoSuchRowToUpdate
 import com.socrata.datacoordinator.truth.loader.VersionMismatch
+import scala.collection.immutable.NumericRange
+import java.nio.charset.StandardCharsets.UTF_8
 
 case class Field(@JsonKey("c") name: String, @JsonKey("t") typ: String)
 object Field {
@@ -45,8 +47,8 @@ object Field {
 
 case class Schema(hash: String, schema: Map[ColumnName, TypeName], pk: ColumnName)
 
-class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) => Iterator[JsonEvent],
-              processCreation: (Iterator[JValue], IndexedTempFile) => (DatasetId, Iterator[JsonEvent]),
+class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) => Iterator[NumericRange[Long]],
+              processCreation: (Iterator[JValue], IndexedTempFile) => (DatasetId, Iterator[NumericRange[Long]]),
               getSchema: DatasetId => Option[Schema],
               datasetContents: (DatasetId, CopySelector, Option[Set[ColumnName]], Option[Long], Option[Long]) => ((Seq[Field], Option[ColumnName], String, Iterator[Array[JValue]]) => Unit) => Boolean,
               secondaries: Set[String],
@@ -372,20 +374,28 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
               case Right(iterator) =>
                 val (dataset, result) = processCreation(iterator.map { ev => boundResetter(); ev }, tmp)
 
-                OK ~> ContentType("application/json; charset=utf-8") ~> Write { w =>
-                  val bw = new BufferedWriter(w)
+                OK ~> ContentType("application/json; charset=utf-8") ~> Stream { w =>
+                  val bw = new BufferedOutputStream(w)
                   bw.write('[')
-                  bw.write(JString(formatDatasetId(dataset)).toString)
-                  // result is a list-of-lists; we want to flatten this.
-                  val tokens = EventTokenIterator(result).buffered
-                  tokens.next() // skip '['
-                  if(!tokens.head.isInstanceOf[TokenCloseBracket]) {
-                    // there's at least one element; we've already written
-                    // one, so we need to add a comma.
+                  bw.write(JString(formatDatasetId(dataset)).toString.getBytes(UTF_8))
+                  for(jobs <- result) {
                     bw.write(',')
+                    bw.write('[')
+                    jobs.foreach(new Function1[Long, Unit] {
+                      var didOne = false
+                      def apply(job: Long) {
+                        if(didOne) bw.write(',')
+                        else didOne = true
+                        tmp.readRecord(job).get.writeTo(bw)
+                      }
+                    })
+                    bw.write(']')
                   }
-                  tokens.foreach { t => bw.write(t.asFragment) }
+                  bw.write(']')
                   bw.flush()
+
+                  log.debug("Non-linear index seeks: {}", tmp.stats.nonLinearIndexSeeks)
+                  log.debug("Non-linear data seeks: {}", tmp.stats.nonLinearDataSeeks)
                 }
               case Left(error) =>
                 error
@@ -418,10 +428,31 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
               case Right(iterator) =>
                 val result = processMutation(datasetId, iterator.map { ev => boundResetter(); ev }, tmp)
 
-                OK ~> ContentType("application/json; charset=utf-8") ~> Write { w =>
-                  val bw = new BufferedWriter(w)
-                  EventTokenIterator(result).foreach { t => bw.write(t.asFragment) }
+                OK ~> ContentType("application/json; charset=utf-8") ~> Stream { w =>
+                  val bw = new BufferedOutputStream(w)
+                  bw.write('[')
+                  result.foreach(new Function1[NumericRange[Long], Unit] {
+                    var didOne = false
+                    def apply(jobs: NumericRange[Long]) {
+                      if(didOne) bw.write(',')
+                      else didOne = true
+                      bw.write('[')
+                      jobs.foreach(new Function1[Long, Unit] {
+                        var didOne = false
+                        def apply(job: Long) {
+                          if(didOne) bw.write(',')
+                          else didOne = true
+                          tmp.readRecord(job).get.writeTo(bw)
+                        }
+                      })
+                      bw.write(']')
+                    }
+                  })
+                  bw.write(']')
                   bw.flush()
+
+                  log.debug("Non-linear index seeks: {}", tmp.stats.nonLinearIndexSeeks)
+                  log.debug("Non-linear data seeks: {}", tmp.stats.nonLinearDataSeeks)
                 }
               case Left(error) =>
                 error
