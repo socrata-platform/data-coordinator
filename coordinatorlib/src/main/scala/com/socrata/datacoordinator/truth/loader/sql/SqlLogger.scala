@@ -13,6 +13,8 @@ import com.socrata.datacoordinator.util.{TimingReport, Counter}
 import com.socrata.datacoordinator.truth.RowLogCodec
 import com.socrata.datacoordinator.truth.metadata.{CopyInfo, ColumnInfo}
 import com.socrata.datacoordinator.id.RowId
+import java.io.OutputStream
+import java.util.zip.{Deflater, DeflaterOutputStream}
 
 class SqlLogger[CT, CV](connection: Connection,
                         logTableName: String,
@@ -185,10 +187,16 @@ class SqlLogger[CT, CV](connection: Connection,
     }
   }
 
+  def counterUpdated(nextCounter: Long) {
+    checkTxn()
+    flushRowData()
+    logLine(SqlLogger.CounterUpdated, nextCounter.toString)
+  }
+
   // DataLogger facet starts here
 
   var baos: java.io.ByteArrayOutputStream = _
-  var sos: org.xerial.snappy.SnappyOutputStream = _
+  var underlyingOutputStream: OutputStream = _
   var out: com.google.protobuf.CodedOutputStream = _
   var rowCodec: RowLogCodec[CV] = _
   var didOne: Boolean = _
@@ -196,9 +204,21 @@ class SqlLogger[CT, CV](connection: Connection,
 
   def reset() {
     baos = new java.io.ByteArrayOutputStream
+
+    /*
     baos.write(0) // "we're using Snappy"
-    sos = new org.xerial.snappy.SnappyOutputStream(baos)
-    out = com.google.protobuf.CodedOutputStream.newInstance(sos)
+    underlyingOutputStream = new org.xerial.snappy.SnappyOutputStream(baos)
+    */
+
+    /*
+    baos.write(1) // "no compression"
+    underlyingOutputStream = baos
+    */
+
+    baos.write(2) // "deflate"
+    underlyingOutputStream = new DeflaterOutputStream(baos, new Deflater(Deflater.BEST_SPEED)) // FIXME: close will not free this deflater's native mem.  Need to deflater.end() it.
+
+    out = com.google.protobuf.CodedOutputStream.newInstance(underlyingOutputStream)
     didOne = false
     rowCodec = rowCodecFactory()
     rowCodec.writeVersion(out)
@@ -219,7 +239,7 @@ class SqlLogger[CT, CV](connection: Connection,
   def flushInner() {
     if(didOne) {
       out.flush()
-      sos.flush()
+      underlyingOutputStream.close()
       val bytes = baos.toByteArray
       reset()
       logLine(SqlLogger.RowDataUpdated, bytes)
@@ -244,12 +264,6 @@ class SqlLogger[CT, CV](connection: Connection,
     maybeFlushRowData()
   }
 
-  def counterUpdated(nextCounter: Long) {
-    checkTxn()
-    flushRowData()
-    logLine(SqlLogger.CounterUpdated, nextCounter.toString)
-  }
-
   def close() {
     if(_insertStmt != null) {
       _insertStmt.close()
@@ -260,6 +274,8 @@ class SqlLogger[CT, CV](connection: Connection,
 
 object SqlLogger {
   private val log = org.slf4j.LoggerFactory.getLogger(classOf[SqlLogger[_,_]])
+
+  val maxOpLength = 8
 
   // all of these must be at most 8 characters long and consist of
   // nothing but lower-case ASCII letters.
@@ -281,13 +297,9 @@ object SqlLogger {
   val WorkingCopyPublished = "pubwork"
   val TransactionEnded = "endtxn"
 
-  val maxOpLength = 8
-
-  private def good(s: String) = s.length <= maxOpLength && s.forall { c => c >= 'a' && c <= 'z' }
-
-  for {
+  val allEvents = for {
     method <- getClass.getDeclaredMethods
     if java.lang.reflect.Modifier.isPublic(method.getModifiers) && method.getParameterTypes.length == 0
     if method.getReturnType == classOf[String]
-  } assert(good(method.invoke(this).asInstanceOf[String]), s"${method.getName} is either more than $maxOpLength characters long or contains something which isn't a lowercase letter")
+  } yield method.invoke(this).asInstanceOf[String]
 }

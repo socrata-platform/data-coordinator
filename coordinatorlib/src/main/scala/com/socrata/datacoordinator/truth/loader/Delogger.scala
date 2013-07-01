@@ -8,6 +8,7 @@ import com.socrata.datacoordinator.truth.metadata.{UnanchoredDatasetInfo, Unanch
 import com.socrata.datacoordinator.id.RowId
 import com.socrata.datacoordinator.truth.RowLogCodec
 import scala.collection.immutable.VectorBuilder
+import java.util.zip.InflaterInputStream
 
 sealed abstract class CorruptLogException(val version: Long, msg: String) extends Exception(msg)
 class MissingVersion(version: Long, msg: String) extends CorruptLogException(version, msg)
@@ -77,13 +78,17 @@ object Delogger {
   case class RowDataUpdated[CV](bytes: Array[Byte])(codec: RowLogCodec[CV]) extends LogEvent[CV] {
     lazy val operations: Vector[Operation[CV]] = { // TODO: A standard decode exception
       val bais = new ByteArrayInputStream(bytes)
-      bais.read() match {
+      val underlyingInputStream = bais.read() match {
         case 0 => // ok, we're using Snappy
+          new org.xerial.snappy.SnappyInputStream(bais)
+        case 1 => // no compression
+          bais
+        case 2 => // deflate
+          new InflaterInputStream(bais)
         case -1 => sys.error("Empty row data")
         case other => sys.error("Using an unknown compressiong format " + other)
       }
-      val sis = new org.xerial.snappy.SnappyInputStream(bais)
-      val cis = com.google.protobuf.CodedInputStream.newInstance(sis)
+      val cis = com.google.protobuf.CodedInputStream.newInstance(underlyingInputStream)
 
       // TODO: dispatch on version (right now we have only one)
       codec.skipVersion(cis)

@@ -150,7 +150,8 @@ object Main {
           new LoggedTimingReport(org.slf4j.LoggerFactory.getLogger("timing-report")) with StackedTimingReport,
           allowDdlOnPublishedCopies = serviceConfig.allowDdlOnPublishedCopies,
           serviceConfig.writeLockTimeout,
-          serviceConfig.instance
+          serviceConfig.instance,
+          serviceConfig.reports.directory
         )
       }
 

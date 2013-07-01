@@ -60,7 +60,8 @@ object ChicagoCrimesLoadScript extends App {
       new LoggedTimingReport(LoggerFactory.getLogger("timing-report")) with StackedTimingReport,
       allowDdlOnPublishedCopies = false,
       new FiniteDuration(10, TimeUnit.SECONDS),
-      "dummy instance"
+      "dummy instance",
+      new File(System.getProperty("java.io.tmpdir"))
     )
 
     com.rojoma.simplearm.util.using(ds.getConnection()) { conn =>

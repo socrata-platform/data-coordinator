@@ -15,7 +15,7 @@ import com.socrata.datacoordinator.util.collection.{ColumnIdSet, ColumnIdMap}
 import com.socrata.datacoordinator.truth.loader.RowPreparer
 import com.socrata.datacoordinator.id.{DatasetId, RowVersion, RowId}
 import java.sql.Connection
-import java.io.{OutputStream, Reader}
+import java.io.{File, OutputStream, Reader}
 import com.socrata.datacoordinator.util.TransferrableContextTimingReport
 import javax.sql.DataSource
 import com.rojoma.simplearm.{SimpleArm, Managed}
@@ -45,7 +45,8 @@ class SoQLCommon(dataSource: DataSource,
                  val timingReport: TransferrableContextTimingReport,
                  allowDdlOnPublishedCopies: Boolean,
                  writeLockTimeout: Duration,
-                 instance: String)
+                 instance: String,
+                 tmpDir: File)
 { common =>
   type CT = SoQLType
   type CV = SoQLValue
@@ -112,6 +113,8 @@ class SoQLCommon(dataSource: DataSource,
     val typeContext = common.typeContext
 
     val repFor = sqlRepFor
+
+    val tmpDir = common.tmpDir
 
     val newRowCodec = common.newRowLogCodec _
 

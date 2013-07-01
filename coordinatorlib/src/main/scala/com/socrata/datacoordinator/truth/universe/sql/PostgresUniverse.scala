@@ -3,7 +3,7 @@ package sql
 
 import java.util.concurrent.ExecutorService
 import java.sql.Connection
-import java.io.{Reader, OutputStream}
+import java.io.{File, Reader, OutputStream}
 
 import org.joda.time.DateTime
 import com.rojoma.simplearm.SimpleArm
@@ -17,7 +17,7 @@ import com.socrata.datacoordinator.secondary.{SecondaryManifest, PlaybackToSecon
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.loader.sql._
 import com.socrata.datacoordinator.secondary.sql.{SqlSecondaryConfig, SqlSecondaryManifest}
-import com.socrata.datacoordinator.util.{RowIdProvider, RowVersionProvider, RowDataProvider, TransferrableContextTimingReport}
+import com.socrata.datacoordinator.util._
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import scala.concurrent.duration.Duration
 import com.socrata.datacoordinator.truth.metadata.DatasetInfo
@@ -25,6 +25,10 @@ import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
 import com.socrata.datacoordinator.id.{DatasetId, RowId}
 import com.socrata.datacoordinator.truth.json.JsonColumnWriteRep
+import scala.Some
+import com.socrata.datacoordinator.truth.metadata.DatasetInfo
+import com.socrata.datacoordinator.truth.metadata.ColumnInfo
+import com.socrata.datacoordinator.truth.metadata.CopyInfo
 
 trait PostgresCommonSupport[CT, CV] {
   val executor: ExecutorService
@@ -44,6 +48,8 @@ trait PostgresCommonSupport[CT, CV] {
   def rowPreparer(transactionStart: DateTime, ctx: DatasetCopyContext[CT], replaceUpdatedRows: Boolean): RowPreparer[CV]
 
   def writeLockTimeout: Duration
+
+  def tmpDir: File
 
   lazy val loaderProvider = new AbstractSqlLoaderProvider(executor, typeContext, repFor, isSystemColumn) with PostgresSqlLoaderProvider[CT, CV] {
     def copyIn(conn: Connection, sql: String, output: OutputStream => Unit): Long =
@@ -123,7 +129,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
       case Some(logger) =>
         logger
       case None =>
-        val logger = new SqlLogger[CT, CV](conn, logName, newRowCodec, timingReport)
+        val logger = new PostgresLogger[CT, CV](conn, logName, newRowCodec, timingReport, copyInProvider, tmpDir) with LeakDetect
         loggerCache += logName -> logger
         logger
     }

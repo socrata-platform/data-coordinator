@@ -89,6 +89,7 @@ class SecondaryWatcherConfig(config: Config, root: String) {
   val secondaryConfigs = config.getObject(k("secondary.configs"))
   val secondaryPath = new File(config.getString(k("secondary.path")))
   val instance = config.getString(k("instance"))
+  val tmpdir = new File(config.getString(k("tmpdir"))).getAbsoluteFile
 }
 
 object SecondaryWatcher extends App { self =>
@@ -114,7 +115,8 @@ object SecondaryWatcher extends App { self =>
     new LoggedTimingReport(log) with StackedTimingReport,
     allowDdlOnPublishedCopies = false, // don't care,
     Duration.fromNanos(1L), // don't care
-    config.instance
+    config.instance,
+    config.tmpdir
   )
 
   val w = new SecondaryWatcher(common.universe)
