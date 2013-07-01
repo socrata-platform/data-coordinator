@@ -68,7 +68,7 @@ class PostgresLogger[CT, CV](connection: Connection,
 
   private var batchSize = lastBatchSize
   private var wrote = 0L
-  private val targetTimeInNanos = 10000000000L.toDouble // 10 seconds
+  private val targetTimeInNanos = 1000000000L.toDouble // 1 second
   private val nextSubVersionNum = new Counter(init = 1)
   private var transactionEnded = false
 
