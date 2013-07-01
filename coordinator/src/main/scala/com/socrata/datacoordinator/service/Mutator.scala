@@ -282,7 +282,7 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
     val pkRep = jsonRepFor(ctx.primaryKey.typ)
     val verRep = jsonRepFor(ctx.versionColumn.typ)
     var firstError: Option[Failure[CV]] = None
-    var jobLimit = firstJob
+    var jobLimit = firstJob - 1
 
     def jsonifyId(id: CV) = pkRep.toJValue(id)
     def jsonifyVersion(v: RowVersion) =
