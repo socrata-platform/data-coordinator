@@ -173,8 +173,13 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
     underlyingOutputStream = baos
     */
 
+    /*
     baos.write(2) // "deflate"
-    underlyingOutputStream = new DeflaterOutputStream(baos, new Deflater(Deflater.BEST_SPEED)) // FIXME: close will not free this deflater's native mem.  Need to deflater.end() it.
+    underlyingOutputStream = new DeflaterOutputStream(baos)
+    */
+
+    baos.write(3) // "pure java snappy"
+    underlyingOutputStream = new org.iq80.snappy.SnappyOutputStream(baos)
 
     out = com.google.protobuf.CodedOutputStream.newInstance(underlyingOutputStream)
 
