@@ -100,9 +100,13 @@ class SoQLCommon(dataSource: DataSource,
       try {
         conn.setAutoCommit(false)
         val u = new PostgresUniverse(conn, PostgresUniverseCommon)
-        val result = f(u)
-        conn.commit()
-        result
+        try {
+          val result = f(u)
+          u.commit()
+          result
+        } finally {
+          u.rollback()
+        }
       } finally {
         conn.close()
       }
