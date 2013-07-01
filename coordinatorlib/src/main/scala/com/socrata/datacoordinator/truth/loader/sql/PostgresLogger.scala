@@ -43,7 +43,7 @@ class PostgresLogger[CT, CV](connection: Connection,
 
   override def close() {
     tmp.close()
-    lastBatchSize = batchSize
+    if(batchSize != initialBatchSize) lastBatchSize = batchSize
   }
 
   private def openTmp() {
@@ -66,7 +66,8 @@ class PostgresLogger[CT, CV](connection: Connection,
     }
   }
 
-  private var batchSize = lastBatchSize
+  private val initialBatchSize = lastBatchSize
+  private var batchSize = initialBatchSize
   private var wrote = 0L
   private val targetTimeInNanos = 1000000000L.toDouble // 1 second
   private val nextSubVersionNum = new Counter(init = 1)
