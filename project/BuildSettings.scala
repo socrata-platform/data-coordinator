@@ -1,10 +1,13 @@
 import sbt._
 import Keys._
 
+import scalabuff.ScalaBuffPlugin
+import net.virtualvoid.sbt.graph.{Plugin => SbtGraphPlugin}
+
 object BuildSettings {
   val buildSettings: Seq[Setting[_]] =
     Defaults.defaultSettings ++
-      net.virtualvoid.sbt.graph.Plugin.graphSettings ++
+      SbtGraphPlugin.graphSettings ++
       Defaults.itSettings ++
       inConfig(UnitTest)(Defaults.testSettings) ++
       inConfig(ExploratoryTest)(Defaults.testSettings) ++
@@ -35,15 +38,18 @@ object BuildSettings {
         }
       )
 
-  def projectSettings(assembly: Boolean = false): Seq[Setting[_]] =
+  lazy val buildConfigs = Configurations.default
+
+  def projectSettings(assembly: Boolean = false, protobuf: Boolean = false): Seq[Setting[_]] =
     BuildSettings.buildSettings ++
+      (if(protobuf) ScalaBuffPlugin.scalabuffSettings else Seq.empty) ++
       (if(assembly) sbtassembly.Plugin.assemblySettings else Seq.empty) ++
       Seq(
         fork in test := true,
         test in Test <<= (test in Test) dependsOn (test in IntegrationTest)
       )
 
-  lazy val projectConfigs = Configurations.default ++ Seq(UnitTest, IntegrationTest, ExploratoryTest)
+  lazy val projectConfigs = Configurations.default ++ Seq(ScalaBuffPlugin.ScalaBuff, UnitTest, IntegrationTest, ExploratoryTest)
   lazy val ExploratoryTest = config("explore") extend (Test)
   lazy val UnitTest = config("unit") extend (Test)
 

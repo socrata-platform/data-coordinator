@@ -2,7 +2,7 @@ import sbt._
 import Keys._
 
 object CoordinatorLib {
-  lazy val settings: Seq[Setting[_]] = BuildSettings.projectSettings() ++ Seq(
+  lazy val settings: Seq[Setting[_]] = BuildSettings.projectSettings(protobuf=true) ++ Seq(
     libraryDependencies ++= Seq(
       "com.socrata" %% "soql-brita" % "[1.2.1,2.0.0)",
       "com.socrata" %% "soql-environment" % "0.0.16-SNAPSHOT",

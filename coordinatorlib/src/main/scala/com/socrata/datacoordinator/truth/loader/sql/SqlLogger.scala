@@ -6,7 +6,6 @@ import scala.io.Codec
 
 import java.sql.{PreparedStatement, Connection}
 
-import com.rojoma.json.util.JsonUtil
 import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.util.{TimingReport, Counter}
@@ -15,6 +14,7 @@ import com.socrata.datacoordinator.truth.metadata.{CopyInfo, ColumnInfo}
 import com.socrata.datacoordinator.id.RowId
 import java.io.OutputStream
 import java.util.zip.{Deflater, DeflaterOutputStream}
+import com.google.protobuf.MessageLite
 
 class SqlLogger[CT, CV](connection: Connection,
                         logTableName: String,
@@ -24,7 +24,8 @@ class SqlLogger[CT, CV](connection: Connection,
                         batchFlushSize: Int = 2000000)
   extends Logger[CT, CV]
 {
-  import SqlLogger.log
+  import SqlLogger._
+  import messages.ToProtobuf._
 
   lazy val versionNum = timingReport("version-num", "log-table" -> logTableName) {
     for {
@@ -39,7 +40,6 @@ class SqlLogger[CT, CV](connection: Connection,
     }
   }
 
-  val nullBytes = Codec.toUTF8("null")
   var transactionEnded = false
   val nextSubVersionNum = new Counter(init = 1)
 
@@ -55,6 +55,10 @@ class SqlLogger[CT, CV](connection: Connection,
     _insertStmt
   }
 
+  def logLine(what: String, data: String) {
+    logLine(what, Codec.toUTF8(data))
+  }
+
   def logLine(what: String, data: Array[Byte]) {
     val i = insertStmt
     i.setLong(1, nextSubVersionNum())
@@ -66,8 +70,8 @@ class SqlLogger[CT, CV](connection: Connection,
     batched += 1
   }
 
-  def logLine(what: String, data: String) {
-    logLine(what, Codec.toUTF8(data))
+  def logLine(what: String, aux: MessageLite) {
+    logLine(what, aux.toByteArray)
   }
 
   def maybeFlushBatch() {
@@ -94,82 +98,83 @@ class SqlLogger[CT, CV](connection: Connection,
   def truncated() {
     checkTxn()
     flushRowData()
-    logLine(SqlLogger.Truncated, nullBytes)
+    logLine(Truncated, messages.Truncated.defaultInstance)
   }
 
   def columnCreated(info: ColumnInfo[CT]) {
     checkTxn()
     flushRowData()
-    logLine(SqlLogger.ColumnCreated, JsonUtil.renderJson(info.unanchored))
+    logLine(ColumnCreated, messages.ColumnCreated(convert(info.unanchored)))
   }
 
   def columnRemoved(info: ColumnInfo[CT]) {
     checkTxn()
     flushRowData()
-    logLine(SqlLogger.ColumnRemoved, JsonUtil.renderJson(info.unanchored))
+    logLine(ColumnRemoved, messages.ColumnRemoved(convert(info.unanchored)))
   }
 
   def rowIdentifierSet(info: ColumnInfo[CT]) {
     checkTxn()
     flushRowData()
-    logLine(SqlLogger.RowIdentifierSet, JsonUtil.renderJson(info.unanchored))
+    logLine(RowIdentifierSet, messages.RowIdentifierSet(convert(info.unanchored)))
   }
 
   def rowIdentifierCleared(info: ColumnInfo[CT]) {
     checkTxn()
     flushRowData()
-    logLine(SqlLogger.RowIdentifierCleared, JsonUtil.renderJson(info.unanchored))
+    logLine(RowIdentifierCleared, messages.RowIdentifierCleared(convert(info.unanchored)))
   }
 
   def systemIdColumnSet(info: ColumnInfo[CT]) {
     checkTxn()
     flushRowData()
-    logLine(SqlLogger.SystemRowIdentifierChanged, JsonUtil.renderJson(info.unanchored))
+    logLine(SystemRowIdentifierChanged, messages.SystemIdColumnSet(convert(info.unanchored)))
   }
 
   def versionColumnSet(info: ColumnInfo[CT]) {
     checkTxn()
     flushRowData()
-    logLine(SqlLogger.VersionColumnChanged, JsonUtil.renderJson(info.unanchored))
+    logLine(VersionColumnChanged, messages.VersionColumnSet(convert(info.unanchored)))
   }
 
   def logicalNameChanged(info: ColumnInfo[CT]) {
     checkTxn()
     flushRowData()
-    logLine(SqlLogger.ColumnLogicalNameChanged, JsonUtil.renderJson(info.unanchored))
+    logLine(ColumnLogicalNameChanged, messages.LogicalNameChanged(convert(info.unanchored)))
   }
 
   def workingCopyCreated(info: CopyInfo) {
     checkTxn()
     flushRowData()
-    val datasetJson = JsonUtil.renderJson(info.datasetInfo.unanchored)
-    val versionJson = JsonUtil.renderJson(info.unanchored)
-    logLine(SqlLogger.WorkingCopyCreated, datasetJson + "\n" + versionJson)
+    logLine(WorkingCopyCreated, messages.WorkingCopyCreated(
+      convert(info.datasetInfo.unanchored),
+      convert(info.unanchored))
+    )
   }
 
   def dataCopied() {
     checkTxn()
     flushRowData()
 
-    logLine(SqlLogger.DataCopied, nullBytes)
+    logLine(DataCopied, messages.DataCopied.defaultInstance)
   }
 
   def snapshotDropped(info: CopyInfo) {
     checkTxn()
     flushRowData()
-    logLine(SqlLogger.SnapshotDropped, JsonUtil.renderJson(info.unanchored))
+    logLine(SnapshotDropped, messages.SnapshotDropped(convert(info.unanchored)))
   }
 
   def workingCopyDropped() {
     checkTxn()
     flushRowData()
-    logLine(SqlLogger.WorkingCopyDropped, nullBytes)
+    logLine(WorkingCopyDropped, messages.WorkingCopyDropped.defaultInstance)
   }
 
   def workingCopyPublished() {
     checkTxn()
     flushRowData()
-    logLine(SqlLogger.WorkingCopyPublished, nullBytes)
+    logLine(WorkingCopyPublished, messages.WorkingCopyPublished.defaultInstance)
   }
 
   def endTransaction() = {
@@ -179,7 +184,7 @@ class SqlLogger[CT, CV](connection: Connection,
     flushRowData()
 
     if(nextSubVersionNum.peek != 1) {
-      logLine(SqlLogger.TransactionEnded, nullBytes)
+      logLine(TransactionEnded, messages.EndTransaction.defaultInstance)
       flushBatch()
       Some(versionNum)
     } else {
@@ -190,7 +195,7 @@ class SqlLogger[CT, CV](connection: Connection,
   def counterUpdated(nextCounter: Long) {
     checkTxn()
     flushRowData()
-    logLine(SqlLogger.CounterUpdated, nextCounter.toString)
+    logLine(CounterUpdated, messages.CounterUpdated(nextCounter))
   }
 
   // DataLogger facet starts here

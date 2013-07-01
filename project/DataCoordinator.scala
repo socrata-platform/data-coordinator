@@ -4,7 +4,8 @@ object DataCoordinator extends Build {
   lazy val dataCoordinator = Project(
     "data-coordinator",
     file("."),
-    settings = BuildSettings.buildSettings
+    settings = BuildSettings.buildSettings,
+    configurations = BuildSettings.buildConfigs
   ).aggregate (allOtherProjects: _*)
 
   private def allOtherProjects =

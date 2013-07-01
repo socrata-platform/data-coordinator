@@ -1,0 +1,88 @@
+package com.socrata.datacoordinator.truth.loader.sql.messages;
+
+enum LifecycleStage {
+  Unpublished = 0;
+  Published = 1;
+  Snapshotted = 2;
+  Discarded = 3;
+}
+
+message UnanchoredDatasetInfo {
+  required int64 systemId = 1;
+  required int64 nextCounterValue = 2;
+  required string localeName = 3;
+  required bytes obfuscationKey = 4;
+}
+
+message UnanchoredCopyInfo {
+  required int64 systemId = 1;
+  required int64 copyNumber = 2;
+  required LifecycleStage lifecycleStage = 3;
+  required int64 dataVersion = 4;
+}
+
+message UnanchoredColumnInfo {
+  required int64 systemId = 1;
+  required string logicalName = 2;
+  required string typeName = 3;
+  required string physicalColumnBaseBase = 4;
+  required bool isSystemPrimaryKey = 5;
+  required bool isUserPrimaryKey = 6;
+  required bool isVersion = 7;
+}
+
+message Truncated {
+}
+
+message ColumnCreated {
+  required UnanchoredColumnInfo columnInfo = 1;
+}
+
+message ColumnRemoved {
+  required UnanchoredColumnInfo columnInfo = 1;
+}
+
+message RowIdentifierSet {
+  required UnanchoredColumnInfo columnInfo = 1;
+}
+
+message RowIdentifierCleared {
+  required UnanchoredColumnInfo columnInfo = 1;
+}
+
+message SystemIdColumnSet {
+  required UnanchoredColumnInfo columnInfo = 1;
+}
+
+message VersionColumnSet {
+  required UnanchoredColumnInfo columnInfo = 1;
+}
+
+message LogicalNameChanged {
+  required UnanchoredColumnInfo columnInfo = 1;
+}
+
+message WorkingCopyCreated {
+  required UnanchoredDatasetInfo datasetInfo = 1;
+  required UnanchoredCopyInfo copyInfo = 2;
+}
+
+message DataCopied {
+}
+
+message SnapshotDropped {
+  required UnanchoredCopyInfo copyInfo = 1;
+}
+
+message WorkingCopyDropped {
+}
+
+message WorkingCopyPublished {
+}
+
+message CounterUpdated {
+  required int64 nextCounter = 1;
+}
+
+message EndTransaction {
+}

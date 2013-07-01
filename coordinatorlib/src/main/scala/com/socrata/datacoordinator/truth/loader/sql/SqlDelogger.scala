@@ -3,26 +3,21 @@ package truth.loader.sql
 
 import scala.io.Codec
 
-import java.io.StringReader
 import java.sql.{ResultSet, PreparedStatement, Connection}
 
-import com.rojoma.json.util.JsonUtil
-import com.rojoma.json.codec.JsonCodec
 import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.truth.RowLogCodec
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.util.{CloseableIterator, LeakDetect}
-import com.socrata.datacoordinator.truth.metadata.{UnanchoredDatasetInfo, UnanchoredCopyInfo, UnanchoredColumnInfo}
-import com.socrata.datacoordinator.id.RowId
-import com.socrata.datacoordinator.truth.loader.Delogger.EndTransaction
-import scala.Some
 
 class SqlDelogger[CV](connection: Connection,
                       logTableName: String,
                       rowCodecFactory: () => RowLogCodec[CV])
   extends Delogger[CV]
 {
+  import messages.FromProtobuf._
+
   var stmt: PreparedStatement = null
 
   def query = {
@@ -181,83 +176,57 @@ class SqlDelogger[CV](connection: Connection,
       Delogger.RowDataUpdated(aux)(rowCodecFactory())
 
     def decodeCounterUpdated(aux: Array[Byte]) = {
-      val ctr = fromJson[Long](aux).getOrElse {
-        sys.error("Parameter for `counter updated' was not a number")
-      }
-      Delogger.CounterUpdated(ctr)
+      val msg = messages.CounterUpdated.defaultInstance.mergeFrom(aux)
+      Delogger.CounterUpdated(msg.nextCounter)
     }
 
     def decodeColumnCreated(aux: Array[Byte]) = {
-      val ci = fromJson[UnanchoredColumnInfo](aux).getOrElse {
-        sys.error("Parameter for `column created' was not a ColumnInfo")
-      }
-
-      Delogger.ColumnCreated(ci)
+      val msg = messages.ColumnCreated.defaultInstance.mergeFrom(aux)
+      Delogger.ColumnCreated(convert(msg.columnInfo))
     }
 
     def decodeColumnRemoved(aux: Array[Byte]) = {
-      val ci = fromJson[UnanchoredColumnInfo](aux).getOrElse {
-        sys.error("Parameter for `column created' was not an object")
-      }
-      Delogger.ColumnRemoved(ci)
+      val msg = messages.ColumnRemoved.defaultInstance.mergeFrom(aux)
+      Delogger.ColumnRemoved(convert(msg.columnInfo))
     }
 
     def decodeRowIdentifierSet(aux: Array[Byte]) = {
-      val ci = fromJson[UnanchoredColumnInfo](aux).getOrElse {
-        sys.error("Parameter for `row identifier set' was not an object")
-      }
-      Delogger.RowIdentifierSet(ci)
+      val msg = messages.RowIdentifierSet.defaultInstance.mergeFrom(aux)
+      Delogger.RowIdentifierSet(convert(msg.columnInfo))
     }
 
     def decodeRowIdentifierCleared(aux: Array[Byte]) = {
-      val ci = fromJson[UnanchoredColumnInfo](aux).getOrElse {
-        sys.error("Parameter for `row identifier cleared' was not an object")
-      }
-      Delogger.RowIdentifierCleared(ci)
+      val msg = messages.RowIdentifierCleared.defaultInstance.mergeFrom(aux)
+      Delogger.RowIdentifierCleared(convert(msg.columnInfo))
     }
 
     def decodeSystemRowIdentifierChanged(aux: Array[Byte]) = {
-      val ci = fromJson[UnanchoredColumnInfo](aux).getOrElse {
-        sys.error("Parameter for `system row identifier changed' was not an object")
-      }
-      Delogger.SystemRowIdentifierChanged(ci)
+      val msg = messages.SystemIdColumnSet.defaultInstance.mergeFrom(aux)
+      Delogger.SystemRowIdentifierChanged(convert(msg.columnInfo))
     }
 
     def decodeVersionColumnChanged(aux: Array[Byte]) = {
-      val ci = fromJson[UnanchoredColumnInfo](aux).getOrElse {
-        sys.error("Parameter for `system row identifier changed' was not an object")
-      }
-      Delogger.VersionColumnChanged(ci)
+      val msg = messages.VersionColumnSet.defaultInstance.mergeFrom(aux)
+      Delogger.VersionColumnChanged(convert(msg.columnInfo))
     }
 
     def decodeWorkingCopyCreated(aux: Array[Byte]) = {
-      val json = new StringReader(new String(aux, UTF8))
-      val di = JsonUtil.readJson[UnanchoredDatasetInfo](json).getOrElse {
-        sys.error("First parameter for `working copy created' was not an object")
-      }
-      val vi = JsonUtil.readJson[UnanchoredCopyInfo](json).getOrElse {
-        sys.error("Second parameter for `working copy created' was not an object")
-      }
-      Delogger.WorkingCopyCreated(di, vi)
+      val msg = messages.WorkingCopyCreated.defaultInstance.mergeFrom(aux)
+      Delogger.WorkingCopyCreated(
+        convert(msg.datasetInfo),
+        convert(msg.copyInfo)
+      )
     }
 
     def decodeSnapshotDropped(aux: Array[Byte]) = {
-      val json = new StringReader(new String(aux, UTF8))
-      val vi = JsonUtil.readJson[UnanchoredCopyInfo](json).getOrElse {
-        sys.error("Parameter for `working copy dropped' was not an object")
-      }
-      Delogger.SnapshotDropped(vi)
+      val msg = messages.SnapshotDropped.defaultInstance.mergeFrom(aux)
+      Delogger.SnapshotDropped(convert(msg.copyInfo))
     }
 
     def decodeColumnLogicalNameChanged(aux: Array[Byte]) = {
-      val json = new StringReader(new String(aux, UTF8))
-      val ci = JsonUtil.readJson[UnanchoredColumnInfo](json).getOrElse {
-        sys.error("Parameter for `column logical name changed' was not an object")
-      }
-      Delogger.ColumnLogicalNameChanged(ci)
+      val msg = messages.LogicalNameChanged.defaultInstance.mergeFrom(aux)
+      Delogger.ColumnLogicalNameChanged(convert(msg.columnInfo))
     }
-
-    def fromJson[T : JsonCodec](aux: Array[Byte]): Option[T] = JsonUtil.parseJson[T](new String(aux, UTF8))
   }
 
   def close() {

@@ -10,9 +10,10 @@ import java.nio.charset.StandardCharsets
 import com.rojoma.simplearm.util._
 import java.nio.ByteBuffer
 import com.socrata.datacoordinator.id.RowId
-import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, CopyInfo}
-import com.rojoma.json.util.JsonUtil
 import java.util.zip.{Deflater, DeflaterOutputStream}
+import com.google.protobuf.MessageLite
+import com.socrata.datacoordinator.truth.metadata.ColumnInfo
+import com.socrata.datacoordinator.truth.metadata.CopyInfo
 
 class PostgresLogger[CT, CV](connection: Connection,
                              logTableName: String,
@@ -24,6 +25,8 @@ class PostgresLogger[CT, CV](connection: Connection,
   extends Logger[CT, CV]
 {
   import PostgresLogger._
+
+  import messages.ToProtobuf._
 
   private[this] var tmp: RandomAccessFile = _
   private[this] var tmpWrapped: DataOutputStream = _
@@ -157,91 +160,90 @@ class PostgresLogger[CT, CV](connection: Connection,
     writeEntry(versionNum, nextSubVersionNum(), what, aux)
   }
 
-  def logLine(what: Array[Byte], aux: String) {
-    logLine(what, aux.getBytes(StandardCharsets.UTF_8))
+  def logLine(what: Array[Byte], aux: MessageLite) {
+    logLine(what, aux.toByteArray)
   }
-
-  val nullBytes = "null".getBytes(StandardCharsets.UTF_8)
 
   def truncated() {
     checkTxn()
     flushRowData()
-    logLine(Truncated, nullBytes)
+    logLine(Truncated, messages.Truncated.defaultInstance)
   }
 
   def columnCreated(info: ColumnInfo[CT]) {
     checkTxn()
     flushRowData()
-    logLine(ColumnCreated, JsonUtil.renderJson(info.unanchored))
+    logLine(ColumnCreated, messages.ColumnCreated(convert(info.unanchored)))
   }
 
   def columnRemoved(info: ColumnInfo[CT]) {
     checkTxn()
     flushRowData()
-    logLine(ColumnRemoved, JsonUtil.renderJson(info.unanchored))
+    logLine(ColumnRemoved, messages.ColumnRemoved(convert(info.unanchored)))
   }
 
   def rowIdentifierSet(info: ColumnInfo[CT]) {
     checkTxn()
     flushRowData()
-    logLine(RowIdentifierSet, JsonUtil.renderJson(info.unanchored))
+    logLine(RowIdentifierSet, messages.RowIdentifierSet(convert(info.unanchored)))
   }
 
   def rowIdentifierCleared(info: ColumnInfo[CT]) {
     checkTxn()
     flushRowData()
-    logLine(RowIdentifierCleared, JsonUtil.renderJson(info.unanchored))
+    logLine(RowIdentifierCleared, messages.RowIdentifierCleared(convert(info.unanchored)))
   }
 
   def systemIdColumnSet(info: ColumnInfo[CT]) {
     checkTxn()
     flushRowData()
-    logLine(SystemRowIdentifierChanged, JsonUtil.renderJson(info.unanchored))
+    logLine(SystemRowIdentifierChanged, messages.SystemIdColumnSet(convert(info.unanchored)))
   }
 
   def versionColumnSet(info: ColumnInfo[CT]) {
     checkTxn()
     flushRowData()
-    logLine(VersionColumnChanged, JsonUtil.renderJson(info.unanchored))
+    logLine(VersionColumnChanged, messages.VersionColumnSet(convert(info.unanchored)))
   }
 
   def logicalNameChanged(info: ColumnInfo[CT]) {
     checkTxn()
     flushRowData()
-    logLine(ColumnLogicalNameChanged, JsonUtil.renderJson(info.unanchored))
+    logLine(ColumnLogicalNameChanged, messages.LogicalNameChanged(convert(info.unanchored)))
   }
 
   def workingCopyCreated(info: CopyInfo) {
     checkTxn()
     flushRowData()
-    val datasetJson = JsonUtil.renderJson(info.datasetInfo.unanchored)
-    val versionJson = JsonUtil.renderJson(info.unanchored)
-    logLine(WorkingCopyCreated, datasetJson + "\n" + versionJson)
+    logLine(WorkingCopyCreated, messages.WorkingCopyCreated(
+      convert(info.datasetInfo.unanchored),
+      convert(info.unanchored))
+    )
   }
 
   def dataCopied() {
     checkTxn()
     flushRowData()
 
-    logLine(DataCopied, nullBytes)
+    logLine(DataCopied, messages.DataCopied.defaultInstance)
   }
 
   def snapshotDropped(info: CopyInfo) {
     checkTxn()
     flushRowData()
-    logLine(SnapshotDropped, JsonUtil.renderJson(info.unanchored))
+    logLine(SnapshotDropped, messages.SnapshotDropped(convert(info.unanchored)))
   }
 
   def workingCopyDropped() {
     checkTxn()
     flushRowData()
-    logLine(WorkingCopyDropped, nullBytes)
+    logLine(WorkingCopyDropped, messages.WorkingCopyDropped.defaultInstance)
   }
 
   def workingCopyPublished() {
     checkTxn()
     flushRowData()
-    logLine(WorkingCopyPublished, nullBytes)
+    logLine(WorkingCopyPublished, messages.WorkingCopyPublished.defaultInstance)
   }
 
   def endTransaction() = {
@@ -251,7 +253,7 @@ class PostgresLogger[CT, CV](connection: Connection,
     flushRowData()
 
     if(nextSubVersionNum.peek != 1) {
-      logLine(TransactionEnded, nullBytes)
+      logLine(TransactionEnded, messages.EndTransaction.defaultInstance)
       flush()
       Some(versionNum)
     } else {
@@ -262,7 +264,7 @@ class PostgresLogger[CT, CV](connection: Connection,
   def counterUpdated(nextCounter: Long) {
     checkTxn()
     flushRowData()
-    logLine(CounterUpdated, nextCounter.toString)
+    logLine(CounterUpdated, messages.CounterUpdated(nextCounter))
   }
 
   // DataLogger facet starts here
@@ -305,10 +307,6 @@ class PostgresLogger[CT, CV](connection: Connection,
   }
 
   def flushRowData() {
-    flushInner()
-  }
-
-  def flushInner() {
     if(didOne) {
       out.flush()
       underlyingOutputStream.close()
@@ -345,9 +343,9 @@ object PostgresLogger {
   @volatile var lastBatchSize = 1000000L
 
   val binaryFormatHeader = "PGCOPY\n\u00ff\r\n\0\0\0\0\0\0\0\0\0".getBytes(StandardCharsets.ISO_8859_1)
-  //          header proper ^^^^^^^^^^^^^^^^^^
-  //                                    flags ^^^^^^^^
-  //                          header extension length ^^^^^^^^
+  //          header proper ^^^^^^^^^^^^^^^^^^^^
+  //                                      flags ^^^^^^^^
+  //                            header extension length ^^^^^^^^
 
   private def bin(s: String) = s.getBytes(StandardCharsets.UTF_8)
 
