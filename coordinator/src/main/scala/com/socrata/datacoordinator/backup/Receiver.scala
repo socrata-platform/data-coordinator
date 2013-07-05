@@ -5,7 +5,7 @@ import scala.concurrent.duration._
 
 import java.net._
 import java.nio.channels.spi.SelectorProvider
-import java.sql.{DriverManager, Connection}
+import java.sql.Connection
 
 import com.typesafe.config.{Config, ConfigFactory}
 import com.rojoma.simplearm.util._
@@ -15,21 +15,18 @@ import com.socrata.datacoordinator.packets.{PacketsInputStream, Packets}
 import com.socrata.datacoordinator.truth.loader.{SchemaLoader, Delogger}
 import com.socrata.datacoordinator.id.{ColumnId, DatasetId}
 import com.socrata.datacoordinator.common.soql.{SoQLTypeContext, SoQLRowLogCodec}
-import com.socrata.datacoordinator.truth.sql.DatabasePopulator
 import com.socrata.datacoordinator.common.{DataSourceConfig, DataSourceFromConfig, StandardDatasetMapLimits}
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.util.collection.{MutableColumnIdMap, ColumnIdMap}
 import org.xerial.snappy.SnappyInputStream
-import java.io.{BufferedWriter, OutputStream, InputStreamReader}
+import java.io.OutputStream
 import util.control.ControlThrowable
-import scala.Some
 import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
 import com.socrata.datacoordinator.util.NoopTimingReport
 import com.socrata.soql.types.SoQLType
 import org.apache.log4j.PropertyConfigurator
 import com.socrata.thirdparty.typesafeconfig.Propertizer
-import java.nio.charset.StandardCharsets
 
 final abstract class Receiver
 
@@ -49,7 +46,7 @@ object Receiver extends App {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Receiver])
   val config = ConfigFactory.load()
   println(config.root.render)
-  val receiverConfig = new ReceiverConfig(config, "com.socrata.backup.receiver")
+  val receiverConfig = new ReceiverConfig(config, "com.socrata.coordinator.backup.receiver")
   PropertyConfigurator.configure(Propertizer("log4j", receiverConfig.log4j))
   import receiverConfig.{reuseAddr, idleTimeout, dataTimeout, maxPacketSize}
 
@@ -66,12 +63,6 @@ object Receiver extends App {
   import protocol._
 
   val (dataSource, copyIn) = DataSourceFromConfig(receiverConfig.database)
-
-  using(dataSource.getConnection()) { conn =>
-    conn.setAutoCommit(false)
-    DatabasePopulator.populate(conn, datasetMapLimits)
-    conn.commit()
-  }
 
   using(provider.openServerSocketChannel()) { listenSocket =>
     listenSocket.setOption[java.lang.Boolean](StandardSocketOptions.SO_REUSEADDR, reuseAddr)

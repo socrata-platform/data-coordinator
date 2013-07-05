@@ -18,6 +18,8 @@ class SqlDelogger[CV](connection: Connection,
 {
   import messages.FromProtobuf._
 
+  require(!connection.getAutoCommit, "connection is in auto-commit mode") // need non-AC in order to do streaming reads
+
   var stmt: PreparedStatement = null
 
   def query = {

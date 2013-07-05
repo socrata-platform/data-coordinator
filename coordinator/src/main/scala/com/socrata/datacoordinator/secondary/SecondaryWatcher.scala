@@ -97,7 +97,7 @@ object SecondaryWatcher extends App { self =>
 
   val rootConfig = ConfigFactory.load()
   println(rootConfig.root.render())
-  val config = new SecondaryWatcherConfig(rootConfig, "com.socrata.secondary-watcher")
+  val config = new SecondaryWatcherConfig(rootConfig, "com.socrata.coordinator.secondary-watcher")
   PropertyConfigurator.configure(Propertizer("log4j", config.log4j))
 
   val log = LoggerFactory.getLogger(classOf[SecondaryWatcher[_,_]])

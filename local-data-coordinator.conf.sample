@@ -2,7 +2,7 @@
 # and then add -Dconfig.file=/path/to/local-data-coordinator.conf to your
 # JVM arguments when launching the data coordinator.
 
-com.socrata.coordinator-service {
+com.socrata.coordinator.common {
   database {
     host = "localhost"
     port = 5432
@@ -11,16 +11,26 @@ com.socrata.coordinator-service {
     password = "blist"
   }
 
-  service-advertisement {
-    address = "127.0.0.1"
-  }
-
-  curator.ensemble = ["localhost:2181"]
-  network.port = 6001
-
   # The "instance" is a name for the shard which is referenced by this
   # data coordinator.  It doesn't have any semantic meaning but it is used
   # to form the internal names of datasets and to advertise the server
   # in zookeeper.
   instance = alpha
+}
+
+com.socrata.coordinator.service = ${com.socrata.coordinator.common} {
+  service-advertisement.address = "127.0.0.1"
+  curator.ensemble = ["localhost:2181"]
+  network.port = 6001
+}
+
+com.socrata.coordinator.secondary-watcher = ${com.socrata.coordinator.common} {
+}
+
+com.socrata.coordinator.backup.transmitter = ${com.socrata.coordinator.common} {
+  network.backup-host = "localhost"
+}
+
+com.socrata.coordinator.backup.receiver = ${com.socrata.coordinator.common} {
+  database.database = "datacoordinator_backup"
 }

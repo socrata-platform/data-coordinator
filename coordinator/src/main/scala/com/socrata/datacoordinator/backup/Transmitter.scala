@@ -58,7 +58,7 @@ object Transmitter extends App {
 
   val config = ConfigFactory.load()
   println(config.root.render)
-  val backupConfig = new BackupConfig(config, "com.socrata.backup.transmitter")
+  val backupConfig = new BackupConfig(config, "com.socrata.coordinator.backup.transmitter")
   import backupConfig.{maxPacketSize, connectTimeout, pollInterval}
   PropertyConfigurator.configure(Propertizer("log4j", backupConfig.log4j))
 
@@ -87,11 +87,13 @@ object Transmitter extends App {
 
     while(true) {
       using(dataSource.getConnection()) { conn =>
+        conn.setAutoCommit(false)
         val backupLog = new SqlBackupLog(conn)
         val datasets = backupLog.findDatasetsNeedingBackup()
         if(datasets.nonEmpty) {
           for(backupJob <- datasets) {
             send(client, conn, backupJob, backupLog, timingReport)
+            conn.commit()
           }
         } else {
           client.send(NothingYet())
@@ -179,6 +181,7 @@ object Transmitter extends App {
       }
     } catch {
       case _: ResyncRequested =>
+        conn.rollback() // release any locks
         handleResyncRequest(socket, conn, datasetId)
         // We've now copied at least as much as the jobset said was there...
         backupLog.completedBackupTo(datasetId, backupJob.endingDataVersion)
@@ -209,7 +212,6 @@ object Transmitter extends App {
   }
 
   def handleResyncRequest(client: Packets, conn: Connection, datasetId: DatasetId) {
-    conn.setAutoCommit(false) // We'll be taking a lock and so we want transactions too
     val datasetMap: DatasetMapWriter[SoQLType] = new PostgresDatasetMapWriter(conn, typeContext.typeNamespace, timingReport, () => sys.error("Transmitter should never be generating obfuscation keys"), 0L)
     datasetMap.datasetInfo(datasetId, Duration.Inf) match {
       case Some(info) =>
@@ -233,7 +235,6 @@ object Transmitter extends App {
     }
 
     conn.rollback() // release the lock and switch back to read-only mode
-    conn.setAutoCommit(true)
   }
 
   def awaitReadyForCopy(client: Packets) {

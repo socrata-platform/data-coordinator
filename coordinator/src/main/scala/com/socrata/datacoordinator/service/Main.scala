@@ -120,7 +120,7 @@ object Main {
 
   def main(args: Array[String]) {
     val serviceConfig = try {
-      new ServiceConfig(ConfigFactory.load(), "com.socrata.coordinator-service")
+      new ServiceConfig(ConfigFactory.load(), "com.socrata.coordinator.service")
     } catch {
       case e: Exception =>
         Console.err.println(e)
@@ -137,10 +137,6 @@ object Main {
     try {
       val common = locally {
         val (dataSource, copyInForDataSource) = DataSourceFromConfig(serviceConfig.dataSource)
-
-        com.rojoma.simplearm.util.using(dataSource.getConnection()) { conn =>
-          com.socrata.datacoordinator.truth.sql.DatabasePopulator.populate(conn, StandardDatasetMapLimits)
-        }
 
         new SoQLCommon(
           dataSource,

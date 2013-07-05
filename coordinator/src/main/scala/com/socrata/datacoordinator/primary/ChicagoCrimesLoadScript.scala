@@ -64,10 +64,6 @@ object ChicagoCrimesLoadScript extends App {
       new File(System.getProperty("java.io.tmpdir"))
     )
 
-    com.rojoma.simplearm.util.using(ds.getConnection()) { conn =>
-      com.socrata.datacoordinator.truth.sql.DatabasePopulator.populate(conn, StandardDatasetMapLimits)
-    }
-
     val datasetCreator = new DatasetCreator(common.universe, common.SystemColumns.schemaFragment, common.SystemColumns.id, common.SystemColumns.version, common.physicalColumnBaseBase)
 
     val columnAdder = new ColumnAdder(common.universe, common.physicalColumnBaseBase)
