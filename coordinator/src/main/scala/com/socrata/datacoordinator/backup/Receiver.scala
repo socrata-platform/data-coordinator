@@ -15,7 +15,7 @@ import com.socrata.datacoordinator.packets.{PacketsInputStream, Packets}
 import com.socrata.datacoordinator.truth.loader.{SchemaLoader, Delogger}
 import com.socrata.datacoordinator.id.{ColumnId, DatasetId}
 import com.socrata.datacoordinator.common.soql.{SoQLTypeContext, SoQLRowLogCodec}
-import com.socrata.datacoordinator.common.{DataSourceConfig, DataSourceFromConfig, StandardDatasetMapLimits}
+import com.socrata.datacoordinator.common.{SoQLSystemColumns, DataSourceConfig, DataSourceFromConfig, StandardDatasetMapLimits}
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.util.collection.{MutableColumnIdMap, ColumnIdMap}
 import org.xerial.snappy.SnappyInputStream
@@ -102,7 +102,7 @@ object Receiver extends App {
   def datasetUpdateRequested(datasetId: DatasetId, version: Long, client: Packets) {
     using(dataSource.getConnection()) { conn =>
       conn.setAutoCommit(false)
-      val backup = new Backup(conn, timingReport, paranoid = true, copyIn = copyIn)
+      val backup = new Backup(conn, SoQLSystemColumns.isSystemColumnName, timingReport, paranoid = true, copyIn = copyIn)
 
       try {
         backup.datasetMap.datasetInfo(datasetId, Duration.Inf) match {
@@ -130,7 +130,7 @@ object Receiver extends App {
   def forcedResyncRequested(datasetId: DatasetId, client: Packets) {
     using(dataSource.getConnection()) { conn =>
       conn.setAutoCommit(false)
-      val backup = new Backup(conn, timingReport, paranoid = true, copyIn = copyIn)
+      val backup = new Backup(conn, SoQLSystemColumns.isSystemColumnName, timingReport, paranoid = true, copyIn = copyIn)
       try {
         resync(conn, backup, datasetId, client)
       } finally {

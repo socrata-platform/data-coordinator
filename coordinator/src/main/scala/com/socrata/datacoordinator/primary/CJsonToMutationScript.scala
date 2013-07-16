@@ -22,7 +22,8 @@ object CJsonToMutationScript extends App {
   val metadata = JsonCodec[Metadata].decode(in.next()).get
 
   out.println(s"""[{c:"create", user: "cjson-script", locale: ${JString(metadata.locale)}}""")
-  for(Field(nam, typ) <- metadata.schema if !nam.startsWith(":")) {
+  def isSystemColumnName(s: String) = s.startsWith(":") && !s.startsWith(":@")
+  for(Field(nam, typ) <- metadata.schema if !isSystemColumnName(nam)) {
     out.println(s""",{c:"add column", name: ${JString(nam)}, type: ${JString(typ)}}""")
   }
   for(rid <- metadata.rowId if !rid.startsWith(":")) {
@@ -30,7 +31,7 @@ object CJsonToMutationScript extends App {
   }
   out.println(s""",{c:"row data"}""")
   for(JArray(arr) <- in) {
-    out.println(metadata.schema.zip(arr).filterNot(_._1.column.startsWith(":")).map { case (k, v) =>
+    out.println(metadata.schema.zip(arr).filterNot { case (c, _) => isSystemColumnName(c.column) }.map { case (k, v) =>
       JString(k.column) + ":" + CompactJsonWriter.toString(v)
     }.mkString(",{",",","}"))
   }

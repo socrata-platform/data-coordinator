@@ -26,8 +26,9 @@ import com.socrata.datacoordinator.truth.metadata.CopyInfo
 import com.socrata.datacoordinator.truth.loader.Insert
 import com.socrata.datacoordinator.util.{NoopTimingReport, TimingReport}
 import scala.concurrent.duration.Duration
+import com.socrata.soql.environment.ColumnName
 
-class Backup(conn: Connection, /*executor: ExecutorService, */ timingReport: TimingReport, paranoid: Boolean, copyIn: (Connection, String, OutputStream => Unit) => Long) {
+class Backup(conn: Connection, /*executor: ExecutorService, */ isSystemColumnName: ColumnName => Boolean, timingReport: TimingReport, paranoid: Boolean, copyIn: (Connection, String, OutputStream => Unit) => Long) {
   val typeContext = SoQLTypeContext
   val logger: Logger[SoQLType, SoQLValue] = NullLogger[SoQLType, SoQLValue]
   val typeNamespace = SoQLTypeContext.typeNamespace
@@ -49,7 +50,7 @@ class Backup(conn: Connection, /*executor: ExecutorService, */ timingReport: Tim
     val schema = schemaInfo.mapValuesStrict(genericRepFor)
     val idCol = schemaInfo.values.find(_.isSystemPrimaryKey).getOrElse(sys.error("No system ID column?")).systemId
     val versionCol = schemaInfo.values.find(_.isVersion).getOrElse(sys.error("No version column?")).systemId
-    val systemIds = schemaInfo.filter { (_, ci) => ci.logicalName.name.startsWith(":") }.keySet
+    val systemIds = schemaInfo.filter { (_, ci) => isSystemColumnName(ci.logicalName) }.keySet
     val datasetContext = RepBasedSqlDatasetContext(
       typeContext,
       schema,

@@ -36,6 +36,9 @@ object SoQLSystemColumns { sc =>
   )
 
   val allSystemColumnNames = schemaFragment.keySet
+
+  def isSystemColumnName(name: ColumnName) =
+    name.caseFolded.startsWith(":") && !name.caseFolded.startsWith(":@")
 }
 
 class SoQLCommon(dataSource: DataSource,
@@ -92,7 +95,7 @@ class SoQLCommon(dataSource: DataSource,
       toLowerCase
 
   def isSystemColumnName(name: ColumnName) =
-    name.caseFolded.startsWith(":")
+    SoQLSystemColumns.isSystemColumnName(name)
 
   def universe: Managed[PostgresUniverse[CT, CV]] = new SimpleArm[PostgresUniverse[CT, CV]] {
     def flatMap[B](f: PostgresUniverse[CT, CV] => B): B = {
@@ -196,9 +199,17 @@ class SoQLCommon(dataSource: DataSource,
       common.physicalColumnBaseBase(name, isSystemColumn)
 
     def isLegalLogicalName(identifier: ColumnName): Boolean =
-      IdentifierFilter(identifier.name) == identifier.name &&
+      isLexicallyCorrect(identifier) &&
         identifier.name.length <= datasetMapLimits.maximumLogicalColumnNameLength &&
         !identifier.name.contains('$')
+
+    private def isLexicallyCorrect(identifier: ColumnName) =
+      if(identifier.name.startsWith(":@")) {
+        val s = identifier.name.substring(2)
+        IdentifierFilter(s) == s
+      } else {
+        IdentifierFilter(identifier.name) == identifier.name
+      }
 
     def isSystemColumnName(identifier: ColumnName): Boolean =
       common.isSystemColumnName(identifier)
