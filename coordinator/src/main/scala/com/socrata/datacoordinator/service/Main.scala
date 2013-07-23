@@ -17,6 +17,9 @@ import com.netflix.curator.framework.CuratorFrameworkFactory
 import com.netflix.curator.x.discovery.ServiceDiscoveryBuilder
 import com.socrata.http.server.curator.CuratorBroker
 import com.rojoma.simplearm.SimpleArm
+import com.socrata.internal.http.AuxiliaryData
+import com.socrata.internal.http.pingpong.Pong
+import java.net.{InetSocketAddress, InetAddress}
 
 class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
   def ensureInSecondary(storeId: String, datasetId: DatasetId): Unit =
@@ -179,6 +182,7 @@ object Main {
 
       try {
         tableDropper.start()
+        val address = serviceConfig.advertisement.address
         for {
           curator <- managed(CuratorFrameworkFactory.builder.
             connectString(serviceConfig.curator.ensemble).
@@ -189,14 +193,17 @@ object Main {
             serviceConfig.curator.maxRetries)).
             namespace(serviceConfig.curator.namespace).
             build())
-          discovery <- managed(ServiceDiscoveryBuilder.builder(classOf[Void]).
+          discovery <- managed(ServiceDiscoveryBuilder.builder(classOf[AuxiliaryData]).
             client(curator).
             basePath(serviceConfig.advertisement.basePath).
             build())
+          pong <- managed(new Pong(new InetSocketAddress(InetAddress.getByName(address), 0)))
         } {
           curator.start()
           discovery.start()
-          serv.run(serviceConfig.network.port, new CuratorBroker(discovery, serviceConfig.advertisement.address, serviceConfig.advertisement.name + "." + serviceConfig.instance))
+          pong.start()
+          val auxData = new AuxiliaryData(pingInfo = Some(pong.pingInfo))
+          serv.run(serviceConfig.network.port, new CuratorBroker(discovery, address, serviceConfig.advertisement.name + "." + serviceConfig.instance, Some(auxData)))
         }
 
         log.info("Shutting down secondaries")
