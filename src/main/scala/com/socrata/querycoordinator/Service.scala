@@ -2,34 +2,46 @@ package com.socrata.querycoordinator
 
 import javax.servlet.http.{HttpServletResponse, HttpServletRequest}
 
-import dispatch._, Defaults._
-
 import scala.collection.JavaConverters._
 import scala.concurrent.duration._
 import com.socrata.http.server.HttpResponse
 import com.socrata.http.server.responses._
 import com.socrata.http.server.implicits._
-import com.ning.http.client._
-import java.io.OutputStream
+import java.io.{BufferedWriter, BufferedOutputStream, OutputStream}
 import com.socrata.thirdparty.asynchttpclient.{FAsyncHandler, BodyHandler}
 import com.socrata.soql.environment.DatasetContext
 import com.socrata.soql.types.SoQLAnalysisType
-import com.socrata.soql.{SoQLAnalysis, SoQLAnalyzer}
+import com.socrata.soql.SoQLAnalyzer
 import com.socrata.soql.exceptions._
 import com.socrata.soql.collection.OrderedMap
 import com.netflix.curator.x.discovery.ServiceInstance
 import scala.util.control.ControlThrowable
-import com.rojoma.json.io.{CompactJsonWriter, JsonReaderException, JsonReader}
+import com.rojoma.json.io._
 import com.rojoma.json.codec.JsonCodec
-import com.rojoma.json.ast.{JNumber, JValue, JString, JObject}
+import com.rojoma.json.ast.{JNumber, JValue, JObject}
 import scala.annotation.unchecked.uncheckedVariance
-import javax.activation.{MimeTypeParseException, MimeType}
-import java.util.concurrent.atomic.{AtomicBoolean, AtomicLong}
 import scala.annotation.tailrec
-import java.nio.charset.{UnsupportedCharsetException, Charset}
+import com.socrata.internal.http.{SimpleHttpRequestBuilder, HttpClient, AuxiliaryData}
+import com.rojoma.simplearm.Managed
 import com.socrata.soql.exceptions.NoSuchColumn
+import com.socrata.soql.exceptions.UnterminatedString
+import com.socrata.soql.exceptions.UnexpectedCharacter
 import com.socrata.soql.exceptions.DuplicateAlias
 import com.socrata.soql.SoQLAnalysis
+import com.socrata.soql.exceptions.BadParse
+import com.socrata.soql.exceptions.TypeMismatch
+import com.rojoma.json.ast.JString
+import com.socrata.soql.exceptions.UnexpectedEscape
+import com.socrata.soql.exceptions.AggregateInUngroupedContext
+import com.socrata.soql.exceptions.CircularAliasDefinition
+import com.socrata.soql.exceptions.UnexpectedEOF
+import com.socrata.soql.exceptions.AmbiguousCall
+import com.socrata.soql.exceptions.NoSuchFunction
+import com.socrata.soql.exceptions.ColumnNotInGroupBys
+import com.socrata.soql.exceptions.BadUnicodeEscapeCharacter
+import com.socrata.soql.exceptions.UnicodeCharacterOutOfRange
+import com.socrata.soql.exceptions.RepeatedException
+import com.rojoma.simplearm.util._
 
 sealed abstract class TimedFutureResult[+T]
 case object FutureTimedOut extends TimedFutureResult[Nothing]
@@ -65,8 +77,8 @@ object EnrichedFuture {
 
 import EnrichedFuture._
 
-class Service(http: Http,
-              secondaryProvider: ServiceProviderProvider[Void],
+class Service(http: HttpClient,
+              secondaryProvider: ServiceProviderProvider[AuxiliaryData],
               getSchemaTimeout: FiniteDuration,
               responseResponseTimeout: FiniteDuration,
               responseDataTimeout: FiniteDuration,
@@ -165,35 +177,46 @@ class Service(http: Http,
   def notModifiedResponse(newEtag: String) = NotModified ~> Header("etag", newEtag)
   def upstreamTimeoutResponse = internalServerError
 
+  def reqBuilder(secondary: ServiceInstance[AuxiliaryData]) =
+    SimpleHttpRequestBuilder(secondary.getAddress).
+      port(secondary.getPort)
+
   // returns the schema if the given service has this dataset, or None if it doesn't.
-  def schemaFor(secondary: ServiceInstance[_], dataset: String): Option[Schema] = {
-    val future = http.client.executeRequest((url(secondary.buildUriSpec) / "schema" <<? List("ds" -> dataset)).build)
-    future(getSchemaTimeout) match {
-      case FutureCompleted(response) if response.getStatusCode == HttpServletResponse.SC_OK =>
-        val parsed = try {
-          JsonReader.fromString(response.getResponseBody)
-        } catch {
-          case e: Exception =>
-            log.error("Got an exception while parsing the returned schema", e)
+  def schemaFor(secondary: ServiceInstance[AuxiliaryData], dataset: String): Option[Schema] = {
+    val pingTarget = for {
+      auxData <- Option(secondary.getPayload)
+      pingInfo <- auxData.pingInfo
+    } yield pingInfo
+    try {
+      for(response <- http.executeForJson(reqBuilder(secondary).
+          p("schema").
+          q("ds" -> dataset).
+          get, pingTarget)) yield {
+        response.responseInfo.resultCode match {
+          case HttpServletResponse.SC_OK =>
+            val parsed = try {
+              JsonReader.fromEvents(response)
+            } catch {
+              case e: Exception =>
+                log.error("Got an exception while parsing the returned schema", e)
+                finishRequest(internalServerError)
+            }
+            val result = JsonCodec[Schema].decode(parsed)
+            if(!result.isDefined) {
+              log.error("Unable to convert the JSON to a schema")
+              finishRequest(internalServerError)
+            }
+            result
+          case HttpServletResponse.SC_NOT_FOUND =>
+            None
+          case otherCode =>
+            log.error("Unexpected response code {} from request for schema of dataset {} from {}:{}", otherCode.asInstanceOf[AnyRef], dataset.asInstanceOf[AnyRef], secondary.getAddress, secondary.getPort)
             finishRequest(internalServerError)
         }
-        val result = JsonCodec[Schema].decode(parsed)
-        if(!result.isDefined) {
-          log.error("Unable to convert the JSON to a schema")
-          finishRequest(internalServerError)
-        }
-        result
-      case FutureCompleted(response) if response.getStatusCode == HttpServletResponse.SC_NOT_FOUND =>
-        None
-      case FutureCompleted(response) =>
-        log.error("Unexpected response code {} from request for schema of dataset {} from {}", response.getStatusCode.asInstanceOf[AnyRef], dataset.asInstanceOf[AnyRef], secondary.buildUriSpec)
-        finishRequest(internalServerError)
-      case FutureTimedOut =>
-        future.cancel(true)
-        log.error("get schema for dataset {} to to {} timed out", dataset:Any, secondary.buildUriSpec:Any)
-        finishRequest(internalServerError)
-      case FutureFailed(e) =>
-        log.error("Got an exception while requesting schema for dataset {} from {}", dataset:Any, secondary.buildUriSpec:Any)
+      }
+    } catch {
+      case e: Exception =>
+        log.error("Got an exception while requesting schema for dataset {} from {}:{}", dataset:AnyRef, secondary.getAddress:AnyRef, secondary.getPort, e)
         finishRequest(internalServerError)
     }
   }
@@ -212,13 +235,20 @@ class Service(http: Http,
     new String(baos.toByteArray, "latin1")
   }
 
-  def sendQuery[T](secondary: ServiceInstance[_], dataset: String, analysis: SoQLAnalysis[SoQLAnalysisType], schemaHash: String, ifNoneMatch: Option[String], handler: AsyncHandler[T]): java.util.concurrent.Future[T] = {
+ private def sendQuery[T](secondary: ServiceInstance[AuxiliaryData], dataset: String, analysis: SoQLAnalysis[SoQLAnalysisType], schemaHash: String, ifNoneMatch: Option[String]): Managed[http.JsonResponse] = {
     val serializedAnalysis: String = serializeAnalysis(analysis)
 
-    val req = ifNoneMatch.foldLeft(url(secondary.buildUriSpec) / "query" << Map("ds" -> dataset, "q" -> serializedAnalysis, "s" -> schemaHash)) { (r, etag) =>
-      r <:< Map("If-None-Match" -> etag)
+    val pingTarget = for {
+      auxData <- Option(secondary.getPayload)
+      pingInfo <- auxData.pingInfo
+    } yield pingInfo
+
+    val req = ifNoneMatch.foldLeft(reqBuilder(secondary).
+      p("query").
+      q("ds" -> dataset, "q" -> serializedAnalysis, "s" -> schemaHash)) { (r, etag) =>
+      r.addHeader("If-None-Match" -> etag)
     }
-    http.client.executeRequest(req.build, handler)
+    http.executeForJson(req.get, pingTarget)
   }
 
   sealed abstract class RowDataResult
@@ -226,112 +256,30 @@ class Service(http: Http,
   case class SchemaOutOfDate(schema: Schema) extends RowDataResult
   case class OtherResult(response: HttpResponse) extends RowDataResult
 
-  def checkSchemaOutOfDate(bytes: Array[Byte], headers: FluentCaseInsensitiveStringsMap): Option[Schema] = {
-    Option(headers.getFirstValue("content-type")) map { contentTypeString =>
-      val contentType =
-        try { new MimeType(contentTypeString) }
-        catch { case e: MimeTypeParseException =>
-          log.error("Unable to parse content-type from secondary", e)
-          return None
-        }
-      if(contentType.getBaseType != "application/json") {
-        log.error("Response from secondary is not application/json")
-        return None
-      }
-      val charsetString = Option(contentType.getParameter("charset")).getOrElse("latin1")
-      val cs =
-        try { Charset.forName(charsetString) }
-        catch { case _: UnsupportedCharsetException =>
-          log.error("Response is not in a known charset: " + charsetString)
-          return None
-        }
-      val body = new String(bytes, cs)
-      val json =
-        try { JsonReader.fromString(body) }
-        catch { case e: JsonReaderException =>
-          log.error("Response is not valid JSON", e)
-          return None
-        }
-      val obj: JObject = json.cast[JObject].getOrElse {
-        log.error("Response is not a JSON object")
-        return None
-      }
-      val errorCode = obj.get("errorCode").getOrElse {
-        log.error("Response does not contain an errorCode field")
-        return None
-      }
-      if(errorCode != JString("internal.schema-mismatch")) {
-        return None // no need to log anything, it's some other kind of Conflict
-      }
-
-      val data = obj.get("data").getOrElse {
-        log.error("Response does not contain a data field")
-        return None
-      }
-
-      JsonCodec[Schema].decode(data).getOrElse {
-        log.error("data object is not a valid Schema")
-        return None
-      }
+  def checkSchemaOutOfDate(json: JValue): Option[Schema] = {
+    val obj: JObject = json.cast[JObject].getOrElse {
+      log.error("Response is not a JSON object")
+      return None
     }
-  }
-
-  def processResponse(response: HttpServletResponse, onData: ()=>Unit, mutex: AnyRef, cancelled: AtomicBoolean)(status: HttpResponseStatus, headers: FluentCaseInsensitiveStringsMap): Either[RowDataResult, BodyHandler[RowDataResult]] = {
-    mutex.synchronized {
-      if(cancelled.get()) ???
-      onData()
-      status.getStatusCode match {
-        case conflict@HttpServletResponse.SC_CONFLICT =>
-          Right(new BodyHandler[RowDataResult] {
-            val data = new java.io.ByteArrayOutputStream
-
-            def done() = {
-              onData()
-              val bytes = data.toByteArray
-              checkSchemaOutOfDate(bytes, headers) match {
-                case Some(schema) =>
-                  SchemaOutOfDate(schema)
-                case None =>
-                  response.setStatus(conflict)
-                  headers.iterator.asScala.foreach { case entry =>
-                    entry.getValue.asScala.foreach(response.addHeader(entry.getKey, _))
-                  }
-                  response.getOutputStream.write(bytes)
-                  FinishedSuccessfully
-              }
-            }
-
-            def bodyPart(bodyPart: HttpResponseBodyPart): Either[RowDataResult, BodyHandler[RowDataResult]] = mutex.synchronized {
-              if(!cancelled.get) {
-                onData()
-                bodyPart.writeTo(data)
-                if(data.size > 10*1024*1024) {
-                  log.error("Received too much data on a Conflict response")
-                  return Left(OtherResult(internalServerError))
-                }
-              }
-              Right(this)
-            }
-          })
-        case other =>
-          response.setStatus(other)
-          headers.iterator.asScala.foreach { case ent =>
-            ent.getValue.asScala.foreach(response.addHeader(ent.getKey, _))
-          }
-          val output = response.getOutputStream
-          Right(new BodyHandler[RowDataResult] {
-            def done() = FinishedSuccessfully
-
-            def bodyPart(bodyPart: HttpResponseBodyPart) = mutex.synchronized {
-              if(!cancelled.get) {
-                onData()
-                bodyPart.writeTo(output)
-              }
-              Right(this)
-            }
-          })
-      }
+    val errorCode = obj.get("errorCode").getOrElse {
+      log.error("Response does not contain an errorCode field")
+      return None
     }
+    if(errorCode != JString("internal.schema-mismatch")) {
+      return None // no need to log anything, it's some other kind of Conflict
+    }
+
+    val data = obj.get("data").getOrElse {
+      log.error("Response does not contain a data field")
+      return None
+    }
+
+    val schema = JsonCodec[Schema].decode(data).getOrElse {
+      log.error("data object is not a valid Schema")
+      return None
+    }
+
+    Some(schema)
   }
 
   def secondary(dataset: String) = Option(secondaryProvider.provider(secondaryInstance).getInstance).getOrElse {
@@ -398,57 +346,35 @@ class Service(http: Http,
             finishRequest(soqlErrorResponse(dataset, e))
         }) match {
           case Some(analysis) =>
-            val lastDataReceived = new AtomicLong(System.nanoTime())
-            val cancelled = new AtomicBoolean(false)
-            def onData() {
-              lastDataReceived.set(System.nanoTime())
-            }
-            val mutex = new Object
-            val handler = FAsyncHandler()(processResponse(resp, onData, mutex, cancelled))
-            val future = sendQuery(secondary(dataset), dataset, analysis, rawSchema.hash, ifNoneMatch, handler)
-            def maybeAbandon(duration: FiniteDuration): Boolean =
-              mutex.synchronized {
-                val now = System.nanoTime()
-                if((now - lastDataReceived.get) / 1000000 > duration.toMillis) {
-                  future.cancel(true)
-                  cancelled.set(true)
-                  true
-                } else {
-                  false
-                }
-              }
-            val result = future(responseResponseTimeout) match {
-              case FutureTimedOut =>
-                if(maybeAbandon(responseResponseTimeout)) {
-                  log.error("Never even got headers from upstream.  Abandoning request.")
-                  finishRequest(upstreamTimeoutResponse)
-                }
-
-                @tailrec
-                def loopForTimeout(): RowDataResult = {
-                  future(responseDataTimeout) match {
-                    case FutureTimedOut =>
-                      if(maybeAbandon(responseDataTimeout)) {
-                        log.error("Upstream took too long.  Abandoning request")
-                        finishRequest(upstreamTimeoutResponse)
-                      } else {
-                        loopForTimeout()
+            val outcome = for(result <- sendQuery(secondary(dataset), dataset, analysis, rawSchema.hash, ifNoneMatch)) yield {
+              result.responseInfo.resultCode match {
+                case HttpServletResponse.SC_CONFLICT =>
+                  val json = JsonReader.fromEvents(result)
+                  checkSchemaOutOfDate(json) match {
+                    case None =>
+                      resp.setStatus(HttpServletResponse.SC_CONFLICT)
+                      result.responseInfo.headerNames.foreach { h =>
+                        result.responseInfo.headers(h).foreach(resp.addHeader(h, _))
                       }
-                    case FutureCompleted(futureResult) =>
-                      futureResult
-                    case FutureFailed(err) =>
-                      log.error("Unexpected exception while processing data response from secondary", err)
-                      finishRequest(internalServerError)
+                      CompactJsonWriter.toWriter(resp.getWriter, json)
+                      FinishedSuccessfully
+                    case Some(s) =>
+                      SchemaOutOfDate(s)
                   }
-                }
-                loopForTimeout()
-              case FutureCompleted(futureResult) =>
-                futureResult
-              case FutureFailed(err) =>
-                log.error("Unexpected exception while processing header response from secondary", err)
-                finishRequest(internalServerError)
+                case other =>
+                  resp.setStatus(other)
+                  result.responseInfo.headerNames.foreach { h =>
+                    result.responseInfo.headers(h).foreach(resp.addHeader(h, _))
+                  }
+                  using(new BufferedWriter(resp.getWriter)) { w =>
+                    EventTokenIterator(result).foreach { t =>
+                      w.write(t.asFragment)
+                    }
+                  }
+                  FinishedSuccessfully
+              }
             }
-            result match {
+            outcome match {
               case FinishedSuccessfully =>
                 // ok
               case SchemaOutOfDate(schema) =>

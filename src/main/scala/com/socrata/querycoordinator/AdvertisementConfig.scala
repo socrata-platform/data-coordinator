@@ -2,8 +2,10 @@ package com.socrata.querycoordinator
 
 import com.typesafe.config.Config
 
-class AdvertisementConfig(config: Config) {
-  val basePath = config.getString("base-path")
-  val name = config.getString("name")
-  val address = config.getString("address")
+class AdvertisementConfig(config: Config, root: String) {
+  private def k(s: String) = root + "." + s
+
+  val basePath = config.getString(k("base-path"))
+  val name = config.getString(k("name"))
+  val address = config.getString(k("address"))
 }

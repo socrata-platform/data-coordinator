@@ -1,37 +1,41 @@
 package com.socrata.querycoordinator
 
-import com.typesafe.config.ConfigFactory
+import scala.concurrent.duration._
+import com.typesafe.config.{Config, ConfigFactory}
 import org.apache.log4j.PropertyConfigurator
 import com.rojoma.simplearm.util._
 
 import com.socrata.thirdparty.typesafeconfig.Propertizer
 import com.netflix.curator.framework.CuratorFrameworkFactory
 import com.netflix.curator.retry
-import com.netflix.curator.x.discovery.ServiceDiscoveryBuilder
-import com.netflix.curator.x.discovery.strategies
+import com.netflix.curator.x.discovery.{ServiceInstanceBuilder, ServiceDiscoveryBuilder, strategies}
 import com.socrata.http.server.curator.CuratorBroker
 import com.socrata.http.server.SocrataServerJetty
-import com.ning.http.client.{AsyncHttpClient, AsyncHttpClientConfig}
-import com.ning.http.client.providers.grizzly.{GrizzlyAsyncHttpProvider, GrizzlyAsyncHttpProviderConfig}
-import com.socrata.soql.types.{SoQLVersion, SoQLID, SoQLTextLiteral, SoQLAnalysisType}
+import com.socrata.soql.types.SoQLAnalysisType
 import com.socrata.soql.{AnalysisSerializer, SoQLAnalyzer}
-import com.socrata.soql.functions.{SoQLTypeConversions, SoQLFunctions, SoQLFunctionInfo, SoQLTypeInfo}
+import com.socrata.soql.functions.{SoQLFunctionInfo, SoQLTypeInfo}
 import com.google.protobuf.CodedOutputStream
-import com.ibm.icu.util.CaseInsensitiveString
+import com.socrata.internal.http.{AuxiliaryData, HttpClientHttpClient}
+import com.socrata.internal.http.pingpong.InetPingProvider
+import java.util.concurrent.{ExecutorService, Executors}
+import com.rojoma.simplearm.Resource
+import com.rojoma.json.ast.JString
 
 final abstract class Main
 
-object evidences {
-  implicit def httpResource[A <: dispatch.Http] = new com.rojoma.simplearm.Resource[A] {
-    def close(a: A) { a.shutdown() }
-  }
-}
-
 object Main extends App {
-  import evidences._
+  def withDefaultAddress(config: Config): Config = {
+    val ifaces = ServiceInstanceBuilder.getAllLocalIPs
+    if(ifaces.isEmpty) config
+    else {
+      val first = JString(ifaces.iterator.next().getHostAddress)
+      val addressConfig = ConfigFactory.parseString("com.socrata.query-coordinator.service-advertisement.address=" + first)
+      config.withFallback(addressConfig)
+    }
+  }
 
   val config = try {
-    new QueryCoordinatorConfig(ConfigFactory.load().getConfig("com.socrata.query-coordinator"))
+    new QueryCoordinatorConfig(withDefaultAddress(ConfigFactory.load()), "com.socrata.query-coordinator")
   } catch {
     case e: Exception =>
       Console.err.println(e)
@@ -50,11 +54,14 @@ object Main extends App {
   }
   val analysisSerializer = new AnalysisSerializer[SoQLAnalysisType](typeSerializer)
 
+  implicit object executorResource extends Resource[ExecutorService]{
+    def close(a: ExecutorService) { a.shutdown() }
+  }
+
   for {
-    dispatchHttp <- managed(dispatch.Http)
-    http <- managed(dispatchHttp.configure { builder =>
-      builder.setMaxRequestRetry(0)
-    })
+    executor <- managed(Executors.newFixedThreadPool(5))
+    pingProvider <- managed(new InetPingProvider(5.seconds, 1.second, 5, executor))
+    httpClient <- managed(new HttpClientHttpClient(pingProvider, userAgent = "Query Coordinator"))
     curator <- managed(CuratorFrameworkFactory.builder.
       connectString(config.curator.ensemble).
       sessionTimeoutMs(config.curator.sessionTimeout.toMillis.toInt).
@@ -64,7 +71,7 @@ object Main extends App {
                                                            config.curator.maxRetries)).
       namespace(config.curator.namespace).
       build())
-    discovery <- managed(ServiceDiscoveryBuilder.builder(classOf[Void]).
+    discovery <- managed(ServiceDiscoveryBuilder.builder(classOf[AuxiliaryData]).
       client(curator).
       basePath(config.advertisement.basePath).
       build())
@@ -75,9 +82,10 @@ object Main extends App {
   } {
     curator.start()
     discovery.start()
+    pingProvider.start()
 
     val handler = new Service(
-      http,
+      httpClient,
       dataCoordinatorProviderProvider,
       config.schemaTimeout,
       config.initialResponseTimeout,
