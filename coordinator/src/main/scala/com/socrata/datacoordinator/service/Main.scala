@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator.service
 
 import com.rojoma.simplearm.util._
-import com.typesafe.config.ConfigFactory
+import com.typesafe.config.{Config, ConfigFactory}
 import org.apache.log4j.PropertyConfigurator
 import com.socrata.thirdparty.typesafeconfig.Propertizer
 import com.socrata.datacoordinator.secondary.{DatasetAlreadyInSecondary, SecondaryLoader}
@@ -9,12 +9,12 @@ import java.util.concurrent.{CountDownLatch, TimeUnit, Executors}
 import com.socrata.datacoordinator.common.{SoQLCommon, StandardDatasetMapLimits, DataSourceFromConfig}
 import com.socrata.datacoordinator.util.{IndexedTempFile, StackedTimingReport, LoggedTimingReport}
 import com.socrata.datacoordinator.id.{ColumnId, DatasetId}
-import com.rojoma.json.ast.JValue
+import com.rojoma.json.ast.{JString, JValue}
 import com.socrata.datacoordinator.truth.CopySelector
 import com.socrata.soql.environment.ColumnName
 import com.netflix.curator.retry
 import com.netflix.curator.framework.CuratorFrameworkFactory
-import com.netflix.curator.x.discovery.ServiceDiscoveryBuilder
+import com.netflix.curator.x.discovery.{ServiceInstanceBuilder, ServiceInstance, ServiceDiscoveryBuilder}
 import com.socrata.http.server.curator.CuratorBroker
 import com.rojoma.simplearm.SimpleArm
 import com.socrata.internal.http.AuxiliaryData
@@ -121,9 +121,19 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
 object Main {
   lazy val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
 
+  def withDefaultAddress(config: Config): Config = {
+    val ifaces = ServiceInstanceBuilder.getAllLocalIPs
+    if(ifaces.isEmpty) config
+    else {
+      val first = JString(ifaces.iterator.next().getHostAddress)
+      val addressConfig = ConfigFactory.parseString("com.socrata.coordinator.service.service-advertisement.address=" + first)
+      config.withFallback(addressConfig)
+    }
+  }
+
   def main(args: Array[String]) {
     val serviceConfig = try {
-      new ServiceConfig(ConfigFactory.load(), "com.socrata.coordinator.service")
+      new ServiceConfig(withDefaultAddress(ConfigFactory.load()), "com.socrata.coordinator.service")
     } catch {
       case e: Exception =>
         Console.err.println(e)
