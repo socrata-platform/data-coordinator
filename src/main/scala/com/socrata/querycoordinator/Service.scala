@@ -21,7 +21,7 @@ import com.rojoma.json.codec.JsonCodec
 import com.rojoma.json.ast.{JNumber, JValue, JObject}
 import scala.annotation.unchecked.uncheckedVariance
 import scala.annotation.tailrec
-import com.socrata.internal.http.{SimpleHttpRequestBuilder, HttpClient, AuxiliaryData}
+import com.socrata.internal.http.{RequestBuilder, HttpClient, AuxiliaryData}
 import com.rojoma.simplearm.Managed
 import com.socrata.soql.exceptions.NoSuchColumn
 import com.socrata.soql.exceptions.UnterminatedString
@@ -178,7 +178,7 @@ class Service(http: HttpClient,
   def upstreamTimeoutResponse = internalServerError
 
   def reqBuilder(secondary: ServiceInstance[AuxiliaryData]) =
-    SimpleHttpRequestBuilder(secondary.getAddress).
+    RequestBuilder(secondary.getAddress).
       port(secondary.getPort)
 
   // returns the schema if the given service has this dataset, or None if it doesn't.
@@ -188,10 +188,11 @@ class Service(http: HttpClient,
       pingInfo <- auxData.pingInfo
     } yield pingInfo
     try {
-      for(response <- http.executeForJson(reqBuilder(secondary).
-          p("schema").
-          q("ds" -> dataset).
-          get, pingTarget)) yield {
+      val req = reqBuilder(secondary).
+        p("schema").
+        q("ds" -> dataset).
+        get
+      for(response <- http.executeForJson(req, pingTarget)) yield {
         response.responseInfo.resultCode match {
           case HttpServletResponse.SC_OK =>
             val parsed = try {
