@@ -61,7 +61,7 @@ object Main extends App {
   for {
     executor <- managed(Executors.newFixedThreadPool(5))
     pingProvider <- managed(new InetPingProvider(5.seconds, 1.second, 5, executor))
-    httpClient <- managed(new HttpClientHttpClient(pingProvider, userAgent = "Query Coordinator"))
+    httpClient <- managed(new HttpClientHttpClient(pingProvider, executor, userAgent = "Query Coordinator"))
     curator <- managed(CuratorFrameworkFactory.builder.
       connectString(config.curator.ensemble).
       sessionTimeoutMs(config.curator.sessionTimeout.toMillis.toInt).
