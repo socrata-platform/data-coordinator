@@ -21,7 +21,7 @@ import com.rojoma.json.codec.JsonCodec
 import com.rojoma.json.ast.{JNumber, JValue, JObject}
 import scala.annotation.unchecked.uncheckedVariance
 import scala.annotation.tailrec
-import com.socrata.internal.http.{RequestBuilder, HttpClient, AuxiliaryData}
+import com.socrata.internal.http.{Response, RequestBuilder, HttpClient, AuxiliaryData}
 import com.rojoma.simplearm.Managed
 import com.socrata.soql.exceptions.NoSuchColumn
 import com.socrata.soql.exceptions.UnterminatedString
@@ -192,17 +192,16 @@ class Service(http: HttpClient,
         p("schema").
         q("ds" -> dataset).
         get
-      for(response <- http.executeForJson(req, pingTarget)) yield {
-        response.responseInfo.resultCode match {
+      for(response <- http.execute(req, pingTarget)) yield {
+        response.resultCode match {
           case HttpServletResponse.SC_OK =>
-            val parsed = try {
-              JsonReader.fromEvents(response)
+            val result = try {
+              response.asValue[Schema]()
             } catch {
               case e: Exception =>
                 log.error("Got an exception while parsing the returned schema", e)
                 finishRequest(internalServerError)
             }
-            val result = JsonCodec[Schema].decode(parsed)
             if(!result.isDefined) {
               log.error("Unable to convert the JSON to a schema")
               finishRequest(internalServerError)
@@ -236,7 +235,7 @@ class Service(http: HttpClient,
     new String(baos.toByteArray, "latin1")
   }
 
- private def sendQuery[T](secondary: ServiceInstance[AuxiliaryData], dataset: String, analysis: SoQLAnalysis[SoQLAnalysisType], schemaHash: String, ifNoneMatch: Option[String]): Managed[http.JsonResponse] = {
+ private def sendQuery[T](secondary: ServiceInstance[AuxiliaryData], dataset: String, analysis: SoQLAnalysis[SoQLAnalysisType], schemaHash: String, ifNoneMatch: Option[String]): Managed[Response] = {
     val serializedAnalysis: String = serializeAnalysis(analysis)
 
     val pingTarget = for {
@@ -249,7 +248,7 @@ class Service(http: HttpClient,
       q("ds" -> dataset, "q" -> serializedAnalysis, "s" -> schemaHash)) { (r, etag) =>
       r.addHeader("If-None-Match" -> etag)
     }
-    http.executeForJson(req.get, pingTarget)
+    http.execute(req.get, pingTarget)
   }
 
   sealed abstract class RowDataResult
@@ -348,14 +347,15 @@ class Service(http: HttpClient,
         }) match {
           case Some(analysis) =>
             val outcome = for(result <- sendQuery(secondary(dataset), dataset, analysis, rawSchema.hash, ifNoneMatch)) yield {
-              result.responseInfo.resultCode match {
+              result.resultCode match {
                 case HttpServletResponse.SC_CONFLICT =>
-                  val json = JsonReader.fromEvents(result)
+                  val json = result.asJValue()
                   checkSchemaOutOfDate(json) match {
                     case None =>
                       resp.setStatus(HttpServletResponse.SC_CONFLICT)
-                      result.responseInfo.headerNames.foreach { h =>
-                        result.responseInfo.headers(h).foreach(resp.addHeader(h, _))
+                      val headersToRemove = Set("content-length", "content-encoding")
+                      result.headerNames.filterNot(headersToRemove).foreach { h =>
+                        result.headers(h).foreach(resp.addHeader(h, _))
                       }
                       CompactJsonWriter.toWriter(resp.getWriter, json)
                       FinishedSuccessfully
@@ -364,11 +364,11 @@ class Service(http: HttpClient,
                   }
                 case other =>
                   resp.setStatus(other)
-                  result.responseInfo.headerNames.foreach { h =>
-                    result.responseInfo.headers(h).foreach(resp.addHeader(h, _))
+                  result.headerNames.foreach { h =>
+                    result.headers(h).foreach(resp.addHeader(h, _))
                   }
                   using(new BufferedWriter(resp.getWriter)) { w =>
-                    EventTokenIterator(result).foreach { t =>
+                    EventTokenIterator(result.asJsonEvents()).foreach { t =>
                       w.write(t.asFragment)
                     }
                   }
