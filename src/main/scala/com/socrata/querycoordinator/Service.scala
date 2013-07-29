@@ -177,22 +177,24 @@ class Service(http: HttpClient,
   def notModifiedResponse(newEtag: String) = NotModified ~> Header("etag", newEtag)
   def upstreamTimeoutResponse = internalServerError
 
-  def reqBuilder(secondary: ServiceInstance[AuxiliaryData]) =
-    RequestBuilder(secondary.getAddress).
-      port(secondary.getPort)
-
-  // returns the schema if the given service has this dataset, or None if it doesn't.
-  def schemaFor(secondary: ServiceInstance[AuxiliaryData], dataset: String): Option[Schema] = {
+  def reqBuilder(secondary: ServiceInstance[AuxiliaryData]) = {
     val pingTarget = for {
       auxData <- Option(secondary.getPayload)
       pingInfo <- auxData.pingInfo
     } yield pingInfo
+    RequestBuilder(secondary.getAddress).
+      port(secondary.getPort).
+      pingInfo(pingTarget)
+  }
+
+  // returns the schema if the given service has this dataset, or None if it doesn't.
+  def schemaFor(secondary: ServiceInstance[AuxiliaryData], dataset: String): Option[Schema] = {
     try {
       val req = reqBuilder(secondary).
         p("schema").
         q("ds" -> dataset).
         get
-      for(response <- http.execute(req, pingTarget)) yield {
+      for(response <- http.execute(req)) yield {
         response.resultCode match {
           case HttpServletResponse.SC_OK =>
             val result = try {
@@ -238,17 +240,12 @@ class Service(http: HttpClient,
  private def sendQuery[T](secondary: ServiceInstance[AuxiliaryData], dataset: String, analysis: SoQLAnalysis[SoQLAnalysisType], schemaHash: String, ifNoneMatch: Option[String]): Managed[Response] = {
     val serializedAnalysis: String = serializeAnalysis(analysis)
 
-    val pingTarget = for {
-      auxData <- Option(secondary.getPayload)
-      pingInfo <- auxData.pingInfo
-    } yield pingInfo
-
     val req = ifNoneMatch.foldLeft(reqBuilder(secondary).
       p("query").
       q("ds" -> dataset, "q" -> serializedAnalysis, "s" -> schemaHash)) { (r, etag) =>
       r.addHeader("If-None-Match" -> etag)
     }
-    http.execute(req.get, pingTarget)
+    http.execute(req.get)
   }
 
   sealed abstract class RowDataResult
