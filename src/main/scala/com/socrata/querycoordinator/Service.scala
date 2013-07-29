@@ -182,9 +182,15 @@ class Service(http: HttpClient,
       auxData <- Option(secondary.getPayload)
       pingInfo <- auxData.pingInfo
     } yield pingInfo
-    RequestBuilder(secondary.getAddress).
-      port(secondary.getPort).
+    val b = RequestBuilder(secondary.getAddress).
       pingInfo(pingTarget)
+    if(secondary.getSslPort != null) {
+      b.secure(true).port(secondary.getSslPort)
+    } else if(secondary.getPort != null) {
+      b.port(secondary.getPort)
+    } else {
+      b
+    }
   }
 
   // returns the schema if the given service has this dataset, or None if it doesn't.
