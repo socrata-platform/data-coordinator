@@ -17,7 +17,7 @@ object DatabasePopulator {
       load("metadata.tmpl.sql"),
       Map(
         "user_uid_len" -> maximumUserIdLength.toString,
-        "logical_name_len" -> maximumLogicalColumnNameLength.toString,
+        "user_column_id_len" -> maximumLogicalColumnNameLength.toString,
         "physcol_base_len" -> maximumPhysicalColumnBaseLength.toString,
         "type_name_len" -> maximumTypeNameLength.toString,
         "store_id_len" -> maximumStoreIdLength.toString,

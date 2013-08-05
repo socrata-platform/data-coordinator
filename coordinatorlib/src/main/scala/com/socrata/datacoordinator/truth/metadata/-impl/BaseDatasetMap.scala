@@ -1,9 +1,8 @@
 package com.socrata.datacoordinator.truth.metadata
 package `-impl`
 
-import com.socrata.datacoordinator.id.{RowId, DatasetId}
+import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
-import com.socrata.soql.environment.ColumnName
 
 trait BaseDatasetMapReader[CT] {
   /** Gets the newest copy, no matter what the lifecycle stage is. */
@@ -57,10 +56,6 @@ trait BaseDatasetMapWriter[CT] extends BaseDatasetMapReader[CT] {
   /** Removes a column from this dataset-copy.
     * @note Does not change the actual table; this just updates the bookkeeping. */
   def dropColumn(columnInfo: ColumnInfo[CT])
-
-  /** Changes the logical name of a column in this dataset-copy.
-    * @return The new column info. */
-  def renameColumn(columnInfo: ColumnInfo[CT], newLogicalName: ColumnName): ColumnInfo[CT]
 
   /** Changes the type and physical column base of a column in this dataset-copy.
     * @note Does not change the actual table, or (if this column was a primary key) ensure that the new type is still

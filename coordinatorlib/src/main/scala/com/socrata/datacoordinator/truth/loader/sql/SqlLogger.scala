@@ -80,7 +80,6 @@ object SqlLogger {
   val RowIdentifierCleared = "noridcol"
   val SystemRowIdentifierChanged = "sidcol"
   val VersionColumnChanged = "vercol"
-  val ColumnLogicalNameChanged = "colname"
   val WorkingCopyCreated = "workcopy"
   val DataCopied = "datacopy"
   val WorkingCopyDropped = "dropwork"

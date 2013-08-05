@@ -3,24 +3,25 @@ package com.socrata.datacoordinator.primary
 import com.socrata.datacoordinator.truth.universe.{DatasetMutatorProvider, Universe}
 import com.socrata.soql.environment.ColumnName
 import com.rojoma.simplearm.Managed
-import com.socrata.datacoordinator.id.DatasetId
+import com.socrata.datacoordinator.id.{UserColumnId, DatasetId}
+import com.socrata.datacoordinator.util.collection.UserColumnIdMap
 
 class DatasetCreator[CT](universe: Managed[Universe[CT, _] with DatasetMutatorProvider],
-                         systemSchema: Map[ColumnName, CT],
-                         systemIdColumnName: ColumnName,
-                         versionColumnName: ColumnName,
-                         physicalColumnBaseBase: (ColumnName, Boolean) => String) {
+                         systemSchema: UserColumnIdMap[CT],
+                         systemIdColumnId: UserColumnId,
+                         versionColumnId: UserColumnId,
+                         physicalColumnBaseBase: (String, Boolean) => String) {
   def createDataset(username: String, localeName: String): DatasetId = {
     for {
       u <- universe
       ctx <- u.datasetMutator.createDataset(as = username)(localeName)
     } yield {
-      systemSchema.foreach { case (name, typ) =>
-        val col = ctx.addColumn(name, typ, physicalColumnBaseBase(name, true))
+      systemSchema.foreach { (cid, typ) =>
+        val col = ctx.addColumn(cid, typ, physicalColumnBaseBase(cid.underlying, true))
         val col2 =
-          if(name == systemIdColumnName) ctx.makeSystemPrimaryKey(col)
+          if(cid == systemIdColumnId) ctx.makeSystemPrimaryKey(col)
           else col
-        if(name == versionColumnName) ctx.makeVersion(col2)
+        if(cid == versionColumnId) ctx.makeVersion(col2)
       }
       ctx.copyInfo.datasetInfo.systemId
     }

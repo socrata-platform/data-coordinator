@@ -11,9 +11,8 @@ import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.metadata.CopyPair
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
-import com.socrata.datacoordinator.id.{RowVersion, ColumnId, DatasetId}
+import com.socrata.datacoordinator.id.{UserColumnId, RowVersion, ColumnId, DatasetId}
 import scala.concurrent.duration.Duration
-import com.socrata.soql.environment.ColumnName
 
 trait LowLevelDatabaseReader[CT, CV] {
   trait ReadContext {
@@ -108,10 +107,9 @@ trait DatasetMutator[CT, CV] {
     def primaryKey: ColumnInfo[CT]
     def versionColumn: ColumnInfo[CT]
     def columnInfo(id: ColumnId): Option[ColumnInfo[CT]]
-    def columnInfo(name: ColumnName): Option[ColumnInfo[CT]]
+    def columnInfo(name: UserColumnId): Option[ColumnInfo[CT]]
 
-    def addColumn(logicalName: ColumnName, typ: CT, physicalColumnBaseBase: String): ColumnInfo[CT]
-    def renameColumn(col: ColumnInfo[CT], newName: ColumnName): ColumnInfo[CT]
+    def addColumn(userColumnId: UserColumnId, typ: CT, physicalColumnBaseBase: String): ColumnInfo[CT]
     def makeSystemPrimaryKey(ci: ColumnInfo[CT]): ColumnInfo[CT]
     def makeVersion(ci: ColumnInfo[CT]): ColumnInfo[CT]
 
@@ -120,9 +118,9 @@ trait DatasetMutator[CT, CV] {
      */
     def makeUserPrimaryKey(ci: ColumnInfo[CT]): ColumnInfo[CT]
     sealed abstract class PrimaryKeyCreationException extends Exception
-    case class UnPKableColumnException(name: ColumnName, typ: CT) extends PrimaryKeyCreationException
-    case class NullCellsException(name: ColumnName) extends PrimaryKeyCreationException
-    case class DuplicateCellsException(name: ColumnName) extends PrimaryKeyCreationException
+    case class UnPKableColumnException(name: UserColumnId, typ: CT) extends PrimaryKeyCreationException
+    case class NullCellsException(name: UserColumnId) extends PrimaryKeyCreationException
+    case class DuplicateCellsException(name: UserColumnId) extends PrimaryKeyCreationException
 
     def unmakeUserPrimaryKey(ci: ColumnInfo[CT]): ColumnInfo[CT]
     def dropColumn(ci: ColumnInfo[CT])
@@ -168,7 +166,7 @@ object DatasetMutator {
         sys.error("No version column on this dataset?")
       }
       def columnInfo(id: ColumnId) = copyCtx.columnInfoOpt(id)
-      def columnInfo(name: ColumnName) = copyCtx.columnInfoOpt(name)
+      def columnInfo(name: UserColumnId) = copyCtx.columnInfoOpt(name)
 
       def datasetContetsCopier = llCtx.datasetContentsCopier(logger)
 
@@ -180,20 +178,12 @@ object DatasetMutator {
       def now = llCtx.now
       def datasetMap = llCtx.datasetMap
 
-      def addColumn(logicalName: ColumnName, typ: CT, physicalColumnBaseBase: String): ColumnInfo[CT] = {
+      def addColumn(userColumnId: UserColumnId, typ: CT, physicalColumnBaseBase: String): ColumnInfo[CT] = {
         checkDoingRows()
-        val newColumn = datasetMap.addColumn(copyInfo, logicalName, typ, physicalColumnBaseBase)
+        val newColumn = datasetMap.addColumn(copyInfo, userColumnId, typ, physicalColumnBaseBase)
         schemaLoader.addColumn(newColumn)
         copyCtx.addColumn(newColumn)
         newColumn
-      }
-
-      def renameColumn(ci: ColumnInfo[CT], newName: ColumnName): ColumnInfo[CT] = {
-        checkDoingRows()
-        val newCi = datasetMap.renameColumn(ci, newName)
-        logger.logicalNameChanged(newCi)
-        copyCtx.addColumn(newCi)
-        newCi
       }
 
       def dropColumn(ci: ColumnInfo[CT]) {

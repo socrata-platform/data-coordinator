@@ -24,8 +24,8 @@ class SchemaFinder[CT, CV](universe: Managed[Universe[CT, CV] with DatasetMapRea
 
   def getSchema(schema: ColumnIdMap[ColumnInfo[CT]]): Schema = {
     val hash = schemaHash(schema)
-    Schema(hash, RotateSchema(schema).mapValues { col => typeSerializer(col.typ) }, schema.values.find(_.isUserPrimaryKey).orElse(schema.values.find(_.isSystemPrimaryKey)).getOrElse {
+    Schema(hash, RotateSchema(schema).mapValuesStrict { col => typeSerializer(col.typ) }, schema.values.find(_.isUserPrimaryKey).orElse(schema.values.find(_.isSystemPrimaryKey)).getOrElse {
       sys.error("No system primary key column?")
-    }.logicalName)
+    }.userColumnId)
   }
 }

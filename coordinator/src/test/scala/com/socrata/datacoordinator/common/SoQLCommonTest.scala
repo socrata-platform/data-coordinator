@@ -3,15 +3,18 @@ package com.socrata.datacoordinator.common
 import org.scalatest.FunSuite
 import org.scalatest.matchers.MustMatchers
 import com.socrata.soql.environment.ColumnName
+import com.socrata.datacoordinator.id.UserColumnId
 
 class SoQLCommonTest extends FunSuite with MustMatchers {
   test("allSystemNames actually names all system names") {
-    val allSystemColumnNames = {
-      SoQLSystemColumns.getClass.getMethods.filter(_.getReturnType == classOf[ColumnName]).filter(_.getParameterTypes.isEmpty).map { method =>
-        method.invoke(SoQLSystemColumns).asInstanceOf[ColumnName]
+    val allSystemColumnIds = {
+      // This is a little fragile because UserColumnId is a value class.
+      // Fortunately, the test should fail noisily if anything changes.
+      SoQLSystemColumns.getClass.getDeclaredMethods.filter(_.getReturnType == classOf[String]).filter(_.getParameterTypes.isEmpty).map { method =>
+        new UserColumnId(method.invoke(SoQLSystemColumns).asInstanceOf[String])
       }.toSet
     }
 
-    SoQLSystemColumns.allSystemColumnNames must equal (allSystemColumnNames)
+    SoQLSystemColumns.allSystemColumnIds.toSet must equal (allSystemColumnIds)
   }
 }

@@ -8,7 +8,7 @@ import com.socrata.soql.types.{SoQLValue, SoQLType}
 
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.metadata._
-import com.socrata.datacoordinator.id.DatasetId
+import com.socrata.datacoordinator.id.{UserColumnId, DatasetId}
 import com.socrata.datacoordinator.id.sql._
 import com.socrata.datacoordinator.truth.sql.{RepBasedSqlDatasetContext, SqlColumnRep}
 import com.socrata.datacoordinator.truth.loader.sql._
@@ -28,7 +28,7 @@ import com.socrata.datacoordinator.util.{NoopTimingReport, TimingReport}
 import scala.concurrent.duration.Duration
 import com.socrata.soql.environment.ColumnName
 
-class Backup(conn: Connection, /*executor: ExecutorService, */ isSystemColumnName: ColumnName => Boolean, timingReport: TimingReport, paranoid: Boolean, copyIn: (Connection, String, OutputStream => Unit) => Long) {
+class Backup(conn: Connection, /*executor: ExecutorService, */ isSystemColumnId: UserColumnId => Boolean, timingReport: TimingReport, paranoid: Boolean, copyIn: (Connection, String, OutputStream => Unit) => Long) {
   val typeContext = SoQLTypeContext
   val logger: Logger[SoQLType, SoQLValue] = NullLogger[SoQLType, SoQLValue]
   val typeNamespace = SoQLTypeContext.typeNamespace
@@ -50,7 +50,7 @@ class Backup(conn: Connection, /*executor: ExecutorService, */ isSystemColumnNam
     val schema = schemaInfo.mapValuesStrict(genericRepFor)
     val idCol = schemaInfo.values.find(_.isSystemPrimaryKey).getOrElse(sys.error("No system ID column?")).systemId
     val versionCol = schemaInfo.values.find(_.isVersion).getOrElse(sys.error("No version column?")).systemId
-    val systemIds = schemaInfo.filter { (_, ci) => isSystemColumnName(ci.logicalName) }.keySet
+    val systemIds = schemaInfo.filter { (_, ci) => isSystemColumnId(ci.userColumnId) }.keySet
     val datasetContext = RepBasedSqlDatasetContext(
       typeContext,
       schema,
@@ -87,7 +87,7 @@ class Backup(conn: Connection, /*executor: ExecutorService, */ isSystemColumnNam
   def addColumn(currentVersion: CopyInfo, columnInfo: UnanchoredColumnInfo): currentVersion.type = {
     // TODO: Re-paranoid this
     // Resync.unless(currentVersion, currentVersion == columnInfo.copyInfo, "Copy infos differ")
-    val ci = datasetMap.addColumnWithId(columnInfo.systemId, currentVersion, columnInfo.logicalName, typeNamespace.typeForName(currentVersion.datasetInfo, columnInfo.typeName), columnInfo.physicalColumnBaseBase)
+    val ci = datasetMap.addColumnWithId(columnInfo.systemId, currentVersion, columnInfo.userColumnId, typeNamespace.typeForName(currentVersion.datasetInfo, columnInfo.typeName), columnInfo.physicalColumnBaseBase)
     schemaLoader.addColumn(ci)
     Resync.unless(ci, ci.unanchored == columnInfo, "Newly created column info differs")
     currentVersion
@@ -189,15 +189,6 @@ class Backup(conn: Connection, /*executor: ExecutorService, */ isSystemColumnNam
     }
   }
 
-  def columnLogicalNameChanged(currentVersion: CopyInfo, newColumn: UnanchoredColumnInfo): currentVersion.type = {
-    val s = datasetMap.schema(currentVersion)
-    val oldCi = s.get(newColumn.systemId).getOrElse {
-      Resync(currentVersion, "Unknown column renamed")
-    }
-    logger.logicalNameChanged(datasetMap.renameColumn(oldCi, newColumn.logicalName))
-    currentVersion
-  }
-
   def truncate(currentVersion: CopyInfo): currentVersion.type = {
     truncate(currentVersion.dataTableName)
     currentVersion
@@ -257,8 +248,6 @@ class Backup(conn: Connection, /*executor: ExecutorService, */ isSystemColumnNam
         dropWorkingCopy(versionInfo)
       case SnapshotDropped(info) =>
         dropSnapshot(versionInfo, info)
-      case ColumnLogicalNameChanged(info) =>
-        columnLogicalNameChanged(versionInfo, info)
       case EndTransaction =>
         sys.error("Shouldn't have seen this")
     }

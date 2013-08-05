@@ -72,9 +72,6 @@ object Delogger {
 
   case object EndTransaction extends LogEvent[Nothing] with LogEventCompanion
 
-  case class ColumnLogicalNameChanged(info: UnanchoredColumnInfo) extends LogEvent[Nothing]
-  object ColumnLogicalNameChanged extends LogEventCompanion
-
   case class RowDataUpdated[CV](bytes: Array[Byte])(codec: RowLogCodec[CV]) extends LogEvent[CV] {
     lazy val operations: Vector[Operation[CV]] = { // TODO: A standard decode exception
       val bais = new ByteArrayInputStream(bytes)
@@ -115,7 +112,7 @@ object Delogger {
   val allLogEventCompanions: Set[LogEventCompanion] =
     Set(Truncated, ColumnCreated, ColumnRemoved, RowIdentifierSet, RowIdentifierCleared,
       SystemRowIdentifierChanged, VersionColumnChanged, WorkingCopyCreated, DataCopied, WorkingCopyPublished,
-      WorkingCopyDropped, SnapshotDropped, ColumnLogicalNameChanged, RowDataUpdated, CounterUpdated, EndTransaction)
+      WorkingCopyDropped, SnapshotDropped, RowDataUpdated, CounterUpdated, EndTransaction)
 
   // Note: the Delogger test checks that this is exhaustive.  It is not intended
   // to be used outside of this object and that test.
@@ -134,7 +131,6 @@ object Delogger {
         case WorkingCopyPublished => "WorkingCopyPublished"
         case WorkingCopyDropped => "WorkingCopyDropped"
         case SnapshotDropped => "SnapshotDropped"
-        case ColumnLogicalNameChanged => "ColumnLogicalNameChanged"
         case RowDataUpdated => "RowDataUpdated"
         case CounterUpdated => "CounterUpdated"
         case EndTransaction => "EndTransaction"

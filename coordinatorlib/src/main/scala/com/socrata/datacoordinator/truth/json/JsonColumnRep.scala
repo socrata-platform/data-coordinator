@@ -2,7 +2,6 @@ package com.socrata.datacoordinator.truth.json
 
 import com.rojoma.json.ast._
 import com.rojoma.json.codec._
-import com.socrata.soql.environment.ColumnName
 
 trait JsonColumnCommonRep[CT, CV] {
   val representedType: CT

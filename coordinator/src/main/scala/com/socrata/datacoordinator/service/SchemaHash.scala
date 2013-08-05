@@ -6,6 +6,7 @@ import java.security.MessageDigest
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.soql.environment.TypeName
 import java.util.Comparator
+import com.socrata.datacoordinator.id.UserColumnId
 
 object SchemaHash {
   private val hexDigit = "0123456789abcdef".toCharArray
@@ -26,11 +27,12 @@ object SchemaHash {
     val sha1 = MessageDigest.getInstance("SHA-1")
     val cols = schema.values.toArray
     java.util.Arrays.sort(cols, new Comparator[ColumnInfo[CT]] {
+      val o = Ordering[UserColumnId]
       def compare(a: ColumnInfo[CT], b: ColumnInfo[CT]) =
-        a.logicalName compare b.logicalName
+        o.compare(a.userColumnId, b.userColumnId)
     })
     for(col <- cols) {
-      sha1.update(col.logicalName.caseFolded.getBytes(UTF_8))
+      sha1.update(col.userColumnId.underlying.getBytes(UTF_8))
       sha1.update(255.toByte)
       sha1.update(typeSerializer(col.typ).caseFolded.getBytes(UTF_8))
       sha1.update((if(col.isSystemPrimaryKey) 255 else 254).toByte)

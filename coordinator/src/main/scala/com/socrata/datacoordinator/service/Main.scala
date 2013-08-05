@@ -8,7 +8,7 @@ import com.socrata.datacoordinator.secondary.{DatasetAlreadyInSecondary, Seconda
 import java.util.concurrent.{CountDownLatch, TimeUnit, Executors}
 import com.socrata.datacoordinator.common.{SoQLCommon, StandardDatasetMapLimits, DataSourceFromConfig}
 import com.socrata.datacoordinator.util.{IndexedTempFile, StackedTimingReport, LoggedTimingReport}
-import com.socrata.datacoordinator.id.{ColumnId, DatasetId}
+import com.socrata.datacoordinator.id.{UserColumnId, ColumnId, DatasetId}
 import com.rojoma.json.ast.{JString, JValue}
 import com.socrata.datacoordinator.truth.CopySelector
 import com.socrata.soql.environment.ColumnName
@@ -20,6 +20,7 @@ import com.rojoma.simplearm.SimpleArm
 import com.socrata.internal.http.AuxiliaryData
 import com.socrata.internal.http.pingpong.Pong
 import java.net.{InetSocketAddress, InetAddress}
+import com.socrata.datacoordinator.util.collection.UserColumnIdSet
 
 class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
   def ensureInSecondary(storeId: String, datasetId: DatasetId): Unit =
@@ -81,16 +82,16 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
     }
   }
 
-  def exporter(id: DatasetId, copy: CopySelector, columns: Option[Set[ColumnName]], limit: Option[Long], offset: Option[Long])(f: (Seq[Field], Option[ColumnName], String, Iterator[Array[JValue]]) => Unit): Boolean = {
+  def exporter(id: DatasetId, copy: CopySelector, columns: Option[UserColumnIdSet], limit: Option[Long], offset: Option[Long])(f: (Seq[Field], Option[UserColumnId], String, Iterator[Array[JValue]]) => Unit): Boolean = {
     val res = for(u <- common.universe) yield {
       Exporter.export(u, id, copy, columns, limit, offset) { (copyCtx, it) =>
         val jsonReps = common.jsonReps(copyCtx.datasetInfo)
         val jsonSchema = copyCtx.schema.mapValuesStrict { ci => jsonReps(ci.typ) }
-        val unwrappedCids = copyCtx.schema.values.toSeq.filter { ci => jsonSchema.contains(ci.systemId) }.sortBy(_.logicalName).map(_.systemId.underlying).toArray
-        val pkColName = copyCtx.pkCol.map(_.logicalName)
+        val unwrappedCids = copyCtx.schema.values.toSeq.filter { ci => jsonSchema.contains(ci.systemId) }.sortBy(_.userColumnId).map(_.systemId.underlying).toArray
+        val pkColName = copyCtx.pkCol.map(_.userColumnId)
         val orderedSchema = unwrappedCids.map { cidRaw =>
           val col = copyCtx.schema(new ColumnId(cidRaw))
-          Field(col.logicalName.name, col.typ.name.name)
+          Field(col.userColumnId, col.typ.name.name)
         }
         f(orderedSchema,
           pkColName,

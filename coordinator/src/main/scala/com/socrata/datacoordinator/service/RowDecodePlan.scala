@@ -3,17 +3,17 @@ package service
 
 import com.socrata.datacoordinator.truth.json.JsonColumnReadRep
 import com.rojoma.json.ast.{JArray, JBoolean, JObject, JValue}
-import com.socrata.datacoordinator.util.collection.ColumnIdMap
+import com.socrata.datacoordinator.util.collection.{MutableUserColumnIdMap, UserColumnIdMap, ColumnIdMap}
 import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, AbstractColumnInfoLike}
-import com.socrata.datacoordinator.id.{RowVersion, ColumnId}
+import com.socrata.datacoordinator.id.{UserColumnId, RowVersion, ColumnId}
 import com.socrata.soql.environment.{TypeName, ColumnName}
 
-class RowDecodePlan[CT, CV](schema: ColumnIdMap[ColumnInfo[CT]], repFor: CT => JsonColumnReadRep[CT, CV], typeNameFor: CT => TypeName, versionOf: CV => Option[RowVersion])
+class RowDecodePlan[CT, CV](schema: ColumnIdMap[ColumnInfo[CT]], repFor: CT => JsonColumnReadRep[CT, CV], typeNameFor: CT => TypeName, versionOf: CV => Option[RowVersion], onUnknownColumn: UserColumnId => Unit)
   extends (JValue => Either[(CV, Option[Option[RowVersion]]), Row[CV]])
 {
   sealed abstract class BadDataException(msg: String) extends Exception(msg)
   case class BadUpsertCommandException(value: JValue) extends BadDataException("Upsert command not an object or a singleton list")
-  case class UninterpretableFieldValue(column: ColumnName, value: JValue, columnType: CT) extends BadDataException("Unable to interpret value for field " + column + " as " + typeNameFor(columnType) + ": " + value)
+  case class UninterpretableFieldValue(column: UserColumnId, value: JValue, columnType: CT) extends BadDataException("Unable to interpret value for field " + column + " as " + typeNameFor(columnType) + ": " + value)
 
   val pkCol = schema.values.find(_.isUserPrimaryKey).orElse(schema.values.find(_.isSystemPrimaryKey)).getOrElse {
     sys.error("No system primary key in the schema?")
@@ -23,27 +23,37 @@ class RowDecodePlan[CT, CV](schema: ColumnIdMap[ColumnInfo[CT]], repFor: CT => J
     sys.error("No version column in the schema?")
   }
   val versionRep = repFor(versionCol.typ)
-  val cookedSchema: Array[(ColumnName, ColumnId, JsonColumnReadRep[CT, CV])] =
-    schema.iterator.map { case (systemId, ci) =>
-      (ci.logicalName, systemId, repFor(ci.typ))
-    }.toArray
+  val cookedSchema = locally {
+    val res = MutableUserColumnIdMap[(ColumnId, JsonColumnReadRep[CT, CV])]()
+    schema.foreach { (systemId, ci) =>
+      res(ci.userColumnId) = (systemId, repFor(ci.typ))
+    }
+    res.freeze()
+  }
 
-  val columnNames = new java.util.HashMap[String, ColumnName]
-  def columnName(name: String): ColumnName =
-    columnNames.get(name) match {
+  val columnIds = locally {
+    val cids = new java.util.HashMap[String, String]
+    cookedSchema.keys.foreach { k =>
+      cids.put(k.underlying, k.underlying)
+    }
+    cids
+  }
+  def columnId(name: String): UserColumnId =
+    columnIds.get(name) match {
       case null =>
-        if(columnNames.size > 2000) columnNames.clear() // bad user!
-        val newName = ColumnName(name)
-        columnNames.put(name, newName)
-        newName
+        // bad user; unknown column.  We're either going to throw or
+        // ignore this, so just wrap it up and return it.
+        new UserColumnId(name)
       case existingName =>
-        existingName
+        new UserColumnId(existingName)
     }
 
-  def cook(row: scala.collection.Map[String, JValue]): Map[ColumnName, JValue] = {
-    row.foldLeft(Map.empty[ColumnName, JValue]) { (acc, kv) =>
-      acc + (columnName(kv._1) -> kv._2)
+  def cook(row: scala.collection.Map[String, JValue]): UserColumnIdMap[JValue] = {
+    val res = MutableUserColumnIdMap[JValue]()
+    row.foreach { case (k, v) =>
+      res(columnId(k)) = v
     }
+    res.freeze()
   }
 
   /** Turns a row data value into either `Left(id)` (if it is a delete command) or `Right(row)`
@@ -54,17 +64,17 @@ class RowDecodePlan[CT, CV](schema: ColumnIdMap[ColumnInfo[CT]], repFor: CT => J
     case JObject(rawRow) =>
       val row = cook(rawRow)
       val result = new MutableRow[CV]
-      cookedSchema.foreach { case (field, systemId, rep) =>
-        row.get(field) match {
-          case Some(value) =>
+      row.foreach { (cid, value) =>
+        cookedSchema.get(cid) match {
+          case Some((sid, rep)) =>
             rep.fromJValue(value) match {
               case Some(trueValue) =>
-                result(systemId) = trueValue
+                result(sid) = trueValue
               case None =>
-                throw new UninterpretableFieldValue(field, value, rep.representedType)
+                throw new UninterpretableFieldValue(cid, value, rep.representedType)
             }
           case None =>
-          /* pass */
+            onUnknownColumn(cid)
         }
       }
       Right(result.freeze())
@@ -73,20 +83,20 @@ class RowDecodePlan[CT, CV](schema: ColumnIdMap[ColumnInfo[CT]], repFor: CT => J
         case Some(trueValue) =>
           Left((trueValue, None))
         case None =>
-          throw new UninterpretableFieldValue(pkCol.logicalName, value, pkRep.representedType)
+          throw new UninterpretableFieldValue(pkCol.userColumnId, value, pkRep.representedType)
       }
     case JArray(Seq(value, version)) =>
       val id = pkRep.fromJValue(value) match {
         case Some(trueValue) =>
           trueValue
         case None =>
-          throw new UninterpretableFieldValue(pkCol.logicalName, value, pkRep.representedType)
+          throw new UninterpretableFieldValue(pkCol.userColumnId, value, pkRep.representedType)
       }
       val v = versionRep.fromJValue(version) match {
         case Some(trueVersion) =>
           trueVersion
         case None =>
-          throw new UninterpretableFieldValue(versionCol.logicalName, value, versionRep.representedType)
+          throw new UninterpretableFieldValue(versionCol.userColumnId, value, versionRep.representedType)
       }
       Left((id, Some(versionOf(v))))
     case other =>

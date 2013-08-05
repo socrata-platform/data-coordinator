@@ -16,7 +16,6 @@ import com.socrata.datacoordinator.util.collection.MutableColumnIdMap
 import com.socrata.datacoordinator.truth.metadata.CopyPair
 import com.socrata.datacoordinator.truth.metadata.`-impl`._
 import scala.concurrent.duration.Duration
-import com.socrata.soql.environment.ColumnName
 import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
@@ -146,7 +145,7 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
     }
   }
 
-  def schemaQuery = "SELECT system_id, logical_column_orig, logical_column_folded, type_name, physical_column_base_base, (is_system_primary_key IS NOT NULL) is_system_primary_key, (is_user_primary_key IS NOT NULL) is_user_primary_key, (is_version IS NOT NULL) is_version FROM column_map WHERE copy_system_id = ?"
+  def schemaQuery = "SELECT system_id, user_column_id, type_name, physical_column_base_base, (is_system_primary_key IS NOT NULL) is_system_primary_key, (is_user_primary_key IS NOT NULL) is_user_primary_key, (is_version IS NOT NULL) is_version FROM column_map WHERE copy_system_id = ?"
   def schema(copyInfo: CopyInfo) = {
     using(conn.prepareStatement(schemaQuery)) { stmt =>
       stmt.setLong(1, copyInfo.systemId.underlying)
@@ -154,8 +153,7 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
         val result = new MutableColumnIdMap[ColumnInfo[CT]]
         while(rs.next()) {
           val systemId = new ColumnId(rs.getLong("system_id"))
-          val columnName = ColumnName(rs.getString("logical_column_orig"))
-          assert(columnName.caseFolded == rs.getString("logical_column_folded"), "logical_column_orig and logical_column_folded have gotten out of sync!  Copy (sysid): " + copyInfo.systemId + "; id: " + systemId)
+          val columnName = new UserColumnId(rs.getString("user_column_id"))
           result += systemId -> ColumnInfo(
             copyInfo,
             systemId,
@@ -343,7 +341,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
     }
   }
 
-  def addColumn(copyInfo: CopyInfo, logicalName: ColumnName, typ: CT, physicalColumnBaseBase: String): ColumnInfo[CT] = {
+  def addColumn(copyInfo: CopyInfo, userColumnId: UserColumnId, typ: CT, physicalColumnBaseBase: String): ColumnInfo[CT] = {
     val systemId =
       previousVersion(copyInfo) match {
         case Some(previousCopy) =>
@@ -352,27 +350,26 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
           findFirstFreeColumnId(copyInfo, copyInfo)
       }
 
-    addColumnWithId(systemId, copyInfo, logicalName, typ, physicalColumnBaseBase)
+    addColumnWithId(systemId, copyInfo, userColumnId, typ, physicalColumnBaseBase)
   }
 
-  def addColumnQuery = "INSERT INTO column_map (system_id, copy_system_id, logical_column_orig, logical_column_folded, type_name, physical_column_base_base) VALUES (?, ?, ?, ?, ?, ?)"
-  def addColumnWithId(systemId: ColumnId, copyInfo: CopyInfo, logicalName: ColumnName, typ: CT, physicalColumnBaseBase: String): ColumnInfo[CT] = {
+  def addColumnQuery = "INSERT INTO column_map (system_id, copy_system_id, user_column_id, type_name, physical_column_base_base) VALUES (?, ?, ?, ?, ?)"
+  def addColumnWithId(systemId: ColumnId, copyInfo: CopyInfo, userColumnId: UserColumnId, typ: CT, physicalColumnBaseBase: String): ColumnInfo[CT] = {
     using(conn.prepareStatement(addColumnQuery)) { stmt =>
-      val columnInfo = ColumnInfo[CT](copyInfo, systemId, logicalName, typ, physicalColumnBaseBase, isSystemPrimaryKey = false, isUserPrimaryKey = false, isVersion = false)
+      val columnInfo = ColumnInfo[CT](copyInfo, systemId, userColumnId, typ, physicalColumnBaseBase, isSystemPrimaryKey = false, isUserPrimaryKey = false, isVersion = false)
 
       stmt.setLong(1, columnInfo.systemId.underlying)
       stmt.setLong(2, columnInfo.copyInfo.systemId.underlying)
-      stmt.setString(3, logicalName.name)
-      stmt.setString(4, logicalName.caseFolded)
-      stmt.setString(5, typeNamespace.nameForType(typ))
-      stmt.setString(6, physicalColumnBaseBase)
+      stmt.setString(3, userColumnId.underlying)
+      stmt.setString(4, typeNamespace.nameForType(typ))
+      stmt.setString(5, physicalColumnBaseBase)
       try {
         t("add-column-with-id", "dataset_id" -> copyInfo.datasetInfo.systemId, "copy_num" -> copyInfo.copyNumber, "column_id" -> systemId)(stmt.execute())
       } catch {
         case PostgresUniqueViolation("copy_system_id", "system_id") =>
           throw new ColumnSystemIdAlreadyInUse(copyInfo, systemId)
-        case PostgresUniqueViolation("copy_system_id", "logical_column_folded") =>
-          throw new ColumnAlreadyExistsException(copyInfo, logicalName)
+        case PostgresUniqueViolation("copy_system_id", "user_column_id") =>
+          throw new ColumnAlreadyExistsException(copyInfo, userColumnId)
       }
 
       columnInfo
@@ -453,18 +450,6 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
       assert(count == 1, "Column did not exist to be dropped?")
     }
   }
-
-  def renameColumnQuery = "UPDATE column_map SET logical_column_orig = ?, logical_column_folded = ? WHERE copy_system_id = ? AND system_id = ?"
-  def renameColumn(columnInfo: ColumnInfo[CT], newLogicalName: ColumnName): ColumnInfo[CT] =
-    using(conn.prepareStatement(renameColumnQuery)) { stmt =>
-      stmt.setString(1, newLogicalName.name)
-      stmt.setString(2, newLogicalName.caseFolded)
-      stmt.setLong(3, columnInfo.copyInfo.systemId.underlying)
-      stmt.setLong(4, columnInfo.systemId.underlying)
-      val count = t("rename-column", "dataset_id" -> columnInfo.copyInfo.datasetInfo.systemId, "copy_num" -> columnInfo.copyInfo.copyNumber, "column_id" -> columnInfo.systemId)(stmt.executeUpdate())
-      assert(count == 1, "Column did not exist to be renamed?")
-      columnInfo.copy(logicalName = newLogicalName)
-    }
 
   def convertColumnQuery = "UPDATE column_map SET type_name = ?, physical_column_base_base = ? WHERE copy_system_id = ? AND system_id = ?"
   def convertColumn(columnInfo: ColumnInfo[CT], newType: CT, newPhysicalColumnBaseBase: String): ColumnInfo[CT] =
@@ -630,7 +615,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
         }
     }
 
-  def ensureUnpublishedCopyQuery_columnMap = "INSERT INTO column_map (copy_system_id, system_id, logical_column_orig, logical_column_folded, type_name, physical_column_base_base, is_system_primary_key, is_user_primary_key, is_version) SELECT ?, system_id, logical_column_orig, logical_column_folded, type_name, physical_column_base_base, null, null, null FROM column_map WHERE copy_system_id = ?"
+  def ensureUnpublishedCopyQuery_columnMap = "INSERT INTO column_map (copy_system_id, system_id, user_column_id, type_name, physical_column_base_base, is_system_primary_key, is_user_primary_key, is_version) SELECT ?, system_id, user_column_id, type_name, physical_column_base_base, null, null, null FROM column_map WHERE copy_system_id = ?"
   def copySchemaIntoUnpublishedCopy(oldCopy: CopyInfo, newCopy: CopyInfo) {
     using(conn.prepareStatement(ensureUnpublishedCopyQuery_columnMap)) { stmt =>
       stmt.setLong(1, newCopy.systemId.underlying)

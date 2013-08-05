@@ -69,7 +69,6 @@ object LogDataCodec {
     Delogger.RowIdentifierCleared -> RowIdentifierClearedCodec,
     Delogger.ColumnRemoved -> ColumnRemovedCodec,
     Delogger.SystemRowIdentifierChanged -> SystemRowIdentifierChangedCodec,
-    Delogger.ColumnLogicalNameChanged-> ColumnLogicalNameChangedCodec,
     Delogger.VersionColumnChanged -> VersionColumnChangedCodec,
     Delogger.EndTransaction -> EndTransactionCodec
   )
@@ -229,15 +228,6 @@ object LogDataCodec {
     }
     def packageColumn(col: UnanchoredColumnInfo): Delogger.LogEvent[Nothing] =
       Delogger.SystemRowIdentifierChanged(col)
-  }
-
-  private object ColumnLogicalNameChangedCodec extends ColumnEventCodec {
-    def extractColumn(event: Delogger.LogEvent[Any]): UnanchoredColumnInfo = {
-      val Delogger.ColumnLogicalNameChanged(col) = event
-      col
-    }
-    def packageColumn(col: UnanchoredColumnInfo): Delogger.LogEvent[Nothing] =
-      Delogger.ColumnLogicalNameChanged(col)
   }
 
   private object VersionColumnChangedCodec extends ColumnEventCodec {

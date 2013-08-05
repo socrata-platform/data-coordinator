@@ -2,14 +2,14 @@ package com.socrata.datacoordinator
 package service
 
 import com.socrata.datacoordinator.truth.universe.{DatasetReaderProvider, Universe}
-import com.socrata.datacoordinator.util.collection.{MutableColumnIdMap, ColumnIdMap}
+import com.socrata.datacoordinator.util.collection.{UserColumnIdSet, MutableColumnIdMap, ColumnIdMap}
 import com.socrata.datacoordinator.truth.metadata.{DatasetCopyContext, CopyInfo, ColumnInfo}
 import com.socrata.soql.environment.ColumnName
 import com.socrata.datacoordinator.truth.CopySelector
-import com.socrata.datacoordinator.id.DatasetId
+import com.socrata.datacoordinator.id.{UserColumnId, DatasetId}
 
 object Exporter {
-  def export[CT, CV, T](u: Universe[CT, CV] with DatasetReaderProvider, id: DatasetId, copy: CopySelector, columns: Option[Set[ColumnName]], limit: Option[Long], offset: Option[Long])(f: (DatasetCopyContext[CT], Iterator[Row[CV]]) => T): Option[T] = {
+  def export[CT, CV, T](u: Universe[CT, CV] with DatasetReaderProvider, id: DatasetId, copy: CopySelector, columns: Option[UserColumnIdSet], limit: Option[Long], offset: Option[Long])(f: (DatasetCopyContext[CT], Iterator[Row[CV]]) => T): Option[T] = {
     for {
       ctxOpt <- u.datasetReader.openDataset(id, copy)
       ctx <- ctxOpt
@@ -17,7 +17,7 @@ object Exporter {
       import ctx._
 
       val selectedSchema = columns match {
-        case Some(set) => schema.filter { case (_, ci) => set(ci.logicalName) }
+        case Some(set) => schema.filter { case (_, ci) => set(ci.userColumnId) }
         case None => schema
       }
       val properSchema = (copyCtx.userIdCol ++ copyCtx.systemIdCol).foldLeft(selectedSchema) { (ss, idCol) =>

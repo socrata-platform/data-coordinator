@@ -1,15 +1,14 @@
 package com.socrata.datacoordinator.truth.metadata
 
 import com.socrata.datacoordinator.util.collection.{MutableColumnIdMap, ColumnIdMap}
-import com.socrata.soql.environment.ColumnName
-import com.socrata.datacoordinator.id.ColumnId
+import com.socrata.datacoordinator.id.{UserColumnId, ColumnId}
 import com.socrata.datacoordinator.util.RotateSchema
 
 class DatasetCopyContext[CT](val copyInfo: CopyInfo, val schema: ColumnIdMap[ColumnInfo[CT]]) {
   require(schema.values.forall(_.copyInfo eq copyInfo))
   def datasetInfo = copyInfo.datasetInfo
 
-  lazy val schemaByLogicalName = RotateSchema(schema)
+  lazy val schemaByUserColumnId = RotateSchema(schema)
   lazy val userIdCol = schema.values.find(_.isUserPrimaryKey)
   lazy val systemIdCol = schema.values.find(_.isSystemPrimaryKey)
   def systemIdCol_! = systemIdCol.getOrElse {
@@ -42,11 +41,11 @@ class MutableDatasetCopyContext[CT](var _copyInfo: CopyInfo, private var schema:
     _currentSchema = null
   }
   def columnInfoOpt(id: ColumnId) = schema.get(id)
-  def columnInfoOpt(name: ColumnName) = schema.values.find(_.logicalName == name) // yeah, O(n) in the number of columns...
+  def columnInfoOpt(name: UserColumnId) = schema.values.find(_.userColumnId == name) // yeah, O(n) in the number of columns...
 
   def columnInfo(id: ColumnId) = schema(id)
-  def columnInfo(name: ColumnName) = columnInfoOpt(name).getOrElse {
-    throw new NoSuchElementException(name.name)
+  def columnInfo(name: UserColumnId) = columnInfoOpt(name).getOrElse {
+    throw new NoSuchElementException(name.toString)
   }
 
   def addColumn(newColumnInfo: ColumnInfo[CT]) {
@@ -56,9 +55,9 @@ class MutableDatasetCopyContext[CT](var _copyInfo: CopyInfo, private var schema:
     // In the latter case, it is allowed to exist IF IT IS THE COLUMN BEING REPLACED.
     columnInfoOpt(newColumnInfo.systemId) match {
       case None =>
-        require(columnInfoOpt(newColumnInfo.logicalName) == None)
+        require(columnInfoOpt(newColumnInfo.userColumnId) == None)
       case Some(oldCol) =>
-        require(oldCol.logicalName == newColumnInfo.logicalName || columnInfoOpt(newColumnInfo.logicalName) == None)
+        require(oldCol.userColumnId == newColumnInfo.userColumnId)
     }
     schema(newColumnInfo.systemId) = newColumnInfo
     _currentSchema = null

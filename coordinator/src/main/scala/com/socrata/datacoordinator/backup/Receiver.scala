@@ -102,7 +102,7 @@ object Receiver extends App {
   def datasetUpdateRequested(datasetId: DatasetId, version: Long, client: Packets) {
     using(dataSource.getConnection()) { conn =>
       conn.setAutoCommit(false)
-      val backup = new Backup(conn, SoQLSystemColumns.isSystemColumnName, timingReport, paranoid = true, copyIn = copyIn)
+      val backup = new Backup(conn, SoQLSystemColumns.isSystemColumnId, timingReport, paranoid = true, copyIn = copyIn)
 
       try {
         backup.datasetMap.datasetInfo(datasetId, Duration.Inf) match {
@@ -130,7 +130,7 @@ object Receiver extends App {
   def forcedResyncRequested(datasetId: DatasetId, client: Packets) {
     using(dataSource.getConnection()) { conn =>
       conn.setAutoCommit(false)
-      val backup = new Backup(conn, SoQLSystemColumns.isSystemColumnName, timingReport, paranoid = true, copyIn = copyIn)
+      val backup = new Backup(conn, SoQLSystemColumns.isSystemColumnId, timingReport, paranoid = true, copyIn = copyIn)
       try {
         resync(conn, backup, datasetId, client)
       } finally {
@@ -272,7 +272,7 @@ object Receiver extends App {
           val schema = locally {
             val createdColumns = new MutableColumnIdMap[ColumnInfo[SoQLType]]
             for(col0 <- columns) {
-              val col1 = datasetMap.addColumnWithId(col0.systemId, copy, col0.logicalName, typeNamespace.typeForName(copy.datasetInfo, col0.typeName), col0.physicalColumnBaseBase)
+              val col1 = datasetMap.addColumnWithId(col0.systemId, copy, col0.userColumnId, typeNamespace.typeForName(copy.datasetInfo, col0.typeName), col0.physicalColumnBaseBase)
               schemaLoader.addColumn(col1)
 
               def make[CT](col: ColumnInfo[CT])(cond: Boolean, mapOp: (ColumnInfo[CT]) => ColumnInfo[CT], op: (ColumnInfo[CT]) => Unit): ColumnInfo[CT] = {

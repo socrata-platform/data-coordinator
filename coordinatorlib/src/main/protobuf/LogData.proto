@@ -23,7 +23,7 @@ message UnanchoredCopyInfo {
 
 message UnanchoredColumnInfo {
   required int64 systemId = 1;
-  required string logicalName = 2;
+  required string userColumnId = 2;
   required string typeName = 3;
   required string physicalColumnBaseBase = 4;
   required bool isSystemPrimaryKey = 5;
@@ -55,10 +55,6 @@ message SystemIdColumnSet {
 }
 
 message VersionColumnSet {
-  required UnanchoredColumnInfo columnInfo = 1;
-}
-
-message LogicalNameChanged {
   required UnanchoredColumnInfo columnInfo = 1;
 }
 

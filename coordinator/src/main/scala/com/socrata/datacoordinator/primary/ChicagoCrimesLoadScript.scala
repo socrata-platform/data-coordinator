@@ -20,6 +20,8 @@ import com.socrata.datacoordinator.common.soql.SoQLRep
 import org.apache.log4j.PropertyConfigurator
 import scala.concurrent.duration.{FiniteDuration, Duration}
 import java.util.concurrent.TimeUnit
+import com.socrata.datacoordinator.id.UserColumnId
+import com.socrata.datacoordinator.util.collection.UserColumnIdMap
 
 object ChicagoCrimesLoadScript extends App {
   val loggingProps = new java.util.Properties
@@ -89,35 +91,35 @@ object ChicagoCrimesLoadScript extends App {
       val FloatingTimestampT = common.typeContext.typeNamespace.typeForUserType(TypeName("floating_timestamp")).get
       val LocationT = common.typeContext.typeNamespace.typeForUserType(TypeName("location")).get
       val types = Map(
-        ColumnName("id") -> NumberT,
-        ColumnName("case_number") -> TextT,
-        ColumnName("date") -> FloatingTimestampT,
-        ColumnName("block") -> TextT,
-        ColumnName("iucr") -> TextT,
-        ColumnName("primary_type") -> TextT,
-        ColumnName("description") -> TextT,
-        ColumnName("location_description") -> TextT,
-        ColumnName("arrest") -> BooleanT,
-        ColumnName("domestic") -> BooleanT,
-        ColumnName("beat") -> TextT,
-        ColumnName("district") -> TextT,
-        ColumnName("ward") -> NumberT,
-        ColumnName("community_area") -> TextT,
-        ColumnName("fbi_code") -> TextT,
-        ColumnName("x_coordinate") -> NumberT,
-        ColumnName("y_coordinate") -> NumberT,
-        ColumnName("year") -> NumberT,
-        ColumnName("updated_on") -> FloatingTimestampT,
-        ColumnName("latitude") -> NumberT,
-        ColumnName("longitude") -> NumberT,
-        ColumnName("location") -> LocationT
+        "id" -> NumberT,
+        "case_number" -> TextT,
+        "date" -> FloatingTimestampT,
+        "block" -> TextT,
+        "iucr" -> TextT,
+        "primary_type" -> TextT,
+        "description" -> TextT,
+        "location_description" -> TextT,
+        "arrest" -> BooleanT,
+        "domestic" -> BooleanT,
+        "beat" -> TextT,
+        "district" -> TextT,
+        "ward" -> NumberT,
+        "community_area" -> TextT,
+        "fbi_code" -> TextT,
+        "x_coordinate" -> NumberT,
+        "y_coordinate" -> NumberT,
+        "year" -> NumberT,
+        "updated_on" -> FloatingTimestampT,
+        "latitude" -> NumberT,
+        "longitude" -> NumberT,
+        "location" -> LocationT
       )
-      val headers = it.next().map { t => ColumnName(IdentifierFilter(t)) }
-      val schema = columnAdder.addToSchema(datasetId, headers.map { x => x -> types(x) }.toMap, user)
-      primaryKeySetter.makePrimaryKey(datasetId, ColumnName("id"), user)
+      val headers = it.next().map { t => IdentifierFilter(t) }
+      val schema = columnAdder.addToSchema(datasetId, headers.map { x => x -> types(x) }.toMap, new UserColumnId(_), user)
+      primaryKeySetter.makePrimaryKey(datasetId, new UserColumnId("id"), user)
       val start = System.nanoTime()
       upserter.upsert(datasetId, user) { _ =>
-        val plan = rowDecodePlan(schema, headers, SoQLRep.csvRep)
+        val plan = rowDecodePlan(schema, headers.map(new UserColumnId(_)), SoQLRep.csvRep)
         it.map { row =>
           val result = plan(row)
           if(result._1.nonEmpty) throw new Exception("Error decoding row; unable to decode columns: " + result._1.mkString(", "))
@@ -141,7 +143,7 @@ object ChicagoCrimesLoadScript extends App {
     executor.shutdown()
   }
 
-  def rowDecodePlan[CT, CV](schema: Map[ColumnName, ColumnInfo[CT]], headers: IndexedSeq[ColumnName], csvRepForColumn: ColumnInfo[CT] => CsvColumnReadRep[CT, CV]): IndexedSeq[String] => (Seq[ColumnName], Row[CV]) = {
+  def rowDecodePlan[CT, CV](schema: UserColumnIdMap[ColumnInfo[CT]], headers: IndexedSeq[UserColumnId], csvRepForColumn: ColumnInfo[CT] => CsvColumnReadRep[CT, CV]): IndexedSeq[String] => (Seq[UserColumnId], Row[CV]) = {
     val colInfo = headers.zipWithIndex.map { case (header, idx) =>
       val ci = schema(header)
       (header, ci.systemId, csvRepForColumn(ci), Array(idx) : IndexedSeq[Int])

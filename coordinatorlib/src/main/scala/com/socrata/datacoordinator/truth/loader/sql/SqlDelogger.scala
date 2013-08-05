@@ -162,8 +162,6 @@ class SqlDelogger[CV](connection: Connection,
           decodeSnapshotDropped(aux)
         case SqlLogger.WorkingCopyPublished =>
           Delogger.WorkingCopyPublished
-        case SqlLogger.ColumnLogicalNameChanged =>
-          decodeColumnLogicalNameChanged(aux)
         case SqlLogger.Truncated =>
           Delogger.Truncated
         case SqlLogger.TransactionEnded =>
@@ -223,11 +221,6 @@ class SqlDelogger[CV](connection: Connection,
     def decodeSnapshotDropped(aux: Array[Byte]) = {
       val msg = messages.SnapshotDropped.defaultInstance.mergeFrom(aux)
       Delogger.SnapshotDropped(convert(msg.copyInfo))
-    }
-
-    def decodeColumnLogicalNameChanged(aux: Array[Byte]) = {
-      val msg = messages.LogicalNameChanged.defaultInstance.mergeFrom(aux)
-      Delogger.ColumnLogicalNameChanged(convert(msg.columnInfo))
     }
   }
 

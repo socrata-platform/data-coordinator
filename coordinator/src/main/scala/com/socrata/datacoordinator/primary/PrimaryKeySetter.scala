@@ -4,10 +4,10 @@ import com.rojoma.simplearm.Managed
 
 import com.socrata.soql.environment.ColumnName
 import com.socrata.datacoordinator.truth.universe.{DatasetMutatorProvider, Universe}
-import com.socrata.datacoordinator.id.DatasetId
+import com.socrata.datacoordinator.id.{UserColumnId, DatasetId}
 
 class PrimaryKeySetter[CT](universe: Managed[Universe[CT, _] with DatasetMutatorProvider]) extends ExistingDatasetMutator {
-  def makePrimaryKey(dataset: DatasetId, column: ColumnName, username: String) {
+  def makePrimaryKey(dataset: DatasetId, column: UserColumnId, username: String) {
     finish(dataset) {
       for {
         u <- universe
@@ -15,7 +15,7 @@ class PrimaryKeySetter[CT](universe: Managed[Universe[CT, _] with DatasetMutator
         ctx <- ctxOpt
       } yield {
         import ctx._
-        schema.values.find(_.logicalName == column) match {
+        schema.values.find(_.userColumnId == column) match {
           case Some(c) =>
             makeUserPrimaryKey(c)
           case None => sys.error("No such column") // TODO: better error

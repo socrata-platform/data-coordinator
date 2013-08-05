@@ -90,12 +90,6 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
     logLine(VersionColumnChanged, messages.VersionColumnSet(convert(info.unanchored)))
   }
 
-  def logicalNameChanged(info: ColumnInfo[CT]) {
-    checkTxn()
-    flushRowData()
-    logLine(ColumnLogicalNameChanged, messages.LogicalNameChanged(convert(info.unanchored)))
-  }
-
   def workingCopyCreated(info: CopyInfo) {
     checkTxn()
     flushRowData()

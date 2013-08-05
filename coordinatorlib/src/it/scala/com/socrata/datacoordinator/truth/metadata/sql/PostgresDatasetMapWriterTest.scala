@@ -7,16 +7,15 @@ import com.socrata.datacoordinator.truth.sql.{DatasetMapLimits, DatabasePopulato
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
-import com.socrata.datacoordinator.id.{RowId, ColumnId}
+import com.socrata.datacoordinator.id.{UserColumnId, RowId, ColumnId}
 import com.socrata.datacoordinator.util.NoopTimingReport
 import scala.concurrent.duration.Duration
-import com.socrata.soql.environment.{TypeName, ColumnName}
-import scala.Some
+import com.socrata.soql.environment.TypeName
 import com.socrata.datacoordinator.truth.metadata.CopyPair
 import com.socrata.datacoordinator.truth.sql.DatasetMapLimits
 
 class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
-  def c(s: String) = ColumnName(s)
+  def c(s: String) = new UserColumnId(s)
   def t(s: String) = TypeName(s)
 
   def noopKeyGen() = new Array[Byte](0)
@@ -77,7 +76,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       val ci = tables.addColumn(vi, c("col1"), t("typ"), "colbase")
 
       ci.copyInfo must equal (vi)
-      ci.logicalName must be (c("col1"))
+      ci.userColumnId must be (c("col1"))
       ci.typ must be (t("typ"))
       ci.physicalColumnBaseBase must be ("colbase")
       ci.isUserPrimaryKey must be (false)
@@ -106,7 +105,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       val ci2 = tables.addColumn(vi, c("col2"), t("typ2"), "colbase2")
 
       ci2.copyInfo must equal (vi)
-      ci2.logicalName must be (c("col2"))
+      ci2.userColumnId must be (c("col2"))
       ci2.typ must be (t("typ2"))
       ci2.physicalColumnBaseBase must be ("colbase2")
       ci2.isUserPrimaryKey must be (false)
@@ -193,7 +192,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
       val schema1 = tables.schema(vi1)
       val schema2 = tables.schema(vi2)
-      schema1.values.toSeq.map(_.unanchored).sortBy(_.logicalName) must equal (schema2.values.toSeq.map(_.unanchored).sortBy(_.logicalName))
+      schema1.values.toSeq.map(_.unanchored).sortBy(_.userColumnId) must equal (schema2.values.toSeq.map(_.unanchored).sortBy(_.userColumnId))
     }
   }
 

@@ -7,7 +7,7 @@ object ToProtobuf {
   def convert(ci: metadata.UnanchoredColumnInfo): UnanchoredColumnInfo =
     UnanchoredColumnInfo(
       systemId = ci.systemId.underlying,
-      logicalName = ci.logicalName.name,
+      userColumnId = ci.userColumnId.underlying,
       typeName = ci.typeName,
       physicalColumnBaseBase = ci.physicalColumnBaseBase,
       isSystemPrimaryKey = ci.isSystemPrimaryKey,

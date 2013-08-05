@@ -11,9 +11,9 @@ import com.socrata.datacoordinator.truth.json.{JsonColumnWriteRep, JsonColumnRep
 import java.util.concurrent.ExecutorService
 import com.socrata.datacoordinator.truth.universe.sql.{PostgresUniverse, PostgresCommonSupport}
 import org.joda.time.DateTime
-import com.socrata.datacoordinator.util.collection.{ColumnIdSet, ColumnIdMap}
+import com.socrata.datacoordinator.util.collection.{MutableColumnIdSet, UserColumnIdMap, ColumnIdSet, ColumnIdMap}
 import com.socrata.datacoordinator.truth.loader.RowPreparer
-import com.socrata.datacoordinator.id.{DatasetId, RowVersion, RowId}
+import com.socrata.datacoordinator.id.{UserColumnId, DatasetId, RowVersion, RowId}
 import java.sql.Connection
 import java.io.{File, OutputStream, Reader}
 import com.socrata.datacoordinator.util.TransferrableContextTimingReport
@@ -21,24 +21,25 @@ import javax.sql.DataSource
 import com.rojoma.simplearm.{SimpleArm, Managed}
 import com.socrata.soql.types.obfuscation.CryptProvider
 import scala.concurrent.duration.Duration
+import java.security.SecureRandom
 
 object SoQLSystemColumns { sc =>
-  val id = ColumnName(":id")
-  val createdAt = ColumnName(":created_at")
-  val updatedAt = ColumnName(":updated_at")
-  val version = ColumnName(":version")
+  val id = new UserColumnId(":id")
+  val createdAt = new UserColumnId(":created_at")
+  val updatedAt = new UserColumnId(":updated_at")
+  val version = new UserColumnId(":version")
 
-  val schemaFragment = Map(
+  val schemaFragment = UserColumnIdMap(
     id -> SoQLID,
     version -> SoQLVersion,
     createdAt -> SoQLFixedTimestamp,
     updatedAt -> SoQLFixedTimestamp
   )
 
-  val allSystemColumnNames = schemaFragment.keySet
+  val allSystemColumnIds = schemaFragment.keySet
 
-  def isSystemColumnName(name: ColumnName) =
-    name.caseFolded.startsWith(":") && !name.caseFolded.startsWith(":@")
+  def isSystemColumnId(name: UserColumnId) =
+    name.underlying.startsWith(":") && !name.underlying.startsWith(":@")
 }
 
 class SoQLCommon(dataSource: DataSource,
@@ -88,14 +89,14 @@ class SoQLCommon(dataSource: DataSource,
 
   def newRowLogCodec() = SoQLRowLogCodec
 
-  def physicalColumnBaseBase(logicalColumnName: ColumnName, systemColumn: Boolean): String =
-    AsciiIdentifierFilter(List(if(systemColumn) "s" else "u", logicalColumnName.name)).
+  def physicalColumnBaseBase(nameHint: String, systemColumn: Boolean): String =
+    AsciiIdentifierFilter(List(if(systemColumn) "s" else "u", nameHint)).
       take(datasetMapLimits.maximumPhysicalColumnBaseLength).
       replaceAll("_+$", "").
       toLowerCase
 
-  def isSystemColumnName(name: ColumnName) =
-    SoQLSystemColumns.isSystemColumnName(name)
+  def isSystemColumnId(name: UserColumnId) =
+    SoQLSystemColumns.isSystemColumnId(name)
 
   def universe: Managed[PostgresUniverse[CT, CV]] = new SimpleArm[PostgresUniverse[CT, CV]] {
     def flatMap[B](f: PostgresUniverse[CT, CV] => B): B = {
@@ -126,7 +127,7 @@ class SoQLCommon(dataSource: DataSource,
     val newRowCodec = common.newRowLogCodec _
 
     def isSystemColumn(ci: AbstractColumnInfoLike): Boolean =
-      isSystemColumnName(ci.logicalName)
+      isSystemColumnId(ci.userColumnId)
 
     val datasetIdFormatter = internalNameFromDatasetId _
 
@@ -134,11 +135,11 @@ class SoQLCommon(dataSource: DataSource,
 
     def rowPreparer(transactionStart: DateTime, ctx: DatasetCopyContext[CT], replaceUpdatedRows: Boolean): RowPreparer[SoQLValue] =
       new RowPreparer[SoQLValue] {
-        val schema = ctx.schema
+        val schema = ctx.schemaByUserColumnId
         lazy val jsonRepFor = jsonReps(ctx.datasetInfo)
 
-        def findCol(name: ColumnName) =
-          schema.values.find(_.logicalName == name).getOrElse(sys.error(s"No $name column?")).systemId
+        def findCol(name: UserColumnId) =
+          schema.getOrElse(name, sys.error(s"No $name column?")).systemId
 
         val idColumn = findCol(SystemColumns.id)
         val createdAtColumn = findCol(SystemColumns.createdAt)
@@ -149,9 +150,15 @@ class SoQLCommon(dataSource: DataSource,
 
         val primaryKeyColumn = ctx.pkCol_!
 
-        assert(schema(versionColumn).typeName == typeContext.typeNamespace.nameForType(SoQLVersion))
+        assert(ctx.schema(versionColumn).typeName == typeContext.typeNamespace.nameForType(SoQLVersion))
 
-        val allSystemColumns = ColumnIdSet(SystemColumns.allSystemColumnNames.toSeq.map(findCol) : _*)
+        val allSystemColumns = locally {
+          val result = MutableColumnIdSet()
+          for(c <- SystemColumns.allSystemColumnIds) {
+            result += findCol(c)
+          }
+          result.freeze()
+        }
 
         def prepareForInsert(row: Row[SoQLValue], sid: RowId, version: RowVersion) = {
           val tmp = new MutableRow(row)
@@ -195,32 +202,17 @@ class SoQLCommon(dataSource: DataSource,
   }
 
   object Mutator extends MutatorCommon[CT, CV] {
-    def physicalColumnBaseBase(name: ColumnName, isSystemColumn: Boolean) =
-      common.physicalColumnBaseBase(name, isSystemColumn)
+    def physicalColumnBaseBase(nameHint: String, isSystemColumn: Boolean) =
+      common.physicalColumnBaseBase(nameHint, isSystemColumn)
 
-    def isLegalLogicalName(identifier: ColumnName): Boolean =
-      isLexicallyCorrect(identifier) &&
-        identifier.name.length <= datasetMapLimits.maximumLogicalColumnNameLength &&
-        !identifier.name.contains('$')
+    def isSystemColumnId(identifier: UserColumnId): Boolean =
+      common.isSystemColumnId(identifier)
 
-    private def isLexicallyCorrect(identifier: ColumnName) =
-      if(identifier.name.startsWith(":@")) {
-        val s = identifier.name.substring(2)
-        IdentifierFilter(s) == s
-      } else {
-        IdentifierFilter(identifier.name) == identifier.name
-      }
+    val systemSchema = common.SystemColumns.schemaFragment
 
-    def isSystemColumnName(identifier: ColumnName): Boolean =
-      common.isSystemColumnName(identifier)
+    val systemIdColumnId = SystemColumns.id
 
-    val systemSchema: Map[ColumnName, CT] = common.SystemColumns.schemaFragment
-
-    val systemIdColumnName: ColumnName =
-      SystemColumns.id
-
-    val versionColumnName: ColumnName =
-      SystemColumns.version
+    val versionColumnId = SystemColumns.version
 
     def jsonReps(di: DatasetInfo): CT => JsonColumnRep[CT, CV] = common.jsonReps(di)
 
@@ -229,5 +221,12 @@ class SoQLCommon(dataSource: DataSource,
     val schemaFinder = new SchemaFinder[CT, CV](universe, typeContext.typeNamespace.userTypeForType)
 
     val allowDdlOnPublishedCopies = common.allowDdlOnPublishedCopies
+
+    private val rng = new SecureRandom()
+    private val alphabet = (33 to 126).map(_.toChar).toArray
+    def genUserColumnId() = {
+      val res = rng.synchronized { for(i <- 0 to 8) yield alphabet(rng.nextInt(alphabet.length)) }
+      new UserColumnId(res.mkString)
+    }
   }
 }

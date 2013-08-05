@@ -2,14 +2,13 @@ package com.socrata.datacoordinator.truth.loader.sql.messages
 
 import com.socrata.datacoordinator.truth.metadata
 import com.google.protobuf.ByteString
-import com.socrata.datacoordinator.id.{DatasetId, CopyId, ColumnId}
-import com.socrata.soql.environment.ColumnName
+import com.socrata.datacoordinator.id.{UserColumnId, DatasetId, CopyId, ColumnId}
 
 object FromProtobuf {
    def convert(ci: UnanchoredColumnInfo): metadata.UnanchoredColumnInfo =
      metadata.UnanchoredColumnInfo(
        systemId = new ColumnId(ci.systemId),
-       logicalName = new ColumnName(ci.logicalName),
+       userColumnId = new UserColumnId(ci.userColumnId),
        typeName = ci.typeName,
        physicalColumnBaseBase = ci.physicalColumnBaseBase,
        isSystemPrimaryKey = ci.isSystemPrimaryKey,

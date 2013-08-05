@@ -89,13 +89,13 @@ class RepBasedPostgresSchemaLoader[CT, CV](conn: Connection, logger: Logger[CT, 
             stmt.execute("CREATE UNIQUE INDEX " + indexName + " ON " + table + "(" + rep.equalityIndexExpression + ")" + postgresTablespaceSuffixFor(indexName))
           } catch {
             case e: java.sql.SQLException if e.getSQLState == uniqueViolation =>
-              throw DuplicateValuesInColumn(columnInfo.logicalName)
+              throw DuplicateValuesInColumn(columnInfo.userColumnId)
             case e: java.sql.SQLException if e.getSQLState == notNullViolation =>
-              throw NullValuesInColumn(columnInfo.logicalName)
+              throw NullValuesInColumn(columnInfo.userColumnId)
           }
         }
       case _ =>
-        throw NotPKableType(columnInfo.logicalName, columnInfo.typ)
+        throw NotPKableType(columnInfo.userColumnId, columnInfo.typ)
     }
   }
 

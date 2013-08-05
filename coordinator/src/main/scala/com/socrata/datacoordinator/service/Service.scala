@@ -28,7 +28,7 @@ import com.socrata.http.server.curator.CuratorBroker
 import org.apache.log4j.PropertyConfigurator
 import java.io.{BufferedOutputStream, Reader, UnsupportedEncodingException, BufferedWriter}
 import com.socrata.thirdparty.typesafeconfig.Propertizer
-import com.socrata.datacoordinator.id.{ColumnId, DatasetId}
+import com.socrata.datacoordinator.id.{UserColumnId, ColumnId, DatasetId}
 import com.rojoma.json.codec.JsonCodec
 import com.socrata.datacoordinator.truth.loader.NoSuchRowToDelete
 import com.rojoma.json.ast.JString
@@ -39,18 +39,19 @@ import com.socrata.datacoordinator.truth.loader.NoSuchRowToUpdate
 import com.socrata.datacoordinator.truth.loader.VersionMismatch
 import scala.collection.immutable.NumericRange
 import java.nio.charset.StandardCharsets.UTF_8
+import com.socrata.datacoordinator.util.collection.{UserColumnIdMap, UserColumnIdSet}
 
-case class Field(@JsonKey("c") name: String, @JsonKey("t") typ: String)
+case class Field(@JsonKey("c") userColumnId: UserColumnId, @JsonKey("t") typ: String)
 object Field {
   implicit val jCodec = AutomaticJsonCodecBuilder[Field]
 }
 
-case class Schema(hash: String, schema: Map[ColumnName, TypeName], pk: ColumnName)
+case class Schema(hash: String, schema: UserColumnIdMap[TypeName], pk: UserColumnId)
 
 class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) => Iterator[NumericRange[Long]],
               processCreation: (Iterator[JValue], IndexedTempFile) => (DatasetId, Iterator[NumericRange[Long]]),
               getSchema: DatasetId => Option[Schema],
-              datasetContents: (DatasetId, CopySelector, Option[Set[ColumnName]], Option[Long], Option[Long]) => ((Seq[Field], Option[ColumnName], String, Iterator[Array[JValue]]) => Unit) => Boolean,
+              datasetContents: (DatasetId, CopySelector, Option[UserColumnIdSet], Option[Long], Option[Long]) => ((Seq[Field], Option[UserColumnId], String, Iterator[Array[JValue]]) => Unit) => Boolean,
               secondaries: Set[String],
               datasetsInStore: (String) => Map[DatasetId, Long],
               versionInStore: (String, DatasetId) => Option[Long],
@@ -96,7 +97,7 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
     val datasetId = parseDatasetId(normalizedId).getOrElse {
       return notFoundError(normalizedId)
     }
-    val onlyColumns = Option(req.getParameterValues("c")).map(_.flatMap { c => norm(c).split(',').map(ColumnName) }.toSet)
+    val onlyColumns = Option(req.getParameterValues("c")).map(_.flatMap { c => norm(c).split(',').map(new UserColumnId(_)) }).map(UserColumnIdSet(_ : _*))
     val limit = Option(req.getParameter("limit")).map { limStr =>
       try {
         limStr.toLong
@@ -124,16 +125,16 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
         }
     }
     { resp =>
-      val found = datasetContents(datasetId, copy, onlyColumns, limit, offset) { (schema, rowId, locale, rows) =>
+      val found = datasetContents(datasetId, copy, onlyColumns, limit, offset) { (schema, rowIdCol, locale, rows) =>
         resp.setContentType("application/json")
         resp.setCharacterEncoding("utf-8")
         val out = new BufferedWriter(resp.getWriter)
         val jsonWriter = new CompactJsonWriter(out)
         out.write("[{\"locale\":")
         jsonWriter.write(JString(locale))
-        rowId.foreach { rid =>
+        rowIdCol.foreach { rid =>
           out.write("\n ,\"row_id\":")
-          jsonWriter.write(JString(rid.name))
+          jsonWriter.write(JsonCodec.toJValue(rid))
         }
         out.write("\n ,\"schema\":")
         jsonWriter.write(JsonCodec.toJValue(schema))
@@ -262,11 +263,11 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
           "row" -> JNumber(r.row),
           "column" -> JNumber(r.column))
       case e: Mutator.MutationException =>
-        def colErr(msg: String, dataset: DatasetId, name: ColumnName, resp: HttpResponse = BadRequest) = {
+        def colErr(msg: String, dataset: DatasetId, colId: UserColumnId, resp: HttpResponse = BadRequest) = {
           import scala.language.reflectiveCalls
           err(resp, msg,
             "dataset" -> JString(formatDatasetId(dataset)),
-            "column" -> JString(name.name))
+            "column" -> JsonCodec.toJValue(colId))
         }
         e match {
           case Mutator.EmptyCommandStream() =>
@@ -301,9 +302,9 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
               "dataset" -> JString(formatDatasetId(name)))
           case Mutator.ColumnAlreadyExists(dataset, name) =>
             colErr("update.column.exists", dataset, name, Conflict)
-          case Mutator.IllegalColumnName(columnName) =>
-            err(BadRequest, "update.column.illegal-name",
-              "name" -> JString(columnName.name))
+          case Mutator.IllegalColumnId(id) =>
+            err(BadRequest, "update.column.illegal-id",
+              "id" -> JsonCodec.toJValue(id))
           case Mutator.NoSuchType(typeName) =>
             err(BadRequest, "update.type.unknown",
               "type" -> JString(typeName.name))
@@ -311,15 +312,15 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
             colErr("update.column.not-found", dataset, name)
           case Mutator.InvalidSystemColumnOperation(dataset, name, _) =>
             colErr("update.column.system", dataset, name)
-          case Mutator.PrimaryKeyAlreadyExists(datasetName, columnName, existingColumn) =>
+          case Mutator.PrimaryKeyAlreadyExists(datasetName, userColumnId, existingColumn) =>
             err(BadRequest, "update.row-identifier.already-set",
               "dataset" -> JString(formatDatasetId(datasetName)),
-              "column" -> JString(columnName.name),
-              "existing-column" -> JString(existingColumn.name))
-          case Mutator.InvalidTypeForPrimaryKey(datasetName, columnName, typeName) =>
+              "column" -> JsonCodec.toJValue(userColumnId),
+              "existing-column" -> JsonCodec.toJValue(userColumnId))
+          case Mutator.InvalidTypeForPrimaryKey(datasetName, userColumnId, typeName) =>
             err(BadRequest, "update.row-identifier.invalid-type",
               "dataset" -> JString(formatDatasetId(datasetName)),
-              "column" -> JString(columnName.name),
+              "column" -> JsonCodec.toJValue(userColumnId),
               "type" -> JString(typeName.name))
           case Mutator.DuplicateValuesInColumn(dataset, name) =>
             colErr("update.row-identifier.duplicate-values", dataset, name)
@@ -327,12 +328,18 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
             colErr("update.row-identifier.null-values", dataset, name)
           case Mutator.NotPrimaryKey(dataset, name) =>
             colErr("update.row-identifier.not-row-identifier", dataset, name)
-          case Mutator.InvalidUpsertCommand(value) =>
+          case Mutator.InvalidUpsertCommand(datasetName, value) =>
             err(BadRequest, "update.script.row-data.invalid-value",
+              "dataset" -> JString(formatDatasetId(datasetName)),
               "value" -> value)
-          case Mutator.InvalidValue(columnName, typeName, value) =>
+          case Mutator.UnknownColumnId(datasetName, cid) =>
+            err(BadRequest, "update.row.unknown-column",
+              "dataset" -> JString(formatDatasetId(datasetName)),
+              "column" -> JsonCodec.toJValue(cid))
+          case Mutator.InvalidValue(datasetName, userColumnId, typeName, value) =>
             err(BadRequest, "update.row.unparsable-value",
-              "column" -> JString(columnName.name),
+              "dataset" -> JString(formatDatasetId(datasetName)),
+              "column" -> JsonCodec.toJValue(userColumnId),
               "type" -> JString(typeName.name),
               "value" -> value)
           case Mutator.UpsertError(datasetName, NoPrimaryKey, _) =>
@@ -467,11 +474,11 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
 
   def jsonifySchema(schemaObj: Schema) = {
     val Schema(hash, schema, pk) = schemaObj
-    val jsonSchema = JObject(schema.map { case (k,v) => k.name -> JString(v.name) })
+    val jsonSchema = JObject(schema.iterator.map { case (k,v) => k.underlying -> JString(v.name) }.toMap)
     JObject(Map(
       "hash" -> JString(hash),
       "schema" -> jsonSchema,
-      "pk" -> JString(pk.name)
+      "pk" -> JsonCodec.toJValue(pk)
     ))
   }
 
