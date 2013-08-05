@@ -19,7 +19,7 @@ import java.io.{File, OutputStream, Reader}
 import com.socrata.datacoordinator.util.TransferrableContextTimingReport
 import javax.sql.DataSource
 import com.rojoma.simplearm.{SimpleArm, Managed}
-import com.socrata.soql.types.obfuscation.CryptProvider
+import com.socrata.soql.types.obfuscation.{Quadifier, CryptProvider}
 import scala.concurrent.duration.Duration
 import java.security.SecureRandom
 
@@ -223,10 +223,9 @@ class SoQLCommon(dataSource: DataSource,
     val allowDdlOnPublishedCopies = common.allowDdlOnPublishedCopies
 
     private val rng = new SecureRandom()
-    private val alphabet = (33 to 126).map(_.toChar).toArray
     def genUserColumnId() = {
-      val res = rng.synchronized { for(i <- 0 to 8) yield alphabet(rng.nextInt(alphabet.length)) }
-      new UserColumnId(res.mkString)
+      def quad() = Quadifier.quadify(rng.nextInt())
+      new UserColumnId(quad() + "-" + quad())
     }
   }
 }
