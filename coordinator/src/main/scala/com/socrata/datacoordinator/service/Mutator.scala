@@ -19,6 +19,13 @@ import java.io.InputStreamReader
 import com.socrata.datacoordinator.util.collection.UserColumnIdMap
 import scala.annotation.tailrec
 
+sealed trait MutationScriptCommandResult
+object MutationScriptCommandResult {
+  case class ColumnCreated(id: UserColumnId, typ: TypeName) extends MutationScriptCommandResult
+  case object Uninteresting extends MutationScriptCommandResult
+  case class RowData(results: NumericRange[Long]) extends MutationScriptCommandResult
+}
+
 object Mutator {
   sealed abstract class StreamType {
     def index: Long
@@ -264,13 +271,13 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
       Iterator.single(EndOfObjectEvent()))
   }
 
-  def createScript(u: Universe[CT, CV] with DatasetMutatorProvider, commandStream: Iterator[JValue]): (DatasetId, Iterator[NumericRange[Long]]) = {
+  def createScript(u: Universe[CT, CV] with DatasetMutatorProvider, commandStream: Iterator[JValue]): (DatasetId, Seq[MutationScriptCommandResult]) = {
     if(commandStream.isEmpty) throw EmptyCommandStream()(0L)
     val commands = createCreateStream(0L, commandStream.next(), commandStream)
     runScript(u, commands)
   }
 
-  def updateScript(u: Universe[CT, CV] with DatasetMutatorProvider, datasetId: DatasetId, commandStream: Iterator[JValue]): Iterator[NumericRange[Long]] = {
+  def updateScript(u: Universe[CT, CV] with DatasetMutatorProvider, datasetId: DatasetId, commandStream: Iterator[JValue]): Seq[MutationScriptCommandResult] = {
     if(commandStream.isEmpty) throw EmptyCommandStream()(0L)
     val commands = createCommandStream(0L, commandStream.next(), datasetId, commandStream)
     runScript(u, commands)._2
@@ -365,14 +372,14 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
       firstJob to jobLimit
   }
 
-  private def runScript(u: Universe[CT, CV] with DatasetMutatorProvider, commands: CommandStream): (DatasetId, Iterator[NumericRange[Long]]) = {
+  private def runScript(u: Universe[CT, CV] with DatasetMutatorProvider, commands: CommandStream): (DatasetId, Seq[MutationScriptCommandResult]) = {
     def user = commands.user
 
-    def doProcess(ctx: DatasetMutator[CT, CV]#MutationContext): (DatasetId, Iterator[NumericRange[Long]]) = {
+    def doProcess(ctx: DatasetMutator[CT, CV]#MutationContext): (DatasetId, Seq[MutationScriptCommandResult]) = {
       val jsonRepFor = jsonReps(ctx.copyInfo.datasetInfo)
       val processor = new Processor(jsonRepFor)
-      val events = processor.carryOutCommands(ctx, commands).map(_.toJobRange)
-      (ctx.copyInfo.datasetInfo.systemId, events.iterator)
+      val events = processor.carryOutCommands(ctx, commands)
+      (ctx.copyInfo.datasetInfo.systemId, events)
     }
 
     def checkHash(index: Long, schemaHash: Option[String], ctx: DatasetCopyContext[CT]) {
@@ -431,11 +438,11 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
   }
 
   class Processor(jsonRepFor: CT => JsonColumnRep[CT, CV]) {
-    def carryOutCommands(mutator: DatasetMutator[CT, CV]#MutationContext, commands: CommandStream): Seq[JsonReportWriter] = {
-      val reports = new VectorBuilder[JsonReportWriter]
+    def carryOutCommands(mutator: DatasetMutator[CT, CV]#MutationContext, commands: CommandStream): Seq[MutationScriptCommandResult] = {
+      val reports = new VectorBuilder[MutationScriptCommandResult]
       def loop() {
         commands.nextCommand() match {
-          case Some(cmd) => reports ++= carryOutCommand(mutator, commands, cmd); loop()
+          case Some(cmd) => reports += carryOutCommand(mutator, commands, cmd); loop()
           case None => /* done */
         }
       }
@@ -443,7 +450,7 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
       reports.result()
     }
 
-    def carryOutCommand(mutator: DatasetMutator[CT, CV]#MutationContext, commands: CommandStream, cmd: Command): Option[JsonReportWriter] = {
+    def carryOutCommand(mutator: DatasetMutator[CT, CV]#MutationContext, commands: CommandStream, cmd: Command): MutationScriptCommandResult = {
       def datasetId = mutator.copyInfo.datasetInfo.systemId
       def checkDDL(idx: Long) {
         if(!allowDdlOnPublishedCopies && mutator.copyInfo.lifecycleStage != LifecycleStage.Unpublished)
@@ -463,8 +470,8 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
             else id
           }
 
-          mutator.addColumn(createId(), typ, physicalColumnBaseBase(nameHint))
-          None
+          val ci = mutator.addColumn(createId(), typ, physicalColumnBaseBase(nameHint))
+          MutationScriptCommandResult.ColumnCreated(ci.userColumnId, ci.typeNamespace.userTypeForType(ci.typ))
         case AddColumn(idx, Some(id), nameHint, typName) =>
           if(isSystemColumnId(id)) throw IllegalColumnId(id)(idx)
           mutator.columnInfo(id) match {
@@ -473,8 +480,8 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
                 throw NoSuchType(typName)(idx)
               }
               checkDDL(idx)
-              mutator.addColumn(id, typ, physicalColumnBaseBase(nameHint))
-              None
+              val ci = mutator.addColumn(id, typ, physicalColumnBaseBase(nameHint))
+              MutationScriptCommandResult.ColumnCreated(ci.userColumnId, ci.typeNamespace.userTypeForType(ci.typ))
             case Some(_) =>
               throw ColumnAlreadyExists(datasetId, id)(idx)
           }
@@ -487,7 +494,7 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
             case None =>
               throw NoSuchColumn(datasetId, id)(idx)
           }
-          None
+          MutationScriptCommandResult.Uninteresting
         case SetRowId(idx, id) =>
           mutator.columnInfo(id) match {
             case Some(colInfo) =>
@@ -510,7 +517,7 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
             case None =>
               throw NoSuchColumn(datasetId, id)(idx)
           }
-          None
+          MutationScriptCommandResult.Uninteresting
         case DropRowId(idx, id) =>
           mutator.columnInfo(id) match {
             case Some(colInfo) =>
@@ -520,10 +527,10 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
             case None =>
               throw NoSuchColumn(datasetId, id)(idx)
           }
-          None
+          MutationScriptCommandResult.Uninteresting
         case RowData(idx, truncate, mergeReplace, fatalRowErrors) =>
           if(truncate) mutator.truncate()
-          Some(processRowData(idx, commands.rawCommandStream, fatalRowErrors, mutator, mergeReplace))
+          MutationScriptCommandResult.RowData(processRowData(idx, commands.rawCommandStream, fatalRowErrors, mutator, mergeReplace).toJobRange)
       }
     }
 

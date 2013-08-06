@@ -1,6 +1,5 @@
 package com.socrata.datacoordinator.service
 
-import scala.{collection => sc}
 import javax.servlet.http.{HttpServletResponse, HttpServletRequest}
 
 import com.socrata.http.server.implicits._
@@ -11,35 +10,26 @@ import com.rojoma.json.util.{JsonArrayIterator, AutomaticJsonCodecBuilder, JsonK
 import com.rojoma.json.io._
 import com.rojoma.json.ast._
 import com.ibm.icu.text.Normalizer
-import java.util.concurrent.{TimeUnit, Executors}
 import com.socrata.datacoordinator.truth._
-import com.typesafe.config._
-import com.socrata.datacoordinator.common.{SoQLCommon, DataSourceFromConfig, StandardDatasetMapLimits}
 import com.rojoma.simplearm.util._
-import com.socrata.datacoordinator.secondary._
-import com.socrata.datacoordinator.util.{IndexedTempFile, StackedTimingReport, LoggedTimingReport}
+import com.socrata.datacoordinator.util.IndexedTempFile
 import javax.activation.{MimeTypeParseException, MimeType}
-import com.socrata.soql.environment.{TypeName, ColumnName}
+import com.socrata.soql.environment.TypeName
 import com.socrata.datacoordinator.truth.loader._
-import com.netflix.curator.framework.CuratorFrameworkFactory
-import com.netflix.curator.retry
-import com.netflix.curator.x.discovery.ServiceDiscoveryBuilder
-import com.socrata.http.server.curator.CuratorBroker
-import org.apache.log4j.PropertyConfigurator
-import java.io.{BufferedOutputStream, Reader, UnsupportedEncodingException, BufferedWriter}
-import com.socrata.thirdparty.typesafeconfig.Propertizer
-import com.socrata.datacoordinator.id.{UserColumnId, ColumnId, DatasetId}
+import java.io._
+import com.socrata.datacoordinator.id.{UserColumnId, DatasetId}
 import com.rojoma.json.codec.JsonCodec
-import com.socrata.datacoordinator.truth.loader.NoSuchRowToDelete
-import com.rojoma.json.ast.JString
-import com.socrata.datacoordinator.truth.Snapshot
-import com.rojoma.json.io.TokenIdentifier
-import com.rojoma.json.io.TokenString
-import com.socrata.datacoordinator.truth.loader.NoSuchRowToUpdate
-import com.socrata.datacoordinator.truth.loader.VersionMismatch
-import scala.collection.immutable.NumericRange
 import java.nio.charset.StandardCharsets.UTF_8
 import com.socrata.datacoordinator.util.collection.{UserColumnIdMap, UserColumnIdSet}
+import com.socrata.datacoordinator.truth.loader.NoSuchRowToDelete
+import scala.Some
+import com.rojoma.json.ast.JString
+import com.socrata.datacoordinator.truth.Snapshot
+import com.rojoma.json.io.FieldEvent
+import com.rojoma.json.io.StringEvent
+import com.rojoma.json.io.IdentifierEvent
+import com.socrata.datacoordinator.truth.loader.NoSuchRowToUpdate
+import com.socrata.datacoordinator.truth.loader.VersionMismatch
 
 case class Field(@JsonKey("c") userColumnId: UserColumnId, @JsonKey("t") typ: String)
 object Field {
@@ -48,8 +38,8 @@ object Field {
 
 case class Schema(hash: String, schema: UserColumnIdMap[TypeName], pk: UserColumnId)
 
-class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) => Iterator[NumericRange[Long]],
-              processCreation: (Iterator[JValue], IndexedTempFile) => (DatasetId, Iterator[NumericRange[Long]]),
+class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) => Seq[MutationScriptCommandResult],
+              processCreation: (Iterator[JValue], IndexedTempFile) => (DatasetId, Seq[MutationScriptCommandResult]),
               getSchema: DatasetId => Option[Schema],
               datasetContents: (DatasetId, CopySelector, Option[UserColumnIdSet], Option[Long], Option[Long]) => ((Seq[Field], Option[UserColumnId], String, Iterator[Array[JValue]]) => Unit) => Boolean,
               secondaries: Set[String],
@@ -366,6 +356,27 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
     }
   }
 
+  private def writeResult(o: OutputStream, r: MutationScriptCommandResult, tmp: IndexedTempFile) {
+    r match {
+      case MutationScriptCommandResult.ColumnCreated(id, typname) =>
+        o.write(CompactJsonWriter.toString(JObject(Map("id" -> JsonCodec.toJValue(id), "type" -> JString(typname.name)))).getBytes(UTF_8))
+      case MutationScriptCommandResult.Uninteresting =>
+        o.write('{')
+        o.write('}')
+      case MutationScriptCommandResult.RowData(jobs) =>
+        o.write('[')
+        jobs.foreach(new Function1[Long, Unit] {
+          var didOne = false
+          def apply(job: Long) {
+            if(didOne) o.write(',')
+            else didOne = true
+            tmp.readRecord(job).get.writeTo(o)
+          }
+        })
+        o.write(']')
+    }
+  }
+
   def doCreation()(req: HttpServletRequest)(resp: HttpServletResponse) {
     using(tempFileProvider()) { tmp =>
       val responseBuilder = withMutationScriptResults {
@@ -385,18 +396,9 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
                   val bw = new BufferedOutputStream(w)
                   bw.write('[')
                   bw.write(JString(formatDatasetId(dataset)).toString.getBytes(UTF_8))
-                  for(jobs <- result) {
+                  for(r <- result) {
                     bw.write(',')
-                    bw.write('[')
-                    jobs.foreach(new Function1[Long, Unit] {
-                      var didOne = false
-                      def apply(job: Long) {
-                        if(didOne) bw.write(',')
-                        else didOne = true
-                        tmp.readRecord(job).get.writeTo(bw)
-                      }
-                    })
-                    bw.write(']')
+                    writeResult(bw, r, tmp)
                   }
                   bw.write(']')
                   bw.flush()
@@ -438,21 +440,12 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
                 OK ~> ContentType("application/json; charset=utf-8") ~> Stream { w =>
                   val bw = new BufferedOutputStream(w)
                   bw.write('[')
-                  result.foreach(new Function1[NumericRange[Long], Unit] {
+                  result.foreach(new Function1[MutationScriptCommandResult, Unit] {
                     var didOne = false
-                    def apply(jobs: NumericRange[Long]) {
+                    def apply(r: MutationScriptCommandResult) {
                       if(didOne) bw.write(',')
                       else didOne = true
-                      bw.write('[')
-                      jobs.foreach(new Function1[Long, Unit] {
-                        var didOne = false
-                        def apply(job: Long) {
-                          if(didOne) bw.write(',')
-                          else didOne = true
-                          tmp.readRecord(job).get.writeTo(bw)
-                        }
-                      })
-                      bw.write(']')
+                      writeResult(bw, r, tmp)
                     }
                   })
                   bw.write(']')
