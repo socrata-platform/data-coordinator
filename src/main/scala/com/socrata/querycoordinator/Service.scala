@@ -367,7 +367,8 @@ class Service(http: HttpClient,
                   }
                 case other =>
                   resp.setStatus(other)
-                  result.headerNames.foreach { h =>
+                  val headersToRemove = Set("content-length", "content-encoding")
+                  result.headerNames.filterNot(headersToRemove).foreach { h =>
                     result.headers(h).foreach(resp.addHeader(h, _))
                   }
                   using(new BufferedWriter(resp.getWriter)) { w =>
