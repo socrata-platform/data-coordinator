@@ -5,7 +5,6 @@ import javax.servlet.http.{HttpServletResponse, HttpServletRequest}
 import com.socrata.http.server.implicits._
 import com.socrata.http.server.{ServerBroker, HttpResponse, SocrataServerJetty, HttpService}
 import com.socrata.http.server.responses._
-import com.socrata.http.routing.{ExtractingRouter, RouterSet}
 import com.rojoma.json.util.{JsonArrayIterator, AutomaticJsonCodecBuilder, JsonKey, JsonUtil}
 import com.rojoma.json.io._
 import com.rojoma.json.ast._
@@ -30,6 +29,8 @@ import com.rojoma.json.io.StringEvent
 import com.rojoma.json.io.IdentifierEvent
 import com.socrata.datacoordinator.truth.loader.NoSuchRowToUpdate
 import com.socrata.datacoordinator.truth.loader.VersionMismatch
+import com.socrata.http.server.routing.{Routes, Route}
+import com.socrata.http.server.routing.{SingletonResource, Resource}
 
 case class Field(@JsonKey("c") userColumnId: UserColumnId, @JsonKey("t") typ: String)
 object Field {
@@ -82,100 +83,57 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
     err(Conflict, "update.dataset.temporarily-not-writable",
       "dataset" -> JString(formatDatasetId(datasetId)))
 
-  def doExportFile(idRaw: String)(req: HttpServletRequest): HttpResponse = {
-    val normalizedId = norm(idRaw)
-    val datasetId = parseDatasetId(normalizedId).getOrElse {
-      return notFoundError(normalizedId)
-    }
-    val onlyColumns = Option(req.getParameterValues("c")).map(_.flatMap { c => norm(c).split(',').map(new UserColumnId(_)) }).map(UserColumnIdSet(_ : _*))
-    val limit = Option(req.getParameter("limit")).map { limStr =>
-      try {
-        limStr.toLong
-      } catch {
-        case _: NumberFormatException =>
-          return BadRequest ~> Content("Bad limit")
+  val SecondaryManifestsResource = new SodaResource with SingletonResource {
+    override val get = doGetSecondaries _
+
+    def doGetSecondaries(req: HttpServletRequest): HttpResponse =
+      OK ~> ContentType("application/json; charset=utf-8") ~> Write(JsonUtil.writeJson(_, secondaries.toSeq, buffer = true))
+  }
+
+  case class SecondaryManifestResource(storeId: String) extends SodaResource {
+    override def get = doGetSecondaryManifest
+
+    def doGetSecondaryManifest(req: HttpServletRequest): HttpResponse = {
+      if(!secondaries(storeId)) return NotFound
+      val ds = datasetsInStore(storeId)
+      val dsConverted = ds.foldLeft(Map.empty[String, Long]) { (acc, kv) =>
+        acc + (formatDatasetId(kv._1) -> kv._2)
       }
-    }
-    val offset = Option(req.getParameter("offset")).map { offStr =>
-      try {
-        offStr.toLong
-      } catch {
-        case _: NumberFormatException =>
-          return BadRequest ~> Content("Bad offset")
-      }
-    }
-    val copy = Option(req.getParameter("copy")).getOrElse("latest").toLowerCase match {
-      case "latest" => LatestCopy
-      case "published" => PublishedCopy
-      case "working" => WorkingCopy
-      case other =>
-        try { Snapshot(other.toInt) }
-        catch { case _: NumberFormatException =>
-          return BadRequest ~> Content("Bad copy selector")
-        }
-    }
-    { resp =>
-      val found = datasetContents(datasetId, copy, onlyColumns, limit, offset) { (schema, rowIdCol, locale, rows) =>
-        resp.setContentType("application/json")
-        resp.setCharacterEncoding("utf-8")
-        val out = new BufferedWriter(resp.getWriter)
-        val jsonWriter = new CompactJsonWriter(out)
-        out.write("[{\"locale\":")
-        jsonWriter.write(JString(locale))
-        rowIdCol.foreach { rid =>
-          out.write("\n ,\"row_id\":")
-          jsonWriter.write(JsonCodec.toJValue(rid))
-        }
-        out.write("\n ,\"schema\":")
-        jsonWriter.write(JsonCodec.toJValue(schema))
-        out.write("\n }")
-        while(rows.hasNext) {
-          out.write("\n,")
-          jsonWriter.write(JArray(rows.next()))
-        }
-        out.write("\n]\n")
-        out.flush()
-      }
-      if(!found) {
-        notFoundError(normalizedId)
-      }
+      OK ~> ContentType("application/json; charset=utf-8") ~> Write(JsonUtil.writeJson(_, dsConverted, buffer = true))
     }
   }
 
-  def doGetSecondaries()(req: HttpServletRequest): HttpResponse =
-    OK ~> ContentType("application/json; charset=utf-8") ~> Write(JsonUtil.writeJson(_, secondaries.toSeq, buffer = true))
+  case class DatasetSecondaryStatusResource(storeId: String, datasetIdRaw: String) extends SodaResource {
+    override def get = doGetDataVersionInSecondary
+    override def post = doUpdateVersionInSecondary
 
-  def doGetSecondaryManifest(storeId: String)(req: HttpServletRequest): HttpResponse = {
-    if(!secondaries(storeId)) return NotFound
-    val ds = datasetsInStore(storeId)
-    val dsConverted = ds.foldLeft(Map.empty[String, Long]) { (acc, kv) =>
-      acc + (formatDatasetId(kv._1) -> kv._2)
+    def doGetDataVersionInSecondary(req: HttpServletRequest): HttpResponse = {
+      if(!secondaries(storeId)) return NotFound
+      val datasetId = parseDatasetId(datasetIdRaw).getOrElse { return NotFound }
+      versionInStore(storeId, datasetId) match {
+        case Some(v) =>
+          OK ~> ContentType("application/json; charset=utf-8") ~> Write(JsonUtil.writeJson(_, Map("version" -> v), buffer = true))
+        case None =>
+          NotFound
+      }
     }
-    OK ~> ContentType("application/json; charset=utf-8") ~> Write(JsonUtil.writeJson(_, dsConverted, buffer = true))
-  }
 
-  def doGetDataVersionInSecondary(storeId: String, datasetIdRaw: String)(req: HttpServletRequest): HttpResponse = {
-    if(!secondaries(storeId)) return NotFound
-    val datasetId = parseDatasetId(datasetIdRaw).getOrElse { return NotFound }
-    versionInStore(storeId, datasetId) match {
-      case Some(v) =>
-        OK ~> ContentType("application/json; charset=utf-8") ~> Write(JsonUtil.writeJson(_, Map("version" -> v), buffer = true))
-      case None =>
-        NotFound
+    def doUpdateVersionInSecondary(req: HttpServletRequest): HttpResponse = {
+      if(!secondaries(storeId)) return NotFound
+      val datasetId = parseDatasetId(datasetIdRaw).getOrElse { return NotFound }
+      ensureInSecondary(storeId, datasetId)
+      OK
     }
   }
 
-  def doUpdateVersionInSecondary(storeId: String, datasetIdRaw: String)(req: HttpServletRequest): HttpResponse = {
-    if(!secondaries(storeId)) return NotFound
-    val datasetId = parseDatasetId(datasetIdRaw).getOrElse { return NotFound }
-    ensureInSecondary(storeId, datasetId)
-    OK
-  }
+  case class SecondariesOfDatasetResource(datasetIdRaw: String) extends SodaResource {
+    override def get = doGetSecondariesOfDataset
 
-  def doGetSecondariesOfDataset(datasetIdRaw: String)(req: HttpServletRequest): HttpResponse = {
-    val datasetId = parseDatasetId(datasetIdRaw).getOrElse { return NotFound }
-    val ss = secondariesOfDataset(datasetId)
-    OK ~> ContentType("application/json; charset=utf-8") ~> Write(JsonUtil.writeJson(_, ss, buffer = true))
+    def doGetSecondariesOfDataset(req: HttpServletRequest): HttpResponse = {
+      val datasetId = parseDatasetId(datasetIdRaw).getOrElse { return NotFound }
+      val ss = secondariesOfDataset(datasetId)
+      OK ~> ContentType("application/json; charset=utf-8") ~> Write(JsonUtil.writeJson(_, ss, buffer = true))
+    }
   }
 
   class ReaderExceededBound(val bytesRead: Long) extends Exception
@@ -377,93 +335,182 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
     }
   }
 
-  def doCreation()(req: HttpServletRequest)(resp: HttpServletResponse) {
-    using(tempFileProvider()) { tmp =>
-      val responseBuilder = withMutationScriptResults {
-        jsonStream(req, commandReadLimit) match {
-          case Right((events, boundResetter)) =>
-            val iteratorOrError = try {
-              Right(JsonArrayIterator[JValue](events))
-            } catch { case _: JsonBadParse =>
-              Left(err(BadRequest, "req.body.not-json-array"))
-            }
+  trait SodaResource extends Resource
 
-            iteratorOrError match {
-              case Right(iterator) =>
-                val (dataset, result) = processCreation(iterator.map { ev => boundResetter(); ev }, tmp)
+  val CreateResource = new SodaResource with SingletonResource {
+    override val post = { (req: HttpServletRequest) => (resp: HttpServletResponse) =>
+      using(tempFileProvider()) { tmp =>
+        val responseBuilder = withMutationScriptResults {
+          jsonStream(req, commandReadLimit) match {
+            case Right((events, boundResetter)) =>
+              val iteratorOrError = try {
+                Right(JsonArrayIterator[JValue](events))
+              } catch { case _: JsonBadParse =>
+                Left(err(BadRequest, "req.body.not-json-array"))
+              }
 
-                OK ~> ContentType("application/json; charset=utf-8") ~> Stream { w =>
-                  val bw = new BufferedOutputStream(w)
-                  bw.write('[')
-                  bw.write(JString(formatDatasetId(dataset)).toString.getBytes(UTF_8))
-                  for(r <- result) {
-                    bw.write(',')
-                    writeResult(bw, r, tmp)
-                  }
-                  bw.write(']')
-                  bw.flush()
+              iteratorOrError match {
+                case Right(iterator) =>
+                  val (dataset, result) = processCreation(iterator.map { ev => boundResetter(); ev }, tmp)
 
-                  log.debug("Non-linear index seeks: {}", tmp.stats.nonLinearIndexSeeks)
-                  log.debug("Non-linear data seeks: {}", tmp.stats.nonLinearDataSeeks)
-                }
-              case Left(error) =>
-                error
-            }
-          case Left(response) =>
-            response
-        }
-      }
-      responseBuilder(resp)
-    }
-  }
-
-  def doMutation(datasetIdRaw: String)(req: HttpServletRequest)(resp: HttpServletResponse) {
-    val normalizedId = norm(datasetIdRaw)
-    val datasetId = parseDatasetId(normalizedId).getOrElse {
-      notFoundError(normalizedId)(resp)
-      return
-    }
-    using(tempFileProvider()) { tmp =>
-      val responseBuilder = withMutationScriptResults {
-        jsonStream(req, commandReadLimit) match {
-          case Right((events, boundResetter)) =>
-            val iteratorOrError = try {
-              Right(JsonArrayIterator[JValue](events))
-            } catch { case _: JsonBadParse =>
-              Left(err(BadRequest, "req.body.not-json-array"))
-            }
-
-            iteratorOrError match {
-              case Right(iterator) =>
-                val result = processMutation(datasetId, iterator.map { ev => boundResetter(); ev }, tmp)
-
-                OK ~> ContentType("application/json; charset=utf-8") ~> Stream { w =>
-                  val bw = new BufferedOutputStream(w)
-                  bw.write('[')
-                  result.foreach(new Function1[MutationScriptCommandResult, Unit] {
-                    var didOne = false
-                    def apply(r: MutationScriptCommandResult) {
-                      if(didOne) bw.write(',')
-                      else didOne = true
+                  OK ~> ContentType("application/json; charset=utf-8") ~> Stream { w =>
+                    val bw = new BufferedOutputStream(w)
+                    bw.write('[')
+                    bw.write(JString(formatDatasetId(dataset)).toString.getBytes(UTF_8))
+                    for(r <- result) {
+                      bw.write(',')
                       writeResult(bw, r, tmp)
                     }
-                  })
-                  bw.write(']')
-                  bw.flush()
+                    bw.write(']')
+                    bw.flush()
 
-                  log.debug("Non-linear index seeks: {}", tmp.stats.nonLinearIndexSeeks)
-                  log.debug("Non-linear data seeks: {}", tmp.stats.nonLinearDataSeeks)
-                }
-              case Left(error) =>
-                error
-            }
-          case Left(response) =>
-            response
+                    log.debug("Non-linear index seeks: {}", tmp.stats.nonLinearIndexSeeks)
+                    log.debug("Non-linear data seeks: {}", tmp.stats.nonLinearDataSeeks)
+                  }
+                case Left(error) =>
+                  error
+              }
+            case Left(response) =>
+              response
+          }
         }
+        responseBuilder(resp)
       }
-      responseBuilder(resp)
     }
   }
+
+  case class DatasetResource(datasetIdRaw: String) extends SodaResource {
+    override def post = doMutation
+    override def delete = doDeleteDataset
+    override def get = doExportFile
+
+    def doMutation(req: HttpServletRequest)(resp: HttpServletResponse) {
+      val normalizedId = norm(datasetIdRaw)
+      val datasetId = parseDatasetId(normalizedId).getOrElse {
+        notFoundError(normalizedId)(resp)
+        return
+      }
+      using(tempFileProvider()) { tmp =>
+        val responseBuilder = withMutationScriptResults {
+          jsonStream(req, commandReadLimit) match {
+            case Right((events, boundResetter)) =>
+              val iteratorOrError = try {
+                Right(JsonArrayIterator[JValue](events))
+              } catch { case _: JsonBadParse =>
+                Left(err(BadRequest, "req.body.not-json-array"))
+              }
+
+              iteratorOrError match {
+                case Right(iterator) =>
+                  val result = processMutation(datasetId, iterator.map { ev => boundResetter(); ev }, tmp)
+
+                  OK ~> ContentType("application/json; charset=utf-8") ~> Stream { w =>
+                    val bw = new BufferedOutputStream(w)
+                    bw.write('[')
+                    result.foreach(new Function1[MutationScriptCommandResult, Unit] {
+                      var didOne = false
+                      def apply(r: MutationScriptCommandResult) {
+                        if(didOne) bw.write(',')
+                        else didOne = true
+                        writeResult(bw, r, tmp)
+                      }
+                    })
+                    bw.write(']')
+                    bw.flush()
+
+                    log.debug("Non-linear index seeks: {}", tmp.stats.nonLinearIndexSeeks)
+                    log.debug("Non-linear data seeks: {}", tmp.stats.nonLinearDataSeeks)
+                  }
+                case Left(error) =>
+                  error
+              }
+            case Left(response) =>
+              response
+          }
+        }
+        responseBuilder(resp)
+      }
+    }
+
+    def doDeleteDataset(req: HttpServletRequest): HttpResponse = {
+      val normalizedId = norm(datasetIdRaw)
+      val result = for {
+        datasetId <- parseDatasetId(normalizedId)
+      } yield {
+        deleteDataset(datasetId) match {
+          case DatasetDropper.Success =>
+            OK ~> ContentType("application/json; charset=utf-8") ~> Content("[]")
+          case DatasetDropper.FailureNotFound =>
+            notFoundError(normalizedId)
+          case DatasetDropper.FailureWriteLock =>
+            writeLockError(datasetId)
+        }
+      }
+      result.getOrElse(notFoundError(normalizedId))
+    }
+
+
+    def doExportFile(req: HttpServletRequest): HttpResponse = {
+      val normalizedId = norm(datasetIdRaw)
+      val datasetId = parseDatasetId(normalizedId).getOrElse {
+        return notFoundError(normalizedId)
+      }
+      val onlyColumns = Option(req.getParameterValues("c")).map(_.flatMap { c => norm(c).split(',').map(new UserColumnId(_)) }).map(UserColumnIdSet(_ : _*))
+      val limit = Option(req.getParameter("limit")).map { limStr =>
+        try {
+          limStr.toLong
+        } catch {
+          case _: NumberFormatException =>
+            return BadRequest ~> Content("Bad limit")
+        }
+      }
+      val offset = Option(req.getParameter("offset")).map { offStr =>
+        try {
+          offStr.toLong
+        } catch {
+          case _: NumberFormatException =>
+            return BadRequest ~> Content("Bad offset")
+        }
+      }
+      val copy = Option(req.getParameter("copy")).getOrElse("latest").toLowerCase match {
+        case "latest" => LatestCopy
+        case "published" => PublishedCopy
+        case "working" => WorkingCopy
+        case other =>
+          try { Snapshot(other.toInt) }
+          catch { case _: NumberFormatException =>
+            return BadRequest ~> Content("Bad copy selector")
+          }
+      }
+      { resp =>
+        val found = datasetContents(datasetId, copy, onlyColumns, limit, offset) { (schema, rowIdCol, locale, rows) =>
+          resp.setContentType("application/json")
+          resp.setCharacterEncoding("utf-8")
+          val out = new BufferedWriter(resp.getWriter)
+          val jsonWriter = new CompactJsonWriter(out)
+          out.write("[{\"locale\":")
+          jsonWriter.write(JString(locale))
+          rowIdCol.foreach { rid =>
+            out.write("\n ,\"row_id\":")
+            jsonWriter.write(JsonCodec.toJValue(rid))
+          }
+          out.write("\n ,\"schema\":")
+          jsonWriter.write(JsonCodec.toJValue(schema))
+          out.write("\n }")
+          while(rows.hasNext) {
+            out.write("\n,")
+            jsonWriter.write(JArray(rows.next()))
+          }
+          out.write("\n]\n")
+          out.flush()
+        }
+        if(!found) {
+          notFoundError(normalizedId)
+        }
+      }
+    }
+  }
+
 
   def jsonifySchema(schemaObj: Schema) = {
     val Schema(hash, schema, pk) = schemaObj
@@ -488,56 +535,39 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
     result.getOrElse(notFoundError(normalizedId))
   }
 
-  def doListDatasets()(req: HttpServletRequest): HttpResponse = {
-    val ds = datasets()
-    OK ~> ContentType("application/json; charset=utf-8") ~> Write { w =>
-      val bw = new BufferedWriter(w)
-      val jw = new CompactJsonWriter(bw)
-      bw.write('[')
-      var didOne = false
-      for(dsid <- ds) {
-        if(didOne) bw.write(',')
-        else didOne = true
-        jw.write(JString(formatDatasetId(dsid)))
+  val DatasetsResource = new SodaResource with SingletonResource {
+    override val get = doListDatasets _
+
+    def doListDatasets(req: HttpServletRequest): HttpResponse = {
+      val ds = datasets()
+      OK ~> ContentType("application/json; charset=utf-8") ~> Write { w =>
+        val bw = new BufferedWriter(w)
+        val jw = new CompactJsonWriter(bw)
+        bw.write('[')
+        var didOne = false
+        for(dsid <- ds) {
+          if(didOne) bw.write(',')
+          else didOne = true
+          jw.write(JString(formatDatasetId(dsid)))
+        }
+        bw.write(']')
+        bw.flush()
       }
-      bw.write(']')
-      bw.flush()
     }
   }
 
-  def doDeleteDataset(datasetIdRaw: String)(req: HttpServletRequest): HttpResponse = {
-    val normalizedId = norm(datasetIdRaw)
-    val result = for {
-      datasetId <- parseDatasetId(normalizedId)
-    } yield {
-      deleteDataset(datasetId) match {
-        case DatasetDropper.Success =>
-          OK ~> ContentType("application/json; charset=utf-8") ~> Content("[]")
-        case DatasetDropper.FailureNotFound =>
-          notFoundError(normalizedId)
-        case DatasetDropper.FailureWriteLock =>
-          writeLockError(datasetId)
-      }
-    }
-    result.getOrElse(notFoundError(normalizedId))
-  }
-
-  val router = RouterSet(
-    ExtractingRouter[HttpService]("POST", "/dataset")(doCreation _),
-    ExtractingRouter[HttpService]("POST", "/dataset/?")(doMutation _),
-    ExtractingRouter[HttpService]("GET", "/dataset/?/schema")(doGetSchema _),
-    ExtractingRouter[HttpService]("DELETE", "/dataset/?")(doDeleteDataset _),
-    ExtractingRouter[HttpService]("GET", "/dataset/?")(doExportFile _),
-    ExtractingRouter[HttpService]("GET", "/datasets")(doListDatasets _),
-    ExtractingRouter[HttpService]("GET", "/secondary-manifest")(doGetSecondaries _),
-    ExtractingRouter[HttpService]("GET", "/secondary-manifest/?")(doGetSecondaryManifest _),
-    ExtractingRouter[HttpService]("GET", "/secondary-manifest/?/?")(doGetDataVersionInSecondary _),
-    ExtractingRouter[HttpService]("POST", "/secondary-manifest/?/?")(doUpdateVersionInSecondary _),
-    ExtractingRouter[HttpService]("GET", "/secondaries-of-dataset/?")(doGetSecondariesOfDataset _)
+  val router = Routes(
+    Route("/dataset", CreateResource),
+    Route("/dataset/{String}", DatasetResource),
+    Route("/datasets", DatasetsResource),
+    Route("/secondary-manifest", SecondaryManifestsResource),
+    Route("/secondary-manifest/{String}", SecondaryManifestResource),
+    Route("/secondary-manifest/{String}/{String}", DatasetSecondaryStatusResource),
+    Route("/secondaries-of-dataset/{String}", SecondariesOfDatasetResource)
   )
 
   private def handler(req: HttpServletRequest): HttpResponse = {
-    router.apply(req.getMethod, req.getPathInfo.split('/').drop(1)) match {
+    router(req.requestPath) match {
       case Some(result) =>
         result(req)
       case None =>

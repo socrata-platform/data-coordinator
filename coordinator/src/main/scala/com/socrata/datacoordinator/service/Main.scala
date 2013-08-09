@@ -17,10 +17,10 @@ import com.netflix.curator.framework.CuratorFrameworkFactory
 import com.netflix.curator.x.discovery.{ServiceInstanceBuilder, ServiceInstance, ServiceDiscoveryBuilder}
 import com.socrata.http.server.curator.CuratorBroker
 import com.rojoma.simplearm.SimpleArm
-import com.socrata.internal.http.AuxiliaryData
-import com.socrata.internal.http.pingpong.Pong
 import java.net.{InetSocketAddress, InetAddress}
 import com.socrata.datacoordinator.util.collection.UserColumnIdSet
+import com.socrata.http.common.AuxiliaryData
+import com.socrata.http.server.livenesscheck.LivenessCheckResponder
 
 class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
   def ensureInSecondary(storeId: String, datasetId: DatasetId): Unit =
@@ -208,12 +208,12 @@ object Main {
             client(curator).
             basePath(serviceConfig.advertisement.basePath).
             build())
-          pong <- managed(new Pong(new InetSocketAddress(InetAddress.getByName(address), 0)))
+          pong <- managed(new LivenessCheckResponder(new InetSocketAddress(InetAddress.getByName(address), 0)))
         } {
           curator.start()
           discovery.start()
           pong.start()
-          val auxData = new AuxiliaryData(pingInfo = Some(pong.pingInfo))
+          val auxData = new AuxiliaryData(livenessCheckInfo = Some(pong.livenessCheckInfo))
           serv.run(serviceConfig.network.port, new CuratorBroker(discovery, address, serviceConfig.advertisement.name + "." + serviceConfig.instance, Some(auxData)))
         }
 
