@@ -20,8 +20,8 @@ import com.socrata.datacoordinator.id.{UserColumnId, DatasetId}
 import com.rojoma.json.codec.JsonCodec
 import java.nio.charset.StandardCharsets.UTF_8
 import com.socrata.datacoordinator.util.collection.{UserColumnIdMap, UserColumnIdSet}
+import com.socrata.http.server.routing._
 import com.socrata.datacoordinator.truth.loader.NoSuchRowToDelete
-import scala.Some
 import com.rojoma.json.ast.JString
 import com.socrata.datacoordinator.truth.Snapshot
 import com.rojoma.json.io.FieldEvent
@@ -29,8 +29,6 @@ import com.rojoma.json.io.StringEvent
 import com.rojoma.json.io.IdentifierEvent
 import com.socrata.datacoordinator.truth.loader.NoSuchRowToUpdate
 import com.socrata.datacoordinator.truth.loader.VersionMismatch
-import com.socrata.http.server.routing.{Routes, Route}
-import com.socrata.http.server.routing.{SingletonResource, Resource}
 
 case class Field(@JsonKey("c") userColumnId: UserColumnId, @JsonKey("t") typ: String)
 object Field {
@@ -103,13 +101,12 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
     }
   }
 
-  case class DatasetSecondaryStatusResource(storeId: String, datasetIdRaw: String) extends SodaResource {
+  case class DatasetSecondaryStatusResource(storeId: String, datasetId: DatasetId) extends SodaResource {
     override def get = doGetDataVersionInSecondary
     override def post = doUpdateVersionInSecondary
 
     def doGetDataVersionInSecondary(req: HttpServletRequest): HttpResponse = {
       if(!secondaries(storeId)) return NotFound
-      val datasetId = parseDatasetId(datasetIdRaw).getOrElse { return NotFound }
       versionInStore(storeId, datasetId) match {
         case Some(v) =>
           OK ~> ContentType("application/json; charset=utf-8") ~> Write(JsonUtil.writeJson(_, Map("version" -> v), buffer = true))
@@ -120,17 +117,15 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
 
     def doUpdateVersionInSecondary(req: HttpServletRequest): HttpResponse = {
       if(!secondaries(storeId)) return NotFound
-      val datasetId = parseDatasetId(datasetIdRaw).getOrElse { return NotFound }
       ensureInSecondary(storeId, datasetId)
       OK
     }
   }
 
-  case class SecondariesOfDatasetResource(datasetIdRaw: String) extends SodaResource {
+  case class SecondariesOfDatasetResource(datasetId: DatasetId) extends SodaResource {
     override def get = doGetSecondariesOfDataset
 
     def doGetSecondariesOfDataset(req: HttpServletRequest): HttpResponse = {
-      val datasetId = parseDatasetId(datasetIdRaw).getOrElse { return NotFound }
       val ss = secondariesOfDataset(datasetId)
       OK ~> ContentType("application/json; charset=utf-8") ~> Write(JsonUtil.writeJson(_, ss, buffer = true))
     }
@@ -379,17 +374,18 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
     }
   }
 
-  case class DatasetResource(datasetIdRaw: String) extends SodaResource {
+  case class NotFoundDatasetResource(datasetIdRaw: String) extends SodaResource {
+    override def post = _ => notFoundError(datasetIdRaw)
+    override def delete = _ => notFoundError(datasetIdRaw)
+    override def get = _ => notFoundError(datasetIdRaw)
+  }
+
+  case class DatasetResource(datasetId: DatasetId) extends SodaResource {
     override def post = doMutation
     override def delete = doDeleteDataset
     override def get = doExportFile
 
     def doMutation(req: HttpServletRequest)(resp: HttpServletResponse) {
-      val normalizedId = norm(datasetIdRaw)
-      val datasetId = parseDatasetId(normalizedId).getOrElse {
-        notFoundError(normalizedId)(resp)
-        return
-      }
       using(tempFileProvider()) { tmp =>
         val responseBuilder = withMutationScriptResults {
           jsonStream(req, commandReadLimit) match {
@@ -433,28 +429,17 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
     }
 
     def doDeleteDataset(req: HttpServletRequest): HttpResponse = {
-      val normalizedId = norm(datasetIdRaw)
-      val result = for {
-        datasetId <- parseDatasetId(normalizedId)
-      } yield {
-        deleteDataset(datasetId) match {
-          case DatasetDropper.Success =>
-            OK ~> ContentType("application/json; charset=utf-8") ~> Content("[]")
-          case DatasetDropper.FailureNotFound =>
-            notFoundError(normalizedId)
-          case DatasetDropper.FailureWriteLock =>
-            writeLockError(datasetId)
-        }
+      deleteDataset(datasetId) match {
+        case DatasetDropper.Success =>
+          OK ~> ContentType("application/json; charset=utf-8") ~> Content("[]")
+        case DatasetDropper.FailureNotFound =>
+          notFoundError(formatDatasetId(datasetId))
+        case DatasetDropper.FailureWriteLock =>
+          writeLockError(datasetId)
       }
-      result.getOrElse(notFoundError(normalizedId))
     }
 
-
     def doExportFile(req: HttpServletRequest): HttpResponse = {
-      val normalizedId = norm(datasetIdRaw)
-      val datasetId = parseDatasetId(normalizedId).getOrElse {
-        return notFoundError(normalizedId)
-      }
       val onlyColumns = Option(req.getParameterValues("c")).map(_.flatMap { c => norm(c).split(',').map(new UserColumnId(_)) }).map(UserColumnIdSet(_ : _*))
       val limit = Option(req.getParameter("limit")).map { limStr =>
         try {
@@ -505,7 +490,7 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
           out.flush()
         }
         if(!found) {
-          notFoundError(normalizedId)
+          notFoundError(formatDatasetId(datasetId))
         }
       }
     }
@@ -556,14 +541,24 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
     }
   }
 
+  implicit object DatasetIdExtractor extends Extractor[DatasetId] {
+    def extract(s: String): Option[DatasetId] =
+      parseDatasetId(norm(s))
+  }
+
   val router = Routes(
     Route("/dataset", CreateResource),
-    Route("/dataset/{String}", DatasetResource),
+
+    // "If the thing is parsable as a DatasetId, do something with it, otherwise give a
+    // SODA2 not-found response"
+    Route("/dataset/{String}", NotFoundDatasetResource),
+    Route("/dataset/{DatasetId}", DatasetResource),
+
     Route("/datasets", DatasetsResource),
     Route("/secondary-manifest", SecondaryManifestsResource),
     Route("/secondary-manifest/{String}", SecondaryManifestResource),
-    Route("/secondary-manifest/{String}/{String}", DatasetSecondaryStatusResource),
-    Route("/secondaries-of-dataset/{String}", SecondariesOfDatasetResource)
+    Route("/secondary-manifest/{String}/{DatasetId}", DatasetSecondaryStatusResource),
+    Route("/secondaries-of-dataset/{DatasetId}", SecondariesOfDatasetResource)
   )
 
   private def handler(req: HttpServletRequest): HttpResponse = {
