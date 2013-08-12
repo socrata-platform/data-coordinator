@@ -81,7 +81,7 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
     err(Conflict, "update.dataset.temporarily-not-writable",
       "dataset" -> JString(formatDatasetId(datasetId)))
 
-  val SecondaryManifestsResource = new SodaResource with SingletonResource {
+  val SecondaryManifestsResource = new SodaResource {
     override val get = doGetSecondaries _
 
     def doGetSecondaries(req: HttpServletRequest): HttpResponse =
@@ -330,10 +330,16 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
     }
   }
 
-  trait SodaResource extends Resource
+  trait SodaResource extends SimpleResource
 
-  val CreateResource = new SodaResource with SingletonResource {
-    override val post = { (req: HttpServletRequest) => (resp: HttpServletResponse) =>
+  case class NotFoundDatasetResource(datasetIdRaw: String) extends SodaResource {
+    override def post = if(datasetIdRaw == "") doCreateDataset else notFound
+    override def delete = notFound
+    override def get = if(datasetIdRaw == "") doListDatasets else notFound
+
+    def notFound = (_: Any) => notFoundError(datasetIdRaw)
+
+    def doCreateDataset(req: HttpServletRequest)(resp: HttpServletResponse) {
       using(tempFileProvider()) { tmp =>
         val responseBuilder = withMutationScriptResults {
           jsonStream(req, commandReadLimit) match {
@@ -372,12 +378,23 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
         responseBuilder(resp)
       }
     }
-  }
 
-  case class NotFoundDatasetResource(datasetIdRaw: String) extends SodaResource {
-    override def post = _ => notFoundError(datasetIdRaw)
-    override def delete = _ => notFoundError(datasetIdRaw)
-    override def get = _ => notFoundError(datasetIdRaw)
+    def doListDatasets(req: HttpServletRequest): HttpResponse = {
+      val ds = datasets()
+      OK ~> ContentType("application/json; charset=utf-8") ~> Write { w =>
+        val bw = new BufferedWriter(w)
+        val jw = new CompactJsonWriter(bw)
+        bw.write('[')
+        var didOne = false
+        for(dsid <- ds) {
+          if(didOne) bw.write(',')
+          else didOne = true
+          jw.write(JString(formatDatasetId(dsid)))
+        }
+        bw.write(']')
+        bw.flush()
+      }
+    }
   }
 
   case class DatasetResource(datasetId: DatasetId) extends SodaResource {
@@ -520,46 +537,26 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
     result.getOrElse(notFoundError(normalizedId))
   }
 
-  val DatasetsResource = new SodaResource with SingletonResource {
-    override val get = doListDatasets _
-
-    def doListDatasets(req: HttpServletRequest): HttpResponse = {
-      val ds = datasets()
-      OK ~> ContentType("application/json; charset=utf-8") ~> Write { w =>
-        val bw = new BufferedWriter(w)
-        val jw = new CompactJsonWriter(bw)
-        bw.write('[')
-        var didOne = false
-        for(dsid <- ds) {
-          if(didOne) bw.write(',')
-          else didOne = true
-          jw.write(JString(formatDatasetId(dsid)))
-        }
-        bw.write(']')
-        bw.flush()
-      }
-    }
-  }
-
   implicit object DatasetIdExtractor extends Extractor[DatasetId] {
     def extract(s: String): Option[DatasetId] =
       parseDatasetId(norm(s))
   }
 
-  val router = Routes(
-    Route("/dataset", CreateResource),
+  val router = locally {
+    import SimpleRouteContext._
+    Routes(
+      // "If the thing is parsable as a DatasetId, do something with it, otherwise give a
+      // SODA2 not-found response"
+      Directory("/dataset"),
+      Route("/dataset/{String}", NotFoundDatasetResource),
+      Route("/dataset/{DatasetId}", DatasetResource),
 
-    // "If the thing is parsable as a DatasetId, do something with it, otherwise give a
-    // SODA2 not-found response"
-    Route("/dataset/{String}", NotFoundDatasetResource),
-    Route("/dataset/{DatasetId}", DatasetResource),
-
-    Route("/datasets", DatasetsResource),
-    Route("/secondary-manifest", SecondaryManifestsResource),
-    Route("/secondary-manifest/{String}", SecondaryManifestResource),
-    Route("/secondary-manifest/{String}/{DatasetId}", DatasetSecondaryStatusResource),
-    Route("/secondaries-of-dataset/{DatasetId}", SecondariesOfDatasetResource)
-  )
+      Route("/secondary-manifest", SecondaryManifestsResource),
+      Route("/secondary-manifest/{String}", SecondaryManifestResource),
+      Route("/secondary-manifest/{String}/{DatasetId}", DatasetSecondaryStatusResource),
+      Route("/secondaries-of-dataset/{DatasetId}", SecondariesOfDatasetResource)
+    )
+  }
 
   private def handler(req: HttpServletRequest): HttpResponse = {
     router(req.requestPath) match {
