@@ -3,10 +3,10 @@ import sbt._
 object DataCoordinator extends Build {
   lazy val dataCoordinator = Project(
     "data-coordinator",
-    file("."),
-    settings = BuildSettings.buildSettings,
-    configurations = BuildSettings.buildConfigs
-  ).aggregate (allOtherProjects: _*)
+    file(".")
+  ).settings(BuildSettings.buildSettings : _*)
+   .configs(BuildSettings.buildConfigs : _*)
+   .aggregate (allOtherProjects: _*)
 
   private def allOtherProjects =
     for {
@@ -15,7 +15,9 @@ object DataCoordinator extends Build {
     } yield method.invoke(this).asInstanceOf[Project] : ProjectReference
 
   private def p(name: String, settings: { def settings: Seq[Setting[_]]; def configs: Seq[Configuration] }, dependencies: ClasspathDep[ProjectReference]*) =
-    Project(name, file(name), settings = settings.settings, configurations = settings.configs).
+    Project(name, file(name)).
+      settings(settings.settings : _*).
+      configs(settings.configs : _*).
       dependsOn(dependencies: _*)
 
   lazy val coordinatorLib = p("coordinatorlib", CoordinatorLib)
