@@ -89,11 +89,16 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
     new UpdateOp(secondary, job).drop()
   }
 
+  private class SecondaryDatasetInfoImpl(dsInfo: DatasetInfo) extends SecondaryDatasetInfo {
+    def this(copy: CopyInfo) = this(copy.datasetInfo)
+    val internalName: String = datasetIdFormatter(dsInfo.systemId)
+    val obfuscationKey: Array[Byte] = dsInfo.obfuscationKey.clone()
+  }
+
   private class UpdateOp(secondary: NamedSecondary[CT, CV],
                          job: SecondaryRecord)
   {
     private val datasetId = job.datasetId
-    private val internalName = datasetIdFormatter(datasetId)
     private var currentCookie = job.initialCookie
     private var currentLifecycleStage = job.startingLifecycleStage
     private val datasetMapReader = u.datasetMapReader
@@ -108,12 +113,12 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
             }
           } catch {
             case e: MissingVersion =>
-              log.info("Couldn't find version " + e.version + " in log; resyncing")
+              log.info("Couldn't find version {} in log; resyncing", e.version)
               resync()
-            case _: ResyncException =>
-              log.info("Incremental update requested full resync")
+            case ResyncSecondaryException(reason) =>
+              log.info("Incremental update requested full resync: {}", reason)
               resync()
-            case _: ResyncForPickySecondary =>
+            case _: InternalResyncForPickySecondary =>
               log.info("Resyncing because secondary only wants published copies and we just got a publish event")
               resync()
           }
@@ -127,19 +132,20 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
         delogger <- managed(u.delogger(datasetInfo))
         rawIt <- managed(delogger.delog(dataVersion))
       } yield {
+        val secondaryDatasetInfo = new SecondaryDatasetInfoImpl(datasetInfo)
         val it = new LifecycleStageTrackingIterator(rawIt, currentLifecycleStage)
         if(secondary.store.wantsWorkingCopies) {
-          currentCookie = secondary.store.version(internalName, dataVersion, currentCookie, it)
+          currentCookie = secondary.store.version(secondaryDatasetInfo, dataVersion, currentCookie, it)
         } else {
           while(it.hasNext) {
             if(currentLifecycleStage != LifecycleStage.Published) {
               // skip until it IS published, then resync
               while(it.hasNext && it.stageAfterNextEvent != LifecycleStage.Published) it.next()
-              if(it.hasNext) throw new ResyncForPickySecondary
+              if(it.hasNext) throw new InternalResyncForPickySecondary
             } else {
               val publishedIt = new StageLimitedIterator(it)
               if(publishedIt.hasNext) {
-                currentCookie = secondary.store.version(internalName, dataVersion, currentCookie, publishedIt)
+                currentCookie = secondary.store.version(secondaryDatasetInfo, dataVersion, currentCookie, publishedIt)
                 publishedIt.finish()
               }
             }
@@ -159,25 +165,34 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
     }
 
     def resync() {
-      timingReport("resync", "dataset" -> datasetId) {
-        val w = u.datasetMapWriter
-        w.datasetInfo(datasetId, datasetLockTimeout) match {
-          case Some(datasetInfo) =>
-            val allCopies = w.allCopies(datasetInfo)
-            val latest = w.latest(datasetInfo)
-            val latestDataVersion = latest.dataVersion
-            val latestLifecycleStage = latest.lifecycleStage
-            for(copy <- allCopies) {
-              timingReport("copy", "number" -> copy.copyNumber) {
-                if(copy.lifecycleStage == LifecycleStage.Discarded) currentCookie = secondary.store.dropCopy(internalName, copy.copyNumber, currentCookie)
-                else if(copy.lifecycleStage != LifecycleStage.Unpublished) syncCopy(copy)
-                else if(secondary.store.wantsWorkingCopies) syncCopy(copy)
-                else { /* ok */ }
-              }
+      while(true) {
+        try {
+          timingReport("resync", "dataset" -> datasetId) {
+            val w = u.datasetMapWriter
+            w.datasetInfo(datasetId, datasetLockTimeout) match {
+              case Some(datasetInfo) =>
+                val allCopies = w.allCopies(datasetInfo)
+                val latest = w.latest(datasetInfo)
+                val latestDataVersion = latest.dataVersion
+                val latestLifecycleStage = latest.lifecycleStage
+                for(copy <- allCopies) {
+                  val secondaryDatasetInfo = new SecondaryDatasetInfoImpl(copy)
+                  timingReport("copy", "number" -> copy.copyNumber) {
+                    if(copy.lifecycleStage == LifecycleStage.Discarded) currentCookie = secondary.store.dropCopy(secondaryDatasetInfo.internalName, copy.copyNumber, currentCookie)
+                    else if(copy.lifecycleStage != LifecycleStage.Unpublished) syncCopy(copy)
+                    else if(secondary.store.wantsWorkingCopies) syncCopy(copy)
+                    else { /* ok */ }
+                  }
+                }
+                updateSecondaryMap(latestDataVersion, latestLifecycleStage)
+              case None =>
+                drop()
             }
-            updateSecondaryMap(latestDataVersion, latestLifecycleStage)
-          case None =>
-            drop()
+          }
+          return
+        } catch {
+          case ResyncSecondaryException(reason) =>
+            log.warn("Received resync while resyncing.  Resyncing as requested.  Reason: " + reason)
         }
       }
     }
@@ -186,7 +201,8 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
       timingReport("sync-copy", "secondary" -> secondary.storeId, "dataset" -> copyInfo.datasetInfo.systemId, "copy" -> copyInfo.copyNumber) {
         for(reader <- u.datasetReader.openDataset(copyInfo)) {
           val copyCtx = new DatasetCopyContext(reader.copyInfo, reader.schema)
-          currentCookie = secondary.store.resync(internalName, copyCtx, currentCookie, reader.rows())
+          val secondaryDatasetInfo = new SecondaryDatasetInfoImpl(copyInfo)
+          currentCookie = secondary.store.resync(secondaryDatasetInfo, copyCtx, currentCookie, reader.rows())
         }
       }
     }
@@ -201,7 +217,6 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
       u.commit()
     }
 
-    private class ResyncException extends ControlThrowable
-    private class ResyncForPickySecondary extends ControlThrowable
+    private class InternalResyncForPickySecondary extends ControlThrowable
   }
 }

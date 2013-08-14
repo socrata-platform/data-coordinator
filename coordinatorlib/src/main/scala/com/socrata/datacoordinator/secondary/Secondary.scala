@@ -7,6 +7,11 @@ import com.socrata.datacoordinator.truth.loader.Delogger
 import com.socrata.datacoordinator.truth.metadata.DatasetCopyContext
 import com.socrata.datacoordinator.id.DatasetId
 
+trait SecondaryDatasetInfo {
+  val internalName: String
+  val obfuscationKey: Array[Byte]
+}
+
 trait Secondary[CT, CV] {
   import Secondary.Cookie
 
@@ -45,10 +50,18 @@ trait Secondary[CT, CV] {
     * already has this dataVersion.
     * @return a new cookie to store in the secondary map
     */
-  def version(datasetInternalName: String, dataVersion: Long, cookie: Cookie, events: Iterator[Delogger.LogEvent[CV]]): Cookie
+  def version(datasetInfo: SecondaryDatasetInfo, dataVersion: Long, cookie: Cookie, events: Iterator[Delogger.LogEvent[CV]]): Cookie
 
-  def resync(datasetInternalName: String, copyContext: DatasetCopyContext[CT], cookie: Cookie, rows: Managed[Iterator[Row[CV]]]): Cookie
+  def resync(datasetInfo: SecondaryDatasetInfo, copyContext: DatasetCopyContext[CT], cookie: Cookie, rows: Managed[Iterator[Row[CV]]]): Cookie
 }
+
+/** Thrown when a secondary decides it is not in sync and should be redone.  The process
+  * propagating data to the secondary should catch it and immediately switch to `resync`.
+  *
+  * @note may be thrown from `resync` itself, though if it's done it probably means
+  *       something is desperately wrong.
+  */
+case class ResyncSecondaryException(reason: String = "No reason") extends Exception(reason)
 
 object Secondary {
   type Cookie = Option[String]

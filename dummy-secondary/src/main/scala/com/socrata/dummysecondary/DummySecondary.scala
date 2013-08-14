@@ -1,6 +1,6 @@
 package com.socrata.dummysecondary
 
-import com.socrata.datacoordinator.secondary.Secondary
+import com.socrata.datacoordinator.secondary.{SecondaryDatasetInfo, Secondary}
 import com.socrata.datacoordinator.truth.metadata.DatasetCopyContext
 import com.socrata.datacoordinator.truth.loader.Delogger.LogEvent
 import com.typesafe.config.Config
@@ -50,8 +50,8 @@ class DummySecondary(config: Config) extends Secondary[Any, Any] {
     * already has this dataVersion.
     * @return a new cookie to store in the secondary map
     */
-  def version(datasetInternalName: String, dataVersion: Long, cookie: Secondary.Cookie, events: Iterator[LogEvent[Any]]): Secondary.Cookie = {
-    println("Got a new version of " + datasetInternalName)
+  def version(datasetInfo: SecondaryDatasetInfo, dataVersion: Long, cookie: Secondary.Cookie, events: Iterator[LogEvent[Any]]): Secondary.Cookie = {
+    println("Got a new version of " + datasetInfo.internalName)
     println("Version " + dataVersion)
     println("Current cookie: " + cookie)
     readLine("Skip or read or resync? ") match {
@@ -69,8 +69,8 @@ class DummySecondary(config: Config) extends Secondary[Any, Any] {
     }
   }
 
-  def resync(datasetInternalName: String, copyContext: DatasetCopyContext[Any], cookie: Secondary.Cookie, rows: _root_.com.rojoma.simplearm.Managed[Iterator[com.socrata.datacoordinator.Row[Any]]]): Secondary.Cookie = {
-    println("Got a resync request on " + datasetInternalName)
+  def resync(datasetInfo: SecondaryDatasetInfo, copyContext: DatasetCopyContext[Any], cookie: Secondary.Cookie, rows: _root_.com.rojoma.simplearm.Managed[Iterator[com.socrata.datacoordinator.Row[Any]]]): Secondary.Cookie = {
+    println("Got a resync request on " + datasetInfo.internalName)
     println("Copy: " + copyContext.copyInfo)
     println("Current cookie: " + cookie)
     readLine("Skip or read? ") match {
