@@ -29,6 +29,7 @@ import com.rojoma.json.io.StringEvent
 import com.rojoma.json.io.IdentifierEvent
 import com.socrata.datacoordinator.truth.loader.NoSuchRowToUpdate
 import com.socrata.datacoordinator.truth.loader.VersionMismatch
+import com.socrata.http.server.util.ErrorAdapter
 
 case class Field(@JsonKey("c") userColumnId: UserColumnId, @JsonKey("t") typ: String)
 object Field {
@@ -587,36 +588,4 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
     val server = new SocrataServerJetty(errorHandlingHandler, port = port, broker = broker)
     server.run()
   }
-}
-
-abstract class ErrorAdapter(service: HttpServletRequest => HttpResponse) extends (HttpServletRequest => HttpResponse) {
-  type Tag
-
-  def apply(req: HttpServletRequest): HttpResponse = {
-    val response = try {
-      service(req)
-    } catch {
-      case e: Exception =>
-        return handleError(_, e)
-    }
-
-    (resp: HttpServletResponse) => try {
-      response(resp)
-    } catch {
-      case e: Exception =>
-        handleError(resp, e)
-    }
-  }
-
-  private def handleError(resp: HttpServletResponse, ex: Exception) {
-    val tag = errorEncountered(ex)
-    if(!resp.isCommitted) {
-      resp.reset()
-      onException(tag)(resp)
-    }
-  }
-
-  def errorEncountered(ex: Exception): Tag
-
-  def onException(tag: Tag): HttpResponse
 }
