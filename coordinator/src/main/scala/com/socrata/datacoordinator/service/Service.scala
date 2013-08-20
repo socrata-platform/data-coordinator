@@ -560,7 +560,6 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
   }
 
   private def handler(req: HttpServletRequest): HttpResponse = {
-    println(req.getRequestURI + " " + req.requestPath)
     router(req.requestPath) match {
       case Some(result) =>
         result(req)
