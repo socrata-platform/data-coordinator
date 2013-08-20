@@ -548,7 +548,7 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
     Routes(
       // "If the thing is parsable as a DatasetId, do something with it, otherwise give a
       // SODA2 not-found response"
-      Directory("/dataset"),
+      Route("/dataset", NotFoundDatasetResource("")),
       Route("/dataset/{String}", NotFoundDatasetResource),
       Route("/dataset/{DatasetId}", DatasetResource),
 
