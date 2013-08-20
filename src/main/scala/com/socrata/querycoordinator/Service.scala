@@ -43,6 +43,7 @@ import com.socrata.soql.exceptions.RepeatedException
 import com.rojoma.simplearm.util._
 import com.socrata.http.client.{Response, RequestBuilder, HttpClient}
 import com.socrata.http.common.AuxiliaryData
+import java.util.Locale
 
 sealed abstract class TimedFutureResult[+T]
 case object FutureTimedOut extends TimedFutureResult[Nothing]
@@ -358,7 +359,7 @@ class Service(http: HttpClient,
                     case None =>
                       resp.setStatus(HttpServletResponse.SC_CONFLICT)
                       val headersToRemove = Set("content-length", "content-encoding")
-                      result.headerNames.filterNot(headersToRemove).foreach { h =>
+                      result.headerNames.map(_.toLowerCase(Locale.US)).filterNot(headersToRemove).foreach { h =>
                         result.headers(h).foreach(resp.addHeader(h, _))
                       }
                       CompactJsonWriter.toWriter(resp.getWriter, json)
@@ -369,7 +370,7 @@ class Service(http: HttpClient,
                 case other =>
                   resp.setStatus(other)
                   val headersToRemove = Set("content-length", "content-encoding")
-                  result.headerNames.filterNot(headersToRemove).foreach { h =>
+                  result.headerNames.map(_.toLowerCase(Locale.US)).filterNot(headersToRemove).foreach { h =>
                     result.headers(h).foreach(resp.addHeader(h, _))
                   }
                   using(new BufferedWriter(resp.getWriter)) { w =>
