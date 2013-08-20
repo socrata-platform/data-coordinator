@@ -21,7 +21,6 @@ import com.rojoma.json.codec.JsonCodec
 import com.rojoma.json.ast.{JNumber, JValue, JObject}
 import scala.annotation.unchecked.uncheckedVariance
 import scala.annotation.tailrec
-import com.socrata.internal.http.{Response, RequestBuilder, HttpClient, AuxiliaryData}
 import com.rojoma.simplearm.Managed
 import com.socrata.soql.exceptions.NoSuchColumn
 import com.socrata.soql.exceptions.UnterminatedString
@@ -42,6 +41,8 @@ import com.socrata.soql.exceptions.BadUnicodeEscapeCharacter
 import com.socrata.soql.exceptions.UnicodeCharacterOutOfRange
 import com.socrata.soql.exceptions.RepeatedException
 import com.rojoma.simplearm.util._
+import com.socrata.http.client.{Response, RequestBuilder, HttpClient}
+import com.socrata.http.common.AuxiliaryData
 
 sealed abstract class TimedFutureResult[+T]
 case object FutureTimedOut extends TimedFutureResult[Nothing]
@@ -180,10 +181,10 @@ class Service(http: HttpClient,
   def reqBuilder(secondary: ServiceInstance[AuxiliaryData]) = {
     val pingTarget = for {
       auxData <- Option(secondary.getPayload)
-      pingInfo <- auxData.pingInfo
+      pingInfo <- auxData.livenessCheckInfo
     } yield pingInfo
     val b = RequestBuilder(secondary.getAddress).
-      pingInfo(pingTarget)
+      livenessCheckInfo(pingTarget)
     if(secondary.getSslPort != null) {
       b.secure(true).port(secondary.getSslPort)
     } else if(secondary.getPort != null) {

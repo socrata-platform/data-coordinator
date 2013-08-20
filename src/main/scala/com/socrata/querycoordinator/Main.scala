@@ -15,11 +15,13 @@ import com.socrata.soql.types.SoQLAnalysisType
 import com.socrata.soql.{AnalysisSerializer, SoQLAnalyzer}
 import com.socrata.soql.functions.{SoQLFunctionInfo, SoQLTypeInfo}
 import com.google.protobuf.CodedOutputStream
-import com.socrata.internal.http.{AuxiliaryData, HttpClientHttpClient}
-import com.socrata.internal.http.pingpong.InetPingProvider
 import java.util.concurrent.{ExecutorService, Executors}
 import com.rojoma.simplearm.Resource
 import com.rojoma.json.ast.JString
+import com.socrata.http.client.{HttpClientHttpClient, InetLivenessChecker}
+import com.socrata.http.common.AuxiliaryData
+import com.socrata.http.server.livenesscheck.LivenessCheckResponder
+import java.net.{InetSocketAddress, InetAddress}
 
 final abstract class Main
 
@@ -60,7 +62,7 @@ object Main extends App {
 
   for {
     executor <- managed(Executors.newFixedThreadPool(5))
-    pingProvider <- managed(new InetPingProvider(5.seconds, 1.second, 5, executor))
+    pingProvider <- managed(new InetLivenessChecker(5.seconds, 1.second, 5, executor))
     httpClient <- managed(new HttpClientHttpClient(pingProvider, executor, userAgent = "Query Coordinator"))
     curator <- managed(CuratorFrameworkFactory.builder.
       connectString(config.curator.ensemble).
@@ -79,10 +81,12 @@ object Main extends App {
       discovery,
       new strategies.RoundRobinStrategy,
       "es"))
+    pongProvider <- managed(new LivenessCheckResponder(new InetSocketAddress(InetAddress.getByName(config.advertisement.address), 0)))
   } {
     curator.start()
     discovery.start()
     pingProvider.start()
+    pongProvider.start()
 
     val handler = new Service(
       httpClient,
@@ -96,10 +100,12 @@ object Main extends App {
       _ => None,
       secondaryInstance)
 
+    val auxData = new AuxiliaryData(Some(pongProvider.livenessCheckInfo))
+
     val serv = new SocrataServerJetty(
       handler = handler,
       port = config.network.port,
-      broker = new CuratorBroker(discovery, config.advertisement.address, config.advertisement.name)
+      broker = new CuratorBroker(discovery, config.advertisement.address, config.advertisement.name, Some(auxData))
     )
     log.info("Ready to go!  kicking off the server...")
     serv.run()
