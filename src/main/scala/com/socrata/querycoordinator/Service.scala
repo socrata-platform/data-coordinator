@@ -9,8 +9,8 @@ import com.socrata.http.server.responses._
 import com.socrata.http.server.implicits._
 import java.io.{BufferedWriter, BufferedOutputStream, OutputStream}
 import com.socrata.thirdparty.asynchttpclient.{FAsyncHandler, BodyHandler}
-import com.socrata.soql.environment.DatasetContext
-import com.socrata.soql.types.SoQLAnalysisType
+import com.socrata.soql.environment.{TypeName, ColumnName, DatasetContext}
+import com.socrata.soql.types.{SoQLType, SoQLAnalysisType}
 import com.socrata.soql.SoQLAnalyzer
 import com.socrata.soql.exceptions._
 import com.socrata.soql.collection.OrderedMap
@@ -44,6 +44,8 @@ import com.rojoma.simplearm.util._
 import com.socrata.http.client.{Response, RequestBuilder, HttpClient}
 import com.socrata.http.common.AuxiliaryData
 import java.util.Locale
+import com.google.common.collect.{HashBiMap, BiMap}
+import com.rojoma.json.util.JsonUtil
 
 sealed abstract class TimedFutureResult[+T]
 case object FutureTimedOut extends TimedFutureResult[Nothing]
@@ -85,7 +87,7 @@ class Service(http: HttpClient,
               responseResponseTimeout: FiniteDuration,
               responseDataTimeout: FiniteDuration,
               analyzer: SoQLAnalyzer[SoQLAnalysisType],
-              analysisSerializer: (OutputStream, SoQLAnalysis[SoQLAnalysisType]) => Unit,
+              analysisSerializer: (OutputStream, SoQLAnalysis[String, SoQLAnalysisType]) => Unit,
               schemaCache: (String, Schema) => Unit,
               schemaDecache: String => Option[Schema],
               secondaryInstance: String)
@@ -173,6 +175,7 @@ class Service(http: HttpClient,
     "dataset" -> JString(dataset))
   def noDatasetResponse = BadRequest ~> errContent("req.no-dataset-specified")
   def noQueryResponse = BadRequest ~> errContent("req.no-query-specified")
+  def unknownColumnIds(columnIds: Seq[String]) = BadRequest ~> errContent("req.unknown.column-ids", "columns" -> JsonCodec.toJValue(columnIds))
   def noContentTypeResponse = internalServerError
   def unparsableContentTypeResponse = internalServerError
   def notJsonResponseResponse = internalServerError
@@ -239,21 +242,25 @@ class Service(http: HttpClient,
       None
   }
 
-  def serializeAnalysis(analysis: SoQLAnalysis[SoQLAnalysisType]): String = {
+  def serializeAnalysis(analysis: SoQLAnalysis[String, SoQLAnalysisType]): String = {
     val baos = new java.io.ByteArrayOutputStream
     analysisSerializer(baos, analysis)
     new String(baos.toByteArray, "latin1")
   }
 
- private def sendQuery[T](secondary: ServiceInstance[AuxiliaryData], dataset: String, analysis: SoQLAnalysis[SoQLAnalysisType], schemaHash: String, ifNoneMatch: Option[String]): Managed[Response] = {
+ private def sendQuery[T](secondary: ServiceInstance[AuxiliaryData], dataset: String, analysis: SoQLAnalysis[String, SoQLAnalysisType], schemaHash: String, ifNoneMatch: Option[String], jsonizedColumnIdMap: String): Managed[Response] = {
     val serializedAnalysis: String = serializeAnalysis(analysis)
 
     val req = ifNoneMatch.foldLeft(reqBuilder(secondary).
-      p("query").
-      q("ds" -> dataset, "q" -> serializedAnalysis, "s" -> schemaHash)) { (r, etag) =>
+      p("query")) { (r, etag) =>
       r.addHeader("If-None-Match" -> etag)
     }
-    http.execute(req.get)
+    http.execute(req.form(Map(
+      "dataset" -> dataset,
+      "query" -> serializedAnalysis,
+      "schemaHash" -> schemaHash,
+      "columnIdMap" -> jsonizedColumnIdMap
+    )))
   }
 
   sealed abstract class RowDataResult
@@ -300,7 +307,9 @@ class Service(http: HttpClient,
         finishRequest(notFoundResponse(dataset))
     }
 
-  def apply(req: HttpServletRequest) = { resp =>
+  def apply(req: HttpServletRequest) = process(req)
+
+  private def process(req: HttpServletRequest)(resp: HttpServletResponse) {
     val originalThreadName = Thread.currentThread.getName
     try {
       Thread.currentThread.setName(Thread.currentThread.getId + " / " + req.getMethod + " " + req.getRequestURI)
@@ -311,7 +320,22 @@ class Service(http: HttpClient,
       val query = Option(req.getParameter("q")).getOrElse {
         finishRequest(noQueryResponse)
       }
-      val ifNoneMatch = Option(req.getHeader("if-none-match"))
+      val jsonizedColumnIdMap = Option(req.getParameter("idMap")).getOrElse {
+        return (BadRequest ~> Content("no idMap provided"))(resp)
+      }
+      val columnIdMap: BiMap[ColumnName, String] = try {
+        val converted = JsonUtil.parseJson[Map[String,String]](jsonizedColumnIdMap) match {
+          case Some(scalaMap) =>
+            scalaMap.map { case (col, typ) => ColumnName(col) -> typ }
+          case None =>
+            finishRequest(BadRequest ~> Content("idMap not an object whose values are strings"))
+        }
+        HashBiMap.create(converted.asJava)
+      } catch {
+        case e: JsonReaderException =>
+          finishRequest(BadRequest ~> Content("idMap not parsable as JSON"))
+      }
+      val ifNoneMatch = req.header("if-none-match")
 
       // A little spaghetti never hurt anybody!
       // Ok, so the general flow of this code is:
@@ -338,12 +362,17 @@ class Service(http: HttpClient,
       // the servlet response).
       @tailrec
       def loop(rawSchema: Schema, isFresh: Boolean) {
-        implicit val datasetCtx = new DatasetContext[SoQLAnalysisType] {
-          val schema = OrderedMap(rawSchema.schema.toSeq.sortBy(_._1) : _*)
-        }
-
         (try {
-          Some(analyzer.analyzeFullQuery(query))
+          columnIdMap.values.iterator.asScala.filterNot(rawSchema.schema.contains(_)).toList match {
+            case Nil => // no unknown columns
+              implicit val datasetCtx = new DatasetContext[SoQLAnalysisType] {
+                val schema = OrderedMap(columnIdMap.asScala.mapValues(rawSchema.schema).toSeq.sortBy(_._1) : _*)
+              }
+              Some(analyzer.analyzeFullQuery(query))
+            case columnIds =>
+              if(isFresh) finishRequest(unknownColumnIds(columnIds))
+              else None
+          }
         } catch {
           case (_: DuplicateAlias | _: NoSuchColumn | _: TypecheckException) if !isFresh =>
             None
@@ -351,7 +380,7 @@ class Service(http: HttpClient,
             finishRequest(soqlErrorResponse(dataset, e))
         }) match {
           case Some(analysis) =>
-            val outcome = for(result <- sendQuery(secondary(dataset), dataset, analysis, rawSchema.hash, ifNoneMatch)) yield {
+            val outcome = for(result <- sendQuery(secondary(dataset), dataset, analysis.mapColumnIds(columnIdMap.asScala), rawSchema.hash, ifNoneMatch, jsonizedColumnIdMap)) yield {
               result.resultCode match {
                 case HttpServletResponse.SC_CONFLICT =>
                   val json = result.asJValue()

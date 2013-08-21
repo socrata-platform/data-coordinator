@@ -51,10 +51,8 @@ object Main extends App {
   val secondaryInstance = "primus" // TODO: Better way to find this out!
 
   val analyzer = new SoQLAnalyzer(SoQLTypeInfo, SoQLFunctionInfo)
-  def typeSerializer(out: CodedOutputStream, typ: SoQLAnalysisType) {
-    out.writeStringNoTag(typ.canonical.name.name)
-  }
-  val analysisSerializer = new AnalysisSerializer[SoQLAnalysisType](typeSerializer)
+  def typeSerializer(typ: SoQLAnalysisType) = typ.canonical.name.name
+  val analysisSerializer = new AnalysisSerializer[String, SoQLAnalysisType](identity, typeSerializer)
 
   implicit object executorResource extends Resource[ExecutorService]{
     def close(a: ExecutorService) { a.shutdown() }
