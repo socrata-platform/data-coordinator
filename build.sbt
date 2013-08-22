@@ -19,3 +19,25 @@ libraryDependencies ++= Seq(
 )
 
 scalacOptions ++= Seq("-deprecation", "-feature")
+
+resourceGenerators in Compile <+= (resourceManaged in Compile, name in Compile, scalaVersion in Compile, version in Compile) map { (resourceManaged, name, scalaVersion, version) =>
+  import com.rojoma.simplearm.util._
+  import com.rojoma.json.util.JsonUtil._
+  val file = resourceManaged / "query-coordinator-version.json"
+  val revision = Process(Seq("git", "describe", "--always", "--dirty")).!!.split("\n")(0)
+  val result = Map(
+    "service" -> name,
+    "version" -> version,
+    "revision" -> revision,
+    "scala" -> scalaVersion
+  ) ++ sys.env.get("BUILD_TAG").map("build" -> _)
+  resourceManaged.mkdirs()
+  for {
+    stream <- managed(new java.io.FileOutputStream(file))
+    w <- managed(new java.io.OutputStreamWriter(stream, "UTF-8"))
+  } {
+    writeJson(w, result, pretty = true)
+    w.write("\n")
+  }
+  Seq(file)
+}

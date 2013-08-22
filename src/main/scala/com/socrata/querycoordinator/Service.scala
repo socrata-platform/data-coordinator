@@ -7,7 +7,7 @@ import scala.concurrent.duration._
 import com.socrata.http.server.HttpResponse
 import com.socrata.http.server.responses._
 import com.socrata.http.server.implicits._
-import java.io.{BufferedWriter, BufferedOutputStream, OutputStream}
+import java.io._
 import com.socrata.thirdparty.asynchttpclient.{FAsyncHandler, BodyHandler}
 import com.socrata.soql.environment.{TypeName, ColumnName, DatasetContext}
 import com.socrata.soql.types.{SoQLType, SoQLAnalysisType}
@@ -46,6 +46,8 @@ import com.socrata.http.common.AuxiliaryData
 import java.util.Locale
 import com.google.common.collect.{HashBiMap, BiMap}
 import com.rojoma.json.util.JsonUtil
+import com.socrata.http.server.routing.SimpleResource
+import com.socrata.http.server.routing.SimpleRouteContext._
 
 sealed abstract class TimedFutureResult[+T]
 case object FutureTimedOut extends TimedFutureResult[Nothing]
@@ -307,7 +309,39 @@ class Service(http: HttpClient,
         finishRequest(notFoundResponse(dataset))
     }
 
-  def apply(req: HttpServletRequest) = process(req)
+  trait QCResource extends SimpleResource
+
+  object VersionResource extends QCResource {
+    val responseString = for {
+      stream <- managed(getClass.getClassLoader.getResourceAsStream("query-coordinator-version.json"))
+      source <- managed(scala.io.Source.fromInputStream(stream)(scala.io.Codec.UTF8))
+    } yield source.mkString
+
+    val response =
+      OK ~> ContentType("application/json; charset=utf-8") ~> Content(responseString)
+
+    override val get = (_: HttpServletRequest) => response
+  }
+
+  object QueryResource extends QCResource {
+    override val get = process _
+    override val post = process _
+    override val put = process _
+  }
+
+  // Little dance because "/*" doesn't compile yet and I haven't
+  // decided what its canonical target should be (probably "/query")
+  val routingTable = Routes(
+    Route("/{String}/*", (_: Any, _: Any) => QueryResource),
+    Route("/{String}", (_: Any) => QueryResource),
+    Route("/version", VersionResource)
+  )
+
+  def apply(req: HttpServletRequest) =
+    routingTable(req.requestPath) match {
+      case Some(resource) => resource(req)
+      case None => NotFound
+    }
 
   private def process(req: HttpServletRequest)(resp: HttpServletResponse) {
     val originalThreadName = Thread.currentThread.getName

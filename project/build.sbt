@@ -4,3 +4,8 @@ resolvers ++= Seq(
 )
 
 addSbtPlugin("com.socrata" % "socrata-cloudbees-sbt" % "1.0.0")
+
+libraryDependencies ++= Seq(
+  "com.rojoma" %% "rojoma-json" % "2.0.0",
+  "com.rojoma" %% "simple-arm" % "1.1.10"
+)
