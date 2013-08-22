@@ -82,7 +82,7 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
     err(Conflict, "update.dataset.temporarily-not-writable",
       "dataset" -> JString(formatDatasetId(datasetId)))
 
-  val SecondaryManifestsResource = new SodaResource {
+  object SecondaryManifestsResource extends SodaResource {
     override val get = doGetSecondaries _
 
     def doGetSecondaries(req: HttpServletRequest): HttpResponse =
@@ -538,6 +538,18 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
     result.getOrElse(notFoundError(normalizedId))
   }
 
+  object VersionResource extends SodaResource {
+    val responseString = for {
+      stream <- managed(getClass.getClassLoader.getResourceAsStream("data-coordinator-version.json"))
+      source <- managed(scala.io.Source.fromInputStream(stream)(scala.io.Codec.UTF8))
+    } yield source.mkString
+
+    val response =
+      OK ~> ContentType("application/json; charset=utf-8") ~> Content(responseString)
+
+    override val get = (_: HttpServletRequest) => response
+  }
+
   implicit object DatasetIdExtractor extends Extractor[DatasetId] {
     def extract(s: String): Option[DatasetId] =
       parseDatasetId(norm(s))
@@ -555,7 +567,9 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
       Route("/secondary-manifest", SecondaryManifestsResource),
       Route("/secondary-manifest/{String}", SecondaryManifestResource),
       Route("/secondary-manifest/{String}/{DatasetId}", DatasetSecondaryStatusResource),
-      Route("/secondaries-of-dataset/{DatasetId}", SecondariesOfDatasetResource)
+      Route("/secondaries-of-dataset/{DatasetId}", SecondariesOfDatasetResource),
+
+      Route("/version", VersionResource)
     )
   }
 

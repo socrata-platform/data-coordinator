@@ -1,11 +1,15 @@
 import sbt._
 import Keys._
 
+import com.rojoma.simplearm.util._
+import com.rojoma.json.util.JsonUtil.writeJson
+
 import sbtassembly.Plugin.AssemblyKeys._
 
 object Coordinator {
   lazy val settings: Seq[Setting[_]] = BuildSettings.projectSettings(assembly = true) ++ Seq(
     resourceGenerators in Compile <+= (baseDirectory, resourceManaged in Compile, streams) map buildNativeLib,
+    resourceGenerators in Compile <+= (resourceManaged in Compile, name in Compile, version in Compile, scalaVersion in Compile) map genVersion,
     libraryDependencies <++= (scalaVersion) { (scalaVersion) =>
       Seq(
         "com.sun.jna" % "jna" % "3.0.9",
@@ -32,4 +36,28 @@ object Coordinator {
     } else {
       Nil
     }
+
+  def genVersion(resourceManaged: File, name: String, version: String, scalaVersion: String): Seq[File] = {
+    val file = resourceManaged / "data-coordinator-version.json"
+
+    val revision = Process(Seq("git", "describe", "--always", "--dirty")).!!.split("\n")(0)
+
+    val result = Map(
+      "service" -> name,
+      "version" -> version,
+      "revision" -> revision,
+      "scala" -> scalaVersion
+    ) ++ sys.env.get("BUILD_TAG").map("build" -> _)
+
+    resourceManaged.mkdirs()
+    for {
+      stream <- managed(new java.io.FileOutputStream(file))
+      w <- managed(new java.io.OutputStreamWriter(stream, "UTF-8"))
+    } {
+      writeJson(w, result, pretty = true)
+      w.write("\n")
+    }
+
+    Seq(file)
+  }
 }
