@@ -1,0 +1,47 @@
+package com.socrata.querycoordinator
+
+import com.socrata.soql.types.{SoQLAnalysisType, SoQLType}
+import com.socrata.soql.environment.{DatasetContext, ColumnName}
+import com.socrata.soql.collection.OrderedMap
+import com.socrata.soql.{SoQLAnalysis, SoQLAnalyzer}
+import com.socrata.soql.exceptions.SoQLException
+
+import QueryParser._
+
+class QueryParser(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
+  private def dsContext(columnIdMapping: Map[ColumnName, String], rawSchema: Map[String, SoQLType]): Option[DatasetContext[SoQLAnalysisType]] =
+    try {
+      Some(new DatasetContext[SoQLAnalysisType] {
+        val schema: OrderedMap[ColumnName, SoQLAnalysisType] = OrderedMap(columnIdMapping.mapValues(rawSchema).toSeq.sortBy(_._1) : _*)
+      })
+    } catch {
+      case e: NoSuchElementException =>
+        None
+    }
+
+  private def go(columnIdMapping: Map[ColumnName, String], schema: Map[String, SoQLType])(f: DatasetContext[SoQLAnalysisType] => SoQLAnalysis[ColumnName, SoQLAnalysisType]): Result =
+    dsContext(columnIdMapping, schema) match {
+      case Some(ds) =>
+        try {
+          SuccessfulParse(f(ds).mapColumnIds(columnIdMapping))
+        } catch {
+          case e: SoQLException =>
+            AnalysisError(e)
+        }
+      case None =>
+        BadColumnIdMapping
+    }
+
+  def apply(query: String, columnIdMapping: Map[ColumnName, String], schema: Map[String, SoQLType]): Result =
+    go(columnIdMapping, schema)(analyzer.analyzeFullQuery(query)(_))
+
+  def apply(selection: Option[String], where: Option[String], groupBy: Option[String], having: Option[String], orderBy: Option[String], limit: Option[String], offset: Option[String], search: Option[String], columnIdMapping: Map[ColumnName, String], schema: Map[String, SoQLType]): Result =
+    go(columnIdMapping, schema)(analyzer.analyzeSplitQuery(selection, where, groupBy, having, orderBy, limit, offset, search)(_))
+}
+
+object QueryParser {
+  sealed abstract class Result
+  case class SuccessfulParse(analysis: SoQLAnalysis[String, SoQLAnalysisType]) extends Result
+  case class AnalysisError(problem: SoQLException) extends Result
+  case object BadColumnIdMapping extends Result
+}

@@ -7,14 +7,15 @@ import com.rojoma.json.codec.JsonCodec
 import com.rojoma.json.ast.{JValue, JString, JObject}
 import com.rojoma.json.matcher.{PObject, Variable}
 
-case class Schema(hash: String, schema: Map[String, SoQLType], pk: ColumnName)
+case class Schema(hash: String, schema: Map[String, SoQLType], pk: String)
 object Schema {
   implicit object SchemaCodec extends JsonCodec[Schema] {
-    private implicit val schemaProperCodec = new JsonCodec[Map[String, SoQLType]] {
-      def encode(schema: Map[String, SoQLType]) =
-        JObject(schema.map { case (k,v) => k -> JString(v.name.name) })
-      def decode(x: JValue) =
-        JsonCodec[Map[String, String]].decode(x).map { m => m.map { case (k, v) => k -> SoQLType.typesByName(TypeName(v)) } }
+    private implicit object SoQLTypeCodec extends JsonCodec[SoQLType] {
+      def encode(t: SoQLType) = JString(t.name.name)
+      def decode(v: JValue) = v match {
+        case JString(s) => SoQLType.typesByName.get(TypeName(s))
+        case _ => None
+      }
     }
 
     private val hashVar = Variable[String]()
@@ -28,11 +29,11 @@ object Schema {
 
     def encode(schemaObj: Schema) = {
       val Schema(hash, schema, pk) = schemaObj
-      PSchema.generate(hashVar := hash, schemaVar := schema, pkVar := pk.name)
+      PSchema.generate(hashVar := hash, schemaVar := schema, pkVar := pk)
     }
 
     def decode(x: JValue) = PSchema.matches(x) map { results =>
-      Schema(hashVar(results), schemaVar(results), ColumnName(pkVar(results)))
+      Schema(hashVar(results), schemaVar(results), pkVar(results))
     }
   }
 }
