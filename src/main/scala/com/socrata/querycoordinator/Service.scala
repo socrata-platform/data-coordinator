@@ -248,68 +248,66 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
       // That last step is the most complex, because it is a
       // potentially long-running thing, and can cause a retry
       // if the upstream says "the schema just changed".
-      try {
-        val base = reqBuilder(secondary(dataset))
+      val base = reqBuilder(secondary(dataset))
 
-        def getAndCacheSchema(dataset: String) =
-          schemaFetcher(base.receiveTimeoutMS(getSchemaTimeout.toMillis.toInt), dataset) match {
-            case SchemaFetcher.Successful(newSchema) =>
-              schemaCache(dataset, newSchema)
-              newSchema
-            case SchemaFetcher.NoSuchDatasetInSecondary =>
-              finishRequest(notFoundResponse(dataset))
-            case other =>
-              log.error("Unexpected response when fetching schema from secondary: {}", other)
-              finishRequest(internalServerError)
-          }
-
-        @tailrec
-        def analyzeRequest(schema: Schema, isFresh: Boolean): (Schema, SoQLAnalysis[String, SoQLAnalysisType]) = {
-          queryParser(query, columnIdMap, schema.schema) match {
-            case QueryParser.SuccessfulParse(analysis) =>
-              (schema, analysis)
-            case QueryParser.AnalysisError(_: DuplicateAlias | _: NoSuchColumn | _: TypecheckException) if !isFresh =>
-              analyzeRequest(getAndCacheSchema(dataset), true)
-            case QueryParser.AnalysisError(e) =>
-              finishRequest(soqlErrorResponse(dataset, e))
-            case QueryParser.UnknownColumnIds(cids) =>
-              finishRequest(unknownColumnIds(cids))
-          }
+      def getAndCacheSchema(dataset: String) =
+        schemaFetcher(base.receiveTimeoutMS(getSchemaTimeout.toMillis.toInt), dataset) match {
+          case SchemaFetcher.Successful(newSchema) =>
+            schemaCache(dataset, newSchema)
+            newSchema
+          case SchemaFetcher.NoSuchDatasetInSecondary =>
+            finishRequest(notFoundResponse(dataset))
+          case other =>
+            log.error("Unexpected response when fetching schema from secondary: {}", other)
+            finishRequest(internalServerError)
         }
 
-        @tailrec
-        def executeQuery(schema: Schema, analyzedQuery: SoQLAnalysis[String, SoQLAnalysisType]) {
-          val res = queryExecutor(base, dataset, analyzedQuery, schema, ifNoneMatch).map {
-            case QueryExecutor.NotFound =>
-              finishRequest(notFoundResponse(dataset))
-            case QueryExecutor.SchemaHashMismatch(newSchema) =>
-              storeInCache(Some(newSchema), dataset)
-              Some(analyzeRequest(newSchema, true))
-            case QueryExecutor.ToForward(responseCode, headers, body) =>
-              resp.setStatus(responseCode)
-              for { (h,vs) <- headers; v <- vs } resp.addHeader(h, v)
-              transferResponse(resp.getOutputStream, body)
-              None
-          }
-          res match { // bit of a dance because we can't tailrec from within map
-            case Some((s, q)) => executeQuery(s, q)
-            case None => // ok
-          }
+      @tailrec
+      def analyzeRequest(schema: Schema, isFresh: Boolean): (Schema, SoQLAnalysis[String, SoQLAnalysisType]) = {
+        queryParser(query, columnIdMap, schema.schema) match {
+          case QueryParser.SuccessfulParse(analysis) =>
+            (schema, analysis)
+          case QueryParser.AnalysisError(_: DuplicateAlias | _: NoSuchColumn | _: TypecheckException) if !isFresh =>
+            analyzeRequest(getAndCacheSchema(dataset), true)
+          case QueryParser.AnalysisError(e) =>
+            finishRequest(soqlErrorResponse(dataset, e))
+          case QueryParser.UnknownColumnIds(cids) =>
+            finishRequest(unknownColumnIds(cids))
         }
-
-        schemaDecache(dataset) match {
-          case Some(schema) =>
-            (executeQuery _).tupled(analyzeRequest(schema, false))
-          case None =>
-            (executeQuery _).tupled(analyzeRequest(getAndCacheSchema(dataset), true))
-        }
-      } catch {
-        case FinishRequest(response) =>
-        if(resp.isCommitted) ???
-        else { resp.reset(); response(resp) }
-      } finally {
-        Thread.currentThread.setName(originalThreadName)
       }
+
+      @tailrec
+      def executeQuery(schema: Schema, analyzedQuery: SoQLAnalysis[String, SoQLAnalysisType]) {
+        val res = queryExecutor(base, dataset, analyzedQuery, schema, ifNoneMatch).map {
+          case QueryExecutor.NotFound =>
+            finishRequest(notFoundResponse(dataset))
+          case QueryExecutor.SchemaHashMismatch(newSchema) =>
+            storeInCache(Some(newSchema), dataset)
+            Some(analyzeRequest(newSchema, true))
+          case QueryExecutor.ToForward(responseCode, headers, body) =>
+            resp.setStatus(responseCode)
+            for { (h,vs) <- headers; v <- vs } resp.addHeader(h, v)
+            transferResponse(resp.getOutputStream, body)
+            None
+        }
+        res match { // bit of a dance because we can't tailrec from within map
+          case Some((s, q)) => executeQuery(s, q)
+          case None => // ok
+        }
+      }
+
+      schemaDecache(dataset) match {
+        case Some(schema) =>
+          (executeQuery _).tupled(analyzeRequest(schema, false))
+        case None =>
+          (executeQuery _).tupled(analyzeRequest(getAndCacheSchema(dataset), true))
+      }
+    } catch {
+      case FinishRequest(response) =>
+      if(resp.isCommitted) ???
+      else { resp.reset(); response(resp) }
+    } finally {
+      Thread.currentThread.setName(originalThreadName)
     }
   }
 
