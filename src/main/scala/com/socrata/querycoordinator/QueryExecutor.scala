@@ -1,21 +1,27 @@
 package com.socrata.querycoordinator
 
 import com.socrata.http.client.{Response, RequestBuilder, HttpClient}
-import com.socrata.soql.{SoQLAnalysis, AnalysisSerializer}
+import com.socrata.soql.AnalysisSerializer
 import com.socrata.soql.types.SoQLAnalysisType
 import com.rojoma.simplearm.{SimpleArm, Managed}
 
 import QueryExecutor._
-import java.io.{ByteArrayInputStream, InputStreamReader, BufferedInputStream, InputStream}
+import java.io._
 import javax.servlet.http.HttpServletResponse
 import com.socrata.http.client.exceptions.{LivenessCheckFailed, HttpClientTimeoutException}
 import scala.annotation.tailrec
 import com.rojoma.json.io.{FusedBlockJsonEventIterator, JsonReader}
 import java.nio.charset.StandardCharsets
-import com.rojoma.json.ast.{JString, JObject, JValue}
+import com.rojoma.json.ast.{JObject, JValue}
 import com.rojoma.json.codec.JsonCodec
+import com.rojoma.simplearm.util._
+import com.socrata.querycoordinator.QueryExecutor.ToForward
+import com.socrata.soql.SoQLAnalysis
+import com.rojoma.json.ast.JString
+import com.socrata.querycoordinator.QueryExecutor.SchemaHashMismatch
+import com.socrata.querycoordinator.util.TeeToTempInputStream
 
-class QueryExecutor(httpClient: HttpClient, analysisSerializer: AnalysisSerializer[String, SoQLAnalysisType]) {
+class QueryExecutor(httpClient: HttpClient, analysisSerializer: AnalysisSerializer[String, SoQLAnalysisType], teeStreamProvider: InputStream => TeeToTempInputStream) {
   private[this] val log = org.slf4j.LoggerFactory.getLogger(classOf[QueryExecutor])
 
   /**
@@ -40,8 +46,14 @@ class QueryExecutor(httpClient: HttpClient, analysisSerializer: AnalysisSerializ
                 NotFound
               case HttpServletResponse.SC_CONFLICT =>
                 readSchemaHashMismatch(result, result.asInputStream()) match {
-                  case Right(newSchema) => SchemaHashMismatch(newSchema)
-                  case Left(newStream) => forward(result, newStream)
+                  case Right(newSchema) =>
+                    SchemaHashMismatch(newSchema)
+                  case Left(newStream) =>
+                    try {
+                      forward(result, newStream)
+                    } finally {
+                       newStream.close()
+                    }
                 }
               case _ =>
                 forward(result)
@@ -61,24 +73,17 @@ class QueryExecutor(httpClient: HttpClient, analysisSerializer: AnalysisSerializ
     }
   }
 
+  // rawData should be considered invalid after calling this
   private def readSchemaHashMismatch(result: Response, rawData: InputStream): Either[InputStream, Schema] = {
-    // FIXME: this is only correct if a "schema mismatch" error is GUARANTEED to fit in 9K.
-    // Which it isn't, in general.  What this SHOULD do is use the JSON stream-processing stuff
-    // and a temp buffer, returning an input stream which is a SequenceInputStream formed
-    // from the temp buffer and the remaining input.
-    val data = new BufferedInputStream(rawData)
-    data.mark(10240)
-    val bytes = new Array[Byte](1024 * 9)
-    val endptr = readFully(data, bytes)
-    data.reset()
-    val notMismatchResult: Either[InputStream, Schema] = Left(data)
-
-    try {
-      val json = JsonReader.fromEvents(new FusedBlockJsonEventIterator(new InputStreamReader(new ByteArrayInputStream(bytes, 0, endptr), StandardCharsets.UTF_8)))
-      checkSchemaHashMismatch(json).fold(notMismatchResult)(Right(_))
-    } catch {
-      case e: Exception =>
-        notMismatchResult
+    using(teeStreamProvider(rawData)) { data =>
+      def notMismatchResult: Either[InputStream, Schema] = Left(new SequenceInputStream(data.restream(), rawData))
+      try {
+        val json = JsonReader.fromEvents(new FusedBlockJsonEventIterator(new InputStreamReader(data, StandardCharsets.UTF_8)))
+        checkSchemaHashMismatch(json).fold(notMismatchResult)(Right(_))
+      } catch {
+        case e: Exception =>
+          notMismatchResult
+      }
     }
   }
 
@@ -128,7 +133,6 @@ class QueryExecutor(httpClient: HttpClient, analysisSerializer: AnalysisSerializ
 
   private def forward(result: Response): ToForward =
     forward(result, result.asInputStream())
-
 }
 
 object QueryExecutor {
