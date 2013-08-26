@@ -125,7 +125,7 @@ class QueryExecutor(httpClient: HttpClient, analysisSerializer: AnalysisSerializ
   private def serializeAnalysis(analysis: SoQLAnalysis[String, SoQLAnalysisType]): String = {
     val baos = new java.io.ByteArrayOutputStream
     analysisSerializer(baos, analysis)
-    new String(baos.toByteArray, "latin1")
+    new String(baos.toByteArray, StandardCharsets.ISO_8859_1)
   }
 
   private def forward(result: Response, data: InputStream): ToForward =
