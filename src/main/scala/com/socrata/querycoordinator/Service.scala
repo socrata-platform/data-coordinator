@@ -49,40 +49,6 @@ import com.rojoma.json.util.JsonUtil
 import com.socrata.http.server.routing.SimpleResource
 import com.socrata.http.server.routing.SimpleRouteContext._
 
-sealed abstract class TimedFutureResult[+T]
-case object FutureTimedOut extends TimedFutureResult[Nothing]
-sealed abstract class FutureResult[+T] extends TimedFutureResult[T]
-case class FutureCompleted[T](result: T) extends FutureResult[T]
-case class FutureFailed(exception: Throwable) extends FutureResult[Nothing]
-
-class EnrichedFuture[+A](val underlyingFuture: java.util.concurrent.Future[A @uncheckedVariance]) extends AnyVal {
-  import java.util.concurrent._
-  def apply(): FutureResult[A] =
-    try {
-      FutureCompleted(underlyingFuture.get())
-    } catch {
-      case e: ExecutionException =>
-        FutureFailed(e.getCause)
-    }
-
-  def apply(duration: FiniteDuration): TimedFutureResult[A] =
-    try {
-      FutureCompleted(underlyingFuture.get(duration.toMillis max 1L, TimeUnit.MILLISECONDS))
-    } catch {
-      case _: TimeoutException =>
-        FutureTimedOut
-      case e: ExecutionException =>
-        FutureFailed(e.getCause)
-    }
-}
-
-object EnrichedFuture {
-  import scala.language.implicitConversions
-  implicit def fut2df[T](f: java.util.concurrent.Future[T]) = new EnrichedFuture(f)
-}
-
-import EnrichedFuture._
-
 class Service(http: HttpClient,
               secondaryProvider: ServiceProviderProvider[AuxiliaryData],
               getSchemaTimeout: FiniteDuration,
