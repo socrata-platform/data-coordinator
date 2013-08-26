@@ -49,13 +49,12 @@ import com.rojoma.json.util.JsonUtil
 import com.socrata.http.server.routing.SimpleResource
 import com.socrata.http.server.routing.SimpleRouteContext._
 
-class Service(http: HttpClient,
-              secondaryProvider: ServiceProviderProvider[AuxiliaryData],
+class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
+              schemaFetcher: SchemaFetcher,
+              queryParser: QueryParser,
+              queryExecutor: QueryExecutor,
+              connectTimeout: FiniteDuration,
               getSchemaTimeout: FiniteDuration,
-              responseResponseTimeout: FiniteDuration,
-              responseDataTimeout: FiniteDuration,
-              analyzer: SoQLAnalyzer[SoQLAnalysisType],
-              analysisSerializer: (OutputStream, SoQLAnalysis[String, SoQLAnalysisType]) => Unit,
               schemaCache: (String, Schema) => Unit,
               schemaDecache: String => Option[Schema],
               secondaryInstance: String)
@@ -121,7 +120,6 @@ class Service(http: HttpClient,
     ))
   )
 
-
   case class FinishRequest(response: HttpResponse) extends ControlThrowable
   def finishRequest(response: HttpResponse): Nothing = throw new FinishRequest(response)
 
@@ -143,7 +141,7 @@ class Service(http: HttpClient,
     "dataset" -> JString(dataset))
   def noDatasetResponse = BadRequest ~> errContent("req.no-dataset-specified")
   def noQueryResponse = BadRequest ~> errContent("req.no-query-specified")
-  def unknownColumnIds(columnIds: Seq[String]) = BadRequest ~> errContent("req.unknown.column-ids", "columns" -> JsonCodec.toJValue(columnIds))
+  def unknownColumnIds(columnIds: Set[String]) = BadRequest ~> errContent("req.unknown.column-ids", "columns" -> JsonCodec.toJValue(columnIds.toSeq))
   def noContentTypeResponse = internalServerError
   def unparsableContentTypeResponse = internalServerError
   def notJsonResponseResponse = internalServerError
@@ -156,49 +154,14 @@ class Service(http: HttpClient,
       pingInfo <- auxData.livenessCheckInfo
     } yield pingInfo
     val b = RequestBuilder(secondary.getAddress).
-      livenessCheckInfo(pingTarget)
+      livenessCheckInfo(pingTarget).
+      connectTimeoutMS(connectTimeout.toMillis.toInt)
     if(secondary.getSslPort != null) {
       b.secure(true).port(secondary.getSslPort)
     } else if(secondary.getPort != null) {
       b.port(secondary.getPort)
     } else {
       b
-    }
-  }
-
-  // returns the schema if the given service has this dataset, or None if it doesn't.
-  def schemaFor(secondary: ServiceInstance[AuxiliaryData], dataset: String): Option[Schema] = {
-    try {
-      val req = reqBuilder(secondary).
-        p("schema").
-        q("ds" -> dataset).
-        get
-      for(response <- http.execute(req)) yield {
-        response.resultCode match {
-          case HttpServletResponse.SC_OK =>
-            val result = try {
-              response.asValue[Schema]()
-            } catch {
-              case e: Exception =>
-                log.error("Got an exception while parsing the returned schema", e)
-                finishRequest(internalServerError)
-            }
-            if(!result.isDefined) {
-              log.error("Unable to convert the JSON to a schema")
-              finishRequest(internalServerError)
-            }
-            result
-          case HttpServletResponse.SC_NOT_FOUND =>
-            None
-          case otherCode =>
-            log.error("Unexpected response code {} from request for schema of dataset {} from {}:{}", otherCode.asInstanceOf[AnyRef], dataset.asInstanceOf[AnyRef], secondary.getAddress, secondary.getPort)
-            finishRequest(internalServerError)
-        }
-      }
-    } catch {
-      case e: Exception =>
-        log.error("Got an exception while requesting schema for dataset {} from {}:{}", dataset:AnyRef, secondary.getAddress:AnyRef, secondary.getPort, e)
-        finishRequest(internalServerError)
     }
   }
 
@@ -209,71 +172,9 @@ class Service(http: HttpClient,
     case None =>
       None
   }
-
-  def serializeAnalysis(analysis: SoQLAnalysis[String, SoQLAnalysisType]): String = {
-    val baos = new java.io.ByteArrayOutputStream
-    analysisSerializer(baos, analysis)
-    new String(baos.toByteArray, "latin1")
-  }
-
- private def sendQuery[T](secondary: ServiceInstance[AuxiliaryData], dataset: String, analysis: SoQLAnalysis[String, SoQLAnalysisType], schemaHash: String, ifNoneMatch: Option[String], jsonizedColumnIdMap: String): Managed[Response] = {
-    val serializedAnalysis: String = serializeAnalysis(analysis)
-
-    val req = ifNoneMatch.foldLeft(reqBuilder(secondary).
-      p("query")) { (r, etag) =>
-      r.addHeader("If-None-Match" -> etag)
-    }
-    http.execute(req.form(Map(
-      "dataset" -> dataset,
-      "query" -> serializedAnalysis,
-      "schemaHash" -> schemaHash,
-      "columnIdMap" -> jsonizedColumnIdMap
-    )))
-  }
-
-  sealed abstract class RowDataResult
-  case object FinishedSuccessfully extends RowDataResult
-  case class SchemaOutOfDate(schema: Schema) extends RowDataResult
-  case class OtherResult(response: HttpResponse) extends RowDataResult
-
-  def checkSchemaOutOfDate(json: JValue): Option[Schema] = {
-    val obj: JObject = json.cast[JObject].getOrElse {
-      log.error("Response is not a JSON object")
-      return None
-    }
-    val errorCode = obj.get("errorCode").getOrElse {
-      log.error("Response does not contain an errorCode field")
-      return None
-    }
-    if(errorCode != JString("internal.schema-mismatch")) {
-      return None // no need to log anything, it's some other kind of Conflict
-    }
-
-    val data = obj.get("data").getOrElse {
-      log.error("Response does not contain a data field")
-      return None
-    }
-
-    val schema = JsonCodec[Schema].decode(data).getOrElse {
-      log.error("data object is not a valid Schema")
-      return None
-    }
-
-    Some(schema)
-  }
-
   def secondary(dataset: String) = Option(secondaryProvider.provider(secondaryInstance).getInstance).getOrElse {
     finishRequest(noSecondaryAvailable(dataset))
   }
-
-  def getAndCacheSchema(dataset: String) =
-    schemaFor(secondary(dataset), dataset) match {
-      case Some(newSchema) =>
-        schemaCache(dataset, newSchema)
-        newSchema
-      case None =>
-        finishRequest(notFoundResponse(dataset))
-    }
 
   trait QCResource extends SimpleResource
 
@@ -323,14 +224,13 @@ class Service(http: HttpClient,
       val jsonizedColumnIdMap = Option(req.getParameter("idMap")).getOrElse {
         return (BadRequest ~> Content("no idMap provided"))(resp)
       }
-      val columnIdMap: BiMap[ColumnName, String] = try {
-        val converted = JsonUtil.parseJson[Map[String,String]](jsonizedColumnIdMap) match {
-          case Some(scalaMap) =>
-            scalaMap.map { case (col, typ) => ColumnName(col) -> typ }
+      val columnIdMap: Map[ColumnName, String] = try {
+        JsonUtil.parseJson[Map[String,String]](jsonizedColumnIdMap) match {
+          case Some(rawMap) =>
+            rawMap.map { case (col, typ) => ColumnName(col) -> typ }
           case None =>
             finishRequest(BadRequest ~> Content("idMap not an object whose values are strings"))
         }
-        HashBiMap.create(converted.asJava)
       } catch {
         case e: JsonReaderException =>
           finishRequest(BadRequest ~> Content("idMap not parsable as JSON"))
@@ -346,95 +246,81 @@ class Service(http: HttpClient,
       //     from the cache, refresh the schema and try again.
       //   3. Make the actual "give me data" request.
       // That last step is the most complex, because it is a
-      // potentially long-running thing.  We need to make an
-      // HTTP request and then wait for either the future to
-      // complete or a timeout to occur.  The timeout is broken
-      // into two stages:
-      //   1. Response headers received
-      //   2. Response data received
-      // Finally, a future completion can take one of several
-      // forms.  It can be a success (the request was
-      // made and the data was transferred to the client in the
-      // background), a retry (the schema used was out-of-date by
-      // the time the query was run; this will give us a new schema
-      // to go back to the first step with) or "other" (the request
-      // handler has given us an HttpResponse object to use to populate
-      // the servlet response).
-      @tailrec
-      def loop(rawSchema: Schema, isFresh: Boolean) {
-        (try {
-          columnIdMap.values.iterator.asScala.filterNot(rawSchema.schema.contains(_)).toList match {
-            case Nil => // no unknown columns
-              implicit val datasetCtx = new DatasetContext[SoQLAnalysisType] {
-                val schema = OrderedMap(columnIdMap.asScala.mapValues(rawSchema.schema).toSeq.sortBy(_._1) : _*)
-              }
-              Some(analyzer.analyzeFullQuery(query))
-            case columnIds =>
-              if(isFresh) finishRequest(unknownColumnIds(columnIds))
-              else None
+      // potentially long-running thing, and can cause a retry
+      // if the upstream says "the schema just changed".
+      try {
+        val base = reqBuilder(secondary(dataset))
+
+        def getAndCacheSchema(dataset: String) =
+          schemaFetcher(base.receiveTimeoutMS(getSchemaTimeout.toMillis.toInt), dataset) match {
+            case SchemaFetcher.Successful(newSchema) =>
+              schemaCache(dataset, newSchema)
+              newSchema
+            case SchemaFetcher.NoSuchDatasetInSecondary =>
+              finishRequest(notFoundResponse(dataset))
+            case other =>
+              log.error("Unexpected response when fetching schema from secondary: {}", other)
+              finishRequest(internalServerError)
           }
-        } catch {
-          case (_: DuplicateAlias | _: NoSuchColumn | _: TypecheckException) if !isFresh =>
-            None
-          case e: SoQLException =>
-            finishRequest(soqlErrorResponse(dataset, e))
-        }) match {
-          case Some(analysis) =>
-            val outcome = for(result <- sendQuery(secondary(dataset), dataset, analysis.mapColumnIds(columnIdMap.asScala), rawSchema.hash, ifNoneMatch, jsonizedColumnIdMap)) yield {
-              result.resultCode match {
-                case HttpServletResponse.SC_CONFLICT =>
-                  val json = result.asJValue()
-                  checkSchemaOutOfDate(json) match {
-                    case None =>
-                      resp.setStatus(HttpServletResponse.SC_CONFLICT)
-                      val headersToRemove = Set("content-length", "content-encoding")
-                      result.headerNames.map(_.toLowerCase(Locale.US)).filterNot(headersToRemove).foreach { h =>
-                        result.headers(h).foreach(resp.addHeader(h, _))
-                      }
-                      CompactJsonWriter.toWriter(resp.getWriter, json)
-                      FinishedSuccessfully
-                    case Some(s) =>
-                      SchemaOutOfDate(s)
-                  }
-                case other =>
-                  resp.setStatus(other)
-                  val headersToRemove = Set("content-length", "content-encoding")
-                  result.headerNames.map(_.toLowerCase(Locale.US)).filterNot(headersToRemove).foreach { h =>
-                    result.headers(h).foreach(resp.addHeader(h, _))
-                  }
-                  using(new BufferedWriter(resp.getWriter)) { w =>
-                    EventTokenIterator(result.asJsonEvents()).foreach { t =>
-                      w.write(t.asFragment)
-                    }
-                  }
-                  FinishedSuccessfully
-              }
-            }
-            outcome match {
-              case FinishedSuccessfully =>
-                // ok
-              case SchemaOutOfDate(schema) =>
-                schemaCache(dataset, schema)
-                loop(schema, true)
-              case OtherResult(response) =>
-                finishRequest(response)
-            }
-          case None =>
-            loop(getAndCacheSchema(dataset), true)
+
+        @tailrec
+        def analyzeRequest(schema: Schema, isFresh: Boolean): (Schema, SoQLAnalysis[String, SoQLAnalysisType]) = {
+          queryParser(query, columnIdMap, schema.schema) match {
+            case QueryParser.SuccessfulParse(analysis) =>
+              (schema, analysis)
+            case QueryParser.AnalysisError(_: DuplicateAlias | _: NoSuchColumn | _: TypecheckException) if !isFresh =>
+              analyzeRequest(getAndCacheSchema(dataset), true)
+            case QueryParser.AnalysisError(e) =>
+              finishRequest(soqlErrorResponse(dataset, e))
+            case QueryParser.UnknownColumnIds(cids) =>
+              finishRequest(unknownColumnIds(cids))
+          }
         }
-      }
-      schemaDecache(dataset) match {
-        case Some(schema) =>
-          loop(schema, false)
-        case None =>
-          loop(getAndCacheSchema(dataset), true)
-      }
-    } catch {
-      case FinishRequest(response) =>
+
+        @tailrec
+        def executeQuery(schema: Schema, analyzedQuery: SoQLAnalysis[String, SoQLAnalysisType]) {
+          val res = queryExecutor(base, dataset, analyzedQuery, schema, ifNoneMatch).map {
+            case QueryExecutor.NotFound =>
+              finishRequest(notFoundResponse(dataset))
+            case QueryExecutor.SchemaHashMismatch(newSchema) =>
+              storeInCache(Some(newSchema), dataset)
+              Some(analyzeRequest(newSchema, true))
+            case QueryExecutor.ToForward(responseCode, headers, body) =>
+              resp.setStatus(responseCode)
+              for { (h,vs) <- headers; v <- vs } resp.addHeader(h, v)
+              transferResponse(resp.getOutputStream, body)
+              None
+          }
+          res match { // bit of a dance because we can't tailrec from within map
+            case Some((s, q)) => executeQuery(s, q)
+            case None => // ok
+          }
+        }
+
+        schemaDecache(dataset) match {
+          case Some(schema) =>
+            (executeQuery _).tupled(analyzeRequest(schema, false))
+          case None =>
+            (executeQuery _).tupled(analyzeRequest(getAndCacheSchema(dataset), true))
+        }
+      } catch {
+        case FinishRequest(response) =>
         if(resp.isCommitted) ???
         else { resp.reset(); response(resp) }
-    } finally {
-      Thread.currentThread.setName(originalThreadName)
+      } finally {
+        Thread.currentThread.setName(originalThreadName)
+      }
     }
+  }
+
+  private def transferResponse(out: OutputStream, in: InputStream) {
+    val buf = new Array[Byte](4096)
+    def loop() {
+      in.read(buf) match {
+        case -1 => // done
+        case n => out.write(buf, 0, n); loop()
+      }
+    }
+    loop()
   }
 }

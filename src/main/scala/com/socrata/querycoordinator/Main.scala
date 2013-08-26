@@ -22,6 +22,8 @@ import com.socrata.http.client.{HttpClientHttpClient, InetLivenessChecker}
 import com.socrata.http.common.AuxiliaryData
 import com.socrata.http.server.livenesscheck.LivenessCheckResponder
 import java.net.{InetSocketAddress, InetAddress}
+import com.socrata.querycoordinator.util.TeeToTempInputStream
+import java.io.InputStream
 
 final abstract class Main
 
@@ -86,14 +88,15 @@ object Main extends App {
     pingProvider.start()
     pongProvider.start()
 
+    def teeStream(in: InputStream) = new TeeToTempInputStream(in)
+
     val handler = new Service(
-      httpClient,
       dataCoordinatorProviderProvider,
+      new SchemaFetcher(httpClient),
+      new QueryParser(analyzer),
+      new QueryExecutor(httpClient, analysisSerializer, teeStream),
+      config.connectTimeout,
       config.schemaTimeout,
-      config.initialResponseTimeout,
-      config.responseDataTimeout,
-      analyzer,
-      analysisSerializer,
       (_, _) => (),
       _ => None,
       secondaryInstance)

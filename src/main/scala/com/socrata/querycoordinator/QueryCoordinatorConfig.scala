@@ -12,7 +12,6 @@ class QueryCoordinatorConfig(config: Config, root: String) {
   val advertisement = new AdvertisementConfig(config, k("service-advertisement"))
   val network = new NetworkConfig(config, k("network"))
 
+  val connectTimeout = config.getMilliseconds(k("get-schema-timeout")).longValue.millis
   val schemaTimeout = config.getMilliseconds(k("get-schema-timeout")).longValue.millis
-  val initialResponseTimeout = config.getMilliseconds(k("initial-response-timeout")).longValue.millis
-  val responseDataTimeout = config.getMilliseconds(k("response-data-timeout")).longValue.millis
 }

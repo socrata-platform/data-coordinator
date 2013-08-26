@@ -9,27 +9,28 @@ import com.socrata.soql.exceptions.SoQLException
 import QueryParser._
 
 class QueryParser(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
-  private def dsContext(columnIdMapping: Map[ColumnName, String], rawSchema: Map[String, SoQLType]): Option[DatasetContext[SoQLAnalysisType]] =
+  private def dsContext(columnIdMapping: Map[ColumnName, String], rawSchema: Map[String, SoQLType]): Either[Set[String], DatasetContext[SoQLAnalysisType]] =
     try {
-      Some(new DatasetContext[SoQLAnalysisType] {
-        val schema: OrderedMap[ColumnName, SoQLAnalysisType] = OrderedMap(columnIdMapping.mapValues(rawSchema).toSeq.sortBy(_._1) : _*)
-      })
-    } catch {
-      case e: NoSuchElementException =>
-        None
+      val unknownColumnIds = columnIdMapping.values.iterator.filterNot(rawSchema.contains).toSet
+      if(unknownColumnIds.isEmpty)
+        Right(new DatasetContext[SoQLAnalysisType] {
+          val schema: OrderedMap[ColumnName, SoQLAnalysisType] = OrderedMap(columnIdMapping.mapValues(rawSchema).toSeq.sortBy(_._1) : _*)
+        })
+      else
+        Left(unknownColumnIds)
     }
 
   private def go(columnIdMapping: Map[ColumnName, String], schema: Map[String, SoQLType])(f: DatasetContext[SoQLAnalysisType] => SoQLAnalysis[ColumnName, SoQLAnalysisType]): Result =
     dsContext(columnIdMapping, schema) match {
-      case Some(ds) =>
+      case Right(ds) =>
         try {
           SuccessfulParse(f(ds).mapColumnIds(columnIdMapping))
         } catch {
           case e: SoQLException =>
             AnalysisError(e)
         }
-      case None =>
-        BadColumnIdMapping
+      case Left(unknownColumnIds) =>
+        UnknownColumnIds(unknownColumnIds)
     }
 
   def apply(query: String, columnIdMapping: Map[ColumnName, String], schema: Map[String, SoQLType]): Result =
@@ -43,5 +44,5 @@ object QueryParser {
   sealed abstract class Result
   case class SuccessfulParse(analysis: SoQLAnalysis[String, SoQLAnalysisType]) extends Result
   case class AnalysisError(problem: SoQLException) extends Result
-  case object BadColumnIdMapping extends Result
+  case class UnknownColumnIds(columnIds: Set[String]) extends Result
 }
