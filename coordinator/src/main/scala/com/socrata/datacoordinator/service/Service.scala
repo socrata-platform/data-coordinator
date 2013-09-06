@@ -36,7 +36,7 @@ object Field {
   implicit val jCodec = AutomaticJsonCodecBuilder[Field]
 }
 
-case class Schema(hash: String, schema: UserColumnIdMap[TypeName], pk: UserColumnId)
+case class Schema(hash: String, schema: UserColumnIdMap[TypeName], pk: UserColumnId, locale: String)
 
 class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) => Seq[MutationScriptCommandResult],
               processCreation: (Iterator[JValue], IndexedTempFile) => (DatasetId, Seq[MutationScriptCommandResult]),
@@ -516,12 +516,13 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
 
 
   def jsonifySchema(schemaObj: Schema) = {
-    val Schema(hash, schema, pk) = schemaObj
+    val Schema(hash, schema, pk, locale) = schemaObj
     val jsonSchema = JObject(schema.iterator.map { case (k,v) => k.underlying -> JString(v.name) }.toMap)
     JObject(Map(
       "hash" -> JString(hash),
       "schema" -> jsonSchema,
-      "pk" -> JsonCodec.toJValue(pk)
+      "pk" -> JsonCodec.toJValue(pk),
+      "locale" -> JString(locale)
     ))
   }
 

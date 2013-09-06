@@ -16,16 +16,18 @@ class SchemaFinder[CT, CV](universe: Managed[Universe[CT, CV] with DatasetMapRea
       dsInfo <- u.datasetMapReader.datasetInfo(datasetId)
     } yield {
       val schema = u.datasetMapReader.schema(u.datasetMapReader.latest(dsInfo))
-      getSchema(schema)
+      getSchema(schema, dsInfo.localeName)
     }
 
-  def schemaHash(schema: ColumnIdMap[ColumnInfo[CT]]) =
-    SchemaHash.computeHash(schema, typeSerializer)
+  def schemaHash(schema: ColumnIdMap[ColumnInfo[CT]], locale: String) =
+    SchemaHash.computeHash(schema, locale, typeSerializer)
 
-  def getSchema(schema: ColumnIdMap[ColumnInfo[CT]]): Schema = {
-    val hash = schemaHash(schema)
-    Schema(hash, RotateSchema(schema).mapValuesStrict { col => typeSerializer(col.typ) }, schema.values.find(_.isUserPrimaryKey).orElse(schema.values.find(_.isSystemPrimaryKey)).getOrElse {
+  def getSchema(schema: ColumnIdMap[ColumnInfo[CT]], locale: String): Schema = {
+    val hash = schemaHash(schema, locale)
+    val columns = RotateSchema(schema).mapValuesStrict { col => typeSerializer(col.typ) }
+    val pk = schema.values.find(_.isUserPrimaryKey).orElse(schema.values.find(_.isSystemPrimaryKey)).getOrElse {
       sys.error("No system primary key column?")
-    }.userColumnId)
+    }.userColumnId
+    Schema(hash, columns, pk, locale)
   }
 }

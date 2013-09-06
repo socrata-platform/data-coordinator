@@ -23,8 +23,10 @@ object SchemaHash {
     new String(cs)
   }
 
-  def computeHash[CT](schema: ColumnIdMap[ColumnInfo[CT]], typeSerializer: CT => TypeName): String = {
+  def computeHash[CT](schema: ColumnIdMap[ColumnInfo[CT]], locale: String, typeSerializer: CT => TypeName): String = {
     val sha1 = MessageDigest.getInstance("SHA-1")
+    sha1.update(locale.getBytes(UTF_8))
+    sha1.update(255.toByte)
     val cols = schema.values.toArray
     java.util.Arrays.sort(cols, new Comparator[ColumnInfo[CT]] {
       val o = Ordering[UserColumnId]

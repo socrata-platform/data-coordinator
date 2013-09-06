@@ -384,9 +384,9 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
 
     def checkHash(index: Long, schemaHash: Option[String], ctx: DatasetCopyContext[CT]) {
       for(givenSchemaHash <- schemaHash) {
-        val realSchemaHash = schemaFinder.schemaHash(ctx.schema)
+        val realSchemaHash = schemaFinder.schemaHash(ctx.schema, ctx.datasetInfo.localeName)
         if(givenSchemaHash != realSchemaHash) {
-          throw MismatchedSchemaHash(ctx.datasetInfo.systemId, schemaFinder.getSchema(ctx.schema))(index)
+          throw MismatchedSchemaHash(ctx.datasetInfo.systemId, schemaFinder.getSchema(ctx.schema, ctx.datasetInfo.localeName))(index)
         }
       }
     }
