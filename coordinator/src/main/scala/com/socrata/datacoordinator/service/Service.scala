@@ -398,6 +398,19 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
     }
   }
 
+  case class DatasetSchemaResource(datasetId: DatasetId) extends SodaResource {
+    override def get = { (req: HttpServletRequest) =>
+      val result = for {
+        schema <- getSchema(datasetId)
+      } yield {
+        OK ~> ContentType("application/json; charset=utf-8") ~> Write { w =>
+          JsonUtil.writeJson(w, jsonifySchema(schema))
+        }
+      }
+      result.getOrElse(notFoundError(formatDatasetId(datasetId)))
+    }
+  }
+
   case class DatasetResource(datasetId: DatasetId) extends SodaResource {
     override def post = doMutation
     override def delete = doDeleteDataset
@@ -526,19 +539,6 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
     ))
   }
 
-  def doGetSchema(datasetIdRaw: String)(req: HttpServletRequest): HttpResponse = {
-    val normalizedId = norm(datasetIdRaw)
-    val result = for {
-      datasetId <- parseDatasetId(normalizedId)
-      schema <- getSchema(datasetId)
-    } yield {
-      OK ~> ContentType("application/json; charset=utf-8") ~> Write { w =>
-        JsonUtil.writeJson(w, jsonifySchema(schema))
-      }
-    }
-    result.getOrElse(notFoundError(normalizedId))
-  }
-
   object VersionResource extends SodaResource {
     val responseString = for {
       stream <- managed(getClass.getClassLoader.getResourceAsStream("data-coordinator-version.json"))
@@ -564,6 +564,7 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
       Route("/dataset", NotFoundDatasetResource("")),
       Route("/dataset/{String}", NotFoundDatasetResource),
       Route("/dataset/{DatasetId}", DatasetResource),
+      Route("/dataset/{DatasetId}/schema", DatasetSchemaResource),
 
       Route("/secondary-manifest", SecondaryManifestsResource),
       Route("/secondary-manifest/{String}", SecondaryManifestResource),
