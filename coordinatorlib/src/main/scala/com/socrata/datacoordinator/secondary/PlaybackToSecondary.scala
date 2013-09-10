@@ -128,6 +128,7 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
     }
 
     def playbackLog(datasetInfo: DatasetInfo, dataVersion: Long) {
+      log.trace("Playing back version {}")
       val finalLifecycleStage = for {
         delogger <- managed(u.delogger(datasetInfo))
         rawIt <- managed(delogger.delog(dataVersion))
@@ -135,23 +136,39 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
         val secondaryDatasetInfo = new SecondaryDatasetInfoImpl(datasetInfo)
         val it = new LifecycleStageTrackingIterator(rawIt, currentLifecycleStage)
         if(secondary.store.wantsWorkingCopies) {
+          log.trace("Secondary store wants working copies; just blindly ending everything")
           currentCookie = secondary.store.version(secondaryDatasetInfo, dataVersion, currentCookie, it)
         } else {
           while(it.hasNext) {
             if(currentLifecycleStage != LifecycleStage.Published) {
+              log.trace("Current lifecycle stage in the secondary is {}; skipping data until I find a publish event", currentLifecycleStage)
               // skip until it IS published, then resync
               while(it.hasNext && it.stageAfterNextEvent != LifecycleStage.Published) it.next()
-              if(it.hasNext) throw new InternalResyncForPickySecondary
+              if(it.hasNext) {
+                log.trace("There is more.  Resyncing")
+                throw new InternalResyncForPickySecondary
+              } else {
+                log.trace("There is no more.")
+              }
+              currentLifecycleStage = it.stageBeforeNextEvent
             } else {
+              log.trace("Sending events for a published copy")
               val publishedIt = new StageLimitedIterator(it)
               if(publishedIt.hasNext) {
+                log.trace("Sendsendsendsend")
                 currentCookie = secondary.store.version(secondaryDatasetInfo, dataVersion, currentCookie, publishedIt)
                 publishedIt.finish()
+                currentLifecycleStage = it.stageBeforeNextEvent
+              } else {
+                log.trace("First item must've been a copy-event")
+                currentLifecycleStage = it.stageAfterNextEvent
               }
             }
           }
         }
-        it.finalLifecycleStage()
+        val res = it.finalLifecycleStage()
+        log.trace("Final lifecycle stage is {}", res)
+        res
       }
       updateSecondaryMap(dataVersion, finalLifecycleStage)
       currentLifecycleStage = finalLifecycleStage
