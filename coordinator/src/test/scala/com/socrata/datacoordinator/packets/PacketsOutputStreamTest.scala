@@ -48,6 +48,17 @@ class PacketsOutputStreamTest extends FunSuite with MustMatchers with PropertyCh
     }
   }
 
+  test("Writing data produces that same data - scalacheck repro 1") {
+    val packetSize = 13
+    val dataSeq = List(List(59.toByte))
+    val data = dataSeq.map(_.toArray)
+    val sink = new PacketsSink(packetSize)
+    val pos = new PacketsOutputStream(sink)
+    data.foreach(pos.write)
+    pos.close()
+    readAll(new PacketsInputStream(new PacketsReservoir(sink.results : _*))) must equal (data.toArray.flatten)
+  }
+
   test("Writing data produces that same data") {
     forAll(Gen.choose(minSize, maxSize), Arbitrary.arbitrary[List[List[Byte]]]) { (packetSize, dataSeq) =>
       val data = dataSeq.map(_.toArray)
