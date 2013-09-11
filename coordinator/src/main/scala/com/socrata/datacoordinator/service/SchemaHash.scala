@@ -24,10 +24,18 @@ object SchemaHash {
   }
 
   def computeHash[CT](schema: ColumnIdMap[ColumnInfo[CT]], locale: String, typeSerializer: CT => TypeName): String = {
+    val cols = schema.values.toArray
     val sha1 = MessageDigest.getInstance("SHA-1")
+
     sha1.update(locale.getBytes(UTF_8))
     sha1.update(255.toByte)
-    val cols = schema.values.toArray
+
+    val pk = cols.find(_.isUserPrimaryKey).orElse(cols.find(_.isSystemPrimaryKey)).getOrElse {
+      sys.error("No primary key defined on dataset?")
+    }
+    sha1.update(pk.userColumnId.underlying.getBytes(UTF_8))
+    sha1.update(255.toByte)
+
     java.util.Arrays.sort(cols, new Comparator[ColumnInfo[CT]] {
       val o = Ordering[UserColumnId]
       def compare(a: ColumnInfo[CT], b: ColumnInfo[CT]) =
@@ -37,9 +45,9 @@ object SchemaHash {
       sha1.update(col.userColumnId.underlying.getBytes(UTF_8))
       sha1.update(255.toByte)
       sha1.update(typeSerializer(col.typ).caseFolded.getBytes(UTF_8))
-      sha1.update((if(col.isSystemPrimaryKey) 255 else 254).toByte)
-      sha1.update((if(col.isUserPrimaryKey) 255 else 254).toByte)
+      sha1.update(255.toByte)
     }
+
     hexString(sha1.digest())
   }
 }
