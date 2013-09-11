@@ -99,7 +99,7 @@ object Packet {
   }
 
   object SimpleLabelledPacket {
-    def minimumSizeFor(prefixStr: String) = prefixStr.length + 1
+    def minimumSizeFor(prefixStr: String) = 4 /* length header */ + prefixStr.length + 1
   }
 
   // This will only be guaranteed to work for SimplePackets and LabelledPackets.

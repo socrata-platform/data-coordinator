@@ -36,32 +36,23 @@ class PacketsOutputStreamTest extends FunSuite with MustMatchers with PropertyCh
   }
 
   test("Writing data produces uniformly-sized data") {
-    forAll(Gen.choose(minSize, maxSize), Arbitrary.arbitrary[List[List[Byte]]]) { (packetSize, dataSeq) =>
-      val data = dataSeq.map(_.toArray)
-      whenever(packetSize >= minSize && packetSize <= maxSize) {
+    forAll(Gen.choose(minSize, maxSize), Arbitrary.arbitrary[List[List[List[Byte]]]]) { (packetSize, dataSeq) =>
+      val data = dataSeq.map(_.flatten.toArray)
+      whenever(packetSize >= minSize && packetSize <= maxSize && data.map(_.length).sum > packetSize) {
         val sink = new PacketsSink(packetSize)
         val pos = new PacketsOutputStream(sink)
         data.foreach(pos.write)
         pos.flush()
-        sink.results.dropRight(1) /* The last one might not be full */.forall(_.buffer.remaining == packetSize) must be (true)
+        sink.results.dropRight(1) /* The last one might not be full */.foreach { b =>
+          b.buffer.remaining must equal (packetSize)
+        }
       }
     }
   }
 
-  test("Writing data produces that same data - scalacheck repro 1") {
-    val packetSize = 13
-    val dataSeq = List(List(59.toByte))
-    val data = dataSeq.map(_.toArray)
-    val sink = new PacketsSink(packetSize)
-    val pos = new PacketsOutputStream(sink)
-    data.foreach(pos.write)
-    pos.close()
-    readAll(new PacketsInputStream(new PacketsReservoir(sink.results : _*))) must equal (data.toArray.flatten)
-  }
-
   test("Writing data produces that same data") {
-    forAll(Gen.choose(minSize, maxSize), Arbitrary.arbitrary[List[List[Byte]]]) { (packetSize, dataSeq) =>
-      val data = dataSeq.map(_.toArray)
+    forAll(Gen.choose(minSize, maxSize), Arbitrary.arbitrary[List[List[List[Byte]]]]) { (packetSize, dataSeq) =>
+      val data = dataSeq.map(_.flatten.toArray)
       whenever(packetSize >= minSize && packetSize <= maxSize) {
         val sink = new PacketsSink(packetSize)
         val pos = new PacketsOutputStream(sink)

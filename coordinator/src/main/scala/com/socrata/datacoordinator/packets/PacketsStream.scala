@@ -97,7 +97,7 @@ class PacketsOutputStream(packets: Packets,
     var rem = length
     while(rem > 0) {
       if(currentPacket == null) currentPacket = freshPacket()
-      val toWrite = rem.min(packets.maxPacketSize - currentPacket.dataSize)
+      val toWrite = rem.min(packets.maxPacketSize - currentPacket.size)
       currentPacket.write(bs, hd, toWrite)
       maybeFlush()
       hd += toWrite
