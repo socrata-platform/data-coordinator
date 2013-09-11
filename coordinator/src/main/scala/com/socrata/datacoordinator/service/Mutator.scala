@@ -48,6 +48,7 @@ object Mutator {
   case class InvalidCommandFieldValue(obj: JObject, field: String, value: JValue)(val index: Long) extends InvalidCommandStreamException
   case class MismatchedSchemaHash(name: DatasetId, schema: Schema)(val index: Long) extends InvalidCommandStreamException
 
+  case class InvalidLocale(locale: String)(val index: Long) extends MutationException
   case class NoSuchDataset(name: DatasetId)(val index: Long) extends MutationException
   case class CannotAcquireDatasetWriteLock(name: DatasetId)(val index: Long) extends MutationException
   case class IncorrectLifecycleStage(name: DatasetId, currentLifecycleStage: LifecycleStage, expected: Set[LifecycleStage])(val index: Long) extends MutationException
@@ -211,7 +212,9 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
       import accessor._
       val streamType = get[String]("c") match {
         case "create" =>
-          val locale = ULocale.createCanonical(getWithStrictDefault("locale", "en_US"))
+          val rawLocale = getWithStrictDefault("locale", "en_US")
+          val locale = ULocale.createCanonical(rawLocale)
+          if(locale.getName != "en_US") throw InvalidLocale(rawLocale)(index) // for now, we only allow en_US
           CreateDatasetMutation(index, locale.getName)
         case other =>
           throw InvalidCommandFieldValue(originalObject, "c", JString(other))(index)

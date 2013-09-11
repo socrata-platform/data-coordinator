@@ -236,6 +236,9 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
             notFoundError(formatDatasetId(name))
           case Mutator.CannotAcquireDatasetWriteLock(name) =>
             writeLockError(name)
+          case Mutator.InvalidLocale(locale) =>
+            err(BadRequest, "create.dataset.invalid-locale",
+              "locale" -> JString(locale))
           case Mutator.IncorrectLifecycleStage(name, currentStage, expectedStage) =>
             err(Conflict, "update.dataset.invalid-state",
               "dataset" -> JString(formatDatasetId(name)),
