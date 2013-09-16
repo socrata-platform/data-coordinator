@@ -406,6 +406,7 @@ class IndexedTempFile(indexBufSizeHint: Int, dataBufSizeHint: Int, tmpDir: File 
         if(blockReadIdx == blockSize) refill()
         val blockRemaining = Math.min(recordRemaining, blockSize - blockReadIdx).toInt
         that.write(dataBuf, blockReadIdx, blockRemaining)
+        blockReadIdx += blockRemaining
         recordRemaining -= blockRemaining
       }
       willHaveWritten
