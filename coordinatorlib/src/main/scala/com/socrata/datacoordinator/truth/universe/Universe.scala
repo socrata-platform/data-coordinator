@@ -7,7 +7,6 @@ import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth._
 import com.socrata.datacoordinator.util._
 import com.socrata.datacoordinator.secondary.{SecondaryConfig, PlaybackToSecondary, SecondaryManifest}
-import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import org.joda.time.DateTime
 import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 
@@ -82,6 +81,10 @@ trait TruncatorProvider {
 
 trait DatasetMapReaderProvider { this: TypeUniverse =>
   val datasetMapReader: DatasetMapReader[CT]
+}
+
+trait CacheProvider {
+  val cache: Cache
 }
 
 trait DatasetMapWriterProvider { this: TypeUniverse =>

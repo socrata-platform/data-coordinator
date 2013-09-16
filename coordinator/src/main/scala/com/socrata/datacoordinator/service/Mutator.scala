@@ -2,7 +2,7 @@ package com.socrata.datacoordinator
 package service
 
 import com.rojoma.json.ast._
-import com.socrata.datacoordinator.truth.universe.{DatasetMutatorProvider, Universe}
+import com.socrata.datacoordinator.truth.universe.{CacheProvider, DatasetMutatorProvider, Universe}
 import com.socrata.datacoordinator.truth.{TypeContext, DatasetIdInUseByWriterException, DatasetMutator}
 import com.socrata.datacoordinator.truth.metadata.{DatasetInfo, DatasetCopyContext, LifecycleStage, ColumnInfo}
 import com.socrata.datacoordinator.truth.json.JsonColumnRep
@@ -10,7 +10,7 @@ import com.rojoma.json.codec.JsonCodec
 import com.socrata.datacoordinator.truth.loader._
 import scala.collection.immutable.{NumericRange, VectorBuilder}
 import com.socrata.soql.environment.{TypeName, ColumnName}
-import com.socrata.datacoordinator.util.{IndexedTempFile, BuiltUpIterator, Counter}
+import com.socrata.datacoordinator.util.{Cache, IndexedTempFile, BuiltUpIterator, Counter}
 import com.ibm.icu.util.ULocale
 import com.rojoma.json.io._
 import com.socrata.datacoordinator.id.{UserColumnId, RowVersion, DatasetId}
@@ -274,13 +274,13 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
       Iterator.single(EndOfObjectEvent()))
   }
 
-  def createScript(u: Universe[CT, CV] with DatasetMutatorProvider, commandStream: Iterator[JValue]): (DatasetId, Seq[MutationScriptCommandResult]) = {
+  def createScript(u: Universe[CT, CV] with DatasetMutatorProvider with CacheProvider, commandStream: Iterator[JValue]): (DatasetId, Seq[MutationScriptCommandResult]) = {
     if(commandStream.isEmpty) throw EmptyCommandStream()(0L)
     val commands = createCreateStream(0L, commandStream.next(), commandStream)
     runScript(u, commands)
   }
 
-  def updateScript(u: Universe[CT, CV] with DatasetMutatorProvider, datasetId: DatasetId, commandStream: Iterator[JValue]): Seq[MutationScriptCommandResult] = {
+  def updateScript(u: Universe[CT, CV] with DatasetMutatorProvider with CacheProvider, datasetId: DatasetId, commandStream: Iterator[JValue]): Seq[MutationScriptCommandResult] = {
     if(commandStream.isEmpty) throw EmptyCommandStream()(0L)
     val commands = createCommandStream(0L, commandStream.next(), datasetId, commandStream)
     runScript(u, commands)._2
@@ -375,7 +375,7 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
       firstJob to jobLimit
   }
 
-  private def runScript(u: Universe[CT, CV] with DatasetMutatorProvider, commands: CommandStream): (DatasetId, Seq[MutationScriptCommandResult]) = {
+  private def runScript(u: Universe[CT, CV] with DatasetMutatorProvider with CacheProvider, commands: CommandStream): (DatasetId, Seq[MutationScriptCommandResult]) = {
     def user = commands.user
 
     def doProcess(ctx: DatasetMutator[CT, CV]#MutationContext): (DatasetId, Seq[MutationScriptCommandResult]) = {
@@ -387,9 +387,9 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
 
     def checkHash(index: Long, schemaHash: Option[String], ctx: DatasetCopyContext[CT]) {
       for(givenSchemaHash <- schemaHash) {
-        val realSchemaHash = schemaFinder.schemaHash(ctx.schema, ctx.datasetInfo.localeName)
+        val realSchemaHash = schemaFinder.schemaHash(ctx, u.cache)
         if(givenSchemaHash != realSchemaHash) {
-          throw MismatchedSchemaHash(ctx.datasetInfo.systemId, schemaFinder.getSchema(ctx.schema, ctx.datasetInfo.localeName))(index)
+          throw MismatchedSchemaHash(ctx.datasetInfo.systemId, schemaFinder.getSchema(ctx, u.cache))(index)
         }
       }
     }

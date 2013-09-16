@@ -7,7 +7,7 @@ import com.socrata.thirdparty.typesafeconfig.Propertizer
 import com.socrata.datacoordinator.secondary.{DatasetAlreadyInSecondary, SecondaryLoader}
 import java.util.concurrent.{CountDownLatch, TimeUnit, Executors}
 import com.socrata.datacoordinator.common.{SoQLCommon, StandardDatasetMapLimits, DataSourceFromConfig}
-import com.socrata.datacoordinator.util.{IndexedTempFile, StackedTimingReport, LoggedTimingReport}
+import com.socrata.datacoordinator.util.{NullCache, IndexedTempFile, StackedTimingReport, LoggedTimingReport}
 import com.socrata.datacoordinator.id.{UserColumnId, ColumnId, DatasetId}
 import com.rojoma.json.ast.{JString, JValue}
 import com.socrata.datacoordinator.truth.CopySelector
@@ -161,7 +161,8 @@ object Main {
           allowDdlOnPublishedCopies = serviceConfig.allowDdlOnPublishedCopies,
           serviceConfig.writeLockTimeout,
           serviceConfig.instance,
-          serviceConfig.reports.directory
+          serviceConfig.reports.directory,
+          NullCache
         )
       }
 

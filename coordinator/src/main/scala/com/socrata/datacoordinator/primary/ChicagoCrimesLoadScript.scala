@@ -11,7 +11,7 @@ import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.{Row, MutableRow}
 import com.socrata.datacoordinator.common.{SoQLCommon, StandardDatasetMapLimits}
 import com.socrata.soql.brita.IdentifierFilter
-import com.socrata.datacoordinator.util.{StackedTimingReport, LoggedTimingReport}
+import com.socrata.datacoordinator.util.{NullCache, StackedTimingReport, LoggedTimingReport}
 import org.slf4j.LoggerFactory
 import com.socrata.soql.environment.{ColumnName, TypeName}
 import com.socrata.datacoordinator.truth.universe.sql.PostgresCopyIn
@@ -63,7 +63,8 @@ object ChicagoCrimesLoadScript extends App {
       allowDdlOnPublishedCopies = false,
       new FiniteDuration(10, TimeUnit.SECONDS),
       "dummy instance",
-      new File(System.getProperty("java.io.tmpdir"))
+      new File(System.getProperty("java.io.tmpdir")),
+      NullCache
     )
 
     val datasetCreator = new DatasetCreator(common.universe, common.SystemColumns.schemaFragment, common.SystemColumns.id, common.SystemColumns.version, common.physicalColumnBaseBase)

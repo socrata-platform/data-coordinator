@@ -12,7 +12,7 @@ import org.slf4j.LoggerFactory
 import sun.misc.{Signal, SignalHandler}
 import java.util.concurrent.{Executors, TimeUnit, CountDownLatch}
 import org.joda.time.{DateTime, Seconds}
-import com.socrata.datacoordinator.util.{StackedTimingReport, LoggedTimingReport}
+import com.socrata.datacoordinator.util.{NullCache, StackedTimingReport, LoggedTimingReport}
 import com.socrata.datacoordinator.truth.universe._
 import org.apache.log4j.PropertyConfigurator
 import com.socrata.thirdparty.typesafeconfig.Propertizer
@@ -116,7 +116,8 @@ object SecondaryWatcher extends App { self =>
     allowDdlOnPublishedCopies = false, // don't care,
     Duration.fromNanos(1L), // don't care
     config.instance,
-    config.tmpdir
+    config.tmpdir,
+    NullCache
   )
 
   val w = new SecondaryWatcher(common.universe)

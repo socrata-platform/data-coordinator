@@ -16,12 +16,13 @@ import com.socrata.datacoordinator.truth.loader.RowPreparer
 import com.socrata.datacoordinator.id.{UserColumnId, DatasetId, RowVersion, RowId}
 import java.sql.Connection
 import java.io.{File, OutputStream, Reader}
-import com.socrata.datacoordinator.util.TransferrableContextTimingReport
+import com.socrata.datacoordinator.util.{NullCache, Cache, TransferrableContextTimingReport}
 import javax.sql.DataSource
 import com.rojoma.simplearm.{SimpleArm, Managed}
 import com.socrata.soql.types.obfuscation.{Quadifier, CryptProvider}
 import scala.concurrent.duration.Duration
 import java.security.SecureRandom
+import com.socrata.datacoordinator.truth.universe.CacheProvider
 
 object SoQLSystemColumns { sc =>
   val id = new UserColumnId(":id")
@@ -50,7 +51,8 @@ class SoQLCommon(dataSource: DataSource,
                  allowDdlOnPublishedCopies: Boolean,
                  writeLockTimeout: Duration,
                  instance: String,
-                 tmpDir: File)
+                 tmpDir: File,
+                 cache: Cache)
 { common =>
   type CT = SoQLType
   type CV = SoQLValue
@@ -98,12 +100,14 @@ class SoQLCommon(dataSource: DataSource,
   def isSystemColumnId(name: UserColumnId) =
     SoQLSystemColumns.isSystemColumnId(name)
 
-  def universe: Managed[PostgresUniverse[CT, CV]] = new SimpleArm[PostgresUniverse[CT, CV]] {
-    def flatMap[B](f: PostgresUniverse[CT, CV] => B): B = {
+  val universe: Managed[PostgresUniverse[CT, CV] with CacheProvider] = new SimpleArm[PostgresUniverse[CT, CV] with CacheProvider] {
+    def flatMap[B](f: PostgresUniverse[CT, CV] with CacheProvider => B): B = {
       val conn = dataSource.getConnection()
       try {
         conn.setAutoCommit(false)
-        val u = new PostgresUniverse(conn, PostgresUniverseCommon)
+        val u = new PostgresUniverse(conn, PostgresUniverseCommon) with CacheProvider {
+          val cache: Cache = common.cache
+        }
         try {
           val result = f(u)
           u.commit()
