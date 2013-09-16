@@ -35,6 +35,8 @@ final class SqlLoader[CT, CV](val connection: Connection,
 {
   require(!connection.getAutoCommit, "Connection is in auto-commit mode")
 
+  val preStats = sqlizer.computeStatistics(connection)
+
   val log = org.slf4j.LoggerFactory.getLogger(classOf[SqlLoader[_, _]])
   val typeContext = sqlizer.typeContext
   val datasetContext = sqlizer.datasetContext
@@ -91,6 +93,11 @@ final class SqlLoader[CT, CV](val connection: Connection,
     def upserts = upsertBuilder.result()
     def deletions = deletionBuilder.result()
   }
+
+  // These are all updated only by the worker thread
+  private var totalInsertCount = 0L
+  private var totalUpdateCount = 0L
+  private var totalDeleteCount = 0L
 
   private var currentBatch = new Queues
 
@@ -160,6 +167,7 @@ final class SqlLoader[CT, CV](val connection: Connection,
       checkAsyncJob()
     }
 
+    sqlizer.updateStatistics(connection, totalInsertCount, totalDeleteCount, totalUpdateCount, preStats)
     reportWriter.finished = true
   }
 
@@ -262,6 +270,7 @@ final class SqlLoader[CT, CV](val connection: Connection,
         }
       }
       assert(deletedCount == completedDeletions.size, "Didn't delete as many rows as I thought it would?")
+      totalDeleteCount += deletedCount
       for((sid, job, id) <- completedDeletions) {
         dataLogger.delete(sid)
         reportWriter.deleted(job, id)
@@ -378,6 +387,9 @@ final class SqlLoader[CT, CV](val connection: Connection,
       }
       assert(secondaryInsertedCount + insertedCount == believedInserted, s"Insert count ($secondaryInsertedCount + $insertedCount) is different from the TOTAL number of rows collected (${believedInserted})")
 
+      totalInsertCount += insertedCount
+      totalInsertCount += secondaryInsertedCount
+
       for((job, InspectedRow(id, sid, version, row)) <- completedInserts) {
         dataLogger.insert(sid, row)
         reportWriter.inserted(job, IdAndVersion(id, version))
@@ -397,6 +409,7 @@ final class SqlLoader[CT, CV](val connection: Connection,
           val affected = stmt.executeBatch()
           assert(affected.length == updates.length, "Didn't execute as many statements as expected?")
           assert(affected.forall(_ == 1L), "At least one update didn't affect any row?")
+          totalUpdateCount += affected.length
         }
       }
       for(update <- updates) {

@@ -9,6 +9,7 @@ import com.socrata.datacoordinator.truth.sql.RepBasedSqlDatasetContext
 import java.io.{OutputStreamWriter, BufferedWriter, OutputStream}
 import java.nio.charset.StandardCharsets
 import org.postgresql.copy.CopyIn
+import com.rojoma.simplearm.util._
 
 class PostgresRepBasedDataSqlizer[CT, CV](tableName: String,
                                           datasetContext: RepBasedSqlDatasetContext[CT, CV],
@@ -51,6 +52,29 @@ class PostgresRepBasedDataSqlizer[CT, CV](tableName: String,
 
     def close() {
       writer.close()
+    }
+  }
+
+  type PreloadStatistics = Long
+
+  def computeStatistics(conn: Connection): PreloadStatistics =
+    using(conn.prepareStatement("SELECT reltuples FROM pg_class WHERE relname=?")) { stmt =>
+      stmt.setString(1, tableName)
+      using(stmt.executeQuery()) { rs =>
+        if(rs.next()) {
+          rs.getLong("reltuples")
+        } else {
+          0L
+        }
+      }
+    }
+
+  def updateStatistics(conn: Connection, rowsAdded: Long, rowsDeleted: Long, rowsChanged: Long, preload: PreloadStatistics) {
+    if(rowsAdded + rowsDeleted + rowsChanged >= preload / 10) {
+      val cols = (sidRep.physColumns ++ pkRep.physColumns).toSet
+      using(conn.prepareStatement("ANALYZE " + tableName + " (" + cols.mkString(",") + ")")) { stmt =>
+        stmt.execute()
+      }
     }
   }
 }

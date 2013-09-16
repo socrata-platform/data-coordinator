@@ -23,6 +23,11 @@ trait ReadDataSqlizer[CT, CV] {
 
 /** Generates SQL for execution. */
 trait DataSqlizer[CT, CV] extends ReadDataSqlizer[CT, CV] {
+  type PreloadStatistics
+
+  def computeStatistics(conn: Connection): PreloadStatistics
+  def updateStatistics(conn: Connection, rowsAdded: Long, rowsDeleted: Long, rowsChanged: Long, preload: PreloadStatistics)
+
   def softMaxBatchSize: Int
   def sizeofDelete(id: CV): Int
   def sizeof(row: Row[CV]): Int

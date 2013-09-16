@@ -87,6 +87,7 @@ class RepBasedPostgresSchemaLoader[CT, CV](conn: Connection, logger: Logger[CT, 
             }
             val indexName = "uniq_" + table + "_" + rep.base
             stmt.execute("CREATE UNIQUE INDEX " + indexName + " ON " + table + "(" + rep.equalityIndexExpression + ")" + postgresTablespaceSuffixFor(indexName))
+            stmt.execute("ANALYZE " + table + " (" + rep.physColumns.mkString(",") + ")")
           } catch {
             case e: java.sql.SQLException if e.getSQLState == uniqueViolation =>
               throw DuplicateValuesInColumn(columnInfo.userColumnId)

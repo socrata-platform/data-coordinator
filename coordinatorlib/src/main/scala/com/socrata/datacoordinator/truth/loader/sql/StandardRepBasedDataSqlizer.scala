@@ -42,4 +42,8 @@ class StandardRepBasedDataSqlizer[CT, CV](tableName: String,
       stmt.close()
     }
   }
+
+  type PreloadStatistics = Unit
+  def computeStatistics(conn: Connection): PreloadStatistics = ()
+  def updateStatistics(conn: Connection, rowsAdded: Long, rowsDeleted: Long, rowsChanged: Long, preload: PreloadStatistics) {}
 }
