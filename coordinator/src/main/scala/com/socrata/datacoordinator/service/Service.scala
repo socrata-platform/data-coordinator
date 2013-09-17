@@ -41,7 +41,7 @@ case class Schema(hash: String, schema: UserColumnIdMap[TypeName], pk: UserColum
 class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) => Seq[MutationScriptCommandResult],
               processCreation: (Iterator[JValue], IndexedTempFile) => (DatasetId, Seq[MutationScriptCommandResult]),
               getSchema: DatasetId => Option[Schema],
-              datasetContents: (DatasetId, CopySelector, Option[UserColumnIdSet], Option[Long], Option[Long]) => ((Seq[Field], Option[UserColumnId], String, Iterator[Array[JValue]]) => Unit) => Boolean,
+              datasetContents: (DatasetId, Option[String], CopySelector, Option[UserColumnIdSet], Option[Long], Option[Long]) => (Either[Schema, (Seq[Field], Option[UserColumnId], String, Iterator[Array[JValue]])] => Unit) => Boolean,
               secondaries: Set[String],
               datasetsInStore: (String) => Map[DatasetId, Long],
               versionInStore: (String, DatasetId) => Option[Long],
@@ -195,6 +195,11 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
     }
   }
 
+  def mismatchedSchema(code: String, name: DatasetId, schema: Schema) =
+    err(Conflict, code,
+      "dataset" -> JString(formatDatasetId(name)),
+      "schema" -> jsonifySchema(schema))
+
   def withMutationScriptResults[T](f: => HttpResponse): HttpResponse = {
     try {
       f
@@ -224,9 +229,7 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
               "object" -> obj,
               "field" -> JString(field))
           case Mutator.MismatchedSchemaHash(name, schema) =>
-            err(Conflict, "req.script.header.mismatched-schema",
-              "dataset" -> JString(formatDatasetId(name)),
-              "schema" -> jsonifySchema(schema))
+            mismatchedSchema("req.script.header.mismatched-schema", name, schema)
           case Mutator.InvalidCommandFieldValue(obj, field, value) =>
             err(BadRequest, "req.script.command.invalid-field",
               "object" -> obj,
@@ -474,6 +477,7 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
     }
 
     def doExportFile(req: HttpServletRequest): HttpResponse = {
+      val schemaHash = Option(req.getParameter("schemaHash"))
       val onlyColumns = Option(req.getParameterValues("c")).map(_.flatMap { c => norm(c).split(',').map(new UserColumnId(_)) }).map(UserColumnIdSet(_ : _*))
       val limit = Option(req.getParameter("limit")).map { limStr =>
         try {
@@ -502,30 +506,33 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
           }
       }
       { resp =>
-        val found = datasetContents(datasetId, copy, onlyColumns, limit, offset) { (schema, rowIdCol, locale, rows) =>
-          resp.setContentType("application/json")
-          resp.setCharacterEncoding("utf-8")
-          val out = new BufferedWriter(resp.getWriter)
-          val jsonWriter = new CompactJsonWriter(out)
-          out.write("[{\"locale\":")
-          jsonWriter.write(JString(locale))
-          rowIdCol.foreach { rid =>
-            out.write("\n ,\"row_id\":")
-            jsonWriter.write(JsonCodec.toJValue(rid))
+        val found = datasetContents(datasetId, schemaHash, copy, onlyColumns, limit, offset) {
+          case Left(newSchema) =>
+            mismatchedSchema("req.export.mismatched-schema", datasetId, newSchema)(resp)
+          case Right((schema, rowIdCol, locale, rows)) =>
+            resp.setContentType("application/json")
+            resp.setCharacterEncoding("utf-8")
+            val out = new BufferedWriter(resp.getWriter)
+            val jsonWriter = new CompactJsonWriter(out)
+            out.write("[{\"locale\":")
+            jsonWriter.write(JString(locale))
+            rowIdCol.foreach { rid =>
+              out.write("\n ,\"pk\":")
+              jsonWriter.write(JsonCodec.toJValue(rid))
+            }
+            out.write("\n ,\"schema\":")
+            jsonWriter.write(JsonCodec.toJValue(schema))
+            out.write("\n }")
+            while(rows.hasNext) {
+              out.write("\n,")
+              jsonWriter.write(JArray(rows.next()))
+            }
+            out.write("\n]\n")
+            out.flush()
           }
-          out.write("\n ,\"schema\":")
-          jsonWriter.write(JsonCodec.toJValue(schema))
-          out.write("\n }")
-          while(rows.hasNext) {
-            out.write("\n,")
-            jsonWriter.write(JArray(rows.next()))
+          if(!found) {
+            notFoundError(formatDatasetId(datasetId))
           }
-          out.write("\n]\n")
-          out.flush()
-        }
-        if(!found) {
-          notFoundError(formatDatasetId(datasetId))
-        }
       }
     }
   }

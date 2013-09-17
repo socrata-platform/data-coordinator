@@ -12,8 +12,8 @@ import com.socrata.datacoordinator.id.DatasetId
 
 import SchemaFinder._
 
-class SchemaFinder[CT, CV](universe: Managed[Universe[CT, CV] with DatasetMapReaderProvider with CacheProvider], typeSerializer: CT => TypeName) {
-  def getSchema(datasetId: DatasetId): Option[Schema] =
+class SchemaFinder[CT, CV](typeSerializer: CT => TypeName) {
+  def getSchema(universe: Managed[Universe[CT, CV] with DatasetMapReaderProvider with CacheProvider], datasetId: DatasetId): Option[Schema] =
     for {
       u <- universe
       dsInfo <- u.datasetMapReader.datasetInfo(datasetId)

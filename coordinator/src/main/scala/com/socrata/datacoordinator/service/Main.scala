@@ -82,31 +82,39 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
     }
   }
 
-  def exporter(id: DatasetId, copy: CopySelector, columns: Option[UserColumnIdSet], limit: Option[Long], offset: Option[Long])(f: (Seq[Field], Option[UserColumnId], String, Iterator[Array[JValue]]) => Unit): Boolean = {
+  def exporter(id: DatasetId, schemaHash: Option[String], copy: CopySelector, columns: Option[UserColumnIdSet], limit: Option[Long], offset: Option[Long])(f: Either[Schema, (Seq[Field], Option[UserColumnId], String, Iterator[Array[JValue]])] => Unit): Boolean = {
     val res = for(u <- common.universe) yield {
       Exporter.export(u, id, copy, columns, limit, offset) { (copyCtx, it) =>
-        val jsonReps = common.jsonReps(copyCtx.datasetInfo)
-        val jsonSchema = copyCtx.schema.mapValuesStrict { ci => jsonReps(ci.typ) }
-        val unwrappedCids = copyCtx.schema.values.toSeq.filter { ci => jsonSchema.contains(ci.systemId) }.sortBy(_.userColumnId).map(_.systemId.underlying).toArray
-        val pkColName = copyCtx.pkCol.map(_.userColumnId)
-        val orderedSchema = unwrappedCids.map { cidRaw =>
-          val col = copyCtx.schema(new ColumnId(cidRaw))
-          Field(col.userColumnId, col.typ.name.name)
+        val schema = new SchemaFinder(common.typeContext.typeNamespace.userTypeForType).getSchema(copyCtx, u.cache)
+
+        if(schemaHash.isDefined && (Some(schema.hash) != schemaHash)) {
+          f(Left(schema))
+        } else {
+          val jsonReps = common.jsonReps(copyCtx.datasetInfo)
+          val jsonSchema = copyCtx.schema.mapValuesStrict { ci => jsonReps(ci.typ) }
+          val unwrappedCids = copyCtx.schema.values.toSeq.filter { ci => jsonSchema.contains(ci.systemId) }.sortBy(_.userColumnId).map(_.systemId.underlying).toArray
+          val pkColName = copyCtx.pkCol.map(_.userColumnId)
+          val orderedSchema = unwrappedCids.map { cidRaw =>
+            val col = copyCtx.schema(new ColumnId(cidRaw))
+            Field(col.userColumnId, col.typ.name.name)
+          }
+          f(Right(
+            orderedSchema,
+            pkColName,
+            copyCtx.datasetInfo.localeName,
+            it.map { row =>
+              val arr = new Array[JValue](unwrappedCids.length)
+              var i = 0
+              while(i != unwrappedCids.length) {
+                val cid = new ColumnId(unwrappedCids(i))
+                val rep = jsonSchema(cid)
+                arr(i) = rep.toJValue(row(cid))
+                i += 1
+              }
+              arr
+            })
+          )
         }
-        f(orderedSchema,
-          pkColName,
-          copyCtx.datasetInfo.localeName,
-          it.map { row =>
-            val arr = new Array[JValue](unwrappedCids.length)
-            var i = 0
-            while(i != unwrappedCids.length) {
-              val cid = new ColumnId(unwrappedCids(i))
-              val rep = jsonSchema(cid)
-              arr(i) = rep.toJValue(row(cid))
-              i += 1
-            }
-            arr
-          })
       }
     }
     res.isDefined
@@ -168,7 +176,7 @@ object Main {
 
       val operations = new Main(common, serviceConfig)
 
-      val serv = new Service(operations.processMutation, operations.processCreation, common.Mutator.schemaFinder.getSchema,
+      val serv = new Service(operations.processMutation, operations.processCreation, common.Mutator.schemaFinder.getSchema(common.universe, _),
         operations.exporter, secondaries.keySet, operations.datasetsInStore, operations.versionInStore,
         operations.ensureInSecondary, operations.secondariesOfDataset, operations.listDatasets, operations.deleteDataset,
         serviceConfig.commandReadLimit, common.internalNameFromDatasetId, common.datasetIdFromInternalName, operations.makeReportTemporaryFile)

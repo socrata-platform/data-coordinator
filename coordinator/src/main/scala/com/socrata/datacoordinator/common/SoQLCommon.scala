@@ -222,7 +222,7 @@ class SoQLCommon(dataSource: DataSource,
 
     val typeContext = common.typeContext
 
-    val schemaFinder = new SchemaFinder[CT, CV](universe, typeContext.typeNamespace.userTypeForType)
+    val schemaFinder = new SchemaFinder[CT, CV](typeContext.typeNamespace.userTypeForType)
 
     val allowDdlOnPublishedCopies = common.allowDdlOnPublishedCopies
 
