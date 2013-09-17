@@ -5,6 +5,7 @@ import com.rojoma.simplearm.util._
 import com.rojoma.json.util.JsonUtil.writeJson
 
 import sbtassembly.Plugin.AssemblyKeys._
+import sbtassembly.Plugin.MergeStrategy
 
 object Coordinator {
   lazy val settings: Seq[Setting[_]] = BuildSettings.projectSettings(assembly = true) ++ Seq(
@@ -21,7 +22,13 @@ object Coordinator {
         "org.scalacheck" %% "scalacheck" % "1.10.0" % "test"
       )
     },
-    mainClass in assembly := Some("com.socrata.datacoordinator.Launch")
+    mainClass in assembly := Some("com.socrata.datacoordinator.Launch"),
+    mergeStrategy in assembly <<= (mergeStrategy in assembly) { old =>
+      {
+        case "about.html" => MergeStrategy.rename
+        case x => old(x)
+      }
+    }
   )
 
   lazy val configs: Seq[Configuration] = BuildSettings.projectConfigs
