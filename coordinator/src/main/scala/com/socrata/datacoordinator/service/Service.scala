@@ -29,19 +29,15 @@ import com.rojoma.json.io.StringEvent
 import com.rojoma.json.io.IdentifierEvent
 import com.socrata.datacoordinator.truth.loader.NoSuchRowToUpdate
 import com.socrata.datacoordinator.truth.loader.VersionMismatch
-import com.socrata.http.server.util.ErrorAdapter
-
-case class Field(@JsonKey("c") userColumnId: UserColumnId, @JsonKey("t") typ: String)
-object Field {
-  implicit val jCodec = AutomaticJsonCodecBuilder[Field]
-}
-
-case class Schema(hash: String, schema: UserColumnIdMap[TypeName], pk: UserColumnId, locale: String)
+import com.socrata.http.server.util.{StrongEntityTag, EntityTag, Precondition, ErrorAdapter}
+import com.socrata.datacoordinator.truth.metadata.{SchemaField, Schema}
+import java.security.MessageDigest
+import org.apache.commons.codec.binary.Base64
 
 class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) => Seq[MutationScriptCommandResult],
               processCreation: (Iterator[JValue], IndexedTempFile) => (DatasetId, Seq[MutationScriptCommandResult]),
               getSchema: DatasetId => Option[Schema],
-              datasetContents: (DatasetId, Option[String], CopySelector, Option[UserColumnIdSet], Option[Long], Option[Long]) => (Either[Schema, (Seq[Field], Option[UserColumnId], String, Iterator[Array[JValue]])] => Unit) => Boolean,
+              datasetContents: (DatasetId, Option[String], CopySelector, Option[UserColumnIdSet], Option[Long], Option[Long], Precondition) => (Either[Schema, (EntityTag, Seq[SchemaField], Option[UserColumnId], String, Iterator[Array[JValue]])] => Unit) => Exporter.Result[Unit],
               secondaries: Set[String],
               datasetsInStore: (String) => Map[DatasetId, Long],
               versionInStore: (String, DatasetId) => Option[Long],
@@ -477,6 +473,7 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
     }
 
     def doExportFile(req: HttpServletRequest): HttpResponse = {
+      val precondition = req.precondition
       val schemaHash = Option(req.getParameter("schemaHash"))
       val onlyColumns = Option(req.getParameterValues("c")).map(_.flatMap { c => norm(c).split(',').map(new UserColumnId(_)) }).map(UserColumnIdSet(_ : _*))
       val limit = Option(req.getParameter("limit")).map { limStr =>
@@ -505,38 +502,65 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
             return BadRequest ~> Content("Bad copy selector")
           }
       }
-      { resp =>
-        val found = datasetContents(datasetId, schemaHash, copy, onlyColumns, limit, offset) {
-          case Left(newSchema) =>
-            mismatchedSchema("req.export.mismatched-schema", datasetId, newSchema)(resp)
-          case Right((schema, rowIdCol, locale, rows)) =>
-            resp.setContentType("application/json")
-            resp.setCharacterEncoding("utf-8")
-            val out = new BufferedWriter(resp.getWriter)
-            val jsonWriter = new CompactJsonWriter(out)
-            out.write("[{\"locale\":")
-            jsonWriter.write(JString(locale))
-            rowIdCol.foreach { rid =>
-              out.write("\n ,\"pk\":")
-              jsonWriter.write(JsonCodec.toJValue(rid))
+      val suffix = locally {
+        val md = MessageDigest.getInstance("SHA1")
+        md.update(schemaHash.toString.getBytes(UTF_8))
+        md.update(onlyColumns.toString.getBytes(UTF_8))
+        md.update(limit.toString.getBytes(UTF_8))
+        md.update(offset.toString.getBytes(UTF_8))
+        md.update(copy.toString.getBytes)
+        "+" + Base64.encodeBase64URLSafeString(md.digest())
+      }
+      precondition.filter(_.value.endsWith(suffix)) match {
+        case Right(newPrecond) =>
+          val upstreamPrecondition = newPrecond.map(_.map(_.dropRight(suffix.length)));
+          { resp =>
+            val found = datasetContents(datasetId, schemaHash, copy, onlyColumns, limit, offset, upstreamPrecondition) {
+              case Left(newSchema) =>
+                mismatchedSchema("req.export.mismatched-schema", datasetId, newSchema)(resp)
+              case Right((etag, schema, rowIdCol, locale, rows)) =>
+                resp.setContentType("application/json")
+                resp.setCharacterEncoding("utf-8")
+                resp.setHeader("ETag", etag.map(_ + suffix).toString)
+                val out = new BufferedWriter(resp.getWriter)
+                val jsonWriter = new CompactJsonWriter(out)
+                out.write("[{\"locale\":")
+                jsonWriter.write(JString(locale))
+                rowIdCol.foreach { rid =>
+                  out.write("\n ,\"pk\":")
+                  jsonWriter.write(JsonCodec.toJValue(rid))
+                }
+                out.write("\n ,\"schema\":")
+                jsonWriter.write(JsonCodec.toJValue(schema))
+                out.write("\n }")
+                while(rows.hasNext) {
+                  out.write("\n,")
+                  jsonWriter.write(JArray(rows.next()))
+                }
+                out.write("\n]\n")
+                out.flush()
             }
-            out.write("\n ,\"schema\":")
-            jsonWriter.write(JsonCodec.toJValue(schema))
-            out.write("\n }")
-            while(rows.hasNext) {
-              out.write("\n,")
-              jsonWriter.write(JArray(rows.next()))
+
+            found match {
+              case Exporter.Success(_) => // ok good
+              case Exporter.NotFound =>
+                notFoundError(formatDatasetId(datasetId))
+              case Exporter.PreconditionFailed(Precondition.FailedBecauseMatch(etags)) =>
+                notModified(etags)(resp)
+              case Exporter.PreconditionFailed(Precondition.FailedBecauseNoMatch) =>
+                preconditionFailed(resp)
             }
-            out.write("\n]\n")
-            out.flush()
           }
-          if(!found) {
-            notFoundError(formatDatasetId(datasetId))
-          }
+        case Left(Precondition.FailedBecauseMatch(etags)) =>
+          notModified(etags)
+        case Left(Precondition.FailedBecauseNoMatch) =>
+          preconditionFailed
       }
     }
   }
 
+  def notModified(etags: Seq[EntityTag]) = etags.foldLeft(NotModified) { (resp, etag) => resp ~> Header("ETag", etag.toString) }
+  val preconditionFailed = err(PreconditionFailed, "req.precondition-failed")
 
   def jsonifySchema(schemaObj: Schema) = {
     val Schema(hash, schema, pk, locale) = schemaObj

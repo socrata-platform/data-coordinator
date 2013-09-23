@@ -22,7 +22,7 @@ import com.rojoma.simplearm.{SimpleArm, Managed}
 import com.socrata.soql.types.obfuscation.{Quadifier, CryptProvider}
 import scala.concurrent.duration.Duration
 import java.security.SecureRandom
-import com.socrata.datacoordinator.truth.universe.CacheProvider
+import com.socrata.datacoordinator.truth.universe.{SchemaFinderProvider, CacheProvider}
 
 object SoQLSystemColumns { sc =>
   val id = new UserColumnId(":id")
@@ -100,13 +100,14 @@ class SoQLCommon(dataSource: DataSource,
   def isSystemColumnId(name: UserColumnId) =
     SoQLSystemColumns.isSystemColumnId(name)
 
-  val universe: Managed[PostgresUniverse[CT, CV] with CacheProvider] = new SimpleArm[PostgresUniverse[CT, CV] with CacheProvider] {
-    def flatMap[B](f: PostgresUniverse[CT, CV] with CacheProvider => B): B = {
+  val universe: Managed[PostgresUniverse[CT, CV] with SchemaFinderProvider] = new SimpleArm[PostgresUniverse[CT, CV] with SchemaFinderProvider] {
+    def flatMap[B](f: PostgresUniverse[CT, CV] with SchemaFinderProvider => B): B = {
       val conn = dataSource.getConnection()
       try {
         conn.setAutoCommit(false)
-        val u = new PostgresUniverse(conn, PostgresUniverseCommon) with CacheProvider {
-          val cache: Cache = common.cache
+        val u = new PostgresUniverse(conn, PostgresUniverseCommon) with SchemaFinderProvider {
+          lazy val cache: Cache = common.cache
+          lazy val schemaFinder = new SchemaFinder(common.typeContext.typeNamespace.userTypeForType, cache)
         }
         try {
           val result = f(u)
@@ -221,8 +222,6 @@ class SoQLCommon(dataSource: DataSource,
     def jsonReps(di: DatasetInfo): CT => JsonColumnRep[CT, CV] = common.jsonReps(di)
 
     val typeContext = common.typeContext
-
-    val schemaFinder = new SchemaFinder[CT, CV](typeContext.typeNamespace.userTypeForType)
 
     val allowDdlOnPublishedCopies = common.allowDdlOnPublishedCopies
 

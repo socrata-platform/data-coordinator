@@ -20,12 +20,7 @@ import com.socrata.datacoordinator.secondary.sql.{SqlSecondaryConfig, SqlSeconda
 import com.socrata.datacoordinator.util._
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import scala.concurrent.duration.Duration
-import com.socrata.datacoordinator.truth.metadata.DatasetInfo
-import com.socrata.datacoordinator.truth.metadata.ColumnInfo
-import com.socrata.datacoordinator.truth.metadata.CopyInfo
-import com.socrata.datacoordinator.id.{DatasetId, RowId}
-import com.socrata.datacoordinator.truth.json.JsonColumnWriteRep
-import scala.Some
+import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.metadata.CopyInfo

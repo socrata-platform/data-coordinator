@@ -8,7 +8,7 @@ import com.socrata.datacoordinator.truth._
 import com.socrata.datacoordinator.util._
 import com.socrata.datacoordinator.secondary.{SecondaryConfig, PlaybackToSecondary, SecondaryManifest}
 import org.joda.time.DateTime
-import com.socrata.datacoordinator.truth.metadata.DatasetInfo
+import com.socrata.datacoordinator.truth.metadata.{DatasetInfo, SchemaFinder}
 
 // Not sure I'll need all of these!  Certainly not all of them are implemented.
 // The idea behind these traits is that they encapsulate "things which need a Connection".
@@ -137,4 +137,8 @@ trait DatasetDropperProvider {
 
 trait TableCleanupProvider {
   def tableCleanup: TableCleanup
+}
+
+trait SchemaFinderProvider { this: TypeUniverse =>
+  def schemaFinder: SchemaFinder[CT]
 }

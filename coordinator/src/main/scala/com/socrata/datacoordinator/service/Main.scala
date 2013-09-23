@@ -21,6 +21,8 @@ import java.net.{InetSocketAddress, InetAddress}
 import com.socrata.datacoordinator.util.collection.UserColumnIdSet
 import com.socrata.http.common.AuxiliaryData
 import com.socrata.http.server.livenesscheck.LivenessCheckResponder
+import com.socrata.datacoordinator.truth.metadata.{SchemaField, Schema, DatasetCopyContext}
+import com.socrata.http.server.util.{EntityTag, Precondition}
 
 class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
   def ensureInSecondary(storeId: String, datasetId: DatasetId): Unit =
@@ -82,10 +84,10 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
     }
   }
 
-  def exporter(id: DatasetId, schemaHash: Option[String], copy: CopySelector, columns: Option[UserColumnIdSet], limit: Option[Long], offset: Option[Long])(f: Either[Schema, (Seq[Field], Option[UserColumnId], String, Iterator[Array[JValue]])] => Unit): Boolean = {
-    val res = for(u <- common.universe) yield {
-      Exporter.export(u, id, copy, columns, limit, offset) { (copyCtx, it) =>
-        val schema = new SchemaFinder(common.typeContext.typeNamespace.userTypeForType).getSchema(copyCtx, u.cache)
+  def exporter(id: DatasetId, schemaHash: Option[String], copy: CopySelector, columns: Option[UserColumnIdSet], limit: Option[Long], offset: Option[Long], precondition: Precondition)(f: Either[Schema, (EntityTag, Seq[SchemaField], Option[UserColumnId], String, Iterator[Array[JValue]])] => Unit): Exporter.Result[Unit] = {
+    for(u <- common.universe) yield {
+      Exporter.export(u, id, copy, columns, limit, offset, precondition) { (entityTag, copyCtx, it) =>
+        val schema = u.schemaFinder.getSchema(copyCtx)
 
         if(schemaHash.isDefined && (Some(schema.hash) != schemaHash)) {
           f(Left(schema))
@@ -96,9 +98,10 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
           val pkColName = copyCtx.pkCol.map(_.userColumnId)
           val orderedSchema = unwrappedCids.map { cidRaw =>
             val col = copyCtx.schema(new ColumnId(cidRaw))
-            Field(col.userColumnId, col.typ.name.name)
+            SchemaField(col.userColumnId, col.typ.name.name)
           }
           f(Right(
+            entityTag,
             orderedSchema,
             pkColName,
             copyCtx.datasetInfo.localeName,
@@ -117,7 +120,6 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
         }
       }
     }
-    res.isDefined
   }
 
   def makeReportTemporaryFile() =
@@ -176,7 +178,19 @@ object Main {
 
       val operations = new Main(common, serviceConfig)
 
-      val serv = new Service(operations.processMutation, operations.processCreation, common.Mutator.schemaFinder.getSchema(common.universe, _),
+      def getSchema(datasetId: DatasetId) = {
+        for {
+          u <- common.universe
+          dsInfo <- u.datasetMapReader.datasetInfo(datasetId)
+        } yield {
+          val latest = u.datasetMapReader.latest(dsInfo)
+          val schema = u.datasetMapReader.schema(latest)
+          val ctx = new DatasetCopyContext(latest, schema)
+          u.schemaFinder.getSchema(ctx)
+        }
+      }
+
+      val serv = new Service(operations.processMutation, operations.processCreation, getSchema _,
         operations.exporter, secondaries.keySet, operations.datasetsInStore, operations.versionInStore,
         operations.ensureInSecondary, operations.secondariesOfDataset, operations.listDatasets, operations.deleteDataset,
         serviceConfig.commandReadLimit, common.internalNameFromDatasetId, common.datasetIdFromInternalName, operations.makeReportTemporaryFile)

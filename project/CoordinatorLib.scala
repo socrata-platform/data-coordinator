@@ -8,6 +8,7 @@ object CoordinatorLib {
       "com.socrata" %% "soql-environment" % "0.0.16-SNAPSHOT",
       "com.rojoma" %% "rojoma-json" % "[2.4.0,3.0.0)",
       "com.rojoma" %% "simple-arm" % "[1.1.10,2.0.0)",
+      "commons-codec" % "commons-codec" % "1.8",
       "joda-time" % "joda-time" % "2.1",
       "org.joda" % "joda-convert" % "1.2",
       "net.sf.trove4j" % "trove4j" % "3.0.3",

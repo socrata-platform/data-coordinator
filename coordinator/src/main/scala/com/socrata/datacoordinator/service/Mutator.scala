@@ -2,9 +2,9 @@ package com.socrata.datacoordinator
 package service
 
 import com.rojoma.json.ast._
-import com.socrata.datacoordinator.truth.universe.{CacheProvider, DatasetMutatorProvider, Universe}
+import com.socrata.datacoordinator.truth.universe.{SchemaFinderProvider, CacheProvider, DatasetMutatorProvider, Universe}
 import com.socrata.datacoordinator.truth.{TypeContext, DatasetIdInUseByWriterException, DatasetMutator}
-import com.socrata.datacoordinator.truth.metadata.{DatasetInfo, DatasetCopyContext, LifecycleStage, ColumnInfo}
+import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth.json.JsonColumnRep
 import com.rojoma.json.codec.JsonCodec
 import com.socrata.datacoordinator.truth.loader._
@@ -18,6 +18,16 @@ import java.nio.charset.StandardCharsets.UTF_8
 import java.io.InputStreamReader
 import com.socrata.datacoordinator.util.collection.UserColumnIdMap
 import scala.annotation.tailrec
+import com.socrata.datacoordinator.truth.loader.NoSuchRowToDelete
+import scala.Some
+import com.rojoma.json.io.StartOfObjectEvent
+import com.rojoma.json.ast.JString
+import com.socrata.datacoordinator.truth.loader.IdAndVersion
+import com.rojoma.json.io.FieldEvent
+import com.socrata.datacoordinator.truth.metadata.DatasetInfo
+import com.socrata.datacoordinator.truth.loader.NoSuchRowToUpdate
+import com.rojoma.json.io.EndOfObjectEvent
+import com.socrata.datacoordinator.truth.loader.VersionMismatch
 
 sealed trait MutationScriptCommandResult
 object MutationScriptCommandResult {
@@ -150,7 +160,6 @@ trait MutatorCommon[CT, CV] {
   def systemIdColumnId: UserColumnId
   def versionColumnId: UserColumnId
   def jsonReps(di: DatasetInfo): CT => JsonColumnRep[CT, CV]
-  def schemaFinder: SchemaFinder[CT, CV]
   def allowDdlOnPublishedCopies: Boolean
   def typeContext: TypeContext[CT, CV]
   def genUserColumnId(): UserColumnId
@@ -274,13 +283,13 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
       Iterator.single(EndOfObjectEvent()))
   }
 
-  def createScript(u: Universe[CT, CV] with DatasetMutatorProvider with CacheProvider, commandStream: Iterator[JValue]): (DatasetId, Seq[MutationScriptCommandResult]) = {
+  def createScript(u: Universe[CT, CV] with DatasetMutatorProvider with SchemaFinderProvider, commandStream: Iterator[JValue]): (DatasetId, Seq[MutationScriptCommandResult]) = {
     if(commandStream.isEmpty) throw EmptyCommandStream()(0L)
     val commands = createCreateStream(0L, commandStream.next(), commandStream)
     runScript(u, commands)
   }
 
-  def updateScript(u: Universe[CT, CV] with DatasetMutatorProvider with CacheProvider, datasetId: DatasetId, commandStream: Iterator[JValue]): Seq[MutationScriptCommandResult] = {
+  def updateScript(u: Universe[CT, CV] with DatasetMutatorProvider with SchemaFinderProvider, datasetId: DatasetId, commandStream: Iterator[JValue]): Seq[MutationScriptCommandResult] = {
     if(commandStream.isEmpty) throw EmptyCommandStream()(0L)
     val commands = createCommandStream(0L, commandStream.next(), datasetId, commandStream)
     runScript(u, commands)._2
@@ -375,7 +384,7 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
       firstJob to jobLimit
   }
 
-  private def runScript(u: Universe[CT, CV] with DatasetMutatorProvider with CacheProvider, commands: CommandStream): (DatasetId, Seq[MutationScriptCommandResult]) = {
+  private def runScript(u: Universe[CT, CV] with DatasetMutatorProvider with SchemaFinderProvider, commands: CommandStream): (DatasetId, Seq[MutationScriptCommandResult]) = {
     def user = commands.user
 
     def doProcess(ctx: DatasetMutator[CT, CV]#MutationContext): (DatasetId, Seq[MutationScriptCommandResult]) = {
@@ -387,9 +396,9 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
 
     def checkHash(index: Long, schemaHash: Option[String], ctx: DatasetCopyContext[CT]) {
       for(givenSchemaHash <- schemaHash) {
-        val realSchemaHash = schemaFinder.schemaHash(ctx, u.cache)
+        val realSchemaHash = u.schemaFinder.schemaHash(ctx)
         if(givenSchemaHash != realSchemaHash) {
-          throw MismatchedSchemaHash(ctx.datasetInfo.systemId, schemaFinder.getSchema(ctx, u.cache))(index)
+          throw MismatchedSchemaHash(ctx.datasetInfo.systemId, u.schemaFinder.getSchema(ctx))(index)
         }
       }
     }

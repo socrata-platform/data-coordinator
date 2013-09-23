@@ -5,26 +5,15 @@ import scala.concurrent.duration._
 import com.rojoma.simplearm.Managed
 
 import com.socrata.datacoordinator.truth.universe.{CacheProvider, DatasetMapReaderProvider, Universe}
-import com.socrata.datacoordinator.truth.metadata.DatasetCopyContext
+import com.socrata.datacoordinator.truth.metadata.{Schema, DatasetCopyContext}
 import com.socrata.datacoordinator.util.{Cache, RotateSchema}
 import com.socrata.soql.environment.TypeName
 import com.socrata.datacoordinator.id.DatasetId
 
 import SchemaFinder._
 
-class SchemaFinder[CT, CV](typeSerializer: CT => TypeName) {
-  def getSchema(universe: Managed[Universe[CT, CV] with DatasetMapReaderProvider with CacheProvider], datasetId: DatasetId): Option[Schema] =
-    for {
-      u <- universe
-      dsInfo <- u.datasetMapReader.datasetInfo(datasetId)
-    } yield {
-      val latest = u.datasetMapReader.latest(dsInfo)
-      val schema = u.datasetMapReader.schema(latest)
-      val ctx = new DatasetCopyContext(latest, schema)
-      getSchema(ctx, u.cache)
-    }
-
-  def schemaHash(ctx: DatasetCopyContext[CT], cache: Cache): String = {
+class SchemaFinder[CT, CV](typeSerializer: CT => TypeName, cache: Cache) extends com.socrata.datacoordinator.truth.metadata.SchemaFinder[CT] {
+  def schemaHash(ctx: DatasetCopyContext[CT]): String = {
     val key = List("schemahash", ctx.datasetInfo.systemId.underlying.toString, ctx.copyInfo.dataVersion.toString)
     cache.lookup[String](key) match {
       case Some(result) =>
@@ -36,8 +25,8 @@ class SchemaFinder[CT, CV](typeSerializer: CT => TypeName) {
     }
   }
 
-  def getSchema(ctx: DatasetCopyContext[CT], cache: Cache): Schema = {
-    val hash = schemaHash(ctx, cache)
+  def getSchema(ctx: DatasetCopyContext[CT]): Schema = {
+    val hash = schemaHash(ctx)
     val columns = RotateSchema(ctx.schema).mapValuesStrict { col => typeSerializer(col.typ) }
     val pk = ctx.pkCol_!.userColumnId
     Schema(hash, columns, pk, ctx.datasetInfo.localeName)
