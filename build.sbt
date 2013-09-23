@@ -1,3 +1,6 @@
+import AssemblyKeys._
+import sbtassembly.Plugin.MergeStrategy
+
 com.socrata.cloudbeessbt.SocrataCloudbeesSbt.socrataSettings(assembly = true)
 
 name := "query-coordinator"
@@ -19,6 +22,13 @@ libraryDependencies ++= Seq(
 )
 
 scalacOptions ++= Seq("-deprecation", "-feature")
+
+mergeStrategy in assembly <<= (mergeStrategy in assembly) { old =>
+  {
+    case "about.html" => MergeStrategy.rename
+    case x => old(x)
+  }
+}
 
 resourceGenerators in Compile <+= (resourceManaged in Compile, name in Compile, scalaVersion in Compile, version in Compile) map { (resourceManaged, name, scalaVersion, version) =>
   import com.rojoma.simplearm.util._
