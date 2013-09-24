@@ -12,11 +12,14 @@ object DoubleRep extends JsonColumnRep[SoQLType, SoQLValue] {
   def fromJValue(input: JValue) = input match {
     case JNumber(n) => Some(SoQLDouble(n.doubleValue))
     case JNull => Some(SoQLNull)
+    case JString(n) => try { Some(SoQLDouble(n.toDouble)) } catch { case e: NumberFormatException => None } // For NaN/Infinities
     case _ => None
   }
 
   def toJValue(input: SoQLValue) = input match {
-    case SoQLDouble(d) => JNumber(d)
+    case SoQLDouble(d) =>
+      if(d.isInfinite || d.isNaN) JString(d.toString)
+      else JNumber(d)
     case SoQLNull => JNull
     case _ => stdBadValue
   }
