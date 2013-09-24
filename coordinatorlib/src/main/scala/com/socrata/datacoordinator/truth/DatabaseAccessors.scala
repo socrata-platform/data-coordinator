@@ -109,7 +109,9 @@ trait DatasetMutator[CT, CV] {
     def columnInfo(id: ColumnId): Option[ColumnInfo[CT]]
     def columnInfo(name: UserColumnId): Option[ColumnInfo[CT]]
 
-    def addColumn(userColumnId: UserColumnId, typ: CT, physicalColumnBaseBase: String): ColumnInfo[CT]
+    case class ColumnToAdd(userColumnId: UserColumnId, typ: CT, physicalColumnBaseBase: String)
+
+    def addColumns(columns: Iterable[ColumnToAdd]): Iterable[ColumnInfo[CT]]
     def makeSystemPrimaryKey(ci: ColumnInfo[CT]): ColumnInfo[CT]
     def makeVersion(ci: ColumnInfo[CT]): ColumnInfo[CT]
 
@@ -123,7 +125,8 @@ trait DatasetMutator[CT, CV] {
     case class DuplicateCellsException(name: UserColumnId) extends PrimaryKeyCreationException
 
     def unmakeUserPrimaryKey(ci: ColumnInfo[CT]): ColumnInfo[CT]
-    def dropColumn(ci: ColumnInfo[CT])
+
+    def dropColumns(columns: Iterable[ColumnInfo[CT]])
     def truncate()
 
     sealed trait RowDataUpdateJob {
@@ -178,19 +181,25 @@ object DatasetMutator {
       def now = llCtx.now
       def datasetMap = llCtx.datasetMap
 
-      def addColumn(userColumnId: UserColumnId, typ: CT, physicalColumnBaseBase: String): ColumnInfo[CT] = {
+      def addColumns(columnsToAdd: Iterable[ColumnToAdd]): Iterable[ColumnInfo[CT]] = {
         checkDoingRows()
-        val newColumn = datasetMap.addColumn(copyInfo, userColumnId, typ, physicalColumnBaseBase)
-        schemaLoader.addColumn(newColumn)
-        copyCtx.addColumn(newColumn)
-        newColumn
+        val newColumns = columnsToAdd.toVector.map { cta =>
+          val newColumn = datasetMap.addColumn(copyInfo, cta.userColumnId, cta.typ, cta.physicalColumnBaseBase)
+          copyCtx.addColumn(newColumn)
+          newColumn
+        }
+        schemaLoader.addColumns(newColumns)
+        newColumns
       }
 
-      def dropColumn(ci: ColumnInfo[CT]) {
+      def dropColumns(columns: Iterable[ColumnInfo[CT]]) {
         checkDoingRows()
-        datasetMap.dropColumn(ci)
-        schemaLoader.dropColumn(ci)
-        copyCtx.removeColumn(ci.systemId)
+        val cs = columns.toVector
+        for(ci <- cs) {
+          datasetMap.dropColumn(ci)
+          copyCtx.removeColumn(ci.systemId)
+        }
+        schemaLoader.dropColumns(cs)
       }
 
       def makeSystemPrimaryKey(ci: ColumnInfo[CT]): ColumnInfo[CT] = {
@@ -254,9 +263,7 @@ object DatasetMutator {
             // Great.  Now we can actually do the data loading.
             schemaLoader.create(newCopy)
             val newSchema = datasetMap.schema(newCopy)
-            for(ci <- newSchema.values) {
-              schemaLoader.addColumn(ci)
-            }
+            schemaLoader.addColumns(newSchema.values)
 
             val newFrozenCopyContext = new DatasetCopyContext(newCopy, newSchema)
             dataCopier.foreach(_.copy(oldCopy, newFrozenCopyContext))

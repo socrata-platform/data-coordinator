@@ -15,7 +15,7 @@ class ColumnAdder[CT](universe: Managed[Universe[CT, _] with DatasetMutatorProvi
   def addToSchema(dataset: DatasetId, columns: Map[String, CT], genColumnId: String => UserColumnId, username: String): UserColumnIdMap[ColumnInfo[CT]] = {
     def columnCreations[CV](ctx: DatasetMutator[CT, CV]#MutationContext) = columns.iterator.map { case (columnName, columnType) =>
       val baseName = physicalColumnBaseBase(columnName, false)
-      ctx.addColumn(genColumnId(columnName), columnType, baseName)
+      ctx.addColumns(List(ctx.ColumnToAdd(genColumnId(columnName), columnType, baseName))).head
     }.toList
 
     finish(dataset) {

@@ -504,6 +504,7 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
       }
       val suffix = locally {
         val md = MessageDigest.getInstance("SHA1")
+        md.update(formatDatasetId(datasetId).getBytes(UTF_8))
         md.update(schemaHash.toString.getBytes(UTF_8))
         md.update(onlyColumns.toString.getBytes(UTF_8))
         md.update(limit.toString.getBytes(UTF_8))

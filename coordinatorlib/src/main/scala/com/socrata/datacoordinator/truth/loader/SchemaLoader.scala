@@ -8,8 +8,8 @@ trait SchemaLoader[CT] {
   def create(copyInfo: CopyInfo)
   def drop(copyInfo: CopyInfo)
 
-  def addColumn(colInfo: ColumnInfo[CT])
-  def dropColumn(colInfo: ColumnInfo[CT])
+  def addColumns(colInfo: Iterable[ColumnInfo[CT]])
+  def dropColumns(colInfo: Iterable[ColumnInfo[CT]])
 
   def makePrimaryKey(colInfo: ColumnInfo[CT])
   def makeSystemPrimaryKey(colInfo: ColumnInfo[CT])

@@ -28,6 +28,7 @@ import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 import com.socrata.datacoordinator.truth.loader.NoSuchRowToUpdate
 import com.rojoma.json.io.EndOfObjectEvent
 import com.socrata.datacoordinator.truth.loader.VersionMismatch
+import scala.collection.mutable.ListBuffer
 
 sealed trait MutationScriptCommandResult
 object MutationScriptCommandResult {
@@ -388,9 +389,8 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
     def user = commands.user
 
     def doProcess(ctx: DatasetMutator[CT, CV]#MutationContext): (DatasetId, Seq[MutationScriptCommandResult]) = {
-      val jsonRepFor = jsonReps(ctx.copyInfo.datasetInfo)
-      val processor = new Processor(jsonRepFor)
-      val events = processor.carryOutCommands(ctx, commands)
+      val processor = new Processor(ctx)
+      val events = processor.carryOutCommands(commands)
       (ctx.copyInfo.datasetInfo.systemId, events)
     }
 
@@ -422,12 +422,14 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
           }
         case CreateDatasetMutation(idx, localeName) =>
           for(ctx <- u.datasetMutator.createDataset(user)(localeName)) yield {
-            systemSchema.foreach { (col, typ) =>
-              val ci = ctx.addColumn(col, typ, physicalColumnBaseBase(col.underlying, systemColumn = true))
+            val cis = ctx.addColumns(systemSchema.toSeq.map { case (col, typ) =>
+              ctx.ColumnToAdd(col, typ, physicalColumnBaseBase(col.underlying, systemColumn = true))
+            })
+            for(ci <- cis) {
               val ci2 =
-                if(col == systemIdColumnId) ctx.makeSystemPrimaryKey(ci)
+                if(ci.userColumnId == systemIdColumnId) ctx.makeSystemPrimaryKey(ci)
                 else ci
-              if(col == versionColumnId) ctx.makeVersion(ci2)
+              if(ci2.userColumnId == versionColumnId) ctx.makeVersion(ci2)
             }
             doProcess(ctx)
           }
@@ -449,64 +451,94 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
     }
   }
 
-  class Processor(jsonRepFor: CT => JsonColumnRep[CT, CV]) {
-    def carryOutCommands(mutator: DatasetMutator[CT, CV]#MutationContext, commands: CommandStream): Seq[MutationScriptCommandResult] = {
+  class Processor(mutator: DatasetMutator[CT, CV]#MutationContext) {
+    val jsonRepFor = jsonReps(mutator.copyInfo.datasetInfo)
+
+    val datasetId = mutator.copyInfo.datasetInfo.systemId
+    def checkDDL(idx: Long) {
+      if(!allowDdlOnPublishedCopies && mutator.copyInfo.lifecycleStage != LifecycleStage.Unpublished)
+        throw IncorrectLifecycleStage(datasetId, mutator.copyInfo.lifecycleStage, Set(LifecycleStage.Unpublished))(idx)
+    }
+
+    def carryOutCommands(commands: CommandStream): Seq[MutationScriptCommandResult] = {
       val reports = new VectorBuilder[MutationScriptCommandResult]
       def loop() {
         commands.nextCommand() match {
-          case Some(cmd) => reports += carryOutCommand(mutator, commands, cmd); loop()
-          case None => /* done */
+          case Some(cmd) => reports ++= carryOutCommand(commands, cmd); loop()
+          case None => reports ++= flushPendingCommands()
         }
       }
       loop()
       reports.result()
     }
 
-    def carryOutCommand(mutator: DatasetMutator[CT, CV]#MutationContext, commands: CommandStream, cmd: Command): MutationScriptCommandResult = {
-      def datasetId = mutator.copyInfo.datasetInfo.systemId
-      def checkDDL(idx: Long) {
-        if(!allowDdlOnPublishedCopies && mutator.copyInfo.lifecycleStage != LifecycleStage.Unpublished)
-          throw IncorrectLifecycleStage(datasetId, mutator.copyInfo.lifecycleStage, Set(LifecycleStage.Unpublished))(idx)
+    private val pendingAdds = new ListBuffer[mutator.ColumnToAdd]
+    private val pendingDrops = new ListBuffer[UserColumnId]
+
+    def isExistingColumn(cid: UserColumnId) =
+      (mutator.schema.iterator.map(_._2.userColumnId).exists(_ == cid) || pendingAdds.exists(_.userColumnId == cid)) && !pendingDrops.exists(_ == cid)
+
+    def createId(): UserColumnId = {
+      var id = genUserColumnId()
+      while(isExistingColumn(id)) id = genUserColumnId()
+      id
+    }
+
+    def flushPendingCommands(): Seq[MutationScriptCommandResult] = {
+      assert(pendingAdds.isEmpty || pendingDrops.isEmpty, "Have both pending adds and pending drops?")
+
+      val addResults = if(pendingAdds.nonEmpty) {
+        val cis = mutator.addColumns(pendingAdds)
+        val res = cis.toVector.map { ci =>
+          MutationScriptCommandResult.ColumnCreated(ci.userColumnId, ci.typeNamespace.userTypeForType(ci.typ))
+        }
+        pendingAdds.clear()
+        res
+      } else Vector.empty
+
+      val dropResults = if(pendingDrops.nonEmpty) {
+        mutator.dropColumns(pendingDrops.map { cid => mutator.columnInfo(cid).getOrElse { sys.error("I verified column " + cid + " existed before adding it to the list for dropping?") } })
+        val res = Vector.fill(pendingDrops.size) { MutationScriptCommandResult.Uninteresting }
+        pendingDrops.clear()
+        res
+      } else {
+        Vector.empty
       }
-      cmd match {
+
+      addResults ++ dropResults
+    }
+
+    def carryOutCommand(commands: CommandStream, cmd: Command): Seq[MutationScriptCommandResult] = {
+      val pendingResults =
+        if(!cmd.isInstanceOf[AddColumn] && pendingAdds.nonEmpty) flushPendingCommands()
+        else if(!cmd.isInstanceOf[DropColumn] && pendingDrops.nonEmpty) flushPendingCommands()
+        else Vector.empty
+
+      val newResults = cmd match {
         case AddColumn(idx, None, nameHint, typName) =>
           val typ = nameForTypeOpt(typName).getOrElse {
             throw NoSuchType(typName)(idx)
           }
           checkDDL(idx)
 
-          @tailrec
-          def createId(): UserColumnId = {
-            val id = genUserColumnId()
-            if(mutator.schema.iterator.exists(_._2.userColumnId == id)) createId()
-            else id
-          }
-
-          val ci = mutator.addColumn(createId(), typ, physicalColumnBaseBase(nameHint))
-          MutationScriptCommandResult.ColumnCreated(ci.userColumnId, ci.typeNamespace.userTypeForType(ci.typ))
+          pendingAdds += mutator.ColumnToAdd(createId(), typ, physicalColumnBaseBase(nameHint))
+          Nil
         case AddColumn(idx, Some(id), nameHint, typName) =>
           if(isSystemColumnId(id)) throw IllegalColumnId(id)(idx)
-          mutator.columnInfo(id) match {
-            case None =>
-              val typ = nameForTypeOpt(typName).getOrElse {
-                throw NoSuchType(typName)(idx)
-              }
-              checkDDL(idx)
-              val ci = mutator.addColumn(id, typ, physicalColumnBaseBase(nameHint))
-              MutationScriptCommandResult.ColumnCreated(ci.userColumnId, ci.typeNamespace.userTypeForType(ci.typ))
-            case Some(_) =>
-              throw ColumnAlreadyExists(datasetId, id)(idx)
+          if(isExistingColumn(id)) throw ColumnAlreadyExists(datasetId, id)(idx)
+
+          val typ = nameForTypeOpt(typName).getOrElse {
+            throw NoSuchType(typName)(idx)
           }
+          checkDDL(idx)
+          pendingAdds += mutator.ColumnToAdd(id, typ, physicalColumnBaseBase(nameHint))
+          Nil
         case DropColumn(idx, id) =>
-          mutator.columnInfo(id) match {
-            case Some(colInfo) =>
-              if(isSystemColumnId(id)) throw InvalidSystemColumnOperation(datasetId, id, DropColumnOp)(idx)
-              checkDDL(idx)
-              mutator.dropColumn(colInfo)
-            case None =>
-              throw NoSuchColumn(datasetId, id)(idx)
-          }
-          MutationScriptCommandResult.Uninteresting
+          if(!isExistingColumn(id)) throw NoSuchColumn(datasetId, id)(idx)
+          if(isSystemColumnId(id)) throw InvalidSystemColumnOperation(datasetId, id, DropColumnOp)(idx)
+          checkDDL(idx)
+          pendingDrops += id
+          Nil
         case SetRowId(idx, id) =>
           mutator.columnInfo(id) match {
             case Some(colInfo) =>
@@ -529,7 +561,7 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
             case None =>
               throw NoSuchColumn(datasetId, id)(idx)
           }
-          MutationScriptCommandResult.Uninteresting
+          Seq(MutationScriptCommandResult.Uninteresting)
         case DropRowId(idx, id) =>
           mutator.columnInfo(id) match {
             case Some(colInfo) =>
@@ -539,11 +571,13 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
             case None =>
               throw NoSuchColumn(datasetId, id)(idx)
           }
-          MutationScriptCommandResult.Uninteresting
+          Seq(MutationScriptCommandResult.Uninteresting)
         case RowData(idx, truncate, mergeReplace, fatalRowErrors) =>
           if(truncate) mutator.truncate()
-          MutationScriptCommandResult.RowData(processRowData(idx, commands.rawCommandStream, fatalRowErrors, mutator, mergeReplace).toJobRange)
+          Seq(MutationScriptCommandResult.RowData(processRowData(idx, commands.rawCommandStream, fatalRowErrors, mutator, mergeReplace).toJobRange))
       }
+
+      pendingResults ++ newResults
     }
 
     def processRowData(idx: Long, rows: BufferedIterator[JValue], fatalRowErrors: Boolean, mutator: DatasetMutator[CT,CV]#MutationContext, mergeReplace: MergeReplace): JsonReportWriter = {

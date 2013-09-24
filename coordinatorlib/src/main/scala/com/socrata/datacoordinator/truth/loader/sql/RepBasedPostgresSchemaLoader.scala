@@ -42,24 +42,42 @@ class RepBasedPostgresSchemaLoader[CT, CV](conn: Connection, logger: Logger[CT, 
       sys.error("Dropped a non-snapshot/working copy")
   }
 
-  def addColumn(columnInfo: ColumnInfo[CT]) {
-    val rep = repFor(columnInfo)
+  def addColumns(columnInfo: Iterable[ColumnInfo[CT]]) {
+    if(columnInfo.isEmpty) return; // ok?
+    assert(columnInfo.forall { ci => ci.copyInfo == columnInfo.head.copyInfo }, "Columns come from different copies?")
     using(conn.createStatement()) { stmt =>
-      for((col, colTyp) <- rep.physColumns.zip(rep.sqlTypes)) {
-        stmt.execute("ALTER TABLE " + columnInfo.copyInfo.dataTableName + " ADD COLUMN " + col + " " + colTyp + " NULL")
+      val qb = new StringBuilder("ALTER TABLE " + columnInfo.head.copyInfo.dataTableName)
+      var didOne = false
+      for(ci <- columnInfo) {
+        val rep = repFor(ci)
+        for((col, colTyp) <- rep.physColumns.zip(rep.sqlTypes)) {
+          if(didOne) qb.append(',')
+          else didOne = true
+          qb.append(" ADD COLUMN " + col + " " + colTyp + " NULL")
+        }
+        logger.columnCreated(ci)
       }
+      stmt.execute(qb.toString)
     }
-    logger.columnCreated(columnInfo)
   }
 
-  def dropColumn(columnInfo: ColumnInfo[CT]) {
-    val rep = repFor(columnInfo)
+  def dropColumns(columnInfo: Iterable[ColumnInfo[CT]]) {
+    if(columnInfo.isEmpty) return; // ok?
+    assert(columnInfo.forall { ci => ci.copyInfo == columnInfo.head.copyInfo }, "Columns come from different copies?")
     using(conn.createStatement()) { stmt =>
-      for(col <- rep.physColumns) {
-        stmt.execute("ALTER TABLE " + columnInfo.copyInfo.dataTableName + " DROP COLUMN " + col)
+      val qb = new StringBuilder("ALTER TABLE " + columnInfo.head.copyInfo.dataTableName)
+      var didOne = false
+      for(ci <- columnInfo) {
+        val rep = repFor(ci)
+        for((col, colTyp) <- rep.physColumns.zip(rep.sqlTypes)) {
+          if(didOne) qb.append(',')
+          else didOne = true
+          qb.append(" DROP COLUMN " + col + " " + colTyp + " NULL")
+        }
+        logger.columnRemoved(ci)
       }
+      stmt.execute(qb.toString)
     }
-    logger.columnRemoved(columnInfo)
   }
 
   def makePrimaryKey(columnInfo: ColumnInfo[CT]) {

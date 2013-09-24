@@ -16,12 +16,14 @@ class DatasetCreator[CT](universe: Managed[Universe[CT, _] with DatasetMutatorPr
       u <- universe
       ctx <- u.datasetMutator.createDataset(as = username)(localeName)
     } yield {
-      systemSchema.foreach { (cid, typ) =>
-        val col = ctx.addColumn(cid, typ, physicalColumnBaseBase(cid.underlying, true))
+      val cols = ctx.addColumns(systemSchema.toSeq.map { case (cid, typ) =>
+        ctx.ColumnToAdd(cid, typ, physicalColumnBaseBase(cid.underlying, true))
+      })
+      cols.foreach { col =>
         val col2 =
-          if(cid == systemIdColumnId) ctx.makeSystemPrimaryKey(col)
+          if(col.userColumnId == systemIdColumnId) ctx.makeSystemPrimaryKey(col)
           else col
-        if(cid == versionColumnId) ctx.makeVersion(col2)
+        if(col2.userColumnId == versionColumnId) ctx.makeVersion(col2)
       }
       ctx.copyInfo.datasetInfo.systemId
     }

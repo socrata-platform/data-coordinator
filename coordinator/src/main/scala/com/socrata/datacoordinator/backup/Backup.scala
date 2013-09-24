@@ -27,6 +27,7 @@ import com.socrata.datacoordinator.truth.loader.Insert
 import com.socrata.datacoordinator.util.{NoopTimingReport, TimingReport}
 import scala.concurrent.duration.Duration
 import com.socrata.soql.environment.ColumnName
+import scala.collection.mutable.ListBuffer
 
 class Backup(conn: Connection, /*executor: ExecutorService, */ isSystemColumnId: UserColumnId => Boolean, timingReport: TimingReport, paranoid: Boolean, copyIn: (Connection, String, OutputStream => Unit) => Long) {
   val typeContext = SoQLTypeContext
@@ -84,22 +85,29 @@ class Backup(conn: Connection, /*executor: ExecutorService, */ isSystemColumnId:
     vi
   }
 
-  def addColumn(currentVersion: CopyInfo, columnInfo: UnanchoredColumnInfo): currentVersion.type = {
+  def addColumn(currentVersion: CopyInfo, columnInfos: Iterable[UnanchoredColumnInfo]): currentVersion.type = {
     // TODO: Re-paranoid this
     // Resync.unless(currentVersion, currentVersion == columnInfo.copyInfo, "Copy infos differ")
-    val ci = datasetMap.addColumnWithId(columnInfo.systemId, currentVersion, columnInfo.userColumnId, typeNamespace.typeForName(currentVersion.datasetInfo, columnInfo.typeName), columnInfo.physicalColumnBaseBase)
-    schemaLoader.addColumn(ci)
-    Resync.unless(ci, ci.unanchored == columnInfo, "Newly created column info differs")
+
+    val cis = columnInfos.toVector.map { columnInfo =>
+      val ci = datasetMap.addColumnWithId(columnInfo.systemId, currentVersion, columnInfo.userColumnId, typeNamespace.typeForName(currentVersion.datasetInfo, columnInfo.typeName), columnInfo.physicalColumnBaseBase)
+      Resync.unless(ci, ci.unanchored == columnInfo, "Newly created column info differs")
+      ci
+    }
+    schemaLoader.addColumns(cis)
     currentVersion
   }
 
-  def dropColumn(currentVersion: CopyInfo, columnInfo: UnanchoredColumnInfo): currentVersion.type = {
+  def dropColumn(currentVersion: CopyInfo, columnInfos: Iterable[UnanchoredColumnInfo]): currentVersion.type = {
     // TODO: Re-paranoid this
     // Resync.unless(currentVersion, currentVersion == columnInfo.copyInfo, "Version infos differ")
-    val ci = datasetMap.schema(currentVersion).getOrElse(columnInfo.systemId, Resync(currentVersion, "No column with ID " + columnInfo.systemId))
-    Resync.unless(ci, ci.unanchored == columnInfo, "Column infos differ")
-    datasetMap.dropColumn(ci)
-    schemaLoader.dropColumn(ci)
+    val cis = columnInfos.toVector.map { columnInfo =>
+      val ci = datasetMap.schema(currentVersion).getOrElse(columnInfo.systemId, Resync(currentVersion, "No column with ID " + columnInfo.systemId))
+      Resync.unless(ci, ci.unanchored == columnInfo, "Column infos differ")
+      datasetMap.dropColumn(ci)
+      ci
+    }
+    schemaLoader.dropColumns(cis)
     currentVersion
   }
 
@@ -218,12 +226,30 @@ class Backup(conn: Connection, /*executor: ExecutorService, */ isSystemColumnId:
         Resync(currentVersionInfo, "Not a published copy")
     }
 
-  def dispatch(versionInfo: CopyInfo, event: Delogger.LogEvent[SoQLValue]): CopyInfo = {
+  private[this] val pendingAdds = new ListBuffer[UnanchoredColumnInfo]
+  private[this] val pendingDrops = new ListBuffer[UnanchoredColumnInfo]
+
+  def dispatch(initVersionInfo: CopyInfo, event: Delogger.LogEvent[SoQLValue]): CopyInfo = {
+    val versionInfo =
+      if(pendingAdds.nonEmpty && !event.isInstanceOf[ColumnCreated]) {
+        // type ascription asserts that the version info is not changed by the add column call
+        val newvi: initVersionInfo.type = addColumn(initVersionInfo, pendingAdds)
+        pendingAdds.clear()
+        newvi
+      } else if(pendingDrops.nonEmpty && !event.isInstanceOf[ColumnRemoved]) {
+        // type ascription asserts that the version info is not changed by the add column call
+        val newvi: initVersionInfo.type = dropColumn(initVersionInfo, pendingDrops)
+        pendingDrops.clear()
+        newvi
+      } else {
+        initVersionInfo
+      }
     event match {
       case WorkingCopyCreated(_, newVersionInfo) =>
         makeWorkingCopy(versionInfo, newVersionInfo)
       case ColumnCreated(info) =>
-        addColumn(versionInfo, info)
+        pendingAdds += info
+        versionInfo
       case RowIdentifierSet(info) =>
         makePrimaryKey(versionInfo, info)
       case SystemRowIdentifierChanged(info) =>
@@ -241,7 +267,8 @@ class Backup(conn: Connection, /*executor: ExecutorService, */ isSystemColumnId:
       case DataCopied =>
         populateWorkingCopy(versionInfo)
       case ColumnRemoved(info) =>
-        dropColumn(versionInfo, info)
+        pendingDrops += info
+        versionInfo
       case Truncated =>
         truncate(versionInfo)
       case WorkingCopyDropped =>
@@ -249,7 +276,7 @@ class Backup(conn: Connection, /*executor: ExecutorService, */ isSystemColumnId:
       case SnapshotDropped(info) =>
         dropSnapshot(versionInfo, info)
       case EndTransaction =>
-        sys.error("Shouldn't have seen this")
+        versionInfo
     }
   }
 }

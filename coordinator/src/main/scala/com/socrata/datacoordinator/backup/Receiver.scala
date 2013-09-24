@@ -27,6 +27,7 @@ import com.socrata.datacoordinator.util.NoopTimingReport
 import com.socrata.soql.types.SoQLType
 import org.apache.log4j.PropertyConfigurator
 import com.socrata.thirdparty.typesafeconfig.Propertizer
+import com.socrata.datacoordinator.truth.loader.Delogger.EndTransaction
 
 final abstract class Receiver
 
@@ -201,7 +202,7 @@ object Receiver extends App {
             loop(backup.dispatch(copy, d))
           case Some(DataDone()) =>
             log.info("Version {} completed", version)
-            copy
+            backup.dispatch(copy, EndTransaction)
           case Some(_) =>
             ??? // TODO: Unexpected packet
           case None =>
@@ -271,10 +272,11 @@ object Receiver extends App {
 
           val schema = locally {
             val createdColumns = new MutableColumnIdMap[ColumnInfo[SoQLType]]
-            for(col0 <- columns) {
-              val col1 = datasetMap.addColumnWithId(col0.systemId, copy, col0.userColumnId, typeNamespace.typeForName(copy.datasetInfo, col0.typeName), col0.physicalColumnBaseBase)
-              schemaLoader.addColumn(col1)
-
+            val col1s = columns.map { col0 =>
+              datasetMap.addColumnWithId(col0.systemId, copy, col0.userColumnId, typeNamespace.typeForName(copy.datasetInfo, col0.typeName), col0.physicalColumnBaseBase)
+            }
+            schemaLoader.addColumns(col1s)
+            for((col0, col1) <- columns.zip(col1s)) {
               def make[CT](col: ColumnInfo[CT])(cond: Boolean, mapOp: (ColumnInfo[CT]) => ColumnInfo[CT], op: (ColumnInfo[CT]) => Unit): ColumnInfo[CT] = {
                 if(cond) {
                   val newCol = mapOp(col)
@@ -336,9 +338,9 @@ object Receiver extends App {
 
     def drop(copyInfo: CopyInfo) {}
 
-    def addColumn(colInfo: ColumnInfo[CT]) {}
+    def addColumns(colInfo: Iterable[ColumnInfo[CT]]) {}
 
-    def dropColumn(colInfo: ColumnInfo[CT]) {}
+    def dropColumns(colInfo: Iterable[ColumnInfo[CT]]) {}
 
     def makePrimaryKey(colInfo: ColumnInfo[CT]) {}
 
