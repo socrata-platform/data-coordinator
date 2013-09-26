@@ -188,10 +188,10 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
           currentCookie = secondary.store.version(secondaryDatasetInfo, dataVersion, currentCookie, it.flatMap(convertEvent))
         } else {
           while(it.hasNext) {
-            if(currentLifecycleStage != LifecycleStage.Published) {
+            if(currentLifecycleStage != metadata.LifecycleStage.Published) {
               log.trace("Current lifecycle stage in the secondary is {}; skipping data until I find a publish event", currentLifecycleStage)
               // skip until it IS published, then resync
-              while(it.hasNext && it.stageAfterNextEvent != LifecycleStage.Published) it.next()
+              while(it.hasNext && it.stageAfterNextEvent != metadata.LifecycleStage.Published) it.next()
               if(it.hasNext) {
                 log.trace("There is more.  Resyncing")
                 throw new InternalResyncForPickySecondary
@@ -243,8 +243,8 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
                 for(copy <- allCopies) {
                   val secondaryDatasetInfo = makeSecondaryDatasetInfo(copy.datasetInfo)
                   timingReport("copy", "number" -> copy.copyNumber) {
-                    if(copy.lifecycleStage == LifecycleStage.Discarded) currentCookie = secondary.store.dropCopy(secondaryDatasetInfo.internalName, copy.copyNumber, currentCookie)
-                    else if(copy.lifecycleStage != LifecycleStage.Unpublished) syncCopy(copy)
+                    if(copy.lifecycleStage == metadata.LifecycleStage.Discarded) currentCookie = secondary.store.dropCopy(secondaryDatasetInfo.internalName, copy.copyNumber, currentCookie)
+                    else if(copy.lifecycleStage != metadata.LifecycleStage.Unpublished) syncCopy(copy)
                     else if(secondary.store.wantsWorkingCopies) syncCopy(copy)
                     else { /* ok */ }
                   }
