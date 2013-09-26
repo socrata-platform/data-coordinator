@@ -98,7 +98,7 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
   def makeSecondaryColumnInfo(colInfo: metadata.ColumnInfoLike) = {
     typeForName(TypeName(colInfo.typeName)) match {
       case Some(typ) =>
-        ColumnInfo(colInfo.userColumnId, typ, isSystemPrimaryKey = colInfo.isSystemPrimaryKey, isUserPrimaryKey = colInfo.isUserPrimaryKey, isVersion = colInfo.isVersion)
+        ColumnInfo(colInfo.systemId, colInfo.userColumnId, typ, isSystemPrimaryKey = colInfo.isSystemPrimaryKey, isUserPrimaryKey = colInfo.isUserPrimaryKey, isVersion = colInfo.isVersion)
       case None =>
         sys.error("Typename " + colInfo.typeName + " got into the logs somehow!")
     }
