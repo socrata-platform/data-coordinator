@@ -1,9 +1,11 @@
 package com.socrata.dummysecondary
 
-import com.socrata.datacoordinator.secondary.{SecondaryDatasetInfo, Secondary}
-import com.socrata.datacoordinator.truth.metadata.DatasetCopyContext
-import com.socrata.datacoordinator.truth.loader.Delogger.LogEvent
+import com.socrata.datacoordinator.secondary._
 import com.typesafe.config.Config
+import com.socrata.datacoordinator.util.collection.ColumnIdMap
+import com.socrata.datacoordinator.secondary.ColumnInfo
+import scala.Some
+import com.socrata.datacoordinator.secondary.DatasetInfo
 
 class DummySecondary(config: Config) extends Secondary[Any, Any] {
   def shutdown() {}
@@ -50,7 +52,7 @@ class DummySecondary(config: Config) extends Secondary[Any, Any] {
     * already has this dataVersion.
     * @return a new cookie to store in the secondary map
     */
-  def version(datasetInfo: SecondaryDatasetInfo, dataVersion: Long, cookie: Secondary.Cookie, events: Iterator[LogEvent[Any]]): Secondary.Cookie = {
+  def version(datasetInfo: DatasetInfo, dataVersion: Long, cookie: Secondary.Cookie, events: Iterator[Event[Any, Any]]): Secondary.Cookie = {
     println("Got a new version of " + datasetInfo.internalName)
     println("Version " + dataVersion)
     println("Current cookie: " + cookie)
@@ -69,9 +71,9 @@ class DummySecondary(config: Config) extends Secondary[Any, Any] {
     }
   }
 
-  def resync(datasetInfo: SecondaryDatasetInfo, copyContext: DatasetCopyContext[Any], cookie: Secondary.Cookie, rows: _root_.com.rojoma.simplearm.Managed[Iterator[com.socrata.datacoordinator.Row[Any]]]): Secondary.Cookie = {
+  def resync(datasetInfo: DatasetInfo, copyInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo[Any]], cookie: Secondary.Cookie, rows: _root_.com.rojoma.simplearm.Managed[Iterator[com.socrata.datacoordinator.secondary.Row[Any]]]): Secondary.Cookie = {
     println("Got a resync request on " + datasetInfo.internalName)
-    println("Copy: " + copyContext.copyInfo)
+    println("Copy: " + copyInfo)
     println("Current cookie: " + cookie)
     readLine("Skip or read? ") match {
       case "skip" | "s" =>

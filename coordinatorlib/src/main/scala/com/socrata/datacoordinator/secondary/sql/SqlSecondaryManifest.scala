@@ -8,7 +8,7 @@ import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.id.sql._
 import scala.collection.immutable.VectorBuilder
-import com.socrata.datacoordinator.truth.metadata.{LifecycleStage, CopyInfo}
+import com.socrata.datacoordinator.truth.metadata
 import com.socrata.datacoordinator.util.PostgresUniqueViolation
 
 class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
@@ -36,7 +36,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
           |   LIMIT 1""".stripMargin)) { stmt =>
         stmt.setString(1, storeId)
         stmt.setDatasetId(2, datasetId)
-        stmt.setLifecycleStage(3, LifecycleStage.Discarded)
+        stmt.setLifecycleStage(3, metadata.LifecycleStage.Discarded)
         stmt.execute()
         (0L, None)
       }
@@ -113,7 +113,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
       }
     }
 
-  def completedReplicationTo(storeId: String, datasetId: DatasetId, dataVersion: Long, lifecycleStage: LifecycleStage, cookie: Option[String]) {
+  def completedReplicationTo(storeId: String, datasetId: DatasetId, dataVersion: Long, lifecycleStage: metadata.LifecycleStage, cookie: Option[String]) {
     using(conn.prepareStatement(
       """UPDATE secondary_manifest
         | SET latest_secondary_data_version = ?,

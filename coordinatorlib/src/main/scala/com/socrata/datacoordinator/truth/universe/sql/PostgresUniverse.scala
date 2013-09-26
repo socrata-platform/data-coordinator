@@ -116,7 +116,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
     new PostgresSecondaryPlaybackManifest(conn, storeId)
 
   lazy val playbackToSecondary: PlaybackToSecondary[CT, CV] =
-    new PlaybackToSecondary(this, repFor, datasetIdFormatter, timingReport)
+    new PlaybackToSecondary(this, repFor, typeContext.typeNamespace.typeForUserType, datasetIdFormatter, timingReport)
 
   def logger(datasetInfo: DatasetInfo): Logger[CT, CV] = {
     val logName = datasetInfo.logTableName

@@ -1,16 +1,8 @@
-package com.socrata.datacoordinator
-package secondary
+package com.socrata.datacoordinator.secondary
 
 import com.rojoma.simplearm.Managed
 
-import com.socrata.datacoordinator.truth.loader.Delogger
-import com.socrata.datacoordinator.truth.metadata.DatasetCopyContext
-import com.socrata.datacoordinator.id.DatasetId
-
-trait SecondaryDatasetInfo {
-  val internalName: String
-  val obfuscationKey: Array[Byte]
-}
+import com.socrata.datacoordinator.util.collection.ColumnIdMap
 
 trait Secondary[CT, CV] {
   import Secondary.Cookie
@@ -50,9 +42,9 @@ trait Secondary[CT, CV] {
     * already has this dataVersion.
     * @return a new cookie to store in the secondary map
     */
-  def version(datasetInfo: SecondaryDatasetInfo, dataVersion: Long, cookie: Cookie, events: Iterator[Delogger.LogEvent[CV]]): Cookie
+  def version(datasetInfo: DatasetInfo, dataVersion: Long, cookie: Cookie, events: Iterator[Event[CT, CV]]): Cookie
 
-  def resync(datasetInfo: SecondaryDatasetInfo, copyContext: DatasetCopyContext[CT], cookie: Cookie, rows: Managed[Iterator[Row[CV]]]): Cookie
+  def resync(datasetInfo: DatasetInfo, copyInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo[CT]], cookie: Cookie, rows: Managed[Iterator[ColumnIdMap[CV]]]): Cookie
 }
 
 /** Thrown when a secondary decides it is not in sync and should be redone.  The process

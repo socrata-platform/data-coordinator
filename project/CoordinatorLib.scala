@@ -11,7 +11,6 @@ object CoordinatorLib {
       "commons-codec" % "commons-codec" % "1.8",
       "joda-time" % "joda-time" % "2.1",
       "org.joda" % "joda-convert" % "1.2",
-      "net.sf.trove4j" % "trove4j" % "3.0.3",
       "org.xerial.snappy" % "snappy-java" % "1.1.0-M3",
       "org.iq80.snappy" % "snappy" % "0.3",
       "postgresql" % "postgresql" % "9.1-901-1.jdbc4", // we do use postgres-specific features some places
@@ -21,12 +20,7 @@ object CoordinatorLib {
       "org.scalacheck" %% "scalacheck" % "1.10.0" % "test,it",
       "org.slf4j" % "slf4j-simple" % BuildSettings.slf4jVersion % "test,it",
       "org.scalatest" %% "scalatest" % "1.9.1" % "it"
-    ),
-    sourceGenerators in Compile <+= (sourceManaged in Compile) map { targetDir =>
-      GenLongLikeMap(targetDir, "com.socrata.datacoordinator.util.collection", "com.socrata.datacoordinator.id", "ColumnId") ++
-        GenLongLikeMap(targetDir, "com.socrata.datacoordinator.util.collection", "com.socrata.datacoordinator.id", "CopyId") ++
-        GenLongLikeMap(targetDir, "com.socrata.datacoordinator.util.collection", "com.socrata.datacoordinator.id", "RowId")
-    }
+    )
   )
 
 

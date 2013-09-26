@@ -7,21 +7,21 @@ import scala.concurrent.duration.Duration
 import com.rojoma.simplearm.util._
 import org.slf4j.LoggerFactory
 
-import com.socrata.datacoordinator.truth.loader.{MissingVersion, Delogger}
-import com.socrata.datacoordinator.id.DatasetId
+import com.socrata.datacoordinator.truth.loader.{Delogger, MissingVersion}
+import com.socrata.datacoordinator.id.{RowId, DatasetId}
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth.sql.SqlColumnReadRep
 import com.socrata.datacoordinator.util.TimingReport
-import com.socrata.datacoordinator.truth.loader.Delogger.{WorkingCopyPublished, WorkingCopyDropped, WorkingCopyCreated}
 import com.socrata.datacoordinator.truth.universe._
-import com.socrata.datacoordinator.truth.metadata.ColumnInfo
+import com.socrata.datacoordinator.truth.metadata
+import com.socrata.soql.environment.TypeName
 
-class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with SecondaryManifestProvider with DatasetMapReaderProvider with DatasetMapWriterProvider with DatasetReaderProvider with DeloggerProvider, repFor: ColumnInfo[CT] => SqlColumnReadRep[CT, CV], datasetIdFormatter: DatasetId => String, timingReport: TimingReport) {
+class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with SecondaryManifestProvider with DatasetMapReaderProvider with DatasetMapWriterProvider with DatasetReaderProvider with DeloggerProvider, repFor: metadata.ColumnInfo[CT] => SqlColumnReadRep[CT, CV], typeForName: TypeName => Option[CT], datasetIdFormatter: DatasetId => String, timingReport: TimingReport) {
   val log = LoggerFactory.getLogger(classOf[PlaybackToSecondary[_,_]])
 
   val datasetLockTimeout = Duration.Inf
 
-  class LifecycleStageTrackingIterator(underlying: Iterator[Delogger.LogEvent[CV]], initialStage: LifecycleStage) extends BufferedIterator[Delogger.LogEvent[CV]] {
+  class LifecycleStageTrackingIterator(underlying: Iterator[Delogger.LogEvent[CV]], initialStage: metadata.LifecycleStage) extends BufferedIterator[Delogger.LogEvent[CV]] {
     private var currentStage = initialStage
     private var lookahead: Delogger.LogEvent[CV] = null
 
@@ -58,10 +58,10 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
 
     private def computeNextStage(ev: Delogger.LogEvent[CV]) =
       ev match {
-        case WorkingCopyCreated(_, _) =>
-          LifecycleStage.Unpublished
-        case WorkingCopyDropped | WorkingCopyPublished =>
-          LifecycleStage.Published
+        case Delogger.WorkingCopyCreated(_, _) =>
+          metadata.LifecycleStage.Unpublished
+        case Delogger.WorkingCopyDropped | Delogger.WorkingCopyPublished =>
+          metadata.LifecycleStage.Published
         case _ =>
           currentStage
       }
@@ -89,10 +89,19 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
     new UpdateOp(secondary, job).drop()
   }
 
-  private class SecondaryDatasetInfoImpl(dsInfo: DatasetInfo) extends SecondaryDatasetInfo {
-    def this(copy: CopyInfo) = this(copy.datasetInfo)
-    val internalName: String = datasetIdFormatter(dsInfo.systemId)
-    val obfuscationKey: Array[Byte] = dsInfo.obfuscationKey.clone()
+  def makeSecondaryDatasetInfo(dsInfo: metadata.DatasetInfoLike) =
+    DatasetInfo(datasetIdFormatter(dsInfo.systemId), dsInfo.localeName, dsInfo.obfuscationKey.clone())
+
+  def makeSecondaryCopyInfo(copyInfo: metadata.CopyInfoLike) =
+    CopyInfo(copyInfo.systemId, copyInfo.copyNumber, copyInfo.lifecycleStage.correspondingSecondaryStage, copyInfo.dataVersion)
+
+  def makeSecondaryColumnInfo(colInfo: metadata.ColumnInfoLike) = {
+    typeForName(TypeName(colInfo.typeName)) match {
+      case Some(typ) =>
+        ColumnInfo(colInfo.userColumnId, typ, isSystemPrimaryKey = colInfo.isSystemPrimaryKey, isUserPrimaryKey = colInfo.isUserPrimaryKey, isVersion = colInfo.isVersion)
+      case None =>
+        sys.error("Typename " + colInfo.typeName + " got into the logs somehow!")
+    }
   }
 
   private class UpdateOp(secondary: NamedSecondary[CT, CV],
@@ -127,17 +136,56 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
       }
     }
 
-    def playbackLog(datasetInfo: DatasetInfo, dataVersion: Long) {
+    def convertOp(op: truth.loader.Operation[CV]): Operation[CV] = op match {
+      case truth.loader.Insert(systemId, data) => Insert(systemId, data)
+      case truth.loader.Update(systemId, data) => Update(systemId, data)
+      case truth.loader.Delete(systemId) => Delete(systemId)
+    }
+
+    def convertEvent(ev: Delogger.LogEvent[CV]): Option[Event[CT, CV]] = ev match {
+      case rdu: Delogger.RowDataUpdated[CV] =>
+        Some(RowDataUpdated(rdu.operations.view.map(convertOp)))
+      case Delogger.Truncated =>
+        Some(Truncated)
+      case Delogger.WorkingCopyDropped =>
+        Some(WorkingCopyDropped)
+      case Delogger.DataCopied =>
+        Some(DataCopied)
+      case Delogger.WorkingCopyPublished =>
+        Some(WorkingCopyPublished)
+      case Delogger.ColumnCreated(info) =>
+        Some(ColumnCreated(makeSecondaryColumnInfo(info)))
+      case Delogger.ColumnRemoved(info) =>
+        Some(ColumnRemoved(makeSecondaryColumnInfo(info)))
+      case Delogger.RowIdentifierSet(info) =>
+        Some(RowIdentifierSet(makeSecondaryColumnInfo(info)))
+      case Delogger.RowIdentifierCleared(info) =>
+        Some(RowIdentifierCleared(makeSecondaryColumnInfo(info)))
+      case Delogger.SystemRowIdentifierChanged(info) =>
+        Some(SystemRowIdentifierChanged(makeSecondaryColumnInfo(info)))
+      case Delogger.VersionColumnChanged(info) =>
+        Some(VersionColumnChanged(makeSecondaryColumnInfo(info)))
+      case Delogger.WorkingCopyCreated(datasetInfo, copyInfo) =>
+        Some(WorkingCopyCreated(makeSecondaryCopyInfo(copyInfo)))
+      case Delogger.SnapshotDropped(info) =>
+        Some(SnapshotDropped(makeSecondaryCopyInfo(info)))
+      case Delogger.CounterUpdated(nextCounter) =>
+        None
+      case Delogger.EndTransaction =>
+        None
+    }
+
+    def playbackLog(datasetInfo: metadata.DatasetInfo, dataVersion: Long) {
       log.trace("Playing back version {}")
       val finalLifecycleStage = for {
         delogger <- managed(u.delogger(datasetInfo))
         rawIt <- managed(delogger.delog(dataVersion))
       } yield {
-        val secondaryDatasetInfo = new SecondaryDatasetInfoImpl(datasetInfo)
+        val secondaryDatasetInfo = makeSecondaryDatasetInfo(datasetInfo)
         val it = new LifecycleStageTrackingIterator(rawIt, currentLifecycleStage)
         if(secondary.store.wantsWorkingCopies) {
           log.trace("Secondary store wants working copies; just blindly ending everything")
-          currentCookie = secondary.store.version(secondaryDatasetInfo, dataVersion, currentCookie, it)
+          currentCookie = secondary.store.version(secondaryDatasetInfo, dataVersion, currentCookie, it.flatMap(convertEvent))
         } else {
           while(it.hasNext) {
             if(currentLifecycleStage != LifecycleStage.Published) {
@@ -156,7 +204,7 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
               val publishedIt = new StageLimitedIterator(it)
               if(publishedIt.hasNext) {
                 log.trace("Sendsendsendsend")
-                currentCookie = secondary.store.version(secondaryDatasetInfo, dataVersion, currentCookie, publishedIt)
+                currentCookie = secondary.store.version(secondaryDatasetInfo, dataVersion, currentCookie, publishedIt.flatMap(convertEvent))
                 publishedIt.finish()
                 currentLifecycleStage = it.stageBeforeNextEvent
               } else {
@@ -193,7 +241,7 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
                 val latestDataVersion = latest.dataVersion
                 val latestLifecycleStage = latest.lifecycleStage
                 for(copy <- allCopies) {
-                  val secondaryDatasetInfo = new SecondaryDatasetInfoImpl(copy)
+                  val secondaryDatasetInfo = makeSecondaryDatasetInfo(copy.datasetInfo)
                   timingReport("copy", "number" -> copy.copyNumber) {
                     if(copy.lifecycleStage == LifecycleStage.Discarded) currentCookie = secondary.store.dropCopy(secondaryDatasetInfo.internalName, copy.copyNumber, currentCookie)
                     else if(copy.lifecycleStage != LifecycleStage.Unpublished) syncCopy(copy)
@@ -214,17 +262,19 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
       }
     }
 
-    def syncCopy(copyInfo: CopyInfo) {
+    def syncCopy(copyInfo: metadata.CopyInfo) {
       timingReport("sync-copy", "secondary" -> secondary.storeId, "dataset" -> copyInfo.datasetInfo.systemId, "copy" -> copyInfo.copyNumber) {
         for(reader <- u.datasetReader.openDataset(copyInfo)) {
           val copyCtx = new DatasetCopyContext(reader.copyInfo, reader.schema)
-          val secondaryDatasetInfo = new SecondaryDatasetInfoImpl(copyInfo)
-          currentCookie = secondary.store.resync(secondaryDatasetInfo, copyCtx, currentCookie, reader.rows())
+          val secondaryDatasetInfo = makeSecondaryDatasetInfo(copyCtx.datasetInfo)
+          val secondaryCopyInfo = makeSecondaryCopyInfo(copyCtx.copyInfo)
+          val secondarySchema = copyCtx.schema.mapValuesStrict(makeSecondaryColumnInfo)
+          currentCookie = secondary.store.resync(secondaryDatasetInfo, secondaryCopyInfo, secondarySchema, currentCookie, reader.rows())
         }
       }
     }
 
-    def updateSecondaryMap(newLastDataVersion: Long, newLifecycleStage: LifecycleStage) {
+    def updateSecondaryMap(newLastDataVersion: Long, newLifecycleStage: metadata.LifecycleStage) {
       u.secondaryManifest.completedReplicationTo(secondary.storeId, datasetId, newLastDataVersion, newLifecycleStage, currentCookie)
       u.commit()
     }

@@ -20,7 +20,8 @@ object DataCoordinator extends Build {
       configs(settings.configs : _*).
       dependsOn(dependencies: _*)
 
-  lazy val coordinatorLib = p("coordinatorlib", CoordinatorLib)
+  lazy val coordinatorLib = p("coordinatorlib", CoordinatorLib,
+    secondaryLib)
 
   lazy val coordinatorLibSoql = p("coordinatorlib-soql", CoordinatorLibSoql,
     coordinatorLib)
@@ -28,6 +29,8 @@ object DataCoordinator extends Build {
   lazy val coordinator = p("coordinator", Coordinator,
     coordinatorLib, coordinatorLibSoql)
 
+  lazy val secondaryLib = p("secondarylib", SecondaryLib)
+
   lazy val dummySecondary = p("dummy-secondary", DummySecondary,
-    coordinatorLib % "provided")
+    secondaryLib % "provided")
 }
