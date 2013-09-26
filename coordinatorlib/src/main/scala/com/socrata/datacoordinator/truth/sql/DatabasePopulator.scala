@@ -28,12 +28,14 @@ object DatabasePopulator {
   }
 
   def logTableCreate(tableName: String,
-                     operationLen: Int): String =
+                     operationLen: Int,
+                     tablespace: Option[String]): String =
     TemplateReplacer(
       load("table_log.tmpl.sql"),
       Map(
         "table_name" -> tableName,
-        "operation_len" -> operationLen.toString
+        "operation_len" -> operationLen.toString,
+        "tablespace" -> tablespace.fold("") { ts => "TABLESPACE " + ts }
       ))
 
   def populate(conn: java.sql.Connection,

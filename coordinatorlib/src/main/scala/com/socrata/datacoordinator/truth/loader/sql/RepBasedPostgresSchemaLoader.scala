@@ -13,18 +13,37 @@ class RepBasedPostgresSchemaLoader[CT, CV](conn: Connection, logger: Logger[CT, 
   private val uniqueViolation = "23505"
   private val notNullViolation = "23502"
 
-  private def postgresTablespaceSuffixFor(s: String): String =
-    tablespace(s) match {
+  private def postgresTablespaceSuffixFor(tablespace: Option[String]): String =
+    tablespace match {
       case Some(ts) =>
         " TABLESPACE " + ts
       case None =>
         ""
     }
 
+  // None == table did not exist; Some(None) == default tablespace; Some(Some(ts)) == specific tablespace
+  def tablespaceOfTable(tableName: String): Option[Option[String]] =
+    using(conn.prepareStatement("SELECT tablespace FROM pg_tables WHERE schemaname = ? AND tablename = ?")) { stmt =>
+      stmt.setString(1, "public")
+      stmt.setString(2, tableName)
+      using(stmt.executeQuery()) { rs =>
+        if(rs.next()) {
+          Some(Option(rs.getString("tablespace")))
+        } else {
+          None
+        }
+      }
+    }
+
   def create(copyInfo: CopyInfo) {
+    // if copyInfo.logTableName exists, we want to use its tablespace.  Othewise we'll ask
+    // postgresTablespaceSuffixFor to generate one.
+
+    val ts: Option[String] =
+      tablespaceOfTable(copyInfo.datasetInfo.logTableName).getOrElse(tablespace(copyInfo.datasetInfo.logTableName))
     using(conn.createStatement()) { stmt =>
-      stmt.execute("CREATE TABLE " + copyInfo.dataTableName + " ()" + postgresTablespaceSuffixFor(copyInfo.dataTableName))
-      stmt.execute(DatabasePopulator.logTableCreate(copyInfo.datasetInfo.logTableName, SqlLogger.maxOpLength))
+      stmt.execute("CREATE TABLE " + copyInfo.dataTableName + " ()" + postgresTablespaceSuffixFor(ts))
+      stmt.execute(DatabasePopulator.logTableCreate(copyInfo.datasetInfo.logTableName, SqlLogger.maxOpLength, ts))
     }
     logger.workingCopyCreated(copyInfo)
   }
@@ -97,14 +116,17 @@ class RepBasedPostgresSchemaLoader[CT, CV](conn: Connection, logger: Logger[CT, 
   def makePrimaryKeyWithoutLogging(columnInfo: ColumnInfo[CT]) {
     repFor(columnInfo) match {
       case rep: SqlPKableColumnRep[CT, CV] =>
+        val table = columnInfo.copyInfo.dataTableName
+        val ts = tablespaceOfTable(table).getOrElse {
+          sys.error("Setting a primary key on table " + table + ", which does not exist?")
+        }
         using(conn.createStatement()) { stmt =>
-          val table = columnInfo.copyInfo.dataTableName
           try {
             for(col <- rep.physColumns) {
               stmt.execute("ALTER TABLE " + table + " ALTER " + col + " SET NOT NULL")
             }
             val indexName = "uniq_" + table + "_" + rep.base
-            stmt.execute("CREATE UNIQUE INDEX " + indexName + " ON " + table + "(" + rep.equalityIndexExpression + ")" + postgresTablespaceSuffixFor(indexName))
+            stmt.execute("CREATE UNIQUE INDEX " + indexName + " ON " + table + "(" + rep.equalityIndexExpression + ")" + postgresTablespaceSuffixFor(ts))
             stmt.execute("ANALYZE " + table + " (" + rep.physColumns.mkString(",") + ")")
           } catch {
             case e: java.sql.SQLException if e.getSQLState == uniqueViolation =>

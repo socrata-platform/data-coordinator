@@ -4,4 +4,4 @@ CREATE TABLE IF NOT EXISTS %TABLE_NAME% (
   what       VARCHAR(%OPERATION_LEN%) NOT NULL,
   aux        BYTEA                    NOT NULL,
   PRIMARY KEY (version, subversion)
-);
+) %TABLESPACE%;
