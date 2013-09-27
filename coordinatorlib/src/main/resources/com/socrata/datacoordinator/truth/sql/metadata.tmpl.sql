@@ -8,19 +8,6 @@ IF (SELECT NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'unit')) THEN
   CREATE TYPE unit AS ENUM('Unit');
 END IF;
 
-CREATE TABLE IF NOT EXISTS global_log (
-  id                BIGINT                   NOT NULL PRIMARY KEY, -- guaranteed to be contiguous and strictly increasing
-  dataset_system_id BIGINT                   NOT NULL, -- Not REFERENCES because datasets can be deleted
-  version           BIGINT                   NOT NULL,
-  updated_at        TIMESTAMP WITH TIME ZONE NOT NULL,
-  updated_by        VARCHAR(%USER_UID_LEN%)  NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS last_id_sent_to_backup (
-  id                  BIGINT NOT NULL REFERENCES global_log(id),
-  single_row_enforcer unit   NOT NULL DEFAULT 'Unit'
-);
-
 -- This is a separate table from dataset_map so it can continue to exist
 -- even if the dataset_map entry goes away.
 CREATE TABLE IF NOT EXISTS truth_manifest (
@@ -33,11 +20,6 @@ CREATE TABLE IF NOT EXISTS secondary_stores_config (
   store_id            VARCHAR(%STORE_ID_LEN%)  NOT NULL PRIMARY KEY,
   next_run_time       TIMESTAMP WITH TIME ZONE NOT NULL,
   interval_in_seconds INT                      NOT NULL
-);
-
-CREATE TABLE IF NOT EXISTS last_id_processed_for_secondaries (
-  secondary_id        VARCHAR(%STORE_ID_LEN%)  NOT NULL PRIMARY KEY REFERENCES secondary_stores_config(store_id),
-  global_log_id       BIGINT                   NOT NULL REFERENCES global_log(id)
 );
 
 CREATE TABLE IF NOT EXISTS dataset_map (

@@ -103,16 +103,8 @@ trait DatasetReaderProvider { this: TypeUniverse =>
   val datasetReader: DatasetReader[CT, CV]
 }
 
-trait GlobalLogPlaybackProvider {
-  val globalLogPlayback: GlobalLogPlayback
-}
-
 trait SecondaryManifestProvider {
   val secondaryManifest: SecondaryManifest
-}
-
-trait SecondaryPlaybackManifestProvider {
-  def secondaryPlaybackManifest(storeId: String): PlaybackManifest
 }
 
 trait PlaybackToSecondaryProvider { this: TypeUniverse =>
@@ -125,10 +117,6 @@ trait SecondaryConfigProvider {
 
 trait DatasetContentsCopierProvider { this: TypeUniverse =>
   def datasetContentsCopier(logger: Logger[CT, CV]): DatasetContentsCopier[CT]
-}
-
-trait GlobalLogProvider {
-  val globalLog: GlobalLog
 }
 
 trait DatasetDropperProvider {

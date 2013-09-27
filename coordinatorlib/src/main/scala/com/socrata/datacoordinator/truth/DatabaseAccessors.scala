@@ -37,8 +37,6 @@ trait LowLevelDatabaseMutator[CT, CV] {
     def withDataLoader[A](copyCtx: DatasetCopyContext[CT], logger: Logger[CT, CV], reportWriter: ReportWriter[CV], replaceUpdatedRows: Boolean)(f: Loader[CV] => A): (Long, A)
     def truncate(table: CopyInfo, logger: Logger[CT, CV])
 
-    def globalLog: GlobalLog
-
     def finishDatasetTransaction(username: String, copyInfo: CopyInfo)
 
     def loadLatestVersionOfDataset(datasetId: DatasetId, lockTimeout: Duration): Option[DatasetCopyContext[CT]]

@@ -9,7 +9,6 @@ import com.rojoma.simplearm.util._
 import com.rojoma.simplearm.Managed
 
 import com.socrata.datacoordinator.truth.metadata._
-import com.socrata.datacoordinator.truth.metadata.sql.{PostgresGlobalLog, PostgresDatasetMapWriter}
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.loader.sql.{RepBasedSqlDatasetContentsCopier, SqlLogger}
 import com.socrata.datacoordinator.truth.{TypeContext, RowLogCodec}
@@ -27,12 +26,12 @@ import com.socrata.datacoordinator.truth.metadata.CopyInfo
 
 // Does this need to be *Postgres*, or is all postgres-specific stuff encapsulated in its paramters?
 // Actually does this need to be in the sql package at all now that Universe exists?
-class PostgresDatabaseMutator[CT, CV](universe: Managed[Universe[CT, CV] with LoggerProvider with SchemaLoaderProvider with LoaderProvider with TruncatorProvider with DatasetContentsCopierProvider with DatasetMapWriterProvider with GlobalLogProvider])
+class PostgresDatabaseMutator[CT, CV](universe: Managed[Universe[CT, CV] with LoggerProvider with SchemaLoaderProvider with LoaderProvider with TruncatorProvider with DatasetContentsCopierProvider with DatasetMapWriterProvider])
   extends LowLevelDatabaseMutator[CT, CV]
 {
   // type LoaderProvider = (CopyInfo, ColumnIdMap[ColumnInfo], RowPreparer[CV], IdProvider, Logger[CV], ColumnInfo => SqlColumnRep[CT, CV]) => Loader[CV]
 
-  private class S(val universe: Universe[CT, CV] with LoggerProvider with SchemaLoaderProvider with LoaderProvider with TruncatorProvider with DatasetContentsCopierProvider with DatasetMapWriterProvider with GlobalLogProvider) extends MutationContext {
+  private class S(val universe: Universe[CT, CV] with LoggerProvider with SchemaLoaderProvider with LoaderProvider with TruncatorProvider with DatasetContentsCopierProvider with DatasetMapWriterProvider) extends MutationContext {
     lazy val now = universe.transactionStart
 
     final def loadLatestVersionOfDataset(datasetId: DatasetId, lockTimeout: Duration): Option[DatasetCopyContext[CT]] = {
@@ -56,12 +55,9 @@ class PostgresDatabaseMutator[CT, CV](universe: Managed[Universe[CT, CV] with Lo
     def datasetContentsCopier(logger: Logger[CT, CV]): DatasetContentsCopier[CT] =
       universe.datasetContentsCopier(logger)
 
-    def globalLog = universe.globalLog
-
     def finishDatasetTransaction(username: String, copyInfo: CopyInfo) {
       logger(copyInfo.datasetInfo, username).endTransaction() foreach { ver =>
         datasetMap.updateDataVersion(copyInfo, ver)
-        globalLog.log(copyInfo.datasetInfo, ver, now, username)
       }
     }
 

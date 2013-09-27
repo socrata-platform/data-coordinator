@@ -72,9 +72,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
     with Commitable
     with DatasetMapReaderProvider
     with DatasetMapWriterProvider
-    with GlobalLogPlaybackProvider
     with SecondaryManifestProvider
-    with SecondaryPlaybackManifestProvider
     with PlaybackToSecondaryProvider
     with DeloggerProvider
     with LoggerProvider
@@ -84,7 +82,6 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
     with TruncatorProvider
     with DatasetContentsCopierProvider
     with SchemaLoaderProvider
-    with GlobalLogProvider
     with DatasetReaderProvider
     with DatasetMutatorProvider
     with DatasetDropperProvider
@@ -111,9 +108,6 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
   }
 
   def transactionStart = txnStart
-
-  def secondaryPlaybackManifest(storeId: String): PlaybackManifest =
-    new PostgresSecondaryPlaybackManifest(conn, storeId)
 
   lazy val playbackToSecondary: PlaybackToSecondary[CT, CV] =
     new PlaybackToSecondary(this, repFor, typeContext.typeNamespace.typeForUserType, datasetIdFormatter, timingReport)
@@ -145,14 +139,8 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
   lazy val datasetMapWriter: DatasetMapWriter[CT] =
     new PostgresDatasetMapWriter(conn, typeContext.typeNamespace, timingReport, obfuscationKeyGenerator, initialCounterValue)
 
-  lazy val globalLogPlayback: GlobalLogPlayback =
-    new PostgresGlobalLogPlayback(conn)
-
   lazy val secondaryConfig =
     new SqlSecondaryConfig(conn, timingReport)
-
-  lazy val globalLog =
-    new PostgresGlobalLog(conn)
 
   def datasetContextFactory(schema: ColumnIdMap[ColumnInfo[CT]]): RepBasedSqlDatasetContext[CT, CV] = {
     RepBasedSqlDatasetContext(
