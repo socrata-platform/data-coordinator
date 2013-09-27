@@ -36,11 +36,11 @@ class RepBasedPostgresSchemaLoader[CT, CV](conn: Connection, logger: Logger[CT, 
     }
 
   def create(copyInfo: CopyInfo) {
-    // if copyInfo.logTableName exists, we want to use its tablespace.  Othewise we'll ask
+    // if copyInfo.auditTableName exists, we want to use its tablespace.  Othewise we'll ask
     // postgresTablespaceSuffixFor to generate one.
 
     val ts: Option[String] =
-      tablespaceOfTable(copyInfo.datasetInfo.logTableName).getOrElse(tablespace(copyInfo.datasetInfo.logTableName))
+      tablespaceOfTable(copyInfo.datasetInfo.auditTableName).getOrElse(tablespace(copyInfo.datasetInfo.auditTableName))
     using(conn.createStatement()) { stmt =>
       stmt.execute("CREATE TABLE " + copyInfo.dataTableName + " ()" + postgresTablespaceSuffixFor(ts))
       stmt.execute(DatabasePopulator.logTableCreate(
