@@ -11,19 +11,22 @@ import com.rojoma.simplearm.util._
 import java.nio.ByteBuffer
 
 class PostgresLogger[CT, CV](connection: Connection,
+                             auditTableName: String,
+                             user: String,
                              logTableName: String,
                              rowCodecFactory: () => RowLogCodec[CV],
                              timingReport: TimingReport,
                              copyIn: (Connection, String, (OutputStream => Unit)) => Long,
                              tmpDir: File,
                              rowFlushSize: Int = 128000)
-  extends AbstractSqlLogger[CT, CV](connection, logTableName, rowCodecFactory, timingReport, rowFlushSize)
+  extends AbstractSqlLogger[CT, CV](connection, auditTableName, user, logTableName, rowCodecFactory, timingReport, rowFlushSize)
 {
   import PostgresLogger._
 
   private[this] var tmp: RandomAccessFile = _
   private[this] var tmpWrapped: DataOutputStream = _
 
+  private[this] var didOneLine = false
   private[this] val initialBatchSize = lastBatchSize
   private[this] var batchSize = initialBatchSize
   private[this] var wrote = 0L
@@ -98,6 +101,11 @@ class PostgresLogger[CT, CV](connection: Connection,
     writeEnd()
     tmpWrapped.flush()
 
+    if(!didOneLine) {
+      writeAudit()
+      didOneLine = true
+    }
+
     timingReport("write-log", "log-table" -> logTableName) {
       copyIn(connection, copyInSql, { out =>
         using(tmp.getChannel) { chan =>
@@ -132,6 +140,20 @@ class PostgresLogger[CT, CV](connection: Connection,
   protected def logLine(what: String, aux: Array[Byte]) {
     writeEntry(versionNum, nextSubVersionNum(), bytesOf(what), aux)
     maybeFlushBatch()
+  }
+
+
+  def findRows(tableName: String): Long = {
+    using(connection.prepareStatement("SELECT reltuples FROM pg_class WHERE relname=?")) { stmt =>
+      stmt.setString(1, tableName)
+      using(stmt.executeQuery()) { rs =>
+        if(rs.next()) {
+          rs.getLong("reltuples")
+        } else {
+          0L
+        }
+      }
+    }
   }
 
   openTmp()

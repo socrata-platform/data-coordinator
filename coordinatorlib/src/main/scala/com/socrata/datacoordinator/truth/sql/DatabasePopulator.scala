@@ -27,12 +27,16 @@ object DatabasePopulator {
     )
   }
 
-  def logTableCreate(tableName: String,
+  def logTableCreate(auditTableName: String,
+                     tableName: String,
+                     userUidLen: Int,
                      operationLen: Int,
                      tablespace: Option[String]): String =
     TemplateReplacer(
       load("table_log.tmpl.sql"),
       Map(
+        "audit_table_name" -> auditTableName,
+        "user_uid_len" -> userUidLen.toString,
         "table_name" -> tableName,
         "operation_len" -> operationLen.toString,
         "tablespace" -> tablespace.fold("") { ts => "TABLESPACE " + ts }

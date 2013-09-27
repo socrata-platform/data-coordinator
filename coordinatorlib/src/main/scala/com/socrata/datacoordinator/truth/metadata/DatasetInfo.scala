@@ -13,6 +13,7 @@ trait DatasetInfoLike extends Product {
   val obfuscationKey: Array[Byte]
 
   lazy val tableBase = "t" + systemId.underlying
+  lazy val auditTableName = tableBase + "_audit"
   lazy val logTableName = tableBase + "_log"
 }
 

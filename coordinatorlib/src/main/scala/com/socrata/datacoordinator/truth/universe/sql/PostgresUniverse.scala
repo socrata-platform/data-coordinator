@@ -118,13 +118,13 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
   lazy val playbackToSecondary: PlaybackToSecondary[CT, CV] =
     new PlaybackToSecondary(this, repFor, typeContext.typeNamespace.typeForUserType, datasetIdFormatter, timingReport)
 
-  def logger(datasetInfo: DatasetInfo): Logger[CT, CV] = {
+  def logger(datasetInfo: DatasetInfo, user: String): Logger[CT, CV] = {
     val logName = datasetInfo.logTableName
     loggerCache.get(logName) match {
       case Some(logger) =>
         logger
       case None =>
-        val logger = new PostgresLogger[CT, CV](conn, logName, newRowCodec, timingReport, copyInProvider, tmpDir) with LeakDetect
+        val logger = new PostgresLogger[CT, CV](conn, datasetInfo.auditTableName, user, logName, newRowCodec, timingReport, copyInProvider, tmpDir) with LeakDetect
         loggerCache += logName -> logger
         logger
     }

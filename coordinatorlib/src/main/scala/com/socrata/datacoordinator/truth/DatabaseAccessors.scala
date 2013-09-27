@@ -31,7 +31,7 @@ trait LowLevelDatabaseMutator[CT, CV] {
   trait MutationContext {
     def now: DateTime
     def datasetMap: DatasetMapWriter[CT]
-    def logger(info: DatasetInfo): Logger[CT, CV]
+    def logger(info: DatasetInfo, user: String): Logger[CT, CV]
     def schemaLoader(logger: Logger[CT, CV]): SchemaLoader[CT]
     def datasetContentsCopier(logger: Logger[CT, CV]): DatasetContentsCopier[CT]
     def withDataLoader[A](copyCtx: DatasetCopyContext[CT], logger: Logger[CT, CV], reportWriter: ReportWriter[CV], replaceUpdatedRows: Boolean)(f: Loader[CV] => A): (Long, A)
@@ -343,7 +343,7 @@ object DatasetMutator {
         llCtx <- databaseMutator.openDatabase
       } yield {
         val ctx = llCtx.loadLatestVersionOfDataset(datasetId, lockTimeout) map { copyCtx =>
-          val logger = llCtx.logger(copyCtx.datasetInfo)
+          val logger = llCtx.logger(copyCtx.datasetInfo, username)
           val schemaLoader = llCtx.schemaLoader(logger)
           new S(copyCtx.thaw(), llCtx, logger, schemaLoader)
         }
@@ -369,7 +369,7 @@ object DatasetMutator {
         for { llCtx <- databaseMutator.openDatabase } yield {
           val m = llCtx.datasetMap
           val firstVersion = m.create(localeName)
-          val logger = llCtx.logger(firstVersion.datasetInfo)
+          val logger = llCtx.logger(firstVersion.datasetInfo, as)
           val schemaLoader = llCtx.schemaLoader(logger)
           schemaLoader.create(firstVersion)
           val state = new S(new DatasetCopyContext(firstVersion, ColumnIdMap.empty).thaw(), llCtx, logger, schemaLoader)

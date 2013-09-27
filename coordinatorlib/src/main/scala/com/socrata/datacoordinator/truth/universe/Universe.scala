@@ -52,7 +52,7 @@ trait Commitable {
 }
 
 trait LoggerProvider { this: TypeUniverse =>
-  def logger(datasetInfo: DatasetInfo): Logger[CT, CV]
+  def logger(datasetInfo: DatasetInfo, user: String): Logger[CT, CV]
 }
 
 trait DeloggerProvider { this: TypeUniverse =>

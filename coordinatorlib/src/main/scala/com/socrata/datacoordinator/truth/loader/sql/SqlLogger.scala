@@ -6,14 +6,17 @@ import java.sql.{PreparedStatement, Connection}
 
 import com.socrata.datacoordinator.util.TimingReport
 import com.socrata.datacoordinator.truth.RowLogCodec
+import com.rojoma.simplearm.util._
 
 class SqlLogger[CT, CV](connection: Connection,
+                        auditTableName: String,
+                        user: String,
                         logTableName: String,
                         rowCodecFactory: () => RowLogCodec[CV],
                         timingReport: TimingReport,
                         rowFlushSize: Int = 128000,
                         batchFlushSize: Int = 2000000)
-  extends AbstractSqlLogger[CT, CV](connection, logTableName, rowCodecFactory, timingReport, rowFlushSize)
+  extends AbstractSqlLogger[CT, CV](connection, auditTableName, user, logTableName, rowCodecFactory, timingReport, rowFlushSize)
 {
   import SqlLogger._
 
@@ -24,6 +27,7 @@ class SqlLogger[CT, CV](connection: Connection,
 
   private def insertStmt = {
     if(_insertStmt == null) {
+      writeAudit()
       _insertStmt = connection.prepareStatement("INSERT INTO " + logTableName + " (version, subversion, what, aux) VALUES (" + versionNum + ", ?, ?, ?)")
     }
     _insertStmt

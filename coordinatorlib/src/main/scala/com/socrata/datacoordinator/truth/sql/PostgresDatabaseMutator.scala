@@ -44,8 +44,8 @@ class PostgresDatabaseMutator[CT, CV](universe: Managed[Universe[CT, CV] with Lo
       }
     }
 
-    def logger(datasetInfo: DatasetInfo): Logger[CT, CV] =
-      universe.logger(datasetInfo)
+    def logger(datasetInfo: DatasetInfo, user: String): Logger[CT, CV] =
+      universe.logger(datasetInfo, user)
 
     def schemaLoader(logger: Logger[CT, CV]): SchemaLoader[CT] =
       universe.schemaLoader(logger)
@@ -59,7 +59,7 @@ class PostgresDatabaseMutator[CT, CV](universe: Managed[Universe[CT, CV] with Lo
     def globalLog = universe.globalLog
 
     def finishDatasetTransaction(username: String, copyInfo: CopyInfo) {
-      logger(copyInfo.datasetInfo).endTransaction() foreach { ver =>
+      logger(copyInfo.datasetInfo, username).endTransaction() foreach { ver =>
         datasetMap.updateDataVersion(copyInfo, ver)
         globalLog.log(copyInfo.datasetInfo, ver, now, username)
       }

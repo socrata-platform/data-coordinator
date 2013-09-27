@@ -12,6 +12,8 @@ import com.socrata.datacoordinator.id.RowId
 import com.rojoma.simplearm.util._
 
 abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
+                                         val auditTableName: String,
+                                         val user: String,
                                          val logTableName: String,
                                          rowCodecFactory: () => RowLogCodec[CV],
                                          val timingReport: TimingReport,
@@ -24,10 +26,10 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
   protected def logLine(what: String, aux: Array[Byte])
   protected def flushBatch()
 
-  protected lazy val versionNum = timingReport("version-num", "log-table" -> logTableName) {
+  protected lazy val versionNum = timingReport("version-num", "audit-table" -> auditTableName) {
     for {
       stmt <- managed(connection.createStatement())
-      rs <- managed(stmt.executeQuery("SELECT MAX(version) FROM " + logTableName))
+      rs <- managed(stmt.executeQuery("SELECT MAX(version) FROM " + auditTableName))
     } yield {
       val hasNext = rs.next()
       assert(hasNext, "next version query didn't return anything?")
@@ -42,6 +44,14 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
 
   private[this] def checkTxn() {
     assert(!transactionEnded, "Operation logged after saying the transaction was over")
+  }
+
+  protected[this] def writeAudit() {
+    using(connection.prepareStatement("INSERT INTO " + auditTableName + " (version, who) VALUES (?, ?)")) { stmt =>
+      stmt.setLong(1, versionNum)
+      stmt.setString(2, user)
+      stmt.executeUpdate()
+    }
   }
 
   private def logLine(what: String, aux: MessageLite) {
