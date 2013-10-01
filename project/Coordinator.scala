@@ -18,6 +18,7 @@ object Coordinator {
         "net.sf.opencsv" % "opencsv" % "2.3",
         "com.typesafe" % "config" % "1.0.1",
         "com.mchange" % "c3p0" % "0.9.2.1",
+        "org.clojure" % "clojure" % "1.5.1",
         "com.socrata" %% "socrata-http-curator-broker" % "2.0.0-SNAPSHOT",
         "org.slf4j" % "slf4j-log4j12" % BuildSettings.slf4jVersion,
         "org.scalacheck" %% "scalacheck" % "1.10.0" % "test"

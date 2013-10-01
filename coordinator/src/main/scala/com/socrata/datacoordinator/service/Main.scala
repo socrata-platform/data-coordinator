@@ -161,11 +161,28 @@ object Main {
       val executorService = Executors.newCachedThreadPool()
       try {
         val common = locally {
+          // force RT to be initialized to avoid circular-dependency NPE
+          // Merely putting a reference to T is sufficient; the call to hashCode
+          // is to silence a compiler warning about ignoring a pure value
+          clojure.lang.RT.T.hashCode
+
+          // serviceConfig.tablespace must be an expression with the free variable
+          // table-name which should return either `nil' or a valid Postgresql tablespace
+          // name.
+          //
+          // I wish there were an obvious way to read the expression separately and then
+          // splice it in knowing that it's well-formed.
+          val iFn = clojure.lang.Compiler.load(new java.io.StringReader(s"""(let [op (fn [^String table-name] ${serviceConfig.tablespace})]
+                                                                              (fn [^String table-name]
+                                                                                (let [result (op table-name)]
+                                                                                  (if result
+                                                                                      (scala.Some. result)
+                                                                                      (scala.Option/empty)))))""")).asInstanceOf[clojure.lang.IFn]
           new SoQLCommon(
             dsInfo.dataSource,
             dsInfo.copyIn,
             executorService,
-            _ => Some("pg_default"),
+            { t => iFn.invoke(t).asInstanceOf[Option[String]] },
             new LoggedTimingReport(org.slf4j.LoggerFactory.getLogger("timing-report")) with StackedTimingReport,
             allowDdlOnPublishedCopies = serviceConfig.allowDdlOnPublishedCopies,
             serviceConfig.writeLockTimeout,

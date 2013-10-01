@@ -16,6 +16,7 @@ class ServiceConfig(val config: Config, root: String) {
   val commandReadLimit = config.getBytes(k("command-read-limit")).longValue
   val allowDdlOnPublishedCopies = config.getBoolean(k("allow-ddl-on-published-copies"))
   val instance = config.getString(k("instance"))
+  val tablespace = config.getString(k("tablespace"))
   val writeLockTimeout = new FiniteDuration(config.getMilliseconds(k("write-lock-timeout")), TimeUnit.MILLISECONDS)
   val reports = new ReportsConfig(config, k("reports"))
 
