@@ -28,6 +28,7 @@ import com.socrata.soql.types.SoQLType
 import org.apache.log4j.PropertyConfigurator
 import com.socrata.thirdparty.typesafeconfig.Propertizer
 import com.socrata.datacoordinator.truth.loader.Delogger.EndTransaction
+import javax.sql.DataSource
 
 final abstract class Receiver
 
@@ -63,9 +64,10 @@ object Receiver extends App {
   val protocol = new Protocol(codec)
   import protocol._
 
-  val (dataSource, copyIn) = DataSourceFromConfig(receiverConfig.database)
-
-  using(provider.openServerSocketChannel()) { listenSocket =>
+  for {
+    dsInfo <- DataSourceFromConfig(receiverConfig.database)
+    listenSocket <- managed(provider.openServerSocketChannel())
+  } {
     listenSocket.setOption[java.lang.Boolean](StandardSocketOptions.SO_REUSEADDR, reuseAddr)
     listenSocket.bind(address)
 
@@ -85,10 +87,10 @@ object Receiver extends App {
             loop()
           case Some(DatasetUpdated(id, version)) =>
             log.info("Dataset {} updated to version {}", id.underlying, version)
-            datasetUpdateRequested(id, version, client)
+            datasetUpdateRequested(dsInfo, id, version, client)
             loop()
           case Some(ForceResync(datasetId)) =>
-            forcedResyncRequested(datasetId, client)
+            forcedResyncRequested(dsInfo, datasetId, client)
             loop()
           case Some(_) =>
             ??? // TODO: Unexpected packet received
@@ -100,10 +102,10 @@ object Receiver extends App {
     }
   }
 
-  def datasetUpdateRequested(datasetId: DatasetId, version: Long, client: Packets) {
-    using(dataSource.getConnection()) { conn =>
+  def datasetUpdateRequested(dsInfo: DataSourceFromConfig.DSInfo, datasetId: DatasetId, version: Long, client: Packets) {
+    using(dsInfo.dataSource.getConnection()) { conn =>
       conn.setAutoCommit(false)
-      val backup = new Backup(conn, SoQLSystemColumns.isSystemColumnId, timingReport, paranoid = true, copyIn = copyIn)
+      val backup = new Backup(conn, SoQLSystemColumns.isSystemColumnId, timingReport, paranoid = true, copyIn = dsInfo.copyIn)
 
       try {
         backup.datasetMap.datasetInfo(datasetId, Duration.Inf) match {
@@ -128,10 +130,10 @@ object Receiver extends App {
     }
   }
 
-  def forcedResyncRequested(datasetId: DatasetId, client: Packets) {
-    using(dataSource.getConnection()) { conn =>
+  def forcedResyncRequested(dsInfo: DataSourceFromConfig.DSInfo, datasetId: DatasetId, client: Packets) {
+    using(dsInfo.dataSource.getConnection()) { conn =>
       conn.setAutoCommit(false)
-      val backup = new Backup(conn, SoQLSystemColumns.isSystemColumnId, timingReport, paranoid = true, copyIn = copyIn)
+      val backup = new Backup(conn, SoQLSystemColumns.isSystemColumnId, timingReport, paranoid = true, copyIn = dsInfo.copyIn)
       try {
         resync(conn, backup, datasetId, client)
       } finally {

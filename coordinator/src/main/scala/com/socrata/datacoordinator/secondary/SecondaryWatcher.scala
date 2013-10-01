@@ -102,79 +102,80 @@ object SecondaryWatcher extends App { self =>
 
   val log = LoggerFactory.getLogger(classOf[SecondaryWatcher[_,_]])
 
-  val (dataSource, copyIn) = DataSourceFromConfig(config.database)
-  val secondaries = SecondaryLoader.load(config.secondaryConfigs, config.secondaryPath).asInstanceOf[Map[String, Secondary[SoQLType, SoQLValue]]]
+  for(dsInfo <- DataSourceFromConfig(config.database)) {
+    val secondaries = SecondaryLoader.load(config.secondaryConfigs, config.secondaryPath).asInstanceOf[Map[String, Secondary[SoQLType, SoQLValue]]]
 
-  val executor = Executors.newCachedThreadPool()
+    val executor = Executors.newCachedThreadPool()
 
-  val common = new SoQLCommon(
-    dataSource,
-    copyIn,
-    executor,
-    _ => None,
-    new LoggedTimingReport(log) with StackedTimingReport,
-    allowDdlOnPublishedCopies = false, // don't care,
-    Duration.fromNanos(1L), // don't care
-    config.instance,
-    config.tmpdir,
-    NullCache
-  )
+    val common = new SoQLCommon(
+      dsInfo.dataSource,
+      dsInfo.copyIn,
+      executor,
+      _ => None,
+      new LoggedTimingReport(log) with StackedTimingReport,
+      allowDdlOnPublishedCopies = false, // don't care,
+      Duration.fromNanos(1L), // don't care
+      config.instance,
+      config.tmpdir,
+      NullCache
+    )
 
-  val w = new SecondaryWatcher(common.universe)
+    val w = new SecondaryWatcher(common.universe)
 
-  val SIGTERM = new Signal("TERM")
-  val SIGINT = new Signal("INT")
+    val SIGTERM = new Signal("TERM")
+    val SIGINT = new Signal("INT")
 
-  val finished = new CountDownLatch(1)
+    val finished = new CountDownLatch(1)
 
-  val signalHandler = new SignalHandler {
-    val firstSignal = new java.util.concurrent.atomic.AtomicBoolean(true)
-    def handle(signal: Signal) {
-      log.info("Signalling shutdown")
-      finished.countDown()
-    }
-  }
-
-  var oldSIGTERM: SignalHandler = null
-  var oldSIGINT: SignalHandler = null
-  try {
-    log.info("Hooking SIGTERM and SIGINT")
-    oldSIGTERM = Signal.handle(SIGTERM, signalHandler)
-    oldSIGINT = Signal.handle(SIGINT, signalHandler)
-
-    val threads =
-      using(dataSource.getConnection()) { conn =>
-        val cfg = new SqlSecondaryConfig(conn, common.timingReport)
-
-        secondaries.iterator.flatMap { case (name, secondary) =>
-          cfg.lookup(name).map { info =>
-            new Thread {
-              setName("Worker for secondary " + name)
-
-              override def run() {
-                w.mainloop(info, secondary, finished)
-              }
-            }
-          }.orElse {
-            log.warn("Secondary {} is defined, but there is no record in the secondary config table", name)
-            None
-          }
-        }.toList
+    val signalHandler = new SignalHandler {
+      val firstSignal = new java.util.concurrent.atomic.AtomicBoolean(true)
+      def handle(signal: Signal) {
+        log.info("Signalling shutdown")
+        finished.countDown()
       }
+    }
 
-    threads.foreach(_.start())
+    var oldSIGTERM: SignalHandler = null
+    var oldSIGINT: SignalHandler = null
+    try {
+      log.info("Hooking SIGTERM and SIGINT")
+      oldSIGTERM = Signal.handle(SIGTERM, signalHandler)
+      oldSIGINT = Signal.handle(SIGINT, signalHandler)
 
-    log.info("Going to sleep...")
-    finished.await()
+      val threads =
+        using(dsInfo.dataSource.getConnection()) { conn =>
+          val cfg = new SqlSecondaryConfig(conn, common.timingReport)
 
-    log.info("Waiting for threads to stop...")
-    threads.foreach(_.join())
-  } finally {
-    log.info("Un-hooking SIGTERM and SIGINT")
-    if(oldSIGTERM != null) Signal.handle(SIGTERM, oldSIGTERM)
-    if(oldSIGTERM != null) Signal.handle(SIGINT, oldSIGINT)
+          secondaries.iterator.flatMap { case (name, secondary) =>
+            cfg.lookup(name).map { info =>
+              new Thread {
+                setName("Worker for secondary " + name)
+
+                override def run() {
+                  w.mainloop(info, secondary, finished)
+                }
+              }
+            }.orElse {
+              log.warn("Secondary {} is defined, but there is no record in the secondary config table", name)
+              None
+            }
+          }.toList
+        }
+
+      threads.foreach(_.start())
+
+      log.info("Going to sleep...")
+      finished.await()
+
+      log.info("Waiting for threads to stop...")
+      threads.foreach(_.join())
+    } finally {
+      log.info("Un-hooking SIGTERM and SIGINT")
+      if(oldSIGTERM != null) Signal.handle(SIGTERM, oldSIGTERM)
+      if(oldSIGTERM != null) Signal.handle(SIGINT, oldSIGINT)
+    }
+
+    secondaries.values.foreach(_.shutdown())
+    executor.shutdown()
   }
-
-  secondaries.values.foreach(_.shutdown())
-  executor.shutdown()
 }

@@ -8,6 +8,7 @@ import org.postgresql.ds.PGSimpleDataSource
 import com.socrata.datacoordinator.truth.universe.sql.{PostgresCopyIn, C3P0WrappedPostgresCopyIn}
 import com.socrata.thirdparty.typesafeconfig.{Propertizer, ConfigClass}
 import com.mchange.v2.c3p0.DataSources
+import com.rojoma.simplearm.{SimpleArm, Managed}
 
 class DataSourceConfig(config: Config, root: String) extends ConfigClass(config, root) {
   val host = getString("host")
@@ -20,21 +21,29 @@ class DataSourceConfig(config: Config, root: String) extends ConfigClass(config,
 }
 
 object DataSourceFromConfig {
-  def apply(config: DataSourceConfig): (DataSource, (Connection, String, OutputStream => Unit) => Long) = {
-    val dataSource = new PGSimpleDataSource
-    dataSource.setServerName(config.host)
-    dataSource.setPortNumber(config.port)
-    dataSource.setDatabaseName(config.database)
-    dataSource.setUser(config.username)
-    dataSource.setPassword(config.password)
-    dataSource.setApplicationName(config.applicationName)
-    config.poolOptions match {
-      case Some(poolOptions) =>
-        val overrideProps = Propertizer("", poolOptions)
-        val pooled = DataSources.pooledDataSource(dataSource, null, overrideProps)
-        (pooled, C3P0WrappedPostgresCopyIn)
-      case None =>
-        (dataSource, PostgresCopyIn)
+  case class DSInfo(dataSource: DataSource, copyIn: (Connection, String, OutputStream => Unit) => Long)
+  def apply(config: DataSourceConfig): Managed[DSInfo] =
+    new SimpleArm[DSInfo] {
+      def flatMap[A](f: DSInfo => A): A = {
+        val dataSource = new PGSimpleDataSource
+        dataSource.setServerName(config.host)
+        dataSource.setPortNumber(config.port)
+        dataSource.setDatabaseName(config.database)
+        dataSource.setUser(config.username)
+        dataSource.setPassword(config.password)
+        dataSource.setApplicationName(config.applicationName)
+        config.poolOptions match {
+          case Some(poolOptions) =>
+            val overrideProps = Propertizer("", poolOptions)
+            val pooled = DataSources.pooledDataSource(dataSource, null, overrideProps)
+            try {
+              f(DSInfo(pooled, C3P0WrappedPostgresCopyIn))
+            } finally {
+              DataSources.destroy(pooled)
+            }
+          case None =>
+            f(DSInfo(dataSource, PostgresCopyIn))
+        }
+      }
     }
-  }
 }

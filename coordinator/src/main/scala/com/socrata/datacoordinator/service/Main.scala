@@ -157,100 +157,100 @@ object Main {
 
     val secondaries = SecondaryLoader.load(serviceConfig.secondary.configs, serviceConfig.secondary.path)
 
-    val executorService = Executors.newCachedThreadPool()
-    try {
-      val common = locally {
-        val (dataSource, copyInForDataSource) = DataSourceFromConfig(serviceConfig.dataSource)
-
-        new SoQLCommon(
-          dataSource,
-          copyInForDataSource,
-          executorService,
-          _ => Some("pg_default"),
-          new LoggedTimingReport(org.slf4j.LoggerFactory.getLogger("timing-report")) with StackedTimingReport,
-          allowDdlOnPublishedCopies = serviceConfig.allowDdlOnPublishedCopies,
-          serviceConfig.writeLockTimeout,
-          serviceConfig.instance,
-          serviceConfig.reports.directory,
-          NullCache
-        )
-      }
-
-      val operations = new Main(common, serviceConfig)
-
-      def getSchema(datasetId: DatasetId) = {
-        for {
-          u <- common.universe
-          dsInfo <- u.datasetMapReader.datasetInfo(datasetId)
-        } yield {
-          val latest = u.datasetMapReader.latest(dsInfo)
-          val schema = u.datasetMapReader.schema(latest)
-          val ctx = new DatasetCopyContext(latest, schema)
-          u.schemaFinder.getSchema(ctx)
+    for(dsInfo <- DataSourceFromConfig(serviceConfig.dataSource)) {
+      val executorService = Executors.newCachedThreadPool()
+      try {
+        val common = locally {
+          new SoQLCommon(
+            dsInfo.dataSource,
+            dsInfo.copyIn,
+            executorService,
+            _ => Some("pg_default"),
+            new LoggedTimingReport(org.slf4j.LoggerFactory.getLogger("timing-report")) with StackedTimingReport,
+            allowDdlOnPublishedCopies = serviceConfig.allowDdlOnPublishedCopies,
+            serviceConfig.writeLockTimeout,
+            serviceConfig.instance,
+            serviceConfig.reports.directory,
+            NullCache
+          )
         }
-      }
 
-      val serv = new Service(operations.processMutation, operations.processCreation, getSchema _,
-        operations.exporter, secondaries.keySet, operations.datasetsInStore, operations.versionInStore,
-        operations.ensureInSecondary, operations.secondariesOfDataset, operations.listDatasets, operations.deleteDataset,
-        serviceConfig.commandReadLimit, common.internalNameFromDatasetId, common.datasetIdFromInternalName, operations.makeReportTemporaryFile)
+        val operations = new Main(common, serviceConfig)
 
-      val finished = new CountDownLatch(1)
-      val tableDropper = new Thread() {
-        setName("table dropper")
-        override def run() {
-          while(!finished.await(30, TimeUnit.SECONDS)) {
-            try {
-              for(u <- common.universe) {
-                while(finished.getCount > 0 && u.tableCleanup.cleanupPendingDrops()) {
-                  u.commit()
+        def getSchema(datasetId: DatasetId) = {
+          for {
+            u <- common.universe
+            dsInfo <- u.datasetMapReader.datasetInfo(datasetId)
+          } yield {
+            val latest = u.datasetMapReader.latest(dsInfo)
+            val schema = u.datasetMapReader.schema(latest)
+            val ctx = new DatasetCopyContext(latest, schema)
+            u.schemaFinder.getSchema(ctx)
+          }
+        }
+
+        val serv = new Service(operations.processMutation, operations.processCreation, getSchema _,
+          operations.exporter, secondaries.keySet, operations.datasetsInStore, operations.versionInStore,
+          operations.ensureInSecondary, operations.secondariesOfDataset, operations.listDatasets, operations.deleteDataset,
+          serviceConfig.commandReadLimit, common.internalNameFromDatasetId, common.datasetIdFromInternalName, operations.makeReportTemporaryFile)
+
+        val finished = new CountDownLatch(1)
+        val tableDropper = new Thread() {
+          setName("table dropper")
+          override def run() {
+            while(!finished.await(30, TimeUnit.SECONDS)) {
+              try {
+                for(u <- common.universe) {
+                  while(finished.getCount > 0 && u.tableCleanup.cleanupPendingDrops()) {
+                    u.commit()
+                  }
                 }
+              } catch {
+                case e: Exception =>
+                  log.error("Unexpected error while dropping tables", e)
               }
-            } catch {
-              case e: Exception =>
-                log.error("Unexpected error while dropping tables", e)
             }
           }
         }
-      }
 
-      try {
-        tableDropper.start()
-        val address = serviceConfig.advertisement.address
-        for {
-          curator <- managed(CuratorFrameworkFactory.builder.
-            connectString(serviceConfig.curator.ensemble).
-            sessionTimeoutMs(serviceConfig.curator.sessionTimeout.toMillis.toInt).
-            connectionTimeoutMs(serviceConfig.curator.connectTimeout.toMillis.toInt).
-            retryPolicy(new retry.BoundedExponentialBackoffRetry(serviceConfig.curator.baseRetryWait.toMillis.toInt,
-            serviceConfig.curator.maxRetryWait.toMillis.toInt,
-            serviceConfig.curator.maxRetries)).
-            namespace(serviceConfig.curator.namespace).
-            build())
-          discovery <- managed(ServiceDiscoveryBuilder.builder(classOf[AuxiliaryData]).
-            client(curator).
-            basePath(serviceConfig.advertisement.basePath).
-            build())
-          pong <- managed(new LivenessCheckResponder(new InetSocketAddress(InetAddress.getByName(address), 0)))
-        } {
-          curator.start()
-          discovery.start()
-          pong.start()
-          val auxData = new AuxiliaryData(livenessCheckInfo = Some(pong.livenessCheckInfo))
-          serv.run(serviceConfig.network.port, new CuratorBroker(discovery, address, serviceConfig.advertisement.name + "." + serviceConfig.instance, Some(auxData)))
+        try {
+          tableDropper.start()
+          val address = serviceConfig.advertisement.address
+          for {
+            curator <- managed(CuratorFrameworkFactory.builder.
+              connectString(serviceConfig.curator.ensemble).
+              sessionTimeoutMs(serviceConfig.curator.sessionTimeout.toMillis.toInt).
+              connectionTimeoutMs(serviceConfig.curator.connectTimeout.toMillis.toInt).
+              retryPolicy(new retry.BoundedExponentialBackoffRetry(serviceConfig.curator.baseRetryWait.toMillis.toInt,
+              serviceConfig.curator.maxRetryWait.toMillis.toInt,
+              serviceConfig.curator.maxRetries)).
+              namespace(serviceConfig.curator.namespace).
+              build())
+            discovery <- managed(ServiceDiscoveryBuilder.builder(classOf[AuxiliaryData]).
+              client(curator).
+              basePath(serviceConfig.advertisement.basePath).
+              build())
+            pong <- managed(new LivenessCheckResponder(new InetSocketAddress(InetAddress.getByName(address), 0)))
+          } {
+            curator.start()
+            discovery.start()
+            pong.start()
+            val auxData = new AuxiliaryData(livenessCheckInfo = Some(pong.livenessCheckInfo))
+            serv.run(serviceConfig.network.port, new CuratorBroker(discovery, address, serviceConfig.advertisement.name + "." + serviceConfig.instance, Some(auxData)))
+          }
+
+          log.info("Shutting down secondaries")
+          secondaries.values.foreach(_.shutdown())
+        } finally {
+          finished.countDown()
         }
 
-        log.info("Shutting down secondaries")
-        secondaries.values.foreach(_.shutdown())
+        log.info("Waiting for table dropper to terminate")
+        tableDropper.join()
       } finally {
-        finished.countDown()
+        executorService.shutdown()
       }
-
-      log.info("Waiting for table dropper to terminate")
-      tableDropper.join()
-    } finally {
-      executorService.shutdown()
+      executorService.awaitTermination(Long.MaxValue, TimeUnit.SECONDS)
     }
-    executorService.awaitTermination(Long.MaxValue, TimeUnit.SECONDS)
   }
 }

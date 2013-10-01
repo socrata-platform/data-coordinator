@@ -66,8 +66,6 @@ object Transmitter extends App {
 
   val provider = SelectorProvider.provider
 
-  val (dataSource, _) = DataSourceFromConfig(backupConfig.database)
-
   val rowCodecFactory = () => SoQLRowLogCodec
   val protocol = new Protocol(new LogDataCodec(rowCodecFactory))
   import protocol._
@@ -79,14 +77,17 @@ object Transmitter extends App {
     schema.mapValuesStrict(genericRepFor)
   val timingReport = NoopTimingReport
 
-  using(provider.openSocketChannel()) { socket =>
+  for {
+    dsInfo <- DataSourceFromConfig(backupConfig.database)
+    socket <- managed(provider.openSocketChannel())
+  } {
     connect(socket, address, connectTimeout)
     KeepaliveSetup(socket)
 
     val client = new NetworkPackets(socket, maxPacketSize)
 
     while(true) {
-      using(dataSource.getConnection()) { conn =>
+      using(dsInfo.dataSource.getConnection()) { conn =>
         conn.setAutoCommit(false)
         val backupLog = new SqlBackupLog(conn)
         val datasets = backupLog.findDatasetsNeedingBackup()

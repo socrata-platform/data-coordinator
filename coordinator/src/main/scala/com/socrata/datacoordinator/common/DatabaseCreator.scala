@@ -9,9 +9,10 @@ object DatabaseCreator {
     val config = ConfigFactory.load()
     println(config.root.render)
 
-    val (dataSource, _) = DataSourceFromConfig(new DataSourceConfig(config, databaseTree))
-
-    using(dataSource.getConnection()) { conn =>
+    for {
+      dsInfo <- DataSourceFromConfig(new DataSourceConfig(config, databaseTree))
+      conn <- managed(dsInfo.dataSource.getConnection())
+    } {
       DatabasePopulator.populate(conn, StandardDatasetMapLimits)
     }
   }
