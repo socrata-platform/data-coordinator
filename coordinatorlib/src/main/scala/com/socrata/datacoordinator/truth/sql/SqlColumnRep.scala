@@ -110,6 +110,9 @@ trait SqlPKableColumnReadRep[Type, Value] extends SqlColumnReadRep[Type, Value] 
     */
   def sql_in(literals: Iterable[Value]): String
 
+  /** Generates a SQL expression equivalent to "`count(column)`" */
+  def count: String
+
   /** Generates SQL equivalent to "column = ?", where the placeholder can be filled
     * in by `prepareSingleLookup`
     */

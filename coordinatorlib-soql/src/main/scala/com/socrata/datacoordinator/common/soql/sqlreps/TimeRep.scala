@@ -40,6 +40,8 @@ class TimeRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
       literalize(lit.asInstanceOf[SoQLTime].value)
     }.mkString(s"($base in (", ",", "))")
 
+  def count = "count(" + base + ")"
+
   def templateForSingleLookup: String = s"($base = $placeholder)"
 
   def prepareSingleLookup(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = prepareMultiLookup(stmt, v, start)

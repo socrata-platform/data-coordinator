@@ -28,6 +28,8 @@ class IdRep(cid: ColumnId) extends SqlPKableColumnReadRep[TestColumnType, TestCo
   def sql_in(literals: Iterable[TestColumnValue]) =
     literals.map(_.asInstanceOf[IdValue].value.underlying).mkString("(" + base + " in (", ",", "))")
 
+  def count = "count(" + base + ")"
+
   def templateForSingleLookup = "(" + base + " = ?)"
 
   def prepareSingleLookup(stmt: PreparedStatement, v: TestColumnValue, start: Int) =
@@ -91,6 +93,8 @@ class StringRep(val cid: ColumnId) extends SqlPKableColumnReadRep[TestColumnType
 
   def sql_in(literals: Iterable[TestColumnValue]) =
     literals.map { v => escape(v.asInstanceOf[StringValue].value) }.mkString("(" + base + " in (", ",", "))")
+
+  def count = "count(" + base + ")"
 
   def templateForSingleLookup = "(" + base + " = ?)"
 

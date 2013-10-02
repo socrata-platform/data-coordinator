@@ -38,6 +38,33 @@ class PostgresDatabaseReader[CT, CV](conn: Connection,
     def loadDataset(copyInfo: CopyInfo) =
       new DatasetCopyContext(copyInfo, datasetMap.schema(copyInfo))
 
+    def approximateRowCount(copyCtx: DatasetCopyContext[CT]): Long = {
+      val approx =
+        using(conn.prepareStatement("SELECT reltuples FROM pg_class WHERE relname=?")) { stmt =>
+          stmt.setString(1, copyCtx.copyInfo.dataTableName)
+          using(stmt.executeQuery()) { rs =>
+            if(rs.next()) {
+              rs.getLong("reltuples")
+            } else {
+              -1L
+            }
+          }
+        }
+      if(approx <= 1000) { // small enough we can take the hit to get an exact number
+        val colRep = repFor(copyCtx.systemIdCol_!).asPKableRep
+        for {
+          stmt <- managed(conn.prepareStatement("SELECT " + colRep.count + " FROM " + copyCtx.copyInfo.dataTableName))
+          rs <- managed(stmt.executeQuery())
+        } yield {
+          val foundOne = rs.next()
+          assert(foundOne, "select count(id) returned zero rows?")
+          rs.getLong(1)
+        }
+      } else {
+        approx
+      }
+    }
+
     def rows(copyCtx: DatasetCopyContext[CT], sidCol: ColumnId, limit: Option[Long], offset: Option[Long]): Managed[Iterator[ColumnIdMap[CV]]] =
       new RepBasedDatasetExtractor(conn, copyCtx.copyInfo.dataTableName, repFor(copyCtx.schema(sidCol)).asPKableRep, copyCtx.schema.mapValuesStrict(repFor)).allRows(limit, offset)
   }

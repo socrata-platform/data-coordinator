@@ -42,6 +42,8 @@ class SampleSidColumnRep(val base: String) extends SqlPKableColumnRep[SampleType
     literals.iterator.map(extract).mkString("(" + base + " IN (", ",", "))")
   }
 
+  def count = "count(" + base + ")"
+
   def sql_==(literal: SampleValue) = "(" + base + '=' + extract(literal) + ')'
 
   def fromResultSet(rs: ResultSet, start: Int): SampleValue =

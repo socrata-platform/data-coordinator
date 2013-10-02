@@ -37,7 +37,7 @@ import org.apache.commons.codec.binary.Base64
 class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) => Seq[MutationScriptCommandResult],
               processCreation: (Iterator[JValue], IndexedTempFile) => (DatasetId, Seq[MutationScriptCommandResult]),
               getSchema: DatasetId => Option[Schema],
-              datasetContents: (DatasetId, Option[String], CopySelector, Option[UserColumnIdSet], Option[Long], Option[Long], Precondition) => (Either[Schema, (EntityTag, Seq[SchemaField], Option[UserColumnId], String, Iterator[Array[JValue]])] => Unit) => Exporter.Result[Unit],
+              datasetContents: (DatasetId, Option[String], CopySelector, Option[UserColumnIdSet], Option[Long], Option[Long], Precondition) => (Either[Schema, (EntityTag, Seq[SchemaField], Option[UserColumnId], String, Long, Iterator[Array[JValue]])] => Unit) => Exporter.Result[Unit],
               secondaries: Set[String],
               datasetsInStore: (String) => Map[DatasetId, Long],
               versionInStore: (String, DatasetId) => Option[Long],
@@ -519,13 +519,15 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
             val found = datasetContents(datasetId, schemaHash, copy, onlyColumns, limit, offset, upstreamPrecondition) {
               case Left(newSchema) =>
                 mismatchedSchema("req.export.mismatched-schema", datasetId, newSchema)(resp)
-              case Right((etag, schema, rowIdCol, locale, rows)) =>
+              case Right((etag, schema, rowIdCol, locale, approxRowCount, rows)) =>
                 resp.setContentType("application/json")
                 resp.setCharacterEncoding("utf-8")
                 resp.setHeader("ETag", etag.map(_ + suffix).toString)
                 val out = new BufferedWriter(resp.getWriter)
                 val jsonWriter = new CompactJsonWriter(out)
-                out.write("[{\"locale\":")
+                out.write("[{\"approximate_row_count\":")
+                out.write(JNumber(approxRowCount).toString)
+                out.write("\n ,\"locale\":")
                 jsonWriter.write(JString(locale))
                 rowIdCol.foreach { rid =>
                   out.write("\n ,\"pk\":")

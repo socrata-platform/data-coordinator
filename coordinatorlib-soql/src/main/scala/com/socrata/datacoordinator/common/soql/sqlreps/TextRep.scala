@@ -28,6 +28,8 @@ class TextRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
       s"lower($escaped)"
     }.mkString(s"(lower($base) in (", ",", "))")
 
+  def count = "count(" + base + ")"
+
   def templateForSingleLookup: String = s"(lower($base) = lower(?))"
 
   def prepareSingleLookup(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = prepareMultiLookup(stmt, v, start)

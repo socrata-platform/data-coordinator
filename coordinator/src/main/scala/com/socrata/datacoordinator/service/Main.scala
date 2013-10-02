@@ -84,9 +84,9 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
     }
   }
 
-  def exporter(id: DatasetId, schemaHash: Option[String], copy: CopySelector, columns: Option[UserColumnIdSet], limit: Option[Long], offset: Option[Long], precondition: Precondition)(f: Either[Schema, (EntityTag, Seq[SchemaField], Option[UserColumnId], String, Iterator[Array[JValue]])] => Unit): Exporter.Result[Unit] = {
+  def exporter(id: DatasetId, schemaHash: Option[String], copy: CopySelector, columns: Option[UserColumnIdSet], limit: Option[Long], offset: Option[Long], precondition: Precondition)(f: Either[Schema, (EntityTag, Seq[SchemaField], Option[UserColumnId], String, Long, Iterator[Array[JValue]])] => Unit): Exporter.Result[Unit] = {
     for(u <- common.universe) yield {
-      Exporter.export(u, id, copy, columns, limit, offset, precondition) { (entityTag, copyCtx, it) =>
+      Exporter.export(u, id, copy, columns, limit, offset, precondition) { (entityTag, copyCtx, approxRowCount, it) =>
         val schema = u.schemaFinder.getSchema(copyCtx)
 
         if(schemaHash.isDefined && (Some(schema.hash) != schemaHash)) {
@@ -105,6 +105,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
             orderedSchema,
             pkColName,
             copyCtx.datasetInfo.localeName,
+            approxRowCount,
             it.map { row =>
               val arr = new Array[JValue](unwrappedCids.length)
               var i = 0

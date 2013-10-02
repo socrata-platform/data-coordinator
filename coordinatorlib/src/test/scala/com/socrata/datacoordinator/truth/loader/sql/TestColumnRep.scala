@@ -46,6 +46,8 @@ class LongRep(columnId: ColumnId) extends TestColumnRep(columnId) {
     sb.toString
   }
 
+  def count = "count(" + base + ")"
+
   def sql_==(literal: TestColumnValue) =
     "(" + base + "=" + literal.asInstanceOf[LongValue].value + ")"
 
@@ -88,6 +90,8 @@ class StringRep(columnId: ColumnId) extends TestColumnRep(columnId) {
     sb.append("))")
     sb.toString
   }
+
+  def count = "count(" + base + ")"
 
   def sql_==(literal: TestColumnValue) =
     "(" + base + "=" + escape('\'', literal.asInstanceOf[StringValue].value) + ")"

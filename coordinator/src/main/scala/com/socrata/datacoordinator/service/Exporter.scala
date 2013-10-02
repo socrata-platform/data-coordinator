@@ -15,7 +15,7 @@ object Exporter {
   case class PreconditionFailed(reason: Precondition.Failure) extends Result[Nothing]
   case class Success[T](x: T) extends Result[T]
 
-  def export[CT, CV, T](u: Universe[CT, CV] with DatasetReaderProvider, id: DatasetId, copy: CopySelector, columns: Option[UserColumnIdSet], limit: Option[Long], offset: Option[Long], precondition: Precondition)(f: (EntityTag, DatasetCopyContext[CT], Iterator[Row[CV]]) => T): Result[T] = {
+  def export[CT, CV, T](u: Universe[CT, CV] with DatasetReaderProvider, id: DatasetId, copy: CopySelector, columns: Option[UserColumnIdSet], limit: Option[Long], offset: Option[Long], precondition: Precondition)(f: (EntityTag, DatasetCopyContext[CT], Long, Iterator[Row[CV]]) => T): Result[T] = {
     val subResult = for {
       ctxOpt <- u.datasetReader.openDataset(id, copy)
       ctx <- ctxOpt
@@ -42,6 +42,7 @@ object Exporter {
               m.freeze()
             }
             Success(f(entityTag, copyCtx.verticalSlice { ci => selectedSchema.keySet(ci.systemId) },
+              approximateRowCount,
               if(selectedSchema.contains(copyCtx.pkCol_!.systemId)) it
               else it.map(_ - copyCtx.pkCol_!.systemId)))
           }

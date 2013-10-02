@@ -70,6 +70,8 @@ class SampleTextColumnRep(val base: String) extends SqlPKableColumnRep[SampleTyp
     sb.toString
   }
 
+  def count = "count(" + base + ")"
+
   def sql_==(literal: SampleValue) =
     literal match {
       case SampleText(text) =>
