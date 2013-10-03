@@ -472,12 +472,6 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
       }
     }
 
-    def appendBytes(a: Array[Byte], b: Array[Byte]): Array[Byte] = {
-      val res = new Array[Byte](a.length + b.length)
-      System.arraycopy(a, 0, res, 0, a.length)
-      System.arraycopy(b, 0, res, a.length, b.length)
-      res
-    }
     val suffixHashAlg = "SHA1"
     val suffixHashLen = MessageDigest.getInstance(suffixHashAlg).getDigestLength
     def doExportFile(req: HttpServletRequest): HttpResponse = {
@@ -520,9 +514,9 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
         md.update(copy.toString.getBytes)
         md.digest()
       }
-      precondition.filter(_.asBytesUnsafe.endsWith(suffix)) match { // TODO: Possible perf problem due to endsWith call
+      precondition.filter(_.endsWith(suffix)) match {
         case Right(newPrecond) =>
-          val upstreamPrecondition = newPrecond.map(_.map(_.dropRight(suffix.length)));
+          val upstreamPrecondition = newPrecond.map(_.dropRight(suffix.length));
           { resp =>
             val found = datasetContents(datasetId, schemaHash, copy, onlyColumns, limit, offset, upstreamPrecondition) {
               case Left(newSchema) =>
@@ -530,7 +524,7 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
               case Right((etag, schema, rowIdCol, locale, approxRowCount, rows)) =>
                 resp.setContentType("application/json")
                 resp.setCharacterEncoding("utf-8")
-                ETag(etag.map(appendBytes(_, suffix)))(resp)
+                ETag(etag.append(suffix))(resp)
                 val out = new BufferedWriter(resp.getWriter)
                 val jsonWriter = new CompactJsonWriter(out)
                 out.write("[{\"approximate_row_count\":")
