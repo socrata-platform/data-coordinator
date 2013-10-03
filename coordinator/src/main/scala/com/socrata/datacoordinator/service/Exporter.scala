@@ -8,6 +8,7 @@ import com.socrata.soql.environment.ColumnName
 import com.socrata.datacoordinator.truth.CopySelector
 import com.socrata.datacoordinator.id.{UserColumnId, DatasetId}
 import com.socrata.http.server.util.{StrongEntityTag, EntityTag, Precondition}
+import java.nio.charset.StandardCharsets
 
 object Exporter {
   sealed abstract class Result[+T]
@@ -22,7 +23,7 @@ object Exporter {
     } yield {
       import ctx._
 
-      val entityTag = StrongEntityTag(copyInfo.dataVersion.toString)
+      val entityTag = StrongEntityTag(copyInfo.dataVersion.toString.getBytes(StandardCharsets.UTF_8))
       precondition.check(Some(entityTag), sideEffectFree = true) match {
         case Precondition.Passed =>
           val selectedSchema = columns match {

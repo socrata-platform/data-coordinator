@@ -472,6 +472,14 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
       }
     }
 
+    def appendBytes(a: Array[Byte], b: Array[Byte]): Array[Byte] = {
+      val res = new Array[Byte](a.length + b.length)
+      System.arraycopy(a, 0, res, 0, a.length)
+      System.arraycopy(b, 0, res, a.length, b.length)
+      res
+    }
+    val suffixHashAlg = "SHA1"
+    val suffixHashLen = MessageDigest.getInstance(suffixHashAlg).getDigestLength
     def doExportFile(req: HttpServletRequest): HttpResponse = {
       val precondition = req.precondition
       val schemaHash = Option(req.getParameter("schemaHash"))
@@ -503,16 +511,16 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
           }
       }
       val suffix = locally {
-        val md = MessageDigest.getInstance("SHA1")
+        val md = MessageDigest.getInstance(suffixHashAlg)
         md.update(formatDatasetId(datasetId).getBytes(UTF_8))
         md.update(schemaHash.toString.getBytes(UTF_8))
         md.update(onlyColumns.toString.getBytes(UTF_8))
         md.update(limit.toString.getBytes(UTF_8))
         md.update(offset.toString.getBytes(UTF_8))
         md.update(copy.toString.getBytes)
-        "+" + Base64.encodeBase64URLSafeString(md.digest())
+        md.digest()
       }
-      precondition.filter(_.value.endsWith(suffix)) match {
+      precondition.filter(_.asBytesUnsafe.endsWith(suffix)) match { // TODO: Possible perf problem due to endsWith call
         case Right(newPrecond) =>
           val upstreamPrecondition = newPrecond.map(_.map(_.dropRight(suffix.length)));
           { resp =>
@@ -522,7 +530,7 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
               case Right((etag, schema, rowIdCol, locale, approxRowCount, rows)) =>
                 resp.setContentType("application/json")
                 resp.setCharacterEncoding("utf-8")
-                resp.setHeader("ETag", etag.map(_ + suffix).toString)
+                ETag(etag.map(appendBytes(_, suffix)))(resp)
                 val out = new BufferedWriter(resp.getWriter)
                 val jsonWriter = new CompactJsonWriter(out)
                 out.write("[{\"approximate_row_count\":")
@@ -554,15 +562,13 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
                 preconditionFailed(resp)
             }
           }
-        case Left(Precondition.FailedBecauseMatch(etags)) =>
-          notModified(etags)
         case Left(Precondition.FailedBecauseNoMatch) =>
           preconditionFailed
       }
     }
   }
 
-  def notModified(etags: Seq[EntityTag]) = etags.foldLeft(NotModified) { (resp, etag) => resp ~> Header("ETag", etag.toString) }
+  def notModified(etags: Seq[EntityTag]) = etags.foldLeft(NotModified) { (resp, etag) => resp ~> ETag(etag) }
   val preconditionFailed = err(PreconditionFailed, "req.precondition-failed")
 
   def jsonifySchema(schemaObj: Schema) = {
