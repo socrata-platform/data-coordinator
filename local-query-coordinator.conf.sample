@@ -1,0 +1,38 @@
+com.socrata.query-coordinator {
+  log4j {
+    rootLogger = [ INFO, console ]
+    appender {
+      console.class = org.apache.log4j.ConsoleAppender
+      console.props {
+        layout.class = org.apache.log4j.PatternLayout
+        layout.props {
+          ConversionPattern = "[%t] %d %c %m%n"
+        }
+      }
+    }
+  }
+
+  network {
+    port = 0
+  }
+
+  curator {
+    namespace = "com.socrata/soda"
+    session-timeout = 40s
+    connect-timeout = 5s
+    base-retry-wait = 100ms
+    max-retry-wait = 10s
+    max-retries = 29
+    ensemble = ["localhost:2181"]
+  }
+
+  service-advertisement {
+    base-path = "/services"
+    name = query-coordinator
+    address = "127.0.0.1"
+  }
+
+  get-schema-timeout = 10s
+  initial-response-timeout = 1m
+  response-data-timeout = 3m
+}
