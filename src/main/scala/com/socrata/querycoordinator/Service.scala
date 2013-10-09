@@ -221,6 +221,9 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
       val query = Option(req.getParameter("q")).getOrElse {
         finishRequest(noQueryResponse)
       }
+
+      val rowCount = Option(req.getParameter("rowCount"))
+
       val jsonizedColumnIdMap = Option(req.getParameter("idMap")).getOrElse {
         return (BadRequest ~> Content("no idMap provided"))(resp)
       }
@@ -278,7 +281,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
 
       @tailrec
       def executeQuery(schema: Schema, analyzedQuery: SoQLAnalysis[String, SoQLAnalysisType]) {
-        val res = queryExecutor(base, dataset, analyzedQuery, schema, ifNoneMatch).map {
+        val res = queryExecutor(base, dataset, analyzedQuery, schema, ifNoneMatch, rowCount).map {
           case QueryExecutor.NotFound =>
             finishRequest(notFoundResponse(dataset))
           case QueryExecutor.SchemaHashMismatch(newSchema) =>
