@@ -238,7 +238,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
         case e: JsonReaderException =>
           finishRequest(BadRequest ~> Content("idMap not parsable as JSON"))
       }
-      val ifNoneMatch = req.header("if-none-match")
+      val precondition = req.precondition
 
       // A little spaghetti never hurt anybody!
       // Ok, so the general flow of this code is:
@@ -281,7 +281,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
 
       @tailrec
       def executeQuery(schema: Schema, analyzedQuery: SoQLAnalysis[String, SoQLAnalysisType]) {
-        val res = queryExecutor(base, dataset, analyzedQuery, schema, ifNoneMatch, rowCount).map {
+        val res = queryExecutor(base, dataset, analyzedQuery, schema, precondition, rowCount).map {
           case QueryExecutor.NotFound =>
             finishRequest(notFoundResponse(dataset))
           case QueryExecutor.SchemaHashMismatch(newSchema) =>
