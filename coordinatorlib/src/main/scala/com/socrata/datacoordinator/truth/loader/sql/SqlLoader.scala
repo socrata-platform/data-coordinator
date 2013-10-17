@@ -239,8 +239,6 @@ final class SqlLoader[CT, CV](val connection: Connection,
       }
     }
     loop(batch.upserts)
-    // val updates = processInserts(batch.upserts, batch.hasKnownInserts)
-    // processUpdates(updates)
   }
 
   private def doInserts(inserts: Seq[SqlLoader.DecoratedRow[CV]]) {
