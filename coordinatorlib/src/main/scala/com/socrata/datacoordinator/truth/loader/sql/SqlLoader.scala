@@ -249,8 +249,11 @@ final class SqlLoader[CT, CV](val connection: Connection,
         for(insert <- inserts) {
           inserter.insert(insert.row)
           reportWriter.inserted(insert.job, IdAndVersion(insert.id, insert.version))
-          dataLogger.insert(insert.rowId, insert.row)
         }
+      }
+      // Can't do this in the loop above because the inserter owns the DB connection for the COPY
+      for(insert <- inserts) {
+        dataLogger.insert(insert.rowId, insert.row)
       }
       totalInsertCount += inserts.length
     }
@@ -262,7 +265,7 @@ final class SqlLoader[CT, CV](val connection: Connection,
         for(update <- updates) {
           sqlizer.prepareSystemIdUpdate(stmt, update.rowId, update.row)
           reportWriter.updated(update.job, IdAndVersion(update.id, update.version))
-          dataLogger.update(update.rowId, update.row)
+          dataLogger.update(update.rowId, update.row) // This CAN be done here because there is no active query
           stmt.addBatch()
         }
         val results = stmt.executeBatch()
