@@ -81,6 +81,8 @@ object SoQLTypeContext extends TypeContext[SoQLType, SoQLValue] {
           }
         }
 
+        def keysIterator = map.keys.map { rid => SoQLID(rid.underlying) }
+
         def valuesIterator: Iterator[T] =
           map.values.iterator
       }
@@ -132,6 +134,8 @@ object SoQLTypeContext extends TypeContext[SoQLType, SoQLValue] {
             f(k, v)
           }
         }
+
+        def keysIterator = map.values.iterator.asScala.map(_._1)
 
         def valuesIterator: Iterator[T] =
           map.values.iterator.asScala.map(_._2)

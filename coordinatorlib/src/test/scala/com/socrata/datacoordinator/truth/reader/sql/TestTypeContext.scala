@@ -46,6 +46,8 @@ object TestTypeContext extends TypeContext[TestColumnType, TestColumnValue] {
       }
     }
 
+    def keysIterator = underlying.keysIterator.map(StringValue)
+
     def valuesIterator = underlying.valuesIterator
 
     def remove(x: TestColumnValue) {

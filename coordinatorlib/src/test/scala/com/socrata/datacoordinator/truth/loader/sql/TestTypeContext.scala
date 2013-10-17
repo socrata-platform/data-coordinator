@@ -69,6 +69,8 @@ object TestTypeContext extends TypeContext[TestColumnType, TestColumnValue] {
         }
       }
 
+      def keysIterator = m.keySet.iterator.asScala
+
       def valuesIterator = m.values().iterator.asScala
 
       def remove(x: TestColumnValue) {

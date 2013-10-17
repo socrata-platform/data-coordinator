@@ -12,6 +12,7 @@ trait RowUserIdMap[CV, T] {
   def isEmpty: Boolean
   def size: Int
   def foreach(f: (CV, T) => Unit)
+  def keysIterator: Iterator[CV]
   def valuesIterator: Iterator[T]
 }
 
@@ -48,6 +49,8 @@ class SimpleRowUserIdMap[CV, T] extends RowUserIdMap[CV, T] {
       f(ent.getKey, ent.getValue)
     }
   }
+
+  def keysIterator = map.keySet.iterator.asScala
 
   def valuesIterator: Iterator[T] = map.values.iterator.asScala
 }
