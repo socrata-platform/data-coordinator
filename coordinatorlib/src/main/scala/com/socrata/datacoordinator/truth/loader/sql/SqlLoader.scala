@@ -202,6 +202,10 @@ final class SqlLoader[CT, CV](val connection: Connection,
     checkJob(jobId)
     idOf(row) match {
       case Some(id) =>
+        if(currentBatch.hasUpsertFor(id)) {
+          log.debug("Upsert forced a flush; potential pipeline stall")
+          flush()
+        }
         currentBatch += UpsertOp(jobId, id, row)
       case None if isSystemPK =>
         versionOf(row) match {
@@ -230,15 +234,9 @@ final class SqlLoader[CT, CV](val connection: Connection,
 
   private def process(batch: Queues) {
     processDeletes(batch.deletions)
-    def loop(upserts: Seq[UpsertLike]) {
-      if(upserts.nonEmpty) {
-        val (remaining, inserts, updates) = prepareInsertsAndUpdates(upserts)
-        doInserts(inserts)
-        doUpdates(updates)
-        loop(remaining)
-      }
-    }
-    loop(batch.upserts)
+    val (inserts, updates) = prepareInsertsAndUpdates(batch.upserts)
+    doInserts(inserts)
+    doUpdates(updates)
   }
 
   private def doInserts(inserts: Seq[SqlLoader.DecoratedRow[CV]]) {
@@ -328,7 +326,7 @@ final class SqlLoader[CT, CV](val connection: Connection,
     }
   }
 
-  private def prepareInsertsAndUpdates(upserts: Seq[UpsertLike]): (Seq[UpsertLike], Seq[SqlLoader.DecoratedRow[CV]], Seq[SqlLoader.DecoratedRow[CV]]) = {
+  private def prepareInsertsAndUpdates(upserts: Seq[UpsertLike]): (Seq[SqlLoader.DecoratedRow[CV]], Seq[SqlLoader.DecoratedRow[CV]]) = {
     // ok, what we want to do here is divide "upserts" into two piles: inserts and updates.
     // The OUTPUT of this will be fully filled-in rows which are ready to go through the
     // validation/population script before actually being sent to the database.
@@ -338,25 +336,14 @@ final class SqlLoader[CT, CV](val connection: Connection,
     //       sent a job for a sid that didn't exist yet).  This should be SUPER RARE
     //       verging on NEVER HAPPENS.  It means that a row identifier picked out of
     //       thin air happened to be one that was generated in the same batch!
-    // * upserts that refer to the same ID as a previous operation can be assumed
-    //       to be updates, but CANNOT BE FILLED IN FULLY because the previous row
-    //       hasn't gone through validation/population.
-    //   - ALMOST ALWAYS this will not happen (it's a very edge case) but there's no
-    //         clean way to report that as an error, since it's an artifact of the
-    //         two jobs just happening to fall in the same batch.
-    //   - Perhaps in that event we should just stop processing and split the batch
-    //         in two?  That opens us up to bad perf from receiving LOTS of jobs for
-    //         a single row in a mutation.  That's totally a pathlogical case.
-    //         It won't actually be _super_ painful though because the resulting DB
-    //         queries are all lookups-by-key.  So yeah, I think that's what we'll
-    //         do.
+    // * Before, upserts could refer to the same ID as a previous operation.  Now this can't;
+    //       a flush will have occurred if the user tries it.
     if(isSystemPK) prepareInsertsAndUpdatesSID(upserts)
     else prepareInsertsAndUpdatesUID(upserts)
   }
 
-  private def prepareInsertsAndUpdatesSID(upserts: Seq[UpsertLike]): (Seq[UpsertLike], Seq[SqlLoader.DecoratedRow[CV]], Seq[SqlLoader.DecoratedRow[CV]]) = {
+  private def prepareInsertsAndUpdatesSID(upserts: Seq[UpsertLike]): (Seq[SqlLoader.DecoratedRow[CV]], Seq[SqlLoader.DecoratedRow[CV]]) = {
     assert(isSystemPK)
-    var processed = 0
     val inserts = Vector.newBuilder[SqlLoader.DecoratedRow[CV]]
     var unprocessedUpdates = Vector.newBuilder[UpsertOp]
     val seenIds = datasetContext.makeIdMap[AnyRef]()
@@ -367,6 +354,7 @@ final class SqlLoader[CT, CV](val connection: Connection,
       // This is why I'm willing to do this in this less-than-efficient way
       log.debug("Wow!  I'm killing an update that happened before the insert in a SID dataset!")
       val update = seenOps(sid)
+      seenOps.remove(sid)
       reportWriter.error(update.job, NoSuchRowToUpdate(update.id))
       val newUnprocessedUpdates = Vector.newBuilder[UpsertOp]
       for(upsertOp <- unprocessedUpdates.result() if upsertOp ne update) {
@@ -396,7 +384,6 @@ final class SqlLoader[CT, CV](val connection: Connection,
             seenOps.put(u.id, u)
             seenIds.put(u.id, seenIds)
         }
-        processed += 1
       }
     } catch { case _: Break => /* ok */ }
 
@@ -417,17 +404,17 @@ final class SqlLoader[CT, CV](val connection: Connection,
       }
     }
 
-    (upserts.drop(processed), inserts.result(), updates.result())
+    (inserts.result(), updates.result())
   }
 
-  private def prepareInsertsAndUpdatesUID(upserts: Seq[UpsertLike]): (Seq[UpsertLike], Seq[SqlLoader.DecoratedRow[CV]], Seq[SqlLoader.DecoratedRow[CV]]) = {
+  private def prepareInsertsAndUpdatesUID(upserts: Seq[UpsertLike]): (Seq[SqlLoader.DecoratedRow[CV]], Seq[SqlLoader.DecoratedRow[CV]]) = {
     assert(!isSystemPK)
-    var processed = 0
     val seenIds = datasetContext.makeIdMap[AnyRef]()
-    val ops = new Array[UpsertOp](upserts.length) // this might be an over-allocation.  But probably isn't.
+    val ops = new Array[UpsertOp](upserts.length)
 
     class Break extends ControlThrowable
     try {
+      var processed = 0
       val it = upserts.iterator
       while(it.hasNext) {
         it.next() match {
@@ -449,7 +436,7 @@ final class SqlLoader[CT, CV](val connection: Connection,
     val updates = Vector.newBuilder[SqlLoader.DecoratedRow[CV]]
 
     var i = 0
-    while(i != processed) {
+    while(i != ops.length) {
       val op = ops(i)
       rows.get(op.id) match {
         case None =>
@@ -469,7 +456,7 @@ final class SqlLoader[CT, CV](val connection: Connection,
       i += 1
     }
 
-    (upserts.drop(processed), inserts.result(), updates.result())
+    (inserts.result(), updates.result())
   }
 }
 
