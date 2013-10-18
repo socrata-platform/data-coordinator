@@ -52,7 +52,6 @@ final class SqlLoader[CT, CV](val connection: Connection,
   }
   private case class KnownToBeInsertOp(job: Int, id: RowId, newVersion: RowVersion, row: Row[CV]) extends UpsertLike
   private case class UpsertOp(job: Int, id: CV, row: Row[CV]) extends UpsertLike
-  private case class UpdateOp(job: Int, sid: RowId, id: CV, newPreparedRow: Row[CV])
   private class Queues {
     private var empty = true
     private var knownInserts = false
@@ -346,7 +345,6 @@ final class SqlLoader[CT, CV](val connection: Connection,
     assert(isSystemPK)
     val inserts = Vector.newBuilder[SqlLoader.DecoratedRow[CV]]
     var unprocessedUpdates = Vector.newBuilder[UpsertOp]
-    val seenIds = datasetContext.makeIdMap[AnyRef]()
     val seenOps = datasetContext.makeIdMap[UpsertOp]()
 
     def killPreinsertUpdate(sid: CV) {
@@ -363,35 +361,26 @@ final class SqlLoader[CT, CV](val connection: Connection,
       unprocessedUpdates = newUnprocessedUpdates
     }
 
-    class Break extends ControlThrowable
-    try {
-      val it = upserts.iterator
-      while(it.hasNext) {
-        // These are SIDs, so inserts will be Known and Updates will be not-known
-        it.next() match {
-          case KnownToBeInsertOp(job, sid, version, row) =>
-            val preparedRow = rowPreparer.prepareForInsert(row, sid, version)
-            val sidValue = preparedRow(datasetContext.systemIdColumn)
-            if(seenOps.contains(sidValue)) killPreinsertUpdate(sidValue)
-
-            inserts += SqlLoader.DecoratedRow(job, sidValue, sid, version, preparedRow)
-            seenIds.put(sidValue, seenIds)
-          case u: UpsertOp =>
-            if(seenIds.contains(u.id)) { // ok, we're done here.  As noted above, this should be RARE in real upserts
-              throw new Break
-            }
-            unprocessedUpdates += u
-            seenOps.put(u.id, u)
-            seenIds.put(u.id, seenIds)
-        }
+    val firstPassIterator = upserts.iterator
+    while(firstPassIterator.hasNext) {
+      // These are SIDs, so inserts will be Known and Updates will be not-known
+      firstPassIterator.next() match {
+        case KnownToBeInsertOp(job, sid, version, row) =>
+          val preparedRow = rowPreparer.prepareForInsert(row, sid, version)
+          val sidValue = preparedRow(datasetContext.systemIdColumn)
+          if(seenOps.contains(sidValue)) killPreinsertUpdate(sidValue)
+          inserts += SqlLoader.DecoratedRow(job, sidValue, sid, version, preparedRow)
+        case u: UpsertOp =>
+          unprocessedUpdates += u
+          seenOps.put(u.id, u)
       }
-    } catch { case _: Break => /* ok */ }
+    }
 
     val updates = Vector.newBuilder[SqlLoader.DecoratedRow[CV]]
     val preexistingRows = lookupRows(seenOps.keysIterator)
-    val it = unprocessedUpdates.result().iterator
-    while(it.hasNext) {
-      val op = it.next()
+    val secondPassIterator = unprocessedUpdates.result().iterator
+    while(secondPassIterator.hasNext) {
+      val op = secondPassIterator.next()
       preexistingRows.get(op.id) match {
         case Some(oldRow) =>
           checkVersion(op.job, op.id, versionOf(op.row), Some(oldRow.version)) {
@@ -409,29 +398,21 @@ final class SqlLoader[CT, CV](val connection: Connection,
 
   private def prepareInsertsAndUpdatesUID(upserts: Seq[UpsertLike]): (Seq[SqlLoader.DecoratedRow[CV]], Seq[SqlLoader.DecoratedRow[CV]]) = {
     assert(!isSystemPK)
-    val seenIds = datasetContext.makeIdMap[AnyRef]()
     val ops = new Array[UpsertOp](upserts.length)
 
-    class Break extends ControlThrowable
-    try {
-      var processed = 0
-      val it = upserts.iterator
-      while(it.hasNext) {
-        it.next() match {
-          case u: UpsertOp =>
-            if(seenIds.contains(u.id)) { // ok, we're done here.  As noted above, this should be RARE in real upserts
-              throw new Break
-            }
-            seenIds.put(u.id, seenIds)
-            ops(processed) = u
-          case _: KnownToBeInsertOp =>
-            sys.error("Found KnownToBeInsertOp in a non-sid dataset")
-        }
-        processed += 1
+    var processed = 0
+    val it = upserts.iterator
+    while(it.hasNext) {
+      it.next() match {
+        case u: UpsertOp =>
+          ops(processed) = u
+        case _: KnownToBeInsertOp =>
+          sys.error("Found KnownToBeInsertOp in a non-sid dataset")
       }
-    } catch { case _: Break => /* ok */ }
+      processed += 1
+    }
 
-    val rows = lookupRows(seenIds.keysIterator)
+    val rows = lookupRows(ops.iterator.map(_.id))
     val inserts = Vector.newBuilder[SqlLoader.DecoratedRow[CV]]
     val updates = Vector.newBuilder[SqlLoader.DecoratedRow[CV]]
 
