@@ -3,7 +3,7 @@ package service
 
 import com.rojoma.json.ast._
 import com.socrata.datacoordinator.truth.universe.{SchemaFinderProvider, CacheProvider, DatasetMutatorProvider, Universe}
-import com.socrata.datacoordinator.truth.{TypeContext, DatasetIdInUseByWriterException, DatasetMutator}
+import com.socrata.datacoordinator.truth.{DatabaseInReadOnlyMode, TypeContext, DatasetIdInUseByWriterException, DatasetMutator}
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth.json.JsonColumnRep
 import com.rojoma.json.codec.JsonCodec
@@ -62,6 +62,7 @@ object Mutator {
   case class InvalidLocale(locale: String)(val index: Long) extends MutationException
   case class NoSuchDataset(name: DatasetId)(val index: Long) extends MutationException
   case class CannotAcquireDatasetWriteLock(name: DatasetId)(val index: Long) extends MutationException
+  case class SystemInReadOnlyMode()(val index: Long) extends MutationException
   case class IncorrectLifecycleStage(name: DatasetId, currentLifecycleStage: LifecycleStage, expected: Set[LifecycleStage])(val index: Long) extends MutationException
   case class InitialCopyDrop(name: DatasetId)(val index: Long) extends MutationException
   case class IllegalColumnId(id: UserColumnId)(val index: Long) extends MutationException
@@ -448,6 +449,8 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
     } catch {
       case e: DatasetIdInUseByWriterException =>
         throw CannotAcquireDatasetWriteLock(e.datasetId)(commands.streamType.index)
+      case e: DatabaseInReadOnlyMode =>
+        throw SystemInReadOnlyMode()(commands.streamType.index)
     }
   }
 

@@ -9,7 +9,7 @@ import java.sql.{Connection, ResultSet, Statement, SQLException}
 import org.postgresql.util.PSQLException
 import com.rojoma.simplearm.util._
 
-import com.socrata.datacoordinator.truth.DatasetIdInUseByWriterException
+import com.socrata.datacoordinator.truth.{DatabaseInReadOnlyMode, DatasetIdInUseByWriterException}
 import com.socrata.datacoordinator.id._
 import com.socrata.datacoordinator.util.{TimingReport, PostgresUniqueViolation}
 import com.socrata.datacoordinator.util.collection.MutableColumnIdMap
@@ -218,10 +218,16 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
       stmt.setLong(1, datasetInfoNoSystemId.nextCounterValue)
       stmt.setString(2, datasetInfoNoSystemId.localeName)
       stmt.setBytes(3, datasetInfoNoSystemId.obfuscationKey)
-      using(t("create-dataset") { stmt.executeQuery() }) { rs =>
-        val returnedSomething = rs.next()
-        assert(returnedSomething, "INSERT didn't return a system ID?")
-        datasetInfoNoSystemId.copy(systemId = rs.getDatasetId(1))
+      try {
+        using(t("create-dataset") { stmt.executeQuery() }) { rs =>
+          val returnedSomething = rs.next()
+          assert(returnedSomething, "INSERT didn't return a system ID?")
+          datasetInfoNoSystemId.copy(systemId = rs.getDatasetId(1))
+        }
+      } catch {
+        case e: PSQLException if isReadOnlyTransaction(e) =>
+          BasePostgresDatasetMapWriter.log.trace("Create dataset failed due to read-only txn; abandoning")
+          throw new DatabaseInReadOnlyMode(e)
       }
     }
 
@@ -643,6 +649,27 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
       unpublishedCopy.copy(lifecycleStage = LifecycleStage.Published)
     }
   }
+
+  def lockNotAvailableState = "55P03"
+  def queryCancelledState = "57014"
+  def readOnlySqlTransactionState = "25006"
+
+  def isStatementTimeout(e: PSQLException): Boolean =
+    e.getSQLState == queryCancelledState &&
+      errorMessage(e).map(_.endsWith("due to statement timeout")).getOrElse(false)
+
+  def isReadOnlyTransaction(e: PSQLException): Boolean =
+    e.getSQLState == readOnlySqlTransactionState
+
+  def errorMessage(e: PSQLException): Option[String] =
+    for {
+      serverErrorMessage <- Option(e.getServerErrorMessage)
+      message <- Option(serverErrorMessage.getMessage)
+    } yield message
+}
+
+object BasePostgresDatasetMapWriter {
+  private val log = org.slf4j.LoggerFactory.getLogger(classOf[BasePostgresDatasetMapWriter[_]])
 }
 
 class PostgresDatasetMapWriter[CT](val conn: Connection, tns: TypeNamespace[CT], timingReport: TimingReport, val obfuscationKeyGenerator: () => Array[Byte], val initialCounterValue: Long) extends DatasetMapWriter[CT] with BasePostgresDatasetMapWriter[CT] with BackupDatasetMap[CT] {
@@ -652,9 +679,6 @@ class PostgresDatasetMapWriter[CT](val conn: Connection, tns: TypeNamespace[CT],
   import PostgresDatasetMapWriter._
 
   def t = timingReport
-
-  def lockNotAvailableState = "55P03"
-  def queryCancelledState = "57014"
 
   // Can't set parameters' values via prepared statement placeholders
   def setTimeout(timeoutMs: Int) =
@@ -694,6 +718,10 @@ class PostgresDatasetMapWriter[CT](val conn: Connection, tns: TypeNamespace[CT],
               log.trace("Get dataset _with_ waiting failed; abandoning")
               conn.rollback(savepoint)
               throw new DatasetIdInUseByWriterException(datasetId, e)
+            case e: PSQLException if isReadOnlyTransaction(e) =>
+              log.trace("Get dataset for update failed due to read-only txn; abandoning")
+              conn.rollback(savepoint)
+              throw new DatabaseInReadOnlyMode(e)
           }
         }
       if(timeout.isFinite) execute(resetTimeout)
@@ -732,16 +760,6 @@ class PostgresDatasetMapWriter[CT](val conn: Connection, tns: TypeNamespace[CT],
         None
       }
     }
-
-  def isStatementTimeout(e: PSQLException): Boolean =
-    e.getSQLState == queryCancelledState &&
-      errorMessage(e).map(_.endsWith("due to statement timeout")).getOrElse(false)
-
-  def errorMessage(e: PSQLException): Option[String] =
-    for {
-      serverErrorMessage <- Option(e.getServerErrorMessage)
-      message <- Option(serverErrorMessage.getMessage)
-    } yield message
 }
 
 object PostgresDatasetMapWriter {

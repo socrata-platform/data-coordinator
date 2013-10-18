@@ -235,6 +235,8 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
             notFoundError(formatDatasetId(name))
           case Mutator.CannotAcquireDatasetWriteLock(name) =>
             writeLockError(name)
+          case Mutator.SystemInReadOnlyMode() =>
+            err(ServiceUnavailable, "update.read-only-mode")
           case Mutator.InvalidLocale(locale) =>
             err(BadRequest, "create.dataset.invalid-locale",
               "locale" -> JString(locale))
