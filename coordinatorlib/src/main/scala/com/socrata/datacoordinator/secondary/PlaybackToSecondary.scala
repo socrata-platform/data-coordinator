@@ -138,8 +138,8 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
 
     def convertOp(op: truth.loader.Operation[CV]): Operation[CV] = op match {
       case truth.loader.Insert(systemId, data) => Insert(systemId, data)
-      case truth.loader.Update(systemId, data) => Update(systemId, data)
-      case truth.loader.Delete(systemId) => Delete(systemId)
+      case truth.loader.Update(systemId, oldData, newData) => Update(systemId, newData)(oldData)
+      case truth.loader.Delete(systemId, oldData) => Delete(systemId)(oldData)
     }
 
     def convertEvent(ev: Delogger.LogEvent[CV]): Option[Event[CT, CV]] = ev match {

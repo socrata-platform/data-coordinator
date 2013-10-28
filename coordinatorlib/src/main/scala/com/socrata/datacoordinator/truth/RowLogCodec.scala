@@ -7,6 +7,7 @@ import com.google.protobuf.{CodedInputStream, CodedOutputStream, InvalidProtocol
 
 import com.socrata.datacoordinator.id.{ColumnId, RowId}
 import com.socrata.datacoordinator.truth.loader.{Operation, Insert, Update, Delete}
+import com.socrata.datacoordinator.util.RowUtils
 
 // Hm, may want to refactor this somewhat.  In particular, we'll
 // probably want to plug in different decoders depending on
@@ -21,25 +22,47 @@ trait RowLogCodec[CV] {
   protected def encode(target: CodedOutputStream, row: Row[CV])
   protected def decode(source: CodedInputStream): Row[CV]
 
+  private val InsertId = 0
+  private val UpdateNoOldRowId = 1
+  private val DeleteNoOldRowDataId = 2
+  private val UpdateId = 3
+  private val DeleteId = 4
+
   def writeVersion(target: CodedOutputStream) {
     target.writeFixed32NoTag((structureVersion.toInt << 16) | (rowDataVersion & 0xffff))
   }
 
   def insert(target: CodedOutputStream, systemID: RowId, row: Row[CV]) {
-    target.writeRawByte(0)
+    target.writeRawByte(InsertId)
     target.writeInt64NoTag(systemID.underlying)
     encode(target, row)
   }
 
-  def update(target: CodedOutputStream, systemID: RowId, row: Row[CV]) {
-    target.writeRawByte(1)
-    target.writeInt64NoTag(systemID.underlying)
-    encode(target, row)
+  def update(target: CodedOutputStream, systemID: RowId, oldRow: Option[Row[CV]], newRow: Row[CV]) {
+    oldRow match {
+      case Some(trueOldRow) =>
+        target.writeRawByte(UpdateId)
+        target.writeInt64NoTag(systemID.underlying)
+        encode(target, trueOldRow)
+        val trueNewRow = RowUtils.delta(trueOldRow, newRow)
+        encode(target, trueNewRow)
+      case None =>
+        target.writeRawByte(UpdateNoOldRowId)
+        target.writeInt64NoTag(systemID.underlying)
+        encode(target, newRow)
+    }
   }
 
-  def delete(target: CodedOutputStream, systemID: RowId) {
-    target.writeRawByte(2)
-    target.writeInt64NoTag(systemID.underlying)
+  def delete(target: CodedOutputStream, systemID: RowId, oldRow: Option[Row[CV]]) {
+    oldRow match {
+      case Some(trueOldRow) =>
+        target.writeRawByte(DeleteId)
+        target.writeInt64NoTag(systemID.underlying)
+        encode(target, trueOldRow)
+      case None =>
+        target.writeRawByte(DeleteNoOldRowDataId)
+        target.writeInt64NoTag(systemID.underlying)
+    }
   }
 
   def skipVersion(source: CodedInputStream) {
@@ -52,17 +75,26 @@ trait RowLogCodec[CV] {
         None
       } else {
         val op = source.readRawByte() match {
-          case 0 =>
+          case InsertId =>
             val sid = source.readInt64()
             val row = decode(source)
             Insert(new RowId(sid), row)
-          case 1 =>
+          case UpdateNoOldRowId =>
             val sid = source.readInt64()
             val row = decode(source)
-            Update(new RowId(sid), row)
-          case 2 =>
+            Update(new RowId(sid), None, row)
+          case DeleteNoOldRowDataId =>
             val sid = source.readInt64()
-            Delete(new RowId(sid))
+            Delete(new RowId(sid), None)
+          case UpdateId =>
+            val sid = source.readInt64()
+            val oldRow = decode(source)
+            val newRow = oldRow ++ decode(source)
+            Update(new RowId(sid), Some(oldRow), newRow)
+          case DeleteId =>
+            val sid = source.readInt64()
+            val oldRow = decode(source)
+            Delete(new RowId(sid), Some(oldRow))
           case other =>
             throw new UnknownRowLogOperationException(other)
         }

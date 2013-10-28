@@ -51,7 +51,7 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
                     stmt.executeUpdate()
                   }
                   assert(updatedCount == 1)
-                  dataLogger.update(sid, updateRow)
+                  dataLogger.update(sid, Some(oldRow), updateRow)
                   reportWriter.updated(job, IdAndVersion(id, newVersion))
                 }
                 versionOf(unpreparedRow) match {
@@ -92,7 +92,7 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
                       val result = stmt.executeUpdate()
                       assert(result == 1, "From update: " + result)
                     }
-                    dataLogger.update(sid, updateRow)
+                    dataLogger.update(sid, Some(oldRow), updateRow)
                     reportWriter.updated(job, IdAndVersion(id, newVersion))
                   }
                   versionOf(unpreparedRow) match {
@@ -141,37 +141,23 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
 
   def delete(job: Int, id: CV, version: Option[Option[RowVersion]]) {
     checkJob(job)
-    datasetContext.userPrimaryKeyColumn match {
-      case Some(pkCol) =>
-        findRowId(id) match {
-          case Some(InspectedRowless(_, sid, oldVersion)) =>
-            def doDelete() {
-              val (result, ()) = sqlizer.deleteBatch(connection) { deleter =>
-                deleter.delete(sid)
-              }
-              assert(result == 1)
-              reportWriter.deleted(job, id)
-              dataLogger.delete(sid)
-            }
-            version match {
-              case None => doDelete()
-              case Some(Some(v)) if v == oldVersion => doDelete()
-              case Some(other) => reportWriter.error(job, VersionMismatch(id, Some(oldVersion), other))
-            }
-          case None =>
-            reportWriter.error(job, NoSuchRowToDelete(id))
+    findRow(id) match {
+      case Some(InspectedRow(_, sid, oldVersion, oldRow)) =>
+        def doDelete() {
+          val (result, ()) = sqlizer.deleteBatch(connection) { deleter =>
+            deleter.delete(sid)
+          }
+          assert(result == 1)
+          reportWriter.deleted(job, id)
+          dataLogger.delete(sid, Some(oldRow))
+        }
+        version match {
+          case None => doDelete()
+          case Some(Some(v)) if v == oldVersion => doDelete()
+          case Some(other) => reportWriter.error(job, VersionMismatch(id, Some(oldVersion), other))
         }
       case None =>
-        val sid = typeContext.makeSystemIdFromValue(id)
-        val result = sqlizer.deleteBatch(connection) { deleter =>
-          deleter.delete(sid)
-        }
-        if(result != 1) {
-          reportWriter.error(job, NoSuchRowToDelete(id))
-        } else {
-          reportWriter.deleted(job, id)
-          dataLogger.delete(sid)
-        }
+        reportWriter.error(job, NoSuchRowToDelete(id))
     }
   }
 

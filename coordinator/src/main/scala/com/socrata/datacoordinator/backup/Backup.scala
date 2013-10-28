@@ -28,6 +28,7 @@ import com.socrata.datacoordinator.util.{NoopTimingReport, TimingReport}
 import scala.concurrent.duration.Duration
 import com.socrata.soql.environment.ColumnName
 import scala.collection.mutable.ListBuffer
+import com.socrata.datacoordinator.Row
 
 class Backup(conn: Connection, /*executor: ExecutorService, */ isSystemColumnId: UserColumnId => Boolean, timingReport: TimingReport, paranoid: Boolean, copyIn: (Connection, String, OutputStream => Unit) => Long) {
   val typeContext = SoQLTypeContext
@@ -206,8 +207,8 @@ class Backup(conn: Connection, /*executor: ExecutorService, */ isSystemColumnId:
     val loader = dataLoader(currentVersionInfo)
     ops.foreach {
       case Insert(sid, row) => loader.insert(sid, row)
-      case Update(sid, row) => loader.update(sid, row)
-      case Delete(sid) => loader.delete(sid)
+      case Update(sid, oldRow, newRow) => loader.update(sid, oldRow, newRow)
+      case Delete(sid, oldRow) => loader.delete(sid, oldRow)
     }
     loader.flush()
     currentVersionInfo

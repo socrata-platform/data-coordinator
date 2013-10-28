@@ -29,9 +29,9 @@ class NullLogger[CT, CV] extends Logger[CT, CV] {
 
   def insert(systemID: RowId, row: Row[CV]) {}
 
-  def update(sid: RowId, row: Row[CV]) {}
+  def update(sid: RowId, oldRow: Option[Row[CV]], newRow: Row[CV]) {}
 
-  def delete(systemID: RowId) {}
+  def delete(systemID: RowId, oldRow: Option[Row[CV]]) {}
 
   def counterUpdated(nextCtr: Long) {}
 

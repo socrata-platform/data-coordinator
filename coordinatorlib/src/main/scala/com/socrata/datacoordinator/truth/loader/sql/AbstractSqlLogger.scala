@@ -215,15 +215,15 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
     maybeFlushRowData()
   }
 
-  def update(sid: RowId, row: Row[CV]) {
+  def update(sid: RowId, oldRow: Option[Row[CV]], newRow: Row[CV]) {
     checkTxn()
-    rowCodec.update(out, sid, row)
+    rowCodec.update(out, sid, oldRow, newRow)
     maybeFlushRowData()
   }
 
-  def delete(systemID: RowId) {
+  def delete(systemID: RowId, oldRow: Option[Row[CV]]) {
     checkTxn()
-    rowCodec.delete(out, systemID)
+    rowCodec.delete(out, systemID, oldRow)
     maybeFlushRowData()
   }
 }

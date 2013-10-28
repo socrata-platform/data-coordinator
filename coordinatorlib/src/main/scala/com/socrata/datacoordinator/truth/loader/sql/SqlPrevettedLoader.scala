@@ -15,7 +15,7 @@ class SqlPrevettedLoader[CT, CV](val conn: Connection, sqlizer: DataSqlizer[CT, 
 
   val insertBatch = new mutable.ArrayBuffer[Insert[CV]]
   val updateBatch = new mutable.ArrayBuffer[Update[CV]]
-  val deleteBatch = new mutable.ArrayBuffer[Delete]
+  val deleteBatch = new mutable.ArrayBuffer[Delete[CV]]
 
   def insert(rowId: RowId, row: Row[CV]) {
     flushUpdates()
@@ -24,18 +24,18 @@ class SqlPrevettedLoader[CT, CV](val conn: Connection, sqlizer: DataSqlizer[CT, 
     logger.insert(rowId, row)
   }
 
-  def update(rowId: RowId, row: Row[CV]) {
+  def update(rowId: RowId, oldRow: Option[Row[CV]], newRow: Row[CV]) {
     flushInserts()
     flushDeletes()
-    updateBatch += Update(rowId, row)
-    logger.update(rowId, row)
+    updateBatch += Update(rowId, oldRow, newRow)
+    logger.update(rowId, oldRow, newRow)
   }
 
-  def delete(rowId: RowId) {
+  def delete(rowId: RowId, oldRow: Option[Row[CV]]) {
     flushInserts()
     flushUpdates()
-    deleteBatch += Delete(rowId)
-    logger.delete(rowId)
+    deleteBatch += Delete(rowId, oldRow)
+    logger.delete(rowId, oldRow)
   }
 
   def flushUpdates() {

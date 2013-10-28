@@ -127,7 +127,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       val reportWriter = simpleReportWriter()
       for {
-        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, idProvider(15), versionProvider(53), executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row[TestColumnValue](num -> LongValue(1), str -> StringValue("a")))
@@ -175,7 +175,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       val reportWriter = simpleReportWriter()
       for {
-        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row[TestColumnValue](num -> LongValue(1), str -> StringValue("a")))
@@ -198,8 +198,8 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq(
         locally {
           val op1 = logMap(idCol -> JNumber(15), versionCol -> JNumber(431), num -> JNumber(1), str -> JString("a"))
-          val op2 = logMap(idCol -> JNumber(15), versionCol -> JNumber(432), num -> JNumber(2), str -> JString("b"))
-          Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"i":""" + op1 + """},{"u":""" + op2 + """}]"""), "who" -> "hello")
+          val op2 = logMap(versionCol -> JNumber(432), num -> JNumber(2), str -> JString("b"))
+          Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"i":""" + op1 + """},{"u":[""" + op1 + "," + op2 + """]}]"""), "who" -> "hello")
         }
       ))
     }
@@ -218,7 +218,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       val reportWriter = simpleReportWriter()
       for {
-        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(idCol -> NullValue, num -> LongValue(1), str -> StringValue("a")))
@@ -259,7 +259,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       val reportWriter = simpleReportWriter()
       for {
-        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(idCol -> LongValue(77), num -> LongValue(1), str -> StringValue("a")))
@@ -296,7 +296,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       val reportWriter = simpleReportWriter()
       for {
-        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(idCol -> LongValue(7), num -> LongValue(44)))
@@ -319,8 +319,9 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       ))
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq(
         locally {
-          val op = logMap(idCol -> JNumber(7), versionCol -> JNumber(5), num -> JNumber(44), str -> JString("q"))
-          Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"u":""" + op + """}]"""), "who" -> "hello")
+          val oldData = logMap(idCol -> JNumber(7), versionCol -> JNumber(99), num -> JNumber(2), str -> JString("q"))
+          val op = logMap(versionCol -> JNumber(5), num -> JNumber(44))
+          Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"u":[""" + oldData + "," + op + """]}]"""), "who" -> "hello")
         }
       ))
     }
@@ -338,7 +339,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       val reportWriter = simpleReportWriter()
       for {
-        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(str), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("a")))
@@ -380,7 +381,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       val reportWriter = simpleReportWriter()
       for {
-        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(str), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(num -> LongValue(1), str -> NullValue))
@@ -415,7 +416,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       val reportWriter = simpleReportWriter()
       for {
-        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(str), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(num -> LongValue(1)))
@@ -452,7 +453,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       val reportWriter = simpleReportWriter()
       for {
-        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(str), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(str -> StringValue("q"), num -> LongValue(44)))
@@ -475,8 +476,9 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       ))
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq(
         locally {
-          val op = logMap(idCol -> JNumber(7), versionCol -> JNumber(24), num -> JNumber(44), str -> JString("q"))
-          Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"u":""" + op + """}]"""), "who" -> "hello")
+          val oldData = logMap(idCol -> JNumber(7), versionCol -> JNumber(11001001), num -> JNumber(2), str -> JString("q"))
+          val op = logMap(versionCol -> JNumber(24), num -> JNumber(44))
+          Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"u":[""" + oldData + "," + op + """]}]"""), "who" -> "hello")
         }
       ))
     }
@@ -494,7 +496,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       val reportWriter = simpleReportWriter()
       for {
-        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(str), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q")))
@@ -519,8 +521,8 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq(
         locally {
           val op1 = logMap(idCol -> JNumber(15), versionCol -> JNumber(32), num -> JNumber(1), str -> JString("q"))
-          val op2 = logMap(idCol -> JNumber(15), versionCol -> JNumber(33), num -> JNumber(2), str -> JString("q"))
-          Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"i":""" + op1 + """},{"u":""" + op2 + """}]"""), "who" -> "hello")
+          val op2 = logMap(versionCol -> JNumber(33), num -> JNumber(2))
+          Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"i":""" + op1 + """},{"u":[""" + op1 + "," + op2 + """]}]"""), "who" -> "hello")
         }
       ))
     }
@@ -538,7 +540,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       val reportWriter = simpleReportWriter()
       for {
-        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(str), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(idCol -> LongValue(15), num -> LongValue(1), str -> StringValue("q")))
@@ -580,7 +582,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       val reportWriter = simpleReportWriter()
       for {
-        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(str), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q")))
@@ -603,7 +605,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq(
         locally {
           val op = logMap(idCol -> JNumber(15), versionCol -> JNumber(48), num -> JNumber(1), str -> JString("q"))
-          Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"i":""" + op + """},{"d":15}]"""), "who" -> "hello")
+          Map("version" -> 1L, "subversion" -> 1L, "rows" -> s"""[{"i":$op},{"d":$op}]""", "who" -> "hello")
         }
       ))
     }
@@ -623,7 +625,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       val reportWriter = simpleReportWriter()
       for {
-        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q")))
@@ -646,7 +648,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq(
         locally {
           val op = logMap(idCol -> JNumber(15), versionCol -> JNumber(56), num -> JNumber(1), str -> JString("q"))
-          Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"i":""" + op + """},{"d":15}]"""), "who" -> "hello")
+          Map("version" -> 1L, "subversion" -> 1L, "rows" -> s"""[{"i":$op},{"d":$op}]""", "who" -> "hello")
         }
       ))
     }
@@ -664,7 +666,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       val reportWriter = simpleReportWriter()
       for {
-        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> NullValue))
@@ -706,7 +708,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       val reportWriter = simpleReportWriter()
       for {
-        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> NullValue))
@@ -748,7 +750,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       val reportWriter = simpleReportWriter()
       for {
-        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> LongValue(0)))
@@ -783,7 +785,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       val reportWriter = simpleReportWriter()
       for {
-        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> LongValue(0)))
@@ -820,7 +822,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       val reportWriter = simpleReportWriter()
       for {
-        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(idCol -> LongValue(1), num -> LongValue(1), str -> StringValue("q"), versionCol -> NullValue))
@@ -859,7 +861,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       val reportWriter = simpleReportWriter()
       for {
-        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> NullValue))
@@ -898,7 +900,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       val reportWriter = simpleReportWriter()
       for {
-        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(idCol -> LongValue(1), num -> LongValue(1), str -> StringValue("q"), versionCol -> LongValue(1)))
@@ -937,7 +939,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       val reportWriter = simpleReportWriter()
       for {
-        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> LongValue(1)))
@@ -976,7 +978,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       val reportWriter = simpleReportWriter()
       for {
-        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(idCol -> LongValue(1), num -> LongValue(1), str -> StringValue("w"), versionCol -> LongValue(0)))
@@ -999,8 +1001,9 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       ))
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq(
         locally {
-          val op = logMap(idCol -> JNumber(1), versionCol -> JNumber(128), num -> JNumber(1), str -> JString("w"))
-          Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"u":""" + op + """}]"""), "who" -> "hello")
+          val oldData = logMap(idCol -> JNumber(1), versionCol -> JNumber(0), str -> JString("q"), num -> JNumber(2))
+          val op = logMap(versionCol -> JNumber(128), num -> JNumber(1), str -> JString("w"))
+          Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"u":[""" + oldData + "," + op + """]}]"""), "who" -> "hello")
         }
       ))
     }
@@ -1020,7 +1023,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
       val reportWriter = simpleReportWriter()
       for {
-        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName))
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(idCol), dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
         txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> LongValue(0)))
@@ -1043,8 +1046,9 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       ))
       query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq(
         locally {
-          val op = logMap(idCol -> JNumber(1), versionCol -> JNumber(136), num -> JNumber(1), str -> JString("q"))
-          Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"u":""" + op + """}]"""), "who" -> "hello")
+          val oldData = logMap(idCol -> JNumber(1), versionCol -> JNumber(0), str -> JString("q"), num -> JNumber(2))
+          val op = logMap(versionCol -> JNumber(136), num -> JNumber(1))
+          Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"u":[""" + oldData +"," + op + """]}]"""), "who" -> "hello")
         }
       ))
     }

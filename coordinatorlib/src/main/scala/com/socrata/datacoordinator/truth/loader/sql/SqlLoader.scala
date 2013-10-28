@@ -242,13 +242,13 @@ final class SqlLoader[CT, CV](val connection: Connection,
     if(inserts.nonEmpty) {
       sqlizer.insertBatch(connection) { inserter =>
         for(insert <- inserts) {
-          inserter.insert(insert.row)
+          inserter.insert(insert.newRow)
           reportWriter.inserted(insert.job, IdAndVersion(insert.id, insert.version))
         }
       }
       // Can't do this in the loop above because the inserter owns the DB connection for the COPY
       for(insert <- inserts) {
-        dataLogger.insert(insert.rowId, insert.row)
+        dataLogger.insert(insert.rowId, insert.newRow)
       }
       totalInsertCount += inserts.length
     }
@@ -258,9 +258,9 @@ final class SqlLoader[CT, CV](val connection: Connection,
     if(updates.nonEmpty) {
       using(connection.prepareStatement(sqlizer.prepareSystemIdUpdateStatement)) { stmt =>
         for(update <- updates) {
-          sqlizer.prepareSystemIdUpdate(stmt, update.rowId, update.row)
+          sqlizer.prepareSystemIdUpdate(stmt, update.rowId, update.newRow)
           reportWriter.updated(update.job, IdAndVersion(update.id, update.version))
-          dataLogger.update(update.rowId, update.row) // This CAN be done here because there is no active query
+          dataLogger.update(update.rowId, Some(update.oldRow), update.newRow) // This CAN be done here because there is no active query
           stmt.addBatch()
         }
         val results = stmt.executeBatch()
@@ -291,16 +291,16 @@ final class SqlLoader[CT, CV](val connection: Connection,
 
   private def processDeletes(deletes: Seq[DeleteOp]) {
     if(deletes.nonEmpty) {
-      val existingIdsAndVersions = lookupIdsAndVersions(deletes.iterator.map(_.id))
-      val completedDeletions = new mutable.ArrayBuffer[(RowId, Int, CV)](deletes.size)
+      val existingRows = lookupRows(deletes.iterator.map(_.id))
+      val completedDeletions = new mutable.ArrayBuffer[(RowId, Int, CV, Row[CV])](deletes.size)
       val (deletedCount, ()) = sqlizer.deleteBatch(connection) { deleter =>
         for(delete <- deletes) {
-          existingIdsAndVersions.get(delete.id) match {
-            case Some(InspectedRowless(_, sid, version)) =>
+          existingRows.get(delete.id) match {
+            case Some(InspectedRow(_, sid, version, oldRow)) =>
               checkVersion(delete.job, delete.id, delete.version, Some(version)) {
                 deleter.delete(sid)
-                completedDeletions += ((sid, delete.job, delete.id))
-                existingIdsAndVersions.remove(delete.id)
+                completedDeletions += ((sid, delete.job, delete.id, oldRow))
+                existingRows.remove(delete.id)
               }
             case None =>
               reportWriter.error(delete.job, NoSuchRowToDelete(delete.id))
@@ -309,8 +309,8 @@ final class SqlLoader[CT, CV](val connection: Connection,
       }
       assert(deletedCount == completedDeletions.size, "Didn't delete as many rows as I thought it would?")
       totalDeleteCount += deletedCount
-      for((sid, job, id) <- completedDeletions) {
-        dataLogger.delete(sid)
+      for((sid, job, id, oldRow) <- completedDeletions) {
+        dataLogger.delete(sid, Some(oldRow))
         reportWriter.deleted(job, id)
       }
     }
@@ -369,7 +369,7 @@ final class SqlLoader[CT, CV](val connection: Connection,
           val preparedRow = rowPreparer.prepareForInsert(row, sid, version)
           val sidValue = preparedRow(datasetContext.systemIdColumn)
           if(seenOps.contains(sidValue)) killPreinsertUpdate(sidValue)
-          inserts += SqlLoader.DecoratedRow(job, sidValue, sid, version, preparedRow)
+          inserts += SqlLoader.DecoratedRow(job, sidValue, sid, version, SqlLoader.emptyRow, preparedRow)
         case u: UpsertOp =>
           unprocessedUpdates += u
           seenOps.put(u.id, u)
@@ -386,7 +386,7 @@ final class SqlLoader[CT, CV](val connection: Connection,
           checkVersion(op.job, op.id, versionOf(op.row), Some(oldRow.version)) {
             val version = versionProvider.allocate()
             val newRow = rowPreparer.prepareForUpdate(op.row, oldRow.row, version)
-            updates += SqlLoader.DecoratedRow(op.job, op.id, oldRow.rowId, version, newRow)
+            updates += SqlLoader.DecoratedRow(op.job, op.id, oldRow.rowId, version, oldRow.row, newRow)
           }
         case None =>
           reportWriter.error(op.job, NoSuchRowToUpdate(op.id))
@@ -425,13 +425,13 @@ final class SqlLoader[CT, CV](val connection: Connection,
             val sid = idProvider.allocate()
             val version = versionProvider.allocate()
             val preparedRow = rowPreparer.prepareForInsert(op.row, sid, version)
-            inserts += SqlLoader.DecoratedRow(op.job, op.id, sid, version, preparedRow)
+            inserts += SqlLoader.DecoratedRow(op.job, op.id, sid, version, SqlLoader.emptyRow, preparedRow)
           }
         case Some(oldRow) =>
           checkVersion(op.job, op.id, versionOf(op.row), Some(oldRow.version)) {
             val newVersion = versionProvider.allocate()
             val preparedRow = rowPreparer.prepareForUpdate(op.row, oldRow.row, newVersion)
-            updates += SqlLoader.DecoratedRow(op.job, op.id, oldRow.rowId, newVersion, preparedRow)
+            updates += SqlLoader.DecoratedRow(op.job, op.id, oldRow.rowId, newVersion, oldRow.row, preparedRow)
           }
       }
       i += 1
@@ -446,5 +446,6 @@ object SqlLoader {
     new SqlLoader(connection, preparer, sqlizer, dataLogger, idProvider, versionProvider, executor, timingReport, reportWriter)
   }
 
-  private case class DecoratedRow[CV](job: Int, id: CV, rowId: RowId, version: RowVersion, row: Row[CV])
+  private case class DecoratedRow[CV](job: Int, id: CV, rowId: RowId, version: RowVersion, oldRow: Row[CV], newRow: Row[CV])
+  private val emptyRow = Row[Nothing]()
 }

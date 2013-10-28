@@ -11,11 +11,11 @@ import com.rojoma.json.ast._
 import com.rojoma.json.codec.JsonCodec
 
 import com.socrata.datacoordinator.truth.loader.DataLogger
-import com.socrata.datacoordinator.util.Counter
+import com.socrata.datacoordinator.util.{RowUtils, Counter}
 import com.rojoma.json.util.JsonUtil
-import com.socrata.datacoordinator.id.RowId
+import com.socrata.datacoordinator.id.{ColumnId, RowId}
 
-class TestDataLogger(conn: Connection, logTableName: String) extends DataLogger[TestColumnValue] {
+class TestDataLogger(conn: Connection, logTableName: String, sidCol: ColumnId) extends DataLogger[TestColumnValue] {
   val subVersion = new Counter(init = 1)
 
   val list = new VectorBuilder[JValue]
@@ -44,15 +44,22 @@ class TestDataLogger(conn: Connection, logTableName: String) extends DataLogger[
   }
 
   def insert(systemID: RowId, row: Row[TestColumnValue]) {
+    assert(row.get(sidCol) == Some(LongValue(systemID.underlying)))
     list += JObject(Map("i" -> JsonCodec.toJValue(sortRow(row))))
   }
 
-  def update(sid: RowId, row: Row[TestColumnValue]) {
-    list += JObject(Map("u" -> JsonCodec.toJValue(sortRow(row))))
+  def update(sid: RowId, oldRow: Option[Row[TestColumnValue]], newRow: Row[TestColumnValue]) {
+    assert(oldRow.isDefined, "We should never generate None for old-row")
+    assert(oldRow.get.get(sidCol) == Some(LongValue(sid.underlying)))
+    assert(newRow.get(sidCol) == Some(LongValue(sid.underlying)))
+    val delta = RowUtils.delta(oldRow.get, newRow)
+    list += JObject(Map("u" -> JsonCodec.toJValue(List(oldRow.get, delta).map(sortRow))))
   }
 
-  def delete(systemID: RowId) {
-    list += JObject(Map("d" -> JNumber(systemID.underlying)))
+  def delete(systemID: RowId, oldRow: Option[Row[TestColumnValue]]) {
+    assert(oldRow.isDefined, "We should never generate None for old-row")
+    assert(oldRow.get.get(sidCol) == Some(LongValue(systemID.underlying)))
+    list += JObject(Map("d" -> JsonCodec.toJValue(sortRow(oldRow.get))))
   }
 
   def counterUpdated(nextCtr: Long) {
