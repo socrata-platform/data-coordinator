@@ -47,7 +47,7 @@ object SoQLRep {
   def csvRep(typ: SoQLType): CsvColumnRep[SoQLType, SoQLValue] =
     csvRepFactories(typ)
 
-  private val jsonRepFactoriesMinusId = Map[SoQLType, JsonColumnRep[SoQLType, SoQLValue]](
+  val jsonRepFactoriesMinusIdAndVersion = Map[SoQLType, JsonColumnRep[SoQLType, SoQLValue]](
     SoQLText -> jsonreps.TextRep,
     SoQLBoolean -> jsonreps.BooleanRep,
     SoQLNumber -> new jsonreps.NumberLikeRep(SoQLNumber, _.asInstanceOf[SoQLNumber].value, SoQLNumber(_)),
@@ -73,13 +73,11 @@ object SoQLRep {
   }
 
   private def jsonRepFactories(idStringRep: SoQLID.StringRep, versionStringRep: SoQLVersion.StringRep) =
-    jsonRepFactoriesMinusId ++ Seq(
+    jsonRepFactoriesMinusIdAndVersion ++ Seq(
       SoQLID -> new jsonreps.IDRep(idStringRep),
       SoQLVersion -> new jsonreps.VersionRep(versionStringRep)
     )
 
-  def jsonRep(idStringRep: SoQLID.StringRep, versionStringRep: SoQLVersion.StringRep): (SoQLType => JsonColumnRep[SoQLType, SoQLValue]) = {
-    val factories = jsonRepFactories(idStringRep, versionStringRep);
-    { typ => factories(typ) }
-  }
+  def jsonRep(idStringRep: SoQLID.StringRep, versionStringRep: SoQLVersion.StringRep): (SoQLType => JsonColumnRep[SoQLType, SoQLValue]) =
+    jsonRepFactories(idStringRep, versionStringRep)
 }
