@@ -199,7 +199,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
   // Little dance because "/*" doesn't compile yet and I haven't
   // decided what its canonical target should be (probably "/query")
   val routingTable = Routes(
-    Route("/{String}/*", (_: Any, _: Any) => QueryResource),
+    Route("/{String}/+", (_: Any, _: Any) => QueryResource),
     Route("/{String}", (_: Any) => QueryResource),
     Route("/version", VersionResource)
   )
@@ -210,6 +210,8 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
       case None => NotFound
     }
 
+  case class FragmentedQuery(select: Option[String], where: Option[String], group: Option[String], having: Option[String], search: Option[String], order: Option[String], limit: Option[String], offset: Option[String])
+
   private def process(req: HttpServletRequest)(resp: HttpServletResponse) {
     val originalThreadName = Thread.currentThread.getName
     try {
@@ -218,8 +220,18 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
       val dataset = Option(req.getParameter("ds")).getOrElse {
         finishRequest(noDatasetResponse)
       }
-      val query = Option(req.getParameter("q")).getOrElse {
-        finishRequest(noQueryResponse)
+
+      val query = Option(req.getParameter("q")).map(Left(_)).getOrElse {
+        Right(FragmentedQuery(
+          select = Option(req.getParameter("select")),
+          where = Option(req.getParameter("where")),
+          group = Option(req.getParameter("group")),
+          having = Option(req.getParameter("having")),
+          search = Option(req.getParameter("search")),
+          order = Option(req.getParameter("order")),
+          limit = Option(req.getParameter("limit")),
+          offset = Option(req.getParameter("offset"))
+        ))
       }
 
       val rowCount = Option(req.getParameter("rowCount"))
@@ -267,7 +279,24 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
 
       @tailrec
       def analyzeRequest(schema: Schema, isFresh: Boolean): (Schema, SoQLAnalysis[String, SoQLAnalysisType]) = {
-        queryParser(query, columnIdMap, schema.schema) match {
+        val parsedQuery = query match {
+          case Left(q) =>
+            queryParser(q, columnIdMap, schema.schema)
+          case Right(fq) =>
+            queryParser(
+              selection = fq.select,
+              where = fq.where,
+              groupBy = fq.group,
+              having = fq.having,
+              orderBy = fq.order,
+              limit = fq.limit,
+              offset = fq.offset,
+              search = fq.search,
+              columnIdMapping = columnIdMap,
+              schema = schema.schema
+            )
+        }
+        parsedQuery match {
           case QueryParser.SuccessfulParse(analysis) =>
             (schema, analysis)
           case QueryParser.AnalysisError(_: DuplicateAlias | _: NoSuchColumn | _: TypecheckException) if !isFresh =>
