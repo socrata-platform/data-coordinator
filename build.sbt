@@ -34,7 +34,7 @@ resourceGenerators in Compile <+= (resourceManaged in Compile, name in Compile, 
   import com.rojoma.simplearm.util._
   import com.rojoma.json.util.JsonUtil._
   val file = resourceManaged / "query-coordinator-version.json"
-  val revision = Process(Seq("git", "describe", "--always", "--dirty")).!!.split("\n")(0)
+  val revision = Process(Seq("git", "describe", "--always", "--dirty", "--long")).!!.split("\n")(0)
   val result = Map(
     "service" -> name,
     "version" -> version,
