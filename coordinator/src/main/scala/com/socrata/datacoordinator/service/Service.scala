@@ -639,7 +639,7 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
   }
 
   def run(port: Int, broker: ServerBroker) {
-    val server = new SocrataServerJetty(errorHandlingHandler, port = port, broker = broker)
+    val server = new SocrataServerJetty(new ThreadNamingHandler(new LoggingHandler(errorHandlingHandler)), port = port, broker = broker)
     server.run()
   }
 }
