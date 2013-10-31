@@ -49,7 +49,7 @@ object Coordinator {
   def genVersion(resourceManaged: File, name: String, version: String, scalaVersion: String): Seq[File] = {
     val file = resourceManaged / "data-coordinator-version.json"
 
-    val revision = Process(Seq("git", "describe", "--always", "--dirty")).!!.split("\n")(0)
+    val revision = Process(Seq("git", "describe", "--always", "--dirty", "--long")).!!.split("\n")(0)
 
     val result = Map(
       "service" -> name,
