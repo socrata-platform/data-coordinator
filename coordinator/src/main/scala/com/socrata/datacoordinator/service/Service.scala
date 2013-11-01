@@ -33,6 +33,7 @@ import com.socrata.http.server.util.{StrongEntityTag, EntityTag, Precondition, E
 import com.socrata.datacoordinator.truth.metadata.{SchemaField, Schema}
 import java.security.MessageDigest
 import org.apache.commons.codec.binary.Base64
+import com.socrata.http.server.util.handlers.{ThreadRenamingHandler, LoggingHandler}
 
 class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) => Seq[MutationScriptCommandResult],
               processCreation: (Iterator[JValue], IndexedTempFile) => (DatasetId, Seq[MutationScriptCommandResult]),
@@ -639,7 +640,7 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
   }
 
   def run(port: Int, broker: ServerBroker) {
-    val server = new SocrataServerJetty(new ThreadNamingHandler(new LoggingHandler(errorHandlingHandler)), port = port, broker = broker)
+    val server = new SocrataServerJetty(new ThreadRenamingHandler(new LoggingHandler(errorHandlingHandler)), port = port, broker = broker)
     server.run()
   }
 }
