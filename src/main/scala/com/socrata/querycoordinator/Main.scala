@@ -24,6 +24,7 @@ import com.socrata.http.server.livenesscheck.LivenessCheckResponder
 import java.net.{InetSocketAddress, InetAddress}
 import com.socrata.querycoordinator.util.TeeToTempInputStream
 import java.io.InputStream
+import com.socrata.http.server.util.handlers.{ThreadRenamingHandler, LoggingHandler}
 
 final abstract class Main
 
@@ -104,7 +105,7 @@ object Main extends App {
     val auxData = new AuxiliaryData(Some(pongProvider.livenessCheckInfo))
 
     val serv = new SocrataServerJetty(
-      handler = handler,
+      handler = ThreadRenamingHandler(LoggingHandler(handler)),
       port = config.network.port,
       broker = new CuratorBroker(discovery, config.advertisement.address, config.advertisement.name, Some(auxData))
     )
