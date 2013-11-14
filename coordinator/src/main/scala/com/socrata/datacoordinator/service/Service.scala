@@ -38,7 +38,7 @@ import com.socrata.http.server.util.handlers.{ThreadRenamingHandler, LoggingHand
 class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) => Seq[MutationScriptCommandResult],
               processCreation: (Iterator[JValue], IndexedTempFile) => (DatasetId, Seq[MutationScriptCommandResult]),
               getSchema: DatasetId => Option[Schema],
-              datasetContents: (DatasetId, Option[String], CopySelector, Option[UserColumnIdSet], Option[Long], Option[Long], Precondition) => (Either[Schema, (EntityTag, Seq[SchemaField], Option[UserColumnId], String, Long, Iterator[Array[JValue]])] => Unit) => Exporter.Result[Unit],
+              datasetContents: (DatasetId, Option[String], CopySelector, Option[UserColumnIdSet], Option[Long], Option[Long], Precondition, Boolean) => (Either[Schema, (EntityTag, Seq[SchemaField], Option[UserColumnId], String, Long, Iterator[Array[JValue]])] => Unit) => Exporter.Result[Unit],
               secondaries: Set[String],
               datasetsInStore: (String) => Map[DatasetId, Long],
               versionInStore: (String, DatasetId) => Option[Long],
@@ -507,6 +507,15 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
             return BadRequest ~> Content("Bad copy selector")
           }
       }
+      val sorted = Option(req.getParameter("sorted")).getOrElse("true").toLowerCase match {
+        case "true" =>
+          true
+        case "false" =>
+          if(limit.isDefined || offset.isDefined) return BadRequest ~> Content("Cannot page through an unsorted export")
+          false
+        case _ =>
+          return BadRequest ~> Content("Bad sorted selector")
+      }
       val suffix = locally {
         val md = MessageDigest.getInstance(suffixHashAlg)
         md.update(formatDatasetId(datasetId).getBytes(UTF_8))
@@ -515,13 +524,14 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
         md.update(limit.toString.getBytes(UTF_8))
         md.update(offset.toString.getBytes(UTF_8))
         md.update(copy.toString.getBytes)
+        md.update(sorted.toString.getBytes)
         md.digest()
       }
       precondition.filter(_.endsWith(suffix)) match {
         case Right(newPrecond) =>
           val upstreamPrecondition = newPrecond.map(_.dropRight(suffix.length));
           { resp =>
-            val found = datasetContents(datasetId, schemaHash, copy, onlyColumns, limit, offset, upstreamPrecondition) {
+            val found = datasetContents(datasetId, schemaHash, copy, onlyColumns, limit, offset, upstreamPrecondition, sorted) {
               case Left(newSchema) =>
                 mismatchedSchema("req.export.mismatched-schema", datasetId, newSchema)(resp)
               case Right((etag, schema, rowIdCol, locale, approxRowCount, rows)) =>

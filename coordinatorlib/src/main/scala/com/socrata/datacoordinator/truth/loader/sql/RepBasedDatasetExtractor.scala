@@ -31,14 +31,14 @@ class RepBasedDatasetExtractor[CT, CV](conn: Connection, dataTableName: String, 
     result.freeze()
   }
 
-  def allRows(limit: Option[Long], offset: Option[Long]): Managed[Iterator[Row[CV]]] = new SimpleArm[Iterator[Row[CV]]] {
+  def allRows(limit: Option[Long], offset: Option[Long], sorted: Boolean): Managed[Iterator[Row[CV]]] = new SimpleArm[Iterator[Row[CV]]] {
     def flatMap[B](f: (Iterator[Row[CV]]) => B): B = {
       if(schema.isEmpty) {
         f(Iterator.empty)
       } else {
         val colSelectors = cids.flatMap { cid => schema(new ColumnId(cid)).physColumns }
         val q = "SELECT " + colSelectors.mkString(",") + " FROM " + dataTableName +
-          " ORDER BY " + sidCol.orderBy() +
+          (if(sorted) " ORDER BY " + sidCol.orderBy() else "") +
           limit.map { l => " LIMIT " + l.max(0) }.getOrElse("") +
           offset.map { o => " OFFSET " + o.max(0) }.getOrElse("")
         using(conn.createStatement()) { stmt =>

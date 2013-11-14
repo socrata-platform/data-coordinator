@@ -22,7 +22,7 @@ trait LowLevelDatabaseReader[CT, CV] {
     def loadDataset(latest: CopyInfo): DatasetCopyContext[CT]
 
     def approximateRowCount(copyCtx: DatasetCopyContext[CT]): Long
-    def rows(copyCtx: DatasetCopyContext[CT], sidCol: ColumnId, limit: Option[Long], offset: Option[Long]): Managed[Iterator[ColumnIdMap[CV]]]
+    def rows(copyCtx: DatasetCopyContext[CT], sidCol: ColumnId, limit: Option[Long], offset: Option[Long], sorted: Boolean): Managed[Iterator[ColumnIdMap[CV]]]
   }
 
   def openDatabase: Managed[ReadContext]
@@ -60,7 +60,7 @@ trait DatasetReader[CT, CV] {
     def copyInfo = copyCtx.copyInfo
     def schema = copyCtx.schema
     def approximateRowCount: Long
-    def rows(cids: ColumnIdSet = schema.keySet, limit: Option[Long] = None, offset: Option[Long] = None): Managed[Iterator[ColumnIdMap[CV]]]
+    def rows(cids: ColumnIdSet = schema.keySet, limit: Option[Long] = None, offset: Option[Long] = None, sorted: Boolean = true): Managed[Iterator[ColumnIdMap[CV]]]
   }
 
   def openDataset(datasetId: DatasetId, copy: CopySelector): Managed[Option[ReadContext]]
@@ -72,8 +72,8 @@ object DatasetReader {
     class S(val copyCtx: DatasetCopyContext[CT], llCtx: databaseReader.ReadContext) extends ReadContext {
       def approximateRowCount = llCtx.approximateRowCount(copyCtx)
 
-      def rows(keySet: ColumnIdSet, limit: Option[Long], offset: Option[Long]): Managed[Iterator[ColumnIdMap[CV]]] =
-        llCtx.rows(copyCtx.verticalSlice { col => keySet.contains(col.systemId) }, copyCtx.pkCol_!.systemId, limit = limit, offset = offset)
+      def rows(keySet: ColumnIdSet, limit: Option[Long], offset: Option[Long], sorted: Boolean): Managed[Iterator[ColumnIdMap[CV]]] =
+        llCtx.rows(copyCtx.verticalSlice { col => keySet.contains(col.systemId) }, copyCtx.pkCol_!.systemId, limit = limit, offset = offset, sorted = sorted)
     }
 
     def openDataset(datasetId: DatasetId, copySelector: CopySelector): Managed[Option[ReadContext]] =
