@@ -145,7 +145,7 @@ object Mutator {
   case class DropColumn(index: Long, id: UserColumnId) extends Command
   case class SetRowId(index: Long, id: UserColumnId) extends Command
   case class DropRowId(index: Long, id: UserColumnId) extends Command
-  case class RowData(index: Long, truncate: Boolean, mergeReplace: MergeReplace, fatalRowErrors: Boolean) extends Command
+  case class RowData(index: Long, truncate: Boolean, mergeReplace: MergeReplace, nonfatalRowErrors: Set[Class[_ <: Failure[_]]]) extends Command
 
   val AddColumnOp = "add column"
   val DropColumnOp = "drop column"
@@ -200,8 +200,13 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
         case RowDataOp =>
           val truncate = getWithStrictDefault("truncate", false)
           val mergeReplace = getWithStrictDefault[MergeReplace]("update", Merge)
-          val fatalRowErrors = getWithStrictDefault("fatal_row_errors", true)
-          RowData(index, truncate, mergeReplace, fatalRowErrors)
+          val nonFatalRowErrors = getOption[Seq[String]]("nonfatal_row_errors").getOrElse {
+            if(getWithStrictDefault("fatal_row_errors", true)) Seq.empty[String] else Failure.allFailures.keys
+          }
+          val nonFatalRowErrorsClasses = nonFatalRowErrors.map { nfe =>
+            Failure.allFailures.getOrElse(nfe, throw new InvalidCommandFieldValue(originalObject, "nonfatal_row_errors", JString(nfe))(index))
+          }.toSet
+          RowData(index, truncate, mergeReplace, nonFatalRowErrorsClasses)
         case other =>
           throw InvalidCommandFieldValue(originalObject, "c", JString(other))(index)
       }
@@ -299,11 +304,11 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
 
   val jobCounter = new Counter(0)
 
-  class JsonReportWriter(ctx: DatasetMutator[CT, CV]#MutationContext, val firstJob: Long, tmpFile: IndexedTempFile) extends ReportWriter[CV] {
+  class JsonReportWriter(ctx: DatasetMutator[CT, CV]#MutationContext, val firstJob: Long, tmpFile: IndexedTempFile, ignorableFailureTypes: Set[Class[_ <: Failure[_]]]) extends ReportWriter[CV] {
     val jsonRepFor = jsonReps(ctx.copyInfo.datasetInfo)
     val pkRep = jsonRepFor(ctx.primaryKey.typ)
     val verRep = jsonRepFor(ctx.versionColumn.typ)
-    var firstError: Option[Failure[CV]] = None
+    @volatile var firstError: Option[Failure[CV]] = None
     var jobLimit = firstJob - 1
 
     def jsonifyId(id: CV) = pkRep.toJValue(id)
@@ -378,7 +383,8 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
     }
 
     def error(job: Int, result: Failure[CV]) {
-      if(None == firstError) firstError = Some(result)
+      if(None == firstError && !ignorableFailureTypes.exists(_.isAssignableFrom(result.getClass)))
+        firstError = Some(result)
       writeJson(job, jsonifyError(result))
     }
 
@@ -575,27 +581,40 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
               throw NoSuchColumn(datasetId, id)(idx)
           }
           Seq(MutationScriptCommandResult.Uninteresting)
-        case RowData(idx, truncate, mergeReplace, fatalRowErrors) =>
+        case RowData(idx, truncate, mergeReplace, nonFatalRowErrors) =>
           if(truncate) mutator.truncate()
-          Seq(MutationScriptCommandResult.RowData(processRowData(idx, commands.rawCommandStream, fatalRowErrors, mutator, mergeReplace).toJobRange))
+          Seq(MutationScriptCommandResult.RowData(processRowData(idx, commands.rawCommandStream, nonFatalRowErrors, mutator, mergeReplace).toJobRange))
       }
 
       pendingResults ++ newResults
     }
 
-    def processRowData(idx: Long, rows: BufferedIterator[JValue], fatalRowErrors: Boolean, mutator: DatasetMutator[CT,CV]#MutationContext, mergeReplace: MergeReplace): JsonReportWriter = {
+    def processRowData(idx: Long, rows: BufferedIterator[JValue], nonFatalRowErrors: Set[Class[_ <: Failure[_]]], mutator: DatasetMutator[CT,CV]#MutationContext, mergeReplace: MergeReplace): JsonReportWriter = {
       import mutator._
       class UnknownCid(val job: Int, val cid: UserColumnId) extends Exception
       def onUnknownColumn(cid: UserColumnId) {
-        if(fatalRowErrors) throw new UnknownCid(jobCounter(), cid)
+        throw new UnknownCid(jobCounter(), cid)
       }
       val plan = new RowDecodePlan(schema, jsonRepFor, typeNameFor, (v: CV) => if(typeContext.isNull(v)) None else Some(typeContext.makeRowVersionFromValue(v)), onUnknownColumn)
       try {
-        val reportWriter = new JsonReportWriter(mutator, jobCounter.peek, indexedTempFile)
+        val reportWriter = new JsonReportWriter(mutator, jobCounter.peek, indexedTempFile, nonFatalRowErrors)
+        def checkForError() {
+          for(error <- reportWriter.firstError) {
+            val pk = schema.values.find(_.isUserPrimaryKey).orElse(schema.values.find(_.isSystemPrimaryKey)).getOrElse {
+              sys.error("No primary key on this dataset?")
+            }
+            val trueError = error.map(jsonRepFor(pk.typ).toJValue)
+            val jsonizer = { (rv: RowVersion) =>
+              jsonRepFor(mutator.versionColumn.typ).toJValue(typeContext.makeValueFromRowVersion(rv))
+            }
+            throw UpsertError(mutator.copyInfo.datasetInfo.systemId, trueError, jsonizer)(idx)
+          }
+        }
         val it = new Iterator[RowDataUpdateJob] {
           def hasNext = rows.hasNext && JNull != rows.head
           def next() = {
             if(!hasNext) throw new NoSuchElementException
+            checkForError()
             plan(rows.next()) match {
               case Right(row) => UpsertJob(jobCounter(), row)
               case Left((id, version)) => DeleteJob(jobCounter(), id, version)
@@ -604,16 +623,7 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
         }
         mutator.upsert(it, reportWriter, replaceUpdatedRows = mergeReplace == Replace)
         if(rows.hasNext && JNull == rows.head) rows.next()
-        for(error <- reportWriter.firstError if fatalRowErrors) {
-          val pk = schema.values.find(_.isUserPrimaryKey).orElse(schema.values.find(_.isSystemPrimaryKey)).getOrElse {
-            sys.error("No primary key on this dataset?")
-          }
-          val trueError = error.map(jsonRepFor(pk.typ).toJValue)
-          val jsonizer = { (rv: RowVersion) =>
-            jsonRepFor(mutator.versionColumn.typ).toJValue(typeContext.makeValueFromRowVersion(rv))
-          }
-          throw UpsertError(mutator.copyInfo.datasetInfo.systemId, trueError, jsonizer)(idx)
-        }
+        checkForError()
         reportWriter
       } catch {
         case e: plan.BadDataException => e match {

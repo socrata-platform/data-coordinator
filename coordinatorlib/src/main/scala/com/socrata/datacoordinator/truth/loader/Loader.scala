@@ -51,6 +51,16 @@ sealed abstract class Failure[+CV] {
   def map[B](f: CV => B): Failure[B]
 }
 
+object Failure {
+  val allFailures = Map[String, Class[_ <: Failure[_]]](
+    "version_on_new_row" -> VersionOnNewRow.getClass.asInstanceOf[Class[VersionOnNewRow.type]],
+    "no_such_row_to_delete" -> classOf[NoSuchRowToDelete[_]],
+    "no_such_row_to_update" -> classOf[NoSuchRowToUpdate[_]],
+    "no_primary_key" -> NoPrimaryKey.getClass.asInstanceOf[Class[NoPrimaryKey.type]],
+    "verison_mismatch" -> classOf[VersionMismatch[_]]
+  )
+}
+
 case object VersionOnNewRow extends Failure[Nothing] {
   def map[B](f: Nothing => B) = this
 }
