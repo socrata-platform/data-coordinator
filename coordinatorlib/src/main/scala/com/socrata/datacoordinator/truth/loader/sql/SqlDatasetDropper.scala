@@ -22,6 +22,7 @@ class SqlDatasetDropper[CT](conn: Connection, writeLockTimeout: Duration, datase
             td.scheduleForDropping(copy.dataTableName)
           }
           td.scheduleForDropping(di.logTableName)
+          td.scheduleForDropping(di.auditTableName)
           td.go()
         }
 
