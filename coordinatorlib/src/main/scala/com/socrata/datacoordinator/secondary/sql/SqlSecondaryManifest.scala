@@ -117,7 +117,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
     using(conn.prepareStatement("UPDATE secondary_manifest SET broken_at = CURRENT_TIMESTAMP WHERE store_id = ? AND dataset_system_id = ?")) { stmt =>
       stmt.setString(1, job.storeId)
       stmt.setLong(2, job.datasetId.underlying)
-      stmt.executeUpdate();
+      stmt.executeUpdate()
     }
   }
 
