@@ -113,6 +113,14 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
       }
     }
 
+  def markSecondaryDatasetBroken(job: SecondaryRecord) {
+    using(conn.prepareStatement("UPDATE secondary_manifest SET broken_at = CURRENT_TIMESTAMP WHERE store_id = ? AND dataset_system_id = ?")) { stmt =>
+      stmt.setString(1, job.storeId)
+      stmt.setLong(2, job.datasetId.underlying)
+      stmt.executeUpdate();
+    }
+  }
+
   def completedReplicationTo(storeId: String, datasetId: DatasetId, dataVersion: Long, lifecycleStage: metadata.LifecycleStage, cookie: Option[String]) {
     using(conn.prepareStatement(
       """UPDATE secondary_manifest

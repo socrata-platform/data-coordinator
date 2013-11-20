@@ -17,6 +17,7 @@ trait SecondaryManifest {
   def stores(datasetId: DatasetId): Map[String, Long]
 
   def findDatasetsNeedingReplication(storeId: String, limit: Int = 1000): Seq[SecondaryRecord]
+  def markSecondaryDatasetBroken(job: SecondaryRecord)
   def completedReplicationTo(storeId: String, datasetId: DatasetId, dataVersion: Long, lifecycleStage: metadata.LifecycleStage, newCookie: Option[String])
 }
 

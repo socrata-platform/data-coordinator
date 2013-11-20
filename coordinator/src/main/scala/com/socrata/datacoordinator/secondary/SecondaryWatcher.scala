@@ -27,7 +27,13 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
     val jobs = secondaryManifest.findDatasetsNeedingReplication(secondary.storeId)
     for(job <- jobs) {
       log.info("Syncing {} into {}", job.datasetId, secondary.storeId)
-      playbackToSecondary(secondary, job)
+      try {
+        playbackToSecondary(secondary, job)
+      } catch {
+        case e: Exception =>
+          log.error("Unexpected exception while updating dataset {} in secondary {}; marking it as broken", job.datasetId.asInstanceOf[AnyRef], secondary.storeId, e)
+          secondaryManifest.markSecondaryDatasetBroken(job)
+      }
     }
   }
 
