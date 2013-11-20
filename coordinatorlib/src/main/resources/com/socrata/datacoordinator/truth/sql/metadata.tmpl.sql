@@ -75,6 +75,7 @@ CREATE TABLE IF NOT EXISTS secondary_manifest (
   latest_data_version              BIGINT NOT NULL,
   went_out_of_sync_at              TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(), -- used to order processing
   cookie                           TEXT NULL,
+  broken_at                        TIMESTAMP WITH TIME ZONE NULL,
   PRIMARY KEY (store_id, dataset_system_id)
 );
 
@@ -82,7 +83,7 @@ DROP INDEX IF EXISTS secondary_manifest_dataset_system_id;
 CREATE INDEX secondary_manifest_dataset_system_id ON secondary_manifest(dataset_system_id);
 
 DROP INDEX IF EXISTS secondary_manifest_order;
-CREATE INDEX secondary_manifest_order ON secondary_manifest (store_id, (latest_data_version > latest_secondary_data_version), went_out_of_sync_at);
+CREATE INDEX secondary_manifest_order ON secondary_manifest (store_id, (broken_at IS NULL), (latest_data_version > latest_secondary_data_version), went_out_of_sync_at);
 
 CREATE TABLE IF NOT EXISTS backup_log (
   dataset_system_id          BIGINT                   NOT NULL UNIQUE, -- doesn't "reference" because this has to be able to refer to deleted datasets

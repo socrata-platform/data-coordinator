@@ -94,7 +94,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
   }
 
   def findDatasetsNeedingReplication(storeId: String, limit: Int): Seq[SecondaryRecord] =
-    using(conn.prepareStatement("SELECT dataset_system_id, latest_secondary_data_version, latest_secondary_lifecycle_stage, latest_data_version, cookie FROM secondary_manifest WHERE store_id = ? AND latest_data_version > latest_secondary_data_version ORDER BY went_out_of_sync_at LIMIT ?")) { stmt =>
+    using(conn.prepareStatement("SELECT dataset_system_id, latest_secondary_data_version, latest_secondary_lifecycle_stage, latest_data_version, cookie FROM secondary_manifest WHERE store_id = ? AND broken_at IS NULL AND latest_data_version > latest_secondary_data_version ORDER BY went_out_of_sync_at LIMIT ?")) { stmt =>
       stmt.setString(1, storeId)
       stmt.setInt(2, limit)
       using(stmt.executeQuery()) { rs =>
