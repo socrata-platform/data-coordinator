@@ -96,7 +96,7 @@ class RepBasedPostgresSchemaLoader[CT, CV](conn: Connection, logger: Logger[CT, 
         for((col, colTyp) <- rep.physColumns.zip(rep.sqlTypes)) {
           if(didOne) qb.append(',')
           else didOne = true
-          qb.append(" DROP COLUMN " + col + " " + colTyp + " NULL")
+          qb.append(" DROP COLUMN " + col)
         }
         logger.columnRemoved(ci)
       }
