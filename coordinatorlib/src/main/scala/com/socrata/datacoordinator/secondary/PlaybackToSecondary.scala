@@ -176,7 +176,7 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
     }
 
     def playbackLog(datasetInfo: metadata.DatasetInfo, dataVersion: Long) {
-      log.trace("Playing back version {}")
+      log.trace("Playing back version {}", dataVersion)
       val finalLifecycleStage = for {
         delogger <- managed(u.delogger(datasetInfo))
         rawIt <- managed(delogger.delog(dataVersion))
