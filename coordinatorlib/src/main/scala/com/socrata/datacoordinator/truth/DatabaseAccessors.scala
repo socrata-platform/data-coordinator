@@ -173,8 +173,6 @@ object DatasetMutator {
       def columnInfo(id: ColumnId) = copyCtx.columnInfoOpt(id)
       def columnInfo(name: UserColumnId) = copyCtx.columnInfoOpt(name)
 
-      def datasetContetsCopier = llCtx.datasetContentsCopier(logger)
-
       var doingRows = false
       def checkDoingRows() {
         if(doingRows) throw new IllegalStateException("Cannot perform operation while rows are being processed")
