@@ -1,7 +1,8 @@
 package com.socrata.datacoordinator.backup
 
-import com.socrata.datacoordinator.common.DatabaseCreator
+import com.socrata.datacoordinator.primary.SchemaMigrator
+import com.socrata.datacoordinator.truth.migration.Migration.MigrationOperation
 
 object CreateDatabase extends App {
-  DatabaseCreator("com.socrata.coordinator.backup.receiver.database")
+  SchemaMigrator("com.socrata.coordinator.backup.receiver.database", MigrationOperation.Migrate)
 }
