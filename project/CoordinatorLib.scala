@@ -19,7 +19,9 @@ object CoordinatorLib {
       "com.h2database" % "h2" % "1.3.166" % "test,it",
       "org.scalacheck" %% "scalacheck" % "1.10.0" % "test,it",
       "org.slf4j" % "slf4j-simple" % BuildSettings.slf4jVersion % "test,it",
-      "org.scalatest" %% "scalatest" % "1.9.1" % "it"
+      "org.scalatest" %% "scalatest" % "1.9.1" % "it",
+      "org.liquibase" % "liquibase-core" % "2.0.0",
+      "org.liquibase" % "liquibase-plugin" % "1.9.5.0"
     )
   )
 
