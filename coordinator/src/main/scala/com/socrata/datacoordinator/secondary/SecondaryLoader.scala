@@ -26,10 +26,18 @@ class SecondaryLoader(parentClassLoader: ClassLoader, secondaryConfigRoot: Confi
     jars.foldLeft(Map.empty[String, Secondary[_, _]]) { (acc, jar) =>
       log.info("Loading secondary from " + jar.getAbsolutePath)
       try {
+        // Class loader for loading a specific secondary implementation.
+        // This requires the parent class loader to recognize that a secondary implements
+        // the secondary trait.
         val cl = new URLClassLoader(Array(jar.toURI.toURL), parentClassLoader)
-        val stream = cl.getResourceAsStream("secondary-manifest.json")
+        // Class loader for loading secondary-manifest.json resource only.
+        // Don't inherit from data coordinator class loader so that it will not
+        // be confused with other resources even when the parent is associated with
+        // a specific secondary implementation jar for debugging.
+        val resourceCl = new URLClassLoader(Array(jar.toURI.toURL), null)
+        val stream = resourceCl.getResourceAsStream("secondary-manifest.json")
         if(stream == null) throw Nope("No secondary-manifest.json in " + jar.getAbsolutePath)
-        val desc = withStreamResource(cl, jar, "secondary-manifest.json") { reader =>
+        val desc = withStreamResource(resourceCl, jar, "secondary-manifest.json") { reader =>
           try {
             JsonUtil.readJson[SecondaryDescription](reader).getOrElse {
               throw Nope("Unable to parse a SecondaryDescription from " + jar.getAbsolutePath)
