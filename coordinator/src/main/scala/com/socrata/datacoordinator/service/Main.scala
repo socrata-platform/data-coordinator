@@ -154,8 +154,6 @@ object Main {
 
     PropertyConfigurator.configure(Propertizer("log4j", serviceConfig.logProperties))
 
-    println(serviceConfig.config.root.render)
-
     val secondaries = SecondaryLoader.load(serviceConfig.secondary.configs, serviceConfig.secondary.path)
 
     for(dsInfo <- DataSourceFromConfig(serviceConfig.dataSource)) {
