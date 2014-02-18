@@ -51,8 +51,6 @@ object Main extends App {
 
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Main])
 
-  val secondaryInstance = "primus" // TODO: Better way to find this out!
-
   val analyzer = new SoQLAnalyzer(SoQLTypeInfo, SoQLFunctionInfo)
   def typeSerializer(typ: SoQLAnalysisType) = typ.canonical.name.name
   val analysisSerializer = new AnalysisSerializer[String, SoQLAnalysisType](identity, typeSerializer)
@@ -80,8 +78,7 @@ object Main extends App {
       build())
     dataCoordinatorProviderProvider <- managed(new ServiceProviderProvider(
       discovery,
-      new strategies.RoundRobinStrategy,
-      "es"))
+      new strategies.RoundRobinStrategy))
     pongProvider <- managed(new LivenessCheckResponder(new InetSocketAddress(InetAddress.getByName(config.advertisement.address), 0)))
   } {
     curator.start()
@@ -90,6 +87,8 @@ object Main extends App {
     pongProvider.start()
 
     def teeStream(in: InputStream) = new TeeToTempInputStream(in)
+
+    val secondaryInstanceSelector = new SecondaryInstanceSelector
 
     val handler = new Service(
       dataCoordinatorProviderProvider,
@@ -100,7 +99,7 @@ object Main extends App {
       config.schemaTimeout,
       (_, _) => (),
       _ => None,
-      secondaryInstance)
+      secondaryInstanceSelector)
 
     val auxData = new AuxiliaryData(Some(pongProvider.livenessCheckInfo))
 

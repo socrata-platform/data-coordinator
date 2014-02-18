@@ -5,7 +5,7 @@ import java.io.Closeable
 import com.netflix.curator.x.discovery.{ProviderStrategy, ServiceProvider, ServiceDiscovery}
 import java.util.concurrent.ConcurrentHashMap
 
-class ServiceProviderProvider[T](serviceDiscovery: ServiceDiscovery[T], providerStrategy: ProviderStrategy[T], baseName: String) extends Closeable {
+class ServiceProviderProvider[T](serviceDiscovery: ServiceDiscovery[T], providerStrategy: ProviderStrategy[T]) extends Closeable {
   private val providers = new ConcurrentHashMap[String, ServiceProvider[T]]
   private var closed = false
 
@@ -15,7 +15,7 @@ class ServiceProviderProvider[T](serviceDiscovery: ServiceDiscovery[T], provider
       case None =>
         val provider = serviceDiscovery.serviceProviderBuilder.
           providerStrategy(providerStrategy).
-          serviceName(baseName + "." + instance).
+          serviceName(instance).
           build()
         provider.start()
 

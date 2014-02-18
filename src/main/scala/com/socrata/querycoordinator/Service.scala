@@ -57,7 +57,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
               getSchemaTimeout: FiniteDuration,
               schemaCache: (String, Schema) => Unit,
               schemaDecache: String => Option[Schema],
-              secondaryInstance: String)
+              secondaryInstance:SecondaryInstanceSelector)
   extends (HttpServletRequest => HttpResponse)
 {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
@@ -172,7 +172,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
     case None =>
       None
   }
-  def secondary(dataset: String) = Option(secondaryProvider.provider(secondaryInstance).getInstance).getOrElse {
+  def secondary(dataset: String, datastore:Option[String]) = Option(secondaryProvider.provider(secondaryInstance.getInstance(dataset, datastore)).getInstance).getOrElse {
     finishRequest(noSecondaryAvailable(dataset))
   }
 
@@ -221,6 +221,10 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
         finishRequest(noDatasetResponse)
       }
 
+      val datastore = Option(req.getParameter("store"))
+
+      datastore.map(ds => log.info("Forcing use of the secondary store instance: " + ds))
+
       val query = Option(req.getParameter("q")).map(Left(_)).getOrElse {
         Right(FragmentedQuery(
           select = Option(req.getParameter("select")),
@@ -263,8 +267,8 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
       // That last step is the most complex, because it is a
       // potentially long-running thing, and can cause a retry
       // if the upstream says "the schema just changed".
-      val base = reqBuilder(secondary(dataset))
-
+      val base = reqBuilder(secondary(dataset, datastore))
+      log.info("Base URI: " + base)
       def getAndCacheSchema(dataset: String) =
         schemaFetcher(base.receiveTimeoutMS(getSchemaTimeout.toMillis.toInt), dataset) match {
           case SchemaFetcher.Successful(newSchema) =>
