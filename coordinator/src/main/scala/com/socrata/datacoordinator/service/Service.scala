@@ -271,6 +271,8 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
               "dataset" -> JString(formatDatasetId(datasetName)),
               "column" -> JsonCodec.toJValue(userColumnId),
               "type" -> JString(typeName.name))
+          case Mutator.DeleteRowIdentifierNotAllowed(datasetId, columnId) =>
+            colErr("update.row-identifier.delete", datasetId, columnId)
           case Mutator.DuplicateValuesInColumn(dataset, name) =>
             colErr("update.row-identifier.duplicate-values", dataset, name)
           case Mutator.NullsInColumn(dataset, name) =>

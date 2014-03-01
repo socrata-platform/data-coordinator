@@ -75,6 +75,7 @@ object Mutator {
   case class NotPrimaryKey(dataset: DatasetId, id: UserColumnId)(val index: Long) extends MutationException
   case class DuplicateValuesInColumn(dataset: DatasetId, id: UserColumnId)(val index: Long) extends MutationException
   case class InvalidSystemColumnOperation(dataset: DatasetId, id: UserColumnId, op: String)(val index: Long) extends MutationException
+  case class DeleteRowIdentifierNotAllowed(dataset: DatasetId, id: UserColumnId)(val index: Long) extends MutationException
 
   sealed abstract class RowDataException extends MutationException {
     def subindex: Int
@@ -545,6 +546,7 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
         case DropColumn(idx, id) =>
           if(!isExistingColumn(id)) throw NoSuchColumn(datasetId, id)(idx)
           if(isSystemColumnId(id)) throw InvalidSystemColumnOperation(datasetId, id, DropColumnOp)(idx)
+          if(mutator.columnInfo(id).get.isUserPrimaryKey) throw DeleteRowIdentifierNotAllowed(datasetId, id)(idx)
           checkDDL(idx)
           pendingDrops += id
           Nil
