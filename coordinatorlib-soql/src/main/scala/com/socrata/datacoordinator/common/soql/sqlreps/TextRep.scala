@@ -9,7 +9,7 @@ import com.socrata.soql.types.{SoQLNull, SoQLValue, SoQLText, SoQLType}
 
 class TextRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType, SoQLValue] {
   def templateForMultiLookup(n: Int): String =
-    s"(lower($base) in (${(1 to n).map(_ => "lower(?)").mkString(",")}))"
+    s"($base in (${(1 to n).map(_ => "?").mkString(",")}))"
 
   def prepareMultiLookup(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
     stmt.setString(start, v.asInstanceOf[SoQLText].value)
@@ -24,22 +24,21 @@ class TextRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
     */
   def sql_in(literals: Iterable[SoQLValue]): String =
     literals.iterator.map { lit =>
-      val escaped = sqlescape(lit.asInstanceOf[SoQLText].value)
-      s"lower($escaped)"
-    }.mkString(s"(lower($base) in (", ",", "))")
+      sqlescape(lit.asInstanceOf[SoQLText].value)
+    }.mkString(s"($base in (", ",", "))")
 
   def count = "count(" + base + ")"
 
-  def templateForSingleLookup: String = s"(lower($base) = lower(?))"
+  def templateForSingleLookup: String = s"($base = ?)"
 
   def prepareSingleLookup(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = prepareMultiLookup(stmt, v, start)
 
   def sql_==(literal: SoQLValue): String = {
     val escaped = sqlescape(literal.asInstanceOf[SoQLText].value)
-    s"(lower($base) = lower($escaped))"
+    s"($base = $escaped)"
   }
 
-  def equalityIndexExpression: String = s"lower($base) text_pattern_ops"
+  def equalityIndexExpression: String = s"$base text_pattern_ops"
 
   def representedType: SoQLType = SoQLText
 
