@@ -22,8 +22,12 @@ object Migration {
   /**
    * Performs a Liquibase schema migration operation on a given database.
    */
-  def migrateDb(conn: Connection, operation: MigrationOperation, changeLogPath: String, database: String) {
+  def migrateDb(conn: Connection,
+                operation: MigrationOperation = MigrationOperation.Migrate,
+                changeLogPath: String = MigrationScriptPath) {
+
     val liquibase = new Liquibase(changeLogPath, new ClassLoaderResourceAccessor, new JdbcConnection(conn))
+    val database = conn.getCatalog
 
     operation match {
       case Migrate => liquibase.update(database)
@@ -31,4 +35,6 @@ object Migration {
       case Redo => { liquibase.rollback(1, database); liquibase.update(database) }
     }
   }
+
+  private val MigrationScriptPath = "com.socrata.datacoordinator.truth.schema/migrate.xml"
 }

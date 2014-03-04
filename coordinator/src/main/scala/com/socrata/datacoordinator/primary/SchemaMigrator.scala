@@ -17,7 +17,7 @@ object SchemaMigrator {
       dataSourceInfo <- DataSourceFromConfig(new DataSourceConfig(config, databaseTree))
       conn <- managed(dataSourceInfo.dataSource.getConnection)
     } {
-      Migration.migrateDb(conn, operation, "schema/migrate.xml", config.getString(s"$databaseTree.database"))
+      Migration.migrateDb(conn, operation)
     }
   }
 }

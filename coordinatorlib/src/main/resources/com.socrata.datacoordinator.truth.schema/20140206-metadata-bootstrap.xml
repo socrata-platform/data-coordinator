@@ -5,9 +5,9 @@
     http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
 
     <changeSet author="Andrew Burnell" id="20140206-metadata-bootstrap">
-        <sqlFile path="schema/sql/metadata_bootstrap.sql" splitStatements="false"/>
+        <sqlFile path="com.socrata.datacoordinator.truth.schema/sql/metadata_bootstrap.sql" splitStatements="false"/>
         <rollback>
-            <sqlFile path="schema/sql/metadata_rollback.sql" splitStatements="false"/>
+            <sqlFile path="com.socrata.datacoordinator.truth.schema/sql/metadata_rollback.sql" splitStatements="false"/>
         </rollback>
     </changeSet>
 

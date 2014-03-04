@@ -3,7 +3,6 @@ package com.socrata.datacoordinator.truth.metadata.sql
 import org.scalatest.{BeforeAndAfterAll, FunSuite}
 import org.scalatest.matchers.MustMatchers
 import java.sql.{SQLException, Connection, DriverManager}
-import com.socrata.datacoordinator.truth.sql.{DatasetMapLimits, DatabasePopulator}
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
@@ -12,7 +11,7 @@ import com.socrata.datacoordinator.util.NoopTimingReport
 import scala.concurrent.duration.Duration
 import com.socrata.soql.environment.TypeName
 import com.socrata.datacoordinator.truth.metadata.CopyPair
-import com.socrata.datacoordinator.truth.sql.DatasetMapLimits
+import com.socrata.datacoordinator.truth.migration.Migration
 
 class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
   def c(s: String) = new UserColumnId(s)
@@ -31,10 +30,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
   val ZeroID = 0L
 
   def populateDatabase(conn: Connection) {
-    val sql = DatabasePopulator.metadataTablesCreate(DatasetMapLimits())
-    using(conn.createStatement()) { stmt =>
-      stmt.execute(sql)
-    }
+    Migration.migrateDb(conn)
   }
 
   def withDb[T]()(f: (Connection) => T): T = {

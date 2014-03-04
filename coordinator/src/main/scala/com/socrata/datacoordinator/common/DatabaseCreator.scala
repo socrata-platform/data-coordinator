@@ -2,7 +2,7 @@ package com.socrata.datacoordinator.common
 
 import com.typesafe.config.ConfigFactory
 import com.rojoma.simplearm.util._
-import com.socrata.datacoordinator.truth.sql.DatabasePopulator
+import com.socrata.datacoordinator.truth.migration.Migration
 
 object DatabaseCreator {
   def apply(databaseTree: String) {
@@ -11,9 +11,9 @@ object DatabaseCreator {
 
     for {
       dsInfo <- DataSourceFromConfig(new DataSourceConfig(config, databaseTree))
-      conn <- managed(dsInfo.dataSource.getConnection())
+      conn <- managed(dsInfo.dataSource.getConnection)
     } {
-      DatabasePopulator.populate(conn, StandardDatasetMapLimits)
+      Migration.migrateDb(conn)
     }
   }
 }

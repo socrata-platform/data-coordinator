@@ -11,22 +11,6 @@ object DatabasePopulator {
       Source.fromInputStream(stream)(Codec.UTF8).getLines().mkString("\n")
     }
 
-  def metadataTablesCreate(datasetMapLimits: DatasetMapLimits): String = {
-    import datasetMapLimits._
-    TemplateReplacer(
-      load("metadata.tmpl.sql"),
-      Map(
-        "user_uid_len" -> maximumUserIdLength.toString,
-        "user_column_id_len" -> maximumLogicalColumnNameLength.toString,
-        "physcol_base_len" -> maximumPhysicalColumnBaseLength.toString,
-        "type_name_len" -> maximumTypeNameLength.toString,
-        "store_id_len" -> maximumStoreIdLength.toString,
-        "table_name_len" -> maximumPhysicalTableNameLength.toString,
-        "locale_name_len" -> maximumLocaleNameLength.toString
-      )
-    )
-  }
-
   def logTableCreate(auditTableName: String,
                      tableName: String,
                      userUidLen: Int,
@@ -41,11 +25,6 @@ object DatabasePopulator {
         "operation_len" -> operationLen.toString,
         "tablespace" -> tablespace.fold("") { ts => "TABLESPACE " + ts }
       ))
-
-  def populate(conn: java.sql.Connection,
-               datasetMapLimits: DatasetMapLimits) {
-    using(conn.createStatement()) { stmt => stmt.execute(metadataTablesCreate(datasetMapLimits)) }
-  }
 }
 
 case class DatasetMapLimits(maximumUserIdLength: Int = 40,
