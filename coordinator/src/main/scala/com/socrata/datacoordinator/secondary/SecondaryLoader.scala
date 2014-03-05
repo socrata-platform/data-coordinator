@@ -9,6 +9,7 @@ import com.rojoma.json.util.{JsonUtil, AutomaticJsonCodecBuilder, JsonKey}
 import com.rojoma.json.io.JsonReaderException
 import scala.util.control.ControlThrowable
 import com.typesafe.config._
+import scala.collection.JavaConverters._
 import scala.io.{Codec, Source}
 
 case class SecondaryDescription(@JsonKey("class") className: String, name: String)
@@ -47,26 +48,48 @@ class SecondaryLoader(parentClassLoader: ClassLoader, secondaryConfigRoot: Confi
               throw Nope("Unable to parse " + jar.getAbsolutePath + " as JSON", e)
           }
         }
+
         val secondaryConfig =
           try { secondaryConfigRoot.getConfig(desc.name) }
           catch {
             case e: ConfigException.Missing => ConfigFactory.empty
             case e: ConfigException.WrongType => throw Nope("Configuration for " + desc.name + " is not a valid config")
           }
-        val mergedConfig = secondaryConfig.withFallback(loadBaseConfig(cl, jar))
-        if(acc.contains(desc.name)) throw Nope("A secondary named " + desc.name + " already exists")
-        val cls =
-          try { cl.loadClass(desc.className) }
-          catch { case e: Exception => throw Nope("Unable to load class " + desc.className + " from " + jar.getAbsolutePath, e) }
-        if(!classOf[Secondary[_,_]].isAssignableFrom(cls)) throw Nope(desc.className + " is not a subclass of Secondary")
-        val ctor =
-          try { cls.getConstructor(classOf[Config]) }
-          catch { case e: Exception => throw Nope("Unable to find constructor for " + desc.className + " from " + jar.getAbsolutePath, e) }
-        log.info("Instantiating secondary \"" + desc.name + "\" from " + jar.getAbsolutePath + " with configuration " + mergedConfig.root.render)
-        val instance =
-          try { ctor.newInstance(mergedConfig).asInstanceOf[Secondary[_,_]] }
-          catch { case e: Exception => throw Nope("Unable to create a new instance of " + desc.className, e) }
-        acc + (desc.name -> instance)
+
+        // If this secondary type has an entry map, "instances" then load the secondary once for each
+        // sub-configuration
+        // "instances": {"primus" => {/* some config */}, "yetanother" => {/* some config*/}}
+        val instanceConfigs:Map[String, Config] = if (secondaryConfig.hasPath("instances")) {
+          val cs:java.util.Set[java.util.Map.Entry[String, ConfigValue]] = secondaryConfig.getConfig("instances").root().entrySet()
+          val css = cs.asScala map {
+            case (e:java.util.Map.Entry[String, ConfigValue]) =>
+              e.getKey -> secondaryConfig.getConfig("instances").getConfig(e.getKey)
+          }
+          css.toMap
+        } else {
+          Map("" -> secondaryConfig)
+        }
+
+        val loadedInstances = instanceConfigs map {
+          case ((instanceName:String, conf:Config))  =>
+          val mergedConfig = secondaryConfig.withFallback(loadBaseConfig(cl, jar))
+          val name:String = desc.name + { if (instanceName.isEmpty) "" else "."  + instanceName }
+          log.info("Loading instance " + name)
+          if(acc.contains(name)) throw Nope("A secondary named " + name + " already exists")
+          val cls =
+            try { cl.loadClass(desc.className) }
+            catch { case e: Exception => throw Nope("Unable to load class " + desc.className + " from " + jar.getAbsolutePath, e) }
+          if(!classOf[Secondary[_,_]].isAssignableFrom(cls)) throw Nope(desc.className + " is not a subclass of Secondary")
+          val ctor =
+            try { cls.getConstructor(classOf[Config]) }
+            catch { case e: Exception => throw Nope("Unable to find constructor for " + desc.className + " from " + jar.getAbsolutePath, e) }
+          log.info("Instantiating secondary \"" + name + "\" from " + jar.getAbsolutePath + " with configuration " + conf.root.render)
+          val instance =
+            try { ctor.newInstance(conf).asInstanceOf[Secondary[_,_]] }
+            catch { case e: Exception => throw Nope("Unable to create a new instance of " + desc.className, e) }
+          name -> instance
+        }
+        acc ++ loadedInstances
       } catch {
         case Nope(msg, null) => log.warn(msg); acc
         case Nope(msg, ex) => log.warn(msg, ex); acc
