@@ -184,7 +184,7 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
         val secondaryDatasetInfo = makeSecondaryDatasetInfo(datasetInfo)
         val it = new LifecycleStageTrackingIterator(rawIt, currentLifecycleStage)
         if(secondary.store.wantsWorkingCopies) {
-          log.trace("Secondary store wants working copies; just blindly ending everything")
+          log.trace("Secondary store wants working copies; just blindly sending everything")
           currentCookie = secondary.store.version(secondaryDatasetInfo, dataVersion, currentCookie, it.flatMap(convertEvent))
         } else {
           while(it.hasNext) {
