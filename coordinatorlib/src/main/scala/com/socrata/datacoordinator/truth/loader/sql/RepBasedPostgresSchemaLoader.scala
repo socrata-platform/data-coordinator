@@ -93,7 +93,7 @@ class RepBasedPostgresSchemaLoader[CT, CV](conn: Connection, logger: Logger[CT, 
       var didOne = false
       for(ci <- columnInfo) {
         val rep = repFor(ci)
-        for((col, colTyp) <- rep.physColumns.zip(rep.sqlTypes)) {
+        for(col <- rep.physColumns) {
           if(didOne) qb.append(',')
           else didOne = true
           qb.append(" DROP COLUMN " + col)
