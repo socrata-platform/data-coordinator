@@ -268,7 +268,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
       // potentially long-running thing, and can cause a retry
       // if the upstream says "the schema just changed".
       val base = reqBuilder(secondary(dataset, datastore))
-      log.info("Base URI: " + base)
+      log.info("Base URI: " + base.url)
       def getAndCacheSchema(dataset: String) =
         schemaFetcher(base.receiveTimeoutMS(getSchemaTimeout.toMillis.toInt), dataset) match {
           case SchemaFetcher.Successful(newSchema) =>
