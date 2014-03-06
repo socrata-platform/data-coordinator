@@ -13,6 +13,7 @@ import scala.collection.JavaConverters._
 import scala.io.{Codec, Source}
 
 case class SecondaryDescription(@JsonKey("class") className: String, name: String)
+
 object SecondaryDescription {
   implicit val jCodec = AutomaticJsonCodecBuilder[SecondaryDescription]
 }
@@ -48,7 +49,6 @@ class SecondaryLoader(parentClassLoader: ClassLoader, secondaryConfigRoot: Confi
               throw Nope("Unable to parse " + jar.getAbsolutePath + " as JSON", e)
           }
         }
-
         val secondaryConfig =
           try { secondaryConfigRoot.getConfig(desc.name) }
           catch {
@@ -72,7 +72,7 @@ class SecondaryLoader(parentClassLoader: ClassLoader, secondaryConfigRoot: Confi
 
         val loadedInstances = instanceConfigs map {
           case ((instanceName:String, conf:Config))  =>
-          val mergedConfig = secondaryConfig.withFallback(loadBaseConfig(cl, jar))
+          val mergedConfig = conf.withFallback(loadBaseConfig(cl, jar))
           val name:String = desc.name + { if (instanceName.isEmpty) "" else "."  + instanceName }
           log.info("Loading instance " + name)
           if(acc.contains(name)) throw Nope("A secondary named " + name + " already exists")
@@ -83,9 +83,9 @@ class SecondaryLoader(parentClassLoader: ClassLoader, secondaryConfigRoot: Confi
           val ctor =
             try { cls.getConstructor(classOf[Config]) }
             catch { case e: Exception => throw Nope("Unable to find constructor for " + desc.className + " from " + jar.getAbsolutePath, e) }
-          log.info("Instantiating secondary \"" + name + "\" from " + jar.getAbsolutePath + " with configuration " + conf.root.render)
+          log.info("Instantiating secondary \"" + name + "\" from " + jar.getAbsolutePath + " with configuration " + mergedConfig.root.render)
           val instance =
-            try { ctor.newInstance(conf).asInstanceOf[Secondary[_,_]] }
+            try { ctor.newInstance(mergedConfig).asInstanceOf[Secondary[_,_]] }
             catch { case e: Exception => throw Nope("Unable to create a new instance of " + desc.className, e) }
           name -> instance
         }
