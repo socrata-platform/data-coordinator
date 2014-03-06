@@ -13,7 +13,6 @@ import scala.collection.JavaConverters._
 import scala.io.{Codec, Source}
 
 case class SecondaryDescription(@JsonKey("class") className: String, name: String)
-
 object SecondaryDescription {
   implicit val jCodec = AutomaticJsonCodecBuilder[SecondaryDescription]
 }
@@ -56,19 +55,20 @@ class SecondaryLoader(parentClassLoader: ClassLoader, secondaryConfigRoot: Confi
             case e: ConfigException.WrongType => throw Nope("Configuration for " + desc.name + " is not a valid config")
           }
 
-        // If this secondary type has an entry map, "instances" then load the secondary once for each
-        // sub-configuration
+
         // "instances": {"primus" => {/* some config */}, "yetanother" => {/* some config*/}}
-        val instanceConfigs:Map[String, Config] = if (secondaryConfig.hasPath("instances")) {
-          val cs:java.util.Set[java.util.Map.Entry[String, ConfigValue]] = secondaryConfig.getConfig("instances").root().entrySet()
-          val css = cs.asScala map {
-            case (e:java.util.Map.Entry[String, ConfigValue]) =>
-              e.getKey -> secondaryConfig.getConfig("instances").getConfig(e.getKey)
+        val cs:java.util.Set[java.util.Map.Entry[String, ConfigValue]] =
+          try { secondaryConfig.getConfig("instances").root().entrySet() }
+          catch {
+             case e: ConfigException.Missing => throw Nope("Configuration for " + desc.name + ".instances is not a valid config")
+             case e: ConfigException.WrongType => throw Nope("Configuration for " + desc.name + " is not a valid config")
           }
-          css.toMap
-        } else {
-          Map("" -> secondaryConfig)
+
+        val css = cs.asScala map {
+          case (e:java.util.Map.Entry[String, ConfigValue]) =>
+            e.getKey -> secondaryConfig.getConfig("instances").getConfig(e.getKey)
         }
+        val instanceConfigs:Map[String, Config] = css.toMap
 
         val loadedInstances = instanceConfigs map {
           case ((instanceName:String, conf:Config))  =>
