@@ -23,8 +23,11 @@ import com.socrata.http.common.AuxiliaryData
 import com.socrata.http.server.livenesscheck.LivenessCheckResponder
 import com.socrata.datacoordinator.truth.metadata.{SchemaField, Schema, DatasetCopyContext}
 import com.socrata.http.server.util.{EntityTag, Precondition}
+import scala.util.Random
 
 class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
+  val log = org.slf4j.LoggerFactory.getLogger(classOf[Main])
+
   def ensureInSecondary(storeId: String, datasetId: DatasetId): Unit =
     for(u <- common.universe) {
       try {
@@ -39,6 +42,33 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
         // ok, it's there
       }
     }
+
+  def ensureInSecondaryGroup(secondaryGroupStr: String, datasetId: DatasetId): Unit = {
+    val currentDatasetSecondaries = secondariesOfDataset(datasetId).keySet
+    for(u <- common.universe) {
+      val secondaryGroup = serviceConfig.secondary.groups.get(secondaryGroupStr).getOrElse(
+        // TODO: proper error
+        throw new Exception(s"Can't find secondary group ${secondaryGroupStr}")
+      )
+      val desiredCopies: Int = secondaryGroup.numReplicas
+      val newCopiesRequired: Int = Math.max(desiredCopies - currentDatasetSecondaries.size, 0)
+      val secondariesInGroup: Set[String] = secondaryGroup.instances
+
+      log.info(s"Dataset ${datasetId} exists on ${currentDatasetSecondaries.size} secondaries, want it on ${desiredCopies} so need ${newCopiesRequired} new secondaries")
+
+      val newSecondaries = Random.shuffle((secondariesInGroup -- currentDatasetSecondaries).toList).take(newCopiesRequired)
+
+      if (newSecondaries.size < newCopiesRequired) {
+        // TODO: proper error
+        throw new Exception(s"Can't find ${desiredCopies} servers in secondary group ${secondaryGroupStr} to publish to")
+      }
+
+      log.info(s"Publishing dataset ${datasetId} to ${newSecondaries}")
+
+      newSecondaries.foreach(ensureInSecondary(_, datasetId))
+
+    }
+  }
 
   def datasetsInStore(storeId: String): Map[DatasetId, Long] =
     for(u <- common.universe) yield {
@@ -154,7 +184,7 @@ object Main {
 
     PropertyConfigurator.configure(Propertizer("log4j", serviceConfig.logProperties))
 
-    val secondaries = SecondaryLoader.load(serviceConfig.secondary.configs, serviceConfig.secondary.path)
+    val secondaries = serviceConfig.secondary.instances.keySet
 
     for(dsInfo <- DataSourceFromConfig(serviceConfig.dataSource)) {
       val executorService = Executors.newCachedThreadPool()
@@ -205,9 +235,9 @@ object Main {
           }
         }
 
-        val serv = new Service(operations.processMutation, operations.processCreation, getSchema _,
-          operations.exporter, secondaries.keySet, operations.datasetsInStore, operations.versionInStore,
-          operations.ensureInSecondary, operations.secondariesOfDataset, operations.listDatasets, operations.deleteDataset,
+        val serv = new Service(serviceConfig, operations.processMutation, operations.processCreation, getSchema _,
+          operations.exporter, secondaries, operations.datasetsInStore, operations.versionInStore,
+          operations.ensureInSecondary, operations.ensureInSecondaryGroup, operations.secondariesOfDataset, operations.listDatasets, operations.deleteDataset,
           serviceConfig.commandReadLimit, common.internalNameFromDatasetId, common.datasetIdFromInternalName, operations.makeReportTemporaryFile)
 
         val finished = new CountDownLatch(1)
@@ -254,9 +284,6 @@ object Main {
             val auxData = new AuxiliaryData(livenessCheckInfo = Some(pong.livenessCheckInfo))
             serv.run(serviceConfig.network.port, new CuratorBroker(discovery, address, serviceConfig.advertisement.name + "." + serviceConfig.instance, Some(auxData)))
           }
-
-          log.info("Shutting down secondaries")
-          secondaries.values.foreach(_.shutdown())
         } finally {
           finished.countDown()
         }

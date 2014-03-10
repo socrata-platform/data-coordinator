@@ -7,7 +7,7 @@ import java.util.concurrent.TimeUnit
 
 class ServiceConfig(val config: Config, root: String) {
   private def k(field: String) = root + "." + field
-  val secondary = new SecondaryConfig(config, k("secondary"))
+  val secondary = new SecondaryConfig(config.getConfig(k("secondary")))
   val network = new NetworkConfig(config, k("network"))
   val curator = new CuratorConfig(config, k("curator"))
   val advertisement = new AdvertisementConfig(config, k("service-advertisement"))

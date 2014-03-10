@@ -17,6 +17,7 @@ import com.socrata.datacoordinator.truth.universe._
 import org.apache.log4j.PropertyConfigurator
 import com.socrata.thirdparty.typesafeconfig.Propertizer
 import scala.concurrent.duration.Duration
+import com.socrata.datacoordinator.service.{SecondaryConfig => ServiceSecondaryConfig}
 
 class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseType[CT, CV]]) {
   import SecondaryWatcher.log
@@ -92,8 +93,7 @@ class SecondaryWatcherConfig(config: Config, root: String) {
   private def k(s: String) = root + "." + s
   val log4j = config.getConfig(k("log4j"))
   val database = new DataSourceConfig(config, k("database"))
-  val secondaryConfigs = config.getObject(k("secondary.configs"))
-  val secondaryPath = new File(config.getString(k("secondary.path")))
+  val secondaryConfig = new ServiceSecondaryConfig(config.getConfig(k("secondary")))
   val instance = config.getString(k("instance"))
   val tmpdir = new File(config.getString(k("tmpdir"))).getAbsoluteFile
 }
@@ -109,7 +109,7 @@ object SecondaryWatcher extends App { self =>
   val log = LoggerFactory.getLogger(classOf[SecondaryWatcher[_,_]])
 
   for(dsInfo <- DataSourceFromConfig(config.database)) {
-    val secondaries = SecondaryLoader.load(config.secondaryConfigs, config.secondaryPath).asInstanceOf[Map[String, Secondary[SoQLType, SoQLValue]]]
+    val secondaries = SecondaryLoader.load(config.secondaryConfig).asInstanceOf[Map[String, Secondary[SoQLType, SoQLValue]]]
 
     val executor = Executors.newCachedThreadPool()
 

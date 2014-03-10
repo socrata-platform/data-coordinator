@@ -35,7 +35,8 @@ import java.security.MessageDigest
 import org.apache.commons.codec.binary.Base64
 import com.socrata.http.server.util.handlers.{ThreadRenamingHandler, LoggingHandler}
 
-class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) => Seq[MutationScriptCommandResult],
+class Service(serviceConfig: ServiceConfig,
+              processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) => Seq[MutationScriptCommandResult],
               processCreation: (Iterator[JValue], IndexedTempFile) => (DatasetId, Seq[MutationScriptCommandResult]),
               getSchema: DatasetId => Option[Schema],
               datasetContents: (DatasetId, Option[String], CopySelector, Option[UserColumnIdSet], Option[Long], Option[Long], Precondition, Boolean) => (Either[Schema, (EntityTag, Seq[SchemaField], Option[UserColumnId], String, Long, Iterator[Array[JValue]])] => Unit) => Exporter.Result[Unit],
@@ -43,6 +44,7 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
               datasetsInStore: (String) => Map[DatasetId, Long],
               versionInStore: (String, DatasetId) => Option[Long],
               ensureInSecondary: (String, DatasetId) => Unit,
+              ensureInSecondaryGroup: (String, DatasetId) => Unit,
               secondariesOfDataset: DatasetId => Map[String, Long],
               datasets: () => Seq[DatasetId],
               deleteDataset: DatasetId => DatasetDropper.Result,
@@ -114,8 +116,14 @@ class Service(processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) =>
     }
 
     def doUpdateVersionInSecondary(req: HttpServletRequest): HttpResponse = {
-      if(!secondaries(storeId)) return NotFound
-      ensureInSecondary(storeId, datasetId)
+      val defaultSecondaryGroups: Set[String] = serviceConfig.secondary.defaultGroups
+      val groupRe = "_(.*)_".r
+      storeId match {
+        case "_DEFAULT_" => defaultSecondaryGroups.foreach(ensureInSecondaryGroup(_, datasetId))
+        case groupRe(g) if serviceConfig.secondary.groups.contains(g) => ensureInSecondaryGroup(g, datasetId)
+        case secondary if secondaries(storeId) => ensureInSecondary(secondary, datasetId)
+        case _ => return NotFound
+      }
       OK
     }
   }

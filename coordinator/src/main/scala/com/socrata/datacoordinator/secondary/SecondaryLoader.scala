@@ -11,90 +11,79 @@ import scala.util.control.ControlThrowable
 import com.typesafe.config._
 import scala.collection.JavaConverters._
 import scala.io.{Codec, Source}
+import com.rojoma.simplearm.util._
 
 case class SecondaryDescription(@JsonKey("class") className: String, name: String)
 object SecondaryDescription {
   implicit val jCodec = AutomaticJsonCodecBuilder[SecondaryDescription]
 }
 
-class SecondaryLoader(parentClassLoader: ClassLoader, secondaryConfigRoot: Config) {
+class SecondaryLoader(parentClassLoader: ClassLoader, secondaryConfig: com.socrata.datacoordinator.service.SecondaryConfig) {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[SecondaryLoader])
 
-  def loadSecondaries(dir: File): Map[String, Secondary[_, _]] = {
+  def loadSecondaries(): Map[String, Secondary[_, _]] = {
+    val dir = secondaryConfig.path
     val jars = Option(dir.listFiles(new FilenameFilter {
       def accept(dir: File, name: String): Boolean = name.endsWith(".jar")
     })).getOrElse(Array.empty).toSeq
-    jars.foldLeft(Map.empty[String, Secondary[_, _]]) { (acc, jar) =>
-      log.info("Loading secondary from " + jar.getAbsolutePath)
+
+
+    log.info("Loading secondary types...")
+    val secondaryTypesMap = jars.foldLeft(Map.empty[String, File]) { (acc, jar) =>
+      log.info("Investigating secondary in " + jar.getAbsolutePath)
       try {
-        // Class loader for loading a specific secondary implementation.
-        // This requires the parent class loader to recognize that a secondary implements
-        // the secondary trait.
-        val cl = new URLClassLoader(Array(jar.toURI.toURL), parentClassLoader)
         // Class loader for loading secondary-manifest.json resource only.
         // Don't inherit from data coordinator class loader so that it will not
         // be confused with other resources even when the parent is associated with
         // a specific secondary implementation jar for debugging.
-        val resourceCl = new URLClassLoader(Array(jar.toURI.toURL), null)
-        val stream = resourceCl.getResourceAsStream("secondary-manifest.json")
-        if(stream == null) throw Nope("No secondary-manifest.json in " + jar.getAbsolutePath)
-        val desc = withStreamResource(resourceCl, jar, "secondary-manifest.json") { reader =>
-          try {
-            JsonUtil.readJson[SecondaryDescription](reader).getOrElse {
-              throw Nope("Unable to parse a SecondaryDescription from " + jar.getAbsolutePath)
+        for (resourceCl <- managed(new URLClassLoader(Array(jar.toURI.toURL), null))) yield {
+          val stream = resourceCl.getResourceAsStream("secondary-manifest.json")
+          if(stream == null) throw Nope("No secondary-manifest.json in " + jar.getAbsolutePath)
+          val desc = withStreamResource(resourceCl, jar, "secondary-manifest.json") { reader =>
+            try {
+              JsonUtil.readJson[SecondaryDescription](reader).getOrElse {
+                throw Nope("Unable to parse a SecondaryDescription from " + jar.getAbsolutePath)
+              }
+            } catch {
+              case e: JsonReaderException =>
+                throw Nope("Unable to parse " + jar.getAbsolutePath + " as JSON", e)
             }
-          } catch {
-            case e: JsonReaderException =>
-              throw Nope("Unable to parse " + jar.getAbsolutePath + " as JSON", e)
           }
+          if(acc.contains(desc.name)) throw Nope("A secondary type named " + desc.name + " already exists")
+
+          log.info("Found secondary type " + desc.name)
+
+          acc + (desc.name -> jar)
         }
-        val secondaryConfig =
-          try { secondaryConfigRoot.getConfig(desc.name) }
-          catch {
-            case e: ConfigException.Missing => ConfigFactory.empty
-            case e: ConfigException.WrongType => throw Nope("Configuration for " + desc.name + " is not a valid config")
-          }
+      } catch {
+      case Nope(msg, null) => log.warn(msg); acc
+      case Nope(msg, ex) => log.warn(msg, ex); acc
+    }
+  }
 
-
-        // "instances": {"primus" => {/* some config */}, "yetanother" => {/* some config*/}}
-        val cs:java.util.Set[java.util.Map.Entry[String, ConfigValue]] =
-          try { secondaryConfig.getConfig("instances").root().entrySet() }
-          catch {
-             case e: ConfigException.Missing => throw Nope("Configuration for " + desc.name + ".instances is not a valid config")
-             case e: ConfigException.WrongType => throw Nope("Configuration for " + desc.name + " is not a valid config")
-          }
-
-        val css = cs.asScala map {
-          case (e:java.util.Map.Entry[String, ConfigValue]) =>
-            e.getKey -> secondaryConfig.getConfig("instances").getConfig(e.getKey)
+    log.info("Loading secondary instances...")
+    val secondaryMap = secondaryConfig.instances.foldLeft(Map.empty[String, Secondary[_,_]]) { case (acc, (instanceName, instanceConfig)) =>
+      log.info("Loading secondary instance " + instanceName)
+      try {
+        val jar = secondaryTypesMap.get(instanceConfig.secondaryType).getOrElse {
+          throw Nope("Unable to find secondary instance type " + instanceConfig.secondaryType)
         }
-        val instanceConfigs:Map[String, Config] = css.toMap
 
-        val loadedInstances = instanceConfigs map {
-          case ((instanceName:String, conf:Config))  =>
-          val mergedConfig = conf.withFallback(loadBaseConfig(cl, jar))
-          val name:String = desc.name + { if (instanceName.isEmpty) "" else "."  + instanceName }
-          log.info("Loading instance " + name)
-          if(acc.contains(name)) throw Nope("A secondary named " + name + " already exists")
-          val cls =
-            try { cl.loadClass(desc.className) }
-            catch { case e: Exception => throw Nope("Unable to load class " + desc.className + " from " + jar.getAbsolutePath, e) }
-          if(!classOf[Secondary[_,_]].isAssignableFrom(cls)) throw Nope(desc.className + " is not a subclass of Secondary")
-          val ctor =
-            try { cls.getConstructor(classOf[Config]) }
-            catch { case e: Exception => throw Nope("Unable to find constructor for " + desc.className + " from " + jar.getAbsolutePath, e) }
-          log.info("Instantiating secondary \"" + name + "\" from " + jar.getAbsolutePath + " with configuration " + mergedConfig.root.render)
-          val instance =
-            try { ctor.newInstance(mergedConfig).asInstanceOf[Secondary[_,_]] }
-            catch { case e: Exception => throw Nope("Unable to create a new instance of " + desc.className, e) }
-          name -> instance
-        }
-        acc ++ loadedInstances
+        val secondary = loadSecondary(jar, instanceConfig.config)
+        acc + (instanceName -> secondary)
       } catch {
         case Nope(msg, null) => log.warn(msg); acc
         case Nope(msg, ex) => log.warn(msg, ex); acc
       }
     }
+
+    secondaryConfig.groups.values.foreach { g =>
+      g.instances.foreach { i =>
+        secondaryMap.get(i).orElse(throw Nope("Unable to find instance " + i))
+      }
+    }
+
+    secondaryMap
   }
 
   private def withStreamResource[T](cl: ClassLoader, jar: File, name: String)(f: Reader => T): T = {
@@ -112,7 +101,7 @@ class SecondaryLoader(parentClassLoader: ClassLoader, secondaryConfigRoot: Confi
     if(stream == null) ConfigFactory.empty
     else try {
       val text = Source.fromInputStream(stream)(Codec.UTF8).getLines().mkString("\n")
-      ConfigFactory.parseString(text, ConfigParseOptions.defaults().setOriginDescription("secondary.conf"))
+      ConfigFactory.parseString(text, ConfigParseOptions.defaults().setOriginDescription("secondary.conf")).resolve()
     } catch {
       case e: Exception => throw Nope("Unable to parse base config in " + jar.getAbsolutePath, e)
     } finally {
@@ -120,11 +109,41 @@ class SecondaryLoader(parentClassLoader: ClassLoader, secondaryConfigRoot: Confi
     }
   }
 
+  private def loadSecondary(jar: File, config: Config): Secondary[_, _] = {
+    val cl = new URLClassLoader(Array(jar.toURI.toURL), parentClassLoader)
+    val stream = cl.getResourceAsStream("secondary-manifest.json")
+    if(stream == null) throw Nope("No secondary-manifest.json in " + jar.getAbsolutePath)
+    val desc = withStreamResource(cl, jar, "secondary-manifest.json") { reader =>
+      try {
+        JsonUtil.readJson[SecondaryDescription](reader).getOrElse {
+          throw Nope("Unable to parse a SecondaryDescription from " + jar.getAbsolutePath)
+        }
+      } catch {
+        case e: JsonReaderException =>
+          throw Nope("Unable to parse " + jar.getAbsolutePath + " as JSON", e)
+      }
+    }
+
+    val mergedConfig = config.withFallback(loadBaseConfig(cl, jar))
+
+    val cls =
+      try { cl.loadClass(desc.className) }
+      catch { case e: Exception => throw Nope("Unable to load class " + desc.className + " from " + jar.getAbsolutePath, e) }
+    if(!classOf[Secondary[_,_]].isAssignableFrom(cls)) throw Nope(desc.className + " is not a subclass of Secondary")
+    val ctor =
+      try { cls.getConstructor(classOf[Config]) }
+      catch { case e: Exception => throw Nope("Unable to find constructor for " + desc.className + " from " + jar.getAbsolutePath, e) }
+    log.info("Instantiating secondary type \"" + desc.name + "\" from " + jar.getAbsolutePath + " with configuration " + mergedConfig.root.render)
+
+    try { ctor.newInstance(mergedConfig).asInstanceOf[Secondary[_,_]] }
+    catch { case e: Exception => throw Nope("Unable to create a new instance of " + desc.className, e) }
+  }
+
   private case class Nope(message: String, cause: Throwable = null) extends Throwable(message, cause) with ControlThrowable
 }
 
 object SecondaryLoader {
-  def load(secondaryConfigs: ConfigObject, dir: File): Map[String, Secondary[_,_]] =
-    new SecondaryLoader(Thread.currentThread.getContextClassLoader, secondaryConfigs.toConfig).loadSecondaries(dir)
+  def load(secondaryConfig: com.socrata.datacoordinator.service.SecondaryConfig): Map[String, Secondary[_,_]] =
+    new SecondaryLoader(Thread.currentThread.getContextClassLoader, secondaryConfig).loadSecondaries()
 }
 

@@ -257,7 +257,8 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
           return
         } catch {
           case ResyncSecondaryException(reason) =>
-            log.warn("Received resync while resyncing.  Resyncing as requested.  Reason: " + reason)
+            log.warn("Received resync while resyncing.  Resyncing as requested after waiting 10 seconds.  Reason: " + reason)
+            Thread.sleep(10L * 1000);
         }
       }
     }
