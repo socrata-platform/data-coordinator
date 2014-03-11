@@ -6,7 +6,7 @@ package com.socrata.querycoordinator
 class SecondaryInstanceSelector {
 
   def getInstance(dataset:String, instanceHint:Option[String]) = {
-    instanceHint.getOrElse("es.primus")
+    instanceHint.getOrElse("pg.primus")
   }
 
 }
