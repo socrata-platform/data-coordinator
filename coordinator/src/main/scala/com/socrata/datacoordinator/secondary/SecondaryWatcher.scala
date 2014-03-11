@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator.secondary
 
 import com.rojoma.simplearm.Managed
-
+import scala.concurrent.duration._
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.secondary.sql.SqlSecondaryConfig
 import com.typesafe.config.{Config, ConfigFactory}
@@ -18,15 +18,19 @@ import org.apache.log4j.PropertyConfigurator
 import com.socrata.thirdparty.typesafeconfig.Propertizer
 import scala.concurrent.duration.Duration
 import com.socrata.datacoordinator.service.{SecondaryConfig => ServiceSecondaryConfig}
+import scala.util.Random
+import java.util.UUID
 
-class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseType[CT, CV]]) {
+class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseType[CT, CV]], claimantId: UUID, claimTimeout: FiniteDuration) {
   import SecondaryWatcher.log
+  private val rand = new Random()
+  // splay the sleep time +/- 5s to prevent watchers from getting in lock step
+  private val nextRuntimeSplay = (rand.nextInt(10000) - 5000).toLong
 
   def run(u: Universe[CT, CV] with SecondaryManifestProvider with PlaybackToSecondaryProvider, secondary: NamedSecondary[CT, CV]) {
     import u._
 
-    val jobs = secondaryManifest.findDatasetsNeedingReplication(secondary.storeId)
-    for(job <- jobs) {
+    for(job <- secondaryManifest.claimDatasetNeedingReplication(secondary.storeId, claimantId, claimTimeout)) {
       log.info("Syncing {} into {}", job.datasetId, secondary.storeId)
       try {
         playbackToSecondary(secondary, job)
@@ -34,12 +38,25 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
         case e: Exception =>
           log.error("Unexpected exception while updating dataset {} in secondary {}; marking it as broken", job.datasetId.asInstanceOf[AnyRef], secondary.storeId, e)
           secondaryManifest.markSecondaryDatasetBroken(job)
+      } finally {
+        try {
+          secondaryManifest.releaseClaimedDataset(job)
+        } catch {
+          case e: Exception =>
+            log.error("Unexpected exception while releasing claim on dataset {} in secondary {}", job.datasetId.asInstanceOf[AnyRef], secondary.storeId, e)
+        }
       }
     }
   }
 
+  def cleanOphanedJobs(u: Universe[CT, CV] with SecondaryManifestProvider with PlaybackToSecondaryProvider, secondary: NamedSecondary[CT, CV]) {
+    import u._
+    secondaryManifest.cleanOrphanedClaimedDatasets(secondary.storeId, claimantId)
+  }
+
+
   private def maybeSleep(storeId: String, nextRunTime: DateTime, finished: CountDownLatch): Boolean = {
-    val remainingTime = nextRunTime.getMillis - System.currentTimeMillis()
+    val remainingTime = nextRunTime.getMillis - System.currentTimeMillis() - nextRuntimeSplay
     finished.await(remainingTime, TimeUnit.MILLISECONDS)
   }
 
@@ -58,6 +75,13 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
   }
 
   def mainloop(secondaryConfigInfo: SecondaryConfigInfo, secondary: Secondary[CT, CV], finished: CountDownLatch) {
+    // Clean up any orphaned jobs which may have been created by this watcher
+    // This needs to be done outside the loop such that it's only executed once.  It also requires access to u.secondaryManifest
+    for { u <- universe } yield {
+      import u.secondaryManifest
+      secondaryManifest.cleanOrphanedClaimedDatasets(secondaryConfigInfo.storeId, claimantId)
+    }
+
     var lastWrote = new DateTime(0L)
     var nextRunTime = bestNextRunTime(secondaryConfigInfo.storeId,
       secondaryConfigInfo.nextRunTime,
@@ -95,7 +119,10 @@ class SecondaryWatcherConfig(config: Config, root: String) {
   val database = new DataSourceConfig(config, k("database"))
   val secondaryConfig = new ServiceSecondaryConfig(config.getConfig(k("secondary")))
   val instance = config.getString(k("instance"))
+  val watcherId = UUID.fromString(config.getString(k("watcher-id")))
+  val claimTimeout = config.getMilliseconds(k("claim-timeout")).longValue.millis
   val tmpdir = new File(config.getString(k("tmpdir"))).getAbsoluteFile
+
 }
 
 object SecondaryWatcher extends App { self =>
@@ -126,7 +153,7 @@ object SecondaryWatcher extends App { self =>
       NullCache
     )
 
-    val w = new SecondaryWatcher(common.universe)
+    val w = new SecondaryWatcher(common.universe, config.watcherId, config.claimTimeout)
 
     val SIGTERM = new Signal("TERM")
     val SIGINT = new Signal("INT")

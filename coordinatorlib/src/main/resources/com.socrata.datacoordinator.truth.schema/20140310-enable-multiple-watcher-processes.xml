@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
+
+    <changeSet author="Brian Oldfield" id="20140206-enable-multiple-watcher-processes">
+        <preConditions onFail="MARK_RAN">
+            <not><columnExists columnName="claimant_id" tableName="secondary_manifest" /></not>
+            <not><columnExists columnName="claimed_at" tableName="secondary_manifest" /></not>
+        </preConditions>
+
+        <addColumn tableName="secondary_manifest">
+            <column name="claimant_id" type="UUID" />
+        </addColumn>
+        <!-- Create partial index covering (claimant_id, store_id, dataset_system_id) -->
+        <sql>
+            CREATE INDEX secondary_manifest_claimed_job
+            ON secondary_manifest(claimant_id, store_id, dataset_system_id)
+            WHERE claimant_id IS NOT NULL;
+        </sql>
+
+        <addColumn tableName="secondary_manifest">
+            <column name="claimed_at" type="TIMESTAMP WITH TIME ZONE" />
+        </addColumn>
+
+        <rollback>
+            <dropIndex indexName="secondary_manifest_claimed_job" tableName="secondary_manifest" />
+            <dropColumn tableName="secondary_manifest" columnName="claimant_id" />
+            <dropColumn tableName="secondary_manifest" columnName="claimed_at" />
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

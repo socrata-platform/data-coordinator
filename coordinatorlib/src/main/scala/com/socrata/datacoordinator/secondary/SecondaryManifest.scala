@@ -3,8 +3,10 @@ package secondary
 
 import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.truth.metadata
+import scala.concurrent.duration.FiniteDuration
+import java.util.UUID
 
-case class SecondaryRecord(storeId: String, datasetId: DatasetId, startingDataVersion: Long, startingLifecycleStage: metadata.LifecycleStage, endingDataVersion: Long, initialCookie: Option[String])
+case class SecondaryRecord(storeId: String, claimantId: UUID, datasetId: DatasetId, startingDataVersion: Long, startingLifecycleStage: metadata.LifecycleStage, endingDataVersion: Long, initialCookie: Option[String])
 class DatasetAlreadyInSecondary(val storeId: String, val DatasetId: DatasetId) extends Exception
 
 trait SecondaryManifest {
@@ -16,9 +18,11 @@ trait SecondaryManifest {
   def datasets(storeId: String): Map[DatasetId, Long]
   def stores(datasetId: DatasetId): Map[String, Long]
 
-  def findDatasetsNeedingReplication(storeId: String, limit: Int = 1000): Seq[SecondaryRecord]
+  def cleanOrphanedClaimedDatasets(storeId: String, claimantId: UUID)
+  def claimDatasetNeedingReplication(storeId: String, claimantId: UUID, claimTimeout: FiniteDuration): Option[SecondaryRecord]
+  def releaseClaimedDataset(job: SecondaryRecord)
   def markSecondaryDatasetBroken(job: SecondaryRecord)
-  def completedReplicationTo(storeId: String, datasetId: DatasetId, dataVersion: Long, lifecycleStage: metadata.LifecycleStage, newCookie: Option[String])
+  def completedReplicationTo(storeId: String, claimantId: UUID, datasetId: DatasetId, dataVersion: Long, lifecycleStage: metadata.LifecycleStage, newCookie: Option[String])
 }
 
 case class NamedSecondary[CT, CV](storeId: String, store: Secondary[CT, CV])

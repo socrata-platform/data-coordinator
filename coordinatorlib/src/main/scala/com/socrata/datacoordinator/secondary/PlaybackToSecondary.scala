@@ -108,6 +108,7 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
                          job: SecondaryRecord)
   {
     private val datasetId = job.datasetId
+    private val claimantId = job.claimantId
     private var currentCookie = job.initialCookie
     private var currentLifecycleStage = job.startingLifecycleStage
     private val datasetMapReader = u.datasetMapReader
@@ -276,7 +277,7 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
     }
 
     def updateSecondaryMap(newLastDataVersion: Long, newLifecycleStage: metadata.LifecycleStage) {
-      u.secondaryManifest.completedReplicationTo(secondary.storeId, datasetId, newLastDataVersion, newLifecycleStage, currentCookie)
+      u.secondaryManifest.completedReplicationTo(secondary.storeId, claimantId, datasetId, newLastDataVersion, newLifecycleStage, currentCookie)
       u.commit()
     }
 

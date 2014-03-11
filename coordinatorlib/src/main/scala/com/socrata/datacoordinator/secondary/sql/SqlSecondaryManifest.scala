@@ -2,6 +2,7 @@ package com.socrata.datacoordinator.secondary
 package sql
 
 import java.sql.{Types, Connection}
+import java.util.UUID
 
 import com.rojoma.simplearm.util._
 
@@ -10,6 +11,7 @@ import com.socrata.datacoordinator.id.sql._
 import scala.collection.immutable.VectorBuilder
 import com.socrata.datacoordinator.truth.metadata
 import com.socrata.datacoordinator.util.PostgresUniqueViolation
+import scala.concurrent.duration.FiniteDuration
 
 class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
   def readLastDatasetInfo(storeId: String, datasetId: DatasetId): Option[(Long, Option[String])] =
@@ -93,50 +95,133 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
     }
   }
 
-  def findDatasetsNeedingReplication(storeId: String, limit: Int): Seq[SecondaryRecord] =
-    using(conn.prepareStatement("SELECT dataset_system_id, latest_secondary_data_version, latest_secondary_lifecycle_stage, latest_data_version, cookie FROM secondary_manifest WHERE store_id = ? AND broken_at IS NULL AND latest_data_version > latest_secondary_data_version ORDER BY went_out_of_sync_at LIMIT ?")) { stmt =>
+  def claimDatasetNeedingReplication(storeId: String, claimantId: UUID, claimTimeout: FiniteDuration):Option[SecondaryRecord] = {
+    val job = using(conn.prepareStatement(
+      """SELECT dataset_system_id
+        |  ,latest_secondary_data_version
+        |  ,latest_secondary_lifecycle_stage
+        |  ,latest_data_version
+        |  ,cookie
+        |FROM secondary_manifest
+        |WHERE store_id = ?
+        |  AND broken_at IS NULL
+        |  AND latest_data_version > latest_secondary_data_version
+        |  AND (claimant_id is NULL
+        |    OR claimed_at < (CURRENT_TIMESTAMP - CAST (? AS INTERVAL)))
+        |ORDER BY went_out_of_sync_at
+        |LIMIT 1
+        |FOR UPDATE""".stripMargin)) { stmt =>
       stmt.setString(1, storeId)
-      stmt.setInt(2, limit)
+      stmt.setString(2, claimTimeout.toMillis + " milliseconds")
       using(stmt.executeQuery()) { rs =>
-        val results = new VectorBuilder[SecondaryRecord]
-        while(rs.next()) {
-          results += SecondaryRecord(
+        if(rs.next()) {
+          val j = SecondaryRecord(
             storeId,
+            claimantId,
             rs.getDatasetId("dataset_system_id"),
             startingDataVersion = rs.getLong("latest_secondary_data_version") + 1,
             startingLifecycleStage = rs.getLifecycleStage("latest_secondary_lifecycle_stage"),
             endingDataVersion = rs.getLong("latest_data_version"),
-            initialCookie = Option(rs.getString("cookie"))
-          )
+            initialCookie = Option(rs.getString("cookie")))
+          markDatasetClaimedForReplication(j)
+          Some(j)
         }
-        results.result()
+        else None
       }
     }
+    conn.commit()
+    job
+  }
+
+  def cleanOrphanedClaimedDatasets(storeId: String, claimantId: UUID) {
+    using(conn.prepareStatement(
+      """SELECT  dataset_system_id
+        |  ,latest_secondary_data_version
+        |  ,latest_secondary_lifecycle_stage
+        |  ,latest_data_version
+        |  ,cookie
+        |FROM secondary_manifest
+        |WHERE claimant_id = ?
+        |  AND store_id = ?""".stripMargin)) {stmt =>
+      stmt.setObject(1, claimantId)
+      stmt.setString(2, storeId)
+      using(stmt.executeQuery()) { rs =>
+        while(rs.next()){
+          val j = SecondaryRecord(
+            storeId,
+            claimantId,
+            rs.getDatasetId("dataset_system_id"),
+            startingDataVersion = rs.getLong("latest_secondary_data_version") + 1,
+            startingLifecycleStage = rs.getLifecycleStage("latest_secondary_lifecycle_stage"),
+            endingDataVersion = rs.getLong("latest_data_version"),
+            initialCookie = Option(rs.getString("cookie")))
+          releaseClaimedDataset(j)
+        }
+      }
+    }
+  }
+
+  def markDatasetClaimedForReplication(job: SecondaryRecord) {
+    using(conn.prepareStatement(
+      """UPDATE secondary_manifest
+        |SET claimed_at = CURRENT_TIMESTAMP
+        |  ,claimant_id = ?
+        |WHERE store_id = ?
+        |  AND dataset_system_id = ?""".stripMargin)) { stmt =>
+      stmt.setObject(1, job.claimantId)
+      stmt.setString(2, job.storeId)
+      stmt.setLong(3, job.datasetId.underlying)
+      stmt.executeUpdate()
+    }
+  }
+
+  def releaseClaimedDataset(job: SecondaryRecord) {
+    using(conn.prepareStatement(
+      """UPDATE secondary_manifest
+        |SET claimed_at = NULL
+        |  ,claimant_id = NULL
+        |WHERE claimant_id = ?
+        |  AND store_id = ?
+        |  AND dataset_system_id = ?""".stripMargin)) { stmt =>
+      stmt.setObject(1, job.claimantId)
+      stmt.setString(2, job.storeId)
+      stmt.setLong(3, job.datasetId.underlying)
+      stmt.executeUpdate()
+    }
+  }
+
 
   def markSecondaryDatasetBroken(job: SecondaryRecord) {
-    using(conn.prepareStatement("UPDATE secondary_manifest SET broken_at = CURRENT_TIMESTAMP WHERE store_id = ? AND dataset_system_id = ?")) { stmt =>
+    using(conn.prepareStatement(
+      """UPDATE secondary_manifest
+        |SET broken_at = CURRENT_TIMESTAMP
+        |WHERE store_id = ?
+        |  AND dataset_system_id = ?""".stripMargin)) { stmt =>
       stmt.setString(1, job.storeId)
       stmt.setLong(2, job.datasetId.underlying)
       stmt.executeUpdate()
     }
   }
 
-  def completedReplicationTo(storeId: String, datasetId: DatasetId, dataVersion: Long, lifecycleStage: metadata.LifecycleStage, cookie: Option[String]) {
+  def completedReplicationTo(storeId: String, claimantId: UUID, datasetId: DatasetId, dataVersion: Long, lifecycleStage: metadata.LifecycleStage, cookie: Option[String]) {
     using(conn.prepareStatement(
       """UPDATE secondary_manifest
-        | SET latest_secondary_data_version = ?,
-        |     latest_secondary_lifecycle_stage = CAST(? AS dataset_lifecycle_stage),
-        |     cookie = ?,
-        |     went_out_of_sync_at = CURRENT_TIMESTAMP
-        | WHERE store_id = ? AND dataset_system_id = ?""".stripMargin)) { stmt =>
+        |SET latest_secondary_data_version = ?
+        |  ,latest_secondary_lifecycle_stage = CAST(? AS dataset_lifecycle_stage)
+        |  ,cookie = ?
+        |  ,went_out_of_sync_at = CURRENT_TIMESTAMP
+        |WHERE claimant_id = ?
+        |  AND store_id = ?
+        |  AND dataset_system_id = ?""".stripMargin)) { stmt =>
       stmt.setLong(1, dataVersion)
       stmt.setLifecycleStage(2, lifecycleStage)
       cookie match {
         case Some(c) => stmt.setString(3, c)
         case None => stmt.setNull(3, Types.VARCHAR)
       }
-      stmt.setString(4, storeId)
-      stmt.setDatasetId(5, datasetId)
+      stmt.setObject(4, claimantId)
+      stmt.setString(5, storeId)
+      stmt.setDatasetId(6, datasetId)
       stmt.executeUpdate()
     }
   }
