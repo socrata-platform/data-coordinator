@@ -7,8 +7,9 @@ import com.socrata.soql.{SoQLAnalysis, SoQLAnalyzer}
 import com.socrata.soql.exceptions.SoQLException
 
 import QueryParser._
+import com.socrata.soql.SoQLAnalysis
 
-class QueryParser(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
+class QueryParser(analyzer: SoQLAnalyzer[SoQLAnalysisType], maxRows: Option[Int]) {
   private def dsContext(columnIdMapping: Map[ColumnName, String], rawSchema: Map[String, SoQLType]): Either[Set[String], DatasetContext[SoQLAnalysisType]] =
     try {
       val unknownColumnIds = columnIdMapping.values.iterator.filterNot(rawSchema.contains).toSet
@@ -24,7 +25,7 @@ class QueryParser(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
     dsContext(columnIdMapping, schema) match {
       case Right(ds) =>
         try {
-          SuccessfulParse(f(ds).mapColumnIds(columnIdMapping))
+          SuccessfulParse(limitRows(f(ds)).mapColumnIds(columnIdMapping))
         } catch {
           case e: SoQLException =>
             AnalysisError(e)
@@ -32,6 +33,17 @@ class QueryParser(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
       case Left(unknownColumnIds) =>
         UnknownColumnIds(unknownColumnIds)
     }
+
+  private def limitRows(analysis: SoQLAnalysis[ColumnName, SoQLAnalysisType]): SoQLAnalysis[ColumnName, SoQLAnalysisType] = {
+    maxRows match {
+      case Some(max) =>
+        analysis.limit match {
+          case Some(lim) if lim < max => analysis
+          case _ => analysis.copy(limit = Some(max))
+        }
+      case None => analysis
+    }
+  }
 
   def apply(query: String, columnIdMapping: Map[ColumnName, String], schema: Map[String, SoQLType]): Result =
     go(columnIdMapping, schema)(analyzer.analyzeFullQuery(query)(_))

@@ -93,7 +93,7 @@ object Main extends App {
     val handler = new Service(
       dataCoordinatorProviderProvider,
       new SchemaFetcher(httpClient),
-      new QueryParser(analyzer),
+      new QueryParser(analyzer, config.maxRows),
       new QueryExecutor(httpClient, analysisSerializer, teeStream),
       config.connectTimeout,
       config.schemaTimeout,

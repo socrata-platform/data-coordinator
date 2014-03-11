@@ -2,7 +2,8 @@ package com.socrata.querycoordinator
 
 import scala.concurrent.duration._
 
-import com.typesafe.config.Config
+import com.typesafe.config.{ConfigException, Config}
+
 
 class QueryCoordinatorConfig(config: Config, root: String) {
   private def k(s: String) = root + "." + s
@@ -14,4 +15,5 @@ class QueryCoordinatorConfig(config: Config, root: String) {
 
   val connectTimeout = config.getMilliseconds(k("get-schema-timeout")).longValue.millis
   val schemaTimeout = config.getMilliseconds(k("get-schema-timeout")).longValue.millis
+  val maxRows = try { Some(config.getInt(k("max-rows"))) } catch { case _: ConfigException.Missing => None}
 }
