@@ -25,7 +25,10 @@ class QueryParser(analyzer: SoQLAnalyzer[SoQLAnalysisType], maxRows: Option[Int]
     dsContext(columnIdMapping, schema) match {
       case Right(ds) =>
         try {
-          SuccessfulParse(limitRows(f(ds)).mapColumnIds(columnIdMapping))
+          limitRows(f(ds)) match {
+            case Right(analysis) => SuccessfulParse(analysis.mapColumnIds(columnIdMapping))
+            case Left(result) => result
+          }
         } catch {
           case e: SoQLException =>
             AnalysisError(e)
@@ -34,14 +37,15 @@ class QueryParser(analyzer: SoQLAnalyzer[SoQLAnalysisType], maxRows: Option[Int]
         UnknownColumnIds(unknownColumnIds)
     }
 
-  private def limitRows(analysis: SoQLAnalysis[ColumnName, SoQLAnalysisType]): SoQLAnalysis[ColumnName, SoQLAnalysisType] = {
+  private def limitRows(analysis: SoQLAnalysis[ColumnName, SoQLAnalysisType]): Either[Result, SoQLAnalysis[ColumnName, SoQLAnalysisType]] = {
     maxRows match {
       case Some(max) =>
         analysis.limit match {
-          case Some(lim) if lim < max => analysis
-          case _ => analysis.copy(limit = Some(max))
+          case Some(lim) if lim <= max => Right(analysis)
+          case Some(lim) if lim > max => Left(RowLimitExceeded(max))
+          case _ => Right(analysis.copy(limit = Some(max)))
         }
-      case None => analysis
+      case None => Right(analysis)
     }
   }
 
@@ -57,4 +61,5 @@ object QueryParser {
   case class SuccessfulParse(analysis: SoQLAnalysis[String, SoQLAnalysisType]) extends Result
   case class AnalysisError(problem: SoQLException) extends Result
   case class UnknownColumnIds(columnIds: Set[String]) extends Result
+  case class RowLimitExceeded(max: Int) extends Result
 }
