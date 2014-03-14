@@ -26,11 +26,7 @@ class SqlDatasetDropper[CT](conn: Connection, writeLockTimeout: Duration, datase
           td.go()
         }
 
-        using(conn.createStatement()) { stmt =>
-          stmt.executeUpdate("UPDATE secondary_manifest SET latest_data_version = " + fakeVersion + " WHERE dataset_system_id = " + datasetId.underlying)
-          stmt.executeUpdate("UPDATE backup_log SET latest_data_version = " + fakeVersion + " WHERE dataset_system_id = " + datasetId.underlying)
-        }
-
+        updateSecondaryAndBackupInfo(datasetId, fakeVersion)
         datasetMap.delete(di)
 
         DatasetDropper.Success
@@ -40,6 +36,14 @@ class SqlDatasetDropper[CT](conn: Connection, writeLockTimeout: Duration, datase
     } catch {
       case _: DatasetIdInUseByWriterException =>
         DatasetDropper.FailureWriteLock
+    }
+  }
+
+  protected def updateSecondaryAndBackupInfo(datasetId: DatasetId, fakeVersion: Long) {
+    using(conn.createStatement()) { stmt =>
+      stmt.executeUpdate("UPDATE secondary_manifest SET latest_data_version = " + fakeVersion +
+        ", latest_secondary_lifecycle_stage = 'Discarded'::dataset_lifecycle_stage WHERE dataset_system_id = " + datasetId.underlying)
+      stmt.executeUpdate("UPDATE backup_log SET latest_data_version = " + fakeVersion + " WHERE dataset_system_id = " + datasetId.underlying)
     }
   }
 
