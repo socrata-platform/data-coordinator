@@ -27,10 +27,10 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
   // splay the sleep time +/- 5s to prevent watchers from getting in lock step
   private val nextRuntimeSplay = (rand.nextInt(10000) - 5000).toLong
 
-  def run(u: Universe[CT, CV] with SecondaryManifestProvider with PlaybackToSecondaryProvider, secondary: NamedSecondary[CT, CV]) {
+  def run(u: Universe[CT, CV] with SecondaryManifestProvider with PlaybackToSecondaryProvider, secondary: NamedSecondary[CT, CV]): Boolean = {
     import u._
 
-    for(job <- secondaryManifest.claimDatasetNeedingReplication(secondary.storeId, claimantId, claimTimeout)) {
+    val foundWorkToDo = for (job <-  secondaryManifest.claimDatasetNeedingReplication(secondary.storeId, claimantId, claimTimeout)) yield {
       log.info("Syncing {} into {}", job.datasetId, secondary.storeId)
       try {
         playbackToSecondary(secondary, job)
@@ -47,6 +47,7 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
         }
       }
     }
+    foundWorkToDo.isDefined
   }
 
   def cleanOphanedJobs(u: Universe[CT, CV] with SecondaryManifestProvider with PlaybackToSecondaryProvider, secondary: NamedSecondary[CT, CV]) {
@@ -92,8 +93,9 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
       for { u <- universe } yield {
         import u._
 
-        run(u, new NamedSecondary(secondaryConfigInfo.storeId, secondary))
-
+        while(run(u, new NamedSecondary(secondaryConfigInfo.storeId, secondary)) && finished.getCount != 0) {
+          // loop until we either have no more work or we are told to exit
+        }
 
         nextRunTime = bestNextRunTime(secondaryConfigInfo.storeId,
           nextRunTime.plus(Seconds.seconds(secondaryConfigInfo.runIntervalSeconds)),
