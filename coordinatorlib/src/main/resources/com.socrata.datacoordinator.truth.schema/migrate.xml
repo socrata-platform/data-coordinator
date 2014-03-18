@@ -5,6 +5,7 @@
         xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
 
     <include file="com.socrata.datacoordinator.truth.schema/20140206-metadata-bootstrap.xml"/>
+    <include file="com.socrata.datacoordinator.truth.schema/20140307-add-column-last-modified.xml"/>
     <include file="com.socrata.datacoordinator.truth.schema/20140310-enable-multiple-watcher-processes.xml"/>
 
 </databaseChangeLog>

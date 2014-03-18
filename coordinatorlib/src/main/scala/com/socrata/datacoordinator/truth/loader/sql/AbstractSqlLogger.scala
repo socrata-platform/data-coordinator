@@ -10,6 +10,7 @@ import com.socrata.datacoordinator.util.{Counter, TimingReport}
 import com.socrata.datacoordinator.truth.metadata.{CopyInfo, ColumnInfo}
 import com.socrata.datacoordinator.id.RowId
 import com.rojoma.simplearm.util._
+import org.joda.time.DateTime
 
 abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
                                          val auditTableName: String,
@@ -98,6 +99,12 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
     checkTxn()
     flushRowData()
     logLine(VersionColumnChanged, messages.VersionColumnSet(convert(info.unanchored)))
+  }
+
+  def lastModifiedChanged(lastModified: DateTime) {
+    checkTxn()
+    flushRowData()
+    logLine(LastModifiedChanged, messages.LastModifiedChanged(convert(lastModified)))
   }
 
   def workingCopyCreated(info: CopyInfo) {

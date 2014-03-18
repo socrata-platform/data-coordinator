@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
+    <changeSet author="Andrew Burnell" id="20140307-add-column-last-modified">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="copy_map" columnName="last_modified"/>
+            </not>
+        </preConditions>
+        <sql>
+            ALTER TABLE copy_map ADD last_modified TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+        </sql>
+        <rollback>
+            <sql>
+                ALTER TABLE copy_map DROP COLUMN last_modified;
+            </sql>
+        </rollback>
+    </changeSet>
+</databaseChangeLog>

@@ -19,6 +19,7 @@ message UnanchoredCopyInfo {
   required int64 copyNumber = 2;
   required LifecycleStage lifecycleStage = 3;
   required int64 dataVersion = 4;
+  required int64 lastModified = 5;
 }
 
 message UnanchoredColumnInfo {
@@ -56,6 +57,10 @@ message SystemIdColumnSet {
 
 message VersionColumnSet {
   required UnanchoredColumnInfo columnInfo = 1;
+}
+
+message LastModifiedChanged {
+  required int64 lastModified = 1;
 }
 
 message WorkingCopyCreated {

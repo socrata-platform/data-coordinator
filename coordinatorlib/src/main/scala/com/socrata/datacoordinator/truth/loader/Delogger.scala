@@ -9,6 +9,7 @@ import com.socrata.datacoordinator.id.RowId
 import com.socrata.datacoordinator.truth.RowLogCodec
 import scala.collection.immutable.VectorBuilder
 import java.util.zip.InflaterInputStream
+import org.joda.time.DateTime
 
 sealed abstract class CorruptLogException(val version: Long, msg: String) extends Exception(msg)
 class MissingVersion(version: Long, msg: String) extends CorruptLogException(version, msg)
@@ -57,6 +58,9 @@ object Delogger {
 
   case class WorkingCopyCreated(datasetInfo: UnanchoredDatasetInfo, copyInfo: UnanchoredCopyInfo) extends LogEvent[Nothing]
   object WorkingCopyCreated extends LogEventCompanion
+
+  case class LastModifiedChanged(lastModified: DateTime) extends LogEvent[Nothing]
+  object LastModifiedChanged extends LogEventCompanion
 
   case object WorkingCopyDropped extends LogEvent[Nothing] with LogEventCompanion
 
@@ -111,8 +115,8 @@ object Delogger {
   // Note: the Delogger test checks that this is exhaustive
   val allLogEventCompanions: Set[LogEventCompanion] =
     Set(Truncated, ColumnCreated, ColumnRemoved, RowIdentifierSet, RowIdentifierCleared,
-      SystemRowIdentifierChanged, VersionColumnChanged, WorkingCopyCreated, DataCopied, WorkingCopyPublished,
-      WorkingCopyDropped, SnapshotDropped, RowDataUpdated, CounterUpdated, EndTransaction)
+      SystemRowIdentifierChanged, VersionColumnChanged, LastModifiedChanged, WorkingCopyCreated, DataCopied,
+      WorkingCopyPublished, WorkingCopyDropped, SnapshotDropped, RowDataUpdated, CounterUpdated, EndTransaction)
 
   // Note: the Delogger test checks that this is exhaustive.  It is not intended
   // to be used outside of this object and that test.
@@ -126,6 +130,7 @@ object Delogger {
         case RowIdentifierCleared => "RowIdentifierCleared"
         case SystemRowIdentifierChanged => "SystemRowIdentifierChanged"
         case VersionColumnChanged => "VersionColumnChanged"
+        case LastModifiedChanged => "LastModifiedChanged"
         case WorkingCopyCreated => "WorkingCopyCreated"
         case DataCopied => "DataCopied"
         case WorkingCopyPublished => "WorkingCopyPublished"

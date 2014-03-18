@@ -152,6 +152,8 @@ class SqlDelogger[CV](connection: Connection,
           decodeSystemRowIdentifierChanged(aux)
         case SqlLogger.VersionColumnChanged =>
           decodeVersionColumnChanged(aux)
+        case SqlLogger.LastModifiedChanged =>
+          decodeLastModifiedChanged(aux)
         case SqlLogger.WorkingCopyCreated =>
           decodeWorkingCopyCreated(aux)
         case SqlLogger.DataCopied =>
@@ -193,6 +195,11 @@ class SqlDelogger[CV](connection: Connection,
     def decodeRowIdentifierSet(aux: Array[Byte]) = {
       val msg = messages.RowIdentifierSet.defaultInstance.mergeFrom(aux)
       Delogger.RowIdentifierSet(convert(msg.columnInfo))
+    }
+
+    def decodeLastModifiedChanged(aux: Array[Byte]) = {
+      val msg = messages.LastModifiedChanged.defaultInstance.mergeFrom(aux)
+      Delogger.LastModifiedChanged(convert(msg.lastModified))
     }
 
     def decodeRowIdentifierCleared(aux: Array[Byte]) = {

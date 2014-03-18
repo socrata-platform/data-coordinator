@@ -56,8 +56,11 @@ class PostgresDatabaseMutator[CT, CV](universe: Managed[Universe[CT, CV] with Lo
       universe.datasetContentsCopier(logger)
 
     def finishDatasetTransaction(username: String, copyInfo: CopyInfo) {
-      logger(copyInfo.datasetInfo, username).endTransaction() foreach { ver =>
-        datasetMap.updateDataVersion(copyInfo, ver)
+      val dsLogger = logger(copyInfo.datasetInfo, username)
+      val updatedCopyInfo = datasetMap.updateLastModified(copyInfo)
+      dsLogger.lastModifiedChanged(updatedCopyInfo.lastModified)
+      dsLogger.endTransaction() foreach { ver =>
+        datasetMap.updateDataVersion(updatedCopyInfo, ver)
       }
     }
 

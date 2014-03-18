@@ -93,7 +93,7 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
     DatasetInfo(datasetIdFormatter(dsInfo.systemId), dsInfo.localeName, dsInfo.obfuscationKey.clone())
 
   def makeSecondaryCopyInfo(copyInfo: metadata.CopyInfoLike) =
-    CopyInfo(copyInfo.systemId, copyInfo.copyNumber, copyInfo.lifecycleStage.correspondingSecondaryStage, copyInfo.dataVersion)
+    CopyInfo(copyInfo.systemId, copyInfo.copyNumber, copyInfo.lifecycleStage.correspondingSecondaryStage, copyInfo.dataVersion, copyInfo.lastModified)
 
   def makeSecondaryColumnInfo(colInfo: metadata.ColumnInfoLike) = {
     typeForName(TypeName(colInfo.typeName)) match {
@@ -166,6 +166,8 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
         Some(SystemRowIdentifierChanged(makeSecondaryColumnInfo(info)))
       case Delogger.VersionColumnChanged(info) =>
         Some(VersionColumnChanged(makeSecondaryColumnInfo(info)))
+      case Delogger.LastModifiedChanged(lastModified) =>
+        Some(LastModifiedChanged(lastModified))
       case Delogger.WorkingCopyCreated(datasetInfo, copyInfo) =>
         Some(WorkingCopyCreated(makeSecondaryCopyInfo(copyInfo)))
       case Delogger.SnapshotDropped(info) =>

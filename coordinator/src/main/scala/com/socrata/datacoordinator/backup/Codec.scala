@@ -6,10 +6,11 @@ import java.nio.charset.StandardCharsets.UTF_8
 import com.rojoma.json.util.JsonUtil
 
 import com.socrata.datacoordinator.truth.loader.Delogger
-import com.socrata.datacoordinator.truth.loader.Delogger.{LogEventCompanion, LogEvent}
+import com.socrata.datacoordinator.truth.loader.Delogger.{LastModifiedChanged, LogEventCompanion, LogEvent}
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.id.RowId
 import com.socrata.datacoordinator.truth.RowLogCodec
+import org.joda.time.DateTime
 
 trait Codec[T] {
   def encode(target: DataOutputStream, data: T)
@@ -65,6 +66,7 @@ object LogDataCodec {
     Delogger.WorkingCopyDropped -> WorkingCopyDroppedCodec,
     Delogger.SnapshotDropped -> SnapshotDroppedCodec,
     Delogger.ColumnCreated -> ColumnCreatedCodec,
+    Delogger.LastModifiedChanged -> LastModifiedCodec,
     Delogger.RowIdentifierSet -> RowIdentifierSetCodec,
     Delogger.RowIdentifierCleared -> RowIdentifierClearedCodec,
     Delogger.ColumnRemoved -> ColumnRemovedCodec,
@@ -88,6 +90,17 @@ object LogDataCodec {
       val bytes = new Array[Byte](count)
       stream.readFully(bytes)
       Delogger.RowDataUpdated(bytes)(rowLogCodecFactory())
+    }
+  }
+
+  private object LastModifiedCodec extends EventCodec {
+    def encode(stream: DataOutputStream, event: Delogger.LogEvent[Any]): Unit = {
+      val Delogger.LastModifiedChanged(time) = event
+      stream.writeLong(time.getMillis)
+    }
+    def decode[CV](stream: DataInputStream, rowCodecFactory: () => RowLogCodec[CV]): LogEvent[CV] = {
+      val time = new DateTime(stream.readLong())
+      Delogger.LastModifiedChanged(time)
     }
   }
 

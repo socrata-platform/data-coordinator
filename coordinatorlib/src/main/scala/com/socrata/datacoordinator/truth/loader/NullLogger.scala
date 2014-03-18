@@ -3,6 +3,7 @@ package truth.loader
 
 import com.socrata.datacoordinator.truth.metadata.{CopyInfo, ColumnInfo}
 import com.socrata.datacoordinator.id.RowId
+import org.joda.time.DateTime
 
 class NullLogger[CT, CV] extends Logger[CT, CV] {
   def columnCreated(info: ColumnInfo[CT]) {}
@@ -18,6 +19,8 @@ class NullLogger[CT, CV] extends Logger[CT, CV] {
   def workingCopyCreated(info: CopyInfo) {}
 
   def dataCopied() {}
+
+  def lastModifiedChanged(lastModified: DateTime) {}
 
   def snapshotDropped(info: CopyInfo) {}
 

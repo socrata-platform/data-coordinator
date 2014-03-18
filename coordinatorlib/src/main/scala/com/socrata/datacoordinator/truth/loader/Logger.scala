@@ -2,6 +2,7 @@ package com.socrata.datacoordinator
 package truth.loader
 
 import com.socrata.datacoordinator.truth.metadata.{CopyInfo, ColumnInfo}
+import org.joda.time.DateTime
 
 trait Logger[CT, CV] extends DataLogger[CV] {
   def truncated()
@@ -10,6 +11,7 @@ trait Logger[CT, CV] extends DataLogger[CV] {
   def rowIdentifierSet(newIdentifier: ColumnInfo[CT])
   def rowIdentifierCleared(oldIdentifier: ColumnInfo[CT])
   def systemIdColumnSet(info: ColumnInfo[CT])
+  def lastModifiedChanged(time: DateTime)
   def versionColumnSet(info: ColumnInfo[CT])
   def workingCopyCreated(info: CopyInfo)
   def dataCopied()

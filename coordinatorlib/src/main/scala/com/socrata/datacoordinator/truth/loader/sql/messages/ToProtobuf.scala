@@ -2,6 +2,7 @@ package com.socrata.datacoordinator.truth.loader.sql.messages
 
 import com.socrata.datacoordinator.truth.metadata
 import com.google.protobuf.ByteString
+import org.joda.time.DateTime
 
 object ToProtobuf {
   def convert(ci: metadata.UnanchoredColumnInfo): UnanchoredColumnInfo =
@@ -20,8 +21,12 @@ object ToProtobuf {
       systemId = ci.systemId.underlying,
       copyNumber = ci.copyNumber,
       lifecycleStage = convert(ci.lifecycleStage),
-      dataVersion = ci.dataVersion
+      dataVersion = ci.dataVersion,
+      lastModified = convert(ci.lastModified)
     )
+
+  def convert(dateTime: DateTime): Long =
+    dateTime.getMillis
 
   def convert(ls: metadata.LifecycleStage): LifecycleStage.EnumVal = ls match {
     case metadata.LifecycleStage.Unpublished => LifecycleStage.Unpublished

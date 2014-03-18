@@ -3,6 +3,7 @@ package `-impl`
 
 import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
+import org.joda.time.DateTime
 
 trait BaseDatasetMapReader[CT] {
   /** Gets the newest copy, no matter what the lifecycle stage is. */
@@ -40,6 +41,10 @@ trait BaseDatasetMapReader[CT] {
   def copyNumber(datasetInfo: DatasetInfo, copyNumber: Long): Option[CopyInfo]
 
   def allDatasetIds(): Seq[DatasetId]
+
+  /** Gets the current time.
+   */
+  def currentTime(): DateTime
 }
 
 trait BaseDatasetMapWriter[CT] extends BaseDatasetMapReader[CT] {
@@ -96,4 +101,8 @@ trait BaseDatasetMapWriter[CT] extends BaseDatasetMapReader[CT] {
   def updateNextCounterValue(copyInfo: CopyInfo, newNextCounterValue: Long): CopyInfo
 
   def updateDataVersion(copyInfo: CopyInfo, newDataVersion: Long): CopyInfo
+
+  /** Updates the last-modified information for this copy.
+    */
+  def updateLastModified(copyInfo: CopyInfo, newLastModified: DateTime = currentTime()): CopyInfo
 }

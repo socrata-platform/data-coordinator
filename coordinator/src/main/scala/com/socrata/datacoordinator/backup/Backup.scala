@@ -29,6 +29,7 @@ import scala.concurrent.duration.Duration
 import com.socrata.soql.environment.ColumnName
 import scala.collection.mutable.ListBuffer
 import com.socrata.datacoordinator.Row
+import org.joda.time.DateTime
 
 class Backup(conn: Connection, /*executor: ExecutorService, */ isSystemColumnId: UserColumnId => Boolean, timingReport: TimingReport, paranoid: Boolean, copyIn: (Connection, String, OutputStream => Unit) => Long) {
   val typeContext = SoQLTypeContext
@@ -153,6 +154,12 @@ class Backup(conn: Connection, /*executor: ExecutorService, */ isSystemColumnId:
     currentVersionInfo
   }
 
+  def lastModifiedChanged(currentVersionInfo: CopyInfo, lastModified: DateTime): currentVersionInfo.type = {
+    Resync.unless(currentVersionInfo, currentVersionInfo.lastModified.isBefore(lastModified), "Told to send last modified back in time")
+    datasetMap.updateLastModified(currentVersionInfo, lastModified)
+    currentVersionInfo
+  }
+
   def makeWorkingCopy(currentVersionInfo: CopyInfo, newVersionInfo: UnanchoredCopyInfo): CopyInfo = {
     val CopyPair(_, newVi) = datasetMap.createUnpublishedCopyWithId(currentVersionInfo.datasetInfo, newVersionInfo.systemId)
     Resync.unless(currentVersionInfo, newVi.unanchored == newVersionInfo, "New version info differs")
@@ -257,6 +264,8 @@ class Backup(conn: Connection, /*executor: ExecutorService, */ isSystemColumnId:
         makeSystemPrimaryKey(versionInfo, info)
       case VersionColumnChanged(info) =>
         versionColumnChanged(versionInfo, info)
+      case LastModifiedChanged(time) =>
+        lastModifiedChanged(versionInfo, time)
       case RowIdentifierCleared(info) =>
         dropPrimaryKey(versionInfo, info)
       case r@RowDataUpdated(_) =>
