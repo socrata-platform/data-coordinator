@@ -1,0 +1,4 @@
+To run migrations in this project:
+
+java -Dconfig.file=/etc/soda2.conf -jar coordinator/target/scala-2.10/coordinator-assembly-0.0.1-SNAPSHOT.jar com.socrata.datacoordinator.primary.MigrateSchema migrate
+
