@@ -22,6 +22,9 @@ com.socrata.coordinator.service = ${com.socrata.coordinator.common} {
   service-advertisement.address = "127.0.0.1"
   curator.ensemble = ["localhost:2181"]
   network.port = 6001
+
+  # Target pre-configured continuous tablespace between ts00000 .. ts00999
+  tablespace = """(format "ts%05d" (rand-int 1000))"""
 }
 
 com.socrata.coordinator.secondary-watcher = ${com.socrata.coordinator.common} {
