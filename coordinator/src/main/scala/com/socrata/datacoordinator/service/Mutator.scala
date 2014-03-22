@@ -2,7 +2,7 @@ package com.socrata.datacoordinator
 package service
 
 import com.rojoma.json.ast._
-import com.socrata.datacoordinator.truth.universe.{SchemaFinderProvider, CacheProvider, DatasetMutatorProvider, Universe}
+import com.socrata.datacoordinator.truth.universe._
 import com.socrata.datacoordinator.truth.{DatabaseInReadOnlyMode, TypeContext, DatasetIdInUseByWriterException, DatasetMutator}
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth.json.JsonColumnRep
@@ -29,6 +29,18 @@ import com.socrata.datacoordinator.truth.loader.NoSuchRowToUpdate
 import com.rojoma.json.io.EndOfObjectEvent
 import com.socrata.datacoordinator.truth.loader.VersionMismatch
 import scala.collection.mutable.ListBuffer
+import com.socrata.datacoordinator.truth.loader.NoSuchRowToDelete
+import scala.Some
+import com.rojoma.json.io.StartOfObjectEvent
+import com.rojoma.json.ast.JString
+import com.socrata.datacoordinator.truth.metadata.Schema
+import com.socrata.datacoordinator.truth.loader.IdAndVersion
+import com.rojoma.json.io.FieldEvent
+import com.socrata.datacoordinator.truth.metadata.DatasetInfo
+import com.socrata.datacoordinator.truth.loader.NoSuchRowToUpdate
+import com.rojoma.json.io.EndOfObjectEvent
+import com.socrata.datacoordinator.truth.loader.VersionMismatch
+import org.joda.time.DateTime
 
 sealed trait MutationScriptCommandResult
 object MutationScriptCommandResult {
@@ -291,16 +303,22 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
       Iterator.single(EndOfObjectEvent()))
   }
 
-  def createScript(u: Universe[CT, CV] with DatasetMutatorProvider with SchemaFinderProvider, commandStream: Iterator[JValue]): (DatasetId, Seq[MutationScriptCommandResult]) = {
+  def createScript(u: Universe[CT, CV] with DatasetMutatorProvider with SchemaFinderProvider with DatasetMapReaderProvider, commandStream: Iterator[JValue]): (DatasetId, Long, DateTime, Seq[MutationScriptCommandResult]) = {
     if(commandStream.isEmpty) throw EmptyCommandStream()(0L)
     val commands = createCreateStream(0L, commandStream.next(), commandStream)
-    runScript(u, commands)
+    val (datasetId, mutationResults) = runScript(u, commands)
+
+    // Have to re-lookup copy info to get a valid lastModified from the DB...
+    val copyInfo = u.datasetMapReader.latest(u.datasetMapReader.datasetInfo(datasetId).get)
+    (datasetId, copyInfo.dataVersion, copyInfo.lastModified, mutationResults)
   }
 
-  def updateScript(u: Universe[CT, CV] with DatasetMutatorProvider with SchemaFinderProvider, datasetId: DatasetId, commandStream: Iterator[JValue]): Seq[MutationScriptCommandResult] = {
+  def updateScript(u: Universe[CT, CV] with DatasetMutatorProvider with SchemaFinderProvider with DatasetMapReaderProvider, datasetId: DatasetId, commandStream: Iterator[JValue]): (Long, DateTime, Seq[MutationScriptCommandResult]) = {
     if(commandStream.isEmpty) throw EmptyCommandStream()(0L)
     val commands = createCommandStream(0L, commandStream.next(), datasetId, commandStream)
-    runScript(u, commands)._2
+    val (_, mutationResults) = runScript(u, commands)
+    val copyInfo = u.datasetMapReader.latest(u.datasetMapReader.datasetInfo(datasetId).get)
+    (copyInfo.dataVersion, copyInfo.lastModified, mutationResults)
   }
 
   val jobCounter = new Counter(0)

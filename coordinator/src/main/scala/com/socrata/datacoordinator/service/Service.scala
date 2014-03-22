@@ -34,10 +34,12 @@ import com.socrata.datacoordinator.truth.metadata.{SchemaField, Schema}
 import java.security.MessageDigest
 import org.apache.commons.codec.binary.Base64
 import com.socrata.http.server.util.handlers.{ThreadRenamingHandler, LoggingHandler}
+import org.joda.time.DateTime
+import org.joda.time.format.ISODateTimeFormat
 
 class Service(serviceConfig: ServiceConfig,
-              processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) => Seq[MutationScriptCommandResult],
-              processCreation: (Iterator[JValue], IndexedTempFile) => (DatasetId, Seq[MutationScriptCommandResult]),
+              processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) => (Long, DateTime, Seq[MutationScriptCommandResult]),
+              processCreation: (Iterator[JValue], IndexedTempFile) => (DatasetId, Long, DateTime, Seq[MutationScriptCommandResult]),
               getSchema: DatasetId => Option[Schema],
               datasetContents: (DatasetId, Option[String], CopySelector, Option[UserColumnIdSet], Option[Long], Option[Long], Precondition, Boolean) => (Either[Schema, (EntityTag, Seq[SchemaField], Option[UserColumnId], String, Long, Iterator[Array[JValue]])] => Unit) => Exporter.Result[Unit],
               secondaries: Set[String],
@@ -353,6 +355,7 @@ class Service(serviceConfig: ServiceConfig,
     override def delete = notFound
     override def get = if(datasetIdRaw == "") doListDatasets else notFound
 
+    val dateTimeFormat = ISODateTimeFormat.dateTime
     def notFound = (_: Any) => notFoundError(datasetIdRaw)
 
     def doCreateDataset(req: HttpServletRequest)(resp: HttpServletResponse) {
@@ -365,25 +368,26 @@ class Service(serviceConfig: ServiceConfig,
               } catch { case _: JsonBadParse =>
                 Left(err(BadRequest, "req.body.not-json-array"))
               }
-
               iteratorOrError match {
                 case Right(iterator) =>
-                  val (dataset, result) = processCreation(iterator.map { ev => boundResetter(); ev }, tmp)
-
-                  OK ~> ContentType("application/json; charset=utf-8") ~> Stream { w =>
-                    val bw = new BufferedOutputStream(w)
-                    bw.write('[')
-                    bw.write(JString(formatDatasetId(dataset)).toString.getBytes(UTF_8))
-                    for(r <- result) {
-                      bw.write(',')
-                      writeResult(bw, r, tmp)
+                  val (dataset, dataVersion, lastModified, result) = processCreation(iterator.map { ev => boundResetter(); ev }, tmp)
+                  OK ~>
+                    Header("X-SODA2-Truth-Last-Modified", dateTimeFormat.print(lastModified)) ~>
+                    Header("X-SODA2-Truth-Version", dataVersion.toString) ~>
+                    ContentType("application/json; charset=utf-8") ~>
+                    Stream { w =>
+                      val bw = new BufferedOutputStream(w)
+                      bw.write('[')
+                      bw.write(JString(formatDatasetId(dataset)).toString.getBytes(UTF_8))
+                      for(r <- result) {
+                        bw.write(',')
+                        writeResult(bw, r, tmp)
+                      }
+                      bw.write(']')
+                      bw.flush()
+                      log.debug("Non-linear index seeks: {}", tmp.stats.nonLinearIndexSeeks)
+                      log.debug("Non-linear data seeks: {}", tmp.stats.nonLinearDataSeeks)
                     }
-                    bw.write(']')
-                    bw.flush()
-
-                    log.debug("Non-linear index seeks: {}", tmp.stats.nonLinearIndexSeeks)
-                    log.debug("Non-linear data seeks: {}", tmp.stats.nonLinearDataSeeks)
-                  }
                 case Left(error) =>
                   error
               }
@@ -431,6 +435,8 @@ class Service(serviceConfig: ServiceConfig,
     override def delete = doDeleteDataset
     override def get = doExportFile
 
+    val dateTimeFormat = ISODateTimeFormat.dateTime
+
     def doMutation(req: HttpServletRequest)(resp: HttpServletResponse) {
       using(tempFileProvider()) { tmp =>
         val responseBuilder = withMutationScriptResults {
@@ -441,28 +447,30 @@ class Service(serviceConfig: ServiceConfig,
               } catch { case _: JsonBadParse =>
                 Left(err(BadRequest, "req.body.not-json-array"))
               }
-
               iteratorOrError match {
                 case Right(iterator) =>
-                  val result = processMutation(datasetId, iterator.map { ev => boundResetter(); ev }, tmp)
+                  val (version, lastModified, result) = processMutation(datasetId, iterator.map { ev => boundResetter(); ev }, tmp)
+                  OK ~>
+                    ContentType("application/json; charset=utf-8") ~>
+                    Header("X-SODA2-Truth-Last-Modified", dateTimeFormat.print(lastModified)) ~>
+                    Header("X-SODA2-Truth-Version", version.toString) ~>
+                    Stream { w =>
+                      val bw = new BufferedOutputStream(w)
+                      bw.write('[')
+                      result.foreach(new Function1[MutationScriptCommandResult, Unit] {
+                        var didOne = false
+                        def apply(r: MutationScriptCommandResult) {
+                          if(didOne) bw.write(',')
+                          else didOne = true
+                          writeResult(bw, r, tmp)
+                        }
+                      })
+                      bw.write(']')
+                      bw.flush()
 
-                  OK ~> ContentType("application/json; charset=utf-8") ~> Stream { w =>
-                    val bw = new BufferedOutputStream(w)
-                    bw.write('[')
-                    result.foreach(new Function1[MutationScriptCommandResult, Unit] {
-                      var didOne = false
-                      def apply(r: MutationScriptCommandResult) {
-                        if(didOne) bw.write(',')
-                        else didOne = true
-                        writeResult(bw, r, tmp)
-                      }
-                    })
-                    bw.write(']')
-                    bw.flush()
-
-                    log.debug("Non-linear index seeks: {}", tmp.stats.nonLinearIndexSeeks)
-                    log.debug("Non-linear data seeks: {}", tmp.stats.nonLinearDataSeeks)
-                  }
+                      log.debug("Non-linear index seeks: {}", tmp.stats.nonLinearIndexSeeks)
+                      log.debug("Non-linear data seeks: {}", tmp.stats.nonLinearDataSeeks)
+                    }
                 case Left(error) =>
                   error
               }
