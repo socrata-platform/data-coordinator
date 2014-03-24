@@ -4,24 +4,24 @@ import com.typesafe.config.Config
 import com.socrata.datacoordinator.common.DataSourceConfig
 import scala.concurrent.duration.{FiniteDuration, Duration}
 import java.util.concurrent.TimeUnit
+import com.socrata.thirdparty.typesafeconfig.ConfigClass
 
-class ServiceConfig(val config: Config, root: String) {
-  private def k(field: String) = root + "." + field
-  val secondary = new SecondaryConfig(config.getConfig(k("secondary")))
-  val network = new NetworkConfig(config, k("network"))
-  val curator = new CuratorConfig(config, k("curator"))
-  val advertisement = new AdvertisementConfig(config, k("service-advertisement"))
-  val dataSource = new DataSourceConfig(config, k("database"))
-  val logProperties = config.getConfig(k("log4j"))
-  val commandReadLimit = config.getBytes(k("command-read-limit")).longValue
-  val allowDdlOnPublishedCopies = config.getBoolean(k("allow-ddl-on-published-copies"))
-  val instance = config.getString(k("instance"))
-  val tablespace = config.getString(k("tablespace"))
-  val writeLockTimeout = new FiniteDuration(config.getMilliseconds(k("write-lock-timeout")), TimeUnit.MILLISECONDS)
-  val reports = new ReportsConfig(config, k("reports"))
-  val logTableCleanupSleepTime = new FiniteDuration(config.getMilliseconds(k("log-table-cleanup-sleep-time")), TimeUnit.MILLISECONDS)
-  val logTableCleanupDeleteOlderThan = new FiniteDuration(config.getMilliseconds(k("log-table-cleanup-delete-older-than")), TimeUnit.MILLISECONDS)
-  val logTableCleanupDeleteEvery = new FiniteDuration(config.getMilliseconds(k("log-table-cleanup-delete-every")), TimeUnit.MILLISECONDS)
+class ServiceConfig(config: Config, root: String) extends ConfigClass(config, root) {
+  val secondary = getConfig("secondary", new SecondaryConfig(_, _))
+  val network = getConfig("network", new NetworkConfig(_, _))
+  val curator = getConfig("curator", new CuratorConfig(_, _))
+  val advertisement = getConfig("service-advertisement", new AdvertisementConfig(_, _))
+  val dataSource = getConfig("database", new DataSourceConfig(_, _))
+  val logProperties = getRawConfig("log4j")
+  val commandReadLimit = config.getBytes(path("command-read-limit")).longValue
+  val allowDdlOnPublishedCopies = config.getBoolean(path("allow-ddl-on-published-copies"))
+  val instance = getString("instance")
+  val tablespace = getString("tablespace")
+  val writeLockTimeout = getDuration("write-lock-timeout")
+  val reports = getConfig("reports", new ReportsConfig(_, _))
+  val logTableCleanupSleepTime = getDuration("log-table-cleanup-sleep-time")
+  val logTableCleanupDeleteOlderThan = getDuration("log-table-cleanup-delete-older-than")
+  val logTableCleanupDeleteEvery = getDuration("log-table-cleanup-delete-every")
 
   require(instance.matches("[a-zA-Z0-9._]+"), "Instance names must consist of only ASCII letters, numbers, periods, and underscores")
 }

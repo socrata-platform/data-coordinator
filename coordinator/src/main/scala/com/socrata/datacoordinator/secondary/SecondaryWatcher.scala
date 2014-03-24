@@ -15,7 +15,7 @@ import org.joda.time.{DateTime, Seconds}
 import com.socrata.datacoordinator.util.{NullCache, StackedTimingReport, LoggedTimingReport}
 import com.socrata.datacoordinator.truth.universe._
 import org.apache.log4j.PropertyConfigurator
-import com.socrata.thirdparty.typesafeconfig.Propertizer
+import com.socrata.thirdparty.typesafeconfig.{ConfigClass, Propertizer}
 import scala.concurrent.duration.Duration
 import com.socrata.datacoordinator.service.{SecondaryConfig => ServiceSecondaryConfig}
 import scala.util.Random
@@ -115,15 +115,14 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
   }
 }
 
-class SecondaryWatcherConfig(config: Config, root: String) {
-  private def k(s: String) = root + "." + s
-  val log4j = config.getConfig(k("log4j"))
-  val database = new DataSourceConfig(config, k("database"))
-  val secondaryConfig = new ServiceSecondaryConfig(config.getConfig(k("secondary")))
-  val instance = config.getString(k("instance"))
-  val watcherId = UUID.fromString(config.getString(k("watcher-id")))
-  val claimTimeout = config.getMilliseconds(k("claim-timeout")).longValue.millis
-  val tmpdir = new File(config.getString(k("tmpdir"))).getAbsoluteFile
+class SecondaryWatcherConfig(config: Config, root: String) extends ConfigClass(config, root) {
+  val log4j = getRawConfig("log4j")
+  val database = getConfig("database", new DataSourceConfig(_, _))
+  val secondaryConfig = getConfig("secondary", new ServiceSecondaryConfig(_, _))
+  val instance = getString("instance")
+  val watcherId = UUID.fromString(getString("watcher-id"))
+  val claimTimeout = getDuration("claim-timeout")
+  val tmpdir = new File(getString("tmpdir")).getAbsoluteFile
 
 }
 

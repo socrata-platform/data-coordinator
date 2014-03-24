@@ -69,7 +69,7 @@ class SecondaryLoader(parentClassLoader: ClassLoader, secondaryConfig: com.socra
           throw Nope("Unable to find secondary instance type " + instanceConfig.secondaryType)
         }
 
-        val secondary = loadSecondary(jar, instanceConfig.config)
+        val secondary = loadSecondary(jar, instanceConfig.secondaryConfig)
         acc + (instanceName -> secondary)
       } catch {
         case Nope(msg, null) => log.warn(msg); acc

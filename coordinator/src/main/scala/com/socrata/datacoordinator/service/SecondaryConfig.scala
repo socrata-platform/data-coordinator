@@ -1,24 +1,28 @@
 package com.socrata.datacoordinator.service
 
 import java.io.File
+import scala.collection.JavaConverters._
 
 import com.typesafe.config.Config
-import net.ceedubs.ficus.FicusConfig._
+import com.socrata.thirdparty.typesafeconfig.ConfigClass
 
+class SecondaryGroupConfig(config: Config, root: String) extends ConfigClass(config, root) {
+  val numReplicas = getInt("num-replicas")
+  val instances = getStringList("instances").toSet
+}
 
-case class SecondaryGroupConfig(
-     numReplicas: Int,
-     instances: Set[String]
- )
+class SecondaryInstanceConfig(config: Config, root: String) extends ConfigClass(config, root) {
+  val secondaryType = getString("type")
+  val secondaryConfig = getRawConfig("config")
+}
 
-case class SecondaryInstanceConfig(
-    secondaryType: String,
-    config: Config
-)
-
-class SecondaryConfig(config: Config) {
-  val path = new File(config.as[String]("path"))
-  val defaultGroups = config.as[Set[String]]("defaultGroups")
-  val groups = config.as[Map[String, SecondaryGroupConfig]]("groups")
-  val instances = config.as[Map[String, SecondaryInstanceConfig]]("instances")
+class SecondaryConfig(config: Config, root: String) extends ConfigClass(config, root) {
+  val path = new File(getString("path"))
+  val defaultGroups = getStringList("default-groups").toSet
+  val groups = config.getObject(path("groups")).keySet.asScala.toSeq.map { k =>
+    k -> getConfig("groups." + k, new SecondaryGroupConfig(_, _))
+  }.toMap
+  val instances = config.getObject(path("instances")).keySet.asScala.toSeq.map { k =>
+    k -> getConfig("instances." + k, new SecondaryInstanceConfig(_, _))
+  }.toMap
 }

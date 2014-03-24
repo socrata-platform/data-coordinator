@@ -21,8 +21,7 @@ object Coordinator {
         "org.clojure" % "clojure" % "1.5.1",
         "com.socrata" %% "socrata-http-curator-broker" % "2.0.0-SNAPSHOT",
         "org.slf4j" % "slf4j-log4j12" % BuildSettings.slf4jVersion,
-        "org.scalacheck" %% "scalacheck" % "1.10.0" % "test",
-	"net.ceedubs" %% "ficus" % "1.0.0"
+        "org.scalacheck" %% "scalacheck" % "1.10.0" % "test"
       )
     },
     mainClass in assembly := Some("com.socrata.datacoordinator.Launch"),
