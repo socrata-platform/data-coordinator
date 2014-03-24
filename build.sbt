@@ -18,7 +18,8 @@ libraryDependencies ++= Seq(
   "com.google.protobuf" % "protobuf-java" % "2.4.1",
   "net.sf.trove4j" % "trove4j" % "3.0.3",
   "org.scalatest" %% "scalatest" % "1.9.1" % "test",
-  "org.scalacheck" %% "scalacheck" % "1.10.1" % "test"
+  "org.scalacheck" %% "scalacheck" % "1.10.1" % "test",
+  "com.typesafe" %% "scalalogging-slf4j" % "1.1.0"
 )
 
 scalacOptions ++= Seq("-deprecation", "-feature")

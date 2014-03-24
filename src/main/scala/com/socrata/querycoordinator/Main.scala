@@ -88,7 +88,7 @@ object Main extends App {
 
     def teeStream(in: InputStream) = new TeeToTempInputStream(in)
 
-    val secondaryInstanceSelector = new SecondaryInstanceSelector
+    val secondaryInstanceSelector = new SecondaryInstanceSelector(config)
 
     val handler = new Service(
       dataCoordinatorProviderProvider,

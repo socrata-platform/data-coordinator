@@ -3,6 +3,7 @@ package com.socrata.querycoordinator
 import scala.concurrent.duration._
 
 import com.typesafe.config.{ConfigException, Config}
+import scala.collection.JavaConversions.asScalaIterator
 
 
 class QueryCoordinatorConfig(config: Config, root: String) {
@@ -16,4 +17,8 @@ class QueryCoordinatorConfig(config: Config, root: String) {
   val connectTimeout = config.getMilliseconds(k("get-schema-timeout")).longValue.millis
   val schemaTimeout = config.getMilliseconds(k("get-schema-timeout")).longValue.millis
   val maxRows = try { Some(config.getInt(k("max-rows"))) } catch { case _: ConfigException.Missing => None}
+
+  val allSecondaryInstanceNames = asScalaIterator(config.getStringList(k("all-secondary-instance-names")).iterator()).toSeq
+  val secondaryDiscoveryExpirationMillis = config.getMilliseconds(k("secondary-discovery-expiration"))
+  val datasetMaxNopeCount = config.getInt(k("dataset-max-nope-count"))
 }

@@ -173,9 +173,6 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
     case None =>
       None
   }
-  def secondary(dataset: String, datastore:Option[String]) = Option(secondaryProvider.provider(secondaryInstance.getInstance(dataset, datastore)).getInstance).getOrElse {
-    finishRequest(noSecondaryAvailable(dataset))
-  }
 
   trait QCResource extends SimpleResource
 
@@ -222,9 +219,9 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
         finishRequest(noDatasetResponse)
       }
 
-      val datastore = Option(req.getParameter("store"))
+      val forcedSecondaryName = Option(req.getParameter("store"))
 
-      datastore.map(ds => log.info("Forcing use of the secondary store instance: " + ds))
+      forcedSecondaryName.map(ds => log.info("Forcing use of the secondary store instance: " + ds))
 
       val query = Option(req.getParameter("q")).map(Left(_)).getOrElse {
         Right(FragmentedQuery(
@@ -257,6 +254,37 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
       }
       val precondition = req.precondition
 
+      def isInSecondary(name: String): Option[Boolean] = {
+        // TODO we should either create a separate less expensive method for checking if a dataset
+        // is in a secondary, or we should integrate this into schema caching if and when we
+        // build that.
+        for {
+          instance <- Option(secondaryProvider.provider(name).getInstance())
+          base <- Some(reqBuilder(instance))
+          result <- schemaFetcher(base.receiveTimeoutMS(getSchemaTimeout.toMillis.toInt), dataset) match {
+            case SchemaFetcher.Successful(newSchema) => Some(true)
+            case SchemaFetcher.NoSuchDatasetInSecondary => Some(false)
+            case other =>
+              log.warn("Unexpected response when fetching schema from secondary: {}", other)
+              None
+          }
+        } yield result
+      }
+
+      def secondary(dataset: String, instanceName: Option[String]) = {
+        val instance = for {
+          name <- instanceName
+          instance <- Option(secondaryProvider.provider(name).getInstance())
+        } yield instance
+
+        instance.getOrElse {
+          instanceName.foreach { n => secondaryInstance.flagError(dataset, n) }
+          finishRequest(noSecondaryAvailable(dataset))
+        }
+      }
+
+      val chosenSecondaryName = forcedSecondaryName.orElse { secondaryInstance.getInstanceName(dataset, isInSecondary) }
+
       // A little spaghetti never hurt anybody!
       // Ok, so the general flow of this code is:
       //   1. Look up the dataset's schema (in cache or, if
@@ -268,7 +296,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
       // That last step is the most complex, because it is a
       // potentially long-running thing, and can cause a retry
       // if the upstream says "the schema just changed".
-      val base = reqBuilder(secondary(dataset, datastore))
+      val base = reqBuilder(secondary(dataset, chosenSecondaryName))
       log.info("Base URI: " + base.url)
       def getAndCacheSchema(dataset: String) =
         schemaFetcher(base.receiveTimeoutMS(getSchemaTimeout.toMillis.toInt), dataset) match {
@@ -276,9 +304,11 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
             schemaCache(dataset, newSchema)
             newSchema
           case SchemaFetcher.NoSuchDatasetInSecondary =>
+            chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
             finishRequest(notFoundResponse(dataset))
           case other =>
             log.error("Unexpected response when fetching schema from secondary: {}", other)
+            chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
             finishRequest(internalServerError)
         }
 
@@ -319,6 +349,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
       def executeQuery(schema: Schema, analyzedQuery: SoQLAnalysis[String, SoQLAnalysisType]) {
         val res = queryExecutor(base, dataset, analyzedQuery, schema, precondition, rowCount).map {
           case QueryExecutor.NotFound =>
+            chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
             finishRequest(notFoundResponse(dataset))
           case QueryExecutor.SchemaHashMismatch(newSchema) =>
             storeInCache(Some(newSchema), dataset)
