@@ -5,7 +5,7 @@ object SecondaryLib {
   lazy val settings: Seq[Setting[_]] = BuildSettings.projectSettings(protobuf=true) ++ Seq(
     libraryDependencies ++= Seq(
       "net.sf.trove4j" % "trove4j" % "3.0.3",
-      "com.rojoma" %% "rojoma-json" % "[2.4.0,3.0.0)",
+      "com.rojoma" %% "rojoma-json" % "2.4.0",
       "com.rojoma" %% "simple-arm" % "[1.1.10,2.0.0)",
       "joda-time" % "joda-time" % "2.1",
       "org.joda" % "joda-convert" % "1.2"
