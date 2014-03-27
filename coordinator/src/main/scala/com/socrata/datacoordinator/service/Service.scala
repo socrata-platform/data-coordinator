@@ -485,7 +485,10 @@ class Service(serviceConfig: ServiceConfig,
     def doDeleteDataset(req: HttpServletRequest): HttpResponse = {
       deleteDataset(datasetId) match {
         case DatasetDropper.Success =>
-          OK ~> ContentType("application/json; charset=utf-8") ~> Content("[]")
+          OK ~>
+            Header("X-SODA2-Truth-Last-Modified", dateTimeFormat.print(DateTime.now)) ~>
+            Header("X-SODA2-Truth-Version", 0.toString) ~>
+            ContentType("application/json; charset=utf-8") ~> Content("[]")
         case DatasetDropper.FailureNotFound =>
           notFoundError(formatDatasetId(datasetId))
         case DatasetDropper.FailureWriteLock =>
