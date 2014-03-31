@@ -20,6 +20,7 @@ import scala.concurrent.duration.Duration
 import com.socrata.datacoordinator.service.{SecondaryConfig => ServiceSecondaryConfig}
 import scala.util.Random
 import java.util.UUID
+import com.socrata.datacoordinator.common.DataSourceFromConfig.DSInfo
 
 class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseType[CT, CV]], claimantId: UUID, claimTimeout: FiniteDuration) {
   import SecondaryWatcher.log
@@ -54,7 +55,6 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
     import u._
     secondaryManifest.cleanOrphanedClaimedDatasets(secondary.storeId, claimantId)
   }
-
 
   private def maybeSleep(storeId: String, nextRunTime: DateTime, finished: CountDownLatch): Boolean = {
     val remainingTime = nextRunTime.getMillis - System.currentTimeMillis() - nextRuntimeSplay
@@ -127,6 +127,43 @@ class SecondaryWatcherConfig(config: Config, root: String) {
 
 }
 
+class SecondaryWatcherClaimManager(dsInfo: DSInfo, claimantId: UUID, claimTimeout: FiniteDuration) {
+  import SecondaryWatcher.log
+  val updateInterval = claimTimeout / 2
+
+  def mainloop(finished: CountDownLatch) {
+    var lastUpdate = DateTime.now()
+
+    var done = awaitEither(finished, updateInterval.toMillis)
+    while(!done) {
+      try {
+        updateDatasetClaimedAtTime()
+        lastUpdate = DateTime.now()
+      } catch {
+        case e: Exception =>
+          log.error("Unexpected exception while updating claimedAt time for secondary sync jobs claimed by watcherId " + claimantId.toString(), e)
+      }
+      done = awaitEither(finished, updateInterval.toMillis)
+    }
+  }
+
+  private def awaitEither(finished: CountDownLatch, interval: Long): Boolean = {
+    finished.await(interval, TimeUnit.MILLISECONDS)
+  }
+
+  private def updateDatasetClaimedAtTime() {
+    using(dsInfo.dataSource.getConnection()) { conn =>
+      using(conn.prepareStatement(
+        """UPDATE secondary_manifest
+        |SET claimed_at = CURRENT_TIMESTAMP
+        |WHERE claimant_id = ?""".stripMargin)) { stmt =>
+        stmt.setObject(1, claimantId)
+        stmt.executeUpdate()
+      }
+    }
+  }
+}
+
 object SecondaryWatcher extends App { self =>
   type UniverseType[CT, CV] = Universe[CT, CV] with SecondaryManifestProvider with PlaybackToSecondaryProvider with SecondaryConfigProvider
 
@@ -156,6 +193,7 @@ object SecondaryWatcher extends App { self =>
     )
 
     val w = new SecondaryWatcher(common.universe, config.watcherId, config.claimTimeout)
+    val cm = new SecondaryWatcherClaimManager(dsInfo, config.watcherId, config.claimTimeout)
 
     val SIGTERM = new Signal("TERM")
     val SIGINT = new Signal("INT")
@@ -181,7 +219,14 @@ object SecondaryWatcher extends App { self =>
         using(dsInfo.dataSource.getConnection()) { conn =>
           val cfg = new SqlSecondaryConfig(conn, common.timingReport)
 
-          secondaries.iterator.flatMap { case (name, secondary) =>
+
+          new Thread {
+              setName("SecondaryWatcher claim time manager")
+
+              override def run() {
+                cm.mainloop(finished)
+              }
+          } :: secondaries.iterator.flatMap { case (name, secondary) =>
             cfg.lookup(name).map { info =>
               new Thread {
                 setName("Worker for secondary " + name)
