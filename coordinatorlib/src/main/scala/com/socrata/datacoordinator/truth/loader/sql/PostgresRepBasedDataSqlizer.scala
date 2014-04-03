@@ -1,17 +1,15 @@
 package com.socrata.datacoordinator
 package truth.loader.sql
 
-
-import com.mchange.v2.c3p0.C3P0ProxyConnection
-import com.rojoma.simplearm.util._
-import com.socrata.datacoordinator.truth.sql.RepBasedSqlDatasetContext
-import com.socrata.datacoordinator.truth.universe.sql.C3P0WrappedPostgresCopyIn
-import java.io.{OutputStreamWriter, BufferedWriter, OutputStream}
-import java.nio.charset.StandardCharsets
 import java.sql.Connection
-import org.postgresql.copy.CopyIn
+
 import org.postgresql.PGConnection
 
+import com.socrata.datacoordinator.truth.sql.RepBasedSqlDatasetContext
+import java.io.{OutputStreamWriter, BufferedWriter, OutputStream}
+import java.nio.charset.StandardCharsets
+import org.postgresql.copy.CopyIn
+import com.rojoma.simplearm.util._
 
 class PostgresRepBasedDataSqlizer[CT, CV](tableName: String,
                                           datasetContext: RepBasedSqlDatasetContext[CT, CV],
@@ -83,19 +81,12 @@ class PostgresRepBasedDataSqlizer[CT, CV](tableName: String,
 
 object PostgresRepBasedDataSqlizer {
   def pgCopyManager(conn: Connection, sql: String, output: OutputStream => Unit): Long = {
-    conn match {
-      case pgConn: PGConnection =>
-        val copyIn = pgConn.getCopyAPI.copyIn(sql)
-        try {
-          output(new CopyInOutputStream(copyIn))
-          copyIn.endCopy()
-        } finally {
-          if(copyIn.isActive) copyIn.cancelCopy()
-        }
-      case c3p0Conn: C3P0ProxyConnection =>
-        C3P0WrappedPostgresCopyIn(conn, sql, output)
-      case unknown =>
-        throw new Exception("Unknown sql connection " + unknown.getClass.getName)
+    val copyIn = conn.asInstanceOf[PGConnection].getCopyAPI.copyIn(sql)
+    try {
+      output(new CopyInOutputStream(copyIn))
+      copyIn.endCopy()
+    } finally {
+      if(copyIn.isActive) copyIn.cancelCopy()
     }
   }
 
