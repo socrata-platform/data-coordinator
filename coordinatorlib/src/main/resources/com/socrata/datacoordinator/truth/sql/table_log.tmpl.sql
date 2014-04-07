@@ -5,6 +5,8 @@ CREATE TABLE IF NOT EXISTS %AUDIT_TABLE_NAME% (
   PRIMARY KEY (version)
 ) %TABLESPACE%;
 
+CREATE INDEX %AUDIT_TABLE_NAME%_at_time ON %AUDIT_TABLE_NAME% (at_time) %TABLESPACE%;
+
 CREATE TABLE IF NOT EXISTS %TABLE_NAME% (
   version    BIGINT                   NOT NULL REFERENCES %AUDIT_TABLE_NAME% (version), -- guaranteed to be contiguous and strictly increasing
   subversion BIGINT                   NOT NULL, -- guaranteed to be contiguous and strictly increasing within a version

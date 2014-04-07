@@ -64,6 +64,8 @@ object ChicagoCrimesLoadScript extends App {
       new FiniteDuration(10, TimeUnit.SECONDS),
       "dummy instance",
       new File(System.getProperty("java.io.tmpdir")),
+      new FiniteDuration(10, TimeUnit.SECONDS),
+      new FiniteDuration(10, TimeUnit.SECONDS),
       NullCache
     )
 

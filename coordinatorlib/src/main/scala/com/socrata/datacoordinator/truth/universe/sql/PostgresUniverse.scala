@@ -19,7 +19,7 @@ import com.socrata.datacoordinator.truth.loader.sql._
 import com.socrata.datacoordinator.secondary.sql.{SqlSecondaryConfig, SqlSecondaryManifest}
 import com.socrata.datacoordinator.util._
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
-import scala.concurrent.duration.Duration
+import scala.concurrent.duration.{FiniteDuration, Duration}
 import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
@@ -45,6 +45,9 @@ trait PostgresCommonSupport[CT, CV] {
   def writeLockTimeout: Duration
 
   def tmpDir: File
+
+  def logTableCleanupDeleteOlderThan: FiniteDuration
+  def logTableCleanupDeleteEvery: FiniteDuration
 
   lazy val loaderProvider = new AbstractSqlLoaderProvider(executor, typeContext, repFor, isSystemColumn) with PostgresSqlLoaderProvider[CT, CV] {
     def copyIn(conn: Connection, sql: String, output: OutputStream => Unit): Long =
@@ -86,6 +89,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
     with DatasetMutatorProvider
     with DatasetDropperProvider
     with TableCleanupProvider
+    with LogTableCleanupProvider
 {
   import commonSupport._
 
@@ -186,4 +190,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
 
   lazy val tableCleanup: TableCleanup =
     new SqlTableCleanup(conn)
+
+  lazy val logTableCleanup: LogTableCleanup =
+    new SqlLogTableCleanup(conn, logTableCleanupDeleteOlderThan, logTableCleanupDeleteEvery)
 }

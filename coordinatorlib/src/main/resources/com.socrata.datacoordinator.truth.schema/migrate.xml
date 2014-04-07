@@ -4,8 +4,13 @@
         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
         xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
 
+    <!-- run-once migrations -->
     <include file="com.socrata.datacoordinator.truth.schema/20140206-metadata-bootstrap.xml"/>
     <include file="com.socrata.datacoordinator.truth.schema/20140307-add-column-last-modified.xml"/>
     <include file="com.socrata.datacoordinator.truth.schema/20140310-enable-multiple-watcher-processes.xml"/>
+    <include file="com.socrata.datacoordinator.truth.schema/20140401-add-log-cleanup-fields.xml"/>
+
+    <!-- run-on-change migrations: recreation of triggers typically comes after other changes that they may depend on -->
+    <include file="com.socrata.datacoordinator.truth.schema/triggers/update-dataset-log-trigger.xml"/>
 
 </databaseChangeLog>

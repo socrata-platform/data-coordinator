@@ -217,6 +217,8 @@ object Main {
             serviceConfig.writeLockTimeout,
             serviceConfig.instance,
             serviceConfig.reports.directory,
+            serviceConfig.logTableCleanupDeleteOlderThan,
+            serviceConfig.logTableCleanupDeleteEvery,
             NullCache
           )
         }
@@ -244,7 +246,7 @@ object Main {
         val tableDropper = new Thread() {
           setName("table dropper")
           override def run() {
-            while(!finished.await(30, TimeUnit.SECONDS)) {
+            do {
               try {
                 for(u <- common.universe) {
                   while(finished.getCount > 0 && u.tableCleanup.cleanupPendingDrops()) {
@@ -255,12 +257,34 @@ object Main {
                 case e: Exception =>
                   log.error("Unexpected error while dropping tables", e)
               }
-            }
+            } while(!finished.await(30, TimeUnit.SECONDS))
+          }
+        }
+
+        val logTableCleanup = new Thread() {
+          setName("logTableCleanup thread")
+          override def run() {
+            do {
+              try {
+                for (u <- common.universe) {
+                  while (finished.getCount > 0 && u.logTableCleanup.cleanupOldVersions()) {
+                    u.commit()
+                    // a simple knob to allow us to slow the log table cleanup down without
+                    // requiring complicated things.
+                    finished.await(serviceConfig.logTableCleanupSleepTime.toMillis, TimeUnit.MILLISECONDS)
+                  }
+                }
+              } catch {
+                case e: Exception =>
+                  log.error("Unexpected error while cleaning log tables", e)
+              }
+            } while(!finished.await(30, TimeUnit.SECONDS))
           }
         }
 
         try {
           tableDropper.start()
+          logTableCleanup.start()
           val address = serviceConfig.advertisement.address
           for {
             curator <- managed(CuratorFrameworkFactory.builder.

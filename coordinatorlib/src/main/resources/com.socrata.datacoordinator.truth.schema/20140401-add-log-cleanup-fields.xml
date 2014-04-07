@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
+
+    <changeSet author="Marc Slemko" id="20140401-add-log-cleanup-fields">
+        <addColumn tableName="dataset_map">
+            <column name="log_last_cleaned"
+                    type="TIMESTAMP WITH TIME ZONE"
+                    defaultValueComputed="NOW()">
+                <constraints nullable="false"/>
+            </column>
+
+            <column name="log_last_cleaned_data_version"
+                    type="BIGINT NOT NULL DEFAULT 0"/>
+
+            <column name="latest_data_version"
+                    type="BIGINT NOT NULL DEFAULT 0"/>
+        </addColumn>
+        <sql>
+            CREATE INDEX dataset_map_log_cleaning
+            ON dataset_map(log_last_cleaned)
+            WHERE latest_data_version != log_last_cleaned_data_version
+        </sql>
+
+        <sql>
+            UPDATE dataset_map dm
+            SET latest_data_version = (
+                SELECT MAX(data_version) FROM copy_map cm WHERE dm.system_id=cm.dataset_system_id
+            )
+        </sql>
+
+        <rollback>
+            <dropIndex indexName="dataset_map_log_cleaning" tableName="dataset_map"/>
+            <dropColumn tableName="dataset_map" columnName="log_last_cleaned"/>
+            <dropColumn tableName="dataset_map" columnName="log_last_cleaned_data_version"/>
+            <dropColumn tableName="dataset_map" columnName="latest_data_version"/>
+        </rollback>
+    </changeSet>
+</databaseChangeLog>

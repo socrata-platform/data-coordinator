@@ -20,7 +20,7 @@ import com.socrata.datacoordinator.util.{NullCache, Cache, TransferrableContextT
 import javax.sql.DataSource
 import com.rojoma.simplearm.{SimpleArm, Managed}
 import com.socrata.soql.types.obfuscation.{Quadifier, CryptProvider}
-import scala.concurrent.duration.Duration
+import scala.concurrent.duration.{FiniteDuration, Duration}
 import java.security.SecureRandom
 import com.socrata.datacoordinator.truth.universe.{SchemaFinderProvider, CacheProvider}
 
@@ -52,6 +52,8 @@ class SoQLCommon(dataSource: DataSource,
                  writeLockTimeout: Duration,
                  instance: String,
                  tmpDir: File,
+                 logTableCleanupDeleteOlderThan: FiniteDuration,
+                 logTableCleanupDeleteEvery: FiniteDuration,
                  cache: Cache)
 { common =>
   type CT = SoQLType
@@ -128,6 +130,9 @@ class SoQLCommon(dataSource: DataSource,
     val repFor = sqlRepFor
 
     val tmpDir = common.tmpDir
+
+    val logTableCleanupDeleteOlderThan = common.logTableCleanupDeleteOlderThan
+    val logTableCleanupDeleteEvery = common.logTableCleanupDeleteEvery
 
     val newRowCodec = common.newRowLogCodec _
 

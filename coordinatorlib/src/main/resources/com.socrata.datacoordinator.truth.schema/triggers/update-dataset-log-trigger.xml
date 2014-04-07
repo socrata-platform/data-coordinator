@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
+
+    <changeSet author="Marc Slemko" id="update-dataset-log-trigger" runOnChange="true">
+        <createProcedure>
+            CREATE OR REPLACE FUNCTION update_backup_log() RETURNS trigger as $update_backup_log$
+              DECLARE
+                last_data_version BIGINT;
+              BEGIN
+                -- First, we update the timestamp only if this is the first change since the last time
+                -- the backup was run.  This is to keep things fair, otherwise a fast-changing dataset
+                -- could keep knocking itself down the queue.
+                UPDATE backup_log
+                  SET went_out_of_sync_at = CURRENT_TIMESTAMP
+                  WHERE dataset_system_id = NEW.dataset_system_id AND latest_data_version = latest_backup_data_version;
+                -- Then unconditionally bump the latest data version.
+                UPDATE backup_log SET latest_data_version = NEW.data_version WHERE dataset_system_id = NEW.dataset_system_id;
+
+                -- Same thing for all secondaries to which this is attached.
+                UPDATE secondary_manifest
+                  SET went_out_of_sync_at = CURRENT_TIMESTAMP
+                  WHERE dataset_system_id = NEW.dataset_system_id AND latest_data_version = latest_secondary_data_version;
+                UPDATE secondary_manifest
+                  SET latest_data_version = NEW.data_version
+                  WHERE secondary_manifest.dataset_system_id = NEW.dataset_system_id;
+
+                -- and finally dataset_map
+                UPDATE dataset_map
+                  SET latest_data_version = NEW.data_version
+                  WHERE dataset_map.system_id = NEW.dataset_system_id;
+
+                RETURN NEW;
+              END;
+            $update_backup_log$ LANGUAGE PLPGSQL;
+
+            DROP TRIGGER IF EXISTS update_dataset_log_trigger ON copy_map;
+            CREATE TRIGGER update_dataset_log_trigger AFTER UPDATE ON copy_map FOR EACH ROW EXECUTE PROCEDURE update_backup_log();
+        </createProcedure>
+
+        <rollback>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>

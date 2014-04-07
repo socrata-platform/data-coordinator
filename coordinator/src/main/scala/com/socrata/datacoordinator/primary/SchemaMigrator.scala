@@ -11,13 +11,13 @@ import com.rojoma.simplearm.util._
  * Performs Liquibase migrations on the truth store.
  */
 object SchemaMigrator {
-  def apply(databaseTree: String, operation: MigrationOperation) {
+  def apply(databaseTree: String, operation: MigrationOperation, numChanges: Int = 1) {
     val config = ConfigFactory.load
     for {
       dataSourceInfo <- DataSourceFromConfig(new DataSourceConfig(config, databaseTree))
       conn <- managed(dataSourceInfo.dataSource.getConnection)
     } {
-      Migration.migrateDb(conn, operation)
+      Migration.migrateDb(conn, operation, numChanges)
     }
   }
 }

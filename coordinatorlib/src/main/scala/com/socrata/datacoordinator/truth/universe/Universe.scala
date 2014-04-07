@@ -127,6 +127,10 @@ trait TableCleanupProvider {
   def tableCleanup: TableCleanup
 }
 
+trait LogTableCleanupProvider {
+  def logTableCleanup: LogTableCleanup
+}
+
 trait SchemaFinderProvider { this: TypeUniverse =>
   def schemaFinder: SchemaFinder[CT]
 }

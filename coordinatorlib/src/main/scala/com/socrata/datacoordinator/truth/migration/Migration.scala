@@ -24,6 +24,7 @@ object Migration {
    */
   def migrateDb(conn: Connection,
                 operation: MigrationOperation = MigrationOperation.Migrate,
+                numChanges: Int = 1,
                 changeLogPath: String = MigrationScriptPath) {
 
     val liquibase = new Liquibase(changeLogPath, new ClassLoaderResourceAccessor, new JdbcConnection(conn))
@@ -31,8 +32,8 @@ object Migration {
 
     operation match {
       case Migrate => liquibase.update(database)
-      case Undo => liquibase.rollback(1, database)
-      case Redo => { liquibase.rollback(1, database); liquibase.update(database) }
+      case Undo => liquibase.rollback(numChanges, database)
+      case Redo => { liquibase.rollback(numChanges, database); liquibase.update(database) }
     }
   }
 

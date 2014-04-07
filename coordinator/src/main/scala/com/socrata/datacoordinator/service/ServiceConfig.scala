@@ -19,6 +19,9 @@ class ServiceConfig(val config: Config, root: String) {
   val tablespace = config.getString(k("tablespace"))
   val writeLockTimeout = new FiniteDuration(config.getMilliseconds(k("write-lock-timeout")), TimeUnit.MILLISECONDS)
   val reports = new ReportsConfig(config, k("reports"))
+  val logTableCleanupSleepTime = new FiniteDuration(config.getMilliseconds(k("log-table-cleanup-sleep-time")), TimeUnit.MILLISECONDS)
+  val logTableCleanupDeleteOlderThan = new FiniteDuration(config.getMilliseconds(k("log-table-cleanup-delete-older-than")), TimeUnit.MILLISECONDS)
+  val logTableCleanupDeleteEvery = new FiniteDuration(config.getMilliseconds(k("log-table-cleanup-delete-every")), TimeUnit.MILLISECONDS)
 
   require(instance.matches("[a-zA-Z0-9._]+"), "Instance names must consist of only ASCII letters, numbers, periods, and underscores")
 }
