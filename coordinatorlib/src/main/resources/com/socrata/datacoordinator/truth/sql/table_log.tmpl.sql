@@ -5,7 +5,18 @@ CREATE TABLE IF NOT EXISTS %AUDIT_TABLE_NAME% (
   PRIMARY KEY (version)
 ) %TABLESPACE%;
 
-CREATE INDEX %AUDIT_TABLE_NAME%_at_time ON %AUDIT_TABLE_NAME% (at_time) %TABLESPACE%;
+DO $$
+BEGIN
+
+IF NOT EXISTS (
+  SELECT 1
+  FROM pg_indexes
+  WHERE schemaname = 'public' and indexname = '%AUDIT_TABLE_NAME%_at_time'
+) THEN
+    CREATE INDEX %AUDIT_TABLE_NAME%_at_time ON %AUDIT_TABLE_NAME% (at_time) %TABLESPACE%;
+END IF;
+
+END$$;
 
 CREATE TABLE IF NOT EXISTS %TABLE_NAME% (
   version    BIGINT                   NOT NULL REFERENCES %AUDIT_TABLE_NAME% (version), -- guaranteed to be contiguous and strictly increasing
