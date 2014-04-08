@@ -56,14 +56,15 @@ class SqlLogTableCleanup(conn: Connection, deleteOlderThan: FiniteDuration, dele
                   |WHERE version <= ${version}
                   """.stripMargin)
                 log.info(s"Removed ${rowsDeleted} rows up to version ${version} from ${logTableName}")
-
-                stmt.executeUpdate(s"""
-                  |UPDATE dataset_map
-                  |SET log_last_cleaned_data_version = ${version},
-                  |    log_last_cleaned = NOW()
-                  |WHERE system_id = ${dataset_system_id}
-                """.stripMargin)
             }
+
+            stmt.executeUpdate(s"""
+              |UPDATE dataset_map
+              |SET log_last_cleaned_data_version = ${deletableVersion.getOrElse("log_last_cleaned_data_version")},
+              |    log_last_cleaned = NOW()
+              |WHERE system_id = ${dataset_system_id}
+            """.stripMargin)
+
             true
           }
         }
