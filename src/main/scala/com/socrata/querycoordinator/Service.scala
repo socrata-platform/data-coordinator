@@ -14,7 +14,7 @@ import com.socrata.soql.types.{SoQLType, SoQLAnalysisType}
 import com.socrata.soql.SoQLAnalyzer
 import com.socrata.soql.exceptions._
 import com.socrata.soql.collection.OrderedMap
-import com.netflix.curator.x.discovery.ServiceInstance
+import org.apache.curator.x.discovery.ServiceInstance
 import scala.util.control.ControlThrowable
 import com.rojoma.json.io._
 import com.rojoma.json.codec.JsonCodec

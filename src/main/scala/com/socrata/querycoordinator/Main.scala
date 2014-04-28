@@ -6,9 +6,9 @@ import org.apache.log4j.PropertyConfigurator
 import com.rojoma.simplearm.util._
 
 import com.socrata.thirdparty.typesafeconfig.Propertizer
-import com.netflix.curator.framework.CuratorFrameworkFactory
-import com.netflix.curator.retry
-import com.netflix.curator.x.discovery.{ServiceInstanceBuilder, ServiceDiscoveryBuilder, strategies}
+import org.apache.curator.framework.CuratorFrameworkFactory
+import org.apache.curator.retry
+import org.apache.curator.x.discovery.{ServiceInstanceBuilder, ServiceDiscoveryBuilder, strategies}
 import com.socrata.http.server.curator.CuratorBroker
 import com.socrata.http.server.SocrataServerJetty
 import com.socrata.soql.types.SoQLAnalysisType

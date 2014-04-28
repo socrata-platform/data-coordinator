@@ -7,7 +7,7 @@ name := "query-coordinator"
 
 version := "0.0.1-SNAPSHOT"
 
-scalaVersion := "2.10.2"
+scalaVersion := "2.10.4"
 
 libraryDependencies ++= Seq(
   "com.socrata" %% "soql-stdlib" % "0.0.16-SNAPSHOT",
@@ -20,7 +20,7 @@ libraryDependencies ++= Seq(
   "org.scalatest" %% "scalatest" % "1.9.1" % "test",
   "org.scalacheck" %% "scalacheck" % "1.10.1" % "test",
   "com.typesafe" %% "scalalogging-slf4j" % "1.1.0",
-  "com.rojoma" %% "rojoma-json" % "2.4.0"
+  "com.rojoma" %% "rojoma-json" % "[2.4.3,3.0.0)"
 )
 
 scalacOptions ++= Seq("-deprecation", "-feature")

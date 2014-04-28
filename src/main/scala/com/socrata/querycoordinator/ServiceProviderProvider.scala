@@ -2,7 +2,7 @@ package com.socrata.querycoordinator
 
 import scala.collection.JavaConverters._
 import java.io.Closeable
-import com.netflix.curator.x.discovery.{ProviderStrategy, ServiceProvider, ServiceDiscovery}
+import org.apache.curator.x.discovery.{ProviderStrategy, ServiceProvider, ServiceDiscovery}
 import java.util.concurrent.ConcurrentHashMap
 
 class ServiceProviderProvider[T](serviceDiscovery: ServiceDiscovery[T], providerStrategy: ProviderStrategy[T]) extends Closeable {
