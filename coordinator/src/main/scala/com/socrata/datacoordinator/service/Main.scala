@@ -12,9 +12,9 @@ import com.socrata.datacoordinator.id.{UserColumnId, ColumnId, DatasetId}
 import com.rojoma.json.ast.{JString, JValue}
 import com.socrata.datacoordinator.truth.CopySelector
 import com.socrata.soql.environment.ColumnName
-import com.netflix.curator.retry
-import com.netflix.curator.framework.CuratorFrameworkFactory
-import com.netflix.curator.x.discovery.{ServiceInstanceBuilder, ServiceInstance, ServiceDiscoveryBuilder}
+import org.apache.curator.retry
+import org.apache.curator.framework.CuratorFrameworkFactory
+import org.apache.curator.x.discovery.{ServiceInstanceBuilder, ServiceInstance, ServiceDiscoveryBuilder}
 import com.socrata.http.server.curator.CuratorBroker
 import com.rojoma.simplearm.SimpleArm
 import java.net.{InetSocketAddress, InetAddress}
