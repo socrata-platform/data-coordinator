@@ -1,3 +1,22 @@
+**data-coordinator** is a set of related services and scripts that takes SoQL upserts, inserts them to the truth store, watches truth store logs and writes the data to the secondary stores.
+
+## Projects
+
+* coordinator - contains the REST service for the data coordinator, as well as services for secondary watchers, various scripts including backup
+* coordinatorlib
+    - common utilities and data structures for working with truth store and secondaries, at a lower level
+    - database migrations are in src/main/resources
+* coordinatorlib-soql - en/decoders between SoQL and JSON, CSV, and SQL
+* dummy-secondary - a dummy secondary store implementation for testing only
+* secondarylib - trait for Secondary store
+
+## Running
+
+To run the tests, from the SBT shell:
+
+    project data-coordinator
+    test:test
+
 To run migrations in this project:
 ```
 sbt -Dconfig.file=/etc/soda2.conf "coordinator/run-main com.socrata.datacoordinator.primary.MigrateSchema Redo"
