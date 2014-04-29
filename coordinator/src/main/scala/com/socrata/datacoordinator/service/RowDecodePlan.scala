@@ -1,11 +1,11 @@
 package com.socrata.datacoordinator
 package service
 
-import com.socrata.datacoordinator.truth.json.JsonColumnReadRep
 import com.rojoma.json.ast.{JArray, JBoolean, JObject, JValue}
-import com.socrata.datacoordinator.util.collection.{MutableUserColumnIdMap, UserColumnIdMap, ColumnIdMap}
-import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, AbstractColumnInfoLike}
 import com.socrata.datacoordinator.id.{UserColumnId, RowVersion, ColumnId}
+import com.socrata.datacoordinator.truth.json.JsonColumnReadRep
+import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, AbstractColumnInfoLike}
+import com.socrata.datacoordinator.util.collection.{MutableUserColumnIdMap, UserColumnIdMap, ColumnIdMap}
 import com.socrata.soql.environment.{TypeName, ColumnName}
 
 class RowDecodePlan[CT, CV](schema: ColumnIdMap[ColumnInfo[CT]], repFor: CT => JsonColumnReadRep[CT, CV], typeNameFor: CT => TypeName, versionOf: CV => Option[RowVersion], onUnknownColumn: UserColumnId => Unit)

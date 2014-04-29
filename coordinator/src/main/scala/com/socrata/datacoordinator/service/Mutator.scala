@@ -1,46 +1,26 @@
 package com.socrata.datacoordinator
 package service
 
-import com.rojoma.json.ast._
-import com.socrata.datacoordinator.truth.universe._
-import com.socrata.datacoordinator.truth.{DatabaseInReadOnlyMode, TypeContext, DatasetIdInUseByWriterException, DatasetMutator}
-import com.socrata.datacoordinator.truth.metadata._
-import com.socrata.datacoordinator.truth.json.JsonColumnRep
-import com.rojoma.json.codec.JsonCodec
-import com.socrata.datacoordinator.truth.loader._
-import scala.collection.immutable.{NumericRange, VectorBuilder}
-import com.socrata.soql.environment.{TypeName, ColumnName}
-import com.socrata.datacoordinator.util.{Cache, IndexedTempFile, BuiltUpIterator, Counter}
 import com.ibm.icu.util.ULocale
+import com.rojoma.json.ast._
+import com.rojoma.json.codec.JsonCodec
 import com.rojoma.json.io._
 import com.socrata.datacoordinator.id.{UserColumnId, RowVersion, DatasetId}
-import java.nio.charset.StandardCharsets.UTF_8
-import java.io.InputStreamReader
+import com.socrata.datacoordinator.truth.json.JsonColumnRep
+import com.socrata.datacoordinator.truth.loader._
+import com.socrata.datacoordinator.truth.metadata._
+import com.socrata.datacoordinator.truth.universe._
+import com.socrata.datacoordinator.truth.{DatabaseInReadOnlyMode, TypeContext}
+import com.socrata.datacoordinator.truth.{DatasetIdInUseByWriterException, DatasetMutator}
 import com.socrata.datacoordinator.util.collection.UserColumnIdMap
-import scala.annotation.tailrec
-import com.socrata.datacoordinator.truth.loader.NoSuchRowToDelete
-import scala.Some
-import com.rojoma.json.io.StartOfObjectEvent
-import com.rojoma.json.ast.JString
-import com.socrata.datacoordinator.truth.loader.IdAndVersion
-import com.rojoma.json.io.FieldEvent
-import com.socrata.datacoordinator.truth.metadata.DatasetInfo
-import com.socrata.datacoordinator.truth.loader.NoSuchRowToUpdate
-import com.rojoma.json.io.EndOfObjectEvent
-import com.socrata.datacoordinator.truth.loader.VersionMismatch
-import scala.collection.mutable.ListBuffer
-import com.socrata.datacoordinator.truth.loader.NoSuchRowToDelete
-import scala.Some
-import com.rojoma.json.io.StartOfObjectEvent
-import com.rojoma.json.ast.JString
-import com.socrata.datacoordinator.truth.metadata.Schema
-import com.socrata.datacoordinator.truth.loader.IdAndVersion
-import com.rojoma.json.io.FieldEvent
-import com.socrata.datacoordinator.truth.metadata.DatasetInfo
-import com.socrata.datacoordinator.truth.loader.NoSuchRowToUpdate
-import com.rojoma.json.io.EndOfObjectEvent
-import com.socrata.datacoordinator.truth.loader.VersionMismatch
+import com.socrata.datacoordinator.util.{Cache, IndexedTempFile, BuiltUpIterator, Counter}
+import com.socrata.soql.environment.{TypeName, ColumnName}
+import java.io.InputStreamReader
+import java.nio.charset.StandardCharsets.UTF_8
 import org.joda.time.DateTime
+import scala.annotation.tailrec
+import scala.collection.immutable.{NumericRange, VectorBuilder}
+import scala.collection.mutable
 
 sealed trait MutationScriptCommandResult
 object MutationScriptCommandResult {
@@ -500,8 +480,8 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
       reports.result()
     }
 
-    private val pendingAdds = new ListBuffer[mutator.ColumnToAdd]
-    private val pendingDrops = new ListBuffer[UserColumnId]
+    private val pendingAdds = new mutable.ListBuffer[mutator.ColumnToAdd]
+    private val pendingDrops = new mutable.ListBuffer[UserColumnId]
 
     def isExistingColumn(cid: UserColumnId) =
       (mutator.schema.iterator.map(_._2.userColumnId).exists(_ == cid) || pendingAdds.exists(_.userColumnId == cid)) && !pendingDrops.exists(_ == cid)

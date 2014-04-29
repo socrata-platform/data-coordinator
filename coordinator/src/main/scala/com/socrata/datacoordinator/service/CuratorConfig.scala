@@ -1,9 +1,8 @@
 package com.socrata.datacoordinator.service
 
+import com.typesafe.config.Config
 import scala.collection.JavaConverters._
 import scala.concurrent.duration._
-
-import com.typesafe.config.Config
 
 class CuratorConfig(config: Config, root: String) {
   private def k(s: String) = root + "." + s

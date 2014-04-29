@@ -1,13 +1,13 @@
 package com.socrata.datacoordinator
 package service
 
+import com.socrata.datacoordinator.id.{UserColumnId, DatasetId}
+import com.socrata.datacoordinator.truth.CopySelector
+import com.socrata.datacoordinator.truth.metadata.{DatasetCopyContext, CopyInfo, ColumnInfo}
 import com.socrata.datacoordinator.truth.universe.{SchemaFinderProvider, CacheProvider, DatasetReaderProvider, Universe}
 import com.socrata.datacoordinator.util.collection.{UserColumnIdSet, MutableColumnIdMap, ColumnIdMap}
-import com.socrata.datacoordinator.truth.metadata.{DatasetCopyContext, CopyInfo, ColumnInfo}
-import com.socrata.soql.environment.ColumnName
-import com.socrata.datacoordinator.truth.CopySelector
-import com.socrata.datacoordinator.id.{UserColumnId, DatasetId}
 import com.socrata.http.server.util.{StrongEntityTag, EntityTag, Precondition}
+import com.socrata.soql.environment.ColumnName
 import java.nio.charset.StandardCharsets
 
 object Exporter {

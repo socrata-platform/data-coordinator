@@ -1,9 +1,9 @@
 package com.socrata.datacoordinator.service
 
-import com.typesafe.config.Config
 import com.socrata.datacoordinator.common.DataSourceConfig
-import scala.concurrent.duration.{FiniteDuration, Duration}
+import com.typesafe.config.Config
 import java.util.concurrent.TimeUnit
+import scala.concurrent.duration.{FiniteDuration, Duration}
 
 class ServiceConfig(val config: Config, root: String) {
   private def k(field: String) = root + "." + field

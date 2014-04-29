@@ -1,28 +1,28 @@
 package com.socrata.datacoordinator.service
 
-import com.rojoma.simplearm.util._
-import com.typesafe.config.{Config, ConfigFactory}
-import org.apache.log4j.PropertyConfigurator
-import com.socrata.thirdparty.typesafeconfig.Propertizer
-import com.socrata.datacoordinator.secondary.{DatasetAlreadyInSecondary, SecondaryLoader}
-import java.util.concurrent.{CountDownLatch, TimeUnit, Executors}
-import com.socrata.datacoordinator.common.{SoQLCommon, StandardDatasetMapLimits, DataSourceFromConfig}
-import com.socrata.datacoordinator.util.{NullCache, IndexedTempFile, StackedTimingReport, LoggedTimingReport}
-import com.socrata.datacoordinator.id.{UserColumnId, ColumnId, DatasetId}
 import com.rojoma.json.ast.{JString, JValue}
-import com.socrata.datacoordinator.truth.CopySelector
-import com.socrata.soql.environment.ColumnName
-import org.apache.curator.retry
-import org.apache.curator.framework.CuratorFrameworkFactory
-import org.apache.curator.x.discovery.{ServiceInstanceBuilder, ServiceInstance, ServiceDiscoveryBuilder}
-import com.socrata.http.server.curator.CuratorBroker
 import com.rojoma.simplearm.SimpleArm
-import java.net.{InetSocketAddress, InetAddress}
-import com.socrata.datacoordinator.util.collection.UserColumnIdSet
-import com.socrata.http.common.AuxiliaryData
-import com.socrata.http.server.livenesscheck.LivenessCheckResponder
+import com.rojoma.simplearm.util._
+import com.socrata.datacoordinator.common.{SoQLCommon, StandardDatasetMapLimits, DataSourceFromConfig}
+import com.socrata.datacoordinator.id.{UserColumnId, ColumnId, DatasetId}
+import com.socrata.datacoordinator.secondary.{DatasetAlreadyInSecondary, SecondaryLoader}
+import com.socrata.datacoordinator.truth.CopySelector
 import com.socrata.datacoordinator.truth.metadata.{SchemaField, Schema, DatasetCopyContext}
+import com.socrata.datacoordinator.util.collection.UserColumnIdSet
+import com.socrata.datacoordinator.util.{NullCache, IndexedTempFile, StackedTimingReport, LoggedTimingReport}
+import com.socrata.http.common.AuxiliaryData
+import com.socrata.http.server.curator.CuratorBroker
+import com.socrata.http.server.livenesscheck.LivenessCheckResponder
 import com.socrata.http.server.util.{EntityTag, Precondition}
+import com.socrata.soql.environment.ColumnName
+import com.socrata.thirdparty.typesafeconfig.Propertizer
+import com.typesafe.config.{Config, ConfigFactory}
+import java.net.{InetSocketAddress, InetAddress}
+import java.util.concurrent.{CountDownLatch, TimeUnit, Executors}
+import org.apache.curator.framework.CuratorFrameworkFactory
+import org.apache.curator.retry
+import org.apache.curator.x.discovery.{ServiceInstanceBuilder, ServiceInstance, ServiceDiscoveryBuilder}
+import org.apache.log4j.PropertyConfigurator
 import scala.util.Random
 
 class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {

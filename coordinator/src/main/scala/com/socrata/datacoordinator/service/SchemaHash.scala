@@ -1,12 +1,12 @@
 package com.socrata.datacoordinator.service
 
-import java.nio.charset.StandardCharsets.UTF_8
+import com.socrata.datacoordinator.id.UserColumnId
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
-import java.security.MessageDigest
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.soql.environment.TypeName
+import java.nio.charset.StandardCharsets.UTF_8
+import java.security.MessageDigest
 import java.util.Comparator
-import com.socrata.datacoordinator.id.UserColumnId
 
 object SchemaHash {
   private val hexDigit = "0123456789abcdef".toCharArray

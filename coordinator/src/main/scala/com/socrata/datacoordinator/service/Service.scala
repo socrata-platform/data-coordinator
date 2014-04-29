@@ -1,39 +1,30 @@
 package com.socrata.datacoordinator.service
 
-import javax.servlet.http.{HttpServletResponse, HttpServletRequest}
-
-import com.socrata.http.server.implicits._
-import com.socrata.http.server.{ServerBroker, HttpResponse, SocrataServerJetty, HttpService}
-import com.socrata.http.server.responses._
-import com.rojoma.json.util.{JsonArrayIterator, AutomaticJsonCodecBuilder, JsonKey, JsonUtil}
-import com.rojoma.json.io._
-import com.rojoma.json.ast._
 import com.ibm.icu.text.Normalizer
-import com.socrata.datacoordinator.truth._
-import com.rojoma.simplearm.util._
-import com.socrata.datacoordinator.util.IndexedTempFile
-import javax.activation.{MimeTypeParseException, MimeType}
-import com.socrata.soql.environment.TypeName
-import com.socrata.datacoordinator.truth.loader._
-import java.io._
-import com.socrata.datacoordinator.id.{UserColumnId, DatasetId}
+import com.rojoma.json.ast._
 import com.rojoma.json.codec.JsonCodec
-import java.nio.charset.StandardCharsets.UTF_8
-import com.socrata.datacoordinator.util.collection.{UserColumnIdMap, UserColumnIdSet}
-import com.socrata.http.server.routing._
-import com.socrata.datacoordinator.truth.loader.NoSuchRowToDelete
-import com.rojoma.json.ast.JString
-import com.socrata.datacoordinator.truth.Snapshot
-import com.rojoma.json.io.FieldEvent
-import com.rojoma.json.io.StringEvent
-import com.rojoma.json.io.IdentifierEvent
-import com.socrata.datacoordinator.truth.loader.NoSuchRowToUpdate
-import com.socrata.datacoordinator.truth.loader.VersionMismatch
-import com.socrata.http.server.util.{StrongEntityTag, EntityTag, Precondition, ErrorAdapter}
+import com.rojoma.json.io._
+import com.rojoma.json.util.{JsonArrayIterator, AutomaticJsonCodecBuilder, JsonKey, JsonUtil}
+import com.rojoma.simplearm.util._
+import com.socrata.datacoordinator.id.{UserColumnId, DatasetId}
+import com.socrata.datacoordinator.truth._
+import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.metadata.{SchemaField, Schema}
-import java.security.MessageDigest
-import org.apache.commons.codec.binary.Base64
+import com.socrata.datacoordinator.util.collection.{UserColumnIdMap, UserColumnIdSet}
+import com.socrata.datacoordinator.util.IndexedTempFile
+import com.socrata.http.server.implicits._
+import com.socrata.http.server.responses._
+import com.socrata.http.server.routing._
 import com.socrata.http.server.util.handlers.{ThreadRenamingHandler, LoggingHandler}
+import com.socrata.http.server.util.{StrongEntityTag, EntityTag, Precondition, ErrorAdapter}
+import com.socrata.http.server.{ServerBroker, HttpResponse, SocrataServerJetty, HttpService}
+import com.socrata.soql.environment.TypeName
+import java.io._
+import java.nio.charset.StandardCharsets.UTF_8
+import java.security.MessageDigest
+import javax.activation.{MimeTypeParseException, MimeType}
+import javax.servlet.http.{HttpServletResponse, HttpServletRequest}
+import org.apache.commons.codec.binary.Base64
 import org.joda.time.DateTime
 import org.joda.time.format.ISODateTimeFormat
 

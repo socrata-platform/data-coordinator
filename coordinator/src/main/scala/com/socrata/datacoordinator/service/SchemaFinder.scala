@@ -4,11 +4,11 @@ import scala.concurrent.duration._
 
 import com.rojoma.simplearm.Managed
 
-import com.socrata.datacoordinator.truth.universe.{CacheProvider, DatasetMapReaderProvider, Universe}
+import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.truth.metadata.{Schema, DatasetCopyContext}
+import com.socrata.datacoordinator.truth.universe.{CacheProvider, DatasetMapReaderProvider, Universe}
 import com.socrata.datacoordinator.util.{Cache, RotateSchema}
 import com.socrata.soql.environment.TypeName
-import com.socrata.datacoordinator.id.DatasetId
 
 import SchemaFinder._
 

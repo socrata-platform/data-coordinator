@@ -1,10 +1,8 @@
 package com.socrata.datacoordinator.service
 
-import java.io.File
-
 import com.typesafe.config.Config
+import java.io.File
 import net.ceedubs.ficus.FicusConfig._
-
 
 case class SecondaryGroupConfig(
      numReplicas: Int,
