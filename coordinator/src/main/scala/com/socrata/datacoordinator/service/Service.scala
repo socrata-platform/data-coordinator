@@ -29,8 +29,8 @@ import org.joda.time.DateTime
 import org.joda.time.format.ISODateTimeFormat
 
 object Service {
-  type processMutationFunc = (DatasetId, Iterator[JValue], IndexedTempFile) =>
-                             (Long, DateTime, Seq[MutationScriptCommandResult])
+  type processMutationReturns = (Long, DateTime, Seq[MutationScriptCommandResult])
+  type processMutationFunc = (DatasetId, Iterator[JValue], IndexedTempFile) => processMutationReturns
   type processCreationReturns = (DatasetId, Long, DateTime, Seq[MutationScriptCommandResult])
   type datasetContentsFunc = Either[Schema, (EntityTag, Seq[SchemaField],
                                              Option[UserColumnId], String,

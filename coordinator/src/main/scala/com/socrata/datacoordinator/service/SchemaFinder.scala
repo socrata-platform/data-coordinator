@@ -12,7 +12,8 @@ import com.socrata.soql.environment.TypeName
 
 import SchemaFinder._
 
-class SchemaFinder[CT, CV](typeSerializer: CT => TypeName, cache: Cache) extends com.socrata.datacoordinator.truth.metadata.SchemaFinder[CT] {
+class SchemaFinder[CT, CV](typeSerializer: CT => TypeName, cache: Cache) extends
+    com.socrata.datacoordinator.truth.metadata.SchemaFinder[CT] {
   def schemaHash(ctx: DatasetCopyContext[CT]): String = {
     val key = List("schemahash", ctx.datasetInfo.systemId.underlying.toString, ctx.copyInfo.dataVersion.toString)
     cache.lookup[String](key) match {

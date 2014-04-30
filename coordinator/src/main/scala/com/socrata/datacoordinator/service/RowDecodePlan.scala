@@ -8,16 +8,23 @@ import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, AbstractColumnInf
 import com.socrata.datacoordinator.util.collection.{MutableUserColumnIdMap, UserColumnIdMap, ColumnIdMap}
 import com.socrata.soql.environment.{TypeName, ColumnName}
 
-class RowDecodePlan[CT, CV](schema: ColumnIdMap[ColumnInfo[CT]], repFor: CT => JsonColumnReadRep[CT, CV], typeNameFor: CT => TypeName, versionOf: CV => Option[RowVersion], onUnknownColumn: UserColumnId => Unit)
+class RowDecodePlan[CT, CV](schema: ColumnIdMap[ColumnInfo[CT]],
+                            repFor: CT => JsonColumnReadRep[CT, CV],
+                            typeNameFor: CT => TypeName,
+                            versionOf: CV => Option[RowVersion],
+                            onUnknownColumn: UserColumnId => Unit)
   extends (JValue => Either[(CV, Option[Option[RowVersion]]), Row[CV]])
 {
   sealed abstract class BadDataException(msg: String) extends Exception(msg)
-  case class BadUpsertCommandException(value: JValue) extends BadDataException("Upsert command not an object or a singleton list")
-  case class UninterpretableFieldValue(column: UserColumnId, value: JValue, columnType: CT) extends BadDataException("Unable to interpret value for field " + column + " as " + typeNameFor(columnType) + ": " + value)
+  case class BadUpsertCommandException(value: JValue) extends
+      BadDataException("Upsert command not an object or a singleton list")
+  case class UninterpretableFieldValue(column: UserColumnId, value: JValue, columnType: CT) extends
+      BadDataException(s"Unable to interpret value for field ${column} as " +
+                       s"${typeNameFor(columnType)}: $value")
 
-  val pkCol = schema.values.find(_.isUserPrimaryKey).orElse(schema.values.find(_.isSystemPrimaryKey)).getOrElse {
-    sys.error("No system primary key in the schema?")
-  }
+  val pkCol = schema.values.find(_.isUserPrimaryKey)
+                           .orElse(schema.values.find(_.isSystemPrimaryKey))
+                           .getOrElse { sys.error("No system primary key in the schema?") }
   val pkRep = repFor(pkCol.typ)
   val versionCol = schema.values.find(_.isVersion).getOrElse {
     sys.error("No version column in the schema?")
