@@ -4,7 +4,8 @@ package service
 import com.socrata.datacoordinator.id.{UserColumnId, DatasetId}
 import com.socrata.datacoordinator.truth.CopySelector
 import com.socrata.datacoordinator.truth.metadata.{DatasetCopyContext, CopyInfo, ColumnInfo}
-import com.socrata.datacoordinator.truth.universe.{SchemaFinderProvider, CacheProvider, DatasetReaderProvider, Universe}
+import com.socrata.datacoordinator.truth.universe.{SchemaFinderProvider, CacheProvider}
+import com.socrata.datacoordinator.truth.universe.{DatasetReaderProvider, Universe}
 import com.socrata.datacoordinator.util.collection.{UserColumnIdSet, MutableColumnIdMap, ColumnIdMap}
 import com.socrata.http.server.util.{StrongEntityTag, EntityTag, Precondition}
 import com.socrata.soql.environment.ColumnName
@@ -16,7 +17,15 @@ object Exporter {
   case class PreconditionFailed(reason: Precondition.Failure) extends Result[Nothing]
   case class Success[T](x: T) extends Result[T]
 
-  def export[CT, CV, T](u: Universe[CT, CV] with DatasetReaderProvider, id: DatasetId, copy: CopySelector, columns: Option[UserColumnIdSet], limit: Option[Long], offset: Option[Long], precondition: Precondition, sorted: Boolean)(f: (EntityTag, DatasetCopyContext[CT], Long, Iterator[Row[CV]]) => T): Result[T] = {
+  def export[CT, CV, T](u: Universe[CT, CV] with DatasetReaderProvider,
+                        id: DatasetId,
+                        copy: CopySelector,
+                        columns: Option[UserColumnIdSet],
+                        limit: Option[Long],
+                        offset: Option[Long],
+                        precondition: Precondition,
+                        sorted: Boolean)
+                       (f: (EntityTag, DatasetCopyContext[CT], Long, Iterator[Row[CV]]) => T): Result[T] = {
     val subResult = for {
       ctxOpt <- u.datasetReader.openDataset(id, copy)
       ctx <- ctxOpt
@@ -30,7 +39,8 @@ object Exporter {
             case Some(set) => schema.filter { case (_, ci) => set(ci.userColumnId) }
             case None => schema
           }
-          val properSchema = (copyCtx.userIdCol ++ copyCtx.systemIdCol).foldLeft(selectedSchema) { (ss, idCol) =>
+          val properSchema = (copyCtx.userIdCol ++
+                              copyCtx.systemIdCol).foldLeft(selectedSchema) { (ss, idCol) =>
             ss + (idCol.systemId -> idCol)
           }
 

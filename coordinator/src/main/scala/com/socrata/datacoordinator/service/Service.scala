@@ -28,11 +28,28 @@ import org.apache.commons.codec.binary.Base64
 import org.joda.time.DateTime
 import org.joda.time.format.ISODateTimeFormat
 
+object Service {
+  type processMutationFunc = (DatasetId, Iterator[JValue], IndexedTempFile) =>
+                             (Long, DateTime, Seq[MutationScriptCommandResult])
+  type processCreationReturns = (DatasetId, Long, DateTime, Seq[MutationScriptCommandResult])
+  type datasetContentsFunc = Either[Schema, (EntityTag, Seq[SchemaField],
+                                             Option[UserColumnId], String,
+                                             Long, Iterator[Array[JValue]])] => Unit
+}
+
+import Service._
+
+/**
+ * The main HTTP REST resource servicing class for the data coordinator.
+ * It should probably be broken up into multiple classes per resource.
+ */
 class Service(serviceConfig: ServiceConfig,
-              processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) => (Long, DateTime, Seq[MutationScriptCommandResult]),
-              processCreation: (Iterator[JValue], IndexedTempFile) => (DatasetId, Long, DateTime, Seq[MutationScriptCommandResult]),
+              processMutation: processMutationFunc,
+              processCreation: (Iterator[JValue], IndexedTempFile) => processCreationReturns,
               getSchema: DatasetId => Option[Schema],
-              datasetContents: (DatasetId, Option[String], CopySelector, Option[UserColumnIdSet], Option[Long], Option[Long], Precondition, Boolean) => (Either[Schema, (EntityTag, Seq[SchemaField], Option[UserColumnId], String, Long, Iterator[Array[JValue]])] => Unit) => Exporter.Result[Unit],
+              datasetContents: (DatasetId, Option[String], CopySelector, Option[UserColumnIdSet],
+                                Option[Long], Option[Long], Precondition, Boolean) =>
+                               datasetContentsFunc => Exporter.Result[Unit],
               secondaries: Set[String],
               datasetsInStore: (String) => Map[DatasetId, Long],
               versionInStore: (String, DatasetId) => Option[Long],
@@ -78,7 +95,8 @@ class Service(serviceConfig: ServiceConfig,
     override val get = doGetSecondaries _
 
     def doGetSecondaries(req: HttpServletRequest): HttpResponse =
-      OK ~> ContentType("application/json; charset=utf-8") ~> Write(JsonUtil.writeJson(_, secondaries.toSeq, buffer = true))
+      OK ~> ContentType("application/json; charset=utf-8") ~>
+            Write(JsonUtil.writeJson(_, secondaries.toSeq, buffer = true))
   }
 
   case class SecondaryManifestResource(storeId: String) extends SodaResource {
@@ -90,7 +108,8 @@ class Service(serviceConfig: ServiceConfig,
       val dsConverted = ds.foldLeft(Map.empty[String, Long]) { (acc, kv) =>
         acc + (formatDatasetId(kv._1) -> kv._2)
       }
-      OK ~> ContentType("application/json; charset=utf-8") ~> Write(JsonUtil.writeJson(_, dsConverted, buffer = true))
+      OK ~> ContentType("application/json; charset=utf-8") ~>
+            Write(JsonUtil.writeJson(_, dsConverted, buffer = true))
     }
   }
 
@@ -102,7 +121,8 @@ class Service(serviceConfig: ServiceConfig,
       if(!secondaries(storeId)) return NotFound
       versionInStore(storeId, datasetId) match {
         case Some(v) =>
-          OK ~> ContentType("application/json; charset=utf-8") ~> Write(JsonUtil.writeJson(_, Map("version" -> v), buffer = true))
+          OK ~> ContentType("application/json; charset=utf-8") ~>
+                Write(JsonUtil.writeJson(_, Map("version" -> v), buffer = true))
         case None =>
           NotFound
       }
@@ -126,7 +146,8 @@ class Service(serviceConfig: ServiceConfig,
 
     def doGetSecondariesOfDataset(req: HttpServletRequest): HttpResponse = {
       val ss = secondariesOfDataset(datasetId)
-      OK ~> ContentType("application/json; charset=utf-8") ~> Write(JsonUtil.writeJson(_, ss, buffer = true))
+      OK ~> ContentType("application/json; charset=utf-8") ~>
+            Write(JsonUtil.writeJson(_, ss, buffer = true))
     }
   }
 
@@ -159,7 +180,8 @@ class Service(serviceConfig: ServiceConfig,
     }
   }
 
-  def jsonStream(req: HttpServletRequest, approximateMaxDatumBound: Long): Either[HttpResponse, (Iterator[JsonEvent], () => Unit)] = {
+  def jsonStream(req: HttpServletRequest, approximateMaxDatumBound: Long):
+      Either[HttpResponse, (Iterator[JsonEvent], () => Unit)] = {
     val nullableContentType = req.getContentType
     if(nullableContentType == null)
       return Left(err(BadRequest, "req.content-type.missing"))
@@ -321,7 +343,8 @@ class Service(serviceConfig: ServiceConfig,
   private def writeResult(o: OutputStream, r: MutationScriptCommandResult, tmp: IndexedTempFile) {
     r match {
       case MutationScriptCommandResult.ColumnCreated(id, typname) =>
-        o.write(CompactJsonWriter.toString(JObject(Map("id" -> JsonCodec.toJValue(id), "type" -> JString(typname.name)))).getBytes(UTF_8))
+        o.write(CompactJsonWriter.toString(JObject(Map("id" -> JsonCodec.toJValue(id),
+                                                       "type" -> JString(typname.name)))).getBytes(UTF_8))
       case MutationScriptCommandResult.Uninteresting =>
         o.write('{')
         o.write('}')
@@ -361,7 +384,8 @@ class Service(serviceConfig: ServiceConfig,
               }
               iteratorOrError match {
                 case Right(iterator) =>
-                  val (dataset, dataVersion, lastModified, result) = processCreation(iterator.map { ev => boundResetter(); ev }, tmp)
+                  val (dataset, dataVersion, lastModified, result) =
+                    processCreation(iterator.map { ev => boundResetter(); ev }, tmp)
                   OK ~>
                     Header("X-SODA2-Truth-Last-Modified", dateTimeFormat.print(lastModified)) ~>
                     Header("X-SODA2-Truth-Version", dataVersion.toString) ~>
@@ -440,7 +464,8 @@ class Service(serviceConfig: ServiceConfig,
               }
               iteratorOrError match {
                 case Right(iterator) =>
-                  val (version, lastModified, result) = processMutation(datasetId, iterator.map { ev => boundResetter(); ev }, tmp)
+                  val (version, lastModified, result) =
+                    processMutation(datasetId, iterator.map { ev => boundResetter(); ev }, tmp)
                   OK ~>
                     ContentType("application/json; charset=utf-8") ~>
                     Header("X-SODA2-Truth-Last-Modified", dateTimeFormat.print(lastModified)) ~>
@@ -492,7 +517,9 @@ class Service(serviceConfig: ServiceConfig,
     def doExportFile(req: HttpServletRequest): HttpResponse = {
       val precondition = req.precondition
       val schemaHash = Option(req.getParameter("schemaHash"))
-      val onlyColumns = Option(req.getParameterValues("c")).map(_.flatMap { c => norm(c).split(',').map(new UserColumnId(_)) }).map(UserColumnIdSet(_ : _*))
+      val onlyColumns = Option(req.getParameterValues("c"))
+                          .map(_.flatMap { c => norm(c).split(',').map(new UserColumnId(_)) })
+                          .map(UserColumnIdSet(_ : _*))
       val limit = Option(req.getParameter("limit")).map { limStr =>
         try {
           limStr.toLong
@@ -523,7 +550,9 @@ class Service(serviceConfig: ServiceConfig,
         case "true" =>
           true
         case "false" =>
-          if(limit.isDefined || offset.isDefined) return BadRequest ~> Content("Cannot page through an unsorted export")
+          if (limit.isDefined || offset.isDefined) {
+            return BadRequest ~> Content("Cannot page through an unsorted export")
+          }
           false
         case _ =>
           return BadRequest ~> Content("Bad sorted selector")
@@ -543,7 +572,8 @@ class Service(serviceConfig: ServiceConfig,
         case Right(newPrecond) =>
           val upstreamPrecondition = newPrecond.map(_.dropRight(suffix.length));
           { resp =>
-            val found = datasetContents(datasetId, schemaHash, copy, onlyColumns, limit, offset, upstreamPrecondition, sorted) {
+            val found = datasetContents(datasetId, schemaHash, copy, onlyColumns, limit, offset,
+                                        upstreamPrecondition, sorted) {
               case Left(newSchema) =>
                 mismatchedSchema("req.export.mismatched-schema", datasetId, newSchema)(resp)
               case Right((etag, schema, rowIdCol, locale, approxRowCount, rows)) =>
@@ -662,7 +692,8 @@ class Service(serviceConfig: ServiceConfig,
   }
 
   def run(port: Int, broker: ServerBroker) {
-    val server = new SocrataServerJetty(new ThreadRenamingHandler(new LoggingHandler(errorHandlingHandler)), port = port, broker = broker)
+    val server = new SocrataServerJetty(new ThreadRenamingHandler(
+                   new LoggingHandler(errorHandlingHandler)), port = port, broker = broker)
     server.run()
   }
 }
