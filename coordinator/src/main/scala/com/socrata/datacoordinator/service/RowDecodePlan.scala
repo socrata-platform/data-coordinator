@@ -85,6 +85,7 @@ class RowDecodePlan[CT, CV](schema: ColumnIdMap[ColumnInfo[CT]],
         }
       }
       Right(result.freeze())
+
     case JArray(Seq(value)) =>
       pkRep.fromJValue(value) match {
         case Some(trueValue) =>
@@ -92,6 +93,7 @@ class RowDecodePlan[CT, CV](schema: ColumnIdMap[ColumnInfo[CT]],
         case None =>
           throw new UninterpretableFieldValue(pkCol.userColumnId, value, pkRep.representedType)
       }
+
     case JArray(Seq(value, version)) =>
       val id = pkRep.fromJValue(value) match {
         case Some(trueValue) =>
@@ -106,6 +108,7 @@ class RowDecodePlan[CT, CV](schema: ColumnIdMap[ColumnInfo[CT]],
           throw new UninterpretableFieldValue(versionCol.userColumnId, value, versionRep.representedType)
       }
       Left((id, Some(versionOf(v))))
+
     case other =>
       throw new BadUpsertCommandException(other)
   }
