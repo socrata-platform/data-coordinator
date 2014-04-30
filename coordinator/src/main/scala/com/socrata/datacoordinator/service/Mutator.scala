@@ -36,11 +36,16 @@ object Mutator {
 
   case class NormalMutation(index: Long, datasetId: DatasetId, schemaHash: Option[String]) extends StreamType
   case class CreateDatasetMutation(index: Long, localeName: String) extends StreamType
-  case class CreateWorkingCopyMutation(index: Long, datasetId: DatasetId, copyData: Boolean,
+  case class CreateWorkingCopyMutation(index: Long,
+                                       datasetId: DatasetId,
+                                       copyData: Boolean,
                                        schemaHash: Option[String]) extends StreamType
-  case class PublishWorkingCopyMutation(index: Long, datasetId: DatasetId, keepingSnapshotCount: Option[Int],
+  case class PublishWorkingCopyMutation(index: Long,
+                                        datasetId: DatasetId,
+                                        keepingSnapshotCount: Option[Int],
                                         schemaHash: Option[String]) extends StreamType
-  case class DropWorkingCopyMutation(index: Long, datasetId: DatasetId,
+  case class DropWorkingCopyMutation(index: Long,
+                                     datasetId: DatasetId,
                                      schemaHash: Option[String]) extends StreamType
 
   sealed abstract class MutationException(msg: String = null, cause: Throwable = null)
@@ -651,9 +656,9 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
         val reportWriter = new JsonReportWriter(mutator, jobCounter.peek, indexedTempFile, nonFatalRowErrors)
         def checkForError() {
           for(error <- reportWriter.firstError) {
-            val pk = schema.values.find(_.isUserPrimaryKey)
-                                  .orElse(schema.values.find(_.isSystemPrimaryKey))
-                                  .getOrElse { sys.error("No primary key on this dataset?") }
+            val pk = schema.values.find(_.isUserPrimaryKey).
+                                   orElse(schema.values.find(_.isSystemPrimaryKey)).
+                                   getOrElse { sys.error("No primary key on this dataset?") }
             val trueError = error.map(jsonRepFor(pk.typ).toJValue)
             val jsonizer = { (rv: RowVersion) =>
               jsonRepFor(mutator.versionColumn.typ).toJValue(typeContext.makeValueFromRowVersion(rv))

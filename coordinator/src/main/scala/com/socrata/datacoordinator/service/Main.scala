@@ -136,11 +136,11 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
         } else {
           val jsonReps = common.jsonReps(copyCtx.datasetInfo)
           val jsonSchema = copyCtx.schema.mapValuesStrict { ci => jsonReps(ci.typ) }
-          val unwrappedCids = copyCtx.schema.values.toSeq
-                                .filter { ci => jsonSchema.contains(ci.systemId) }
-                                .sortBy(_.userColumnId)
-                                .map(_.systemId.underlying)
-                                .toArray
+          val unwrappedCids = copyCtx.schema.values.toSeq.
+                                filter { ci => jsonSchema.contains(ci.systemId) }.
+                                sortBy(_.userColumnId).
+                                map(_.systemId.underlying).
+                                toArray
           val pkColName = copyCtx.pkCol.map(_.userColumnId)
           val orderedSchema = unwrappedCids.map { cidRaw =>
             val col = copyCtx.schema(new ColumnId(cidRaw))
@@ -327,7 +327,8 @@ object Main {
             pong.start()
             val auxData = new AuxiliaryData(livenessCheckInfo = Some(pong.livenessCheckInfo))
             serv.run(serviceConfig.network.port,
-                     new CuratorBroker(discovery, address,
+                     new CuratorBroker(discovery,
+                                       address,
                                        serviceConfig.advertisement.name + "." + serviceConfig.instance,
                                        Some(auxData)))
           }
