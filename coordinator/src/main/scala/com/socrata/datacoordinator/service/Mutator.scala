@@ -308,7 +308,8 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
   }
 
   type UniverseWithProviders = Universe[CT, CV] with DatasetMutatorProvider
-                                                with SchemaFinderProvider with DatasetMapReaderProvider
+                                                with SchemaFinderProvider
+                                                with DatasetMapReaderProvider
 
   def createScript(u: UniverseWithProviders, commandStream: Iterator[JValue]):
       Service.processCreationReturns = {

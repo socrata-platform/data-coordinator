@@ -117,9 +117,14 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
     }
   }
 
-  def exporter(id: DatasetId, schemaHash: Option[String], copy: CopySelector,
-               columns: Option[UserColumnIdSet], limit: Option[Long], offset: Option[Long],
-               precondition: Precondition, sorted: Boolean)
+  def exporter(id: DatasetId,
+               schemaHash: Option[String],
+               copy: CopySelector,
+               columns: Option[UserColumnIdSet],
+               limit: Option[Long],
+               offset: Option[Long],
+               precondition: Precondition,
+               sorted: Boolean)
               (f: Service.datasetContentsFunc): Exporter.Result[Unit] = {
     for(u <- common.universe) yield {
       Exporter.export(u, id, copy, columns, limit, offset,
