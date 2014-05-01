@@ -23,6 +23,7 @@ import com.socrata.soql.types.obfuscation.{Quadifier, CryptProvider}
 import scala.concurrent.duration.{FiniteDuration, Duration}
 import java.security.SecureRandom
 import com.socrata.datacoordinator.truth.universe.{SchemaFinderProvider, CacheProvider}
+import com.socrata.datacoordinator.service.mutator.{DMLMutatorCommon, DDLMutatorCommon}
 
 object SoQLSystemColumns { sc =>
   val id = new UserColumnId(":id")
@@ -211,7 +212,7 @@ class SoQLCommon(dataSource: DataSource,
     val timingReport = common.timingReport
   }
 
-  object Mutator extends MutatorCommon[CT, CV] {
+  object Mutator extends MutatorCommon[CT, CV] with DDLMutatorCommon[CT, CV] with DMLMutatorCommon[CT, CV] {
     def physicalColumnBaseBase(nameHint: String, isSystemColumn: Boolean) =
       common.physicalColumnBaseBase(nameHint, isSystemColumn)
 
@@ -235,5 +236,9 @@ class SoQLCommon(dataSource: DataSource,
       def quad() = Quadifier.quadify(rng.nextInt())
       new UserColumnId(quad() + "-" + quad())
     }
+
+    override def indexedTempFileIndexBufSize: Int = 1024*1024
+    override def indexedTempFileDataBufSize: Int = 1024*1024
+    override def indexedTempFileTempDir: File = common.tmpDir
   }
 }
