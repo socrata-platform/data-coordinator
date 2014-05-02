@@ -24,6 +24,8 @@ import com.socrata.http.server.livenesscheck.LivenessCheckResponder
 import com.socrata.datacoordinator.truth.metadata.{SchemaField, Schema, DatasetCopyContext}
 import com.socrata.http.server.util.{EntityTag, Precondition}
 import scala.util.Random
+import com.socrata.datacoordinator.service.mutator.{DMLMutator, DDLMutator, UniversalMutator}
+import org.joda.time.DateTime
 
 class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Main])
@@ -237,6 +239,37 @@ object Main {
           }
         }
 
+        val universalMutator = new UniversalMutator {
+          val ddlMutator = new DDLMutator(common.Mutator)
+          val dmlMutator = new DMLMutator(common.Mutator)
+
+          override def createScript(commandStream: Iterator[JValue]): (DatasetId, Long, DateTime, Seq[mutator.MutationScriptCommandResult]) = {
+            for(u <- common.universe) yield {
+              ddlMutator.createScript(u, commandStream)
+            }
+          }
+
+          override def upsertUtf8(datasetId: DatasetId, commandStream: Iterator[JValue]): Managed[(Long, DateTime, Iterator[Array[Byte]])] =
+            new SimpleArm[(Long, DateTime, Iterator[Array[Byte]])] {
+              override def flatMap[A](f: ((Long, DateTime, Iterator[Array[Byte]])) => A): A = {
+                for(u <- common.universe) yield {
+                  dmlMutator.upsertScript(u, datasetId, commandStream).flatMap(f)
+                }
+              }
+            }
+
+          override def copyOp(datasetId: DatasetId, command: JValue): (Long, DateTime) = {
+            for(u <- common.universe) yield {
+              ddlMutator.copyOp(u, datasetId, command)
+            }
+          }
+
+          override def ddlScript(datasetId: DatasetId, commandStream: Iterator[JValue]): (Long, DateTime, Seq[mutator.MutationScriptCommandResult]) = {
+            for(u <- common.universe) yield {
+              ddlMutator.updateScript(u, datasetId, commandStream)
+            }
+          }
+        }
         val serv = new Service(serviceConfig, operations.processMutation, operations.processCreation, getSchema _,
           operations.exporter, secondaries, operations.datasetsInStore, operations.versionInStore,
           operations.ensureInSecondary, operations.ensureInSecondaryGroup, operations.secondariesOfDataset, operations.listDatasets, operations.deleteDataset,
