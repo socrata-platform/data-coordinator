@@ -57,37 +57,38 @@ object Mutator {
       extends MutationException(msg, cause)
   case class EmptyCommandStream()(val index: Long) extends InvalidCommandStreamException
   case class CommandIsNotAnObject(value: JValue)(val index: Long) extends InvalidCommandStreamException
-  case class MissingCommandField(obj: JObject, field: String)
-                                (val index: Long) extends InvalidCommandStreamException
-  case class InvalidCommandFieldValue(obj: JObject, field: String, value: JValue)
-                                     (val index: Long) extends InvalidCommandStreamException
-  case class MismatchedSchemaHash(name: DatasetId, schema: Schema)
-                                 (val index: Long) extends InvalidCommandStreamException
+  case class MissingCommandField(obj: JObject, field: String) (val index: Long) extends InvalidCommandStreamException
+  case class InvalidCommandFieldValue(obj: JObject,
+                                      field: String,
+                                      value: JValue) (val index: Long) extends InvalidCommandStreamException
+  case class MismatchedSchemaHash(name: DatasetId, schema: Schema)(val index: Long) extends InvalidCommandStreamException
 
   case class InvalidLocale(locale: String)(val index: Long) extends MutationException
   case class NoSuchDataset(name: DatasetId)(val index: Long) extends MutationException
   case class CannotAcquireDatasetWriteLock(name: DatasetId)(val index: Long) extends MutationException
   case class SystemInReadOnlyMode()(val index: Long) extends MutationException
-  case class IncorrectLifecycleStage(name: DatasetId, currentLifecycleStage: LifecycleStage,
+  case class IncorrectLifecycleStage(name: DatasetId,
+                                     currentLifecycleStage: LifecycleStage,
                                      expected: Set[LifecycleStage])(val index: Long) extends MutationException
   case class InitialCopyDrop(name: DatasetId)(val index: Long) extends MutationException
   case class IllegalColumnId(id: UserColumnId)(val index: Long) extends MutationException
   case class NoSuchColumn(dataset: DatasetId, id: UserColumnId)(val index: Long) extends MutationException
   case class NoSuchType(name: TypeName)(val index: Long) extends MutationException
-  case class ColumnAlreadyExists(dataset: DatasetId, id: UserColumnId)
-                                (val index: Long) extends MutationException
-  case class PrimaryKeyAlreadyExists(dataset: DatasetId, id: UserColumnId, existingName: UserColumnId)
-                                    (val index: Long) extends MutationException
-  case class InvalidTypeForPrimaryKey(dataset: DatasetId, name: UserColumnId, typ: TypeName)
-                                     (val index: Long) extends MutationException
+  case class ColumnAlreadyExists(dataset: DatasetId, id: UserColumnId)(val index: Long) extends MutationException
+  case class PrimaryKeyAlreadyExists(dataset: DatasetId,
+                                     id: UserColumnId,
+                                     existingName: UserColumnId)(val index: Long) extends MutationException
+  case class InvalidTypeForPrimaryKey(dataset: DatasetId,
+                                      name: UserColumnId,
+                                      typ: TypeName)(val index: Long) extends MutationException
   case class NullsInColumn(dataset: DatasetId, id: UserColumnId)(val index: Long) extends MutationException
   case class NotPrimaryKey(dataset: DatasetId, id: UserColumnId)(val index: Long) extends MutationException
-  case class DuplicateValuesInColumn(dataset: DatasetId, id: UserColumnId)
-                                    (val index: Long) extends MutationException
-  case class InvalidSystemColumnOperation(dataset: DatasetId, id: UserColumnId, op: String)
-                                         (val index: Long) extends MutationException
-  case class DeleteRowIdentifierNotAllowed(dataset: DatasetId, id: UserColumnId)
-                                          (val index: Long) extends MutationException
+  case class DuplicateValuesInColumn(dataset: DatasetId, id: UserColumnId) (val index: Long) extends MutationException
+  case class InvalidSystemColumnOperation(dataset: DatasetId,
+                                          id: UserColumnId,
+                                          op: String)(val index: Long) extends MutationException
+  case class DeleteRowIdentifierNotAllowed(dataset: DatasetId,
+                                           id: UserColumnId)(val index: Long) extends MutationException
 
   sealed abstract class RowDataException extends MutationException {
     def subindex: Int
