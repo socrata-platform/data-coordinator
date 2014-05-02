@@ -5,7 +5,7 @@ import javax.servlet.http.{HttpServletResponse, HttpServletRequest}
 import com.socrata.http.server.implicits._
 import com.socrata.http.server.{ServerBroker, HttpResponse, SocrataServerJetty, HttpService}
 import com.socrata.http.server.responses._
-import com.rojoma.json.util.{JsonArrayIterator, AutomaticJsonCodecBuilder, JsonKey, JsonUtil}
+import com.rojoma.json.util.{JsonArrayIterator, JsonUtil}
 import com.rojoma.json.io._
 import com.rojoma.json.ast._
 import com.ibm.icu.text.Normalizer
@@ -13,13 +13,12 @@ import com.socrata.datacoordinator.truth._
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.util.IndexedTempFile
 import javax.activation.{MimeTypeParseException, MimeType}
-import com.socrata.soql.environment.TypeName
 import com.socrata.datacoordinator.truth.loader._
 import java.io._
 import com.socrata.datacoordinator.id.{UserColumnId, DatasetId}
 import com.rojoma.json.codec.JsonCodec
 import java.nio.charset.StandardCharsets.UTF_8
-import com.socrata.datacoordinator.util.collection.{UserColumnIdMap, UserColumnIdSet}
+import com.socrata.datacoordinator.util.collection.UserColumnIdSet
 import com.socrata.http.server.routing._
 import com.socrata.datacoordinator.truth.loader.NoSuchRowToDelete
 import com.rojoma.json.ast.JString
@@ -29,10 +28,9 @@ import com.rojoma.json.io.StringEvent
 import com.rojoma.json.io.IdentifierEvent
 import com.socrata.datacoordinator.truth.loader.NoSuchRowToUpdate
 import com.socrata.datacoordinator.truth.loader.VersionMismatch
-import com.socrata.http.server.util.{StrongEntityTag, EntityTag, Precondition, ErrorAdapter}
+import com.socrata.http.server.util.{EntityTag, Precondition, ErrorAdapter}
 import com.socrata.datacoordinator.truth.metadata.{SchemaField, Schema}
 import java.security.MessageDigest
-import org.apache.commons.codec.binary.Base64
 import com.socrata.http.server.util.handlers.{ThreadRenamingHandler, LoggingHandler}
 import org.joda.time.DateTime
 import org.joda.time.format.ISODateTimeFormat
@@ -40,14 +38,13 @@ import org.joda.time.format.ISODateTimeFormat
 class Service(serviceConfig: ServiceConfig,
               processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) => (Long, DateTime, Seq[MutationScriptCommandResult]),
               processCreation: (Iterator[JValue], IndexedTempFile) => (DatasetId, Long, DateTime, Seq[MutationScriptCommandResult]),
-              getSchema: DatasetId => Option[Schema],
               datasetContents: (DatasetId, Option[String], CopySelector, Option[UserColumnIdSet], Option[Long], Option[Long], Precondition, Boolean) => (Either[Schema, (EntityTag, Seq[SchemaField], Option[UserColumnId], String, Long, Iterator[Array[JValue]])] => Unit) => Exporter.Result[Unit],
-              secondaries: Set[String],
-              datasetsInStore: (String) => Map[DatasetId, Long],
-              versionInStore: (String, DatasetId) => Option[Long],
-              ensureInSecondary: (String, DatasetId) => Unit,
-              ensureInSecondaryGroup: (String, DatasetId) => Unit,
-              secondariesOfDataset: DatasetId => Map[String, Long],
+              datasetSchema: (DatasetId, String) => HttpService,
+              secondaries: HttpService,
+              secondariesOfDataset: DatasetId => HttpService,
+              secondaryManifest: String => HttpService,
+              datasetSecondaryStatus: (String, DatasetId) => HttpService,
+              version: HttpService,
               datasets: () => Seq[DatasetId],
               deleteDataset: DatasetId => DatasetDropper.Result,
               commandReadLimit: Long,
@@ -82,62 +79,6 @@ class Service(serviceConfig: ServiceConfig,
   def writeLockError(datasetId: DatasetId) =
     err(Conflict, "update.dataset.temporarily-not-writable",
       "dataset" -> JString(formatDatasetId(datasetId)))
-
-  object SecondaryManifestsResource extends SodaResource {
-    override val get = doGetSecondaries _
-
-    def doGetSecondaries(req: HttpServletRequest): HttpResponse =
-      OK ~> ContentType("application/json; charset=utf-8") ~> Write(JsonUtil.writeJson(_, secondaries.toSeq, buffer = true))
-  }
-
-  case class SecondaryManifestResource(storeId: String) extends SodaResource {
-    override def get = doGetSecondaryManifest
-
-    def doGetSecondaryManifest(req: HttpServletRequest): HttpResponse = {
-      if(!secondaries(storeId)) return NotFound
-      val ds = datasetsInStore(storeId)
-      val dsConverted = ds.foldLeft(Map.empty[String, Long]) { (acc, kv) =>
-        acc + (formatDatasetId(kv._1) -> kv._2)
-      }
-      OK ~> ContentType("application/json; charset=utf-8") ~> Write(JsonUtil.writeJson(_, dsConverted, buffer = true))
-    }
-  }
-
-  case class DatasetSecondaryStatusResource(storeId: String, datasetId: DatasetId) extends SodaResource {
-    override def get = doGetDataVersionInSecondary
-    override def post = doUpdateVersionInSecondary
-
-    def doGetDataVersionInSecondary(req: HttpServletRequest): HttpResponse = {
-      if(!secondaries(storeId)) return NotFound
-      versionInStore(storeId, datasetId) match {
-        case Some(v) =>
-          OK ~> ContentType("application/json; charset=utf-8") ~> Write(JsonUtil.writeJson(_, Map("version" -> v), buffer = true))
-        case None =>
-          NotFound
-      }
-    }
-
-    def doUpdateVersionInSecondary(req: HttpServletRequest): HttpResponse = {
-      val defaultSecondaryGroups: Set[String] = serviceConfig.secondary.defaultGroups
-      val groupRe = "_(.*)_".r
-      storeId match {
-        case "_DEFAULT_" => defaultSecondaryGroups.foreach(ensureInSecondaryGroup(_, datasetId))
-        case groupRe(g) if serviceConfig.secondary.groups.contains(g) => ensureInSecondaryGroup(g, datasetId)
-        case secondary if secondaries(storeId) => ensureInSecondary(secondary, datasetId)
-        case _ => return NotFound
-      }
-      OK
-    }
-  }
-
-  case class SecondariesOfDatasetResource(datasetId: DatasetId) extends SodaResource {
-    override def get = doGetSecondariesOfDataset
-
-    def doGetSecondariesOfDataset(req: HttpServletRequest): HttpResponse = {
-      val ss = secondariesOfDataset(datasetId)
-      OK ~> ContentType("application/json; charset=utf-8") ~> Write(JsonUtil.writeJson(_, ss, buffer = true))
-    }
-  }
 
   class ReaderExceededBound(val bytesRead: Long) extends Exception
   class BoundedReader(underlying: Reader, bound: Long) extends Reader {
@@ -417,19 +358,6 @@ class Service(serviceConfig: ServiceConfig,
     }
   }
 
-  case class DatasetSchemaResource(datasetId: DatasetId) extends SodaResource {
-    override def get = { (req: HttpServletRequest) =>
-      val result = for {
-        schema <- getSchema(datasetId)
-      } yield {
-        OK ~> ContentType("application/json; charset=utf-8") ~> Write { w =>
-          JsonUtil.writeJson(w, jsonifySchema(schema))
-        }
-      }
-      result.getOrElse(notFoundError(formatDatasetId(datasetId)))
-    }
-  }
-
   case class DatasetResource(datasetId: DatasetId) extends SodaResource {
     override def post = doMutation
     override def delete = doDeleteDataset
@@ -610,18 +538,6 @@ class Service(serviceConfig: ServiceConfig,
     ))
   }
 
-  object VersionResource extends SodaResource {
-    val responseString = for {
-      stream <- managed(getClass.getClassLoader.getResourceAsStream("data-coordinator-version.json"))
-      source <- managed(scala.io.Source.fromInputStream(stream)(scala.io.Codec.UTF8))
-    } yield source.mkString
-
-    val response =
-      OK ~> ContentType("application/json; charset=utf-8") ~> Content(responseString)
-
-    override val get = (_: HttpServletRequest) => response
-  }
-
   implicit object DatasetIdExtractor extends Extractor[DatasetId] {
     def extract(s: String): Option[DatasetId] =
       parseDatasetId(norm(s))
@@ -632,17 +548,19 @@ class Service(serviceConfig: ServiceConfig,
     Routes(
       // "If the thing is parsable as a DatasetId, do something with it, otherwise give a
       // SODA2 not-found response"
-      Route("/dataset", NotFoundDatasetResource("")),
+      Route("/dataset", NotFoundDatasetResource("")), // PUT to this to create a dataset
       Route("/dataset/{String}", NotFoundDatasetResource),
-      Route("/dataset/{DatasetId}", DatasetResource),
-      Route("/dataset/{DatasetId}/schema", DatasetSchemaResource),
+      Route("/dataset/{DatasetId}", DatasetResource), // GET this for export; POST this for upsert; DELETE this for delete
+      // Route("/dataset/{DatasetId}/copies", DatasetCopiesResource), // GET this for a list of copies; POST this for a copy-op
+      Route("/dataset/{DatasetId}/schema", datasetSchema(_ : DatasetId, "latest")), // POST this for DDL
+      Route("/dataset/{DatasetId}/schema/{String}", datasetSchema),
 
-      Route("/secondary-manifest", SecondaryManifestsResource),
-      Route("/secondary-manifest/{String}", SecondaryManifestResource),
-      Route("/secondary-manifest/{String}/{DatasetId}", DatasetSecondaryStatusResource),
-      Route("/secondaries-of-dataset/{DatasetId}", SecondariesOfDatasetResource),
+      Route("/secondary-manifest", secondaries),
+      Route("/secondary-manifest/{String}", secondaryManifest),
+      Route("/secondary-manifest/{String}/{DatasetId}", datasetSecondaryStatus),
+      Route("/secondaries-of-dataset/{DatasetId}", secondariesOfDataset),
 
-      Route("/version", VersionResource)
+      Route("/version", version)
     )
   }
 

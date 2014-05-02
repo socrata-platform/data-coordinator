@@ -16,7 +16,7 @@ import org.apache.curator.retry
 import org.apache.curator.framework.CuratorFrameworkFactory
 import org.apache.curator.x.discovery.{ServiceInstanceBuilder, ServiceInstance, ServiceDiscoveryBuilder}
 import com.socrata.http.server.curator.CuratorBroker
-import com.rojoma.simplearm.SimpleArm
+import com.rojoma.simplearm.{Managed, SimpleArm}
 import java.net.{InetSocketAddress, InetAddress}
 import com.socrata.datacoordinator.util.collection.UserColumnIdSet
 import com.socrata.http.common.AuxiliaryData
@@ -26,6 +26,10 @@ import com.socrata.http.server.util.{EntityTag, Precondition}
 import scala.util.Random
 import com.socrata.datacoordinator.service.mutator.{DMLMutator, DDLMutator, UniversalMutator}
 import org.joda.time.DateTime
+import com.socrata.datacoordinator.service.resources._
+import scala.Some
+import com.rojoma.json.ast.JString
+import com.socrata.datacoordinator.truth.metadata.Schema
 
 class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Main])
@@ -186,7 +190,7 @@ object Main {
 
     PropertyConfigurator.configure(Propertizer("log4j", serviceConfig.logProperties))
 
-    val secondaries = serviceConfig.secondary.instances.keySet
+    val secondaryStores = serviceConfig.secondary.instances.keySet
 
     for(dsInfo <- DataSourceFromConfig(serviceConfig.dataSource)) {
       val executorService = Executors.newCachedThreadPool()
@@ -270,9 +274,16 @@ object Main {
             }
           }
         }
-        val serv = new Service(serviceConfig, operations.processMutation, operations.processCreation, getSchema _,
-          operations.exporter, secondaries, operations.datasetsInStore, operations.versionInStore,
-          operations.ensureInSecondary, operations.ensureInSecondaryGroup, operations.secondariesOfDataset, operations.listDatasets, operations.deleteDataset,
+
+        val datasetSchema = new DatasetSchemaResource(getSchema, common.internalNameFromDatasetId)
+        val secondaries = new SecondaryManifestsResource(secondaryStores)
+        val secondariesOfDataset = new SecondariesOfDatasetResource(operations.secondariesOfDataset)
+        val secondaryManifest = new SecondaryManifestResource(secondaryStores, operations.datasetsInStore, common.internalNameFromDatasetId)
+        val datasetSecondaryStatus = new DatasetSecondaryStatusResource(secondaryStores, operations.versionInStore, operations.ensureInSecondary, operations.ensureInSecondaryGroup, serviceConfig.secondary.groups.keySet, serviceConfig.secondary.defaultGroups)
+        val version = VersionResource
+
+        val serv = new Service(serviceConfig, operations.processMutation, operations.processCreation,
+          operations.exporter, datasetSchema.service, secondaries.service, secondariesOfDataset.service, secondaryManifest.service, datasetSecondaryStatus.service, version.service, operations.listDatasets, operations.deleteDataset,
           serviceConfig.commandReadLimit, common.internalNameFromDatasetId, common.datasetIdFromInternalName, operations.makeReportTemporaryFile)
 
         val finished = new CountDownLatch(1)
