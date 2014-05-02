@@ -8,12 +8,12 @@ import com.socrata.datacoordinator.id.{RowVersion, UserColumnId, DatasetId}
 import MutatorLib._
 import com.rojoma.json.codec.JsonCodec
 import com.socrata.datacoordinator.truth.loader._
-import com.socrata.datacoordinator.util.{Counter, IndexedTempFile}
+import com.socrata.datacoordinator.util.{Sized, Counter, IndexedTempFile}
 import com.socrata.datacoordinator.truth.{TypeContext, DatasetMutator}
 import com.socrata.datacoordinator.service.RowDecodePlan
 import com.socrata.datacoordinator.truth.json.JsonColumnRep
 import com.socrata.soql.environment.TypeName
-import com.rojoma.json.io.{JsonReader, FusedBlockJsonEventIterator, CompactJsonWriter}
+import com.rojoma.json.io.CompactJsonWriter
 import java.nio.charset.StandardCharsets
 import com.socrata.datacoordinator.truth.loader.NoSuchRowToDelete
 import com.socrata.datacoordinator.truth.metadata.DatasetInfo
@@ -23,7 +23,7 @@ import com.socrata.datacoordinator.truth.loader.NoSuchRowToUpdate
 import com.socrata.datacoordinator.truth.loader.VersionMismatch
 import com.rojoma.simplearm.{SimpleArm, Managed}
 import com.rojoma.simplearm.util._
-import java.io.{File, InputStreamReader}
+import java.io.{IOException, InputStream, File}
 
 trait DMLMutatorCommon[CT, CV] {
   def jsonReps(di: DatasetInfo): CT => JsonColumnRep[CT, CV]
@@ -76,9 +76,24 @@ class DMLMutator[CT, CV](common: DMLMutatorCommon[CT, CV]) {
     }
   }
 
-  def upsertScript(u: Universe[CT, CV] with DatasetMutatorProvider with SchemaFinderProvider with DatasetMapReaderProvider, datasetId: DatasetId, commandStream: Iterator[JValue]): Managed[(Long, DateTime, Iterator[JValue])] = {
-    new SimpleArm[(Long, DateTime, Iterator[JValue])] {
-      override def flatMap[A](f: ((Long, DateTime, Iterator[JValue])) => A): A = {
+  private def readFully(in: InputStream with Sized): Array[Byte] = {
+    require(in.size >= 0 && in.size <= Int.MaxValue)
+    val buf = new Array[Byte](in.size.toInt)
+    def loop(ptr: Int) {
+      if(ptr != buf.length) {
+        in.read(buf, ptr, buf.length - ptr) match {
+          case -1 => throw new IOException("in.size lied!")
+          case n => loop(ptr + n)
+        }
+      }
+    }
+    loop(0)
+    buf
+  }
+
+  def upsertScript(u: Universe[CT, CV] with DatasetMutatorProvider with SchemaFinderProvider with DatasetMapReaderProvider, datasetId: DatasetId, commandStream: Iterator[JValue]): Managed[(Long, DateTime, Iterator[Array[Byte]])] = {
+    new SimpleArm[(Long, DateTime, Iterator[Array[Byte]])] {
+      override def flatMap[A](f: ((Long, DateTime, Iterator[Array[Byte]])) => A): A = {
         using(new IndexedTempFile(indexedTempFileIndexBufSize, indexedTempFileDataBufSize, indexedTempFileTempDir)) { indexedTempFile =>
           translatingCannotWriteExceptions {
             if(commandStream.isEmpty) throw EmptyCommandStream()
@@ -90,14 +105,14 @@ class DMLMutator[CT, CV](common: DMLMutatorCommon[CT, CV]) {
             }
             val copyInfo = u.datasetMapReader.latest(u.datasetMapReader.datasetInfo(datasetId).get)
 
-            val tempIterator = new Iterator[JValue] {
+            val tempIterator = new Iterator[Array[Byte]] {
               var current = 0L
               def hasNext = current <= report.jobLimit
               def next() = {
                 indexedTempFile.readRecord(current) match {
                   case Some(in) =>
                     current += 1
-                    JsonReader.fromEvents(new FusedBlockJsonEventIterator(new InputStreamReader(in, StandardCharsets.UTF_8)))
+                    readFully(in)
                   case None =>
                     throw new NoSuchElementException
                 }

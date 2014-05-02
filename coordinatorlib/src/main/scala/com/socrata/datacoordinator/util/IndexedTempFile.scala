@@ -145,7 +145,7 @@ class IndexedTempFile(indexBufSizeHint: Int, dataBufSizeHint: Int, tmpDir: File 
     * number of bytes remaining in the record or `Int.MaxValue` if there is more
     * than fits in an `Int`.  It will also have an unbounded capacity for marking.
     */
-  def readRecord(id: Long): Option[InputStreamWithWriteTo] = {
+  def readRecord(id: Long): Option[InputStream with WriteTo with Sized] = {
     if(lastStream != null) lastStream.close()
     ensureIndexBlockContaining(id)
     val idxPos = (id * 16 - indexBufPos).toInt
@@ -377,11 +377,13 @@ class IndexedTempFile(indexBufSizeHint: Int, dataBufSizeHint: Int, tmpDir: File 
   private class RecordInputStream(startPos: Long,
                                   recordSize: Long,
                                   private[this] var blockReadIdx: Int)
-    extends InputStreamWithWriteTo
+    extends InputStream with WriteTo with Sized
   {
     private[this] val blockSize = dataBufSize
     private[this] var recordRemaining = recordSize
     private[this] var markPos = startPos
+
+    override def size = recordSize
 
     override def close() {
       if(lastStream eq this) lastStream = null
@@ -519,6 +521,10 @@ object Test extends App {
   f.close()
 }
 
-abstract class InputStreamWithWriteTo extends InputStream {
+trait WriteTo {
   def writeTo(that: OutputStream): Long
+}
+
+trait Sized {
+  def size: Long
 }
