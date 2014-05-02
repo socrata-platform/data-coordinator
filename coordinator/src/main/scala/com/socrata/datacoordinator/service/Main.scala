@@ -1,28 +1,28 @@
 package com.socrata.datacoordinator.service
 
-import com.rojoma.json.ast.{JString, JValue}
-import com.rojoma.simplearm.SimpleArm
 import com.rojoma.simplearm.util._
-import com.socrata.datacoordinator.common.{SoQLCommon, StandardDatasetMapLimits, DataSourceFromConfig}
-import com.socrata.datacoordinator.id.{UserColumnId, ColumnId, DatasetId}
-import com.socrata.datacoordinator.secondary.{DatasetAlreadyInSecondary, SecondaryLoader}
-import com.socrata.datacoordinator.truth.CopySelector
-import com.socrata.datacoordinator.truth.metadata.{SchemaField, Schema, DatasetCopyContext}
-import com.socrata.datacoordinator.util.collection.UserColumnIdSet
-import com.socrata.datacoordinator.util.{NullCache, IndexedTempFile, StackedTimingReport, LoggedTimingReport}
-import com.socrata.http.common.AuxiliaryData
-import com.socrata.http.server.curator.CuratorBroker
-import com.socrata.http.server.livenesscheck.LivenessCheckResponder
-import com.socrata.http.server.util.{EntityTag, Precondition}
-import com.socrata.soql.environment.ColumnName
-import com.socrata.thirdparty.typesafeconfig.Propertizer
 import com.typesafe.config.{Config, ConfigFactory}
-import java.net.{InetSocketAddress, InetAddress}
-import java.util.concurrent.{CountDownLatch, TimeUnit, Executors}
-import org.apache.curator.framework.CuratorFrameworkFactory
-import org.apache.curator.retry
-import org.apache.curator.x.discovery.{ServiceInstanceBuilder, ServiceInstance, ServiceDiscoveryBuilder}
 import org.apache.log4j.PropertyConfigurator
+import com.socrata.thirdparty.typesafeconfig.Propertizer
+import com.socrata.datacoordinator.secondary.{DatasetAlreadyInSecondary, SecondaryLoader}
+import java.util.concurrent.{CountDownLatch, TimeUnit, Executors}
+import com.socrata.datacoordinator.common.{SoQLCommon, StandardDatasetMapLimits, DataSourceFromConfig}
+import com.socrata.datacoordinator.util.{NullCache, IndexedTempFile, StackedTimingReport, LoggedTimingReport}
+import com.socrata.datacoordinator.id.{UserColumnId, ColumnId, DatasetId}
+import com.rojoma.json.ast.{JString, JValue}
+import com.socrata.datacoordinator.truth.CopySelector
+import com.socrata.soql.environment.ColumnName
+import org.apache.curator.retry
+import org.apache.curator.framework.CuratorFrameworkFactory
+import org.apache.curator.x.discovery.{ServiceInstanceBuilder, ServiceInstance, ServiceDiscoveryBuilder}
+import com.socrata.http.server.curator.CuratorBroker
+import com.rojoma.simplearm.SimpleArm
+import java.net.{InetSocketAddress, InetAddress}
+import com.socrata.datacoordinator.util.collection.UserColumnIdSet
+import com.socrata.http.common.AuxiliaryData
+import com.socrata.http.server.livenesscheck.LivenessCheckResponder
+import com.socrata.datacoordinator.truth.metadata.{SchemaField, Schema, DatasetCopyContext}
+import com.socrata.http.server.util.{EntityTag, Precondition}
 import scala.util.Random
 
 class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
@@ -54,16 +54,13 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
       val newCopiesRequired: Int = Math.max(desiredCopies - currentDatasetSecondaries.size, 0)
       val secondariesInGroup: Set[String] = secondaryGroup.instances
 
-      log.info(s"Dataset ${datasetId} exists on ${currentDatasetSecondaries.size} secondaries, " +
-               s"want it on ${desiredCopies} so need ${newCopiesRequired} new secondaries")
+      log.info(s"Dataset ${datasetId} exists on ${currentDatasetSecondaries.size} secondaries, want it on ${desiredCopies} so need ${newCopiesRequired} new secondaries")
 
-      val newSecondaries = Random.shuffle((secondariesInGroup -- currentDatasetSecondaries).toList)
-                                 .take(newCopiesRequired)
+      val newSecondaries = Random.shuffle((secondariesInGroup -- currentDatasetSecondaries).toList).take(newCopiesRequired)
 
       if (newSecondaries.size < newCopiesRequired) {
         // TODO: proper error
-        throw new Exception(s"Can't find ${desiredCopies} servers in secondary group ${secondaryGroupStr}" +
-                             " to publish to")
+        throw new Exception(s"Can't find ${desiredCopies} servers in secondary group ${secondaryGroupStr} to publish to")
       }
 
       log.info(s"Publishing dataset ${datasetId} to ${newSecondaries}")
@@ -117,18 +114,9 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
     }
   }
 
-  def exporter(id: DatasetId,
-               schemaHash: Option[String],
-               copy: CopySelector,
-               columns: Option[UserColumnIdSet],
-               limit: Option[Long],
-               offset: Option[Long],
-               precondition: Precondition,
-               sorted: Boolean)
-              (f: Service.datasetContentsFunc): Exporter.Result[Unit] = {
+  def exporter(id: DatasetId, schemaHash: Option[String], copy: CopySelector, columns: Option[UserColumnIdSet], limit: Option[Long], offset: Option[Long], precondition: Precondition, sorted: Boolean)(f: Either[Schema, (EntityTag, Seq[SchemaField], Option[UserColumnId], String, Long, Iterator[Array[JValue]])] => Unit): Exporter.Result[Unit] = {
     for(u <- common.universe) yield {
-      Exporter.export(u, id, copy, columns, limit, offset,
-                      precondition, sorted) {(entityTag, copyCtx, approxRowCount, it) =>
+      Exporter.export(u, id, copy, columns, limit, offset, precondition, sorted) { (entityTag, copyCtx, approxRowCount, it) =>
         val schema = u.schemaFinder.getSchema(copyCtx)
 
         if(schemaHash.isDefined && (Some(schema.hash) != schemaHash)) {
@@ -136,11 +124,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
         } else {
           val jsonReps = common.jsonReps(copyCtx.datasetInfo)
           val jsonSchema = copyCtx.schema.mapValuesStrict { ci => jsonReps(ci.typ) }
-          val unwrappedCids = copyCtx.schema.values.toSeq.
-                                filter { ci => jsonSchema.contains(ci.systemId) }.
-                                sortBy(_.userColumnId).
-                                map(_.systemId.underlying).
-                                toArray
+          val unwrappedCids = copyCtx.schema.values.toSeq.filter { ci => jsonSchema.contains(ci.systemId) }.sortBy(_.userColumnId).map(_.systemId.underlying).toArray
           val pkColName = copyCtx.pkCol.map(_.userColumnId)
           val orderedSchema = unwrappedCids.map { cidRaw =>
             val col = copyCtx.schema(new ColumnId(cidRaw))
@@ -184,8 +168,7 @@ object Main {
     if(ifaces.isEmpty) config
     else {
       val first = JString(ifaces.iterator.next().getHostAddress)
-      val addressConfig = ConfigFactory.parseString(
-                            "com.socrata.coordinator.service.service-advertisement.address=" + first)
+      val addressConfig = ConfigFactory.parseString("com.socrata.coordinator.service.service-advertisement.address=" + first)
       config.withFallback(addressConfig)
     }
   }
@@ -203,13 +186,6 @@ object Main {
 
     val secondaries = serviceConfig.secondary.instances.keySet
 
-    val ClojureFunc = s"""(let [op (fn [^String table-name] ${serviceConfig.tablespace})]
-                            (fn [^String table-name]
-                              (let [result (op table-name)]
-                                (if result
-                                    (scala.Some. result)
-                                    (scala.Option/empty)))))"""
-
     for(dsInfo <- DataSourceFromConfig(serviceConfig.dataSource)) {
       val executorService = Executors.newCachedThreadPool()
       try {
@@ -225,7 +201,12 @@ object Main {
           //
           // I wish there were an obvious way to read the expression separately and then
           // splice it in knowing that it's well-formed.
-          val iFn = clojure.lang.Compiler.load(new java.io.StringReader(ClojureFunc)).asInstanceOf[clojure.lang.IFn]
+          val iFn = clojure.lang.Compiler.load(new java.io.StringReader(s"""(let [op (fn [^String table-name] ${serviceConfig.tablespace})]
+                                                                              (fn [^String table-name]
+                                                                                (let [result (op table-name)]
+                                                                                  (if result
+                                                                                      (scala.Some. result)
+                                                                                      (scala.Option/empty)))))""")).asInstanceOf[clojure.lang.IFn]
           new SoQLCommon(
             dsInfo.dataSource,
             dsInfo.copyIn,
@@ -258,9 +239,8 @@ object Main {
 
         val serv = new Service(serviceConfig, operations.processMutation, operations.processCreation, getSchema _,
           operations.exporter, secondaries, operations.datasetsInStore, operations.versionInStore,
-          operations.ensureInSecondary, operations.ensureInSecondaryGroup, operations.secondariesOfDataset,
-          operations.listDatasets, operations.deleteDataset, serviceConfig.commandReadLimit,
-          common.internalNameFromDatasetId, common.datasetIdFromInternalName, operations.makeReportTemporaryFile)
+          operations.ensureInSecondary, operations.ensureInSecondaryGroup, operations.secondariesOfDataset, operations.listDatasets, operations.deleteDataset,
+          serviceConfig.commandReadLimit, common.internalNameFromDatasetId, common.datasetIdFromInternalName, operations.makeReportTemporaryFile)
 
         val finished = new CountDownLatch(1)
         val tableDropper = new Thread() {
@@ -326,11 +306,7 @@ object Main {
             discovery.start()
             pong.start()
             val auxData = new AuxiliaryData(livenessCheckInfo = Some(pong.livenessCheckInfo))
-            serv.run(serviceConfig.network.port,
-                     new CuratorBroker(discovery,
-                                       address,
-                                       serviceConfig.advertisement.name + "." + serviceConfig.instance,
-                                       Some(auxData)))
+            serv.run(serviceConfig.network.port, new CuratorBroker(discovery, address, serviceConfig.advertisement.name + "." + serviceConfig.instance, Some(auxData)))
           }
         } finally {
           finished.countDown()

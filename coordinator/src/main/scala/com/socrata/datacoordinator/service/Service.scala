@@ -1,30 +1,39 @@
 package com.socrata.datacoordinator.service
 
-import com.ibm.icu.text.Normalizer
-import com.rojoma.json.ast._
-import com.rojoma.json.codec.JsonCodec
-import com.rojoma.json.io._
-import com.rojoma.json.util.{JsonArrayIterator, AutomaticJsonCodecBuilder, JsonKey, JsonUtil}
-import com.rojoma.simplearm.util._
-import com.socrata.datacoordinator.id.{UserColumnId, DatasetId}
-import com.socrata.datacoordinator.truth._
-import com.socrata.datacoordinator.truth.loader._
-import com.socrata.datacoordinator.truth.metadata.{SchemaField, Schema}
-import com.socrata.datacoordinator.util.collection.{UserColumnIdMap, UserColumnIdSet}
-import com.socrata.datacoordinator.util.IndexedTempFile
-import com.socrata.http.server.implicits._
-import com.socrata.http.server.responses._
-import com.socrata.http.server.routing._
-import com.socrata.http.server.util.handlers.{ThreadRenamingHandler, LoggingHandler}
-import com.socrata.http.server.util.{StrongEntityTag, EntityTag, Precondition, ErrorAdapter}
-import com.socrata.http.server.{ServerBroker, HttpResponse, SocrataServerJetty, HttpService}
-import com.socrata.soql.environment.TypeName
-import java.io._
-import java.nio.charset.StandardCharsets.UTF_8
-import java.security.MessageDigest
-import javax.activation.{MimeTypeParseException, MimeType}
 import javax.servlet.http.{HttpServletResponse, HttpServletRequest}
+
+import com.socrata.http.server.implicits._
+import com.socrata.http.server.{ServerBroker, HttpResponse, SocrataServerJetty, HttpService}
+import com.socrata.http.server.responses._
+import com.rojoma.json.util.{JsonArrayIterator, AutomaticJsonCodecBuilder, JsonKey, JsonUtil}
+import com.rojoma.json.io._
+import com.rojoma.json.ast._
+import com.ibm.icu.text.Normalizer
+import com.socrata.datacoordinator.truth._
+import com.rojoma.simplearm.util._
+import com.socrata.datacoordinator.util.IndexedTempFile
+import javax.activation.{MimeTypeParseException, MimeType}
+import com.socrata.soql.environment.TypeName
+import com.socrata.datacoordinator.truth.loader._
+import java.io._
+import com.socrata.datacoordinator.id.{UserColumnId, DatasetId}
+import com.rojoma.json.codec.JsonCodec
+import java.nio.charset.StandardCharsets.UTF_8
+import com.socrata.datacoordinator.util.collection.{UserColumnIdMap, UserColumnIdSet}
+import com.socrata.http.server.routing._
+import com.socrata.datacoordinator.truth.loader.NoSuchRowToDelete
+import com.rojoma.json.ast.JString
+import com.socrata.datacoordinator.truth.Snapshot
+import com.rojoma.json.io.FieldEvent
+import com.rojoma.json.io.StringEvent
+import com.rojoma.json.io.IdentifierEvent
+import com.socrata.datacoordinator.truth.loader.NoSuchRowToUpdate
+import com.socrata.datacoordinator.truth.loader.VersionMismatch
+import com.socrata.http.server.util.{StrongEntityTag, EntityTag, Precondition, ErrorAdapter}
+import com.socrata.datacoordinator.truth.metadata.{SchemaField, Schema}
+import java.security.MessageDigest
 import org.apache.commons.codec.binary.Base64
+import com.socrata.http.server.util.handlers.{ThreadRenamingHandler, LoggingHandler}
 import org.joda.time.DateTime
 import org.joda.time.format.ISODateTimeFormat
 
@@ -44,7 +53,7 @@ import Service._
  * It should probably be broken up into multiple classes per resource.
  */
 class Service(serviceConfig: ServiceConfig,
-              processMutation: processMutationFunc,
+              processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) => (Long, DateTime, Seq[MutationScriptCommandResult]),
               processCreation: (Iterator[JValue], IndexedTempFile) => processCreationReturns,
               getSchema: DatasetId => Option[Schema],
               datasetContents: (DatasetId, Option[String], CopySelector, Option[UserColumnIdSet],
@@ -95,8 +104,7 @@ class Service(serviceConfig: ServiceConfig,
     override val get = doGetSecondaries _
 
     def doGetSecondaries(req: HttpServletRequest): HttpResponse =
-      OK ~> ContentType("application/json; charset=utf-8") ~>
-            Write(JsonUtil.writeJson(_, secondaries.toSeq, buffer = true))
+      OK ~> ContentType("application/json; charset=utf-8") ~> Write(JsonUtil.writeJson(_, secondaries.toSeq, buffer = true))
   }
 
   case class SecondaryManifestResource(storeId: String) extends SodaResource {
@@ -108,8 +116,7 @@ class Service(serviceConfig: ServiceConfig,
       val dsConverted = ds.foldLeft(Map.empty[String, Long]) { (acc, kv) =>
         acc + (formatDatasetId(kv._1) -> kv._2)
       }
-      OK ~> ContentType("application/json; charset=utf-8") ~>
-            Write(JsonUtil.writeJson(_, dsConverted, buffer = true))
+      OK ~> ContentType("application/json; charset=utf-8") ~> Write(JsonUtil.writeJson(_, dsConverted, buffer = true))
     }
   }
 
@@ -121,8 +128,7 @@ class Service(serviceConfig: ServiceConfig,
       if(!secondaries(storeId)) return NotFound
       versionInStore(storeId, datasetId) match {
         case Some(v) =>
-          OK ~> ContentType("application/json; charset=utf-8") ~>
-                Write(JsonUtil.writeJson(_, Map("version" -> v), buffer = true))
+          OK ~> ContentType("application/json; charset=utf-8") ~> Write(JsonUtil.writeJson(_, Map("version" -> v), buffer = true))
         case None =>
           NotFound
       }
@@ -146,8 +152,7 @@ class Service(serviceConfig: ServiceConfig,
 
     def doGetSecondariesOfDataset(req: HttpServletRequest): HttpResponse = {
       val ss = secondariesOfDataset(datasetId)
-      OK ~> ContentType("application/json; charset=utf-8") ~>
-            Write(JsonUtil.writeJson(_, ss, buffer = true))
+      OK ~> ContentType("application/json; charset=utf-8") ~> Write(JsonUtil.writeJson(_, ss, buffer = true))
     }
   }
 
@@ -180,8 +185,7 @@ class Service(serviceConfig: ServiceConfig,
     }
   }
 
-  def jsonStream(req: HttpServletRequest, approximateMaxDatumBound: Long):
-      Either[HttpResponse, (Iterator[JsonEvent], () => Unit)] = {
+  def jsonStream(req: HttpServletRequest, approximateMaxDatumBound: Long): Either[HttpResponse, (Iterator[JsonEvent], () => Unit)] = {
     val nullableContentType = req.getContentType
     if(nullableContentType == null)
       return Left(err(BadRequest, "req.content-type.missing"))
@@ -343,8 +347,7 @@ class Service(serviceConfig: ServiceConfig,
   private def writeResult(o: OutputStream, r: MutationScriptCommandResult, tmp: IndexedTempFile) {
     r match {
       case MutationScriptCommandResult.ColumnCreated(id, typname) =>
-        o.write(CompactJsonWriter.toString(JObject(Map("id" -> JsonCodec.toJValue(id),
-                                                       "type" -> JString(typname.name)))).getBytes(UTF_8))
+        o.write(CompactJsonWriter.toString(JObject(Map("id" -> JsonCodec.toJValue(id), "type" -> JString(typname.name)))).getBytes(UTF_8))
       case MutationScriptCommandResult.Uninteresting =>
         o.write('{')
         o.write('}')
@@ -384,8 +387,7 @@ class Service(serviceConfig: ServiceConfig,
               }
               iteratorOrError match {
                 case Right(iterator) =>
-                  val (dataset, dataVersion, lastModified, result) =
-                    processCreation(iterator.map { ev => boundResetter(); ev }, tmp)
+                  val (dataset, dataVersion, lastModified, result) = processCreation(iterator.map { ev => boundResetter(); ev }, tmp)
                   OK ~>
                     Header("X-SODA2-Truth-Last-Modified", dateTimeFormat.print(lastModified)) ~>
                     Header("X-SODA2-Truth-Version", dataVersion.toString) ~>
@@ -464,8 +466,7 @@ class Service(serviceConfig: ServiceConfig,
               }
               iteratorOrError match {
                 case Right(iterator) =>
-                  val (version, lastModified, result) =
-                    processMutation(datasetId, iterator.map { ev => boundResetter(); ev }, tmp)
+                  val (version, lastModified, result) = processMutation(datasetId, iterator.map { ev => boundResetter(); ev }, tmp)
                   OK ~>
                     ContentType("application/json; charset=utf-8") ~>
                     Header("X-SODA2-Truth-Last-Modified", dateTimeFormat.print(lastModified)) ~>
@@ -517,9 +518,7 @@ class Service(serviceConfig: ServiceConfig,
     def doExportFile(req: HttpServletRequest): HttpResponse = {
       val precondition = req.precondition
       val schemaHash = Option(req.getParameter("schemaHash"))
-      val onlyColumns = Option(req.getParameterValues("c"))
-                          .map(_.flatMap { c => norm(c).split(',').map(new UserColumnId(_)) })
-                          .map(UserColumnIdSet(_ : _*))
+      val onlyColumns = Option(req.getParameterValues("c")).map(_.flatMap { c => norm(c).split(',').map(new UserColumnId(_)) }).map(UserColumnIdSet(_ : _*))
       val limit = Option(req.getParameter("limit")).map { limStr =>
         try {
           limStr.toLong
@@ -550,9 +549,7 @@ class Service(serviceConfig: ServiceConfig,
         case "true" =>
           true
         case "false" =>
-          if (limit.isDefined || offset.isDefined) {
-            return BadRequest ~> Content("Cannot page through an unsorted export")
-          }
+          if(limit.isDefined || offset.isDefined) return BadRequest ~> Content("Cannot page through an unsorted export")
           false
         case _ =>
           return BadRequest ~> Content("Bad sorted selector")
@@ -572,8 +569,7 @@ class Service(serviceConfig: ServiceConfig,
         case Right(newPrecond) =>
           val upstreamPrecondition = newPrecond.map(_.dropRight(suffix.length));
           { resp =>
-            val found = datasetContents(datasetId, schemaHash, copy, onlyColumns, limit, offset,
-                                        upstreamPrecondition, sorted) {
+            val found = datasetContents(datasetId, schemaHash, copy, onlyColumns, limit, offset, upstreamPrecondition, sorted) {
               case Left(newSchema) =>
                 mismatchedSchema("req.export.mismatched-schema", datasetId, newSchema)(resp)
               case Right((etag, schema, rowIdCol, locale, approxRowCount, rows)) =>
@@ -692,8 +688,7 @@ class Service(serviceConfig: ServiceConfig,
   }
 
   def run(port: Int, broker: ServerBroker) {
-    val server = new SocrataServerJetty(new ThreadRenamingHandler(
-                   new LoggingHandler(errorHandlingHandler)), port = port, broker = broker)
+    val server = new SocrataServerJetty(new ThreadRenamingHandler(new LoggingHandler(errorHandlingHandler)), port = port, broker = broker)
     server.run()
   }
 }
