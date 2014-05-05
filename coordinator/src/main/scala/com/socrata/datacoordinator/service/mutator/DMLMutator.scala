@@ -28,9 +28,6 @@ import java.io.{IOException, InputStream, File}
 trait DMLMutatorCommon[CT, CV] {
   def jsonReps(di: DatasetInfo): CT => JsonColumnRep[CT, CV]
   def typeContext: TypeContext[CT, CV]
-  def indexedTempFileIndexBufSize: Int
-  def indexedTempFileDataBufSize: Int
-  def indexedTempFileTempDir: File
 }
 
 object DMLMutator {
@@ -55,6 +52,8 @@ object DMLMutator {
 }
 
 class DMLMutator[CT, CV](common: DMLMutatorCommon[CT, CV]) {
+  import UpsertException._
+  import MutationScriptHeaderException._
   import DMLMutator._
   import common._
 
@@ -76,53 +75,18 @@ class DMLMutator[CT, CV](common: DMLMutatorCommon[CT, CV]) {
     }
   }
 
-  private def readFully(in: InputStream with Sized): Array[Byte] = {
-    require(in.size >= 0 && in.size <= Int.MaxValue)
-    val buf = new Array[Byte](in.size.toInt)
-    def loop(ptr: Int) {
-      if(ptr != buf.length) {
-        in.read(buf, ptr, buf.length - ptr) match {
-          case -1 => throw new IOException("in.size lied!")
-          case n => loop(ptr + n)
-        }
+  def upsertScript(u: Universe[CT, CV] with DatasetMutatorProvider with SchemaFinderProvider with DatasetMapReaderProvider, datasetId: DatasetId, commandStream: Iterator[JValue], indexedTempFile: IndexedTempFile): (Long, DateTime) = {
+    translatingCannotWriteExceptions {
+      if(commandStream.isEmpty) throw EmptyCommandStream()
+      val upsertHeader = getUpsertHeader(commandStream.next())
+      for(ctxOpt <- u.datasetMutator.openDataset(upsertHeader.user)(datasetId, checkHash(u, upsertHeader.schemaHash, _))) yield {
+        val ctx = ctxOpt.getOrElse { throw NoSuchDataset(datasetId) }
+        if(upsertHeader.truncate) ctx.truncate()
+        val processor = new Processor(ctx, indexedTempFile)
+        processor.processRowData(commandStream.buffered, upsertHeader.nonFatalRowErrors, ctx, upsertHeader.mergeReplace)
       }
-    }
-    loop(0)
-    buf
-  }
-
-  def upsertScript(u: Universe[CT, CV] with DatasetMutatorProvider with SchemaFinderProvider with DatasetMapReaderProvider, datasetId: DatasetId, commandStream: Iterator[JValue]): Managed[(Long, DateTime, Iterator[Array[Byte]])] = {
-    new SimpleArm[(Long, DateTime, Iterator[Array[Byte]])] {
-      override def flatMap[A](f: ((Long, DateTime, Iterator[Array[Byte]])) => A): A = {
-        using(new IndexedTempFile(indexedTempFileIndexBufSize, indexedTempFileDataBufSize, indexedTempFileTempDir)) { indexedTempFile =>
-          translatingCannotWriteExceptions {
-            if(commandStream.isEmpty) throw EmptyCommandStream()
-            val upsertHeader = getUpsertHeader(commandStream.next())
-            val report = for(ctxOpt <- u.datasetMutator.openDataset(upsertHeader.user)(datasetId, checkHash(u, upsertHeader.schemaHash, _))) yield {
-              val ctx = ctxOpt.getOrElse { throw NoSuchDataset(datasetId) }
-              val processor = new Processor(ctx, indexedTempFile)
-              processor.processRowData(commandStream.buffered, upsertHeader.nonFatalRowErrors, ctx, upsertHeader.mergeReplace)
-            }
-            val copyInfo = u.datasetMapReader.latest(u.datasetMapReader.datasetInfo(datasetId).get)
-
-            val tempIterator = new Iterator[Array[Byte]] {
-              var current = 0L
-              def hasNext = current <= report.jobLimit
-              def next() = {
-                indexedTempFile.readRecord(current) match {
-                  case Some(in) =>
-                    current += 1
-                    readFully(in)
-                  case None =>
-                    throw new NoSuchElementException
-                }
-              }
-            }
-
-            f((copyInfo.dataVersion, copyInfo.lastModified, tempIterator))
-          }
-        }
-      }
+      val copyInfo = u.datasetMapReader.latest(u.datasetMapReader.datasetInfo(datasetId).get)
+      (copyInfo.dataVersion, copyInfo.lastModified)
     }
   }
 

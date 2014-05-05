@@ -11,12 +11,13 @@ object MutatorLib {
     for(givenSchemaHash <- schemaHash) {
       val realSchemaHash = u.schemaFinder.schemaHash(ctx)
       if(givenSchemaHash != realSchemaHash) {
-        throw MismatchedSchemaHash(ctx.datasetInfo.systemId, u.schemaFinder.getSchema(ctx))
+        throw MutationScriptHeaderException.MismatchedSchemaHash(ctx.datasetInfo.systemId, u.schemaFinder.getSchema(ctx))
       }
     }
   }
 
-  def translatingCannotWriteExceptions[T](f: => T) =
+  def translatingCannotWriteExceptions[T](f: => T) = {
+    import CommonMutationException._
     try {
       f
     } catch {
@@ -25,6 +26,7 @@ object MutatorLib {
       case e: DatabaseInReadOnlyMode =>
         throw SystemInReadOnlyMode()
     }
+  }
 
   trait Accessor {
     def originalObject: JObject
@@ -42,6 +44,8 @@ object MutatorLib {
   }
 
   val HeaderError = new OnError {
+    import MutationScriptHeaderException._
+
     override def missingField(obj: JObject, field: String): Nothing =
       throw MissingHeaderField(obj, field)
 

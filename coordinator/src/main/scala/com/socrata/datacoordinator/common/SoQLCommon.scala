@@ -236,9 +236,5 @@ class SoQLCommon(dataSource: DataSource,
       def quad() = Quadifier.quadify(rng.nextInt())
       new UserColumnId(quad() + "-" + quad())
     }
-
-    override def indexedTempFileIndexBufSize: Int = 1024*1024
-    override def indexedTempFileDataBufSize: Int = 1024*1024
-    override def indexedTempFileTempDir: File = common.tmpDir
   }
 }

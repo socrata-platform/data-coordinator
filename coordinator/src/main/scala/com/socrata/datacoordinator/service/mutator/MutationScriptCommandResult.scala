@@ -8,5 +8,4 @@ sealed trait MutationScriptCommandResult
 object MutationScriptCommandResult {
   case class ColumnCreated(id: UserColumnId, typ: TypeName) extends MutationScriptCommandResult
   case object Uninteresting extends MutationScriptCommandResult
-  case class RowData(results: NumericRange[Long]) extends MutationScriptCommandResult
 }

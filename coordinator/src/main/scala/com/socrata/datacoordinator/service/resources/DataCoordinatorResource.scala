@@ -7,6 +7,7 @@ import com.rojoma.json.util.JsonUtil
 import com.rojoma.json.codec.JsonCodec
 import com.rojoma.json.ast.{JValue, JString, JObject}
 import com.socrata.http.server.HttpResponse
+import com.socrata.datacoordinator.truth.metadata.Schema
 
 trait DataCoordinatorResource extends SimpleResource {
 
@@ -24,5 +25,16 @@ object DataCoordinatorResource {
       "data" -> JObject(data.toMap)
     ))
     codeSetter ~> json(response)
+  }
+
+  def jsonifySchema(schemaObj: Schema) = {
+    val Schema(hash, schema, pk, locale) = schemaObj
+    val jsonSchema = JObject(schema.iterator.map { case (k,v) => k.underlying -> JString(v.name) }.toMap)
+    JObject(Map(
+      "hash" -> JString(hash),
+      "schema" -> jsonSchema,
+      "pk" -> JsonCodec.toJValue(pk),
+      "locale" -> JString(locale)
+    ))
   }
 }

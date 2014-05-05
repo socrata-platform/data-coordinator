@@ -34,12 +34,15 @@ import java.security.MessageDigest
 import com.socrata.http.server.util.handlers.{ThreadRenamingHandler, LoggingHandler}
 import org.joda.time.DateTime
 import org.joda.time.format.ISODateTimeFormat
+import com.socrata.datacoordinator.service.resources.DataCoordinatorResource
+import com.rojoma.simplearm.Managed
 
 class Service(serviceConfig: ServiceConfig,
               processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) => (Long, DateTime, Seq[MutationScriptCommandResult]),
               processCreation: (Iterator[JValue], IndexedTempFile) => (DatasetId, Long, DateTime, Seq[MutationScriptCommandResult]),
               datasetContents: (DatasetId, Option[String], CopySelector, Option[UserColumnIdSet], Option[Long], Option[Long], Precondition, Boolean) => (Either[Schema, (EntityTag, Seq[SchemaField], Option[UserColumnId], String, Long, Iterator[Array[JValue]])] => Unit) => Exporter.Result[Unit],
-              datasetSchema: (DatasetId, String) => HttpService,
+              dataset: DatasetId => HttpService,
+              datasetSchema: (DatasetId, CopySelector) => HttpService,
               secondaries: HttpService,
               secondariesOfDataset: DatasetId => HttpService,
               secondaryManifest: String => HttpService,
@@ -50,7 +53,7 @@ class Service(serviceConfig: ServiceConfig,
               commandReadLimit: Long,
               formatDatasetId: DatasetId => String,
               parseDatasetId: String => Option[DatasetId],
-              tempFileProvider: () => IndexedTempFile)
+              tempFileProvider: () => Managed[IndexedTempFile])
 {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
 
@@ -300,7 +303,7 @@ class Service(serviceConfig: ServiceConfig,
     def notFound = (_: Any) => notFoundError(datasetIdRaw)
 
     def doCreateDataset(req: HttpServletRequest)(resp: HttpServletResponse) {
-      using(tempFileProvider()) { tmp =>
+      for(tmp <- tempFileProvider()) {
         val responseBuilder = withMutationScriptResults {
           jsonStream(req, commandReadLimit) match {
             case Right((events, boundResetter)) =>
@@ -358,172 +361,6 @@ class Service(serviceConfig: ServiceConfig,
     }
   }
 
-  case class DatasetResource(datasetId: DatasetId) extends SodaResource {
-    override def post = doMutation
-    override def delete = doDeleteDataset
-    override def get = doExportFile
-
-    val dateTimeFormat = ISODateTimeFormat.dateTime
-
-    def doMutation(req: HttpServletRequest)(resp: HttpServletResponse) {
-      using(tempFileProvider()) { tmp =>
-        val responseBuilder = withMutationScriptResults {
-          jsonStream(req, commandReadLimit) match {
-            case Right((events, boundResetter)) =>
-              val iteratorOrError = try {
-                Right(JsonArrayIterator[JValue](events))
-              } catch { case _: JsonBadParse =>
-                Left(err(BadRequest, "req.body.not-json-array"))
-              }
-              iteratorOrError match {
-                case Right(iterator) =>
-                  val (version, lastModified, result) = processMutation(datasetId, iterator.map { ev => boundResetter(); ev }, tmp)
-                  OK ~>
-                    ContentType("application/json; charset=utf-8") ~>
-                    Header("X-SODA2-Truth-Last-Modified", dateTimeFormat.print(lastModified)) ~>
-                    Header("X-SODA2-Truth-Version", version.toString) ~>
-                    Stream { w =>
-                      val bw = new BufferedOutputStream(w)
-                      bw.write('[')
-                      result.foreach(new Function1[MutationScriptCommandResult, Unit] {
-                        var didOne = false
-                        def apply(r: MutationScriptCommandResult) {
-                          if(didOne) bw.write(',')
-                          else didOne = true
-                          writeResult(bw, r, tmp)
-                        }
-                      })
-                      bw.write(']')
-                      bw.flush()
-
-                      log.debug("Non-linear index seeks: {}", tmp.stats.nonLinearIndexSeeks)
-                      log.debug("Non-linear data seeks: {}", tmp.stats.nonLinearDataSeeks)
-                    }
-                case Left(error) =>
-                  error
-              }
-            case Left(response) =>
-              response
-          }
-        }
-        responseBuilder(resp)
-      }
-    }
-
-    def doDeleteDataset(req: HttpServletRequest): HttpResponse = {
-      deleteDataset(datasetId) match {
-        case DatasetDropper.Success =>
-          OK ~>
-            Header("X-SODA2-Truth-Last-Modified", dateTimeFormat.print(DateTime.now)) ~>
-            Header("X-SODA2-Truth-Version", 0.toString) ~>
-            ContentType("application/json; charset=utf-8") ~> Content("[]")
-        case DatasetDropper.FailureNotFound =>
-          notFoundError(formatDatasetId(datasetId))
-        case DatasetDropper.FailureWriteLock =>
-          writeLockError(datasetId)
-      }
-    }
-
-    val suffixHashAlg = "SHA1"
-    val suffixHashLen = MessageDigest.getInstance(suffixHashAlg).getDigestLength
-    def doExportFile(req: HttpServletRequest): HttpResponse = {
-      val precondition = req.precondition
-      val schemaHash = Option(req.getParameter("schemaHash"))
-      val onlyColumns = Option(req.getParameterValues("c")).map(_.flatMap { c => norm(c).split(',').map(new UserColumnId(_)) }).map(UserColumnIdSet(_ : _*))
-      val limit = Option(req.getParameter("limit")).map { limStr =>
-        try {
-          limStr.toLong
-        } catch {
-          case _: NumberFormatException =>
-            return BadRequest ~> Content("Bad limit")
-        }
-      }
-      val offset = Option(req.getParameter("offset")).map { offStr =>
-        try {
-          offStr.toLong
-        } catch {
-          case _: NumberFormatException =>
-            return BadRequest ~> Content("Bad offset")
-        }
-      }
-      val copy = Option(req.getParameter("copy")).getOrElse("latest").toLowerCase match {
-        case "latest" => LatestCopy
-        case "published" => PublishedCopy
-        case "working" => WorkingCopy
-        case other =>
-          try { Snapshot(other.toInt) }
-          catch { case _: NumberFormatException =>
-            return BadRequest ~> Content("Bad copy selector")
-          }
-      }
-      val sorted = Option(req.getParameter("sorted")).getOrElse("true").toLowerCase match {
-        case "true" =>
-          true
-        case "false" =>
-          if(limit.isDefined || offset.isDefined) return BadRequest ~> Content("Cannot page through an unsorted export")
-          false
-        case _ =>
-          return BadRequest ~> Content("Bad sorted selector")
-      }
-      val suffix = locally {
-        val md = MessageDigest.getInstance(suffixHashAlg)
-        md.update(formatDatasetId(datasetId).getBytes(UTF_8))
-        md.update(schemaHash.toString.getBytes(UTF_8))
-        md.update(onlyColumns.toString.getBytes(UTF_8))
-        md.update(limit.toString.getBytes(UTF_8))
-        md.update(offset.toString.getBytes(UTF_8))
-        md.update(copy.toString.getBytes)
-        md.update(sorted.toString.getBytes)
-        md.digest()
-      }
-      precondition.filter(_.endsWith(suffix)) match {
-        case Right(newPrecond) =>
-          val upstreamPrecondition = newPrecond.map(_.dropRight(suffix.length));
-          { resp =>
-            val found = datasetContents(datasetId, schemaHash, copy, onlyColumns, limit, offset, upstreamPrecondition, sorted) {
-              case Left(newSchema) =>
-                mismatchedSchema("req.export.mismatched-schema", datasetId, newSchema)(resp)
-              case Right((etag, schema, rowIdCol, locale, approxRowCount, rows)) =>
-                resp.setContentType("application/json")
-                resp.setCharacterEncoding("utf-8")
-                ETag(etag.append(suffix))(resp)
-                val out = new BufferedWriter(resp.getWriter)
-                val jsonWriter = new CompactJsonWriter(out)
-                out.write("[{\"approximate_row_count\":")
-                out.write(JNumber(approxRowCount).toString)
-                out.write("\n ,\"locale\":")
-                jsonWriter.write(JString(locale))
-                rowIdCol.foreach { rid =>
-                  out.write("\n ,\"pk\":")
-                  jsonWriter.write(JsonCodec.toJValue(rid))
-                }
-                out.write("\n ,\"schema\":")
-                jsonWriter.write(JsonCodec.toJValue(schema))
-                out.write("\n }")
-                while(rows.hasNext) {
-                  out.write("\n,")
-                  jsonWriter.write(JArray(rows.next()))
-                }
-                out.write("\n]\n")
-                out.flush()
-            }
-
-            found match {
-              case Exporter.Success(_) => // ok good
-              case Exporter.NotFound =>
-                notFoundError(formatDatasetId(datasetId))
-              case Exporter.PreconditionFailed(Precondition.FailedBecauseMatch(etags)) =>
-                notModified(etags)(resp)
-              case Exporter.PreconditionFailed(Precondition.FailedBecauseNoMatch) =>
-                preconditionFailed(resp)
-            }
-          }
-        case Left(Precondition.FailedBecauseNoMatch) =>
-          preconditionFailed
-      }
-    }
-  }
-
   def notModified(etags: Seq[EntityTag]) = etags.foldLeft(NotModified) { (resp, etag) => resp ~> ETag(etag) }
   val preconditionFailed = err(PreconditionFailed, "req.precondition-failed")
 
@@ -543,6 +380,11 @@ class Service(serviceConfig: ServiceConfig,
       parseDatasetId(norm(s))
   }
 
+  implicit object CopySelectorExtractor extends Extractor[CopySelector] {
+    def extract(s: String): Option[CopySelector] =
+      resources.DatasetResource.copySelectorFromString(s)
+  }
+
   val router = locally {
     import SimpleRouteContext._
     Routes(
@@ -550,10 +392,10 @@ class Service(serviceConfig: ServiceConfig,
       // SODA2 not-found response"
       Route("/dataset", NotFoundDatasetResource("")), // PUT to this to create a dataset
       Route("/dataset/{String}", NotFoundDatasetResource),
-      Route("/dataset/{DatasetId}", DatasetResource), // GET this for export; POST this for upsert; DELETE this for delete
+      Route("/dataset/{DatasetId}", dataset), // GET this for export; POST this for upsert; DELETE this for delete
       // Route("/dataset/{DatasetId}/copies", DatasetCopiesResource), // GET this for a list of copies; POST this for a copy-op
-      Route("/dataset/{DatasetId}/schema", datasetSchema(_ : DatasetId, "latest")), // POST this for DDL
-      Route("/dataset/{DatasetId}/schema/{String}", datasetSchema),
+      Route("/dataset/{DatasetId}/schema", datasetSchema(_ : DatasetId, LatestCopy)), // POST this for DDL
+      Route("/dataset/{DatasetId}/schema/{CopySelector}", datasetSchema),
 
       Route("/secondary-manifest", secondaries),
       Route("/secondary-manifest/{String}", secondaryManifest),
@@ -565,7 +407,7 @@ class Service(serviceConfig: ServiceConfig,
   }
 
   private def handler(req: HttpServletRequest): HttpResponse = {
-    router(req.requestPath) match {
+    router(req.requestPath.map(norm)) match {
       case Some(result) =>
         result(req)
       case None =>

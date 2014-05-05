@@ -10,7 +10,7 @@ import com.socrata.datacoordinator.common.{SoQLCommon, StandardDatasetMapLimits,
 import com.socrata.datacoordinator.util.{NullCache, IndexedTempFile, StackedTimingReport, LoggedTimingReport}
 import com.socrata.datacoordinator.id.{UserColumnId, ColumnId, DatasetId}
 import com.rojoma.json.ast.{JString, JValue}
-import com.socrata.datacoordinator.truth.CopySelector
+import com.socrata.datacoordinator.truth.{LatestCopy, CopySelector}
 import com.socrata.soql.environment.ColumnName
 import org.apache.curator.retry
 import org.apache.curator.framework.CuratorFrameworkFactory
@@ -160,10 +160,18 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
   }
 
   def makeReportTemporaryFile() =
-    new IndexedTempFile(
-      indexBufSizeHint = serviceConfig.reports.indexBlockSize,
-      dataBufSizeHint = serviceConfig.reports.dataBlockSize,
-      tmpDir = serviceConfig.reports.directory)
+    new SimpleArm[IndexedTempFile] {
+      override def flatMap[A](f: IndexedTempFile => A): A = {
+        using(new IndexedTempFile(indexBufSizeHint = serviceConfig.reports.indexBlockSize,
+                                  dataBufSizeHint = serviceConfig.reports.dataBlockSize,
+                                  tmpDir = serviceConfig.reports.directory)) { tmp =>
+          val result = f(tmp)
+          log.debug("Non-linear index seeks: {}", tmp.stats.nonLinearIndexSeeks)
+          log.debug("Non-linear data seeks: {}", tmp.stats.nonLinearDataSeeks)
+          result
+        }
+      }
+    }
 }
 
 object Main {
@@ -231,15 +239,13 @@ object Main {
 
         val operations = new Main(common, serviceConfig)
 
-        def getSchema(datasetId: DatasetId) = {
+        def getSchema(datasetId: DatasetId, copySelector: CopySelector) = {
           for {
             u <- common.universe
-            dsInfo <- u.datasetMapReader.datasetInfo(datasetId)
+            ctxOpt <- u.datasetReader.openDataset(datasetId, copySelector)
+            ctx <- ctxOpt
           } yield {
-            val latest = u.datasetMapReader.latest(dsInfo)
-            val schema = u.datasetMapReader.schema(latest)
-            val ctx = new DatasetCopyContext(latest, schema)
-            u.schemaFinder.getSchema(ctx)
+            u.schemaFinder.getSchema(ctx.copyCtx)
           }
         }
 
@@ -253,13 +259,9 @@ object Main {
             }
           }
 
-          override def upsertUtf8(datasetId: DatasetId, commandStream: Iterator[JValue]): Managed[(Long, DateTime, Iterator[Array[Byte]])] =
-            new SimpleArm[(Long, DateTime, Iterator[Array[Byte]])] {
-              override def flatMap[A](f: ((Long, DateTime, Iterator[Array[Byte]])) => A): A = {
-                for(u <- common.universe) yield {
-                  dmlMutator.upsertScript(u, datasetId, commandStream).flatMap(f)
-                }
-              }
+          override def upsertScript(datasetId: DatasetId, commandStream: Iterator[JValue], output: IndexedTempFile): (Long, DateTime) =
+            for(u <- common.universe) yield {
+              dmlMutator.upsertScript(u, datasetId, commandStream, output)
             }
 
           override def copyOp(datasetId: DatasetId, command: JValue): (Long, DateTime) = {
@@ -275,7 +277,19 @@ object Main {
           }
         }
 
-        val datasetSchema = new DatasetSchemaResource(getSchema, common.internalNameFromDatasetId)
+        def exporterAdapter(opts: DatasetResource.DatasetContentOptions)(proc: DatasetResource.DatasetContentProcessor): Exporter.Result[Unit] = {
+          operations.exporter(id = opts.datasetId,
+                              schemaHash = opts.schemaHash,
+                              copy = opts.copy,
+                              columns = opts.columns,
+                              limit = opts.limit,
+                              offset = opts.offset,
+                              precondition = opts.precondition,
+                              sorted = opts.sorted)(proc)
+        }
+
+        val datasets = new DatasetResource(universalMutator, operations.deleteDataset, exporterAdapter, common.internalNameFromDatasetId, serviceConfig.commandReadLimit, operations.makeReportTemporaryFile)
+        val datasetSchema = new DatasetSchemaResource(getSchema, universalMutator, common.internalNameFromDatasetId)
         val secondaries = new SecondaryManifestsResource(secondaryStores)
         val secondariesOfDataset = new SecondariesOfDatasetResource(operations.secondariesOfDataset)
         val secondaryManifest = new SecondaryManifestResource(secondaryStores, operations.datasetsInStore, common.internalNameFromDatasetId)
@@ -283,7 +297,7 @@ object Main {
         val version = VersionResource
 
         val serv = new Service(serviceConfig, operations.processMutation, operations.processCreation,
-          operations.exporter, datasetSchema.service, secondaries.service, secondariesOfDataset.service, secondaryManifest.service, datasetSecondaryStatus.service, version.service, operations.listDatasets, operations.deleteDataset,
+          operations.exporter, datasets.service, datasetSchema.service, secondaries.service, secondariesOfDataset.service, secondaryManifest.service, datasetSecondaryStatus.service, version.service, operations.listDatasets, operations.deleteDataset,
           serviceConfig.commandReadLimit, common.internalNameFromDatasetId, common.datasetIdFromInternalName, operations.makeReportTemporaryFile)
 
         val finished = new CountDownLatch(1)

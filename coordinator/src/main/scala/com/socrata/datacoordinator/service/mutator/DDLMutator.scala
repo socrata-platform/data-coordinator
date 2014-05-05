@@ -29,6 +29,8 @@ trait DDLMutatorCommon[CT, CV] {
 }
 
 class DDLMutator[CT,CV](common: DDLMutatorCommon[CT, CV]) {
+  import DDLException._
+  import MutationScriptHeaderException._
   import common._
 
   val AddColumnOp = "add column"
@@ -67,7 +69,7 @@ class DDLMutator[CT,CV](common: DDLMutatorCommon[CT, CV]) {
       }
       withObjectFields(json, onError) { accessor =>
         import accessor._
-        get[String]("c") match {
+        get[String]("command") match {
           case AddColumnOp =>
             val typ = get[String]("type")
             val nameHint = getWithStrictDefault("hint", typ)
@@ -83,7 +85,7 @@ class DDLMutator[CT,CV](common: DDLMutatorCommon[CT, CV]) {
             val column = get[Either[UserColumnId, ColumnIdLabel]]("column")
             DropRowId(index, column)
           case other =>
-            onError.invalidValue(originalObject, "c", JString(other))
+            onError.invalidValue(originalObject, "command", JString(other))
         }
       }
     }
@@ -237,7 +239,7 @@ class DDLMutator[CT,CV](common: DDLMutatorCommon[CT, CV]) {
     def idFor(idx: Long, idOrLabel: Either[UserColumnId, ColumnIdLabel]): UserColumnId =
       idOrLabel match {
         case Left(id) => id
-        case Right(label) => labels.getOrElse(label.label, throw NoSuchColumnLabel(datasetId, label.label, idx))
+        case Right(label) => labels.getOrElse(label.label, throw NoSuchColumnLabel(label.label, idx))
       }
 
     def isExistingColumn(cid: UserColumnId) =
