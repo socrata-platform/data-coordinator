@@ -19,14 +19,6 @@ object DataCoordinatorResource {
     JsonUtil.writeJson(w, jvalue, pretty = false, buffer = true)
   }
 
-  def err(codeSetter: HttpResponse, errorCode: String, data: (String, JValue)*): HttpResponse = {
-    val response = JObject(Map(
-      "errorCode" -> JString(errorCode),
-      "data" -> JObject(data.toMap)
-    ))
-    codeSetter ~> json(response)
-  }
-
   def jsonifySchema(schemaObj: Schema) = {
     val Schema(hash, schema, pk, locale) = schemaObj
     val jsonSchema = JObject(schema.iterator.map { case (k,v) => k.underlying -> JString(v.name) }.toMap)

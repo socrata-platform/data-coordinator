@@ -18,8 +18,11 @@ import com.rojoma.json.codec.JsonCodec
 
 class DatasetSchemaResource(getSchema: (DatasetId, CopySelector) => Option[Schema],
                             ddlMutator: UniversalDDL,
-                            formatDatasetId: DatasetId => String) {
+                            formatDatasetId: DatasetId => String,
+                            commandReadLimit: Long) {
   val errors = new Errors(formatDatasetId)
+  val ddlLib = new DDLLib(formatDatasetId, commandReadLimit)
+  import ddlLib._
 
   def schema(datasetId: DatasetId, version: CopySelector)(req: HttpServletRequest): HttpResponse = {
     val result = for {
@@ -30,64 +33,15 @@ class DatasetSchemaResource(getSchema: (DatasetId, CopySelector) => Option[Schem
     result.getOrElse(errors.notFoundError(formatDatasetId(datasetId)))
   }
 
-  def withDDLScriptResponse[T](f: => HttpResponse): HttpResponse = {
-    import DataCoordinatorResource.err
-    try {
-      f
-    } catch {
-      case e: TooMuchDataWithoutAcknowledgement =>
-        return err(RequestEntityTooLarge, "req.body.command-too-large",
-          "bytes-without-full-datum" -> JNumber(e.limit))
-      case r: JsonReaderException =>
-        return err(BadRequest, "req.body.malformed-json",
-          "row" -> JNumber(r.row),
-          "column" -> JNumber(r.column))
-      case e: MutationException =>
-        errors.mutationException(e)
-    }
-  }
-
-  private def writeResult(o: OutputStream, r: MutationScriptCommandResult) {
-    r match {
-      case MutationScriptCommandResult.ColumnCreated(id, typname) =>
-        o.write(CompactJsonWriter.toString(JObject(Map("id" -> JsonCodec.toJValue(id), "type" -> JString(typname.name)))).getBytes(StandardCharsets.UTF_8))
-      case MutationScriptCommandResult.Uninteresting =>
-        o.write('{')
-        o.write('}')
-    }
-  }
-
   def ddl(datasetId: DatasetId, version: CopySelector)(req: HttpServletRequest): HttpResponse = {
     if(version != LatestCopy) return errors.versionNotAllowed
-    val commandReadLimit = 1024*1024*10L
-
-    withDDLScriptResponse {
-      val dateTimeFormat = ISODateTimeFormat.dateTime
-      DatasetResource.jsonStream(req, commandReadLimit) match {
-        case Right((events, _)) =>
-          val commands = JsonReader.fromEvents(events) match {
-            case arr: JArray => arr
-            case _ => return errors.contentNotJsonArray
-          }
+    withDDLishScriptResponse {
+      fetchScript(req) match {
+        case Right(commands) =>
           val (dataVersion, lastUpdated, results) = ddlMutator.ddlScript(datasetId, commands.iterator)
-          OK ~>
-            Header("X-SODA2-Truth-Last-Modified", dateTimeFormat.print(lastUpdated)) ~>
-            Header("X-SODA2-Truth-Version", dataVersion.toString) ~>
-            ContentType("application/json; charset=utf-8") ~>
-            Stream { w =>
-              val bw = new BufferedOutputStream(w)
-              bw.write('[')
-              bw.write(JString(formatDatasetId(datasetId)).toString.getBytes(StandardCharsets.UTF_8))
-              for(r <- results) {
-                bw.write(',')
-                writeResult(bw, r)
-              }
-              bw.write(']')
-              bw.flush()
-            }
-
-        case Left(error) =>
-          error
+          createResponse(datasetId, dataVersion, lastUpdated, results)
+        case Left(err) =>
+          err
       }
     }
   }

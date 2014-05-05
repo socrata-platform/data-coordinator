@@ -1,46 +1,23 @@
 package com.socrata.datacoordinator.service
 
-import javax.servlet.http.{HttpServletResponse, HttpServletRequest}
+import javax.servlet.http.HttpServletRequest
 
+import com.socrata.http.server.responses._
 import com.socrata.http.server.implicits._
 import com.socrata.http.server.{ServerBroker, HttpResponse, SocrataServerJetty, HttpService}
-import com.socrata.http.server.responses._
-import com.rojoma.json.util.{JsonArrayIterator, JsonUtil}
 import com.rojoma.json.io._
-import com.rojoma.json.ast._
 import com.ibm.icu.text.Normalizer
 import com.socrata.datacoordinator.truth._
-import com.rojoma.simplearm.util._
-import com.socrata.datacoordinator.util.IndexedTempFile
-import javax.activation.{MimeTypeParseException, MimeType}
-import com.socrata.datacoordinator.truth.loader._
-import java.io._
-import com.socrata.datacoordinator.id.{UserColumnId, DatasetId}
-import com.rojoma.json.codec.JsonCodec
-import java.nio.charset.StandardCharsets.UTF_8
-import com.socrata.datacoordinator.util.collection.UserColumnIdSet
+import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.http.server.routing._
-import com.socrata.datacoordinator.truth.loader.NoSuchRowToDelete
-import com.rojoma.json.ast.JString
-import com.socrata.datacoordinator.truth.Snapshot
 import com.rojoma.json.io.FieldEvent
 import com.rojoma.json.io.StringEvent
 import com.rojoma.json.io.IdentifierEvent
-import com.socrata.datacoordinator.truth.loader.NoSuchRowToUpdate
-import com.socrata.datacoordinator.truth.loader.VersionMismatch
-import com.socrata.http.server.util.{EntityTag, Precondition, ErrorAdapter}
-import com.socrata.datacoordinator.truth.metadata.{SchemaField, Schema}
-import java.security.MessageDigest
+import com.socrata.http.server.util.ErrorAdapter
 import com.socrata.http.server.util.handlers.{ThreadRenamingHandler, LoggingHandler}
-import org.joda.time.DateTime
-import org.joda.time.format.ISODateTimeFormat
-import com.socrata.datacoordinator.service.resources.DataCoordinatorResource
-import com.rojoma.simplearm.Managed
+import com.socrata.datacoordinator.service.resources.Errors
 
-class Service(serviceConfig: ServiceConfig,
-              processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) => (Long, DateTime, Seq[MutationScriptCommandResult]),
-              processCreation: (Iterator[JValue], IndexedTempFile) => (DatasetId, Long, DateTime, Seq[MutationScriptCommandResult]),
-              datasetContents: (DatasetId, Option[String], CopySelector, Option[UserColumnIdSet], Option[Long], Option[Long], Precondition, Boolean) => (Either[Schema, (EntityTag, Seq[SchemaField], Option[UserColumnId], String, Long, Iterator[Array[JValue]])] => Unit) => Exporter.Result[Unit],
+class Service(allDatasets: HttpService,
               dataset: DatasetId => HttpService,
               datasetSchema: (DatasetId, CopySelector) => HttpService,
               secondaries: HttpService,
@@ -48,12 +25,7 @@ class Service(serviceConfig: ServiceConfig,
               secondaryManifest: String => HttpService,
               datasetSecondaryStatus: (String, DatasetId) => HttpService,
               version: HttpService,
-              datasets: () => Seq[DatasetId],
-              deleteDataset: DatasetId => DatasetDropper.Result,
-              commandReadLimit: Long,
-              formatDatasetId: DatasetId => String,
-              parseDatasetId: String => Option[DatasetId],
-              tempFileProvider: () => Managed[IndexedTempFile])
+              parseDatasetId: String => Option[DatasetId])
 {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
 
@@ -75,306 +47,6 @@ class Service(serviceConfig: ServiceConfig,
     }
   }
 
-  def notFoundError(datasetId: String) =
-    err(NotFound, "update.dataset.does-not-exist",
-      "dataset" -> JString(datasetId))
-
-  def writeLockError(datasetId: DatasetId) =
-    err(Conflict, "update.dataset.temporarily-not-writable",
-      "dataset" -> JString(formatDatasetId(datasetId)))
-
-  class ReaderExceededBound(val bytesRead: Long) extends Exception
-  class BoundedReader(underlying: Reader, bound: Long) extends Reader {
-    private var count = 0L
-    private def inc(n: Int) {
-      count += n
-      if(count > bound) throw new ReaderExceededBound(count)
-    }
-
-    override def read() =
-      underlying.read() match {
-        case -1 => -1
-        case n => inc(1); n
-      }
-
-    def read(cbuf: Array[Char], off: Int, len: Int): Int =
-      underlying.read(cbuf, off, len) match {
-        case -1 => -1
-        case n => inc(n); n
-      }
-
-    def close() {
-      underlying.close()
-    }
-
-    def resetCount() {
-      count = 0
-    }
-  }
-
-  def jsonStream(req: HttpServletRequest, approximateMaxDatumBound: Long): Either[HttpResponse, (Iterator[JsonEvent], () => Unit)] = {
-    val nullableContentType = req.getContentType
-    if(nullableContentType == null)
-      return Left(err(BadRequest, "req.content-type.missing"))
-    val contentType =
-      try { new MimeType(nullableContentType) }
-      catch { case _: MimeTypeParseException =>
-        return Left(err(BadRequest, "req.content-type.unparsable",
-          "content-type" -> JString(nullableContentType)))
-      }
-    if(!contentType.`match`("application/json")) {
-      return Left(err(UnsupportedMediaType, "req.content-type.not-json",
-        "content-type" -> JString(contentType.toString)))
-    }
-    val reader =
-      try { req.getReader }
-      catch { case _: UnsupportedEncodingException =>
-        return Left(err(UnsupportedMediaType, "req.content-type.unknown-charset",
-          "content-type" -> JString(req.getContentType.toString)))
-      }
-    val boundedReader = new BoundedReader(reader, approximateMaxDatumBound)
-    Right((new FusedBlockJsonEventIterator(boundedReader).map(normalizeJson), boundedReader.resetCount _))
-  }
-
-  def err(codeSetter: HttpResponse, errorCode: String, data: (String, JValue)*): HttpResponse = {
-    val response = JObject(Map(
-      "errorCode" -> JString(errorCode),
-      "data" -> JObject(data.toMap)
-    ))
-    codeSetter ~> ContentType("application/json; charset=utf-8") ~> Write { w =>
-      JsonUtil.writeJson(w, response, pretty = true, buffer = true)
-    }
-  }
-
-  def mismatchedSchema(code: String, name: DatasetId, schema: Schema) =
-    err(Conflict, code,
-      "dataset" -> JString(formatDatasetId(name)),
-      "schema" -> jsonifySchema(schema))
-
-  def withMutationScriptResults[T](f: => HttpResponse): HttpResponse = {
-    try {
-      f
-    } catch {
-      case e: ReaderExceededBound =>
-        return err(RequestEntityTooLarge, "req.body.command-too-large",
-          "bytes-without-full-datum" -> JNumber(e.bytesRead))
-      case r: JsonReaderException =>
-        return err(BadRequest, "req.body.malformed-json",
-          "row" -> JNumber(r.row),
-          "column" -> JNumber(r.column))
-      case e: Mutator.MutationException =>
-        def colErr(msg: String, dataset: DatasetId, colId: UserColumnId, resp: HttpResponse = BadRequest) = {
-          import scala.language.reflectiveCalls
-          err(resp, msg,
-            "dataset" -> JString(formatDatasetId(dataset)),
-            "column" -> JsonCodec.toJValue(colId))
-        }
-        e match {
-          case Mutator.EmptyCommandStream() =>
-            err(BadRequest, "req.script.header.missing")
-          case Mutator.CommandIsNotAnObject(value) =>
-            err(BadRequest, "req.script.command.non-object",
-              "value" -> value)
-          case Mutator.MissingCommandField(obj, field) =>
-            err(BadRequest, "req.script.command.missing-field",
-              "object" -> obj,
-              "field" -> JString(field))
-          case Mutator.MismatchedSchemaHash(name, schema) =>
-            mismatchedSchema("req.script.header.mismatched-schema", name, schema)
-          case Mutator.InvalidCommandFieldValue(obj, field, value) =>
-            err(BadRequest, "req.script.command.invalid-field",
-              "object" -> obj,
-              "field" -> JString(field),
-              "value" -> value)
-          case Mutator.NoSuchDataset(name) =>
-            notFoundError(formatDatasetId(name))
-          case Mutator.CannotAcquireDatasetWriteLock(name) =>
-            writeLockError(name)
-          case Mutator.SystemInReadOnlyMode() =>
-            err(ServiceUnavailable, "update.read-only-mode")
-          case Mutator.InvalidLocale(locale) =>
-            err(BadRequest, "create.dataset.invalid-locale",
-              "locale" -> JString(locale))
-          case Mutator.IncorrectLifecycleStage(name, currentStage, expectedStage) =>
-            err(Conflict, "update.dataset.invalid-state",
-              "dataset" -> JString(formatDatasetId(name)),
-              "actual-state" -> JString(currentStage.name),
-              "expected-state" -> JArray(expectedStage.toSeq.map(_.name).map(JString)))
-          case Mutator.InitialCopyDrop(name) =>
-            err(Conflict, "update.dataset.initial-copy-drop",
-              "dataset" -> JString(formatDatasetId(name)))
-          case Mutator.ColumnAlreadyExists(dataset, name) =>
-            colErr("update.column.exists", dataset, name, Conflict)
-          case Mutator.IllegalColumnId(id) =>
-            err(BadRequest, "update.column.illegal-id",
-              "id" -> JsonCodec.toJValue(id))
-          case Mutator.NoSuchType(typeName) =>
-            err(BadRequest, "update.type.unknown",
-              "type" -> JString(typeName.name))
-          case Mutator.NoSuchColumn(dataset, name) =>
-            colErr("update.column.not-found", dataset, name)
-          case Mutator.InvalidSystemColumnOperation(dataset, name, _) =>
-            colErr("update.column.system", dataset, name)
-          case Mutator.PrimaryKeyAlreadyExists(datasetName, userColumnId, existingColumn) =>
-            err(BadRequest, "update.row-identifier.already-set",
-              "dataset" -> JString(formatDatasetId(datasetName)),
-              "column" -> JsonCodec.toJValue(userColumnId),
-              "existing-column" -> JsonCodec.toJValue(userColumnId))
-          case Mutator.InvalidTypeForPrimaryKey(datasetName, userColumnId, typeName) =>
-            err(BadRequest, "update.row-identifier.invalid-type",
-              "dataset" -> JString(formatDatasetId(datasetName)),
-              "column" -> JsonCodec.toJValue(userColumnId),
-              "type" -> JString(typeName.name))
-          case Mutator.DeleteRowIdentifierNotAllowed(datasetId, columnId) =>
-            colErr("update.row-identifier.delete", datasetId, columnId)
-          case Mutator.DuplicateValuesInColumn(dataset, name) =>
-            colErr("update.row-identifier.duplicate-values", dataset, name)
-          case Mutator.NullsInColumn(dataset, name) =>
-            colErr("update.row-identifier.null-values", dataset, name)
-          case Mutator.NotPrimaryKey(dataset, name) =>
-            colErr("update.row-identifier.not-row-identifier", dataset, name)
-          case Mutator.InvalidUpsertCommand(datasetName, value) =>
-            err(BadRequest, "update.script.row-data.invalid-value",
-              "dataset" -> JString(formatDatasetId(datasetName)),
-              "value" -> value)
-          case Mutator.UnknownColumnId(datasetName, cid) =>
-            err(BadRequest, "update.row.unknown-column",
-              "dataset" -> JString(formatDatasetId(datasetName)),
-              "column" -> JsonCodec.toJValue(cid))
-          case Mutator.InvalidValue(datasetName, userColumnId, typeName, value) =>
-            err(BadRequest, "update.row.unparsable-value",
-              "dataset" -> JString(formatDatasetId(datasetName)),
-              "column" -> JsonCodec.toJValue(userColumnId),
-              "type" -> JString(typeName.name),
-              "value" -> value)
-          case Mutator.UpsertError(datasetName, NoPrimaryKey, _) =>
-            err(BadRequest, "update.row.no-id",
-              "dataset" -> JString(formatDatasetId(datasetName)))
-          case Mutator.UpsertError(datasetName, NoSuchRowToDelete(id), _) =>
-            err(BadRequest, "update.row.no-such-id",
-              "dataset" -> JString(formatDatasetId(datasetName)),
-              "value" -> id)
-          case Mutator.UpsertError(datasetName, NoSuchRowToUpdate(id),_ ) =>
-            err(BadRequest, "update.row.no-such-id",
-              "dataset" -> JString(formatDatasetId(datasetName)),
-              "value" -> id)
-          case Mutator.UpsertError(datasetName, VersionMismatch(id, expected, actual), rowVersionToJson) =>
-            err(BadRequest, "update.row-version-mismatch",
-              "dataset" -> JString(formatDatasetId(datasetName)),
-              "value" -> id,
-              "expected" -> expected.map(rowVersionToJson).getOrElse(JNull),
-              "actual" -> actual.map(rowVersionToJson).getOrElse(JNull))
-          case Mutator.UpsertError(datasetName, VersionOnNewRow, _) =>
-            err(BadRequest, "update.version-on-new-row",
-              "dataset" -> JString(formatDatasetId(datasetName)))
-        }
-    }
-  }
-
-  private def writeResult(o: OutputStream, r: MutationScriptCommandResult, tmp: IndexedTempFile) {
-    r match {
-      case MutationScriptCommandResult.ColumnCreated(id, typname) =>
-        o.write(CompactJsonWriter.toString(JObject(Map("id" -> JsonCodec.toJValue(id), "type" -> JString(typname.name)))).getBytes(UTF_8))
-      case MutationScriptCommandResult.Uninteresting =>
-        o.write('{')
-        o.write('}')
-      case MutationScriptCommandResult.RowData(jobs) =>
-        o.write('[')
-        jobs.foreach(new Function1[Long, Unit] {
-          var didOne = false
-          def apply(job: Long) {
-            if(didOne) o.write(',')
-            else didOne = true
-            tmp.readRecord(job).get.writeTo(o)
-          }
-        })
-        o.write(']')
-    }
-  }
-
-  trait SodaResource extends SimpleResource
-
-  case class NotFoundDatasetResource(datasetIdRaw: String) extends SodaResource {
-    override def post = if(datasetIdRaw == "") doCreateDataset else notFound
-    override def delete = notFound
-    override def get = if(datasetIdRaw == "") doListDatasets else notFound
-
-    val dateTimeFormat = ISODateTimeFormat.dateTime
-    def notFound = (_: Any) => notFoundError(datasetIdRaw)
-
-    def doCreateDataset(req: HttpServletRequest)(resp: HttpServletResponse) {
-      for(tmp <- tempFileProvider()) {
-        val responseBuilder = withMutationScriptResults {
-          jsonStream(req, commandReadLimit) match {
-            case Right((events, boundResetter)) =>
-              val iteratorOrError = try {
-                Right(JsonArrayIterator[JValue](events))
-              } catch { case _: JsonBadParse =>
-                Left(err(BadRequest, "req.body.not-json-array"))
-              }
-              iteratorOrError match {
-                case Right(iterator) =>
-                  val (dataset, dataVersion, lastModified, result) = processCreation(iterator.map { ev => boundResetter(); ev }, tmp)
-                  OK ~>
-                    Header("X-SODA2-Truth-Last-Modified", dateTimeFormat.print(lastModified)) ~>
-                    Header("X-SODA2-Truth-Version", dataVersion.toString) ~>
-                    ContentType("application/json; charset=utf-8") ~>
-                    Stream { w =>
-                      val bw = new BufferedOutputStream(w)
-                      bw.write('[')
-                      bw.write(JString(formatDatasetId(dataset)).toString.getBytes(UTF_8))
-                      for(r <- result) {
-                        bw.write(',')
-                        writeResult(bw, r, tmp)
-                      }
-                      bw.write(']')
-                      bw.flush()
-                      log.debug("Non-linear index seeks: {}", tmp.stats.nonLinearIndexSeeks)
-                      log.debug("Non-linear data seeks: {}", tmp.stats.nonLinearDataSeeks)
-                    }
-                case Left(error) =>
-                  error
-              }
-            case Left(response) =>
-              response
-          }
-        }
-        responseBuilder(resp)
-      }
-    }
-
-    def doListDatasets(req: HttpServletRequest): HttpResponse = {
-      val ds = datasets()
-      OK ~> ContentType("application/json; charset=utf-8") ~> Write { w =>
-        val bw = new BufferedWriter(w)
-        val jw = new CompactJsonWriter(bw)
-        bw.write('[')
-        var didOne = false
-        for(dsid <- ds) {
-          if(didOne) bw.write(',')
-          else didOne = true
-          jw.write(JString(formatDatasetId(dsid)))
-        }
-        bw.write(']')
-        bw.flush()
-      }
-    }
-  }
-
-  def notModified(etags: Seq[EntityTag]) = etags.foldLeft(NotModified) { (resp, etag) => resp ~> ETag(etag) }
-  val preconditionFailed = err(PreconditionFailed, "req.precondition-failed")
-
-  def jsonifySchema(schemaObj: Schema) = {
-    val Schema(hash, schema, pk, locale) = schemaObj
-    val jsonSchema = JObject(schema.iterator.map { case (k,v) => k.underlying -> JString(v.name) }.toMap)
-    JObject(Map(
-      "hash" -> JString(hash),
-      "schema" -> jsonSchema,
-      "pk" -> JsonCodec.toJValue(pk),
-      "locale" -> JString(locale)
-    ))
-  }
-
   implicit object DatasetIdExtractor extends Extractor[DatasetId] {
     def extract(s: String): Option[DatasetId] =
       parseDatasetId(norm(s))
@@ -388,10 +60,10 @@ class Service(serviceConfig: ServiceConfig,
   val router = locally {
     import SimpleRouteContext._
     Routes(
+      Route("/dataset", allDatasets), // PUT to this to create a dataset
       // "If the thing is parsable as a DatasetId, do something with it, otherwise give a
       // SODA2 not-found response"
-      Route("/dataset", NotFoundDatasetResource("")), // PUT to this to create a dataset
-      Route("/dataset/{String}", NotFoundDatasetResource),
+      Route("/dataset/{String}", { (d: String) => Function.const(Errors.notFoundError(d)) _ }),
       Route("/dataset/{DatasetId}", dataset), // GET this for export; POST this for upsert; DELETE this for delete
       // Route("/dataset/{DatasetId}/copies", DatasetCopiesResource), // GET this for a list of copies; POST this for a copy-op
       Route("/dataset/{DatasetId}/schema", datasetSchema(_ : DatasetId, LatestCopy)), // POST this for DDL

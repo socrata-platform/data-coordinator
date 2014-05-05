@@ -8,11 +8,6 @@ import com.socrata.http.server.util.EntityTag
 import com.socrata.datacoordinator.service.mutator._
 import com.rojoma.json.codec.JsonCodec
 import com.socrata.datacoordinator.truth.loader._
-import com.socrata.datacoordinator.truth.loader.NoSuchRowToDelete
-import com.rojoma.json.ast.JString
-import com.socrata.datacoordinator.truth.loader.NoSuchRowToUpdate
-import com.socrata.datacoordinator.truth.metadata.Schema
-import com.socrata.datacoordinator.truth.loader.VersionMismatch
 import javax.activation.MimeType
 import com.socrata.datacoordinator.truth.loader.NoSuchRowToDelete
 import com.rojoma.json.ast.JString
@@ -20,9 +15,16 @@ import com.socrata.datacoordinator.truth.loader.NoSuchRowToUpdate
 import com.socrata.datacoordinator.truth.metadata.Schema
 import com.socrata.datacoordinator.truth.loader.VersionMismatch
 import com.socrata.http.server.HttpResponse
+import com.rojoma.json.io.JsonReaderException
 
 sealed class StaticErrors {
-  import DataCoordinatorResource.err
+  protected def err(codeSetter: HttpResponse, errorCode: String, data: (String, JValue)*): HttpResponse = {
+    val response = JObject(Map(
+      "errorCode" -> JString(errorCode),
+      "data" -> JObject(data.toMap)
+    ))
+    codeSetter ~> DataCoordinatorResource.json(response)
+  }
 
   def notFoundError(datasetId: String) = // yes, string.  This is used when an invalid dataset ID is specified too.
     err(NotFound, "update.dataset.does-not-exist",
@@ -44,12 +46,27 @@ sealed class StaticErrors {
   val noContentType = err(BadRequest, "req.content-type.missing")
   val contentNotJsonArray = err(BadRequest, "req.body.not-json-array")
 
+  def ddlScriptTooLarge(limit: Long) =
+    err(RequestEntityTooLarge, "req.body.command-too-large",
+      "bytes-without-full-datum" -> JNumber(limit))
+
+  def upsertRowTooLarge(limit: Long) =
+    err(RequestEntityTooLarge, "req.body.row-too-large",
+      "bytes-without-full-datum" -> JNumber(limit))
+
+  def malformedJson(exception: JsonReaderException) =
+    err(BadRequest, "req.body.malformed-json",
+      "row" -> JNumber(exception.row),
+      "column" -> JNumber(exception.column))
+
   def notModified(etags: Seq[EntityTag]) = etags.foldLeft(NotModified) { (resp, etag) => resp ~> ETag(etag) }
 
   // random errors that need formatting
   def badCopySelector(copy: String) = BadRequest ~> Content("Bad copy selector")
   def badOffset(offset: String) = BadRequest ~> Content("Bad offset")
   def badLimit(limit: String) = BadRequest ~> Content("Bad limit")
+  def badSortedSelector(sorted: String) = BadRequest ~> Content("Bad sorted selector")
+  val noUnsortedPaging = BadRequest ~> Content("Cannot page through an unsorted export")
   val versionNotAllowed = BadRequest ~> Content("Can only change the schema of the latest copy")
 }
 
@@ -57,7 +74,7 @@ object Errors extends StaticErrors {
 }
 
 class Errors(formatDatasetId: DatasetId => String) extends StaticErrors {
-  import DataCoordinatorResource.{err, jsonifySchema}
+  import DataCoordinatorResource.jsonifySchema
 
   def mutationException(e: MutationException) = e match {
     case common: CommonMutationException => commonMutationError(common)

@@ -50,17 +50,13 @@ class DatasetResource(upserter: UniversalUpserter,
   val dateTimeFormat = ISODateTimeFormat.dateTime
 
   def withUpsertScriptResponse[T](f: => HttpResponse): HttpResponse = {
-    import DataCoordinatorResource.err
     try {
       f
     } catch {
       case e: TooMuchDataWithoutAcknowledgement =>
-        return err(RequestEntityTooLarge, "req.body.command-too-large",
-          "bytes-without-full-datum" -> JNumber(e.limit))
+        errors.upsertRowTooLarge(e.limit)
       case r: JsonReaderException =>
-        return err(BadRequest, "req.body.malformed-json",
-          "row" -> JNumber(r.row),
-          "column" -> JNumber(r.column))
+        errors.malformedJson(r)
       case e: MutationException =>
         errors.mutationException(e)
     }
@@ -145,18 +141,27 @@ class DatasetResource(upserter: UniversalUpserter,
           return errors.badOffset(offStr)
       }
     }
-    val copyRaw = Option(req.getParameter("copy")).getOrElse("latest")
-    val copy = copySelectorFromString(copyRaw).getOrElse {
-      return errors.badCopySelector(copyRaw)
+    val copy = Option(req.getParameter("copy")) match {
+      case Some(copyRaw) =>
+        copySelectorFromString(copyRaw).getOrElse {
+          return errors.badCopySelector(copyRaw)
+        }
+      case None =>
+        LatestCopy
     }
-    val sorted = Option(req.getParameter("sorted")).getOrElse("true").toLowerCase match {
-      case "true" =>
+    val sorted = Option(req.getParameter("sorted")) match {
+      case Some(sortedRaw) =>
+        sortedRaw.toLowerCase match {
+          case "true" =>
+            true
+          case "false" =>
+            if(limit.isDefined || offset.isDefined) return errors.noUnsortedPaging
+            false
+          case _ =>
+            return errors.badSortedSelector(sortedRaw)
+        }
+      case None =>
         true
-      case "false" =>
-        if(limit.isDefined || offset.isDefined) return BadRequest ~> Content("Cannot page through an unsorted export")
-        false
-      case _ =>
-        return BadRequest ~> Content("Bad sorted selector")
     }
     val suffix = locally {
       val md = MessageDigest.getInstance(suffixHashAlg)

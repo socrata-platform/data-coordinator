@@ -288,17 +288,24 @@ object Main {
                               sorted = opts.sorted)(proc)
         }
 
-        val datasets = new DatasetResource(universalMutator, operations.deleteDataset, exporterAdapter, common.internalNameFromDatasetId, serviceConfig.commandReadLimit, operations.makeReportTemporaryFile)
-        val datasetSchema = new DatasetSchemaResource(getSchema, universalMutator, common.internalNameFromDatasetId)
+        val allDatasets = new AllDatasetsResource(universalMutator, common.internalNameFromDatasetId, operations.listDatasets, serviceConfig.commandReadLimit)
+        val dataset = new DatasetResource(universalMutator, operations.deleteDataset, exporterAdapter, common.internalNameFromDatasetId, serviceConfig.commandReadLimit, operations.makeReportTemporaryFile)
+        val datasetSchema = new DatasetSchemaResource(getSchema, universalMutator, common.internalNameFromDatasetId, serviceConfig.commandReadLimit)
         val secondaries = new SecondaryManifestsResource(secondaryStores)
         val secondariesOfDataset = new SecondariesOfDatasetResource(operations.secondariesOfDataset)
         val secondaryManifest = new SecondaryManifestResource(secondaryStores, operations.datasetsInStore, common.internalNameFromDatasetId)
         val datasetSecondaryStatus = new DatasetSecondaryStatusResource(secondaryStores, operations.versionInStore, operations.ensureInSecondary, operations.ensureInSecondaryGroup, serviceConfig.secondary.groups.keySet, serviceConfig.secondary.defaultGroups)
         val version = VersionResource
 
-        val serv = new Service(serviceConfig, operations.processMutation, operations.processCreation,
-          operations.exporter, datasets.service, datasetSchema.service, secondaries.service, secondariesOfDataset.service, secondaryManifest.service, datasetSecondaryStatus.service, version.service, operations.listDatasets, operations.deleteDataset,
-          serviceConfig.commandReadLimit, common.internalNameFromDatasetId, common.datasetIdFromInternalName, operations.makeReportTemporaryFile)
+        val serv = new Service(allDatasets.service,
+                               dataset.service,
+                               datasetSchema.service,
+                               secondaries.service,
+                               secondariesOfDataset.service,
+                               secondaryManifest.service,
+                               datasetSecondaryStatus.service,
+                               version.service,
+                               common.datasetIdFromInternalName)
 
         val finished = new CountDownLatch(1)
         val tableDropper = new Thread() {
