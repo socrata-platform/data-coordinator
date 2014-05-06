@@ -94,20 +94,6 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
       secondaryManifest.stores(datasetId)
     }
 
-  private def mutator(tmp: IndexedTempFile) = new Mutator(tmp, common.Mutator)
-
-  def processMutation(datasetId: DatasetId, input: Iterator[JValue], tmp: IndexedTempFile) = {
-    for(u <- common.universe) yield {
-      mutator(tmp).updateScript(u, datasetId, input)
-    }
-  }
-
-  def processCreation(input: Iterator[JValue], tmp: IndexedTempFile) = {
-    for(u <- common.universe) yield {
-      mutator(tmp).createScript(u, input)
-    }
-  }
-
   def listDatasets(): Seq[DatasetId] = {
     for(u <- common.universe) yield {
       u.datasetMapReader.allDatasetIds()

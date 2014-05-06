@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator.common
 
 import com.socrata.datacoordinator.{Row, MutableRow}
-import com.socrata.datacoordinator.service.{SchemaFinder, MutatorCommon}
+import com.socrata.datacoordinator.service.SchemaFinder
 import com.socrata.soql.types._
 import com.socrata.soql.environment.{ColumnName, TypeName}
 import com.socrata.soql.brita.{AsciiIdentifierFilter, IdentifierFilter}
@@ -212,7 +212,7 @@ class SoQLCommon(dataSource: DataSource,
     val timingReport = common.timingReport
   }
 
-  object Mutator extends MutatorCommon[CT, CV] with DDLMutatorCommon[CT, CV] with DMLMutatorCommon[CT, CV] {
+  object Mutator extends DDLMutatorCommon[CT, CV] with DMLMutatorCommon[CT, CV] {
     def physicalColumnBaseBase(nameHint: String, isSystemColumn: Boolean) =
       common.physicalColumnBaseBase(nameHint, isSystemColumn)
 
