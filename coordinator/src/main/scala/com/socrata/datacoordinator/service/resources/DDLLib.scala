@@ -7,13 +7,14 @@ import org.joda.time.DateTime
 import com.socrata.datacoordinator.service.mutator.{MutationException, MutationScriptCommandResult}
 import com.socrata.http.server.HttpResponse
 import org.joda.time.format.ISODateTimeFormat
-import java.io.{OutputStream, BufferedOutputStream}
-import com.rojoma.json.ast.{JNumber, JArray, JObject, JString}
+import java.io.{BufferedWriter, Writer, OutputStream, BufferedOutputStream}
+import com.rojoma.json.ast._
 import java.nio.charset.StandardCharsets
 import com.rojoma.json.io.{JsonReaderException, JsonReader, CompactJsonWriter}
 import com.rojoma.json.codec.JsonCodec
 import javax.servlet.http.HttpServletRequest
 import com.socrata.http.common.util.TooMuchDataWithoutAcknowledgement
+import com.rojoma.json.ast.JString
 
 class DDLLib(formatDatasetId: DatasetId => String, commandReadLimit: Long) {
   val dateTimeFormat = ISODateTimeFormat.dateTime
@@ -32,34 +33,38 @@ class DDLLib(formatDatasetId: DatasetId => String, commandReadLimit: Long) {
     }
   }
 
-  private def writeResult(o: OutputStream, r: MutationScriptCommandResult) {
+  private def writeResult(w: Writer, r: MutationScriptCommandResult) {
     r match {
       case MutationScriptCommandResult.ColumnCreated(id, typname) =>
-        o.write(CompactJsonWriter.toString(JObject(Map("id" -> JsonCodec.toJValue(id), "type" -> JString(typname.name)))).getBytes(StandardCharsets.UTF_8))
+        CompactJsonWriter.toWriter(w, JObject(Map("id" -> JsonCodec.toJValue(id), "type" -> JString(typname.name))))
       case MutationScriptCommandResult.Uninteresting =>
-        o.write('{')
-        o.write('}')
+        w.write("{}")
     }
   }
 
-  def fetchScript(req: HttpServletRequest): Either[HttpResponse, JArray] =
-    DatasetResource.jsonStream(req, commandReadLimit).right.flatMap { case (events, _) =>
-      JsonReader.fromEvents(events) match {
-        case arr: JArray => Right(arr)
-        case _ => Left(errors.contentNotJsonArray)
-      }
+  def fetchDatum(req: HttpServletRequest): Either[HttpResponse, JValue] =
+    DatasetResource.jsonStream(req, commandReadLimit).right.map { case (events, _) =>
+      JsonReader.fromEvents(events)
     }
 
+  def fetchScript(req: HttpServletRequest): Either[HttpResponse, JArray] =
+    fetchDatum(req).right.flatMap {
+      case arr: JArray => Right(arr)
+      case _ => Left(errors.contentNotJsonArray)
+    }
+
+  def responseHeaders(dataVersion: Long, lastModified: DateTime): HttpResponse =
+    Header("X-SODA2-Truth-Last-Modified", dateTimeFormat.print(lastModified)) ~>
+      Header("X-SODA2-Truth-Version", dataVersion.toString)
 
   def createResponse(datasetId: DatasetId, dataVersion: Long, lastModified: DateTime, results: Seq[MutationScriptCommandResult]): HttpResponse =
     OK ~>
-      Header("X-SODA2-Truth-Last-Modified", dateTimeFormat.print(lastModified)) ~>
-      Header("X-SODA2-Truth-Version", dataVersion.toString) ~>
-      ContentType("application/json; charset=utf-8") ~>
-      Stream { w =>
-        val bw = new BufferedOutputStream(w)
+      responseHeaders(dataVersion, lastModified) ~>
+      DataCoordinatorResource.ApplicationJson ~>
+      Write { w =>
+        val bw = new BufferedWriter(w)
         bw.write('[')
-        bw.write(JString(formatDatasetId(datasetId)).toString.getBytes(StandardCharsets.UTF_8))
+        CompactJsonWriter.toWriter(bw, JString(formatDatasetId(datasetId)))
         for(r <- results) {
           bw.write(',')
           writeResult(bw, r)

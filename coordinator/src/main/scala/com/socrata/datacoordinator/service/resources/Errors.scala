@@ -16,6 +16,12 @@ import com.socrata.datacoordinator.truth.metadata.Schema
 import com.socrata.datacoordinator.truth.loader.VersionMismatch
 import com.socrata.http.server.HttpResponse
 import com.rojoma.json.io.JsonReaderException
+import com.socrata.datacoordinator.truth._
+import com.socrata.datacoordinator.truth.loader.NoSuchRowToDelete
+import com.rojoma.json.ast.JString
+import com.socrata.datacoordinator.truth.metadata.Schema
+import com.socrata.datacoordinator.truth.loader.NoSuchRowToUpdate
+import com.socrata.datacoordinator.truth.loader.VersionMismatch
 
 sealed class StaticErrors {
   protected def err(codeSetter: HttpResponse, errorCode: String, data: (String, JValue)*): HttpResponse = {
@@ -27,7 +33,7 @@ sealed class StaticErrors {
   }
 
   def notFoundError(datasetId: String) = // yes, string.  This is used when an invalid dataset ID is specified too.
-    err(NotFound, "update.dataset.does-not-exist",
+    err(NotFound, "req.dataset.does-not-exist",
       "dataset" -> JString(datasetId))
 
   def contentTypeUnparsable(contentType: String) =
@@ -243,4 +249,16 @@ class Errors(formatDatasetId: DatasetId => String) extends StaticErrors {
   def writeLockError(datasetId: DatasetId) =
     err(Conflict, "update.dataset.temporarily-not-writable",
       "dataset" -> JString(formatDatasetId(datasetId)))
+
+  private def formatCopySelector(cs: CopySelector) = cs match {
+    case LatestCopy => JString("latest")
+    case PublishedCopy => JString("published")
+    case WorkingCopy => JString("working")
+    case Snapshot(n) => JNumber(n)
+  }
+
+  def versionNotFoundError(datasetId: DatasetId, version: CopySelector) =
+    err(NotFound, "req.version.does-not-exist",
+      "dataset" -> JString(formatDatasetId(datasetId)),
+      "version" -> formatCopySelector(version))
 }

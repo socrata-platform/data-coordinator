@@ -290,6 +290,7 @@ object Main {
 
         val allDatasets = new AllDatasetsResource(universalMutator, common.internalNameFromDatasetId, operations.listDatasets, serviceConfig.commandReadLimit)
         val dataset = new DatasetResource(universalMutator, operations.deleteDataset, exporterAdapter, common.internalNameFromDatasetId, serviceConfig.commandReadLimit, operations.makeReportTemporaryFile)
+        val datasetCopies = new DatasetCopiesResource(universalMutator, common.internalNameFromDatasetId, serviceConfig.commandReadLimit)
         val datasetSchema = new DatasetSchemaResource(getSchema, universalMutator, common.internalNameFromDatasetId, serviceConfig.commandReadLimit)
         val secondaries = new SecondaryManifestsResource(secondaryStores)
         val secondariesOfDataset = new SecondariesOfDatasetResource(operations.secondariesOfDataset)
@@ -299,6 +300,7 @@ object Main {
 
         val serv = new Service(allDatasets.service,
                                dataset.service,
+                               datasetCopies.service,
                                datasetSchema.service,
                                secondaries.service,
                                secondariesOfDataset.service,

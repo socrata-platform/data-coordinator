@@ -30,7 +30,7 @@ class DatasetSchemaResource(getSchema: (DatasetId, CopySelector) => Option[Schem
     } yield {
       OK ~> DataCoordinatorResource.json(DataCoordinatorResource.jsonifySchema(schema))
     }
-    result.getOrElse(errors.notFoundError(formatDatasetId(datasetId)))
+    result.getOrElse(errors.versionNotFoundError(datasetId, version))
   }
 
   def ddl(datasetId: DatasetId, version: CopySelector)(req: HttpServletRequest): HttpResponse = {
