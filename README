@@ -19,7 +19,7 @@ To run the tests, from the SBT shell:
 
 To run migrations in this project:
 ```
-sbt -Dconfig.file=/etc/soda2.conf "coordinator/run-main com.socrata.datacoordinator.primary.MigrateSchema Redo"
+sbt -Dconfig.file=/etc/soda2.conf "coordinator/run-main com.socrata.datacoordinator.primary.MigrateSchema migrate"
 ```
 Alternatively, if you have an assembly jar you can use:
 ```
