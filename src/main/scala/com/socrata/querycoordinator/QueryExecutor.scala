@@ -9,6 +9,7 @@ import QueryExecutor._
 import java.io._
 import javax.servlet.http.HttpServletResponse
 import com.socrata.http.client.exceptions.{LivenessCheckFailed, HttpClientTimeoutException}
+import com.socrata.http.server.implicits._
 import scala.annotation.tailrec
 import com.rojoma.json.io.{FusedBlockJsonEventIterator, JsonReader}
 import java.nio.charset.StandardCharsets
@@ -21,6 +22,7 @@ import com.rojoma.json.ast.JString
 import com.socrata.querycoordinator.QueryExecutor.SchemaHashMismatch
 import com.socrata.querycoordinator.util.TeeToTempInputStream
 import com.socrata.http.server.util.{PreconditionRenderer, Precondition}
+import org.joda.time.DateTime
 
 class QueryExecutor(httpClient: HttpClient, analysisSerializer: AnalysisSerializer[String, SoQLAnalysisType], teeStreamProvider: InputStream => TeeToTempInputStream) {
   private[this] val log = org.slf4j.LoggerFactory.getLogger(classOf[QueryExecutor])
@@ -33,11 +35,11 @@ class QueryExecutor(httpClient: HttpClient, analysisSerializer: AnalysisSerializ
    * @note Reusing the result will re-issue the request to the upstream server.  The serialization of the
    *       analysis will be re-used for each request.
    */
-  def apply(base: RequestBuilder, dataset: String, analysis: SoQLAnalysis[String, SoQLAnalysisType], schema: Schema, precondition: Precondition, rowCount: Option[String]): Managed[Result] = {
+  def apply(base: RequestBuilder, dataset: String, analysis: SoQLAnalysis[String, SoQLAnalysisType], schema: Schema, precondition: Precondition, ifModifiedSince: Option[DateTime], rowCount: Option[String]): Managed[Result] = {
     val serializedAnalysis = serializeAnalysis(analysis)
     val params = List(qpDataset -> dataset, qpQuery -> serializedAnalysis, qpSchemaHash -> schema.hash) ++
       rowCount.map(rc => List(qpRowCount -> rc)).getOrElse(Nil)
-    val request = base.p("query").addHeaders(PreconditionRenderer(precondition)).form(params)
+    val request = base.p("query").addHeaders(PreconditionRenderer(precondition) ++ ifModifiedSince.map("If-Modified-Since" -> _.toHttpDate)).form(params)
 
     new SimpleArm[Result] {
       def flatMap[A](f: Result => A): A = {

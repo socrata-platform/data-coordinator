@@ -146,7 +146,6 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
   def noContentTypeResponse = internalServerError
   def unparsableContentTypeResponse = internalServerError
   def notJsonResponseResponse = internalServerError
-  def notModifiedResponse(newEtag: String) = NotModified ~> Header("etag", newEtag)
   def upstreamTimeoutResponse = internalServerError
 
   def reqBuilder(secondary: ServiceInstance[AuxiliaryData]) = {
@@ -253,6 +252,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
           finishRequest(BadRequest ~> Content("idMap not parsable as JSON"))
       }
       val precondition = req.precondition
+      val ifModifiedSince = req.dateTimeHeader("If-Modified-Since")
 
       def isInSecondary(name: String): Option[Boolean] = {
         // TODO we should either create a separate less expensive method for checking if a dataset
@@ -347,7 +347,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
 
       @tailrec
       def executeQuery(schema: Schema, analyzedQuery: SoQLAnalysis[String, SoQLAnalysisType]) {
-        val res = queryExecutor(base, dataset, analyzedQuery, schema, precondition, rowCount).map {
+        val res = queryExecutor(base, dataset, analyzedQuery, schema, precondition, ifModifiedSince, rowCount).map {
           case QueryExecutor.NotFound =>
             chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
             finishRequest(notFoundResponse(dataset))
