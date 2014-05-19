@@ -62,6 +62,15 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[SoQLValue] {
       case SoQLVersion(ver) =>
         target.writeRawByte(14)
         target.writeInt64NoTag(ver)
+      case SoQLPoint(p) =>
+        target.writeRawByte(15)
+        target.writeStringNoTag(SoQLPoint.JsonRep(p))
+      case SoQLLine(l) =>
+        target.writeRawByte(16)
+        target.writeStringNoTag(SoQLLine.JsonRep(l))
+      case SoQLPolygon(p) =>
+        target.writeRawByte(17)
+        target.writeStringNoTag(SoQLPolygon.JsonRep(p))
       case SoQLNull =>
         target.writeRawByte(-1)
     }
@@ -112,6 +121,21 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[SoQLValue] {
         })
       case 14 =>
         SoQLVersion(source.readInt64())
+      case 15 =>
+        SoQLPoint.JsonRep.unapply(source.readString()) match {
+          case Some(point) => SoQLPoint(point)
+          case _ => sys.error("Unable to parse object from log!")
+        }
+      case 16 =>
+        SoQLLine.JsonRep.unapply(source.readString()) match {
+          case Some(line) => SoQLLine(line)
+          case _ => sys.error("Unable to parse object from log!")
+        }
+      case 17 =>
+        SoQLPolygon.JsonRep.unapply(source.readString()) match {
+          case Some(polygon) => SoQLPolygon(polygon)
+          case _ => sys.error("Unable to parse object from log!")
+        }
       case -1 =>
         SoQLNull
     }
