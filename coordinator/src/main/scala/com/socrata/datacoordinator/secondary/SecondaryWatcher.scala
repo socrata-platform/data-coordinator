@@ -89,28 +89,33 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
       secondaryConfigInfo.runIntervalSeconds)
 
     var done = maybeSleep(secondaryConfigInfo.storeId, nextRunTime, finished)
-    while(!done) {
-      for { u <- universe } yield {
-        import u._
+    while (!done) {
+      try {
+        for {u <- universe} yield {
+          import u._
 
-        while(run(u, new NamedSecondary(secondaryConfigInfo.storeId, secondary)) && finished.getCount != 0) {
-          // loop until we either have no more work or we are told to exit
+          while (run(u, new NamedSecondary(secondaryConfigInfo.storeId, secondary)) && finished.getCount != 0) {
+            // loop until we either have no more work or we are told to exit
+          }
+
+          nextRunTime = bestNextRunTime(secondaryConfigInfo.storeId,
+            nextRunTime.plus(Seconds.seconds(secondaryConfigInfo.runIntervalSeconds)),
+            secondaryConfigInfo.runIntervalSeconds)
+
+          // we only actually write at most once every 15 minutes...
+          val now = DateTime.now()
+          if (now.getMillis - lastWrote.getMillis >= 15 * 60 * 1000) {
+            log.info("Writing new next-runtime: {}", nextRunTime)
+            secondaryConfig.updateNextRunTime(secondaryConfigInfo.storeId, nextRunTime)
+          }
+          lastWrote = now
         }
 
-        nextRunTime = bestNextRunTime(secondaryConfigInfo.storeId,
-          nextRunTime.plus(Seconds.seconds(secondaryConfigInfo.runIntervalSeconds)),
-          secondaryConfigInfo.runIntervalSeconds)
-
-        // we only actually write at most once every 15 minutes...
-        val now = DateTime.now()
-        if(now.getMillis - lastWrote.getMillis >= 15 * 60 * 1000) {
-          log.info("Writing new next-runtime: {}", nextRunTime)
-          secondaryConfig.updateNextRunTime(secondaryConfigInfo.storeId, nextRunTime)
-        }
-        lastWrote = now
+        done = maybeSleep(secondaryConfigInfo.storeId, nextRunTime, finished)
+      } catch {
+        case e: Exception =>
+          log.error("Unexpected exception while updating claimedAt time for secondary sync jobs claimed by watcherId " + claimantId.toString(), e)
       }
-
-      done = maybeSleep(secondaryConfigInfo.storeId, nextRunTime, finished)
     }
   }
 }
@@ -173,6 +178,13 @@ object SecondaryWatcher extends App { self =>
   PropertyConfigurator.configure(Propertizer("log4j", config.log4j))
 
   val log = LoggerFactory.getLogger(classOf[SecondaryWatcher[_,_]])
+
+  Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
+    def uncaughtException(t: Thread, e: Throwable) {
+      log.error(s"Uncaught exception in thread ${t.getName}, exiting", e)
+      sys.exit(1)
+    }
+  })
 
   for(dsInfo <- DataSourceFromConfig(config.database)) {
     val secondaries = SecondaryLoader.load(config.secondaryConfig).asInstanceOf[Map[String, Secondary[SoQLType, SoQLValue]]]

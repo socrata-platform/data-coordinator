@@ -57,8 +57,9 @@ class Service(serviceConfig: ServiceConfig,
               processCreation: (Iterator[JValue], IndexedTempFile) => processCreationReturns,
               getSchema: DatasetId => Option[Schema],
               datasetContents: (DatasetId, Option[String], CopySelector, Option[UserColumnIdSet],
-                                Option[Long], Option[Long], Precondition, Boolean) =>
+                                Option[Long], Option[Long], Precondition, Option[DateTime], Boolean) =>
                                datasetContentsFunc => Exporter.Result[Unit],
+
               secondaries: Set[String],
               datasetsInStore: (String) => Map[DatasetId, Long],
               versionInStore: (String, DatasetId) => Option[Long],
@@ -518,6 +519,7 @@ class Service(serviceConfig: ServiceConfig,
     def doExportFile(req: HttpServletRequest): HttpResponse = {
       val precondition = req.precondition
       val schemaHash = Option(req.getParameter("schemaHash"))
+      val ifModifiedSince = req.dateTimeHeader("If-Modified-Since")
       val onlyColumns = Option(req.getParameterValues("c")).map(_.flatMap { c => norm(c).split(',').map(new UserColumnId(_)) }).map(UserColumnIdSet(_ : _*))
       val limit = Option(req.getParameter("limit")).map { limStr =>
         try {
@@ -569,7 +571,7 @@ class Service(serviceConfig: ServiceConfig,
         case Right(newPrecond) =>
           val upstreamPrecondition = newPrecond.map(_.dropRight(suffix.length));
           { resp =>
-            val found = datasetContents(datasetId, schemaHash, copy, onlyColumns, limit, offset, upstreamPrecondition, sorted) {
+            val found = datasetContents(datasetId, schemaHash, copy, onlyColumns, limit, offset, upstreamPrecondition, ifModifiedSince, sorted) {
               case Left(newSchema) =>
                 mismatchedSchema("req.export.mismatched-schema", datasetId, newSchema)(resp)
               case Right((etag, schema, rowIdCol, locale, approxRowCount, rows)) =>
@@ -601,9 +603,9 @@ class Service(serviceConfig: ServiceConfig,
               case Exporter.Success(_) => // ok good
               case Exporter.NotFound =>
                 notFoundError(formatDatasetId(datasetId))
-              case Exporter.PreconditionFailed(Precondition.FailedBecauseMatch(etags)) =>
-                notModified(etags)(resp)
-              case Exporter.PreconditionFailed(Precondition.FailedBecauseNoMatch) =>
+              case Exporter.NotModified(etags) =>
+                notModified(etags.map(_.append(suffix)))(resp)
+              case Exporter.PreconditionFailedBecauseNoMatch =>
                 preconditionFailed(resp)
             }
           }
