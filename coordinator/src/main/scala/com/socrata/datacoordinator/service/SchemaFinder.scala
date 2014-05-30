@@ -4,15 +4,16 @@ import scala.concurrent.duration._
 
 import com.rojoma.simplearm.Managed
 
-import com.socrata.datacoordinator.truth.universe.{CacheProvider, DatasetMapReaderProvider, Universe}
+import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.truth.metadata.{Schema, DatasetCopyContext}
+import com.socrata.datacoordinator.truth.universe.{CacheProvider, DatasetMapReaderProvider, Universe}
 import com.socrata.datacoordinator.util.{Cache, RotateSchema}
 import com.socrata.soql.environment.TypeName
-import com.socrata.datacoordinator.id.DatasetId
 
 import SchemaFinder._
 
-class SchemaFinder[CT, CV](typeSerializer: CT => TypeName, cache: Cache) extends com.socrata.datacoordinator.truth.metadata.SchemaFinder[CT] {
+class SchemaFinder[CT, CV](typeSerializer: CT => TypeName, cache: Cache) extends
+    com.socrata.datacoordinator.truth.metadata.SchemaFinder[CT] {
   def schemaHash(ctx: DatasetCopyContext[CT]): String = {
     val key = List("schemahash", ctx.datasetInfo.systemId.underlying.toString, ctx.copyInfo.dataVersion.toString)
     cache.lookup[String](key) match {

@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator.common.soql
 
 import com.socrata.datacoordinator.truth.SimpleRowLogCodec
-import com.google.protobuf.{CodedInputStream, CodedOutputStream}
+import com.google.protobuf.{ByteString, CodedInputStream, CodedOutputStream}
 import org.joda.time._
 import com.socrata.soql.types._
 import com.rojoma.json.io.{JsonReader, CompactJsonWriter}
@@ -62,6 +62,15 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[SoQLValue] {
       case SoQLVersion(ver) =>
         target.writeRawByte(14)
         target.writeInt64NoTag(ver)
+      case SoQLPoint(p) =>
+        target.writeRawByte(15)
+        target.writeBytesNoTag(ByteString.copyFrom(SoQLPoint.WkbRep(p)))
+      case SoQLMultiLine(ml) =>
+        target.writeRawByte(16)
+        target.writeBytesNoTag(ByteString.copyFrom(SoQLMultiLine.WkbRep(ml)))
+      case SoQLMultiPolygon(mp) =>
+        target.writeRawByte(17)
+        target.writeBytesNoTag(ByteString.copyFrom(SoQLMultiPolygon.WkbRep(mp)))
       case SoQLNull =>
         target.writeRawByte(-1)
     }
@@ -112,6 +121,21 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[SoQLValue] {
         })
       case 14 =>
         SoQLVersion(source.readInt64())
+      case 15 =>
+        SoQLPoint.WkbRep.unapply(source.readBytes.toByteArray) match {
+          case Some(point) => SoQLPoint(point)
+          case _ => sys.error("Unable to parse object from log!")
+        }
+      case 16 =>
+        SoQLMultiLine.WkbRep.unapply(source.readBytes.toByteArray) match {
+          case Some(multiline) => SoQLMultiLine(multiline)
+          case _ => sys.error("Unable to parse object from log!")
+        }
+      case 17 =>
+        SoQLMultiPolygon.WkbRep.unapply(source.readBytes.toByteArray) match {
+          case Some(multipolygon) => SoQLMultiPolygon(multipolygon)
+          case _ => sys.error("Unable to parse object from log!")
+        }
       case -1 =>
         SoQLNull
     }

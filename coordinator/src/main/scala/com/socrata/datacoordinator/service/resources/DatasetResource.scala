@@ -123,6 +123,7 @@ class DatasetResource(upserter: UniversalUpserter,
   val suffixHashLen = MessageDigest.getInstance(suffixHashAlg).getDigestLength
   def doExportFile(datasetId: DatasetId)(req: HttpServletRequest): HttpResponse = {
     val precondition = req.precondition
+    val ifModifiedSince = req.dateTimeHeader("if-modified-since")
     val schemaHash = Option(req.getParameter("schemaHash"))
     val onlyColumns = Option(req.getParameterValues("c")).map(_.flatMap { c => norm(c).split(',').map(new UserColumnId(_)) }).map(UserColumnIdSet(_ : _*))
     val limit = Option(req.getParameter("limit")).map { limStr =>
@@ -185,6 +186,7 @@ class DatasetResource(upserter: UniversalUpserter,
                                                             limit = limit,
                                                             offset = offset,
                                                             precondition = upstreamPrecondition,
+                                                            ifModifiedSince = ifModifiedSince,
                                                             sorted = sorted)) {
             case Left(newSchema) =>
               errors.mismatchedSchema("req.export.mismatched-schema", datasetId, newSchema)(resp)
@@ -217,9 +219,9 @@ class DatasetResource(upserter: UniversalUpserter,
             case Exporter.Success(_) => // ok good
             case Exporter.NotFound =>
               errors.notFoundError(formatDatasetId(datasetId))
-            case Exporter.PreconditionFailed(Precondition.FailedBecauseMatch(etags)) =>
+            case Exporter.NotModified(etags) =>
               errors.notModified(etags)(resp)
-            case Exporter.PreconditionFailed(Precondition.FailedBecauseNoMatch) =>
+            case Exporter.PreconditionFailedBecauseNoMatch =>
               errors.preconditionFailed(resp)
           }
         }
@@ -245,6 +247,7 @@ object DatasetResource {
                                    limit: Option[Long],
                                    offset: Option[Long],
                                    precondition: Precondition,
+                                   ifModifiedSince: Option[DateTime],
                                    sorted: Boolean)
 
   type DatasetContentProcessor = Either[Schema, (EntityTag, Seq[SchemaField], Option[UserColumnId], String, Long, Iterator[Array[JValue]])] => Unit

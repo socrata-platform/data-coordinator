@@ -6,6 +6,7 @@ import com.socrata.datacoordinator.truth.csv.CsvColumnRep
 import com.socrata.datacoordinator.truth.json.JsonColumnRep
 import com.socrata.datacoordinator.id.{RowVersion, RowId}
 import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, DatasetInfo}
+import com.vividsolutions.jts.geom.{MultiLineString, MultiPolygon, Point}
 
 object SoQLRep {
   private val sqlRepFactories = Map[SoQLType, ColumnInfo[SoQLType] => SqlColumnRep[SoQLType, SoQLValue]](
@@ -22,7 +23,10 @@ object SoQLRep {
     SoQLLocation -> (ci => new sqlreps.LocationRep(ci.physicalColumnBase)),
     SoQLDouble -> (ci => new sqlreps.DoubleRep(ci.physicalColumnBase)),
     SoQLObject -> (ci => new sqlreps.ObjectRep(ci.physicalColumnBase)),
-    SoQLArray -> (ci => new sqlreps.ArrayRep(ci.physicalColumnBase))
+    SoQLArray -> (ci => new sqlreps.ArrayRep(ci.physicalColumnBase)),
+    SoQLPoint -> (ci => new sqlreps.GeometryLikeRep[Point](SoQLPoint, _.asInstanceOf[SoQLPoint].value, SoQLPoint(_), ci.physicalColumnBase)),
+    SoQLMultiLine -> (ci => new sqlreps.GeometryLikeRep[MultiLineString](SoQLMultiLine, _.asInstanceOf[SoQLMultiLine].value, SoQLMultiLine(_), ci.physicalColumnBase)),
+    SoQLMultiPolygon -> (ci => new sqlreps.GeometryLikeRep[MultiPolygon](SoQLMultiPolygon, _.asInstanceOf[SoQLMultiPolygon].value, SoQLMultiPolygon(_), ci.physicalColumnBase))
   )
 
   def sqlRep(columnInfo: ColumnInfo[SoQLType]): SqlColumnRep[SoQLType, SoQLValue] =
@@ -40,7 +44,10 @@ object SoQLRep {
     SoQLFloatingTimestamp -> csvreps.FloatingTimestampRep,
     SoQLDate -> csvreps.DateRep,
     SoQLTime -> csvreps.TimeRep,
-    SoQLLocation -> csvreps.LocationRep
+    SoQLLocation -> csvreps.LocationRep,
+    SoQLPoint -> new csvreps.GeometryLikeRep[Point](SoQLPoint, SoQLPoint(_)),
+    SoQLMultiLine -> new csvreps.GeometryLikeRep[MultiLineString](SoQLMultiLine, SoQLMultiLine(_)),
+    SoQLMultiPolygon -> new csvreps.GeometryLikeRep[MultiPolygon](SoQLMultiPolygon, SoQLMultiPolygon(_))
   )
   def csvRep(columnInfo: ColumnInfo[SoQLType]): CsvColumnRep[SoQLType, SoQLValue] =
     csvRepFactories(columnInfo.typ)
@@ -59,7 +66,10 @@ object SoQLRep {
     SoQLLocation -> jsonreps.LocationRep,
     SoQLDouble -> jsonreps.DoubleRep,
     SoQLArray -> jsonreps.ArrayRep,
-    SoQLObject -> jsonreps.ObjectRep
+    SoQLObject -> jsonreps.ObjectRep,
+    SoQLPoint -> new jsonreps.GeometryLikeRep[Point](SoQLPoint, _.asInstanceOf[SoQLPoint].value, SoQLPoint(_)),
+    SoQLMultiLine -> new jsonreps.GeometryLikeRep[MultiLineString](SoQLMultiLine, _.asInstanceOf[SoQLMultiLine].value, SoQLMultiLine(_)),
+    SoQLMultiPolygon -> new jsonreps.GeometryLikeRep[MultiPolygon](SoQLMultiPolygon, _.asInstanceOf[SoQLMultiPolygon].value, SoQLMultiPolygon(_))
   )
 
   trait IdObfuscationContext {

@@ -9,6 +9,7 @@
     <include file="com.socrata.datacoordinator.truth.schema/20140307-add-column-last-modified.xml"/>
     <include file="com.socrata.datacoordinator.truth.schema/20140310-enable-multiple-watcher-processes.xml"/>
     <include file="com.socrata.datacoordinator.truth.schema/20140401-add-log-cleanup-fields.xml"/>
+    <include file="com.socrata.datacoordinator.truth.schema/20140509-add-column-broken-acknowledged-at.xml"/>
 
     <!-- run-on-change migrations: recreation of triggers typically comes after other changes that they may depend on -->
     <include file="com.socrata.datacoordinator.truth.schema/triggers/update-dataset-log-trigger.xml"/>

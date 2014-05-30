@@ -1,8 +1,7 @@
 package com.socrata.datacoordinator.service
 
-import com.typesafe.config.Config
 import com.socrata.datacoordinator.common.DataSourceConfig
-import scala.concurrent.duration.{FiniteDuration, Duration}
+import com.typesafe.config.Config
 import java.util.concurrent.TimeUnit
 import com.socrata.thirdparty.typesafeconfig.ConfigClass
 
@@ -23,5 +22,6 @@ class ServiceConfig(config: Config, root: String) extends ConfigClass(config, ro
   val logTableCleanupDeleteOlderThan = getDuration("log-table-cleanup-delete-older-than")
   val logTableCleanupDeleteEvery = getDuration("log-table-cleanup-delete-every")
 
-  require(instance.matches("[a-zA-Z0-9._]+"), "Instance names must consist of only ASCII letters, numbers, periods, and underscores")
+  require(instance.matches("[a-zA-Z0-9._]+"),
+          "Instance names must consist of only ASCII letters, numbers, periods, and underscores")
 }

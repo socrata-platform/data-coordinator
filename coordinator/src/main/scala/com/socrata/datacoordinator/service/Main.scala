@@ -106,9 +106,19 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
     }
   }
 
-  def exporter(id: DatasetId, schemaHash: Option[String], copy: CopySelector, columns: Option[UserColumnIdSet], limit: Option[Long], offset: Option[Long], precondition: Precondition, sorted: Boolean)(f: Either[Schema, (EntityTag, Seq[SchemaField], Option[UserColumnId], String, Long, Iterator[Array[JValue]])] => Unit): Exporter.Result[Unit] = {
+  def exporter(
+    id: DatasetId,
+    schemaHash: Option[String],
+    copy: CopySelector,
+    columns: Option[UserColumnIdSet],
+    limit: Option[Long],
+    offset: Option[Long],
+    precondition: Precondition,
+    ifModifiedSince: Option[DateTime],
+    sorted: Boolean
+   )(f: Either[Schema, (EntityTag, Seq[SchemaField], Option[UserColumnId], String, Long, Iterator[Array[JValue]])] => Unit): Exporter.Result[Unit] = {
     for(u <- common.universe) yield {
-      Exporter.export(u, id, copy, columns, limit, offset, precondition, sorted) { (entityTag, copyCtx, approxRowCount, it) =>
+      Exporter.export(u, id, copy, columns, limit, offset, precondition, ifModifiedSince, sorted) { (entityTag, copyCtx, approxRowCount, it) =>
         val schema = u.schemaFinder.getSchema(copyCtx)
 
         if(schemaHash.isDefined && (Some(schema.hash) != schemaHash)) {
@@ -271,6 +281,7 @@ object Main {
                               limit = opts.limit,
                               offset = opts.offset,
                               precondition = opts.precondition,
+                              ifModifiedSince = opts.ifModifiedSince,
                               sorted = opts.sorted)(proc)
         }
 
