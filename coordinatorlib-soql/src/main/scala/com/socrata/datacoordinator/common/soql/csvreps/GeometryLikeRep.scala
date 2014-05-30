@@ -8,13 +8,13 @@ class GeometryLikeRep[T <: Geometry](repType: SoQLType, value: T => SoQLValue) e
   val size = 1
   val representedType = repType
 
-  def fromJson(str: String) = repType.asInstanceOf[SoQLGeometryLike[T]].JsonRep.unapply(str)
+  def fromWkt(str: String) = repType.asInstanceOf[SoQLGeometryLike[T]].WktRep.unapply(str)
 
   def decode(row: IndexedSeq[String], indices: IndexedSeq[Int]) = {
     assert(indices.size == size)
-    val x = row(indices(0))
-    if(x.isEmpty) Some(SoQLNull)
-    else fromJson(x) match {
+    val data = row(indices(0))
+    if (data.isEmpty) Some(SoQLNull)
+    else fromWkt(data) match {
       case Some(g) => Some(value(g))
       case _ => Some(SoQLNull)
     }

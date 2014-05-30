@@ -11,6 +11,7 @@ class GeometryLikeRep[T<:Geometry](repType: SoQLType, geometry: SoQLValue => T, 
 
   def representedType = repType
 
+  def fromWkt(str: String) = repType.asInstanceOf[SoQLGeometryLike[T]].WktRep.unapply(str)
   def toWkt(v: SoQLValue) = v.typ.asInstanceOf[SoQLGeometryLike[T]].WktRep(geometry(v))
 
   val physColumns: Array[String] = Array(base)
@@ -35,10 +36,10 @@ class GeometryLikeRep[T<:Geometry](repType: SoQLType, geometry: SoQLValue => T, 
   }
 
   def fromResultSet(rs: ResultSet, start: Int): SoQLValue = {
-    val v = rs.getString(start)
-    if(v == null) SoQLNull
+    val data = rs.getString(start)
+    if(data == null) SoQLNull
 
-    repType.asInstanceOf[SoQLGeometryLike[T]].JsonRep.unapply(v) match {
+    fromWkt(data) match {
       case Some(geometry) => value(geometry)
       case _ => SoQLNull
     }
