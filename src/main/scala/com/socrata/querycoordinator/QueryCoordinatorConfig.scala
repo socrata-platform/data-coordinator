@@ -14,8 +14,9 @@ class QueryCoordinatorConfig(config: Config, root: String) {
   val advertisement = new AdvertisementConfig(config, k("service-advertisement"))
   val network = new NetworkConfig(config, k("network"))
 
-  val connectTimeout = config.getMilliseconds(k("get-schema-timeout")).longValue.millis
+  val connectTimeout = config.getMilliseconds(k("connect-timeout")).longValue.millis
   val schemaTimeout = config.getMilliseconds(k("get-schema-timeout")).longValue.millis
+  val queryTimeout = config.getMilliseconds(k("query-timeout")).longValue.millis
   val maxRows = try { Some(config.getInt(k("max-rows"))) } catch { case _: ConfigException.Missing => None}
 
   val allSecondaryInstanceNames = asScalaIterator(config.getStringList(k("all-secondary-instance-names")).iterator()).toSeq

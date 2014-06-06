@@ -55,6 +55,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
               queryExecutor: QueryExecutor,
               connectTimeout: FiniteDuration,
               getSchemaTimeout: FiniteDuration,
+              queryTimeout: FiniteDuration,
               schemaCache: (String, Schema) => Unit,
               schemaDecache: String => Option[Schema],
               secondaryInstance:SecondaryInstanceSelector)
@@ -146,7 +147,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
   def noContentTypeResponse = internalServerError
   def unparsableContentTypeResponse = internalServerError
   def notJsonResponseResponse = internalServerError
-  def upstreamTimeoutResponse = internalServerError
+  def upstreamTimeoutResponse = GatewayTimeout
 
   def reqBuilder(secondary: ServiceInstance[AuxiliaryData]) = {
     val pingTarget = for {
@@ -306,6 +307,9 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
           case SchemaFetcher.NoSuchDatasetInSecondary =>
             chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
             finishRequest(notFoundResponse(dataset))
+          case SchemaFetcher.TimeoutFromSecondary =>
+            chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
+            finishRequest(upstreamTimeoutResponse)
           case other =>
             log.error("Unexpected response when fetching schema from secondary: {}", other)
             chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
@@ -347,10 +351,13 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
 
       @tailrec
       def executeQuery(schema: Schema, analyzedQuery: SoQLAnalysis[String, SoQLAnalysisType]) {
-        val res = queryExecutor(base, dataset, analyzedQuery, schema, precondition, ifModifiedSince, rowCount).map {
+        val res = queryExecutor(base.receiveTimeoutMS(queryTimeout.toMillis.toInt), dataset, analyzedQuery, schema, precondition, ifModifiedSince, rowCount).map {
           case QueryExecutor.NotFound =>
             chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
             finishRequest(notFoundResponse(dataset))
+          case QueryExecutor.Timeout =>
+            // don't flag an error in this case because the timeout may be based on the particular query.
+            finishRequest(upstreamTimeoutResponse)
           case QueryExecutor.SchemaHashMismatch(newSchema) =>
             storeInCache(Some(newSchema), dataset)
             Some(analyzeRequest(newSchema, true))

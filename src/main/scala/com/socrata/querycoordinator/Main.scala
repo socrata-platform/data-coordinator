@@ -97,6 +97,7 @@ object Main extends App {
       new QueryExecutor(httpClient, analysisSerializer, teeStream),
       config.connectTimeout,
       config.schemaTimeout,
+      config.queryTimeout,
       (_, _) => (),
       _ => None,
       secondaryInstanceSelector)
