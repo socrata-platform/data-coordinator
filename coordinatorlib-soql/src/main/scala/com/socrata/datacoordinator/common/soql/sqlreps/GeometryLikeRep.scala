@@ -8,31 +8,32 @@ import java.sql.{ResultSet, Types, PreparedStatement}
 
 class GeometryLikeRep[T<:Geometry](repType: SoQLType, geometry: SoQLValue => T, value: T => SoQLValue, val base: String)
   extends RepUtils with SqlColumnRep[SoQLType, SoQLValue]  {
+  private val WGS84SRID = 4326
 
   def representedType = repType
 
   def fromWkt(str: String) = repType.asInstanceOf[SoQLGeometryLike[T]].WktRep.unapply(str)
-  def toWkt(v: SoQLValue) = v.typ.asInstanceOf[SoQLGeometryLike[T]].WktRep(geometry(v))
+  def toEWkt(v: SoQLValue) = v.typ.asInstanceOf[SoQLGeometryLike[T]].EWktRep(geometry(v), WGS84SRID)
 
   val physColumns: Array[String] = Array(base)
 
-  val sqlTypes: Array[String] = Array("GEOMETRY")
+  val sqlTypes: Array[String] = Array(s"GEOMETRY(Geometry,$WGS84SRID)")
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue) {
     if(SoQLNull == v) { /* pass */ }
-    else csvescape(sb, toWkt(v))
+    else csvescape(sb, toEWkt(v))
   }
 
   def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
     if (SoQLNull == v) stmt.setNull(start, Types.VARCHAR)
-    else stmt.setString(start, toWkt(v))
+    else stmt.setString(start, toEWkt(v))
 
     start + 1
   }
 
   def estimateSize(v: SoQLValue): Int = {
     if (SoQLNull == v) standardNullInsertSize
-    else toWkt(v).length
+    else toEWkt(v).length
   }
 
   def fromResultSet(rs: ResultSet, start: Int): SoQLValue = {
