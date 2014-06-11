@@ -12,7 +12,7 @@ import org.slf4j.LoggerFactory
 import sun.misc.{Signal, SignalHandler}
 import java.util.concurrent.{Executors, TimeUnit, CountDownLatch}
 import org.joda.time.{DateTime, Seconds}
-import com.socrata.datacoordinator.util.{NullCache, StackedTimingReport, LoggedTimingReport}
+import com.socrata.datacoordinator.util.{TimingReport, NullCache, StackedTimingReport, LoggedTimingReport}
 import com.socrata.datacoordinator.truth.universe._
 import org.apache.log4j.PropertyConfigurator
 import com.socrata.thirdparty.typesafeconfig.Propertizer
@@ -22,7 +22,7 @@ import scala.util.Random
 import java.util.UUID
 import com.socrata.datacoordinator.common.DataSourceFromConfig.DSInfo
 
-class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseType[CT, CV]], claimantId: UUID, claimTimeout: FiniteDuration) {
+class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseType[CT, CV]], claimantId: UUID, claimTimeout: FiniteDuration, timingReport: TimingReport) {
   import SecondaryWatcher.log
   private val rand = new Random()
   // splay the sleep time +/- 5s to prevent watchers from getting in lock step
@@ -34,7 +34,12 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
     val foundWorkToDo = for (job <-  secondaryManifest.claimDatasetNeedingReplication(secondary.storeId, claimantId, claimTimeout)) yield {
       log.info("Syncing {} into {}", job.datasetId, secondary.storeId)
       try {
-        playbackToSecondary(secondary, job)
+        timingReport(
+          "playback-to-secondary",
+          "truthDatasetId" -> job.datasetId.underlying,
+          "secondary" -> secondary.storeId,
+          "endingDataVersion" -> job.endingDataVersion
+        )(playbackToSecondary(secondary, job))
       } catch {
         case e: Exception =>
           log.error("Unexpected exception while updating dataset {} in secondary {}; marking it as broken", job.datasetId.asInstanceOf[AnyRef], secondary.storeId, e)
@@ -206,7 +211,7 @@ object SecondaryWatcher extends App { self =>
       NullCache
     )
 
-    val w = new SecondaryWatcher(common.universe, config.watcherId, config.claimTimeout)
+    val w = new SecondaryWatcher(common.universe, config.watcherId, config.claimTimeout, common.timingReport)
     val cm = new SecondaryWatcherClaimManager(dsInfo, config.watcherId, config.claimTimeout)
 
     val SIGTERM = new Signal("TERM")
