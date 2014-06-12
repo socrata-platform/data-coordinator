@@ -19,6 +19,10 @@ class GeometryLikeRep[T<:Geometry](repType: SoQLType, geometry: SoQLValue => T, 
 
   val sqlTypes: Array[String] = Array(s"GEOMETRY(Geometry,$WGS84SRID)")
 
+  override def selectList: String = s"ST_AsText($base)"
+
+  override def templateForUpdate: String = s"$base=ST_GeomFromEWKT(?)"
+
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue) {
     if(SoQLNull == v) { /* pass */ }
     else csvescape(sb, toEWkt(v))

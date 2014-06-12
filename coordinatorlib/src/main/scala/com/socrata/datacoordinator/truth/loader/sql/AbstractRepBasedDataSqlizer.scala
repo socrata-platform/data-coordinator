@@ -105,10 +105,17 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
     sidRep.prepareUpdate(stmt, typeContext.makeValueFromSystemId(sid), i)
   }
 
-  def blockQueryById[T](conn: Connection, ids: Iterator[CV], prefix: String)(decode: ResultSet => T): CloseableIterator[Seq[T]] = {
+  def blockQueryById[T](
+    conn: Connection,
+    ids: Iterator[CV],
+    selectReps: Iterable[SqlColumnRep[CT, CV]],
+    dataTableName: String)
+      (decode: ResultSet => T): CloseableIterator[Seq[T]] = {
+
     class ResultIterator extends CloseableIterator[Seq[T]] {
       val blockSize = 100
       val grouped = new FastGroupedIterator(ids, blockSize)
+      val prefix = s"SELECT ${selectReps.map(_.selectList).mkString(",")} FROM $dataTableName WHERE "
       var _fullStmt: PreparedStatement = null
 
       def fullStmt = {
@@ -150,10 +157,8 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
     new ResultIterator with LeakDetect
   }
 
-  lazy val findRowsPrefix = "SELECT " + repSchema.values.flatMap(_.physColumns).mkString(",") + " FROM " + dataTableName + " WHERE "
-
   def findRows(conn: Connection, ids: Iterator[CV]): CloseableIterator[Seq[InspectedRow[CV]]] =
-    blockQueryById(conn, ids, findRowsPrefix) { rs =>
+    blockQueryById(conn, ids, repSchema.values, dataTableName) { rs =>
       val row = new MutableRow[CV]
       var i = 1
       repSchema.foreach { (cid, rep) =>
@@ -166,10 +171,6 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
       InspectedRow(id, typeContext.makeSystemIdFromValue(sid), version, row.freeze())
     }
 
-  lazy val findIdsAndVersionsNoUidPrefix =
-    "SELECT " + pkRep.physColumns.mkString(",") + "," + versionRep.physColumns.mkString(",") + " FROM " + dataTableName + " WHERE "
-  lazy val findIdsAndVersionsWithUidPrefix =
-    "SELECT " + pkRep.physColumns.mkString(",") + "," + sidRep.physColumns.mkString(",") + "," + versionRep.physColumns.mkString(",") + " FROM " + dataTableName + " WHERE "
   def findIdsAndVersions(conn: Connection, ids: Iterator[CV]): CloseableIterator[Seq[InspectedRowless[CV]]] = {
     def processBlockNoUid(rs: ResultSet) = {
       val uid = pkRep.fromResultSet(rs, 1)
@@ -184,9 +185,9 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
       InspectedRowless(uid, sid, ver)
     }
     if(pkRep eq sidRep) {
-      blockQueryById(conn, ids, findIdsAndVersionsNoUidPrefix)(processBlockNoUid)
+      blockQueryById(conn, ids, Seq(pkRep, versionRep), dataTableName)(processBlockNoUid)
     } else {
-      blockQueryById(conn, ids, findIdsAndVersionsWithUidPrefix)(processBlockWithUid)
+      blockQueryById(conn, ids, Seq(pkRep, sidRep, versionRep), dataTableName)(processBlockWithUid)
     }
   }
 }

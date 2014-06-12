@@ -24,6 +24,10 @@ trait SqlColumnCommonRep[Type] {
 }
 
 trait SqlColumnReadRep[Type, Value] extends SqlColumnCommonRep[Type] {
+  /** Produces a column select list for this logical column */
+  def selectList: String = simpleSelectList
+  private lazy val simpleSelectList = physColumns.mkString(",")
+
   /** Extract a value from the result set.  This will "use up" a number of
     * columns equal to `physColumnsForQuery.length`.
     */
