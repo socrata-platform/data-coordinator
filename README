@@ -17,14 +17,32 @@ To run the tests, from the SBT shell:
     project data-coordinator
     test:test
 
-To run migrations in this project:
-```
+To run the data coordinator, from the regular Linux/OSX shell prompt:
+
+    bin/start_dc.sh
+
+To run the secondary watcher:
+
+    bin/start_watcher.sh
+
+The above scripts builds the assembly if its not present and runs the fat jar on the command line, which is much more memory efficient than running it from sbt.  If you need to force a rebuild, simply run `sbt clean` beforehand.
+
+### Migrations
+
+To run migrations in this project from SBT:
+```sh
 sbt -Dconfig.file=/etc/soda2.conf "coordinator/run-main com.socrata.datacoordinator.primary.MigrateSchema migrate"
 ```
-Alternatively, if you have an assembly jar you can use:
+Alternatively, to build from scratch and run migrations:
+```sh
+sbt clean
+bin/run_migrations.sh
 ```
-java -Dconfig.file=/etc/soda2.conf -jar coordinator/target/scala-2.10/coordinator-assembly-0.0.1-SNAPSHOT.jar com.socrata.datacoordinator.primary.MigrateSchema migrate
-```
+
+To run migrations without building from scratch: `bin/run_migrations.sh`
+
+The command is one of `migrate`, `undo`, `redo`, and there is a second optional paramter for undo for the number of changes to roll back.
+
 Running from sbt is recommended in a development environment because
 it ensures you are running the latest migrations without having to build a 
 new assembly.
