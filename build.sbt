@@ -9,6 +9,8 @@ version := "0.0.1-SNAPSHOT"
 
 scalaVersion := "2.10.4"
 
+resolvers += "Open Source Geospatial Foundation Repository" at "http://download.osgeo.org/webdav/geotools"
+
 libraryDependencies ++= Seq(
   "com.socrata" %% "soql-stdlib" % "0.0.16-SNAPSHOT",
   "com.socrata" %% "socrata-thirdparty-utils" % "[2.0.0,3.0.0)",
