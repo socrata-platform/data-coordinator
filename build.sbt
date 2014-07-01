@@ -5,8 +5,6 @@ com.socrata.cloudbeessbt.SocrataCloudbeesSbt.socrataSettings(assembly = true)
 
 name := "query-coordinator"
 
-version := "0.0.1-SNAPSHOT"
-
 scalaVersion := "2.10.4"
 
 resolvers += "Open Source Geospatial Foundation Repository" at "http://download.osgeo.org/webdav/geotools"
