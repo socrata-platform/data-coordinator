@@ -3,7 +3,7 @@ resolvers ++= Seq(
   "DiversIT repo" at "http://repository-diversit.forge.cloudbees.com/release"
 )
 
-addSbtPlugin("com.socrata" % "socrata-cloudbees-sbt" % "1.1.1")
+addSbtPlugin("com.socrata" % "socrata-cloudbees-sbt" % "1.2.1")
 
 addSbtPlugin("com.github.sbt" %% "sbt-scalabuff" % "0.2")
 
