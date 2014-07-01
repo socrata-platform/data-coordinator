@@ -36,7 +36,7 @@ class RepBasedDatasetExtractor[CT, CV](conn: Connection, dataTableName: String, 
       if(schema.isEmpty) {
         f(Iterator.empty)
       } else {
-        val colSelectors = cids.flatMap { cid => schema(new ColumnId(cid)).physColumns }
+        val colSelectors = cids.map { cid => schema(new ColumnId(cid)).selectList }
         val q = "SELECT " + colSelectors.mkString(",") + " FROM " + dataTableName +
           (if(sorted) " ORDER BY " + sidCol.orderBy() else "") +
           limit.map { l => " LIMIT " + l.max(0) }.getOrElse("") +
