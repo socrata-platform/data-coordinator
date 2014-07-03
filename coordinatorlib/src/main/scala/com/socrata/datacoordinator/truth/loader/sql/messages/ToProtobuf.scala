@@ -42,4 +42,10 @@ object ToProtobuf {
       localeName = di.localeName,
       obfuscationKey = ByteString.copyFrom(di.obfuscationKey)
     )
+
+  def convert(ri: metadata.UnanchoredRollupInfo): UnanchoredRollupInfo =
+    UnanchoredRollupInfo(
+      name = ri.name.underlying,
+      soql = ri.soql
+    )
 }

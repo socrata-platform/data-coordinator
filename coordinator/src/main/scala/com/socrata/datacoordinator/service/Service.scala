@@ -262,6 +262,9 @@ class Service(serviceConfig: ServiceConfig,
               "value" -> value)
           case Mutator.NoSuchDataset(name) =>
             notFoundError(formatDatasetId(name))
+          case Mutator.NoSuchRollup(name) =>
+            err(NotFound, "delete.rollup.does-not-exist",
+              "rollup" -> JString(name.underlying))
           case Mutator.CannotAcquireDatasetWriteLock(name) =>
             writeLockError(name)
           case Mutator.SystemInReadOnlyMode() =>

@@ -7,7 +7,7 @@ import com.google.protobuf.MessageLite
 import com.socrata.datacoordinator.truth.RowLogCodec
 import java.util.zip.{Deflater, DeflaterOutputStream}
 import com.socrata.datacoordinator.util.{Counter, TimingReport}
-import com.socrata.datacoordinator.truth.metadata.{CopyInfo, ColumnInfo}
+import com.socrata.datacoordinator.truth.metadata.{RollupInfo, CopyInfo, ColumnInfo}
 import com.socrata.datacoordinator.id.RowId
 import com.rojoma.simplearm.util._
 import org.joda.time.DateTime
@@ -139,6 +139,18 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
     checkTxn()
     flushRowData()
     logLine(WorkingCopyPublished, messages.WorkingCopyPublished.defaultInstance)
+  }
+
+  def rollupCreatedOrUpdated(info: RollupInfo) {
+    checkTxn()
+    flushRowData()
+    logLine(RollupCreatedOrUpdated, messages.RollupCreatedOrUpdated(convert(info.unanchored)))
+  }
+
+  def rollupDropped(info: RollupInfo) {
+    checkTxn()
+    flushRowData()
+    logLine(RollupDropped, messages.RollupDropped(convert(info.unanchored)))
   }
 
   def endTransaction() = {

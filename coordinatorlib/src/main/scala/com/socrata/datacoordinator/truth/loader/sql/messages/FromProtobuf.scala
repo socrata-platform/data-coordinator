@@ -2,7 +2,7 @@ package com.socrata.datacoordinator.truth.loader.sql.messages
 
 import com.socrata.datacoordinator.truth.metadata
 import com.google.protobuf.ByteString
-import com.socrata.datacoordinator.id.{UserColumnId, DatasetId, CopyId, ColumnId}
+import com.socrata.datacoordinator.id.{RollupName, UserColumnId, DatasetId, CopyId, ColumnId}
 import org.joda.time.DateTime
 
 object FromProtobuf {
@@ -44,4 +44,10 @@ object FromProtobuf {
        localeName = di.localeName,
        obfuscationKey = di.obfuscationKey.toByteArray
      )
+
+  def convert(ri: UnanchoredRollupInfo): metadata.UnanchoredRollupInfo =
+    metadata.UnanchoredRollupInfo(
+      name = new RollupName(ri.name),
+      soql = ri.soql
+    )
  }

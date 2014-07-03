@@ -11,7 +11,7 @@ import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.metadata.CopyPair
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
-import com.socrata.datacoordinator.id.{UserColumnId, RowVersion, ColumnId, DatasetId}
+import com.socrata.datacoordinator.id.{RollupName, UserColumnId, RowVersion, ColumnId, DatasetId}
 import scala.concurrent.duration.Duration
 
 trait LowLevelDatabaseReader[CT, CV] {
@@ -138,6 +138,9 @@ trait DatasetMutator[CT, CV] {
     case class UpsertJob(jobNumber: Int, row: Row[CV]) extends RowDataUpdateJob
 
     def upsert(inputGenerator: Iterator[RowDataUpdateJob], reportWriter: ReportWriter[CV], replaceUpdatedRows: Boolean)
+
+    def createOrUpdateRollup(name: RollupName, soql: String)
+    def dropRollup(name: RollupName): Option[RollupInfo]
   }
 
   type TrueMutationContext <: MutationContext
@@ -335,6 +338,20 @@ object DatasetMutator {
         datasetMap.dropCopy(copyInfo)
         schemaLoader.drop(copyInfo)
         copyCtx.copyInfo = datasetMap.latest(copyInfo.datasetInfo)
+      }
+
+      def createOrUpdateRollup(name: RollupName, soql: String) {
+        val info: RollupInfo = datasetMap.createOrUpdateRollup(copyInfo, name, soql)
+        logger.rollupCreatedOrUpdated(info)
+      }
+
+      def dropRollup(name: RollupName): Option[RollupInfo] = {
+        datasetMap.dropRollup(copyInfo, name) match {
+          case Some(info: RollupInfo) =>
+            logger.rollupDropped(info)
+            Some(info)
+          case None => None
+        }
       }
     }
 

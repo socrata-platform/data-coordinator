@@ -112,6 +112,22 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
     }
   }
 
+  def lookupRollupQuery = "SELECT soql FROM rollup_map WHERE copy_system_id = ? AND name = ?"
+  def lookupRollup(copyInfo: CopyInfo, name: RollupName): Option[RollupInfo] = {
+    using(conn.prepareStatement(lookupRollupQuery)) { stmt =>
+      stmt.setLong(1, copyInfo.systemId.underlying)
+      stmt.setString(2, name.underlying)
+      using(t("lookup-rollup","copy_id" -> copyInfo.systemId,"name"-> name)(stmt.executeQuery())) { rs =>
+        if(rs.next()) {
+          Some(RollupInfo(copyInfo, name, rs.getString("soql")))
+        } else {
+          None
+        }
+      }
+    }
+  }
+
+
   def previousVersionQuery = "SELECT system_id, copy_number, lifecycle_stage :: TEXT, data_version, last_modified FROM copy_map WHERE dataset_system_id = ? AND copy_number < ? AND lifecycle_stage <> 'Discarded' ORDER BY copy_number DESC LIMIT 1"
   def previousVersion(copyInfo: CopyInfo): Option[CopyInfo] = {
     using(conn.prepareStatement(previousVersionQuery)) { stmt =>
@@ -683,6 +699,40 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
       val count = t("publish-unpublished-copy", "dataset_id" -> unpublishedCopy.datasetInfo.systemId, "copy_num" -> unpublishedCopy.copyNumber)(stmt.executeUpdate())
       assert(count == 1, "Publishing an unpublished copy didn't change a row?")
       unpublishedCopy.copy(lifecycleStage = LifecycleStage.Published)
+    }
+  }
+
+  def insertRollupQuery = "INSERT INTO rollup_map (name, copy_system_id, soql) VALUES (?,?,?)"
+  def updateRollupQuery = "UPDATE rollup_map SET soql = ? WHERE name = ? AND copy_system_id = ?"
+  def createOrUpdateRollup(copyInfo: CopyInfo, name: RollupName, soql: String): RollupInfo ={
+    lookupRollup(copyInfo, name) match {
+      case Some(_) =>
+        using(conn.prepareStatement(updateRollupQuery)) { stmt =>
+          stmt.setString(1, soql)
+          stmt.setString(2, name.underlying)
+          stmt.setLong(3, copyInfo.systemId.underlying)
+          t("create-or-update-rollup", "action" -> "update", "copy-id" -> copyInfo.systemId, "name" -> name)(stmt.executeUpdate())
+        }
+      case None =>
+        using(conn.prepareStatement(insertRollupQuery)) { stmt =>
+          stmt.setString(1, name.underlying)
+          stmt.setLong(2, copyInfo.systemId.underlying)
+          stmt.setString(3, soql)
+          t("create-or-update-rollup", "action" -> "insert", "copy-id" -> copyInfo.systemId, "name" -> name)(stmt.executeUpdate())
+        }
+    }
+    RollupInfo(copyInfo, name, soql)
+  }
+
+  def dropRollupQuery = "DELETE FROM rollup_map WHERE name = ? AND copy_system_id = ?"
+  def dropRollup(copyInfo: CopyInfo, name: RollupName): Option[RollupInfo] = {
+    lookupRollup(copyInfo, name) map { ri =>
+      using(conn.prepareStatement(dropRollupQuery)) { stmt =>
+        stmt.setString(1, name.underlying)
+        stmt.setLong(2, copyInfo.systemId.underlying)
+        t("drop-rollup", "copy-id" -> copyInfo.systemId, "name" -> name)(stmt.executeUpdate())
+      }
+      ri
     }
   }
 

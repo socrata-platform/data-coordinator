@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator
 package truth.loader
 
-import com.socrata.datacoordinator.truth.metadata.{CopyInfo, ColumnInfo}
+import com.socrata.datacoordinator.truth.metadata.{RollupInfo, CopyInfo, ColumnInfo}
 import com.socrata.datacoordinator.id.RowId
 import org.joda.time.DateTime
 
@@ -27,6 +27,10 @@ class NullLogger[CT, CV] extends Logger[CT, CV] {
   def workingCopyDropped() {}
 
   def workingCopyPublished() {}
+
+  def rollupCreatedOrUpdated(info: RollupInfo) {}
+
+  def rollupDropped(info: RollupInfo) {}
 
   def endTransaction() = None
 

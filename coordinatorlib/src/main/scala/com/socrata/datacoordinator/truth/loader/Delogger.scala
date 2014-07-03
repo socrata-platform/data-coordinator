@@ -4,7 +4,7 @@ package truth.loader
 import java.io.{ByteArrayInputStream, OutputStream, Closeable}
 
 import com.socrata.datacoordinator.util.CloseableIterator
-import com.socrata.datacoordinator.truth.metadata.{UnanchoredDatasetInfo, UnanchoredColumnInfo, UnanchoredCopyInfo}
+import com.socrata.datacoordinator.truth.metadata.{UnanchoredRollupInfo, UnanchoredDatasetInfo, UnanchoredColumnInfo, UnanchoredCopyInfo}
 import com.socrata.datacoordinator.id.RowId
 import com.socrata.datacoordinator.truth.RowLogCodec
 import scala.collection.immutable.VectorBuilder
@@ -74,6 +74,12 @@ object Delogger {
   case class CounterUpdated(nextCounter: Long) extends LogEvent[Nothing]
   object CounterUpdated extends LogEventCompanion
 
+  case class RollupCreatedOrUpdated(info: UnanchoredRollupInfo) extends LogEvent[Nothing]
+  object RollupCreatedOrUpdated extends LogEventCompanion
+
+  case class RollupDropped(info: UnanchoredRollupInfo) extends LogEvent[Nothing]
+  object RollupDropped extends LogEventCompanion
+
   case object EndTransaction extends LogEvent[Nothing] with LogEventCompanion
 
   case class RowDataUpdated[CV](bytes: Array[Byte])(codec: RowLogCodec[CV]) extends LogEvent[CV] {
@@ -116,7 +122,8 @@ object Delogger {
   val allLogEventCompanions: Set[LogEventCompanion] =
     Set(Truncated, ColumnCreated, ColumnRemoved, RowIdentifierSet, RowIdentifierCleared,
       SystemRowIdentifierChanged, VersionColumnChanged, LastModifiedChanged, WorkingCopyCreated, DataCopied,
-      WorkingCopyPublished, WorkingCopyDropped, SnapshotDropped, RowDataUpdated, CounterUpdated, EndTransaction)
+      WorkingCopyPublished, WorkingCopyDropped, SnapshotDropped, RowDataUpdated, CounterUpdated,
+      RollupCreatedOrUpdated, RollupDropped, EndTransaction)
 
   // Note: the Delogger test checks that this is exhaustive.  It is not intended
   // to be used outside of this object and that test.
@@ -138,6 +145,8 @@ object Delogger {
         case SnapshotDropped => "SnapshotDropped"
         case RowDataUpdated => "RowDataUpdated"
         case CounterUpdated => "CounterUpdated"
+        case RollupCreatedOrUpdated => "RollupCreatedOrUpdated"
+        case RollupDropped => "RollupDropped"
         case EndTransaction => "EndTransaction"
       }
       acc + (n -> obj)

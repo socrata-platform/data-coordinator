@@ -90,6 +90,8 @@ object SqlLogger {
   val WorkingCopyDropped = "dropwork"
   val SnapshotDropped = "dropsnap"
   val WorkingCopyPublished = "pubwork"
+  val RollupCreatedOrUpdated = "rollupcr"
+  val RollupDropped = "rollupdr"
   val TransactionEnded = "endtxn"
 
   val allEvents = for {

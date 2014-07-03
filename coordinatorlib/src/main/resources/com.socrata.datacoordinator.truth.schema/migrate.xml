@@ -11,6 +11,7 @@
     <include file="com.socrata.datacoordinator.truth.schema/20140401-add-log-cleanup-fields.xml"/>
     <include file="com.socrata.datacoordinator.truth.schema/20140509-add-column-broken-acknowledged-at.xml"/>
     <include file="com.socrata.datacoordinator.truth.schema/20140627-create-postgis-extension.xml"/>
+    <include file="com.socrata.datacoordinator.truth.schema/20140629-create-rollup-map.xml"/>
 
     <!-- run-on-change migrations: recreation of triggers typically comes after other changes that they may depend on -->
     <include file="com.socrata.datacoordinator.truth.schema/triggers/update-dataset-log-trigger.xml"/>

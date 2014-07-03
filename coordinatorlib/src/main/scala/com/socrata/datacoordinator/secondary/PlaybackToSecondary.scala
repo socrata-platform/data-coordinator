@@ -95,6 +95,9 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
   def makeSecondaryCopyInfo(copyInfo: metadata.CopyInfoLike) =
     CopyInfo(copyInfo.systemId, copyInfo.copyNumber, copyInfo.lifecycleStage.correspondingSecondaryStage, copyInfo.dataVersion, copyInfo.lastModified)
 
+  def makeSecondaryRollupInfo(rollupInfo: metadata.RollupInfoLike) =
+    RollupInfo(rollupInfo.name.underlying, rollupInfo.soql)
+
   def makeSecondaryColumnInfo(colInfo: metadata.ColumnInfoLike) = {
     typeForName(TypeName(colInfo.typeName)) match {
       case Some(typ) =>
@@ -174,6 +177,10 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
         Some(SnapshotDropped(makeSecondaryCopyInfo(info)))
       case Delogger.CounterUpdated(nextCounter) =>
         None
+      case Delogger.RollupCreatedOrUpdated(info) =>
+        Some(RollupCreatedOrUpdated(makeSecondaryRollupInfo(info)))
+      case Delogger.RollupDropped(info) =>
+        Some(RollupDropped(makeSecondaryRollupInfo(info)))
       case Delogger.EndTransaction =>
         None
     }
