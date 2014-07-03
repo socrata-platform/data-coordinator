@@ -352,4 +352,24 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       tables.lookupRollup(vi1, rollupName) must be(None)
     }
   }
+
+  test("Dropping dataset drops rollup metadata") {
+    withDb() { conn =>
+      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID)
+      val vi1 = tables.create("en_US")
+
+      tables.publish(vi1)
+      tables.ensureUnpublishedCopy(vi1.datasetInfo) match {
+        case Left(vi2) => fail("Didn't create a new copy?")
+        case Right(CopyPair(_, vi2)) =>
+          vi2.systemId must not equal (vi1.systemId)
+          tables.lookupRollup(vi2, rollupName) must be(None)
+          tables.createOrUpdateRollup(vi2, rollupName, rollupSoql)
+          tables.lookupRollup(vi2, rollupName) must not be (None)
+
+          tables.delete(vi2.datasetInfo)
+          tables.lookupRollup(vi2, rollupName) must be(None)
+      }
+    }
+  }
 }
