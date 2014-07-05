@@ -132,7 +132,7 @@ class SecondaryWatcherConfig(config: Config, root: String) {
   val secondaryConfig = new ServiceSecondaryConfig(config.getConfig(k("secondary")))
   val instance = config.getString(k("instance"))
   val watcherId = UUID.fromString(config.getString(k("watcher-id")))
-  val claimTimeout = config.getMilliseconds(k("claim-timeout")).longValue.millis
+  val claimTimeout = config.getDuration(k("claim-timeout"), MILLISECONDS).longValue.millis
   val tmpdir = new File(config.getString(k("tmpdir"))).getAbsoluteFile
 
 }
