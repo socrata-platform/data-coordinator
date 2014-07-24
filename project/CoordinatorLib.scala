@@ -4,8 +4,8 @@ import Keys._
 object CoordinatorLib {
   lazy val settings: Seq[Setting[_]] = BuildSettings.projectSettings(protobuf=true) ++ Seq(
     libraryDependencies ++= Seq(
-      "com.socrata" %% "soql-brita" % "[1.2.1,2.0.0)",
-      "com.socrata" %% "soql-environment" % "[0.1.0,1.0.0)",
+      "com.socrata" %% "soql-brita" % "[1.3.0,2.0.0)",
+      "com.socrata" %% "soql-environment" % "[0.2.1,1.0.0)",
       "com.rojoma" %% "rojoma-json" % "[2.4.3,3.0.0)",
       "com.rojoma" %% "simple-arm" % "[1.1.10,2.0.0)",
       "commons-codec" % "commons-codec" % "1.8",
