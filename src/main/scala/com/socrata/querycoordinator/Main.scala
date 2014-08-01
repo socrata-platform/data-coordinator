@@ -98,8 +98,8 @@ object Main extends App {
       config.connectTimeout,
       config.schemaTimeout,
       config.queryTimeout,
-      (_, _) => (),
-      _ => None,
+      (_, _, _) => (),
+      (_, _) => None,
       secondaryInstanceSelector)
 
     val auxData = new AuxiliaryData(Some(pongProvider.livenessCheckInfo))

@@ -31,14 +31,19 @@ class QueryExecutor(httpClient: HttpClient, analysisSerializer: AnalysisSerializ
   private val qpQuery = "query"
   private val qpSchemaHash = "schemaHash"
   private val qpRowCount = "rowCount"
+  private val qpCopy = "copy"
   /**
    * @note Reusing the result will re-issue the request to the upstream server.  The serialization of the
    *       analysis will be re-used for each request.
    */
-  def apply(base: RequestBuilder, dataset: String, analysis: SoQLAnalysis[String, SoQLAnalysisType], schema: Schema, precondition: Precondition, ifModifiedSince: Option[DateTime], rowCount: Option[String]): Managed[Result] = {
+  def apply(base: RequestBuilder, dataset: String, analysis: SoQLAnalysis[String, SoQLAnalysisType], schema: Schema,
+    precondition: Precondition, ifModifiedSince: Option[DateTime],
+    rowCount: Option[String],
+    copy: Option[String]): Managed[Result] = {
     val serializedAnalysis = serializeAnalysis(analysis)
     val params = List(qpDataset -> dataset, qpQuery -> serializedAnalysis, qpSchemaHash -> schema.hash) ++
-      rowCount.map(rc => List(qpRowCount -> rc)).getOrElse(Nil)
+      rowCount.map(rc => List(qpRowCount -> rc)).getOrElse(Nil) ++
+      copy.map(c => List(qpCopy -> c)).getOrElse(Nil)
     val request = base.p("query").addHeaders(PreconditionRenderer(precondition) ++ ifModifiedSince.map("If-Modified-Since" -> _.toHttpDate)).form(params)
 
     new SimpleArm[Result] {

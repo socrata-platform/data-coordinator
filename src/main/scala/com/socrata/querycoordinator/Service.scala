@@ -56,8 +56,8 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
               connectTimeout: FiniteDuration,
               getSchemaTimeout: FiniteDuration,
               queryTimeout: FiniteDuration,
-              schemaCache: (String, Schema) => Unit,
-              schemaDecache: String => Option[Schema],
+              schemaCache: (String, Option[String], Schema) => Unit,
+              schemaDecache: (String, Option[String]) => Option[Schema],
               secondaryInstance:SecondaryInstanceSelector)
   extends (HttpServletRequest => HttpResponse)
 {
@@ -166,9 +166,9 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
     }
   }
 
-  def storeInCache(schema: Option[Schema], dataset: String): Option[Schema] = schema match {
+  def storeInCache(schema: Option[Schema], dataset: String, copy: Option[String]): Option[Schema] = schema match {
     case s@Some(trueSchema) =>
-      schemaCache(dataset, trueSchema)
+      schemaCache(dataset, copy, trueSchema)
       s
     case None =>
       None
@@ -237,6 +237,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
       }
 
       val rowCount = Option(req.getParameter("rowCount"))
+      val copy = Option(req.getParameter("copy"))
 
       val jsonizedColumnIdMap = Option(req.getParameter("idMap")).getOrElse {
         return (BadRequest ~> Content("no idMap provided"))(resp)
@@ -262,7 +263,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
         for {
           instance <- Option(secondaryProvider.provider(name).getInstance())
           base <- Some(reqBuilder(instance))
-          result <- schemaFetcher(base.receiveTimeoutMS(getSchemaTimeout.toMillis.toInt), dataset) match {
+          result <- schemaFetcher(base.receiveTimeoutMS(getSchemaTimeout.toMillis.toInt), dataset, copy) match {
             case SchemaFetcher.Successful(newSchema) => Some(true)
             case SchemaFetcher.NoSuchDatasetInSecondary => Some(false)
             case other =>
@@ -299,10 +300,10 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
       // if the upstream says "the schema just changed".
       val base = reqBuilder(secondary(dataset, chosenSecondaryName))
       log.info("Base URI: " + base.url)
-      def getAndCacheSchema(dataset: String) =
-        schemaFetcher(base.receiveTimeoutMS(getSchemaTimeout.toMillis.toInt), dataset) match {
+      def getAndCacheSchema(dataset: String, copy: Option[String]) =
+        schemaFetcher(base.receiveTimeoutMS(getSchemaTimeout.toMillis.toInt), dataset, copy) match {
           case SchemaFetcher.Successful(newSchema) =>
-            schemaCache(dataset, newSchema)
+            schemaCache(dataset, copy, newSchema)
             newSchema
           case SchemaFetcher.NoSuchDatasetInSecondary =>
             chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
@@ -339,7 +340,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
           case QueryParser.SuccessfulParse(analysis) =>
             (schema, analysis)
           case QueryParser.AnalysisError(_: DuplicateAlias | _: NoSuchColumn | _: TypecheckException) if !isFresh =>
-            analyzeRequest(getAndCacheSchema(dataset), true)
+            analyzeRequest(getAndCacheSchema(dataset, copy), true)
           case QueryParser.AnalysisError(e) =>
             finishRequest(soqlErrorResponse(dataset, e))
           case QueryParser.UnknownColumnIds(cids) =>
@@ -351,7 +352,8 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
 
       @tailrec
       def executeQuery(schema: Schema, analyzedQuery: SoQLAnalysis[String, SoQLAnalysisType]) {
-        val res = queryExecutor(base.receiveTimeoutMS(queryTimeout.toMillis.toInt), dataset, analyzedQuery, schema, precondition, ifModifiedSince, rowCount).map {
+        val res = queryExecutor(base.receiveTimeoutMS(queryTimeout.toMillis.toInt), dataset, analyzedQuery, schema,
+          precondition, ifModifiedSince, rowCount, copy).map {
           case QueryExecutor.NotFound =>
             chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
             finishRequest(notFoundResponse(dataset))
@@ -359,7 +361,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
             // don't flag an error in this case because the timeout may be based on the particular query.
             finishRequest(upstreamTimeoutResponse)
           case QueryExecutor.SchemaHashMismatch(newSchema) =>
-            storeInCache(Some(newSchema), dataset)
+            storeInCache(Some(newSchema), dataset, copy)
             Some(analyzeRequest(newSchema, true))
           case QueryExecutor.ToForward(responseCode, headers, body) =>
             resp.setStatus(responseCode)
@@ -373,11 +375,11 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
         }
       }
 
-      schemaDecache(dataset) match {
+      schemaDecache(dataset, copy) match {
         case Some(schema) =>
           (executeQuery _).tupled(analyzeRequest(schema, false))
         case None =>
-          (executeQuery _).tupled(analyzeRequest(getAndCacheSchema(dataset), true))
+          (executeQuery _).tupled(analyzeRequest(getAndCacheSchema(dataset, copy), true))
       }
     } catch {
       case FinishRequest(response) =>

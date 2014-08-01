@@ -11,7 +11,7 @@ import java.io.IOException
 class SchemaFetcher(httpClient: HttpClient) {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[SchemaFetcher])
 
-  def apply(base: RequestBuilder, dataset: String): Result = {
+  def apply(base: RequestBuilder, dataset: String, copy: Option[String]): Result = {
     def processResponse(response: Response): Result = response.resultCode match {
       case HttpServletResponse.SC_OK =>
         try {
@@ -27,7 +27,8 @@ class SchemaFetcher(httpClient: HttpClient) {
         BadResponseFromSecondary
     }
 
-    val request = base.p("schema").q("ds" -> dataset).get
+    val params = Seq("ds" -> dataset) ++ copy.map(c => Seq("copy" -> c)).getOrElse(Nil)
+    val request = base.p("schema").q(params : _*).get
 
     try {
       httpClient.execute(request).map(processResponse)
