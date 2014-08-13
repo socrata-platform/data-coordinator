@@ -680,6 +680,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
                 }
 
                 copySchemaIntoUnpublishedCopy(publishedCopy, newCopy)
+                copyRollupsIntoUnpublishedCopy(publishedCopy, newCopy)
 
                 newCopy
               case Some(cid) =>
@@ -703,6 +704,16 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
       stmt.setLong(1, newCopy.systemId.underlying)
       stmt.setLong(2, oldCopy.systemId.underlying)
       t("copy-schema-to-unpublished-copy", "dataset_id" -> oldCopy.datasetInfo.systemId, "old_copy_num" -> oldCopy.copyNumber, "new_copy_num" -> newCopy.copyNumber)(stmt.execute())
+    }
+  }
+
+  def ensureUnpublishedCopyQuery_rollupMap =
+    "INSERT INTO rollup_map (name, copy_system_id, soql) SELECT name, ?, soql FROM rollup_map WHERE copy_system_id = ?"
+  def copyRollupsIntoUnpublishedCopy(oldCopy: CopyInfo, newCopy: CopyInfo) {
+    using(conn.prepareStatement(ensureUnpublishedCopyQuery_rollupMap)) { stmt =>
+      stmt.setLong(1, newCopy.systemId.underlying)
+      stmt.setLong(2, oldCopy.systemId.underlying)
+      t("copy-rollups-to-unpublished-copy", "dataset_id" -> oldCopy.datasetInfo.systemId, "old_copy_num" -> oldCopy.copyNumber, "new_copy_num" -> newCopy.copyNumber)(stmt.execute())
     }
   }
 
