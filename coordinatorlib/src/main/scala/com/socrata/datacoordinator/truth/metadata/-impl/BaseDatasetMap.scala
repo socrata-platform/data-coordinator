@@ -42,6 +42,14 @@ trait BaseDatasetMapReader[CT] {
 
   def allDatasetIds(): Seq[DatasetId]
 
+  /** Returns all rollups for the given dataset copy.
+   */
+  def rollups(copyInfo: CopyInfo): Iterable[RollupInfo]
+
+  /** Returns the RollupInfo for the specified rollup.
+    */
+  def rollup(copyInfo: CopyInfo, name: RollupName): Option[RollupInfo]
+
   /** Gets the current time.
    */
   def currentTime(): DateTime
