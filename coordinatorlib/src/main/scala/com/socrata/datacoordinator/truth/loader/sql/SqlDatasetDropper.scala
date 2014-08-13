@@ -17,7 +17,7 @@ class SqlDatasetDropper[CT](conn: Connection, writeLockTimeout: Duration, datase
       } yield {
         val fakeVersion = datasetMap.latest(di).dataVersion + 1
 
-        using(new TableDropper) { td =>
+        using(new SqlTableDropper(conn)) { td =>
           for(copy <- datasetMap.allCopies(di)) {
             td.scheduleForDropping(copy.dataTableName)
           }
@@ -47,20 +47,4 @@ class SqlDatasetDropper[CT](conn: Connection, writeLockTimeout: Duration, datase
     }
   }
 
-  private class TableDropper extends Closeable {
-    val stmt = conn.prepareStatement("INSERT INTO pending_table_drops (table_name, queued_at) values (?, now())")
-
-    def close() {
-      stmt.close()
-    }
-
-    def go() {
-      stmt.executeBatch()
-    }
-
-    def scheduleForDropping(tableName: String) {
-      stmt.setString(1, tableName)
-      stmt.addBatch()
-    }
-  }
 }
