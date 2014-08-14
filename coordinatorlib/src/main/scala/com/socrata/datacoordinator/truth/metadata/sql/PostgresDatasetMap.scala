@@ -198,7 +198,7 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
   def rollups(copyInfo: CopyInfo): Seq[RollupInfo] = {
     using(conn.prepareStatement(rollupsQuery)) { stmt =>
       stmt.setLong(1, copyInfo.systemId.underlying)
-      using(t("rollups","copy_id" -> copyInfo.systemId)(stmt.executeQuery())) { rs =>
+      using(t("rollups", "copy_id" -> copyInfo.systemId)(stmt.executeQuery())) { rs =>
         val res = new VectorBuilder[RollupInfo]
         while(rs.next()) {
           res += RollupInfo(copyInfo, new RollupName(rs.getString("name")), rs.getString("soql"))
@@ -213,7 +213,7 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
     using(conn.prepareStatement(rollupQuery)) { stmt =>
       stmt.setLong(1, copyInfo.systemId.underlying)
       stmt.setString(2, name.underlying)
-      using(t("rollup","copy_id" -> copyInfo.systemId,"name" -> name)(stmt.executeQuery())) { rs =>
+      using(t("rollup", "copy_id" -> copyInfo.systemId,"name" -> name)(stmt.executeQuery())) { rs =>
         if(rs.next()) {
           Some(RollupInfo(copyInfo, name, rs.getString("soql")))
         } else {
@@ -737,9 +737,9 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
     }
   }
 
-  def insertRollupQuery = "INSERT INTO rollup_map (name, copy_system_id, soql) VALUES (?,?,?)"
+  def insertRollupQuery = "INSERT INTO rollup_map (name, copy_system_id, soql) VALUES (?, ?, ?)"
   def updateRollupQuery = "UPDATE rollup_map SET soql = ? WHERE name = ? AND copy_system_id = ?"
-  def createOrUpdateRollup(copyInfo: CopyInfo, name: RollupName, soql: String): RollupInfo ={
+  def createOrUpdateRollup(copyInfo: CopyInfo, name: RollupName, soql: String): RollupInfo = {
     rollup(copyInfo, name) match {
       case Some(_) =>
         using(conn.prepareStatement(updateRollupQuery)) { stmt =>

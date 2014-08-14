@@ -308,15 +308,15 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
       rollupCount must be (0)
       val createdRollup = tables.createOrUpdateRollup(vi1, rollupName, rollupSoql)
-      createdRollup.copyInfo must equal(vi1)
-      createdRollup.name must equal(rollupName)
-      createdRollup.soql must equal(rollupSoql)
+      createdRollup.copyInfo must equal (vi1)
+      createdRollup.name must equal (rollupName)
+      createdRollup.soql must equal (rollupSoql)
       rollupCount must be (1)
 
       val updatedRollup = tables.createOrUpdateRollup(vi1, rollupName, rollupSoql2)
-      updatedRollup.copyInfo must equal(vi1)
-      updatedRollup.name must equal(rollupName)
-      updatedRollup.soql must equal(rollupSoql2)
+      updatedRollup.copyInfo must equal (vi1)
+      updatedRollup.name must equal (rollupName)
+      updatedRollup.soql must equal (rollupSoql2)
       rollupCount must be (1)
     }
   }
@@ -326,14 +326,14 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID)
       val vi1 = tables.create("en_US")
 
-      tables.rollup(vi1, rollupName) must be(None)
+      tables.rollup(vi1, rollupName) must be (None)
       tables.createOrUpdateRollup(vi1, rollupName, rollupSoql)
 
       tables.rollup(vi1, rollupName) match {
         case Some(lookedupRollup) =>
-          lookedupRollup.copyInfo must equal(vi1)
-          lookedupRollup.name must equal(rollupName)
-          lookedupRollup.soql must equal(rollupSoql)
+          lookedupRollup.copyInfo must equal (vi1)
+          lookedupRollup.name must equal (rollupName)
+          lookedupRollup.soql must equal (rollupSoql)
         case None =>
           fail("Couldn't lookup rollup")
       }
@@ -345,11 +345,11 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID)
       val vi1 = tables.create("en_US")
 
-      tables.rollup(vi1, rollupName) must be(None)
+      tables.rollup(vi1, rollupName) must be (None)
       tables.createOrUpdateRollup(vi1, rollupName, rollupSoql)
-      tables.rollup(vi1, rollupName) must not be(None)
+      tables.rollup(vi1, rollupName) must not be (None)
       tables.dropRollup(vi1, rollupName)
-      tables.rollup(vi1, rollupName) must be(None)
+      tables.rollup(vi1, rollupName) must be (None)
     }
   }
 
@@ -363,12 +363,12 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
         case Left(vi2) => fail("Didn't create a new copy?")
         case Right(CopyPair(_, vi2)) =>
           vi2.systemId must not equal (vi1.systemId)
-          tables.rollup(vi2, rollupName) must be(None)
+          tables.rollup(vi2, rollupName) must be (None)
           tables.createOrUpdateRollup(vi2, rollupName, rollupSoql)
           tables.rollup(vi2, rollupName) must not be (None)
 
           tables.delete(vi2.datasetInfo)
-          tables.rollup(vi2, rollupName) must be(None)
+          tables.rollup(vi2, rollupName) must be (None)
       }
     }
   }
