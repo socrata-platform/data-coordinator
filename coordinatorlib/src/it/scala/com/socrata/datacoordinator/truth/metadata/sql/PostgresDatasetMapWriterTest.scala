@@ -6,7 +6,7 @@ import java.sql.{SQLException, Connection, DriverManager}
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
-import com.socrata.datacoordinator.id.{UserColumnId, RowId, ColumnId}
+import com.socrata.datacoordinator.id.{RollupName, UserColumnId, RowId, ColumnId}
 import com.socrata.datacoordinator.util.NoopTimingReport
 import scala.concurrent.duration.Duration
 import com.socrata.soql.environment.TypeName
@@ -293,6 +293,83 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       count(conn, "column_map") must equal (0)
       count(conn, "copy_map") must equal (0)
       count(conn, "dataset_map") must equal (0)
+    }
+  }
+
+  val rollupName = new RollupName("my rollup")
+  val rollupSoql = "select clown_type, count(*) group by clown_type"
+  val rollupSoql2 = "select clown_volume, count(*) group by clown_volume"
+
+  test("Can create and update rollup metadata") {
+    withDb() { conn =>
+      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID)
+      val vi1 = tables.create("en_US")
+      def rollupCount = count(conn, "rollup_map", s"name = '${rollupName.underlying}' AND copy_system_id=${vi1.systemId.underlying}")
+
+      rollupCount must be (0)
+      val createdRollup = tables.createOrUpdateRollup(vi1, rollupName, rollupSoql)
+      createdRollup.copyInfo must equal (vi1)
+      createdRollup.name must equal (rollupName)
+      createdRollup.soql must equal (rollupSoql)
+      rollupCount must be (1)
+
+      val updatedRollup = tables.createOrUpdateRollup(vi1, rollupName, rollupSoql2)
+      updatedRollup.copyInfo must equal (vi1)
+      updatedRollup.name must equal (rollupName)
+      updatedRollup.soql must equal (rollupSoql2)
+      rollupCount must be (1)
+    }
+  }
+
+  test("Can lookup rollup metadata") {
+    withDb() { conn =>
+      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID)
+      val vi1 = tables.create("en_US")
+
+      tables.rollup(vi1, rollupName) must be (None)
+      tables.createOrUpdateRollup(vi1, rollupName, rollupSoql)
+
+      tables.rollup(vi1, rollupName) match {
+        case Some(lookedupRollup) =>
+          lookedupRollup.copyInfo must equal (vi1)
+          lookedupRollup.name must equal (rollupName)
+          lookedupRollup.soql must equal (rollupSoql)
+        case None =>
+          fail("Couldn't lookup rollup")
+      }
+    }
+  }
+
+  test("Can drop rollup metadata") {
+    withDb() { conn =>
+      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID)
+      val vi1 = tables.create("en_US")
+
+      tables.rollup(vi1, rollupName) must be (None)
+      tables.createOrUpdateRollup(vi1, rollupName, rollupSoql)
+      tables.rollup(vi1, rollupName) must not be (None)
+      tables.dropRollup(vi1, rollupName)
+      tables.rollup(vi1, rollupName) must be (None)
+    }
+  }
+
+  test("Dropping dataset drops rollup metadata") {
+    withDb() { conn =>
+      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID)
+      val vi1 = tables.create("en_US")
+
+      tables.publish(vi1)
+      tables.ensureUnpublishedCopy(vi1.datasetInfo) match {
+        case Left(vi2) => fail("Didn't create a new copy?")
+        case Right(CopyPair(_, vi2)) =>
+          vi2.systemId must not equal (vi1.systemId)
+          tables.rollup(vi2, rollupName) must be (None)
+          tables.createOrUpdateRollup(vi2, rollupName, rollupSoql)
+          tables.rollup(vi2, rollupName) must not be (None)
+
+          tables.delete(vi2.datasetInfo)
+          tables.rollup(vi2, rollupName) must be (None)
+      }
     }
   }
 }

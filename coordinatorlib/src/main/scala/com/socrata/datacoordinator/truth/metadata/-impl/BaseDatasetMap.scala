@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator.truth.metadata
 package `-impl`
 
-import com.socrata.datacoordinator.id.DatasetId
+import com.socrata.datacoordinator.id.{RollupName, DatasetId}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import org.joda.time.DateTime
 
@@ -41,6 +41,14 @@ trait BaseDatasetMapReader[CT] {
   def copyNumber(datasetInfo: DatasetInfo, copyNumber: Long): Option[CopyInfo]
 
   def allDatasetIds(): Seq[DatasetId]
+
+  /** Returns all rollups for the given dataset copy.
+   */
+  def rollups(copyInfo: CopyInfo): Iterable[RollupInfo]
+
+  /** Returns the RollupInfo for the specified rollup.
+    */
+  def rollup(copyInfo: CopyInfo, name: RollupName): Option[RollupInfo]
 
   /** Gets the current time.
    */
@@ -105,4 +113,14 @@ trait BaseDatasetMapWriter[CT] extends BaseDatasetMapReader[CT] {
   /** Updates the last-modified information for this copy.
     */
   def updateLastModified(copyInfo: CopyInfo, newLastModified: DateTime = currentTime()): CopyInfo
+
+  /** Creates or updates the metadata about the given rollup based on name and
+    * given soql query.
+    */
+  def createOrUpdateRollup(copyInfo: CopyInfo, name: RollupName, soql: String): RollupInfo
+
+  /** Drops the given rollup.
+    */
+  def dropRollup(copyInfo: CopyInfo, name: RollupName): Option[RollupInfo]
+
 }

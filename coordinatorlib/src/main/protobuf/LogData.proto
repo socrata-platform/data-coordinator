@@ -32,6 +32,11 @@ message UnanchoredColumnInfo {
   required bool isVersion = 7;
 }
 
+message UnanchoredRollupInfo {
+  required string name = 1;
+  required string soql = 2;
+}
+
 message Truncated {
 }
 
@@ -79,6 +84,14 @@ message WorkingCopyDropped {
 }
 
 message WorkingCopyPublished {
+}
+
+message RollupCreatedOrUpdated {
+  required UnanchoredRollupInfo rollupInfo = 1;
+}
+
+message RollupDropped {
+  required UnanchoredRollupInfo rollupInfo = 1;
 }
 
 message CounterUpdated {

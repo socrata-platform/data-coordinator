@@ -16,5 +16,7 @@ case class WorkingCopyCreated(copyInfo: CopyInfo) extends Event[Nothing, Nothing
 case object WorkingCopyDropped extends Event[Nothing, Nothing]
 case object DataCopied extends Event[Nothing, Nothing]
 case class SnapshotDropped(info: CopyInfo) extends Event[Nothing, Nothing]
+case class RollupCreatedOrUpdated(info: RollupInfo) extends Event[Nothing, Nothing]
+case class RollupDropped(info: RollupInfo) extends Event[Nothing, Nothing]
 case object WorkingCopyPublished extends Event[Nothing, Nothing]
 case class RowDataUpdated[CV](operations: Seq[Operation[CV]]) extends Event[Nothing, CV]

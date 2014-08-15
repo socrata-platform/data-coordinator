@@ -5,7 +5,7 @@ import com.ibm.icu.util.ULocale
 import com.rojoma.json.ast._
 import com.rojoma.json.codec.JsonCodec
 import com.rojoma.json.io._
-import com.socrata.datacoordinator.id.{UserColumnId, RowVersion, DatasetId}
+import com.socrata.datacoordinator.id.{RollupName, UserColumnId, RowVersion, DatasetId}
 import com.socrata.datacoordinator.truth.json.JsonColumnRep
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.metadata._
@@ -65,6 +65,7 @@ object Mutator {
 
   case class InvalidLocale(locale: String)(val index: Long) extends MutationException
   case class NoSuchDataset(name: DatasetId)(val index: Long) extends MutationException
+  case class NoSuchRollup(name: RollupName)(val index: Long) extends MutationException
   case class CannotAcquireDatasetWriteLock(name: DatasetId)(val index: Long) extends MutationException
   case class SystemInReadOnlyMode()(val index: Long) extends MutationException
   case class IncorrectLifecycleStage(name: DatasetId,
@@ -165,6 +166,8 @@ object Mutator {
   case class DropRowId(index: Long, id: UserColumnId) extends Command
   case class RowData(index: Long, truncate: Boolean, mergeReplace: MergeReplace,
                      nonfatalRowErrors: Set[Class[_ <: Failure[_]]]) extends Command
+  case class CreateOrUpdateRollup(index: Long, name: RollupName, soql: String) extends Command
+  case class DropRollup(index: Long, name: RollupName) extends Command
 
   val AddColumnOp = "add column"
   val DropColumnOp = "drop column"
@@ -172,6 +175,8 @@ object Mutator {
   val SetRowIdOp = "set row id"
   val DropRowIdOp = "drop row id"
   val RowDataOp = "row data"
+  val CreateOrUpdateRollupOp = "create or update rollup"
+  val DropRollupOp = "drop rollup"
 }
 
 trait MutatorCommon[CT, CV] {
@@ -218,6 +223,13 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
           case DropRowIdOp =>
             val column = get[UserColumnId]("column")
             DropRowId(index, column)
+          case CreateOrUpdateRollupOp =>
+            val name = get[RollupName]("name")
+            val soql = get[String]("soql")
+            CreateOrUpdateRollup(index, name, soql)
+          case DropRollupOp =>
+            val name = get[RollupName]("name")
+            DropRollup(index, name)
           case RowDataOp =>
             val truncate = getWithStrictDefault("truncate", false)
             val mergeReplace = getWithStrictDefault[MergeReplace]("update", Merge)
@@ -631,6 +643,15 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
               throw NoSuchColumn(datasetId, id)(idx)
           }
           Seq(MutationScriptCommandResult.Uninteresting)
+        case CreateOrUpdateRollup(idx, name, soql) =>
+          mutator.createOrUpdateRollup(name, soql)
+          Seq(MutationScriptCommandResult.Uninteresting)
+        case DropRollup(idx, name) =>
+          mutator.dropRollup(name) match {
+            case Some(info) => Seq(MutationScriptCommandResult.Uninteresting)
+            case None => throw NoSuchRollup(name)(idx)
+          }
+
         case RowData(idx, truncate, mergeReplace, nonFatalRowErrors) =>
           if(truncate) mutator.truncate()
           val data = processRowData(idx, commands.rawCommandStream, nonFatalRowErrors, mutator, mergeReplace)

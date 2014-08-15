@@ -112,6 +112,8 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
     }
   }
 
+
+
   def previousVersionQuery = "SELECT system_id, copy_number, lifecycle_stage :: TEXT, data_version, last_modified FROM copy_map WHERE dataset_system_id = ? AND copy_number < ? AND lifecycle_stage <> 'Discarded' ORDER BY copy_number DESC LIMIT 1"
   def previousVersion(copyInfo: CopyInfo): Option[CopyInfo] = {
     using(conn.prepareStatement(previousVersionQuery)) { stmt =>
@@ -192,6 +194,35 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
     }
   }
 
+  def rollupsQuery = "SELECT name, soql FROM rollup_map WHERE copy_system_id = ?"
+  def rollups(copyInfo: CopyInfo): Seq[RollupInfo] = {
+    using(conn.prepareStatement(rollupsQuery)) { stmt =>
+      stmt.setLong(1, copyInfo.systemId.underlying)
+      using(t("rollups", "copy_id" -> copyInfo.systemId)(stmt.executeQuery())) { rs =>
+        val res = new VectorBuilder[RollupInfo]
+        while(rs.next()) {
+          res += RollupInfo(copyInfo, new RollupName(rs.getString("name")), rs.getString("soql"))
+        }
+        res.result()
+      }
+    }
+  }
+
+  def rollupQuery = "SELECT soql FROM rollup_map WHERE copy_system_id = ? AND name = ?"
+  def rollup(copyInfo: CopyInfo, name: RollupName): Option[RollupInfo] = {
+    using(conn.prepareStatement(rollupQuery)) { stmt =>
+      stmt.setLong(1, copyInfo.systemId.underlying)
+      stmt.setString(2, name.underlying)
+      using(t("rollup", "copy_id" -> copyInfo.systemId,"name" -> name)(stmt.executeQuery())) { rs =>
+        if(rs.next()) {
+          Some(RollupInfo(copyInfo, name, rs.getString("soql")))
+        } else {
+          None
+        }
+      }
+    }
+  }
+
   // These are from the reader trait but they're used in the writer tests
   def unpublished(datasetInfo: DatasetInfo) =
     lookup(datasetInfo, LifecycleStage.Unpublished)
@@ -236,7 +267,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
   private def toTimestamp(time: DateTime): Timestamp = new Timestamp(time.getMillis)
 
   def createQuery_tableMap = "INSERT INTO dataset_map (next_counter_value, locale_name, obfuscation_key) VALUES (?, ?, ?) RETURNING system_id"
-  def createQuery_copyMap = "INSERT INTO copy_map (dataset_system_id, copy_number, lifecycle_stage, data_version) VALUES (?, ?, CAST(? AS dataset_lifecycle_stage), ?) RETURNING system_id"
+  def createQuery_copyMap = "INSERT INTO copy_map (dataset_system_id, copy_number, lifecycle_stage, data_version, last_modified) VALUES (?, ?, CAST(? AS dataset_lifecycle_stage), ?, ?) RETURNING system_id"
   def create(localeName: String): CopyInfo = {
     val datasetInfo = using(conn.prepareStatement(createQuery_tableMap)) { stmt =>
       val datasetInfoNoSystemId = DatasetInfo(DatasetId.Invalid, initialCounterValue, localeName, obfuscationKeyGenerator())
@@ -263,6 +294,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
       stmt.setLong(2, copyInfoNoSystemId.copyNumber)
       stmt.setString(3, copyInfoNoSystemId.lifecycleStage.name)
       stmt.setLong(4, copyInfoNoSystemId.dataVersion)
+      stmt.setTimestamp(5, toTimestamp(copyInfoNoSystemId.lastModified))
       using(t("create-initial-copy", "dataset_id" -> datasetInfo.systemId)(stmt.executeQuery())) { rs =>
         val foundSomething = rs.next()
         assert(foundSomething, "Didn't return a system ID?")
@@ -271,7 +303,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
     }
   }
 
-  def createQuery_copyMapWithSystemId = "INSERT INTO copy_map (system_id, dataset_system_id, copy_number, lifecycle_stage, data_version) VALUES (?, ?, ?, CAST(? AS dataset_lifecycle_stage), ?)"
+  def createQuery_copyMapWithSystemId = "INSERT INTO copy_map (system_id, dataset_system_id, copy_number, lifecycle_stage, data_version, last_modified) VALUES (?, ?, ?, CAST(? AS dataset_lifecycle_stage), ?, ?)"
   def createWithId(systemId: DatasetId, initialCopyId: CopyId, localeName: String, obfuscationKey: Array[Byte]): CopyInfo = {
     val datasetInfo = unsafeCreateDataset(systemId, initialCounterValue, localeName, obfuscationKey)
 
@@ -283,6 +315,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
       stmt.setLong(3, copyInfo.copyNumber)
       stmt.setString(4, copyInfo.lifecycleStage.name)
       stmt.setLong(5, copyInfo.dataVersion)
+      stmt.setTimestamp(6, toTimestamp(copyInfo.lastModified))
       try {
         t("create-create-copy-with-system-id", "dataset_id" -> systemId, "copy_id" -> initialCopyId)(stmt.execute())
       } catch {
@@ -296,6 +329,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
 
   // Yay no "DELETE ... CASCADE"!
   def deleteQuery_columnMap = "DELETE FROM column_map WHERE copy_system_id IN (SELECT system_id FROM copy_map WHERE dataset_system_id = ?)"
+  def deleteQuery_rollupMap = "DELETE FROM rollup_map WHERE copy_system_id IN (SELECT system_id FROM copy_map WHERE dataset_system_id = ?)"
   def deleteQuery_copyMap = "DELETE FROM copy_map WHERE dataset_system_id = ?"
   def deleteQuery_tableMap = "DELETE FROM dataset_map WHERE system_id = ?"
   def delete(tableInfo: DatasetInfo) {
@@ -311,6 +345,10 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
     using(conn.prepareStatement(deleteQuery_columnMap)) { stmt =>
       stmt.setDatasetId(1, datasetInfo.systemId)
       t("delete-dataset-columns", "dataset_id" -> datasetInfo.systemId)(stmt.executeUpdate())
+    }
+    using(conn.prepareStatement(deleteQuery_rollupMap)) { stmt =>
+      stmt.setDatasetId(1, datasetInfo.systemId)
+      t("delete-dataset-rollups", "dataset_id" -> datasetInfo.systemId)(stmt.executeUpdate())
     }
     using(conn.prepareStatement(deleteQuery_copyMap)) { stmt =>
       stmt.setDatasetId(1, datasetInfo.systemId)
@@ -447,7 +485,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
     newDatasetInfo
   }
 
-  def unsafeCreateCopyQuery = "INSERT INTO copy_map (system_id, dataset_system_id, copy_number, lifecycle_stage, data_version) values (?, ?, ?, CAST(? AS dataset_lifecycle_stage), ?)"
+  def unsafeCreateCopyQuery = "INSERT INTO copy_map (system_id, dataset_system_id, copy_number, lifecycle_stage, data_version, last_modified) values (?, ?, ?, CAST(? AS dataset_lifecycle_stage), ?, ?)"
   def unsafeCreateCopy(datasetInfo: DatasetInfo,
                        systemId: CopyId,
                        copyNumber: Long,
@@ -461,6 +499,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
       stmt.setLong(3, newCopy.copyNumber)
       stmt.setString(4, newCopy.lifecycleStage.name)
       stmt.setLong(5, newCopy.dataVersion)
+      stmt.setTimestamp(6, toTimestamp(newCopy.lastModified))
       try {
         t("unsafe-create-copy", "dataset_id" -> datasetInfo.systemId, "copy_num" -> copyNumber)(stmt.execute())
       } catch {
@@ -596,7 +635,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
   }
 
   def ensureUnpublishedCopyQuery_newCopyNumber = "SELECT max(copy_number) + 1 FROM copy_map WHERE dataset_system_id = ?"
-  def ensureUnpublishedCopyQuery_copyMap = "INSERT INTO copy_map (dataset_system_id, copy_number, lifecycle_stage, data_version) values (?, ?, CAST(? AS dataset_lifecycle_stage), ?) RETURNING system_id"
+  def ensureUnpublishedCopyQuery_copyMap = "INSERT INTO copy_map (dataset_system_id, copy_number, lifecycle_stage, data_version, last_modified) values (?, ?, CAST(? AS dataset_lifecycle_stage), ?, ?) RETURNING system_id"
   def ensureUnpublishedCopy(tableInfo: DatasetInfo): Either[CopyInfo, CopyPair[CopyInfo]] =
     ensureUnpublishedCopy(tableInfo, None)
 
@@ -632,6 +671,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
                   stmt.setLong(2, newCopyWithoutSystemId.copyNumber)
                   stmt.setString(3, newCopyWithoutSystemId.lifecycleStage.name)
                   stmt.setLong(4, newCopyWithoutSystemId.dataVersion)
+                  stmt.setTimestamp(5, toTimestamp(newCopyWithoutSystemId.lastModified))
                   using(t("create-new-copy", "dataset_id" -> newCopyWithoutSystemId.datasetInfo.systemId)(stmt.executeQuery())) { rs =>
                     val foundSomething = rs.next()
                     assert(foundSomething, "Insert didn't create a row?")
@@ -640,6 +680,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
                 }
 
                 copySchemaIntoUnpublishedCopy(publishedCopy, newCopy)
+                copyRollupsIntoUnpublishedCopy(publishedCopy, newCopy)
 
                 newCopy
               case Some(cid) =>
@@ -666,6 +707,16 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
     }
   }
 
+  def ensureUnpublishedCopyQuery_rollupMap =
+    "INSERT INTO rollup_map (name, copy_system_id, soql) SELECT name, ?, soql FROM rollup_map WHERE copy_system_id = ?"
+  def copyRollupsIntoUnpublishedCopy(oldCopy: CopyInfo, newCopy: CopyInfo) {
+    using(conn.prepareStatement(ensureUnpublishedCopyQuery_rollupMap)) { stmt =>
+      stmt.setLong(1, newCopy.systemId.underlying)
+      stmt.setLong(2, oldCopy.systemId.underlying)
+      t("copy-rollups-to-unpublished-copy", "dataset_id" -> oldCopy.datasetInfo.systemId, "old_copy_num" -> oldCopy.copyNumber, "new_copy_num" -> newCopy.copyNumber)(stmt.execute())
+    }
+  }
+
   def publishQuery = "UPDATE copy_map SET lifecycle_stage = CAST(? AS dataset_lifecycle_stage) WHERE system_id = ?"
   def publish(unpublishedCopy: CopyInfo): CopyInfo = {
     if(unpublishedCopy.lifecycleStage != LifecycleStage.Unpublished) {
@@ -683,6 +734,40 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
       val count = t("publish-unpublished-copy", "dataset_id" -> unpublishedCopy.datasetInfo.systemId, "copy_num" -> unpublishedCopy.copyNumber)(stmt.executeUpdate())
       assert(count == 1, "Publishing an unpublished copy didn't change a row?")
       unpublishedCopy.copy(lifecycleStage = LifecycleStage.Published)
+    }
+  }
+
+  def insertRollupQuery = "INSERT INTO rollup_map (name, copy_system_id, soql) VALUES (?, ?, ?)"
+  def updateRollupQuery = "UPDATE rollup_map SET soql = ? WHERE name = ? AND copy_system_id = ?"
+  def createOrUpdateRollup(copyInfo: CopyInfo, name: RollupName, soql: String): RollupInfo = {
+    rollup(copyInfo, name) match {
+      case Some(_) =>
+        using(conn.prepareStatement(updateRollupQuery)) { stmt =>
+          stmt.setString(1, soql)
+          stmt.setString(2, name.underlying)
+          stmt.setLong(3, copyInfo.systemId.underlying)
+          t("create-or-update-rollup", "action" -> "update", "copy-id" -> copyInfo.systemId, "name" -> name)(stmt.executeUpdate())
+        }
+      case None =>
+        using(conn.prepareStatement(insertRollupQuery)) { stmt =>
+          stmt.setString(1, name.underlying)
+          stmt.setLong(2, copyInfo.systemId.underlying)
+          stmt.setString(3, soql)
+          t("create-or-update-rollup", "action" -> "insert", "copy-id" -> copyInfo.systemId, "name" -> name)(stmt.executeUpdate())
+        }
+    }
+    RollupInfo(copyInfo, name, soql)
+  }
+
+  def dropRollupQuery = "DELETE FROM rollup_map WHERE name = ? AND copy_system_id = ?"
+  def dropRollup(copyInfo: CopyInfo, name: RollupName): Option[RollupInfo] = {
+    rollup(copyInfo, name) map { ri =>
+      using(conn.prepareStatement(dropRollupQuery)) { stmt =>
+        stmt.setString(1, name.underlying)
+        stmt.setLong(2, copyInfo.systemId.underlying)
+        t("drop-rollup", "copy-id" -> copyInfo.systemId, "name" -> name)(stmt.executeUpdate())
+      }
+      ri
     }
   }
 

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
+    <changeSet author="Marc Slemko" id="20140629-create-rollup-map">
+        <sql>
+            CREATE TABLE rollup_map (
+                name                      VARCHAR NOT NULL,
+                copy_system_id            BIGINT                        NOT NULL REFERENCES copy_map(system_id),
+                soql                      VARCHAR NOT NULL,
+                PRIMARY KEY (copy_system_id, name)
+            )
+        </sql>
+        <rollback>
+            <sql>
+                DROP TABLE rollup_map
+            </sql>
+        </rollback>
+    </changeSet>
+</databaseChangeLog>
