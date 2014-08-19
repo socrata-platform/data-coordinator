@@ -38,7 +38,7 @@ import org.joda.time.DateTime
 import org.joda.time.format.ISODateTimeFormat
 
 object Service {
-  type processMutationReturns = (Long, DateTime, Seq[MutationScriptCommandResult])
+  type processMutationReturns = (Long, Long, DateTime, Seq[MutationScriptCommandResult])
   type processMutationFunc = (DatasetId, Iterator[JValue], IndexedTempFile) => processMutationReturns
   type processCreationReturns = (DatasetId, Long, DateTime, Seq[MutationScriptCommandResult])
   type datasetContentsFunc = Either[Schema, (EntityTag, Seq[SchemaField],
@@ -53,7 +53,7 @@ import Service._
  * It should probably be broken up into multiple classes per resource.
  */
 class Service(serviceConfig: ServiceConfig,
-              processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) => (Long, DateTime, Seq[MutationScriptCommandResult]),
+              processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) => processMutationReturns,
               processCreation: (Iterator[JValue], IndexedTempFile) => processCreationReturns,
               getSchema: DatasetId => Option[Schema],
               datasetContents: (DatasetId, Option[String], CopySelector, Option[UserColumnIdSet],
@@ -467,11 +467,12 @@ class Service(serviceConfig: ServiceConfig,
               }
               iteratorOrError match {
                 case Right(iterator) =>
-                  val (version, lastModified, result) = processMutation(datasetId, iterator.map { ev => boundResetter(); ev }, tmp)
+                  val (copyNumber, version, lastModified, result) = processMutation(datasetId, iterator.map { ev => boundResetter(); ev }, tmp)
                   OK ~>
                     ContentType("application/json; charset=utf-8") ~>
                     Header("X-SODA2-Truth-Last-Modified", dateTimeFormat.print(lastModified)) ~>
                     Header("X-SODA2-Truth-Version", version.toString) ~>
+                    Header("X-SODA2-Truth-Copy-Number", copyNumber.toString) ~>
                     Stream { w =>
                       val bw = new BufferedOutputStream(w)
                       bw.write('[')
