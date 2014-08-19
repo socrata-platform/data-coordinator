@@ -3,9 +3,9 @@ resolvers ++= Seq(
   "DiversIT repo" at "http://repository-diversit.forge.cloudbees.com/release"
 )
 
-addSbtPlugin("com.socrata" % "socrata-cloudbees-sbt" % "1.2.1")
+addSbtPlugin("com.socrata" % "socrata-cloudbees-sbt" % "1.3.0")
 
 libraryDependencies ++= Seq(
-  "com.rojoma" %% "rojoma-json" % "2.0.0",
+  "com.rojoma" %% "rojoma-json" % "2.4.3",
   "com.rojoma" %% "simple-arm" % "1.1.10"
 )
