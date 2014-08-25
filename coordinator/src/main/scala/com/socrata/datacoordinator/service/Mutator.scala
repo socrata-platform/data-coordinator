@@ -318,23 +318,23 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
                                                 with DatasetMapReaderProvider
 
   def createScript(u: UniverseWithProviders, commandStream: Iterator[JValue]):
-      Service.processCreationReturns = {
+      ProcessCreationReturns = {
     if(commandStream.isEmpty) throw EmptyCommandStream()(0L)
     val commands = createCreateStream(0L, commandStream.next(), commandStream)
     val (datasetId, mutationResults) = runScript(u, commands)
 
     // Have to re-lookup copy info to get a valid lastModified from the DB...
     val copyInfo = u.datasetMapReader.latest(u.datasetMapReader.datasetInfo(datasetId).get)
-    (datasetId, copyInfo.dataVersion, copyInfo.lastModified, mutationResults)
+    ProcessCreationReturns(datasetId, copyInfo.dataVersion, copyInfo.lastModified, mutationResults)
   }
 
   def updateScript(u: UniverseWithProviders, datasetId: DatasetId, commandStream: Iterator[JValue]):
-      Service.processMutationReturns = {
+      ProcessMutationReturns = {
     if(commandStream.isEmpty) throw EmptyCommandStream()(0L)
     val commands = createCommandStream(0L, commandStream.next(), datasetId, commandStream)
     val (_, mutationResults) = runScript(u, commands)
     val copyInfo = u.datasetMapReader.latest(u.datasetMapReader.datasetInfo(datasetId).get)
-    (copyInfo.copyNumber, copyInfo.dataVersion, copyInfo.lastModified, mutationResults)
+    ProcessMutationReturns(copyInfo.copyNumber, copyInfo.dataVersion, copyInfo.lastModified, mutationResults)
   }
 
   val jobCounter = new Counter(0)

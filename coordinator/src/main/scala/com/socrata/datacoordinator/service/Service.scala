@@ -38,9 +38,7 @@ import org.joda.time.DateTime
 import org.joda.time.format.ISODateTimeFormat
 
 object Service {
-  type processMutationReturns = (Long, Long, DateTime, Seq[MutationScriptCommandResult])
-  type processMutationFunc = (DatasetId, Iterator[JValue], IndexedTempFile) => processMutationReturns
-  type processCreationReturns = (DatasetId, Long, DateTime, Seq[MutationScriptCommandResult])
+  type processMutationFunc = (DatasetId, Iterator[JValue], IndexedTempFile) => ProcessMutationReturns
   type datasetContentsFunc = Either[Schema, (EntityTag, Seq[SchemaField],
                                              Option[UserColumnId], String,
                                              Long, Iterator[Array[JValue]])] => Unit
@@ -53,8 +51,8 @@ import Service._
  * It should probably be broken up into multiple classes per resource.
  */
 class Service(serviceConfig: ServiceConfig,
-              processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) => processMutationReturns,
-              processCreation: (Iterator[JValue], IndexedTempFile) => processCreationReturns,
+              processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) => ProcessMutationReturns,
+              processCreation: (Iterator[JValue], IndexedTempFile) => ProcessCreationReturns,
               getSchema: DatasetId => Option[Schema],
               datasetContents: (DatasetId, Option[String], CopySelector, Option[UserColumnIdSet],
                                 Option[Long], Option[Long], Precondition, Option[DateTime], Boolean) =>
@@ -388,7 +386,7 @@ class Service(serviceConfig: ServiceConfig,
               }
               iteratorOrError match {
                 case Right(iterator) =>
-                  val (dataset, dataVersion, lastModified, result) = processCreation(iterator.map { ev => boundResetter(); ev }, tmp)
+                  val ProcessCreationReturns(dataset, dataVersion, lastModified, result) = processCreation(iterator.map { ev => boundResetter(); ev }, tmp)
                   OK ~>
                     Header("X-SODA2-Truth-Last-Modified", dateTimeFormat.print(lastModified)) ~>
                     Header("X-SODA2-Truth-Version", dataVersion.toString) ~>
@@ -467,7 +465,7 @@ class Service(serviceConfig: ServiceConfig,
               }
               iteratorOrError match {
                 case Right(iterator) =>
-                  val (copyNumber, version, lastModified, result) = processMutation(datasetId, iterator.map { ev => boundResetter(); ev }, tmp)
+                  val ProcessMutationReturns(copyNumber, version, lastModified, result) = processMutation(datasetId, iterator.map { ev => boundResetter(); ev }, tmp)
                   OK ~>
                     ContentType("application/json; charset=utf-8") ~>
                     Header("X-SODA2-Truth-Last-Modified", dateTimeFormat.print(lastModified)) ~>
