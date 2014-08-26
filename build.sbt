@@ -10,7 +10,7 @@ scalaVersion := "2.10.4"
 resolvers += "Open Source Geospatial Foundation Repository" at "http://download.osgeo.org/webdav/geotools"
 
 libraryDependencies ++= Seq(
-  "com.socrata" %% "soql-stdlib" % "[0.2.1,1.0.0)",
+  "com.socrata" %% "soql-stdlib" % "[0.2.1,1.0.0)" exclude ("javax.media", "jai_core"),
   "com.socrata" %% "socrata-thirdparty-utils" % "[2.1.0,3.0.0)",
   "com.typesafe" % "config" % "1.0.0",
   "com.socrata" %% "socrata-http-curator-broker" % "[2.0.0,3.0.0)" exclude ("org.jboss.netty", "netty" /* see ZOOKEEPER-1681 */),
@@ -53,3 +53,5 @@ resourceGenerators in Compile <+= (resourceManaged in Compile, name in Compile, 
   }
   Seq(file)
 }
+
+net.virtualvoid.sbt.graph.Plugin.graphSettings
