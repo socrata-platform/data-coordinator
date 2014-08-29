@@ -14,7 +14,7 @@ object CoordinatorLib {
       "org.xerial.snappy" % "snappy-java" % "1.1.0-M3",
       "org.iq80.snappy" % "snappy" % "0.3",
       "postgresql" % "postgresql" % "9.1-901-1.jdbc4", // we do use postgres-specific features some places
-      "com.mchange" % "c3p0" % "0.9.2.1" % "optional",
+      "com.mchange" % "c3p0" % "0.9.5-pre8" % "optional",
       "com.google.protobuf" % "protobuf-java" % "2.4.1",
       "com.h2database" % "h2" % "1.3.166" % "test,it",
       "org.scalacheck" %% "scalacheck" % "1.10.0" % "test,it",
