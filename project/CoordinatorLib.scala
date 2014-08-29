@@ -13,7 +13,7 @@ object CoordinatorLib {
       "org.joda" % "joda-convert" % "1.2",
       "org.xerial.snappy" % "snappy-java" % "1.1.0-M3",
       "org.iq80.snappy" % "snappy" % "0.3",
-      "postgresql" % "postgresql" % "9.1-901-1.jdbc4", // we do use postgres-specific features some places
+      "org.postgresql" % "postgresql" % "9.3-1102-jdbc41", // we do use postgres-specific features some places
       "com.mchange" % "c3p0" % "0.9.5-pre8" % "optional",
       "com.google.protobuf" % "protobuf-java" % "2.4.1",
       "com.h2database" % "h2" % "1.3.166" % "test,it",
