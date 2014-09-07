@@ -58,7 +58,9 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
               queryTimeout: FiniteDuration,
               schemaCache: (String, Option[String], Schema) => Unit,
               schemaDecache: (String, Option[String]) => Option[Schema],
-              secondaryInstance:SecondaryInstanceSelector)
+              secondaryInstance: SecondaryInstanceSelector,
+              queryRewriter: QueryRewriter,
+              rollupInfoFetcher: RollupInfoFetcher)
   extends (HttpServletRequest => HttpResponse)
 {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
@@ -351,9 +353,9 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
       }
 
       @tailrec
-      def executeQuery(schema: Schema, analyzedQuery: SoQLAnalysis[String, SoQLAnalysisType]) {
+      def executeQuery(schema: Schema, analyzedQuery: SoQLAnalysis[String, SoQLAnalysisType], rollupName: Option[String]) {
         val res = queryExecutor(base.receiveTimeoutMS(queryTimeout.toMillis.toInt), dataset, analyzedQuery, schema,
-          precondition, ifModifiedSince, rowCount, copy).map {
+          precondition, ifModifiedSince, rowCount, copy, rollupName).map {
           case QueryExecutor.NotFound =>
             chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
             finishRequest(notFoundResponse(dataset))
@@ -370,16 +372,38 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
             None
         }
         res match { // bit of a dance because we can't tailrec from within map
-          case Some((s, q)) => executeQuery(s, q)
+          // TODOMS handle rollup rewrite on retry
+          case Some((s, q)) => executeQuery(s, q, None)
           case None => // ok
+        }
+      }
+
+      def possiblyRewriteQuery(schema: Schema, analyzedQuery: SoQLAnalysis[String, SoQLAnalysisType]):
+          (Schema, SoQLAnalysis[String, SoQLAnalysisType], Option[String]) = {
+        rollupInfoFetcher(base.receiveTimeoutMS(getSchemaTimeout.toMillis.toInt), dataset, copy) match {
+          case RollupInfoFetcher.Successful(rollups) =>
+            val rewritten  = queryRewriter.bestRewrite(schema, analyzedQuery, rollups)
+            val (rollupName, analysis) = rewritten map {x => (Some(x._1), x._2) } getOrElse (None, analyzedQuery)
+            log.info(s"Rewrite query to rollup ${rollupName} with analysis ${analysis}")
+            (schema, analysis, rollupName)
+          case RollupInfoFetcher.NoSuchDatasetInSecondary =>
+            chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
+            finishRequest(notFoundResponse(dataset))
+          case RollupInfoFetcher.TimeoutFromSecondary =>
+            chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
+            finishRequest(upstreamTimeoutResponse)
+          case other =>
+            log.error("Unexpected response when fetching schema from secondary: {}", other)
+            chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
+            finishRequest(internalServerError)
         }
       }
 
       schemaDecache(dataset, copy) match {
         case Some(schema) =>
-          (executeQuery _).tupled(analyzeRequest(schema, false))
+          (executeQuery _).tupled((possiblyRewriteQuery _).tupled(analyzeRequest(schema, false)))
         case None =>
-          (executeQuery _).tupled(analyzeRequest(getAndCacheSchema(dataset, copy), true))
+          (executeQuery _).tupled((possiblyRewriteQuery _).tupled(analyzeRequest(getAndCacheSchema(dataset, copy), true)))
       }
     } catch {
       case FinishRequest(response) =>

@@ -17,8 +17,8 @@ libraryDependencies ++= Seq(
   "com.socrata" %% "socrata-http-client" % "[2.0.0,3.0.0)",
   "com.google.protobuf" % "protobuf-java" % "2.4.1",
   "net.sf.trove4j" % "trove4j" % "3.0.3",
-  "org.scalatest" %% "scalatest" % "1.9.1" % "test",
-  "org.scalacheck" %% "scalacheck" % "1.10.1" % "test",
+  "org.scalatest" %% "scalatest" % "2.2.1" % "test",
+  "org.scalacheck" %% "scalacheck" % "1.11.5" % "test",
   "com.typesafe" %% "scalalogging-slf4j" % "1.1.0",
   "com.rojoma" %% "rojoma-json" % "[2.4.3,3.0.0)"
 )

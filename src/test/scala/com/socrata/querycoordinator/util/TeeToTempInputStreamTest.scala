@@ -1,7 +1,7 @@
 package com.socrata.querycoordinator.util
 
 import org.scalatest.FunSuite
-import org.scalatest.matchers.MustMatchers
+import org.scalatest.MustMatchers
 import org.scalatest.prop.PropertyChecks
 import java.io.{ByteArrayOutputStream, InputStream, ByteArrayInputStream}
 import com.rojoma.simplearm.util._

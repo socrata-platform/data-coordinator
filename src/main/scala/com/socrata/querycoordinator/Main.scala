@@ -100,7 +100,9 @@ object Main extends App {
       config.queryTimeout,
       (_, _, _) => (),
       (_, _) => None,
-      secondaryInstanceSelector)
+      secondaryInstanceSelector,
+      new QueryRewriter(analyzer),
+      new RollupInfoFetcher(httpClient))
 
     val auxData = new AuxiliaryData(Some(pongProvider.livenessCheckInfo))
 
