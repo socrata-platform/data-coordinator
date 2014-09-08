@@ -21,7 +21,7 @@ class TestQueryRewriter extends TestBase {
   val schema = Schema("NOHASH", rawSchema, "NOPK")
 
   /** Mapping from column name to column id, that we get from soda fountain with the query.  */
-  private val columnIdMapping = Map[ColumnName, String](
+  private val columnIdMapping = Map[ColumnName, rewriter.ColumnId](
     ColumnName("number1") -> "dxyz-num1",
     ColumnName("ward") -> "wido-ward",
     ColumnName("crime_type") -> "crim-typ3",
@@ -55,12 +55,12 @@ class TestQueryRewriter extends TestBase {
 
   val rollupRawSchemas = rollupAnalysis.mapValues { case analysis =>
     analysis.selection.values.toSeq.zipWithIndex.map { case (expr, idx) =>
-      "c" + (idx + 1) -> expr.typ.canonical
+      rewriter.rollupColumnId(idx) -> expr.typ.canonical
     }.toMap
   }
 
   /** Analyze the query and map to column ids, just like we have in real life. */
-  def analyzeQuery(q: String) =  analyzer.analyzeFullQuery(q)(dsContext).mapColumnIds(columnIdMapping)
+  def analyzeQuery(q: String) = analyzer.analyzeFullQuery(q)(dsContext).mapColumnIds(columnIdMapping)
 
   /** Analyze a "fake" query that has the rollup table column names in, so we
     * can use it to compare  with the rewritten one in assertions.
@@ -72,7 +72,7 @@ class TestQueryRewriter extends TestBase {
 
     val rollupDsContext = QueryParser.dsContext(rollupNoopColumnNameMap, rewrittenRawSchema) match {
       case Right(ctx) => ctx
-      case Left(missingRows) => throw new RuntimeException("MISSING: " + missingRows)
+      case Left(unknownColumnIds) => throw new RuntimeException("Unknown column ids:" + unknownColumnIds)
     }
 
     val rewrittenQueryAnalysis = analyzer.analyzeFullQuery(q)(rollupDsContext).mapColumnIds(rollupNoopColumnNameMap)
@@ -89,18 +89,6 @@ class TestQueryRewriter extends TestBase {
         case _ => println(">" * indent + s"Can't compare ${x} with ${y} but ... ${x.hashCode} vs ${y.hashCode}")
       }
     }
-  }
-
-  test("Rewrite simple group by") {
-    val q = "SELECT ward, count(*) GROUP BY ward"
-    val qAnalysis = analyzeQuery(q)
-
-    val rAnalysis = rewriter.analyzeRollups(schema, rollupInfos)
-
-    val rewrites = rewriter.possibleRewrites(qAnalysis, rAnalysis)
-    rewrites should contain key("r3")
-    rewrites should contain key("r4")
-    rewrites should have size(2)
   }
 
   test("map query ward, count(*)") {
@@ -145,12 +133,11 @@ class TestQueryRewriter extends TestBase {
     rewrites should be(empty)
   }
 
-  // Not even sure if this is supposed to work... it doesn't seem to even without rollups
-  ignore("column aliases") {
+  test("hidden column aliasing") {
     val q = "SELECT crime_type as crimey, ward as crime_type"
     val queryAnalysis = analyzeQuery(q)
 
-    val rewrittenQuery = "SELECT c2 as crimey, c1 as crime_type"
+    val rewrittenQuery = "SELECT c1 as crimey, c1 as crime_type"
     val rewrittenQueryAnalysis = analyzeRewrittenQuery("r6", rewrittenQuery)
 
     val rewrites = rewriter.possibleRewrites(queryAnalysis, rollupAnalysis )
@@ -159,11 +146,45 @@ class TestQueryRewriter extends TestBase {
     rewrites.get("r6").get should equal(rewrittenQueryAnalysis)
   }
 
+
+  test("map query crime_type, ward, 1, count(*) with LIMIT / OFFSET") {
+    val q = "SELECT crime_type, ward, 1, count(*) AS ward_count GROUP BY crime_type, ward LIMIT 100 OFFSET 200"
+    val queryAnalysis = analyzeQuery(q)
+
+    val rewrittenQuery = "SELECT c2 AS crime_type, c1 as ward, 1, sum(c3) AS ward_count GROUP by c2, c1 LIMIT 100 OFFSET 200"
+
+    val rewrittenQueryAnalysis = analyzeRewrittenQuery("r4", rewrittenQuery)
+
+    val rewrites = rewriter.possibleRewrites(queryAnalysis, rollupAnalysis)
+
+    rewrites should contain key("r4")
+    rewrites.get("r4").get  should equal(rewrittenQueryAnalysis)
+
+    rewrites should have size(1)
+  }
+
+
+  ignore("count on literal - map query crime_type, count(0), count('potato')") {
+    val q = "SELECT crime_type, count(0) as crimes, count('potato'), as crimes_potato GROUP BY crime_type"
+    val queryAnalysis = analyzeQuery(q)
+
+    val rewrittenQuery = "SELECT c2 AS crime_type, sum(c3) as crimes, sum(c3) as crimes_potato GROUP by c2"
+
+    val rewrittenQueryAnalysis = analyzeRewrittenQuery("r4", rewrittenQuery)
+
+    val rewrites = rewriter.possibleRewrites(queryAnalysis, rollupAnalysis)
+
+    rewrites should contain key("r4")
+    rewrites.get("r4").get  should equal(rewrittenQueryAnalysis)
+
+    rewrites should have size(1)
+  }
+
+
   // TODO count(coulumnname)
   // TODO count(literal)
   // TODO where
   // TODO order
-  // TODO limit / offset
   // TODO date functions
 }
 

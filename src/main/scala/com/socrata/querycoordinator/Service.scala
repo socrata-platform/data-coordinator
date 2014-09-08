@@ -364,7 +364,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
             finishRequest(upstreamTimeoutResponse)
           case QueryExecutor.SchemaHashMismatch(newSchema) =>
             storeInCache(Some(newSchema), dataset, copy)
-            Some(analyzeRequest(newSchema, true))
+            Some((possiblyRewriteQuery _).tupled(analyzeRequest(newSchema, true)))
           case QueryExecutor.ToForward(responseCode, headers, body) =>
             resp.setStatus(responseCode)
             for { (h,vs) <- headers; v <- vs } resp.addHeader(h, v)
@@ -372,8 +372,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
             None
         }
         res match { // bit of a dance because we can't tailrec from within map
-          // TODOMS handle rollup rewrite on retry
-          case Some((s, q)) => executeQuery(s, q, None)
+          case Some((s, q, r)) => executeQuery(s, q, r)
           case None => // ok
         }
       }
@@ -384,7 +383,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
           case RollupInfoFetcher.Successful(rollups) =>
             val rewritten  = queryRewriter.bestRewrite(schema, analyzedQuery, rollups)
             val (rollupName, analysis) = rewritten map {x => (Some(x._1), x._2) } getOrElse (None, analyzedQuery)
-            log.info(s"Rewrite query to rollup ${rollupName} with analysis ${analysis}")
+            log.info(s"Rewrote query on dataset ${dataset} to rollup ${rollupName} with analysis ${analysis}")
             (schema, analysis, rollupName)
           case RollupInfoFetcher.NoSuchDatasetInSecondary =>
             chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
