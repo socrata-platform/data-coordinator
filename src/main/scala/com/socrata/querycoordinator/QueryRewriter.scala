@@ -70,7 +70,7 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
           }
         }
         if (grouped.forall(g => g.isDefined)) {
-          Some(Some(grouped.map { g => g.get }))
+          Some(Some(grouped.flatten))
         } else {
           None
         }
@@ -79,7 +79,7 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
   }
 
 
-  def possibleRewrites(q: Anal, rollups: Map[RollupName,Anal]): Map[RollupName,Anal] = {
+  def possibleRewrites(q: Anal, rollups: Map[RollupName, Anal]): Map[RollupName, Anal] = {
     log.debug("looking for candidates to rewrite for query: {}", q)
     val candidates = rollups.mapValues { r =>
       log.debug("checking for compat with: {}", r)
