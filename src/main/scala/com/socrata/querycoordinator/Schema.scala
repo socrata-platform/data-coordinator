@@ -1,22 +1,16 @@
 package com.socrata.querycoordinator
 
+import com.socrata.querycoordinator.util.SoQLTypeCodec
 import com.socrata.soql.types.SoQLType
 
-import com.socrata.soql.environment.{TypeName, ColumnName}
 import com.rojoma.json.codec.JsonCodec
-import com.rojoma.json.ast.{JValue, JString, JObject}
+import com.rojoma.json.ast.JValue
 import com.rojoma.json.matcher.{PObject, Variable}
 
 case class Schema(hash: String, schema: Map[String, SoQLType], pk: String)
 object Schema {
   implicit object SchemaCodec extends JsonCodec[Schema] {
-    private implicit object SoQLTypeCodec extends JsonCodec[SoQLType] {
-      def encode(t: SoQLType) = JString(t.name.name)
-      def decode(v: JValue) = v match {
-        case JString(s) => SoQLType.typesByName.get(TypeName(s))
-        case _ => None
-      }
-    }
+    private implicit val soQLTypeCodec = SoQLTypeCodec
 
     private val hashVar = Variable[String]()
     private val schemaVar = Variable[Map[String, SoQLType]]()
