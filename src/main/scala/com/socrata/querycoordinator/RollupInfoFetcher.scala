@@ -9,6 +9,10 @@ import RollupInfoFetcher._
 import com.socrata.http.client.exceptions.{LivenessCheckFailed, HttpClientException, HttpClientTimeoutException}
 import java.io.IOException
 
+/**
+ * Fetches the rollup info from the secondary server.  Modelled after the SchemaFetcher, it would be nice
+ * if they weren't separate operations but changing the schema response is a significantly bigger project.
+ */
 class RollupInfoFetcher(httpClient: HttpClient) {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[RollupInfoFetcher])
 
@@ -50,6 +54,9 @@ object RollupInfoFetcher {
   sealed abstract class Result
   case class Successful(rollupInfos: Seq[RollupInfo]) extends Result
   case object NonRollupInfoResponse extends Result
+  /** Not found on the secondary we asked, should be rare as secondary discovery takes care of
+    * making sure we are asking a secondary that has the dataset.
+    */
   case object NoSuchDatasetInSecondary extends Result
   case object BadResponseFromSecondary extends Result
   case object TimeoutFromSecondary extends Result
