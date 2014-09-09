@@ -197,8 +197,6 @@ class TestQueryRewriter extends TestBase {
 
     val rewrites = rewriter.possibleRewrites(queryAnalysis, rollupAnalysis)
 
-    compareProducts(rewrites.get("r4").get, rewrittenQueryAnalysis)
-
     rewrites should contain key("r4")
     rewrites.get("r4").get  should equal(rewrittenQueryAnalysis)
 
