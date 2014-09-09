@@ -14,7 +14,8 @@ class TestQueryRewriter extends TestBase {
     "dxyz-num1" -> SoQLType.typesByName(TypeName("number")),
     "wido-ward" -> SoQLType.typesByName(TypeName("number")),
     "crim-typ3" -> SoQLType.typesByName(TypeName("text")),
-    "dont-roll" -> SoQLType.typesByName(TypeName("text"))
+    "dont-roll" -> SoQLType.typesByName(TypeName("text")),
+    "crim-date" -> SoQLType.typesByName(TypeName("floating_timestamp"))
   )
 
   /** QueryRewriter wants a Schema object to have a little stronger typing, so make one */
@@ -25,7 +26,8 @@ class TestQueryRewriter extends TestBase {
     ColumnName("number1") -> "dxyz-num1",
     ColumnName("ward") -> "wido-ward",
     ColumnName("crime_type") -> "crim-typ3",
-    ColumnName("dont_create_rollups") -> "dont-roll"
+    ColumnName("dont_create_rollups") -> "dont-roll",
+    ColumnName("crime_date") -> "crim-date"
   )
 
   /** The dataset context, used for parsing the query */
@@ -43,9 +45,10 @@ class TestQueryRewriter extends TestBase {
     ("r1", "SELECT `_dxyz-num1`, count(`_dxyz-num1`) GROUP BY `_dxyz-num1`"),
     ("r2", "SELECT count(`_wido-ward`), `_wido_ward` GROUP BY `_wido-ward`"),
     ("r3", "SELECT `_wido-ward`, count(*) GROUP BY `_wido-ward`"),
-    ("r4", "SELECT `_wido-ward`, `_crim-typ3`, count(*) GROUP BY `_wido-ward`, `_crim-typ3`"),
-    ("r5", "SELECT `_crim-typ3`, count(*) group by `_crim-typ3`"),
-    ("r6", "SELECT `_wido-ward`, `_crim-typ3`")
+    ("r4", "SELECT `_wido-ward`, `_crim-typ3`, count(*), `_dxyz-num1`, `_crim-date` GROUP BY `_wido-ward`, `_crim-typ3`, `_dxyz-num1`, `_crim-date`"),
+    ("r5", "SELECT `_crim-typ3`, count(1) group by `_crim-typ3`"),
+    ("r6", "SELECT `_wido-ward`, `_crim-typ3`"),
+    ("r7", "SELECT `_wido-ward`, min(`_dxyz-num1`), max(`_dxyz-num1`), sum(`_dxyz-num1`), count(*) GROUP BY `_wido-ward`")
   )
 
   val rollupInfos = rollups.map { x => new RollupInfo(x._1, x._2)}
@@ -105,7 +108,8 @@ class TestQueryRewriter extends TestBase {
     rewrites.get("r4").get  should equal(rewrittenQueryAnalysis)
 
     rewrites should contain key("r3")
-    rewrites should have size(2)
+    rewrites should contain key("r7")
+    rewrites should have size(3)
   }
 
   test("map query crime_type, ward, count(*)") {
@@ -124,6 +128,7 @@ class TestQueryRewriter extends TestBase {
     rewrites should have size(1)
   }
 
+
   test("shouldn't rewrite column not in rollup") {
     val q = "SELECT ward, dont_create_rollups, count(*) AS ward_count GROUP BY ward, dont_create_rollups"
     val queryAnalysis = analyzeQuery(q)
@@ -132,6 +137,7 @@ class TestQueryRewriter extends TestBase {
 
     rewrites should be(empty)
   }
+
 
   test("hidden column aliasing") {
     val q = "SELECT crime_type as crimey, ward as crime_type"
@@ -164,11 +170,47 @@ class TestQueryRewriter extends TestBase {
   }
 
 
-  ignore("count on literal - map query crime_type, count(0), count('potato')") {
-    val q = "SELECT crime_type, count(0) as crimes, count('potato'), as crimes_potato GROUP BY crime_type"
+  test("count on literal - map query crime_type, count(0), count('potato')") {
+    val q = "SELECT crime_type, count(0) as crimes, count('potato') as crimes_potato GROUP BY crime_type"
     val queryAnalysis = analyzeQuery(q)
 
     val rewrittenQuery = "SELECT c2 AS crime_type, sum(c3) as crimes, sum(c3) as crimes_potato GROUP by c2"
+
+    val rewrittenQueryAnalysis = analyzeRewrittenQuery("r4", rewrittenQuery)
+
+    val rewrites = rewriter.possibleRewrites(queryAnalysis, rollupAnalysis)
+
+    rewrites should contain key("r4")
+    rewrites.get("r4").get  should equal(rewrittenQueryAnalysis)
+
+    // TODO should be 3 eventually... should also rewrite from table w/o group by
+    rewrites should have size(2)
+  }
+
+  test("map query ward, count(*) where") {
+    val q = "SELECT ward, count(*) AS ward_count WHERE crime_type = 'Clownicide' AND number1 > 5 GROUP BY ward"
+    val queryAnalysis = analyzeQuery(q)
+
+    val rewrittenQuery = "SELECT c1 AS ward, sum(c3) AS ward_count WHERE c2 = 'Clownicide' AND c4 > 5 GROUP by c1"
+
+    val rewrittenQueryAnalysis = analyzeRewrittenQuery("r4", rewrittenQuery)
+
+    val rewrites = rewriter.possibleRewrites(queryAnalysis, rollupAnalysis)
+
+    compareProducts(rewrites.get("r4").get, rewrittenQueryAnalysis)
+
+    rewrites should contain key("r4")
+    rewrites.get("r4").get  should equal(rewrittenQueryAnalysis)
+
+    rewrites should have size(1)
+  }
+
+
+  test("order by - query crime_type, ward, count(*)") {
+    val q = "SELECT crime_type, ward, count(*) AS ward_count GROUP BY crime_type, ward ORDER BY count(*) desc, crime_type"
+    val queryAnalysis = analyzeQuery(q)
+
+    val rewrittenQuery = "SELECT c2 AS crime_type, c1 as ward, sum(c3) AS ward_count GROUP by c2, c1 ORDER BY sum(c3) desc, c2"
 
     val rewrittenQueryAnalysis = analyzeRewrittenQuery("r4", rewrittenQuery)
 
@@ -181,11 +223,38 @@ class TestQueryRewriter extends TestBase {
   }
 
 
-  // TODO count(coulumnname)
-  // TODO count(literal)
-  // TODO where
-  // TODO order
-  // TODO date functions
+  test("map query ward, date_trunc_ym(crime_date), count(*)") {
+    val q = "SELECT ward, date_trunc_ym(crime_date) as d, count(*) AS ward_count GROUP BY ward, date_trunc_ym(crime_date)"
+    val queryAnalysis = analyzeQuery(q)
+
+    val rewrittenQuery = "SELECT c1 AS ward, date_trunc_ym(c5) as d, sum(c3) AS ward_count GROUP by c1, date_trunc_ym(c5)"
+
+    val rewrittenQueryAnalysis = analyzeRewrittenQuery("r4", rewrittenQuery)
+
+    val rewrites = rewriter.possibleRewrites(queryAnalysis, rollupAnalysis)
+
+    rewrites should contain key("r4")
+    rewrites.get("r4").get  should equal(rewrittenQueryAnalysis)
+
+    rewrites should have size(1)
+  }
+
+  test("map query ward, max(n), min(n), count(*)") {
+    val q = "SELECT ward, max(number1) as max_num, min(number1) as min_num, count(*) AS ward_count GROUP BY ward"
+    val queryAnalysis = analyzeQuery(q)
+
+    val rewrittenQuery = "SELECT c1 AS ward, max(c3) as max_num, min(c2) as min_num, sum(c5) AS ward_count GROUP by c1"
+
+    val rewrittenQueryAnalysis = analyzeRewrittenQuery("r7", rewrittenQuery)
+
+    val rewrites = rewriter.possibleRewrites(queryAnalysis, rollupAnalysis)
+
+    rewrites should contain key("r7")
+    rewrites.get("r7").get  should equal(rewrittenQueryAnalysis)
+
+    // TODO should be 2 eventually... should also rewrite from table w/o group by
+//    rewrites should contain key("r4")
+
+    rewrites should have size(1)
+  }
 }
-
-
