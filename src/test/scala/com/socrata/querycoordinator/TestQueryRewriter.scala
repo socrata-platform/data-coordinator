@@ -12,7 +12,7 @@ class TestQueryRewriter extends TestBase {
   /** The raw of the table that we get as part of the secondary /schema call */
   val rawSchema = Map[String, SoQLType](
     "dxyz-num1" -> SoQLType.typesByName(TypeName("number")),
-    "wido-ward" -> SoQLType.typesByName(TypeName("number")),
+    ":wido-ward" -> SoQLType.typesByName(TypeName("number")),
     "crim-typ3" -> SoQLType.typesByName(TypeName("text")),
     "dont-roll" -> SoQLType.typesByName(TypeName("text")),
     "crim-date" -> SoQLType.typesByName(TypeName("floating_timestamp"))
@@ -24,7 +24,7 @@ class TestQueryRewriter extends TestBase {
   /** Mapping from column name to column id, that we get from soda fountain with the query.  */
   private val columnIdMapping = Map[ColumnName, rewriter.ColumnId](
     ColumnName("number1") -> "dxyz-num1",
-    ColumnName("ward") -> "wido-ward",
+    ColumnName("ward") -> ":wido-ward",
     ColumnName("crime_type") -> "crim-typ3",
     ColumnName("dont_create_rollups") -> "dont-roll",
     ColumnName("crime_date") -> "crim-date"
@@ -43,12 +43,12 @@ class TestQueryRewriter extends TestBase {
     */
   val rollups = Seq(
     ("r1", "SELECT `_dxyz-num1`, count(`_dxyz-num1`) GROUP BY `_dxyz-num1`"),
-    ("r2", "SELECT count(`_wido-ward`), `_wido_ward` GROUP BY `_wido-ward`"),
-    ("r3", "SELECT `_wido-ward`, count(*) GROUP BY `_wido-ward`"),
-    ("r4", "SELECT `_wido-ward`, `_crim-typ3`, count(*), `_dxyz-num1`, `_crim-date` GROUP BY `_wido-ward`, `_crim-typ3`, `_dxyz-num1`, `_crim-date`"),
+    ("r2", "SELECT count(`:wido-ward`), `:wido_ward` GROUP BY `:wido-ward`"),
+    ("r3", "SELECT `:wido-ward`, count(*) GROUP BY `:wido-ward`"),
+    ("r4", "SELECT `:wido-ward`, `_crim-typ3`, count(*), `_dxyz-num1`, `_crim-date` GROUP BY `:wido-ward`, `_crim-typ3`, `_dxyz-num1`, `_crim-date`"),
     ("r5", "SELECT `_crim-typ3`, count(1) group by `_crim-typ3`"),
-    ("r6", "SELECT `_wido-ward`, `_crim-typ3`"),
-    ("r7", "SELECT `_wido-ward`, min(`_dxyz-num1`), max(`_dxyz-num1`), sum(`_dxyz-num1`), count(*) GROUP BY `_wido-ward`")
+    ("r6", "SELECT `:wido-ward`, `_crim-typ3`"),
+    ("r7", "SELECT `:wido-ward`, min(`_dxyz-num1`), max(`_dxyz-num1`), sum(`_dxyz-num1`), count(*) GROUP BY `:wido-ward`")
   )
 
   val rollupInfos = rollups.map { x => new RollupInfo(x._1, x._2)}
@@ -128,6 +128,16 @@ class TestQueryRewriter extends TestBase {
     rewrites should have size(1)
   }
 
+  // count(null) is very different than count(*)!
+  test("don't map count(null) - query crime_type, ward, count(null)") {
+    val q = "SELECT crime_type, ward, count(null) AS ward_count GROUP BY crime_type, ward"
+    val queryAnalysis = analyzeQuery(q)
+
+    val rewrites = rewriter.possibleRewrites(queryAnalysis, rollupAnalysis)
+
+    rewrites should have size(0)
+  }
+
 
   test("shouldn't rewrite column not in rollup") {
     val q = "SELECT ward, dont_create_rollups, count(*) AS ward_count GROUP BY ward, dont_create_rollups"
@@ -174,14 +184,18 @@ class TestQueryRewriter extends TestBase {
     val q = "SELECT crime_type, count(0) as crimes, count('potato') as crimes_potato GROUP BY crime_type"
     val queryAnalysis = analyzeQuery(q)
 
-    val rewrittenQuery = "SELECT c2 AS crime_type, sum(c3) as crimes, sum(c3) as crimes_potato GROUP by c2"
-
-    val rewrittenQueryAnalysis = analyzeRewrittenQuery("r4", rewrittenQuery)
 
     val rewrites = rewriter.possibleRewrites(queryAnalysis, rollupAnalysis)
 
+    val rewrittenQueryR4 = "SELECT c2 AS crime_type, sum(c3) as crimes, sum(c3) as crimes_potato GROUP by c2"
+    val rewrittenQueryAnalysisR4 = analyzeRewrittenQuery("r4", rewrittenQueryR4)
     rewrites should contain key("r4")
-    rewrites.get("r4").get  should equal(rewrittenQueryAnalysis)
+    rewrites.get("r4").get  should equal(rewrittenQueryAnalysisR4)
+
+    val rewrittenQueryR5 = "SELECT c1 AS crime_type, sum(c2) as crimes, sum(c2) as crimes_potato GROUP by c1"
+    val rewrittenQueryAnalysisR5 = analyzeRewrittenQuery("r5", rewrittenQueryR5)
+    rewrites should contain key("r5")
+    rewrites.get("r5").get  should equal(rewrittenQueryAnalysisR5)
 
     // TODO should be 3 eventually... should also rewrite from table w/o group by
     rewrites should have size(2)

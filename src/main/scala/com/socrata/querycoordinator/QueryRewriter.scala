@@ -28,8 +28,8 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
   /** Maps the rollup column expression to the 0 based index in the rollup table.  If we have
     * multiple columns with the same definition, that is fine but we will only use one.
     */
-  def mapSelection(q: Selection, r: Selection, rollupColIdx: Map[Expr, Int]): Option[Selection] = {
-    val mapped: OrderedMap[ColumnName, Option[Expr]] = q.mapValues(e => mapExpr(e, rollupColIdx))
+  def rewriteSelection(q: Selection, r: Selection, rollupColIdx: Map[Expr, Int]): Option[Selection] = {
+    val mapped: OrderedMap[ColumnName, Option[Expr]] = q.mapValues(e => rewriteExpr(e, rollupColIdx))
 
     if (mapped.values.forall(c => c.isDefined)) {
       Some(mapped.mapValues { v => v.get })
@@ -38,7 +38,7 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
     }
   }
 
-  def mapGroupBy(qOpt: GroupBy, rOpt: GroupBy, rollupColIdx: Map[Expr, Int]): Option[GroupBy] = {
+  def rewriteGroupBy(qOpt: GroupBy, rOpt: GroupBy, rollupColIdx: Map[Expr, Int]): Option[GroupBy] = {
     (qOpt, rOpt) match {
       // neither have group by, so we match on no group by
       case (None, None) => Some(None)
@@ -46,7 +46,7 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
       // The analysis already validated there are no un-grouped columns in the selection
       // that aren't in the group by.
       case (Some(q), _) =>
-        val grouped: Seq[Option[Expr]] = q.map { expr => mapExpr(expr, rollupColIdx) }
+        val grouped: Seq[Option[Expr]] = q.map { expr => rewriteExpr(expr, rollupColIdx) }
 
         if (grouped.forall(g => g.isDefined)) {
           Some(Some(grouped.flatten))
@@ -61,10 +61,10 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
 
   /** Find the first column index that is a count(*) or count(literal). */
   def findCountStarOrLiteral(rollupColIdx: Map[Expr, Int]): Option[Int] = {
-    rollupColIdx.filterKeys {
-      case fc: FunctionCall[_,_]  if isCountStarOrLiteral(fc) => true
+    rollupColIdx.find {
+      case (fc: FunctionCall[_,_], _) => isCountStarOrLiteral(fc)
       case _ => false
-    }.map(_._2).headOption
+    }.map(_._2)
   }
 
   /** Is the given function call a count(*) or count(literal), excluding NULL because it is special.  */
@@ -80,14 +80,14 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
 
   /** Can this function be applied to its own output in a further aggregation */
   def isSelfAggregatableAggregate(f: Function[_]) = f match {
-    case _  @ (SoQLFunctions.Max | SoQLFunctions.Min | SoQLFunctions.Sum) => true
+    case SoQLFunctions.Max | SoQLFunctions.Min | SoQLFunctions.Sum => true
     case _ => false
   }
 
   /** Recursively maps the Expr based on the rollupColIdx map, returning either
     * a mapped expression or None if the expression couldn't be mapped.
     */
-  def mapExpr(e: Expr, rollupColIdx: Map[Expr, Int]): Option[Expr] = {
+  def rewriteExpr(e: Expr, rollupColIdx: Map[Expr, Int]): Option[Expr] = {
     log.trace("Attempting to match expr: {}", e)
     e match {
       // This is literally a literal, so so literal.
@@ -106,7 +106,7 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
       // Other non-aggregation functions can be recursively mapped
       case fc: FunctionCall[ColumnId, SoQLAnalysisType] if
           fc.function.isAggregate == false =>
-        val mapped = fc.parameters.map(fe => mapExpr(fe, rollupColIdx))
+        val mapped = fc.parameters.map(fe => rewriteExpr(fe, rollupColIdx))
         log.trace("mapped expr params {} {} -> {}", "", fc.parameters, mapped)
         if (mapped.forall(fe => fe.isDefined)) {
           log.trace("expr params all defined")
@@ -127,7 +127,7 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
     }
   }
 
-  def mapWhere(qeOpt: Option[Expr], r: Anal, rollupColIdx: Map[Expr, Int]): Option[Where] = {
+  def rewriteWhere(qeOpt: Option[Expr], r: Anal, rollupColIdx: Map[Expr, Int]): Option[Where] = {
     log.debug(s"Attempting to map query where expression '${qeOpt}' to rollup ${r}")
 
     (qeOpt, r.where) match {
@@ -137,12 +137,12 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
       // no where on query or rollup, so good!  No work to do.
       case (None, None) => Some(None)
       // have a where on query so try to map recursively
-      case (Some(qe), None) => mapExpr(qe, rollupColIdx).map(Some(_))
+      case (Some(qe), None) => rewriteExpr(qe, rollupColIdx).map(Some(_))
     }
   }
 
 
-  def mapOrderBy(obsOpt: Option[Seq[OrderBy[ColumnId, SoQLAnalysisType]]], rollupColIdx: Map[Expr, Int]):
+  def rewriteOrderBy(obsOpt: Option[Seq[OrderBy[ColumnId, SoQLAnalysisType]]], rollupColIdx: Map[Expr, Int]):
       Option[Option[Seq[OrderBy[ColumnId, SoQLAnalysisType]]]] = {
     log.debug(s"Attempting to map order by expression '${obsOpt}'")
 
@@ -150,7 +150,7 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
     obsOpt match {
       case Some(obs) =>
         val mapped = obs.map { ob =>
-          mapExpr(ob.expression, rollupColIdx) match {
+          rewriteExpr(ob.expression, rollupColIdx) match {
             case Some(e) => Some(ob.copy(expression = e))
             case None => None
           }
@@ -173,10 +173,10 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
       // this lets us lookup the column and get the 0 based index in the select list
       val rollupColIdx = r.selection.values.zipWithIndex.toMap
 
-      val selection = mapSelection(q.selection, r.selection, rollupColIdx)
-      val groupBy = mapGroupBy(q.groupBy, r.groupBy, rollupColIdx)
-      val where = mapWhere(q.where, r, rollupColIdx)
-      val orderBy = mapOrderBy(q.orderBy, rollupColIdx)
+      val selection = rewriteSelection(q.selection, r.selection, rollupColIdx)
+      val groupBy = rewriteGroupBy(q.groupBy, r.groupBy, rollupColIdx)
+      val where = rewriteWhere(q.where, r, rollupColIdx)
+      val orderBy = rewriteOrderBy(q.orderBy, rollupColIdx)
 
       val mismatch =
           ensure(selection.isDefined, "mismatch on select") orElse
