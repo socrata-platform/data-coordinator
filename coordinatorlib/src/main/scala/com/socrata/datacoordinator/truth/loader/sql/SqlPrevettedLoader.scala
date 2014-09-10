@@ -11,6 +11,9 @@ import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.id.RowId
 
 class SqlPrevettedLoader[CT, CV](val conn: Connection, sqlizer: DataSqlizer[CT, CV], logger: DataLogger[CV]) extends PrevettedLoader[CV] {
+
+  import SqlPrevettedLoader._
+
   val typeContext = sqlizer.datasetContext.typeContext
 
   val insertBatch = new mutable.ArrayBuffer[Insert[CV]]
@@ -79,8 +82,10 @@ class SqlPrevettedLoader[CT, CV](val conn: Connection, sqlizer: DataSqlizer[CT, 
     if(insertBatch.nonEmpty) {
       try {
         sqlizer.insertBatch(conn) { inserter =>
-          for(insert <- insertBatch) {
-            inserter.insert(insert.data)
+          insertBatch.grouped(BatchSize).foreach { subBatch =>
+            for(insert <- subBatch) {
+              inserter.insert(insert.data)
+            }
           }
         }
       } finally {
@@ -94,4 +99,10 @@ class SqlPrevettedLoader[CT, CV](val conn: Connection, sqlizer: DataSqlizer[CT, 
     flushUpdates()
     flushDeletes()
   }
+}
+
+object SqlPrevettedLoader {
+
+  private val BatchSize = 2000
+
 }
