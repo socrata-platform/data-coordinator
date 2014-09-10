@@ -48,7 +48,8 @@ class TestQueryRewriter extends TestBase {
     ("r4", "SELECT `:wido-ward`, `_crim-typ3`, count(*), `_dxyz-num1`, `_crim-date` GROUP BY `:wido-ward`, `_crim-typ3`, `_dxyz-num1`, `_crim-date`"),
     ("r5", "SELECT `_crim-typ3`, count(1) group by `_crim-typ3`"),
     ("r6", "SELECT `:wido-ward`, `_crim-typ3`"),
-    ("r7", "SELECT `:wido-ward`, min(`_dxyz-num1`), max(`_dxyz-num1`), sum(`_dxyz-num1`), count(*) GROUP BY `:wido-ward`")
+    ("r7", "SELECT `:wido-ward`, min(`_dxyz-num1`), max(`_dxyz-num1`), sum(`_dxyz-num1`), count(*) GROUP BY `:wido-ward`"),
+    ("r8", "SELECT date_trunc_ym(`_crim-date`), `:wido-ward`, count(*) GROUP BY date_trunc_ym(`_crim-date`), `:wido-ward`")
   )
 
   val rollupInfos = rollups.map { x => new RollupInfo(x._1, x._2)}
@@ -109,7 +110,8 @@ class TestQueryRewriter extends TestBase {
 
     rewrites should contain key("r3")
     rewrites should contain key("r7")
-    rewrites should have size(3)
+    rewrites should contain key("r8")
+    rewrites should have size(4)
   }
 
   test("map query crime_type, ward, count(*)") {
@@ -184,7 +186,6 @@ class TestQueryRewriter extends TestBase {
     val q = "SELECT crime_type, count(0) as crimes, count('potato') as crimes_potato GROUP BY crime_type"
     val queryAnalysis = analyzeQuery(q)
 
-
     val rewrites = rewriter.possibleRewrites(queryAnalysis, rollupAnalysis)
 
     val rewrittenQueryR4 = "SELECT c2 AS crime_type, sum(c3) as crimes, sum(c3) as crimes_potato GROUP by c2"
@@ -239,16 +240,23 @@ class TestQueryRewriter extends TestBase {
     val q = "SELECT ward, date_trunc_ym(crime_date) as d, count(*) AS ward_count GROUP BY ward, date_trunc_ym(crime_date)"
     val queryAnalysis = analyzeQuery(q)
 
-    val rewrittenQuery = "SELECT c1 AS ward, date_trunc_ym(c5) as d, sum(c3) AS ward_count GROUP by c1, date_trunc_ym(c5)"
+    val rewrittenQueryR4 = "SELECT c1 AS ward, date_trunc_ym(c5) as d, sum(c3) AS ward_count GROUP by c1, date_trunc_ym(c5)"
 
-    val rewrittenQueryAnalysis = analyzeRewrittenQuery("r4", rewrittenQuery)
+    val rewrittenQueryAnalysisR4 = analyzeRewrittenQuery("r4", rewrittenQueryR4)
+
+    // in this case, we map the function call directly to the column ref
+    val rewrittenQueryR8 = "SELECT c2 as ward, c1 as d, sum(c3) as ward_count GROUP BY c2, c1"
+    val rewrittenQueryAnalysisR8= analyzeRewrittenQuery("r8", rewrittenQueryR8)
 
     val rewrites = rewriter.possibleRewrites(queryAnalysis, rollupAnalysis)
 
     rewrites should contain key("r4")
-    rewrites.get("r4").get  should equal(rewrittenQueryAnalysis)
+    rewrites.get("r4").get  should equal(rewrittenQueryAnalysisR4)
 
-    rewrites should have size(1)
+    rewrites should contain key("r8")
+    rewrites.get("r8").get  should equal(rewrittenQueryAnalysisR8)
+
+    rewrites should have size(2)
   }
 
   test("map query ward, max(n), min(n), count(*)") {
@@ -302,5 +310,4 @@ class TestQueryRewriter extends TestBase {
 
     rewrites should have size(1)
   }
-
 }
