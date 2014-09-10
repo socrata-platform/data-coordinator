@@ -106,17 +106,24 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
           newSumCol <- Some(ColumnRef[ColumnId, SoQLAnalysisType](rollupColumnId(idx), SoQLNumber)(fc.position))
           newFc <- Some(FunctionCall[ColumnId, SoQLAnalysisType](mf, Seq(newSumCol))(fc.position, fc.position))
         } yield newFc
-      // Other non-aggregation functions can be recursively mapped
-      case fc: FunctionCall[ColumnId, SoQLAnalysisType] if
-          fc.function.isAggregate == false =>
-        val mapped = fc.parameters.map(fe => rewriteExpr(fe, rollupColIdx))
-        log.trace("mapped expr params {} {} -> {}", "", fc.parameters, mapped)
-        if (mapped.forall(fe => fe.isDefined)) {
-          log.trace("expr params all defined")
-          Some(fc.copy(parameters = mapped.flatten)(fc.position, fc.position))
-        } else {
-          None
+      case fc: FunctionCall[ColumnId, SoQLAnalysisType] if fc.function.isAggregate == false =>
+        // if we have the exact same function in rollup and query, just turn it into a column ref in the rollup
+        val functionMatch = for {
+          idx <- rollupColIdx.get(fc)
+        } yield ColumnRef[ColumnId, SoQLAnalysisType](rollupColumnId(idx), fc.typ)(fc.position)
+
+        // otherwise, see if we can recursively rewrite
+        functionMatch.orElse {
+          val mapped = fc.parameters.map(fe => rewriteExpr(fe, rollupColIdx))
+          log.trace("mapped expr params {} {} -> {}", "", fc.parameters, mapped)
+          if (mapped.forall(fe => fe.isDefined)) {
+            log.trace("expr params all defined")
+            Some(fc.copy(parameters = mapped.flatten)(fc.position, fc.position))
+          } else {
+            None
+          }
         }
+
       // If the function is "self aggregatable" we can apply it on top of an already aggregated rollup
       // column, eg. select foo, bar, max(x) max_x group by foo, bar --> select foo, max(max_x) group by foo
       // If we have a matching column, we just need to update its argument to reference the rollup column.
