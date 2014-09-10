@@ -368,7 +368,6 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
           case QueryExecutor.ToForward(responseCode, headers, body) =>
             resp.setStatus(responseCode)
             for { (h,vs) <- headers; v <- vs } resp.addHeader(h, v)
-            rollupName.foreach(ru => resp.addHeader("X-Socrata-Rollup", ru))
             transferResponse(resp.getOutputStream, body)
             None
         }
