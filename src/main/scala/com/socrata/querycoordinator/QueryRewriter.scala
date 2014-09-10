@@ -40,8 +40,11 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
 
   def rewriteGroupBy(qOpt: GroupBy, rOpt: GroupBy, rollupColIdx: Map[Expr, Int]): Option[GroupBy] = {
     (qOpt, rOpt) match {
-      // neither have group by, so we match on no group by
-      case (None, None) => Some(None)
+      // If the query has no group by, then either the rollup has no group by so they match, or
+      // the rollup does have one, in which case the analysis will ensure that if there are
+      // any aggregate functions in the selection, then all of the other columns are compatible
+      // (ie. no columnrefs without aggregate functions).
+      case (None, _) => Some(None)
       // if the query is grouping, every grouping in the query must grouped in the rollup.
       // The analysis already validated there are no un-grouped columns in the selection
       // that aren't in the group by.

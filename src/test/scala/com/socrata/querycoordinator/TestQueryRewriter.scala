@@ -269,4 +269,38 @@ class TestQueryRewriter extends TestBase {
 
     rewrites should have size(1)
   }
+
+  test("Query count(0) without group by") {
+    val q = "SELECT count(0) as countess WHERE crime_type = 'NARCOTICS'"
+    val queryAnalysis = analyzeQuery(q)
+
+    val rewrites = rewriter.possibleRewrites(queryAnalysis, rollupAnalysis)
+
+    val rewrittenQueryR4 = "SELECT sum(c3) as countess WHERE c2 = 'NARCOTICS'"
+    val rewrittenQueryAnalysisR4 = analyzeRewrittenQuery("r4", rewrittenQueryR4)
+    rewrites should contain key("r4")
+    rewrites.get("r4").get  should equal(rewrittenQueryAnalysisR4)
+
+    val rewrittenQueryR5 = "SELECT sum(c2) as countess WHERE c1 = 'NARCOTICS'"
+    val rewrittenQueryAnalysisR5 = analyzeRewrittenQuery("r5", rewrittenQueryR5)
+    rewrites should contain key("r5")
+    rewrites.get("r5").get  should equal(rewrittenQueryAnalysisR5)
+
+    rewrites should have size(2)
+  }
+
+  test("Query min/max without group by") {
+    val q = "SELECT min(number1) as minn, max(number1) as maxn WHERE ward = 7"
+    val queryAnalysis = analyzeQuery(q)
+
+    val rewrites = rewriter.possibleRewrites(queryAnalysis, rollupAnalysis)
+
+    val rewrittenQuery = "SELECT min(c2) as minn, max(c3) as maxn WHERE c1 = 7"
+    val rewrittenQueryAnalysis = analyzeRewrittenQuery("r7", rewrittenQuery)
+    rewrites should contain key("r7")
+    rewrites.get("r7").get  should equal(rewrittenQueryAnalysis)
+
+    rewrites should have size(1)
+  }
+
 }
