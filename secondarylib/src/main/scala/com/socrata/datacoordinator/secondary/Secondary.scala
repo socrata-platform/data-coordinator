@@ -44,7 +44,9 @@ trait Secondary[CT, CV] {
     */
   def version(datasetInfo: DatasetInfo, dataVersion: Long, cookie: Cookie, events: Iterator[Event[CT, CV]]): Cookie
 
-  def resync(datasetInfo: DatasetInfo, copyInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo[CT]], cookie: Cookie, rows: Managed[Iterator[ColumnIdMap[CV]]]): Cookie
+  def resync(datasetInfo: DatasetInfo, copyInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo[CT]], cookie: Cookie,
+             rows: Managed[Iterator[ColumnIdMap[CV]]], rollups: Seq[RollupInfo]): Cookie
+
 }
 
 /** Thrown when a secondary decides it is not in sync and should be redone.  The process
