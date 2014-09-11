@@ -222,6 +222,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
       }
 
       val forcedSecondaryName = Option(req.getParameter("store"))
+      val noRollup = Option(req.getParameter("no_rollup")).isDefined
 
       forcedSecondaryName.map(ds => log.info("Forcing use of the secondary store instance: " + ds))
 
@@ -379,22 +380,25 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
 
       def possiblyRewriteQuery(schema: Schema, analyzedQuery: SoQLAnalysis[String, SoQLAnalysisType]):
           (Schema, SoQLAnalysis[String, SoQLAnalysisType], Option[String]) = {
-        rollupInfoFetcher(base.receiveTimeoutMS(getSchemaTimeout.toMillis.toInt), dataset, copy) match {
-          case RollupInfoFetcher.Successful(rollups) =>
-            val rewritten  = queryRewriter.bestRewrite(schema, analyzedQuery, rollups)
-            val (rollupName, analysis) = rewritten map {x => (Some(x._1), x._2) } getOrElse (None, analyzedQuery)
-            log.info(s"Rewrote query on dataset ${dataset} to rollup ${rollupName} with analysis ${analysis}")
-            (schema, analysis, rollupName)
-          case RollupInfoFetcher.NoSuchDatasetInSecondary =>
-            chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
-            finishRequest(notFoundResponse(dataset))
-          case RollupInfoFetcher.TimeoutFromSecondary =>
-            chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
-            finishRequest(upstreamTimeoutResponse)
-          case other =>
-            log.error("Unexpected response when fetching schema from secondary: {}", other)
-            chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
-            finishRequest(internalServerError)
+        if (noRollup) (schema, analyzedQuery, None)
+        else {
+          rollupInfoFetcher(base.receiveTimeoutMS(getSchemaTimeout.toMillis.toInt), dataset, copy) match {
+            case RollupInfoFetcher.Successful(rollups) =>
+              val rewritten  = queryRewriter.bestRewrite(schema, analyzedQuery, rollups)
+              val (rollupName, analysis) = rewritten map {x => (Some(x._1), x._2) } getOrElse (None, analyzedQuery)
+              log.info(s"Rewrote query on dataset ${dataset} to rollup ${rollupName} with analysis ${analysis}")
+              (schema, analysis, rollupName)
+            case RollupInfoFetcher.NoSuchDatasetInSecondary =>
+              chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
+              finishRequest(notFoundResponse(dataset))
+            case RollupInfoFetcher.TimeoutFromSecondary =>
+              chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
+              finishRequest(upstreamTimeoutResponse)
+            case other =>
+              log.error("Unexpected response when fetching schema from secondary: {}", other)
+              chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
+              finishRequest(internalServerError)
+          }
         }
       }
 
