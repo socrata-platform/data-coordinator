@@ -121,6 +121,6 @@ trait BaseDatasetMapWriter[CT] extends BaseDatasetMapReader[CT] {
 
   /** Drops the given rollup.
     */
-  def dropRollup(copyInfo: CopyInfo, name: RollupName): Option[RollupInfo]
+  def dropRollup(copyInfo: CopyInfo, name: Option[RollupName])
 
 }

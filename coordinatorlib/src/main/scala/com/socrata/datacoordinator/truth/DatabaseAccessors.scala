@@ -346,11 +346,13 @@ object DatasetMutator {
       }
 
       def dropRollup(name: RollupName): Option[RollupInfo] = {
-        datasetMap.dropRollup(copyInfo, name) match {
-          case Some(info: RollupInfo) =>
-            logger.rollupDropped(info)
-            Some(info)
-          case None => None
+        datasetMap.rollup(copyInfo, name) match {
+          case r@Some(ru) =>
+            datasetMap.dropRollup(copyInfo, Some(ru.name))
+            logger.rollupDropped(ru)
+            r
+          case None =>
+            None
         }
       }
     }

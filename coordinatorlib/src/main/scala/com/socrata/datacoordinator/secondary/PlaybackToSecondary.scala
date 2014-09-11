@@ -280,7 +280,8 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
           val secondaryDatasetInfo = makeSecondaryDatasetInfo(copyCtx.datasetInfo)
           val secondaryCopyInfo = makeSecondaryCopyInfo(copyCtx.copyInfo)
           val secondarySchema = copyCtx.schema.mapValuesStrict(makeSecondaryColumnInfo)
-          currentCookie = secondary.store.resync(secondaryDatasetInfo, secondaryCopyInfo, secondarySchema, currentCookie, reader.rows())
+          val rollups: Seq[RollupInfo] = u.datasetMapReader.rollups(copyInfo).toSeq.map(makeSecondaryRollupInfo)
+          currentCookie = secondary.store.resync(secondaryDatasetInfo, secondaryCopyInfo, secondarySchema, currentCookie, reader.rows(), rollups)
         }
       }
     }

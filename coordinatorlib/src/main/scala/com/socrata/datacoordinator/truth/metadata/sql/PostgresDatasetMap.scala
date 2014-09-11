@@ -759,15 +759,26 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
     RollupInfo(copyInfo, name, soql)
   }
 
-  def dropRollupQuery = "DELETE FROM rollup_map WHERE name = ? AND copy_system_id = ?"
-  def dropRollup(copyInfo: CopyInfo, name: RollupName): Option[RollupInfo] = {
-    rollup(copyInfo, name) map { ri =>
-      using(conn.prepareStatement(dropRollupQuery)) { stmt =>
-        stmt.setString(1, name.underlying)
-        stmt.setLong(2, copyInfo.systemId.underlying)
-        t("drop-rollup", "copy-id" -> copyInfo.systemId, "name" -> name)(stmt.executeUpdate())
-      }
-      ri
+  private val DropRollupsQuery = "DELETE FROM rollup_map WHERE copy_system_id = ?"
+  private val DropRollupQuery = s"$DropRollupsQuery AND name = ?"
+
+  /**
+   * @param copyInfo - Copy of rollups that are to be dropped.
+   * @param rollupName - If Some, drop one rollup.  If None, drop all rollups.
+   */
+  def dropRollup(copyInfo: CopyInfo, rollupName: Option[RollupName]) {
+    rollupName match {
+      case Some(name) =>
+          using(conn.prepareStatement(DropRollupQuery)) { stmt =>
+            stmt.setLong(1, copyInfo.systemId.underlying)
+            stmt.setString(2, name.underlying)
+            t("drop-rollup", "copy-id" -> copyInfo.systemId, "name" -> name)(stmt.executeUpdate())
+          }
+      case None =>
+        using(conn.prepareStatement(DropRollupsQuery)) { stmt =>
+          stmt.setLong(1, copyInfo.systemId.underlying)
+          t("drop-rollup", "copy-id" -> copyInfo.systemId)(stmt.executeUpdate())
+        }
     }
   }
 
