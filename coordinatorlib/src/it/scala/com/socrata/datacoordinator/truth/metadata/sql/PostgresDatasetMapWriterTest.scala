@@ -348,7 +348,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       tables.rollup(vi1, rollupName) must be (None)
       tables.createOrUpdateRollup(vi1, rollupName, rollupSoql)
       tables.rollup(vi1, rollupName) must not be (None)
-      tables.dropRollup(vi1, rollupName)
+      tables.dropRollup(vi1, Some(rollupName))
       tables.rollup(vi1, rollupName) must be (None)
     }
   }
