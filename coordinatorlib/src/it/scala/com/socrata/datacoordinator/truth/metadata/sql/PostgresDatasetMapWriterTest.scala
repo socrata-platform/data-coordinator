@@ -297,6 +297,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
   }
 
   val rollupName = new RollupName("my rollup")
+  val rollupNames = Seq(rollupName, new RollupName("my rollup 2"))
   val rollupSoql = "select clown_type, count(*) group by clown_type"
   val rollupSoql2 = "select clown_volume, count(*) group by clown_volume"
 
@@ -353,7 +354,21 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
     }
   }
 
-  test("Dropping dataset drops rollup metadata") {
+  test("Can drop multiple rollup metadata") {
+    withDb() { conn =>
+      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID)
+      val vi1 = tables.create("en_US")
+
+      tables.rollup(vi1, rollupName) must be (None)
+      rollupNames.foreach(name => tables.createOrUpdateRollup(vi1, name, rollupSoql))
+      rollupNames.foreach(name => tables.rollup(vi1, name) must not be (None))
+      tables.dropRollup(vi1, None)
+      rollupNames.foreach(name => tables.rollup(vi1, name) must be (None))
+    }
+  }
+
+
+  test("Dropping dataset drops all rollup metadata") {
     withDb() { conn =>
       val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID)
       val vi1 = tables.create("en_US")
@@ -363,12 +378,12 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
         case Left(vi2) => fail("Didn't create a new copy?")
         case Right(CopyPair(_, vi2)) =>
           vi2.systemId must not equal (vi1.systemId)
-          tables.rollup(vi2, rollupName) must be (None)
-          tables.createOrUpdateRollup(vi2, rollupName, rollupSoql)
-          tables.rollup(vi2, rollupName) must not be (None)
+          rollupNames.foreach(name => tables.rollup(vi2, name) must be (None))
+          rollupNames.foreach(name => tables.createOrUpdateRollup(vi2, name, rollupSoql))
+          rollupNames.foreach(name => tables.rollup(vi2, name) must not be (None))
 
           tables.delete(vi2.datasetInfo)
-          tables.rollup(vi2, rollupName) must be (None)
+          rollupNames.foreach(name => tables.rollup(vi2, name) must be (None))
       }
     }
   }
