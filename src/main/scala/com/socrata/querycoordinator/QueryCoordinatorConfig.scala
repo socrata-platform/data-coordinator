@@ -4,6 +4,7 @@ import scala.concurrent.duration._
 
 import com.typesafe.config.{ConfigException, Config}
 import scala.collection.JavaConversions.asScalaIterator
+import scala.util.Try
 
 
 class QueryCoordinatorConfig(config: Config, root: String) {
@@ -17,7 +18,8 @@ class QueryCoordinatorConfig(config: Config, root: String) {
   val connectTimeout = config.getMilliseconds(k("connect-timeout")).longValue.millis
   val schemaTimeout = config.getMilliseconds(k("get-schema-timeout")).longValue.millis
   val queryTimeout = config.getMilliseconds(k("query-timeout")).longValue.millis
-  val maxRows = try { Some(config.getInt(k("max-rows"))) } catch { case _: ConfigException.Missing => None}
+  val maxRows: Option[Int] = Try(config.getInt(k("max-rows"))).toOption
+  val defaultRowsLimit: Int = Try(config.getInt(k("default-rows-limit"))).getOrElse(1000)
 
   val allSecondaryInstanceNames = asScalaIterator(config.getStringList(k("all-secondary-instance-names")).iterator()).toSeq
   val secondaryDiscoveryExpirationMillis = config.getMilliseconds(k("secondary-discovery-expiration"))

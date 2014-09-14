@@ -9,7 +9,7 @@ import com.socrata.soql.exceptions.SoQLException
 import QueryParser._
 import com.socrata.soql.SoQLAnalysis
 
-class QueryParser(analyzer: SoQLAnalyzer[SoQLAnalysisType], maxRows: Option[Int]) {
+class QueryParser(analyzer: SoQLAnalyzer[SoQLAnalysisType], maxRows: Option[Int], defaultRowsLimit: Int) {
 
   private def go(columnIdMapping: Map[ColumnName, String], schema: Map[String, SoQLType])(f: DatasetContext[SoQLAnalysisType] => SoQLAnalysis[ColumnName, SoQLAnalysisType]): Result =
     dsContext(columnIdMapping, schema) match {
@@ -32,8 +32,8 @@ class QueryParser(analyzer: SoQLAnalyzer[SoQLAnalysisType], maxRows: Option[Int]
       case Some(max) =>
         analysis.limit match {
           case Some(lim) if lim <= max => Right(analysis)
-          case Some(lim) if lim > max => Left(RowLimitExceeded(max))
-          case _ => Right(analysis.copy(limit = Some(max)))
+          case Some(lim) => Left(RowLimitExceeded(max)) // lim > max
+          case None => Right(analysis.copy(limit = Some(defaultRowsLimit)))
         }
       case None => Right(analysis)
     }
