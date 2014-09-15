@@ -2,26 +2,23 @@ package com.socrata.querycoordinator
 
 import scala.concurrent.duration._
 
-import com.typesafe.config.{ConfigException, Config}
-import scala.collection.JavaConversions.asScalaIterator
-import scala.util.Try
+import com.socrata.thirdparty.typesafeconfig.ConfigClass
+import com.typesafe.config.Config
 
+class QueryCoordinatorConfig(config: Config, root: String) extends ConfigClass(config, root) {
 
-class QueryCoordinatorConfig(config: Config, root: String) {
-  private def k(s: String) = root + "." + s
+  val log4j = getRawConfig("log4j")
+  val curator = new CuratorConfig(config, path("curator"))
+  val advertisement = new AdvertisementConfig(config, path("service-advertisement"))
+  val network = new NetworkConfig(config, path("network"))
 
-  val log4j = config.getConfig(k("log4j"))
-  val curator = new CuratorConfig(config, k("curator"))
-  val advertisement = new AdvertisementConfig(config, k("service-advertisement"))
-  val network = new NetworkConfig(config, k("network"))
+  val connectTimeout = config.getMilliseconds(path("connect-timeout")).longValue.millis
+  val schemaTimeout = config.getMilliseconds(path("get-schema-timeout")).longValue.millis
+  val queryTimeout = config.getMilliseconds(path("query-timeout")).longValue.millis
+  val maxRows = optionally(getInt("max-rows"))
+  val defaultRowsLimit = optionally(getInt("default-rows-limit")).getOrElse(1000)
 
-  val connectTimeout = config.getMilliseconds(k("connect-timeout")).longValue.millis
-  val schemaTimeout = config.getMilliseconds(k("get-schema-timeout")).longValue.millis
-  val queryTimeout = config.getMilliseconds(k("query-timeout")).longValue.millis
-  val maxRows: Option[Int] = Try(config.getInt(k("max-rows"))).toOption
-  val defaultRowsLimit: Int = Try(config.getInt(k("default-rows-limit"))).getOrElse(1000)
-
-  val allSecondaryInstanceNames = asScalaIterator(config.getStringList(k("all-secondary-instance-names")).iterator()).toSeq
-  val secondaryDiscoveryExpirationMillis = config.getMilliseconds(k("secondary-discovery-expiration"))
-  val datasetMaxNopeCount = config.getInt(k("dataset-max-nope-count"))
+  val allSecondaryInstanceNames = getStringList("all-secondary-instance-names")
+  val secondaryDiscoveryExpirationMillis = config.getMilliseconds(path("secondary-discovery-expiration"))
+  val datasetMaxNopeCount = getInt("dataset-max-nope-count")
 }
