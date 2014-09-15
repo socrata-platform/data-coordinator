@@ -1,6 +1,4 @@
-/target/
-/project/target/
-/project/project/target/
+/**/target/
 /.idea/
 /.idea_modules/
 local-query-coordinator.conf
