@@ -127,13 +127,13 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
           } catch {
             case e: MissingVersion =>
               log.info("Couldn't find version {} in log; resyncing", e.version)
-              resync()
-            case ResyncSecondaryException(reason) =>
+              resync(None)
+            case ResyncSecondaryException(numOfCopies, reason) =>
               log.info("Incremental update requested full resync: {}", reason)
-              resync()
+              resync(numOfCopies)
             case _: InternalResyncForPickySecondary =>
               log.info("Resyncing because secondary only wants published copies and we just got a publish event")
-              resync()
+              resync(None)
           }
         case None =>
           drop()
@@ -239,18 +239,27 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
       }
     }
 
-    def resync() {
+    /**
+     * Resychronizing a dataset
+     * @param numOfCopies - How many copies counting from the latest to resync.  None indicates all copies.
+     *                    Some(1) to resync the latest copy.
+     */
+    def resync(numOfCopies: Option[Int]) {
       while(true) {
         try {
-          timingReport("resync", "dataset" -> datasetId) {
+          timingReport("resync", "dataset" -> datasetId, "numOfCopies" -> numOfCopies.getOrElse("all")) {
             val w = u.datasetMapWriter
             w.datasetInfo(datasetId, datasetLockTimeout) match {
               case Some(datasetInfo) =>
                 val allCopies = w.allCopies(datasetInfo)
+                val interestedCopies = numOfCopies match {
+                  case Some(n) => allCopies.takeRight(n)
+                  case None => allCopies
+                }
                 val latest = w.latest(datasetInfo)
                 val latestDataVersion = latest.dataVersion
                 val latestLifecycleStage = latest.lifecycleStage
-                for(copy <- allCopies) {
+                for(copy <- interestedCopies) {
                   val secondaryDatasetInfo = makeSecondaryDatasetInfo(copy.datasetInfo)
                   timingReport("copy", "number" -> copy.copyNumber) {
                     if(copy.lifecycleStage == metadata.LifecycleStage.Discarded) currentCookie = secondary.store.dropCopy(secondaryDatasetInfo.internalName, copy.copyNumber, currentCookie)
@@ -266,7 +275,7 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
           }
           return
         } catch {
-          case ResyncSecondaryException(reason) =>
+          case ResyncSecondaryException(_, reason) =>
             log.warn("Received resync while resyncing.  Resyncing as requested after waiting 10 seconds.  Reason: " + reason)
             Thread.sleep(10L * 1000);
         }
