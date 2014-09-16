@@ -53,7 +53,7 @@ trait Secondary[CT, CV] {
   * @note may be thrown from `resync` itself, though if it's done it probably means
   *       something is desperately wrong.
   */
-case class ResyncSecondaryException(reason: String = "No reason") extends Exception(reason)
+case class ResyncSecondaryException(numOfCopies: Option[Int], reason: String = "No reason") extends Exception(reason)
 
 object Secondary {
   type Cookie = Option[String]

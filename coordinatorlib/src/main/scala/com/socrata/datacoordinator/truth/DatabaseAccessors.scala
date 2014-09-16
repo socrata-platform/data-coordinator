@@ -412,8 +412,9 @@ object DatasetMutator {
         })
     }
 
-    def createCopy(as: String)(datasetId: DatasetId, copyData: Boolean, check: DatasetCopyContext[CT] => Unit): Managed[CopyContext] =
+    def createCopy(as: String)(datasetId: DatasetId, copyData: Boolean, check: DatasetCopyContext[CT] => Unit): Managed[CopyContext] = {
       firstOp(as, datasetId, LifecycleStage.Published, _.makeWorkingCopy(copyData), check)
+    }
 
     def publishCopy(as: String)(datasetId: DatasetId, snapshotsToKeep: Option[Int], check: DatasetCopyContext[CT] => Unit): Managed[CopyContext] =
       new SimpleArm[CopyContext] {
