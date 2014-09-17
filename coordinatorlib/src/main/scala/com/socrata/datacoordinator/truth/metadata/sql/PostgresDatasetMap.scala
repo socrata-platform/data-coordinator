@@ -626,6 +626,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
       throw new CannotDropInitialWorkingCopyException(copyInfo)
     }
 
+    dropRollup(copyInfo, None)
     using(conn.prepareStatement(dropCopyQuery)) { stmt =>
       stmt.setLong(1, copyInfo.systemId.underlying)
       stmt.setString(2, copyInfo.lifecycleStage.name) // just to make sure the user wasn't mistaken about the stage
