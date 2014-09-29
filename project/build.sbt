@@ -3,11 +3,13 @@ resolvers ++= Seq(
   "DiversIT repo" at "http://repository-diversit.forge.cloudbees.com/release"
 )
 
-addSbtPlugin("com.socrata" % "socrata-cloudbees-sbt" % "1.2.1")
+addSbtPlugin("com.socrata" % "socrata-cloudbees-sbt" % "1.3.0")
 
-addSbtPlugin("com.github.sbt" %% "sbt-scalabuff" % "0.2")
+lazy val root = project.in(file(".")).dependsOn(scalabuff)
+
+lazy val scalabuff = uri("git://github.com/tkawachi/sbt-scalabuff.git#47a1ab48a50ccd42c7c5a44d8ff605184e2b3707")
 
 libraryDependencies ++= Seq(
-  "com.rojoma" %% "rojoma-json" % "2.0.0",
+  "com.rojoma" %% "rojoma-json" % "2.4.3",
   "com.rojoma" %% "simple-arm" % "1.2.0"
 )
