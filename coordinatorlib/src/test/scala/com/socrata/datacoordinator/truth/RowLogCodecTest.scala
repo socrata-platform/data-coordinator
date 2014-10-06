@@ -206,32 +206,34 @@ class RowLogCodecTest extends FunSuite with MustMatchers with PropertyChecks {
       override def read(): Int = throw ex
     }
 
-    try {
-      codec.extract(CodedInputStream.newInstance(new ExStream(invalidProtoBufEx)))
-    } catch {
-      case e: RowLogTruncatedException =>
-        e.getCause must equal (invalidProtoBufEx)
-    }
+    def exStream(ex: Exception) = CodedInputStream.newInstance(new InputStream {
+      override def read(): Int = throw ex
+    })
 
-    try {
-      codec.extract(CodedInputStream.newInstance(new ExStream(eofEx)))
-    } catch {
-      case e: RowLogTruncatedException =>
-        e.getCause must equal (eofEx)
-    }
+    val thrownInvalidProtoBuf = evaluating {
+      codec.extract(exStream(invalidProtoBufEx))
+    } must produce [RowLogTruncatedException]
+
+    thrownInvalidProtoBuf.getCause must equal (invalidProtoBufEx)
+
+    val thrownEOF = evaluating {
+      codec.extract(exStream(eofEx))
+    } must produce [RowLogTruncatedException]
+
+    thrownEOF.getCause must equal (eofEx)
   }
 
   test("Extract throws an exception on unknown operation") {
     val validOps = Seq(InsertId, UpdateNoOldRowId, DeleteNoOldRowDataId, UpdateId, DeleteId)
     forAll { operation: Byte =>
-      if (!validOps.contains(operation)) {
+      whenever (!validOps.contains(operation)) {
         val opBytes = withOutput(_.writeRawByte(operation)).toArray
-        try {
-          val ret = codec.extract(CodedInputStream.newInstance(opBytes))
-        } catch {
-          case e: UnknownRowLogOperationException =>
-            e.operationCode must equal(operation)
-        }
+
+        val thrown = evaluating {
+          codec.extract(CodedInputStream.newInstance(opBytes))
+        } must produce [UnknownRowLogOperationException]
+
+        thrown.operationCode must equal (operation)
       }
     }
   }
