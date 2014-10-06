@@ -157,7 +157,7 @@ trait SimpleRowLogCodec[CV] extends RowLogCodec[CV] {
   }
 }
 
-abstract class CorruptRowLogException(msg: String, cause: Throwable = null) extends RuntimeException(msg)
+abstract class CorruptRowLogException(msg: String, cause: Throwable = null) extends RuntimeException(msg, cause)
 class RowLogTruncatedException(cause: IOException) extends CorruptRowLogException("Row log truncated", cause)
 class UnknownRowLogOperationException(val operationCode: Int) extends CorruptRowLogException("Unknown operation " + operationCode)
 class UnknownDataTypeException(val typeCode: Int) extends CorruptRowLogException("Unknown data type " + typeCode)
