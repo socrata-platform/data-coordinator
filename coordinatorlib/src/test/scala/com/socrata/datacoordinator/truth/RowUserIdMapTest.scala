@@ -32,7 +32,7 @@ class RowUserIdMapTest extends FunSuite with MustMatchers with PropertyChecks {
     val map = new SimpleRowUserIdMap[Int, String]
 
     forAll { key: Int =>
-      val thrown = evaluating { map.apply(key) } must produce [NoSuchElementException]
+      val thrown = evaluating { map(key) } must produce [NoSuchElementException]
     }
   }
 
