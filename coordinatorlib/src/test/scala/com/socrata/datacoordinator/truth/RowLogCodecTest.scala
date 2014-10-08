@@ -32,7 +32,7 @@ class RowLogCodecTest extends FunSuite with MustMatchers with PropertyChecks {
     def doEncode(target: CodedOutputStream, row: Row[Int]) = encode(target, row)
   }
 
-  def withOutput[T](body: CodedOutputStream => Unit): Seq[Byte] = {
+  def withOutput(body: CodedOutputStream => Unit): Seq[Byte] = {
     val byteArrayOutputStream = new ByteArrayOutputStream()
     val codedOutputStream = CodedOutputStream.newInstance(byteArrayOutputStream)
     body(codedOutputStream)
