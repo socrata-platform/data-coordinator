@@ -33,6 +33,7 @@ class RowUserIdMapTest extends FunSuite with MustMatchers with PropertyChecks {
 
     forAll { key: Int =>
       val thrown = evaluating { map(key) } must produce [NoSuchElementException]
+      thrown.getCause must be (null)
     }
   }
 

@@ -118,12 +118,8 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
   def simpleReportWriter() = new SimpleReportWriter[TestColumnValue]
 
   test("building a report before finished fails (simple report writer)") {
-    try {
-      simpleReportWriter().report
-    } catch {
-      case e: AssertionError =>
-        e.getMessage must include ("report() called without being finished first")
-    }
+    val e = evaluating { simpleReportWriter().report } must produce [AssertionError]
+    e.getMessage must include ("report() called without being finished first")
   }
 
   test("adding a new row with system PK succeeds") {
