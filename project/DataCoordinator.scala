@@ -10,9 +10,12 @@ object DataCoordinator extends Build {
 
   private def allOtherProjects =
     for {
-      method <- getClass.getDeclaredMethods.toSeq
-      if method.getParameterTypes.isEmpty && classOf[Project].isAssignableFrom(method.getReturnType) && method.getName != "dataCoordinator"
-    } yield method.invoke(this).asInstanceOf[Project] : ProjectReference
+      proj <- Seq(coordinatorLib,
+        coordinatorLibSoql,
+        coordinator,
+        secondaryLib,
+        dummySecondary)
+    } yield proj : ProjectReference
 
   private def p(name: String, settings: { def settings: Seq[Setting[_]]; def configs: Seq[Configuration] }, dependencies: ClasspathDep[ProjectReference]*) =
     Project(name, file(name)).
