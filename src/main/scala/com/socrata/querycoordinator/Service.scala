@@ -203,6 +203,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
     try {
       Thread.currentThread.setName(Thread.currentThread.getId + " / " + req.getMethod + " " + req.getRequestURI)
 
+      val requestId = RequestId.getFromRequest(req)
       val dataset = Option(req.getParameter("ds")).getOrElse {
         finishRequest(noDatasetResponse)
       }
@@ -340,9 +341,23 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
       }
 
       @tailrec
-      def executeQuery(schema: Schema, analyzedQuery: SoQLAnalysis[String, SoQLAnalysisType], rollupName: Option[String]) {
-        val res = queryExecutor(base.receiveTimeoutMS(queryTimeout.toMillis.toInt), dataset, analyzedQuery, schema,
-          precondition, ifModifiedSince, rowCount, copy, rollupName).map {
+      def executeQuery(schema: Schema,
+                       analyzedQuery: SoQLAnalysis[String, SoQLAnalysisType],
+                       rollupName: Option[String],
+                       requestId: String,
+                       fourByFour: Option[String]) {
+        val extraHeaders = Map(RequestId.ReqIdHeader -> requestId) ++
+                           fourByFour.map(fbf => Map("X-Socrata-4x4" -> fbf)).getOrElse(Nil)
+        val res = queryExecutor(base.receiveTimeoutMS(queryTimeout.toMillis.toInt),
+                                dataset,
+                                analyzedQuery,
+                                schema,
+                                precondition,
+                                ifModifiedSince,
+                                rowCount,
+                                copy,
+                                rollupName,
+                                extraHeaders).map {
           case QueryExecutor.NotFound =>
             chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
             finishRequest(notFoundResponse(dataset))
@@ -361,7 +376,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
             None
         }
         res match { // bit of a dance because we can't tailrec from within map
-          case Some((s, q, r)) => executeQuery(s, q, r)
+          case Some((s, q, r)) => executeQuery(s, q, r, requestId, fourByFour)
           case None => // ok
         }
       }
@@ -395,7 +410,8 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
         case None         => analyzeRequest(getAndCacheSchema(dataset, copy), true)
       }
       val (rewrittenAnalysis, rollupName) = possiblyRewriteQuery(finalSchema, analysis)
-      executeQuery(finalSchema, rewrittenAnalysis, rollupName)
+      executeQuery(finalSchema, rewrittenAnalysis, rollupName,
+                   requestId, Option(req.getHeader("X-Socrata-4x4")))
     } catch {
       case FinishRequest(response) =>
       if(resp.isCommitted) ???

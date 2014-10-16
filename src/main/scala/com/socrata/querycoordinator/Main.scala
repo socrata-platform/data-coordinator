@@ -1,30 +1,30 @@
 package com.socrata.querycoordinator
 
-import scala.concurrent.duration._
-import com.typesafe.config.{Config, ConfigFactory}
-import org.apache.log4j.PropertyConfigurator
+import com.google.protobuf.CodedOutputStream
+import com.rojoma.json.ast.JString
+import com.rojoma.simplearm.Resource
 import com.rojoma.simplearm.util._
-
+import com.socrata.http.client.{HttpClientHttpClient, InetLivenessChecker}
+import com.socrata.http.common.AuxiliaryData
+import com.socrata.http.server.curator.CuratorBroker
+import com.socrata.http.server.livenesscheck.LivenessCheckResponder
+import com.socrata.http.server.SocrataServerJetty
+import com.socrata.http.server.util.handlers.{ThreadRenamingHandler, NewLoggingHandler}
+import com.socrata.http.server.util.RequestId.ReqIdHeader
+import com.socrata.querycoordinator.util.TeeToTempInputStream
+import com.socrata.soql.functions.{SoQLFunctionInfo, SoQLTypeInfo}
+import com.socrata.soql.types.SoQLAnalysisType
+import com.socrata.soql.{AnalysisSerializer, SoQLAnalyzer}
 import com.socrata.thirdparty.typesafeconfig.Propertizer
+import com.typesafe.config.{Config, ConfigFactory}
+import java.io.InputStream
+import java.net.{InetSocketAddress, InetAddress}
+import java.util.concurrent.{ExecutorService, Executors}
 import org.apache.curator.framework.CuratorFrameworkFactory
 import org.apache.curator.retry
 import org.apache.curator.x.discovery.{ServiceInstanceBuilder, ServiceDiscoveryBuilder, strategies}
-import com.socrata.http.server.curator.CuratorBroker
-import com.socrata.http.server.SocrataServerJetty
-import com.socrata.soql.types.SoQLAnalysisType
-import com.socrata.soql.{AnalysisSerializer, SoQLAnalyzer}
-import com.socrata.soql.functions.{SoQLFunctionInfo, SoQLTypeInfo}
-import com.google.protobuf.CodedOutputStream
-import java.util.concurrent.{ExecutorService, Executors}
-import com.rojoma.simplearm.Resource
-import com.rojoma.json.ast.JString
-import com.socrata.http.client.{HttpClientHttpClient, InetLivenessChecker}
-import com.socrata.http.common.AuxiliaryData
-import com.socrata.http.server.livenesscheck.LivenessCheckResponder
-import java.net.{InetSocketAddress, InetAddress}
-import com.socrata.querycoordinator.util.TeeToTempInputStream
-import java.io.InputStream
-import com.socrata.http.server.util.handlers.{ThreadRenamingHandler, LoggingHandler}
+import org.apache.log4j.PropertyConfigurator
+import scala.concurrent.duration._
 
 final abstract class Main
 
@@ -106,8 +106,11 @@ object Main extends App {
 
     val auxData = new AuxiliaryData(Some(pongProvider.livenessCheckInfo))
 
+    val logOptions = NewLoggingHandler.defaultOptions.copy(
+                       logRequestHeaders = Set(ReqIdHeader, "X-Socrata-4x4"))
+
     val serv = new SocrataServerJetty(
-      handler = ThreadRenamingHandler(LoggingHandler(handler)),
+      handler = ThreadRenamingHandler(NewLoggingHandler(logOptions)(handler)),
       port = config.network.port,
       broker = new CuratorBroker(discovery, config.advertisement.address, config.advertisement.name, Some(auxData))
     )
