@@ -21,6 +21,7 @@ import com.socrata.http.server.util.{StrongEntityTag, EntityTag, Precondition, E
 import com.socrata.http.server.util.RequestId.ReqIdHeader
 import com.socrata.http.server.{ServerBroker, HttpResponse, SocrataServerJetty, HttpService}
 import com.socrata.soql.environment.TypeName
+import com.socrata.thirdparty.metrics.{SocrataHttpSupport, Metrics, MetricsOptions, MetricsReporter}
 import java.io._
 import java.nio.charset.StandardCharsets.UTF_8
 import java.security.MessageDigest
@@ -62,7 +63,7 @@ class Service(serviceConfig: ServiceConfig,
               commandReadLimit: Long,
               formatDatasetId: DatasetId => String,
               parseDatasetId: String => Option[DatasetId],
-              tempFileProvider: () => IndexedTempFile)
+              tempFileProvider: () => IndexedTempFile) extends Metrics
 {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
 
@@ -442,6 +443,8 @@ class Service(serviceConfig: ServiceConfig,
     }
   }
 
+  val mutateRate = metrics.meter("mutation-rate", "rows")
+
   case class DatasetResource(datasetId: DatasetId) extends SodaResource {
     override def post = doMutation
     override def delete = doDeleteDataset
@@ -461,7 +464,10 @@ class Service(serviceConfig: ServiceConfig,
               }
               iteratorOrError match {
                 case Right(iterator) =>
-                  val ProcessMutationReturns(copyNumber, version, lastModified, result) = processMutation(datasetId, iterator.map { ev => boundResetter(); ev }, tmp)
+                  val ProcessMutationReturns(copyNumber, version, lastModified, result) =
+                    processMutation(datasetId,
+                                    iterator.map { ev => boundResetter(); mutateRate.mark(); ev },
+                                    tmp)
                   OK ~>
                     ContentType("application/json; charset=utf-8") ~>
                     Header("X-SODA2-Truth-Last-Modified", dateTimeFormat.print(lastModified)) ~>
@@ -684,15 +690,21 @@ class Service(serviceConfig: ServiceConfig,
     }
   }
 
-  val logOptions = NewLoggingHandler.defaultOptions.copy(
+  private val logOptions = NewLoggingHandler.defaultOptions.copy(
                      logRequestHeaders = Set(ReqIdHeader, "X-Socrata-4x4"))
 
+  private val metricsOptions = MetricsOptions(serviceConfig.metrics)
 
   def run(port: Int, broker: ServerBroker) {
-    val server = new SocrataServerJetty(
-                   ThreadRenamingHandler(
-                     NewLoggingHandler(logOptions)(errorHandlingHandler)),
-                     port = port, broker = broker)
-    server.run()
+    for { reporter <- MetricsReporter.managed(metricsOptions) } {
+      val server = new SocrataServerJetty(
+                     ThreadRenamingHandler(
+                       NewLoggingHandler(logOptions)(errorHandlingHandler)),
+                     SocrataServerJetty.defaultOptions.
+                       withPort(port).
+                       withExtraHandlers(List(SocrataHttpSupport.getHandler(metricsOptions))).
+                       withBroker(broker))
+      server.run()
+    }
   }
 }

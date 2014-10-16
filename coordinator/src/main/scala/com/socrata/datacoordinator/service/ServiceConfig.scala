@@ -20,6 +20,7 @@ class ServiceConfig(val config: Config, root: String) {
   val writeLockTimeout = new FiniteDuration(config.getDuration(k("write-lock-timeout"), MILLISECONDS),
                                             TimeUnit.MILLISECONDS)
   val reports = new ReportsConfig(config, k("reports"))
+  val metrics = config.getConfig(k("metrics"))
   val logTableCleanupSleepTime = new FiniteDuration(config.getDuration(k("log-table-cleanup-sleep-time"), MILLISECONDS),
                                                     TimeUnit.MILLISECONDS)
   val logTableCleanupDeleteOlderThan = new FiniteDuration(

@@ -19,7 +19,10 @@ object Coordinator {
         "com.socrata"    %% "socrata-thirdparty-utils" % "2.5.0",
         "com.sun.jna"     % "jna"           % "3.0.9",
         "com.typesafe"    % "config"        % "1.2.1",
+        "io.dropwizard.metrics" % "metrics-jetty9"   % "3.1.0",
+        "io.dropwizard.metrics" % "metrics-graphite"   % "3.1.0",
         "net.sf.opencsv"  % "opencsv"       % "2.3",
+        "nl.grons"       %% "metrics-scala" % "3.3.0",
         "org.clojure"     % "clojure"       % "1.5.1",
         "org.scalacheck" %% "scalacheck"    % "1.10.0" % "test",
         "org.slf4j"       % "slf4j-log4j12" % BuildSettings.slf4jVersion
