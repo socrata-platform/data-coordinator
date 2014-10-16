@@ -1,54 +1,40 @@
 package com.socrata.querycoordinator
 
-import javax.servlet.http.{HttpServletResponse, HttpServletRequest}
-
-import scala.collection.JavaConverters._
-import scala.concurrent.duration._
-import com.socrata.http.server.HttpResponse
-import com.socrata.http.server.responses._
-import com.socrata.http.server.implicits._
-import java.io._
-import com.socrata.thirdparty.asynchttpclient.{FAsyncHandler, BodyHandler}
-import com.socrata.soql.environment.{TypeName, ColumnName, DatasetContext}
-import com.socrata.soql.types.{SoQLType, SoQLAnalysisType}
-import com.socrata.soql.SoQLAnalyzer
-import com.socrata.soql.exceptions._
-import com.socrata.soql.collection.OrderedMap
-import org.apache.curator.x.discovery.ServiceInstance
-import scala.util.control.ControlThrowable
-import com.rojoma.json.io._
+import com.google.common.collect.{HashBiMap, BiMap}
+import com.rojoma.json.ast.{JString, JNumber, JValue, JObject}
 import com.rojoma.json.codec.JsonCodec
-import com.rojoma.json.ast.{JNumber, JValue, JObject}
-import scala.annotation.unchecked.uncheckedVariance
-import scala.annotation.tailrec
+import com.rojoma.json.io._
+import com.rojoma.json.util.JsonUtil
 import com.rojoma.simplearm.Managed
-import com.socrata.soql.exceptions.NoSuchColumn
-import com.socrata.soql.exceptions.UnterminatedString
-import com.socrata.soql.exceptions.UnexpectedCharacter
-import com.socrata.soql.exceptions.DuplicateAlias
-import com.socrata.soql.SoQLAnalysis
-import com.socrata.soql.exceptions.BadParse
-import com.socrata.soql.exceptions.TypeMismatch
-import com.rojoma.json.ast.JString
-import com.socrata.soql.exceptions.UnexpectedEscape
-import com.socrata.soql.exceptions.AggregateInUngroupedContext
-import com.socrata.soql.exceptions.CircularAliasDefinition
-import com.socrata.soql.exceptions.UnexpectedEOF
-import com.socrata.soql.exceptions.AmbiguousCall
-import com.socrata.soql.exceptions.NoSuchFunction
-import com.socrata.soql.exceptions.ColumnNotInGroupBys
-import com.socrata.soql.exceptions.BadUnicodeEscapeCharacter
-import com.socrata.soql.exceptions.UnicodeCharacterOutOfRange
-import com.socrata.soql.exceptions.RepeatedException
 import com.rojoma.simplearm.util._
 import com.socrata.http.client.{Response, RequestBuilder, HttpClient}
 import com.socrata.http.common.AuxiliaryData
-import java.util.Locale
-import com.google.common.collect.{HashBiMap, BiMap}
-import com.rojoma.json.util.JsonUtil
+import com.socrata.http.server.HttpResponse
+import com.socrata.http.server.implicits._
+import com.socrata.http.server.responses._
 import com.socrata.http.server.routing.SimpleResource
 import com.socrata.http.server.routing.SimpleRouteContext._
+import com.socrata.http.server.util.RequestId
+import com.socrata.soql.collection.OrderedMap
+import com.socrata.soql.environment.{TypeName, ColumnName, DatasetContext}
+import com.socrata.soql.exceptions._
+import com.socrata.soql.SoQLAnalysis
+import com.socrata.soql.SoQLAnalyzer
+import com.socrata.soql.types.{SoQLType, SoQLAnalysisType}
+import com.socrata.thirdparty.asynchttpclient.{FAsyncHandler, BodyHandler}
+import java.io._
+import java.util.Locale
+import javax.servlet.http.{HttpServletResponse, HttpServletRequest}
+import org.apache.curator.x.discovery.ServiceInstance
+import scala.annotation.tailrec
+import scala.annotation.unchecked.uncheckedVariance
+import scala.collection.JavaConverters._
+import scala.concurrent.duration._
+import scala.util.control.ControlThrowable
 
+/**
+ * Main HTTP resource servicing class
+ */
 class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
               schemaFetcher: SchemaFetcher,
               queryParser: QueryParser,
@@ -365,7 +351,9 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
             finishRequest(upstreamTimeoutResponse)
           case QueryExecutor.SchemaHashMismatch(newSchema) =>
             storeInCache(Some(newSchema), dataset, copy)
-            Some((possiblyRewriteQuery _).tupled(analyzeRequest(newSchema, true)))
+            val (finalSchema, analysis) = analyzeRequest(newSchema, true)
+            val (rewrittenAnalysis, rollupName) = possiblyRewriteQuery(finalSchema, analysis)
+            Some((finalSchema, rewrittenAnalysis, rollupName))
           case QueryExecutor.ToForward(responseCode, headers, body) =>
             resp.setStatus(responseCode)
             for { (h,vs) <- headers; v <- vs } resp.addHeader(h, v)
@@ -379,15 +367,15 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
       }
 
       def possiblyRewriteQuery(schema: Schema, analyzedQuery: SoQLAnalysis[String, SoQLAnalysisType]):
-          (Schema, SoQLAnalysis[String, SoQLAnalysisType], Option[String]) = {
-        if (noRollup) (schema, analyzedQuery, None)
+          (SoQLAnalysis[String, SoQLAnalysisType], Option[String]) = {
+        if (noRollup) (analyzedQuery, None)
         else {
           rollupInfoFetcher(base.receiveTimeoutMS(getSchemaTimeout.toMillis.toInt), dataset, copy) match {
             case RollupInfoFetcher.Successful(rollups) =>
               val rewritten  = queryRewriter.bestRewrite(schema, analyzedQuery, rollups)
               val (rollupName, analysis) = rewritten map {x => (Some(x._1), x._2) } getOrElse (None, analyzedQuery)
               log.info(s"Rewrote query on dataset ${dataset} to rollup ${rollupName} with analysis ${analysis}")
-              (schema, analysis, rollupName)
+              (analysis, rollupName)
             case RollupInfoFetcher.NoSuchDatasetInSecondary =>
               chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
               finishRequest(notFoundResponse(dataset))
@@ -402,12 +390,12 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
         }
       }
 
-      schemaDecache(dataset, copy) match {
-        case Some(schema) =>
-          (executeQuery _).tupled((possiblyRewriteQuery _).tupled(analyzeRequest(schema, false)))
-        case None =>
-          (executeQuery _).tupled((possiblyRewriteQuery _).tupled(analyzeRequest(getAndCacheSchema(dataset, copy), true)))
+      val (finalSchema, analysis) = schemaDecache(dataset, copy) match {
+        case Some(schema) => analyzeRequest(schema, false)
+        case None         => analyzeRequest(getAndCacheSchema(dataset, copy), true)
       }
+      val (rewrittenAnalysis, rollupName) = possiblyRewriteQuery(finalSchema, analysis)
+      executeQuery(finalSchema, rewrittenAnalysis, rollupName)
     } catch {
       case FinishRequest(response) =>
       if(resp.isCommitted) ???
