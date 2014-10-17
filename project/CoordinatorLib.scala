@@ -12,6 +12,7 @@ object CoordinatorLib {
       "com.socrata"        %% "socrata-thirdparty-utils" % "2.5.0",
       "com.socrata"        %% "soql-brita"    % "1.3.0",
       "com.socrata"        %% "soql-environment" % "0.2.1",
+      "com.typesafe"       %% "scalalogging-slf4j" % "1.1.0",
       "commons-codec"       % "commons-codec" % "1.8",
       "joda-time"           % "joda-time"     % "2.1",
       "nl.grons"           %% "metrics-scala" % "3.3.0",
