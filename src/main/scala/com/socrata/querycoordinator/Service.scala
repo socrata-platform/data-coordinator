@@ -196,7 +196,14 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
       case None => NotFound
     }
 
-  case class FragmentedQuery(select: Option[String], where: Option[String], group: Option[String], having: Option[String], search: Option[String], order: Option[String], limit: Option[String], offset: Option[String])
+  case class FragmentedQuery(select: Option[String],
+                             where: Option[String],
+                             group: Option[String],
+                             having: Option[String],
+                             search: Option[String],
+                             order: Option[String],
+                             limit: Option[String],
+                             offset: Option[String])
 
   private def process(req: HttpServletRequest)(resp: HttpServletResponse) {
     val originalThreadName = Thread.currentThread.getName
