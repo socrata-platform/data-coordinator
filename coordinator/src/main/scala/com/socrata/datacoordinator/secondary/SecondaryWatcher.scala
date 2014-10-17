@@ -3,12 +3,13 @@ package com.socrata.datacoordinator.secondary
 import com.rojoma.simplearm.Managed
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.common.DataSourceFromConfig.DSInfo
-import com.socrata.datacoordinator.common.{DataSourceConfig, SoQLCommon, DataSourceFromConfig}
+import com.socrata.datacoordinator.common.{SoQLCommon, DataSourceFromConfig}
 import com.socrata.datacoordinator.secondary.sql.SqlSecondaryConfig
-import com.socrata.datacoordinator.service.{SecondaryConfig => ServiceSecondaryConfig}
 import com.socrata.datacoordinator.truth.universe._
-import com.socrata.datacoordinator.util.{TimingReport, NullCache, StackedTimingReport, LoggedTimingReport}
+import com.socrata.datacoordinator.util.{TimingReport, NullCache, StackedTimingReport, LoggedTimingReport,
+                                         MetricsTimingReport}
 import com.socrata.soql.types.{SoQLValue, SoQLType}
+import com.socrata.thirdparty.metrics.{MetricsOptions, MetricsReporter}
 import com.socrata.thirdparty.typesafeconfig.Propertizer
 import com.typesafe.config.{Config, ConfigFactory}
 import java.io.File
@@ -133,18 +134,6 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
   }
 }
 
-class SecondaryWatcherConfig(config: Config, root: String) {
-  private def k(s: String) = root + "." + s
-  val log4j = config.getConfig(k("log4j"))
-  val database = new DataSourceConfig(config, k("database"))
-  val secondaryConfig = new ServiceSecondaryConfig(config.getConfig(k("secondary")))
-  val instance = config.getString(k("instance"))
-  val watcherId = UUID.fromString(config.getString(k("watcher-id")))
-  val claimTimeout = config.getDuration(k("claim-timeout"), MILLISECONDS).longValue.millis
-  val tmpdir = new File(config.getString(k("tmpdir"))).getAbsoluteFile
-
-}
-
 class SecondaryWatcherClaimManager(dsInfo: DSInfo, claimantId: UUID, claimTimeout: FiniteDuration) {
   import SecondaryWatcher.log
   val updateInterval = claimTimeout / 2
@@ -189,11 +178,13 @@ object SecondaryWatcher extends App { self =>
                                                     SecondaryConfigProvider
 
   val rootConfig = ConfigFactory.load()
-  println(rootConfig.root.render())
   val config = new SecondaryWatcherConfig(rootConfig, "com.socrata.coordinator.secondary-watcher")
   PropertyConfigurator.configure(Propertizer("log4j", config.log4j))
 
   val log = LoggerFactory.getLogger(classOf[SecondaryWatcher[_,_]])
+  log.info("Started SecondaryWatcher with config: \n" + rootConfig.root.render())
+
+  val metricsOptions = MetricsOptions(config.metrics)
 
   Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
     def uncaughtException(t: Thread, e: Throwable) {
@@ -202,7 +193,8 @@ object SecondaryWatcher extends App { self =>
     }
   })
 
-  for(dsInfo <- DataSourceFromConfig(config.database)) {
+  for { dsInfo <- DataSourceFromConfig(config.database)
+        reporter <- MetricsReporter.managed(metricsOptions) } {
     val secondaries = SecondaryLoader.load(config.secondaryConfig).
                         asInstanceOf[Map[String, Secondary[SoQLType, SoQLValue]]]
 
@@ -213,7 +205,7 @@ object SecondaryWatcher extends App { self =>
       dsInfo.copyIn,
       executor,
       _ => None,
-      new LoggedTimingReport(log) with StackedTimingReport,
+      new LoggedTimingReport(log) with StackedTimingReport with MetricsTimingReport,
       allowDdlOnPublishedCopies = false, // don't care,
       Duration.fromNanos(1L), // don't care
       config.instance,
