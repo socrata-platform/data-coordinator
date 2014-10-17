@@ -1,30 +1,30 @@
 package com.socrata.querycoordinator
 
-import scala.concurrent.duration._
-import com.typesafe.config.{Config, ConfigFactory}
-import org.apache.log4j.PropertyConfigurator
-import com.rojoma.simplearm.util._
-
-import com.socrata.thirdparty.typesafeconfig.Propertizer
-import org.apache.curator.framework.CuratorFrameworkFactory
-import org.apache.curator.retry
-import org.apache.curator.x.discovery.{ServiceInstanceBuilder, ServiceDiscoveryBuilder, strategies}
-import com.socrata.http.server.curator.CuratorBroker
-import com.socrata.http.server.SocrataServerJetty
-import com.socrata.soql.types.SoQLAnalysisType
-import com.socrata.soql.{AnalysisSerializer, SoQLAnalyzer}
-import com.socrata.soql.functions.{SoQLFunctionInfo, SoQLTypeInfo}
 import com.google.protobuf.CodedOutputStream
-import java.util.concurrent.{ExecutorService, Executors}
-import com.rojoma.simplearm.Resource
 import com.rojoma.json.ast.JString
+import com.rojoma.simplearm.Resource
+import com.rojoma.simplearm.util._
 import com.socrata.http.client.{HttpClientHttpClient, InetLivenessChecker}
 import com.socrata.http.common.AuxiliaryData
+import com.socrata.http.server.curator.CuratorBroker
 import com.socrata.http.server.livenesscheck.LivenessCheckResponder
-import java.net.{InetSocketAddress, InetAddress}
+import com.socrata.http.server.SocrataServerJetty
+import com.socrata.http.server.util.handlers.{ThreadRenamingHandler, NewLoggingHandler}
+import com.socrata.http.server.util.RequestId.ReqIdHeader
 import com.socrata.querycoordinator.util.TeeToTempInputStream
+import com.socrata.soql.functions.{SoQLFunctionInfo, SoQLTypeInfo}
+import com.socrata.soql.types.SoQLAnalysisType
+import com.socrata.soql.{AnalysisSerializer, SoQLAnalyzer}
+import com.socrata.thirdparty.curator.CuratorFromConfig
+import com.socrata.thirdparty.metrics.{SocrataHttpSupport, MetricsOptions, MetricsReporter}
+import com.socrata.thirdparty.typesafeconfig.Propertizer
+import com.typesafe.config.{Config, ConfigFactory}
 import java.io.InputStream
-import com.socrata.http.server.util.handlers.{ThreadRenamingHandler, LoggingHandler}
+import java.net.{InetSocketAddress, InetAddress}
+import java.util.concurrent.{ExecutorService, Executors}
+import org.apache.curator.x.discovery.{ServiceInstanceBuilder, ServiceDiscoveryBuilder, strategies}
+import org.apache.log4j.PropertyConfigurator
+import scala.concurrent.duration._
 
 final abstract class Main
 
@@ -59,19 +59,13 @@ object Main extends App {
     def close(a: ExecutorService) { a.shutdown() }
   }
 
+  val metricsOptions = MetricsOptions(config.metrics)
+
   for {
     executor <- managed(Executors.newFixedThreadPool(5))
     pingProvider <- managed(new InetLivenessChecker(5.seconds, 1.second, 5, executor))
     httpClient <- managed(new HttpClientHttpClient(pingProvider, executor, userAgent = "Query Coordinator"))
-    curator <- managed(CuratorFrameworkFactory.builder.
-      connectString(config.curator.ensemble).
-      sessionTimeoutMs(config.curator.sessionTimeout.toMillis.toInt).
-      connectionTimeoutMs(config.curator.connectTimeout.toMillis.toInt).
-      retryPolicy(new retry.BoundedExponentialBackoffRetry(config.curator.baseRetryWait.toMillis.toInt,
-                                                           config.curator.maxRetryWait.toMillis.toInt,
-                                                           config.curator.maxRetries)).
-      namespace(config.curator.namespace).
-      build())
+    curator <- CuratorFromConfig(config.curator)
     discovery <- managed(ServiceDiscoveryBuilder.builder(classOf[AuxiliaryData]).
       client(curator).
       basePath(config.advertisement.basePath).
@@ -79,9 +73,10 @@ object Main extends App {
     dataCoordinatorProviderProvider <- managed(new ServiceProviderProvider(
       discovery,
       new strategies.RoundRobinStrategy))
-    pongProvider <- managed(new LivenessCheckResponder(new InetSocketAddress(InetAddress.getByName(config.advertisement.address), 0)))
+    pongProvider <- managed(new LivenessCheckResponder(
+                            new InetSocketAddress(InetAddress.getByName(config.advertisement.address), 0)))
+    reporter <- MetricsReporter.managed(metricsOptions)
   } {
-    curator.start()
     discovery.start()
     pingProvider.start()
     pongProvider.start()
@@ -106,10 +101,18 @@ object Main extends App {
 
     val auxData = new AuxiliaryData(Some(pongProvider.livenessCheckInfo))
 
+    val logOptions = NewLoggingHandler.defaultOptions.copy(
+                       logRequestHeaders = Set(ReqIdHeader, "X-Socrata-Resource"))
+
+    val broker = new CuratorBroker(discovery, config.advertisement.address, config.advertisement.name,
+                                   Some(auxData))
+
     val serv = new SocrataServerJetty(
-      handler = ThreadRenamingHandler(LoggingHandler(handler)),
-      port = config.network.port,
-      broker = new CuratorBroker(discovery, config.advertisement.address, config.advertisement.name, Some(auxData))
+      ThreadRenamingHandler(NewLoggingHandler(logOptions)(handler)),
+      SocrataServerJetty.defaultOptions.
+                         withPort(config.network.port).
+                         withExtraHandlers(List(SocrataHttpSupport.getHandler(metricsOptions))).
+                         withBroker(broker)
     )
     log.info("Ready to go!  kicking off the server...")
     serv.run()

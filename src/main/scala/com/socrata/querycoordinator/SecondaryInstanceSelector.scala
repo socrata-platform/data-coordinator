@@ -1,17 +1,18 @@
 package com.socrata.querycoordinator
 
+import com.socrata.thirdparty.metrics.Metrics
+import com.typesafe.scalalogging.slf4j.Logging
+import java.util.concurrent.atomic.AtomicInteger
+import scala.annotation.tailrec
+import scala.collection.immutable.Queue
 import scala.collection.mutable
 import scala.compat.Platform
 import scala.util.Random
-import scala.annotation.tailrec
-import com.typesafe.scalalogging.slf4j.Logging
-import scala.collection.immutable.Queue
-import java.util.concurrent.atomic.AtomicInteger
 
 
 /**
- * Selects a Secondary Instance.  
- * 
+ * Selects a Secondary Instance.
+ *
  * For each dataset, all known instances are divided into two buckets.  The candidates are
  * instances that we either don't know if they have the dataset or that we think have the
  * dataset.  The nots are instances that we think don't have the dataset.
@@ -31,15 +32,20 @@ import java.util.concurrent.atomic.AtomicInteger
  * reason, we only do this if we have hit this case less than x times for this dataset.
  *
  */
-class SecondaryInstanceSelector(qcConfig: QueryCoordinatorConfig) extends Logging {
+class SecondaryInstanceSelector(qcConfig: QueryCoordinatorConfig) extends Logging with Metrics {
   /** dataset id to servers */
+  // TODO: This map currently grows without bounds. Maybe make it an LRU cache?
   private val datasetMap = new mutable.HashMap[String, DatasetServers] with mutable.SynchronizedMap[String, DatasetServers]
   /** a count of the number of times we haven't been able to find a server for a dataset. */
   private val datasetNopesMap = new mutable.HashMap[String, AtomicInteger] with mutable.SynchronizedMap[String, AtomicInteger]
 
-  private val allServers = qcConfig.allSecondaryInstanceNames.map{s => Server(s)(Unknown) }.toVector
+  private val allServers = qcConfig.allSecondaryInstanceNames.map { s => Server(s)(Unknown) }.toVector
   private val expirationMillis = qcConfig.secondaryDiscoveryExpirationMillis
   private val datasetMaxNopeCount = qcConfig.datasetMaxNopeCount
+
+  // ****  Metrics metrics metrics ****
+  private val datasetMapSize = metrics.gauge("datasetMap-size") { datasetMap.size }
+  private val datasetNopesMapSize = metrics.gauge("datasetNopesMap-size") { datasetNopesMap.size }
 
   // equality is only on name
   // the code assumes a Server is immutable
@@ -75,7 +81,7 @@ class SecondaryInstanceSelector(qcConfig: QueryCoordinatorConfig) extends Loggin
 
     val dss = datasetMap.getOrElseUpdate(dataset, new DatasetServers)
     val s = Server(secondaryName)(Unknown)
-    
+
     logger.warn("Notified of error for dataset {} on secondary {}, marking as unknown", dataset, secondaryName)
 
     dss.synchronized {
