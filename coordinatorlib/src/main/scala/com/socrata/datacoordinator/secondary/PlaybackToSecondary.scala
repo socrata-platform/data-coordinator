@@ -207,6 +207,11 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
         None
     }
 
+    private def setLifecycleStage(newStage: metadata.LifecycleStage, info: metadata.DatasetInfo) {
+      log.info("{}: New lifecycle stage: {}", info.internalName, newStage)
+      currentLifecycleStage = newStage
+    }
+
     def playbackLog(datasetInfo: metadata.DatasetInfo, dataVersion: Long) {
       log.trace("Playing back version {}", dataVersion)
       val finalLifecycleStage = for {
@@ -232,7 +237,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
               } else {
                 log.trace("There is no more.")
               }
-              currentLifecycleStage = it.stageBeforeNextEvent
+              setLifecycleStage(it.stageBeforeNextEvent, datasetInfo)
             } else {
               log.trace("Sending events for a published copy")
               val publishedIt = new StageLimitedIterator(it)
@@ -243,10 +248,10 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
                                                         currentCookie,
                                                         publishedIt.flatMap(convertEvent))
                 publishedIt.finish()
-                currentLifecycleStage = it.stageBeforeNextEvent
+                setLifecycleStage(it.stageBeforeNextEvent, datasetInfo)
               } else {
                 log.trace("First item must've been a copy-event")
-                currentLifecycleStage = it.stageAfterNextEvent
+                setLifecycleStage(it.stageAfterNextEvent, datasetInfo)
               }
             }
           }
@@ -256,7 +261,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
         res
       }
       updateSecondaryMap(dataVersion, finalLifecycleStage)
-      currentLifecycleStage = finalLifecycleStage
+      setLifecycleStage(finalLifecycleStage, datasetInfo)
     }
 
     def drop() {
