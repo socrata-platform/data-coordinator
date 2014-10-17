@@ -691,7 +691,7 @@ class Service(serviceConfig: ServiceConfig,
   }
 
   private val logOptions = NewLoggingHandler.defaultOptions.copy(
-                     logRequestHeaders = Set(ReqIdHeader, "X-Socrata-4x4"))
+                     logRequestHeaders = Set(ReqIdHeader, "X-Socrata-Resource"))
 
   private val metricsOptions = MetricsOptions(serviceConfig.metrics)
 
