@@ -18,7 +18,10 @@ libraryDependencies ++= Seq(
   "com.socrata"        %% "soql-stdlib"                 % "[0.2.1,1.0.0)" exclude ("javax.media", "jai_core"),
   "com.typesafe"        % "config"                      % "1.0.0",
   "com.typesafe"       %% "scalalogging-slf4j"          % "1.1.0",
+  "io.dropwizard.metrics" % "metrics-jetty9"            % "3.1.0",
+  "io.dropwizard.metrics" % "metrics-graphite"          % "3.1.0",
   "net.sf.trove4j"      % "trove4j"                     % "3.0.3",
+  "nl.grons"           %% "metrics-scala"               % "3.3.0",
   "org.scalacheck"     %% "scalacheck"                  % "1.11.5" % "test",
   "org.scalatest"      %% "scalatest"                   % "2.2.1" % "test",
   "org.slf4j"           % "slf4j-log4j12"               % "1.7.7"

@@ -16,6 +16,7 @@ import com.socrata.soql.functions.{SoQLFunctionInfo, SoQLTypeInfo}
 import com.socrata.soql.types.SoQLAnalysisType
 import com.socrata.soql.{AnalysisSerializer, SoQLAnalyzer}
 import com.socrata.thirdparty.curator.CuratorFromConfig
+import com.socrata.thirdparty.metrics.{SocrataHttpSupport, MetricsOptions, MetricsReporter}
 import com.socrata.thirdparty.typesafeconfig.Propertizer
 import com.typesafe.config.{Config, ConfigFactory}
 import java.io.InputStream
@@ -58,6 +59,8 @@ object Main extends App {
     def close(a: ExecutorService) { a.shutdown() }
   }
 
+  val metricsOptions = MetricsOptions(config.metrics)
+
   for {
     executor <- managed(Executors.newFixedThreadPool(5))
     pingProvider <- managed(new InetLivenessChecker(5.seconds, 1.second, 5, executor))
@@ -72,6 +75,7 @@ object Main extends App {
       new strategies.RoundRobinStrategy))
     pongProvider <- managed(new LivenessCheckResponder(
                             new InetSocketAddress(InetAddress.getByName(config.advertisement.address), 0)))
+    reporter <- MetricsReporter.managed(metricsOptions)
   } {
     discovery.start()
     pingProvider.start()
@@ -100,10 +104,15 @@ object Main extends App {
     val logOptions = NewLoggingHandler.defaultOptions.copy(
                        logRequestHeaders = Set(ReqIdHeader, "X-Socrata-4x4"))
 
+    val broker = new CuratorBroker(discovery, config.advertisement.address, config.advertisement.name,
+                                   Some(auxData))
+
     val serv = new SocrataServerJetty(
-      handler = ThreadRenamingHandler(NewLoggingHandler(logOptions)(handler)),
-      port = config.network.port,
-      broker = new CuratorBroker(discovery, config.advertisement.address, config.advertisement.name, Some(auxData))
+      ThreadRenamingHandler(NewLoggingHandler(logOptions)(handler)),
+      SocrataServerJetty.defaultOptions.
+                         withPort(config.network.port).
+                         withExtraHandlers(List(SocrataHttpSupport.getHandler(metricsOptions))).
+                         withBroker(broker)
     )
     log.info("Ready to go!  kicking off the server...")
     serv.run()
