@@ -347,7 +347,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
                        requestId: String,
                        fourByFour: Option[String]) {
         val extraHeaders = Map(RequestId.ReqIdHeader -> requestId) ++
-                           fourByFour.map(fbf => Map("X-Socrata-4x4" -> fbf)).getOrElse(Nil)
+                           fourByFour.map(fbf => Map("X-Socrata-Resource" -> fbf)).getOrElse(Nil)
         val res = queryExecutor(base.receiveTimeoutMS(queryTimeout.toMillis.toInt),
                                 dataset,
                                 analyzedQuery,
@@ -411,7 +411,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
       }
       val (rewrittenAnalysis, rollupName) = possiblyRewriteQuery(finalSchema, analysis)
       executeQuery(finalSchema, rewrittenAnalysis, rollupName,
-                   requestId, Option(req.getHeader("X-Socrata-4x4")))
+                   requestId, Option(req.getHeader("X-Socrata-Resource")))
     } catch {
       case FinishRequest(response) =>
       if(resp.isCommitted) ???

@@ -102,7 +102,7 @@ object Main extends App {
     val auxData = new AuxiliaryData(Some(pongProvider.livenessCheckInfo))
 
     val logOptions = NewLoggingHandler.defaultOptions.copy(
-                       logRequestHeaders = Set(ReqIdHeader, "X-Socrata-4x4"))
+                       logRequestHeaders = Set(ReqIdHeader, "X-Socrata-Resource"))
 
     val broker = new CuratorBroker(discovery, config.advertisement.address, config.advertisement.name,
                                    Some(auxData))
