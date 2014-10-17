@@ -352,9 +352,9 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
                        analyzedQuery: SoQLAnalysis[String, SoQLAnalysisType],
                        rollupName: Option[String],
                        requestId: String,
-                       fourByFour: Option[String]) {
+                       resourceName: Option[String]) {
         val extraHeaders = Map(RequestId.ReqIdHeader -> requestId) ++
-                           fourByFour.map(fbf => Map("X-Socrata-Resource" -> fbf)).getOrElse(Nil)
+                           resourceName.map(fbf => Map("X-Socrata-Resource" -> fbf)).getOrElse(Nil)
         val res = queryExecutor(base.receiveTimeoutMS(queryTimeout.toMillis.toInt),
                                 dataset,
                                 analyzedQuery,
@@ -383,7 +383,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
             None
         }
         res match { // bit of a dance because we can't tailrec from within map
-          case Some((s, q, r)) => executeQuery(s, q, r, requestId, fourByFour)
+          case Some((s, q, r)) => executeQuery(s, q, r, requestId, resourceName)
           case None => // ok
         }
       }
