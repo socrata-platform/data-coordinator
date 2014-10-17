@@ -1,6 +1,7 @@
 package com.socrata.datacoordinator.service
 
 import com.socrata.datacoordinator.common.DataSourceConfig
+import com.socrata.thirdparty.curator.CuratorConfig
 import com.typesafe.config.Config
 import java.util.concurrent.TimeUnit
 import scala.concurrent.duration.{MILLISECONDS, FiniteDuration, Duration}

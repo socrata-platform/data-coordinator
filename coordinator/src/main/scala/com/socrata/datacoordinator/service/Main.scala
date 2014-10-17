@@ -1,30 +1,29 @@
 package com.socrata.datacoordinator.service
 
-import com.rojoma.simplearm.util._
-import com.typesafe.config.{Config, ConfigFactory}
-import org.apache.log4j.PropertyConfigurator
-import com.socrata.thirdparty.typesafeconfig.Propertizer
-import com.socrata.datacoordinator.secondary.{DatasetAlreadyInSecondary, SecondaryLoader}
-import java.util.concurrent.{CountDownLatch, TimeUnit, Executors}
-import com.socrata.datacoordinator.common.{SoQLCommon, StandardDatasetMapLimits, DataSourceFromConfig}
-import com.socrata.datacoordinator.util.{NullCache, IndexedTempFile, StackedTimingReport, LoggedTimingReport}
-import com.socrata.datacoordinator.id.{UserColumnId, ColumnId, DatasetId}
 import com.rojoma.json.ast.{JString, JValue}
-import com.socrata.datacoordinator.truth.CopySelector
-import com.socrata.soql.environment.ColumnName
-import org.apache.curator.retry
-import org.apache.curator.framework.CuratorFrameworkFactory
-import org.apache.curator.x.discovery.{ServiceInstanceBuilder, ServiceInstance, ServiceDiscoveryBuilder}
-import com.socrata.http.server.curator.CuratorBroker
 import com.rojoma.simplearm.SimpleArm
-import java.net.{InetSocketAddress, InetAddress}
-import com.socrata.datacoordinator.util.collection.UserColumnIdSet
-import com.socrata.http.common.AuxiliaryData
-import com.socrata.http.server.livenesscheck.LivenessCheckResponder
+import com.rojoma.simplearm.util._
+import com.socrata.datacoordinator.common.{SoQLCommon, StandardDatasetMapLimits, DataSourceFromConfig}
+import com.socrata.datacoordinator.id.{UserColumnId, ColumnId, DatasetId}
+import com.socrata.datacoordinator.secondary.{DatasetAlreadyInSecondary, SecondaryLoader}
+import com.socrata.datacoordinator.truth.CopySelector
 import com.socrata.datacoordinator.truth.metadata.{SchemaField, Schema, DatasetCopyContext}
+import com.socrata.datacoordinator.util.collection.UserColumnIdSet
+import com.socrata.datacoordinator.util.{NullCache, IndexedTempFile, StackedTimingReport, LoggedTimingReport}
+import com.socrata.http.common.AuxiliaryData
+import com.socrata.http.server.curator.CuratorBroker
+import com.socrata.http.server.livenesscheck.LivenessCheckResponder
 import com.socrata.http.server.util.{EntityTag, Precondition}
-import scala.util.Random
+import com.socrata.soql.environment.ColumnName
+import com.socrata.thirdparty.curator.CuratorFromConfig
+import com.socrata.thirdparty.typesafeconfig.Propertizer
+import com.typesafe.config.{Config, ConfigFactory}
+import java.net.{InetSocketAddress, InetAddress}
+import java.util.concurrent.{CountDownLatch, TimeUnit, Executors}
+import org.apache.curator.x.discovery.{ServiceInstanceBuilder, ServiceInstance, ServiceDiscoveryBuilder}
+import org.apache.log4j.PropertyConfigurator
 import org.joda.time.DateTime
+import scala.util.Random
 
 class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Main])
@@ -298,22 +297,13 @@ object Main {
           logTableCleanup.start()
           val address = serviceConfig.advertisement.address
           for {
-            curator <- managed(CuratorFrameworkFactory.builder.
-              connectString(serviceConfig.curator.ensemble).
-              sessionTimeoutMs(serviceConfig.curator.sessionTimeout.toMillis.toInt).
-              connectionTimeoutMs(serviceConfig.curator.connectTimeout.toMillis.toInt).
-              retryPolicy(new retry.BoundedExponentialBackoffRetry(serviceConfig.curator.baseRetryWait.toMillis.toInt,
-              serviceConfig.curator.maxRetryWait.toMillis.toInt,
-              serviceConfig.curator.maxRetries)).
-              namespace(serviceConfig.curator.namespace).
-              build())
+            curator <- CuratorFromConfig(serviceConfig.curator)
             discovery <- managed(ServiceDiscoveryBuilder.builder(classOf[AuxiliaryData]).
               client(curator).
               basePath(serviceConfig.advertisement.basePath).
               build())
             pong <- managed(new LivenessCheckResponder(new InetSocketAddress(InetAddress.getByName(address), 0)))
           } {
-            curator.start()
             discovery.start()
             pong.start()
             val auxData = new AuxiliaryData(livenessCheckInfo = Some(pong.livenessCheckInfo))
