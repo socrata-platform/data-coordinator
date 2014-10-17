@@ -2,6 +2,7 @@ package com.socrata.querycoordinator
 
 import scala.concurrent.duration._
 
+import com.socrata.thirdparty.curator.CuratorConfig
 import com.socrata.thirdparty.typesafeconfig.ConfigClass
 import com.typesafe.config.Config
 
