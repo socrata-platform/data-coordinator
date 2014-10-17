@@ -12,37 +12,40 @@ class RowsLimitTest extends TestBase {
   val analyzer = new SoQLAnalyzer(SoQLTypeInfo, SoQLFunctionInfo)
 
   test("max rows and default rows limit are respected") {
-    val configMaxRowsAndLimit = new QueryCoordinatorConfig(ConfigFactory.load("reference-max-rows-and-limit.conf"), "com.socrata.query-coordinator")
-    val qp = new QueryParser(analyzer, configMaxRowsAndLimit.maxRows, configMaxRowsAndLimit.defaultRowsLimit)
+    val defaultRowLimit = 20
+    val maxRowLimit = 200
+
+    val qp = new QueryParser(analyzer, Some(maxRowLimit), defaultRowLimit)
     val cols =  Map[ColumnName, String](ColumnName("c") -> "c")
     val schema = Map[String, SoQLType]("c" -> SoQLText)
     (qp.apply("select *", cols, schema) match {
       case SuccessfulParse(analysis) => analysis.limit
       case x =>
-    }) should be (Some(20))
+    }) should be (Some(defaultRowLimit))
 
-    (qp.apply("select * limit 200", cols, schema) match {
+    (qp.apply(s"select * limit $maxRowLimit", cols, schema) match {
       case SuccessfulParse(analysis) => analysis.limit
       case x =>
-    }) should be (Some(200))
+    }) should be (Some(maxRowLimit))
 
 
-    (qp.apply("select * limit 201", cols, schema) match {
+    (qp.apply(s"select * limit ${maxRowLimit+1}", cols, schema) match {
       case x@RowLimitExceeded(_) => x
       case _ =>
-    }) should be (RowLimitExceeded(200))
+    }) should be (RowLimitExceeded(maxRowLimit))
 
   }
 
-  test("no max rows and default rows limit") {
-    val configMaxRowsAndLimit = new QueryCoordinatorConfig(ConfigFactory.load("reference-no-max-rows.conf"), "com.socrata.query-coordinator")
-    val qp = new QueryParser(analyzer, configMaxRowsAndLimit.maxRows, configMaxRowsAndLimit.defaultRowsLimit)
+  test("max rows not configured") {
+    val defaultRowLimit = 20
+
+    val qp = new QueryParser(analyzer, None, defaultRowLimit)
     val cols =  Map[ColumnName, String](ColumnName("c") -> "c")
     val schema = Map[String, SoQLType]("c" -> SoQLText)
     (qp.apply("select *", cols, schema) match {
       case SuccessfulParse(analysis) => analysis.limit
       case x =>
-    }) should be (None) // no limits
+    }) should be (Some(defaultRowLimit))
 
     (qp.apply("select * limit 100000", cols, schema) match {
       case SuccessfulParse(analysis) => analysis.limit
