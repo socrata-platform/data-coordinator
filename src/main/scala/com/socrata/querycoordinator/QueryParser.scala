@@ -30,16 +30,12 @@ class QueryParser(analyzer: SoQLAnalyzer[SoQLAnalysisType], maxRows: Option[Int]
   private def limitRows(analysis: SoQLAnalysis[ColumnName, SoQLAnalysisType]): Either[Result, SoQLAnalysis[ColumnName, SoQLAnalysisType]] = {
     analysis.limit match {
       case Some(lim) =>
-        if (lim <= actualMaxRows) Right(analysis)
-        else                      Left(RowLimitExceeded(actualMaxRows))
+        val actualMax = BigInt(maxRows.map(_.toLong).getOrElse(Long.MaxValue))
+        if (lim <= actualMax) Right(analysis)
+        else                  Left(RowLimitExceeded(actualMax))
       case None      =>
         Right(analysis.copy(limit = Some(defaultRowsLimit)))
     }
-  }
-
-  private def actualMaxRows = maxRows match {
-    case Some(maxValue) => BigInt(maxValue)
-    case None           => BigInt(Long.MaxValue)
   }
 
   def apply(query: String, columnIdMapping: Map[ColumnName, String], schema: Map[String, SoQLType]): Result =
