@@ -18,7 +18,7 @@ class QueryCoordinatorConfig(config: Config, root: String) extends ConfigClass(c
   val schemaTimeout = config.getMilliseconds(path("get-schema-timeout")).longValue.millis
   val queryTimeout = config.getMilliseconds(path("query-timeout")).longValue.millis
   val maxRows = optionally(getInt("max-rows"))
-  val defaultRowsLimit = optionally(getInt("default-rows-limit")).getOrElse(1000)
+  val defaultRowsLimit = getInt("default-rows-limit")
 
   val allSecondaryInstanceNames = getStringList("all-secondary-instance-names")
   val secondaryDiscoveryExpirationMillis = config.getMilliseconds(path("secondary-discovery-expiration"))

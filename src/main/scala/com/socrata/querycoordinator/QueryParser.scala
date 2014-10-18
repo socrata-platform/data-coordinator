@@ -28,14 +28,13 @@ class QueryParser(analyzer: SoQLAnalyzer[SoQLAnalysisType], maxRows: Option[Int]
     }
 
   private def limitRows(analysis: SoQLAnalysis[ColumnName, SoQLAnalysisType]): Either[Result, SoQLAnalysis[ColumnName, SoQLAnalysisType]] = {
-    maxRows match {
-      case Some(max) =>
-        analysis.limit match {
-          case Some(lim) if lim <= max => Right(analysis)
-          case Some(lim) => Left(RowLimitExceeded(max)) // lim > max
-          case None => Right(analysis.copy(limit = Some(defaultRowsLimit)))
-        }
-      case None => Right(analysis)
+    analysis.limit match {
+      case Some(lim) =>
+        val actualMax = BigInt(maxRows.map(_.toLong).getOrElse(Long.MaxValue))
+        if (lim <= actualMax) Right(analysis)
+        else                  Left(RowLimitExceeded(actualMax))
+      case None      =>
+        Right(analysis.copy(limit = Some(defaultRowsLimit)))
     }
   }
 
@@ -51,7 +50,7 @@ object QueryParser {
   case class SuccessfulParse(analysis: SoQLAnalysis[String, SoQLAnalysisType]) extends Result
   case class AnalysisError(problem: SoQLException) extends Result
   case class UnknownColumnIds(columnIds: Set[String]) extends Result
-  case class RowLimitExceeded(max: Int) extends Result
+  case class RowLimitExceeded(max: BigInt) extends Result
 
   def dsContext(columnIdMapping: Map[ColumnName, String], rawSchema: Map[String, SoQLType]): Either[Set[String], DatasetContext[SoQLAnalysisType]] =
     try {

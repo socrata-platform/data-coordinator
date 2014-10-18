@@ -131,7 +131,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
   def noDatasetResponse = BadRequest ~> errContent("req.no-dataset-specified")
   def noQueryResponse = BadRequest ~> errContent("req.no-query-specified")
   def unknownColumnIds(columnIds: Set[String]) = BadRequest ~> errContent("req.unknown.column-ids", "columns" -> JsonCodec.toJValue(columnIds.toSeq))
-  def rowLimitExceeded(max: Int) = BadRequest ~> errContent("req.row-limit-exceeded", "limit" -> JNumber(max))
+  def rowLimitExceeded(max: BigInt) = BadRequest ~> errContent("req.row-limit-exceeded", "limit" -> JNumber(max))
   def noContentTypeResponse = internalServerError
   def unparsableContentTypeResponse = internalServerError
   def notJsonResponseResponse = internalServerError
