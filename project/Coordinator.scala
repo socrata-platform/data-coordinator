@@ -13,16 +13,19 @@ object Coordinator {
     resourceGenerators in Compile <+= (resourceManaged in Compile, name in Compile, version in Compile, scalaVersion in Compile) map genVersion,
     libraryDependencies <++= (scalaVersion) { (scalaVersion) =>
       Seq(
-        "com.sun.jna" % "jna" % "3.0.9",
-        "com.socrata" %% "socrata-thirdparty-utils" % "2.5.0",
-        "net.sf.opencsv" % "opencsv" % "2.3",
-        "com.typesafe" % "config" % "1.2.1",
-        "com.mchange" % "c3p0" % "0.9.5-pre8",
-        "org.clojure" % "clojure" % "1.5.1",
-        "com.socrata" %% "socrata-http-curator-broker" % "2.3.0",
-        "org.slf4j" % "slf4j-log4j12" % BuildSettings.slf4jVersion,
-        "org.scalacheck" %% "scalacheck" % "1.10.0" % "test",
-	"net.ceedubs" %% "ficus" % "1.0.0"
+        "net.ceedubs"    %% "ficus"         % "1.0.0",
+        "com.mchange"     % "c3p0"          % "0.9.5-pre8",
+        "com.socrata"    %% "socrata-http-curator-broker" % "2.3.1",
+        "com.socrata"    %% "socrata-thirdparty-utils" % "2.5.0",
+        "com.sun.jna"     % "jna"           % "3.0.9",
+        "com.typesafe"    % "config"        % "1.2.1",
+        "io.dropwizard.metrics" % "metrics-jetty9"   % "3.1.0",
+        "io.dropwizard.metrics" % "metrics-graphite"   % "3.1.0",
+        "net.sf.opencsv"  % "opencsv"       % "2.3",
+        "nl.grons"       %% "metrics-scala" % "3.3.0",
+        "org.clojure"     % "clojure"       % "1.5.1",
+        "org.scalacheck" %% "scalacheck"    % "1.10.0" % "test",
+        "org.slf4j"       % "slf4j-log4j12" % BuildSettings.slf4jVersion
       )
     },
     mainClass in assembly := Some("com.socrata.datacoordinator.Launch"),

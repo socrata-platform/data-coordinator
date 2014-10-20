@@ -1,8 +1,8 @@
 package com.socrata.datacoordinator.util
 
-import org.slf4j.Logger
-import scala.util.DynamicVariable
 import com.rojoma.json.util.JsonUtil
+import com.socrata.thirdparty.metrics.Metrics
+import org.slf4j.Logger
 
 trait TimingReport {
   def apply[T](name: String, kv: (String, Any)*)(f: => T): T
@@ -44,6 +44,15 @@ trait StackedTimingReport extends TimingReport with TransferrableContextTimingRe
   }
 }
 
+trait MetricsTimingReport extends TimingReport with Metrics {
+  abstract override def apply[T](name: String, kv: (String, Any)*)(f: => T): T = {
+    val timer = metrics.timer(name)
+    timer.time {
+      super.apply(name, kv: _*)(f)
+    }
+  }
+}
+
 class LoggedTimingReport(log: Logger) extends TimingReport {
   def apply[T](name: String, kv: (String, Any)*)(f: => T): T = {
     val start = System.nanoTime()
@@ -51,8 +60,10 @@ class LoggedTimingReport(log: Logger) extends TimingReport {
       f
     } finally {
       val end = System.nanoTime()
-      if(log.isInfoEnabled) {
-        log.info("{}: {}ms; {}", name, ((end - start)/1000000).asInstanceOf[AnyRef], JsonUtil.renderJson(kv.map { case (k,v) => (k, String.valueOf(v)) }))
+      val timeInMs = (end - start) / 1000000
+      if (log.isInfoEnabled) {
+        log.info("{}: {}ms; {}", name, timeInMs.asInstanceOf[AnyRef],
+                                 JsonUtil.renderJson(kv.map { case (k,v) => (k, String.valueOf(v)) }))
       }
     }
   }

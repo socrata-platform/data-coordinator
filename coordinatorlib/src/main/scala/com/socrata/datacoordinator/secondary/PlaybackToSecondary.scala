@@ -1,27 +1,41 @@
 package com.socrata.datacoordinator
 package secondary
 
-import scala.util.control.ControlThrowable
-import scala.concurrent.duration.Duration
-
 import com.rojoma.simplearm.util._
-import org.slf4j.LoggerFactory
-
-import com.socrata.datacoordinator.truth.loader.{Delogger, MissingVersion}
+import com.rojoma.simplearm.SimpleArm
 import com.socrata.datacoordinator.id.{RowId, DatasetId}
+import com.socrata.datacoordinator.truth.loader.{Delogger, MissingVersion}
+import com.socrata.datacoordinator.truth.metadata
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth.sql.SqlColumnReadRep
-import com.socrata.datacoordinator.util.TimingReport
 import com.socrata.datacoordinator.truth.universe._
-import com.socrata.datacoordinator.truth.metadata
+import com.socrata.datacoordinator.util.collection.ColumnIdMap
+import com.socrata.datacoordinator.util.TimingReport
 import com.socrata.soql.environment.TypeName
+import com.socrata.thirdparty.metrics.Metrics
+import com.typesafe.scalalogging.slf4j.Logging
+import scala.concurrent.duration.Duration
+import scala.util.control.ControlThrowable
 
-class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with SecondaryManifestProvider with DatasetMapReaderProvider with DatasetMapWriterProvider with DatasetReaderProvider with DeloggerProvider, repFor: metadata.ColumnInfo[CT] => SqlColumnReadRep[CT, CV], typeForName: TypeName => Option[CT], datasetIdFormatter: DatasetId => String, timingReport: TimingReport) {
-  val log = LoggerFactory.getLogger(classOf[PlaybackToSecondary[_,_]])
+object PlaybackToSecondary {
+  type SuperUniverse[CT, CV] = Universe[CT, CV] with Commitable with
+                                                     SecondaryManifestProvider with
+                                                     DatasetMapReaderProvider with
+                                                     DatasetMapWriterProvider with
+                                                     DatasetReaderProvider with
+                                                     DeloggerProvider
+}
 
+class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
+                                  repFor: metadata.ColumnInfo[CT] => SqlColumnReadRep[CT, CV],
+                                  typeForName: TypeName => Option[CT],
+                                  datasetIdFormatter: DatasetId => String,
+                                  timingReport: TimingReport) extends Logging {
   val datasetLockTimeout = Duration.Inf
 
-  class LifecycleStageTrackingIterator(underlying: Iterator[Delogger.LogEvent[CV]], initialStage: metadata.LifecycleStage) extends BufferedIterator[Delogger.LogEvent[CV]] {
+  class LifecycleStageTrackingIterator(underlying: Iterator[Delogger.LogEvent[CV]],
+                                       initialStage: metadata.LifecycleStage)
+      extends BufferedIterator[Delogger.LogEvent[CV]] {
     private var currentStage = initialStage
     private var lookahead: Delogger.LogEvent[CV] = null
 
@@ -81,6 +95,24 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
     def finish() = while(hasNext) next()
   }
 
+  // Instruments via metrics and logging the iteration of rows/events
+  class InstrumentedIterator[T](name: String,
+                                datasetName: String,
+                                underlying: Iterator[T],
+                                loggingRate: Int = 10000) extends Iterator[T] with Metrics {
+    var itemNum = 0
+    val meter = metrics.meter(name, "rows")
+
+    def hasNext = underlying.hasNext
+    def next() = {
+      meter.mark()
+      itemNum += 1
+      if (itemNum % loggingRate == 0)
+        logger.info("[{}] {}: {} rows/events processed", name, datasetName, itemNum.toString)
+      underlying.next()
+    }
+  }
+
   def apply(secondary: NamedSecondary[CT, CV], job: SecondaryRecord) {
     new UpdateOp(secondary, job).go()
   }
@@ -93,7 +125,11 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
     DatasetInfo(datasetIdFormatter(dsInfo.systemId), dsInfo.localeName, dsInfo.obfuscationKey.clone())
 
   def makeSecondaryCopyInfo(copyInfo: metadata.CopyInfoLike) =
-    CopyInfo(copyInfo.systemId, copyInfo.copyNumber, copyInfo.lifecycleStage.correspondingSecondaryStage, copyInfo.dataVersion, copyInfo.lastModified)
+    CopyInfo(copyInfo.systemId,
+             copyInfo.copyNumber,
+             copyInfo.lifecycleStage.correspondingSecondaryStage,
+             copyInfo.dataVersion,
+             copyInfo.lastModified)
 
   def makeSecondaryRollupInfo(rollupInfo: metadata.RollupInfoLike) =
     RollupInfo(rollupInfo.name.underlying, rollupInfo.soql)
@@ -101,7 +137,12 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
   def makeSecondaryColumnInfo(colInfo: metadata.ColumnInfoLike) = {
     typeForName(TypeName(colInfo.typeName)) match {
       case Some(typ) =>
-        ColumnInfo(colInfo.systemId, colInfo.userColumnId, typ, isSystemPrimaryKey = colInfo.isSystemPrimaryKey, isUserPrimaryKey = colInfo.isUserPrimaryKey, isVersion = colInfo.isVersion)
+        ColumnInfo(colInfo.systemId,
+                   colInfo.userColumnId,
+                   typ,
+                   isSystemPrimaryKey = colInfo.isSystemPrimaryKey,
+                   isUserPrimaryKey = colInfo.isUserPrimaryKey,
+                   isVersion = colInfo.isVersion)
       case None =>
         sys.error("Typename " + colInfo.typeName + " got into the logs somehow!")
     }
@@ -119,20 +160,20 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
     def go() {
       datasetMapReader.datasetInfo(datasetId) match {
         case Some(datasetInfo) =>
-          log.info("Found dataset " + datasetInfo.systemId + " in truth")
+          logger.info("Found dataset " + datasetInfo.systemId + " in truth")
           try {
             for(dataVersion <- job.startingDataVersion to job.endingDataVersion) {
               playbackLog(datasetInfo, dataVersion)
             }
           } catch {
             case e: MissingVersion =>
-              log.info("Couldn't find version {} in log; resyncing", e.version)
+              logger.info("Couldn't find version {} in log; resyncing", e.version.toString)
               resync()
             case ResyncSecondaryException(reason) =>
-              log.info("Incremental update requested full resync: {}", reason)
+              logger.info("Incremental update requested full resync: {}", reason)
               resync()
             case _: InternalResyncForPickySecondary =>
-              log.info("Resyncing because secondary only wants published copies and we just got a publish event")
+              logger.info("Resyncing because secondary only wants published copies and we just got a publish event")
               resync()
           }
         case None =>
@@ -185,51 +226,64 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
         None
     }
 
+    private def setLifecycleStage(newStage: metadata.LifecycleStage, info: metadata.DatasetInfo) {
+      logger.info("{}: New lifecycle stage: {}", info.systemId.toString, newStage)
+      currentLifecycleStage = newStage
+    }
+
     def playbackLog(datasetInfo: metadata.DatasetInfo, dataVersion: Long) {
-      log.trace("Playing back version {}", dataVersion)
+      logger.trace("Playing back version {}", dataVersion.toString)
       val finalLifecycleStage = for {
         delogger <- managed(u.delogger(datasetInfo))
         rawIt <- managed(delogger.delog(dataVersion))
       } yield {
         val secondaryDatasetInfo = makeSecondaryDatasetInfo(datasetInfo)
-        val it = new LifecycleStageTrackingIterator(rawIt, currentLifecycleStage)
-        if(secondary.store.wantsWorkingCopies) {
-          log.trace("Secondary store wants working copies; just blindly sending everything")
-          currentCookie = secondary.store.version(secondaryDatasetInfo, dataVersion, currentCookie, it.flatMap(convertEvent))
+        val instrumentedIt = new InstrumentedIterator("playback-log-throughput",
+                                                      datasetInfo.systemId.toString,
+                                                      rawIt)
+        val it = new LifecycleStageTrackingIterator(instrumentedIt, currentLifecycleStage)
+        if (secondary.store.wantsWorkingCopies) {
+          logger.trace("Secondary store wants working copies; just blindly sending everything")
+          currentCookie = secondary.store.version(secondaryDatasetInfo, dataVersion,
+                                                  currentCookie, it.flatMap(convertEvent))
         } else {
-          while(it.hasNext) {
-            if(currentLifecycleStage != metadata.LifecycleStage.Published) {
-              log.trace("Current lifecycle stage in the secondary is {}; skipping data until I find a publish event", currentLifecycleStage)
+          while (it.hasNext) {
+            if (currentLifecycleStage != metadata.LifecycleStage.Published) {
+              logger.trace("Current lifecycle stage in the secondary is {}; " +
+                        "skipping data until I find a publish event", currentLifecycleStage)
               // skip until it IS published, then resync
-              while(it.hasNext && it.stageAfterNextEvent != metadata.LifecycleStage.Published) it.next()
-              if(it.hasNext) {
-                log.trace("There is more.  Resyncing")
+              while (it.hasNext && it.stageAfterNextEvent != metadata.LifecycleStage.Published) it.next()
+              if (it.hasNext) {
+                logger.trace("There is more.  Resyncing")
                 throw new InternalResyncForPickySecondary
               } else {
-                log.trace("There is no more.")
+                logger.trace("There is no more.")
               }
-              currentLifecycleStage = it.stageBeforeNextEvent
+              setLifecycleStage(it.stageBeforeNextEvent, datasetInfo)
             } else {
-              log.trace("Sending events for a published copy")
+              logger.trace("Sending events for a published copy")
               val publishedIt = new StageLimitedIterator(it)
-              if(publishedIt.hasNext) {
-                log.trace("Sendsendsendsend")
-                currentCookie = secondary.store.version(secondaryDatasetInfo, dataVersion, currentCookie, publishedIt.flatMap(convertEvent))
+              if (publishedIt.hasNext) {
+                logger.trace("Sendsendsendsend")
+                currentCookie = secondary.store.version(secondaryDatasetInfo,
+                                                        dataVersion,
+                                                        currentCookie,
+                                                        publishedIt.flatMap(convertEvent))
                 publishedIt.finish()
-                currentLifecycleStage = it.stageBeforeNextEvent
+                setLifecycleStage(it.stageBeforeNextEvent, datasetInfo)
               } else {
-                log.trace("First item must've been a copy-event")
-                currentLifecycleStage = it.stageAfterNextEvent
+                logger.trace("First item must've been a copy-event")
+                setLifecycleStage(it.stageAfterNextEvent, datasetInfo)
               }
             }
           }
         }
         val res = it.finalLifecycleStage()
-        log.trace("Final lifecycle stage is {}", res)
+        logger.trace("Final lifecycle stage is {}", res)
         res
       }
       updateSecondaryMap(dataVersion, finalLifecycleStage)
-      currentLifecycleStage = finalLifecycleStage
+      setLifecycleStage(finalLifecycleStage, datasetInfo)
     }
 
     def drop() {
@@ -240,7 +294,7 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
     }
 
     def resync() {
-      while(true) {
+      while (true) {
         try {
           timingReport("resync", "dataset" -> datasetId) {
             val w = u.datasetMapWriter
@@ -250,13 +304,18 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
                 val latest = w.latest(datasetInfo)
                 val latestDataVersion = latest.dataVersion
                 val latestLifecycleStage = latest.lifecycleStage
-                for(copy <- allCopies) {
+                for (copy <- allCopies) {
                   val secondaryDatasetInfo = makeSecondaryDatasetInfo(copy.datasetInfo)
                   timingReport("copy", "number" -> copy.copyNumber) {
-                    if(copy.lifecycleStage == metadata.LifecycleStage.Discarded) currentCookie = secondary.store.dropCopy(secondaryDatasetInfo.internalName, copy.copyNumber, currentCookie)
-                    else if(copy.lifecycleStage != metadata.LifecycleStage.Unpublished) syncCopy(copy)
-                    else if(secondary.store.wantsWorkingCopies) syncCopy(copy)
-                    else { /* ok */ }
+                    if (copy.lifecycleStage == metadata.LifecycleStage.Discarded) {
+                      currentCookie = secondary.store.dropCopy(secondaryDatasetInfo.internalName,
+                                                               copy.copyNumber,
+                                                               currentCookie)
+                    } else if (copy.lifecycleStage != metadata.LifecycleStage.Unpublished) {
+                      syncCopy(copy)
+                    } else if (secondary.store.wantsWorkingCopies) {
+                      syncCopy(copy)
+                    } else { /* ok */ }
                   }
                 }
                 updateSecondaryMap(latestDataVersion, latestLifecycleStage)
@@ -267,27 +326,54 @@ class PlaybackToSecondary[CT, CV](u: Universe[CT, CV] with Commitable with Secon
           return
         } catch {
           case ResyncSecondaryException(reason) =>
-            log.warn("Received resync while resyncing.  Resyncing as requested after waiting 10 seconds.  Reason: " + reason)
+            logger.warn("Received resync while resyncing.  Resyncing as requested after waiting 10 seconds. " +
+                     " Reason: " + reason)
             Thread.sleep(10L * 1000);
         }
       }
     }
 
     def syncCopy(copyInfo: metadata.CopyInfo) {
-      timingReport("sync-copy", "secondary" -> secondary.storeId, "dataset" -> copyInfo.datasetInfo.systemId, "copy" -> copyInfo.copyNumber) {
+      timingReport("sync-copy",
+                   "secondary" -> secondary.storeId,
+                   "dataset" -> copyInfo.datasetInfo.systemId,
+                   "copy" -> copyInfo.copyNumber) {
         for(reader <- u.datasetReader.openDataset(copyInfo)) {
           val copyCtx = new DatasetCopyContext(reader.copyInfo, reader.schema)
           val secondaryDatasetInfo = makeSecondaryDatasetInfo(copyCtx.datasetInfo)
           val secondaryCopyInfo = makeSecondaryCopyInfo(copyCtx.copyInfo)
           val secondarySchema = copyCtx.schema.mapValuesStrict(makeSecondaryColumnInfo)
-          val rollups: Seq[RollupInfo] = u.datasetMapReader.rollups(copyInfo).toSeq.map(makeSecondaryRollupInfo)
-          currentCookie = secondary.store.resync(secondaryDatasetInfo, secondaryCopyInfo, secondarySchema, currentCookie, reader.rows(), rollups)
+          val itRows = reader.rows()
+          // Sigh. itRows is a simple-arm v1 Managed.  v2 has a monad map() which makes the code below
+          // much, much shorter.
+          val wrappedRows = new SimpleArm[Iterator[ColumnIdMap[CV]]] {
+            def flatMap[A](f: Iterator[ColumnIdMap[CV]] => A): A = {
+              itRows.flatMap { it: Iterator[ColumnIdMap[CV]] =>
+                f(new InstrumentedIterator("sync-copy-throughput",
+                                           copyInfo.datasetInfo.systemId.toString,
+                                           it))
+              }
+            }
+          }
+          val rollups: Seq[RollupInfo] = u.datasetMapReader.rollups(copyInfo).toSeq.
+                                           map(makeSecondaryRollupInfo)
+          currentCookie = secondary.store.resync(secondaryDatasetInfo,
+                                                 secondaryCopyInfo,
+                                                 secondarySchema,
+                                                 currentCookie,
+                                                 wrappedRows,
+                                                 rollups)
         }
       }
     }
 
     def updateSecondaryMap(newLastDataVersion: Long, newLifecycleStage: metadata.LifecycleStage) {
-      u.secondaryManifest.completedReplicationTo(secondary.storeId, claimantId, datasetId, newLastDataVersion, newLifecycleStage, currentCookie)
+      u.secondaryManifest.completedReplicationTo(secondary.storeId,
+                                                 claimantId,
+                                                 datasetId,
+                                                 newLastDataVersion,
+                                                 newLifecycleStage,
+                                                 currentCookie)
       u.commit()
     }
 

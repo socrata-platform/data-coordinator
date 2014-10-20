@@ -1,6 +1,7 @@
 package com.socrata.datacoordinator.service
 
 import com.socrata.datacoordinator.common.DataSourceConfig
+import com.socrata.thirdparty.curator.CuratorConfig
 import com.typesafe.config.Config
 import java.util.concurrent.TimeUnit
 import scala.concurrent.duration.{MILLISECONDS, FiniteDuration, Duration}
@@ -20,6 +21,7 @@ class ServiceConfig(val config: Config, root: String) {
   val writeLockTimeout = new FiniteDuration(config.getDuration(k("write-lock-timeout"), MILLISECONDS),
                                             TimeUnit.MILLISECONDS)
   val reports = new ReportsConfig(config, k("reports"))
+  val metrics = config.getConfig(k("metrics"))
   val logTableCleanupSleepTime = new FiniteDuration(config.getDuration(k("log-table-cleanup-sleep-time"), MILLISECONDS),
                                                     TimeUnit.MILLISECONDS)
   val logTableCleanupDeleteOlderThan = new FiniteDuration(

@@ -1,39 +1,33 @@
 package com.socrata.datacoordinator.service
 
-import javax.servlet.http.{HttpServletResponse, HttpServletRequest}
-
-import com.socrata.http.server.implicits._
-import com.socrata.http.server.{ServerBroker, HttpResponse, SocrataServerJetty, HttpService}
-import com.socrata.http.server.responses._
-import com.rojoma.json.util.{JsonArrayIterator, AutomaticJsonCodecBuilder, JsonKey, JsonUtil}
-import com.rojoma.json.io._
-import com.rojoma.json.ast._
 import com.ibm.icu.text.Normalizer
-import com.socrata.datacoordinator.truth._
-import com.rojoma.simplearm.util._
-import com.socrata.datacoordinator.util.IndexedTempFile
-import javax.activation.{MimeTypeParseException, MimeType}
-import com.socrata.soql.environment.TypeName
-import com.socrata.datacoordinator.truth.loader._
-import java.io._
-import com.socrata.datacoordinator.id.{UserColumnId, DatasetId}
+import com.rojoma.json.ast._
 import com.rojoma.json.codec.JsonCodec
-import java.nio.charset.StandardCharsets.UTF_8
-import com.socrata.datacoordinator.util.collection.{UserColumnIdMap, UserColumnIdSet}
-import com.socrata.http.server.routing._
-import com.socrata.datacoordinator.truth.loader.NoSuchRowToDelete
-import com.rojoma.json.ast.JString
-import com.socrata.datacoordinator.truth.Snapshot
-import com.rojoma.json.io.FieldEvent
-import com.rojoma.json.io.StringEvent
-import com.rojoma.json.io.IdentifierEvent
-import com.socrata.datacoordinator.truth.loader.NoSuchRowToUpdate
-import com.socrata.datacoordinator.truth.loader.VersionMismatch
-import com.socrata.http.server.util.{StrongEntityTag, EntityTag, Precondition, ErrorAdapter}
+import com.rojoma.json.io._
+import com.rojoma.json.util.{JsonArrayIterator, AutomaticJsonCodecBuilder, JsonKey, JsonUtil}
+import com.rojoma.simplearm.util._
+import com.socrata.datacoordinator.id.{UserColumnId, DatasetId}
+import com.socrata.datacoordinator.truth._
+import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.metadata.{SchemaField, Schema}
+import com.socrata.datacoordinator.truth.Snapshot
+import com.socrata.datacoordinator.util.collection.{UserColumnIdMap, UserColumnIdSet}
+import com.socrata.datacoordinator.util.IndexedTempFile
+import com.socrata.http.server.implicits._
+import com.socrata.http.server.responses._
+import com.socrata.http.server.routing._
+import com.socrata.http.server.util.handlers.{ThreadRenamingHandler, NewLoggingHandler}
+import com.socrata.http.server.util.{StrongEntityTag, EntityTag, Precondition, ErrorAdapter}
+import com.socrata.http.server.util.RequestId.ReqIdHeader
+import com.socrata.http.server.{ServerBroker, HttpResponse, SocrataServerJetty, HttpService}
+import com.socrata.soql.environment.TypeName
+import com.socrata.thirdparty.metrics.{SocrataHttpSupport, Metrics, MetricsOptions, MetricsReporter}
+import java.io._
+import java.nio.charset.StandardCharsets.UTF_8
 import java.security.MessageDigest
+import javax.activation.{MimeTypeParseException, MimeType}
+import javax.servlet.http.{HttpServletResponse, HttpServletRequest}
 import org.apache.commons.codec.binary.Base64
-import com.socrata.http.server.util.handlers.{ThreadRenamingHandler, LoggingHandler}
 import org.joda.time.DateTime
 import org.joda.time.format.ISODateTimeFormat
 
@@ -69,7 +63,7 @@ class Service(serviceConfig: ServiceConfig,
               commandReadLimit: Long,
               formatDatasetId: DatasetId => String,
               parseDatasetId: String => Option[DatasetId],
-              tempFileProvider: () => IndexedTempFile)
+              tempFileProvider: () => IndexedTempFile) extends Metrics
 {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
 
@@ -449,6 +443,8 @@ class Service(serviceConfig: ServiceConfig,
     }
   }
 
+  val mutateRate = metrics.meter("mutation-rate", "rows")
+
   case class DatasetResource(datasetId: DatasetId) extends SodaResource {
     override def post = doMutation
     override def delete = doDeleteDataset
@@ -468,7 +464,10 @@ class Service(serviceConfig: ServiceConfig,
               }
               iteratorOrError match {
                 case Right(iterator) =>
-                  val ProcessMutationReturns(copyNumber, version, lastModified, result) = processMutation(datasetId, iterator.map { ev => boundResetter(); ev }, tmp)
+                  val ProcessMutationReturns(copyNumber, version, lastModified, result) =
+                    processMutation(datasetId,
+                                    iterator.map { ev => boundResetter(); mutateRate.mark(); ev },
+                                    tmp)
                   OK ~>
                     ContentType("application/json; charset=utf-8") ~>
                     Header("X-SODA2-Truth-Last-Modified", dateTimeFormat.print(lastModified)) ~>
@@ -691,8 +690,21 @@ class Service(serviceConfig: ServiceConfig,
     }
   }
 
+  private val logOptions = NewLoggingHandler.defaultOptions.copy(
+                     logRequestHeaders = Set(ReqIdHeader, "X-Socrata-Resource"))
+
+  private val metricsOptions = MetricsOptions(serviceConfig.metrics)
+
   def run(port: Int, broker: ServerBroker) {
-    val server = new SocrataServerJetty(new ThreadRenamingHandler(new LoggingHandler(errorHandlingHandler)), port = port, broker = broker)
-    server.run()
+    for { reporter <- MetricsReporter.managed(metricsOptions) } {
+      val server = new SocrataServerJetty(
+                     ThreadRenamingHandler(
+                       NewLoggingHandler(logOptions)(errorHandlingHandler)),
+                     SocrataServerJetty.defaultOptions.
+                       withPort(port).
+                       withExtraHandlers(List(SocrataHttpSupport.getHandler(metricsOptions))).
+                       withBroker(broker))
+      server.run()
+    }
   }
 }
