@@ -15,7 +15,7 @@ libraryDependencies ++= Seq(
   "com.socrata"        %% "socrata-http-client"         % "2.3.1",
   "com.socrata"        %% "socrata-http-curator-broker" % "2.3.1" exclude ("org.jboss.netty", "netty" /* see ZOOKEEPER-1681 */),
   "com.socrata"        %% "socrata-thirdparty-utils"    % "2.5.0",
-  "com.socrata"        %% "soql-stdlib"                 % "0.3.0" exclude ("javax.media", "jai_core"),
+  "com.socrata"        %% "soql-stdlib"                 % "[0.3.1,1.0.0)" exclude ("javax.media", "jai_core"),
   "com.typesafe"        % "config"                      % "1.0.0",
   "com.typesafe"       %% "scalalogging-slf4j"          % "1.1.0",
   "io.dropwizard.metrics" % "metrics-jetty9"            % "3.1.0",
