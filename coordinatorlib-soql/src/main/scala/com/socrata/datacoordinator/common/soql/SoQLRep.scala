@@ -20,7 +20,6 @@ object SoQLRep {
     SoQLFloatingTimestamp -> (ci => new sqlreps.FloatingTimestampRep(ci.physicalColumnBase)),
     SoQLDate -> (ci => new sqlreps.DateRep(ci.physicalColumnBase)),
     SoQLTime -> (ci => new sqlreps.TimeRep(ci.physicalColumnBase)),
-    SoQLLocation -> (ci => new sqlreps.LocationRep(ci.physicalColumnBase)),
     SoQLDouble -> (ci => new sqlreps.DoubleRep(ci.physicalColumnBase)),
     SoQLObject -> (ci => new sqlreps.ObjectRep(ci.physicalColumnBase)),
     SoQLArray -> (ci => new sqlreps.ArrayRep(ci.physicalColumnBase)),
@@ -44,7 +43,6 @@ object SoQLRep {
     SoQLFloatingTimestamp -> csvreps.FloatingTimestampRep,
     SoQLDate -> csvreps.DateRep,
     SoQLTime -> csvreps.TimeRep,
-    SoQLLocation -> csvreps.LocationRep,
     SoQLPoint -> new csvreps.GeometryLikeRep[Point](SoQLPoint, SoQLPoint(_)),
     SoQLMultiLine -> new csvreps.GeometryLikeRep[MultiLineString](SoQLMultiLine, SoQLMultiLine(_)),
     SoQLMultiPolygon -> new csvreps.GeometryLikeRep[MultiPolygon](SoQLMultiPolygon, SoQLMultiPolygon(_))
@@ -63,7 +61,6 @@ object SoQLRep {
     SoQLFloatingTimestamp -> jsonreps.FloatingTimestampRep,
     SoQLDate -> jsonreps.DateRep,
     SoQLTime -> jsonreps.TimeRep,
-    SoQLLocation -> jsonreps.LocationRep,
     SoQLDouble -> jsonreps.DoubleRep,
     SoQLArray -> jsonreps.ArrayRep,
     SoQLObject -> jsonreps.ObjectRep,

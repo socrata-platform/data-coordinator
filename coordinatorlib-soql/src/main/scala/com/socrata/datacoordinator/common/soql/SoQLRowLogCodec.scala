@@ -34,10 +34,6 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[SoQLValue] {
         target.writeRawByte(5)
         target.writeStringNoTag(ts.getZone.getID)
         target.writeInt64NoTag(ts.getMillis)
-      case SoQLLocation(lat, lon) =>
-        target.writeRawByte(6)
-        target.writeDoubleNoTag(lat)
-        target.writeDoubleNoTag(lon)
       case SoQLFloatingTimestamp(ts) =>
         target.writeRawByte(7)
         target.writeStringNoTag(SoQLFloatingTimestamp.StringRep(ts))
@@ -92,9 +88,7 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[SoQLValue] {
         val zone = DateTimeZone.forID(source.readString())
         SoQLFixedTimestamp(new DateTime(source.readInt64(), zone))
       case 6 =>
-        val lat = source.readDouble()
-        val lon = source.readDouble()
-        SoQLLocation(lat, lon)
+        throw new RuntimeException("SoQLLocation is no longer supported")
       case 7 =>
         SoQLFloatingTimestamp(SoQLFloatingTimestamp.StringRep.unapply(source.readString()).getOrElse {
           sys.error("Unable to parse floating timestamp from log!")
