@@ -252,7 +252,7 @@ object SecondaryWatcher extends App { self =>
 
               1 to config.secondaryConfig.instances(name).numWorkers map { n =>
                 new Thread {
-                  setName(s"Worker ${n} for secondary ${name}")
+                  setName(s"Worker $n for secondary $name")
 
                   override def run() {
                     w.mainloop(info, secondary, finished)
