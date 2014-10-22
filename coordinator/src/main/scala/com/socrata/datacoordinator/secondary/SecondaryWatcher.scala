@@ -63,12 +63,6 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
     foundWorkToDo.isDefined
   }
 
-  def cleanOphanedJobs(u: Universe[CT, CV] with SecondaryManifestProvider with PlaybackToSecondaryProvider,
-                       secondary: NamedSecondary[CT, CV]) {
-    import u._
-    secondaryManifest.cleanOrphanedClaimedDatasets(secondary.storeId, claimantId)
-  }
-
   private def maybeSleep(storeId: String, nextRunTime: DateTime, finished: CountDownLatch): Boolean = {
     val remainingTime = nextRunTime.getMillis - System.currentTimeMillis() - nextRuntimeSplay
     finished.await(remainingTime, TimeUnit.MILLISECONDS)
@@ -89,14 +83,18 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
     }
   }
 
-  def mainloop(secondaryConfigInfo: SecondaryConfigInfo, secondary: Secondary[CT, CV], finished: CountDownLatch) {
-    // Clean up any orphaned jobs which may have been created by this watcher
-    // This needs to be done outside the loop such that it's only executed once.  It also requires access to u.secondaryManifest
+  /**
+   * Cleanup any orphaned jobs created by this watcher exiting uncleanly.  Needs to be run
+   * without any workers running (ie. at startup).
+   */
+  private def cleanOrphanedJobs(secondaryConfigInfo: SecondaryConfigInfo): Unit = {
+    // At lean up any orphaned jobs which may have been created by this watcher
     for { u <- universe } yield {
-      import u.secondaryManifest
-      secondaryManifest.cleanOrphanedClaimedDatasets(secondaryConfigInfo.storeId, claimantId)
+      u.secondaryManifest.cleanOrphanedClaimedDatasets(secondaryConfigInfo.storeId, claimantId)
     }
+  }
 
+  def mainloop(secondaryConfigInfo: SecondaryConfigInfo, secondary: Secondary[CT, CV], finished: CountDownLatch) {
     var lastWrote = new DateTime(0L)
     var nextRunTime = bestNextRunTime(secondaryConfigInfo.storeId,
       secondaryConfigInfo.nextRunTime,
@@ -242,7 +240,6 @@ object SecondaryWatcher extends App { self =>
         using(dsInfo.dataSource.getConnection()) { conn =>
           val cfg = new SqlSecondaryConfig(conn, common.timingReport)
 
-
           new Thread {
               setName("SecondaryWatcher claim time manager")
 
@@ -251,18 +248,22 @@ object SecondaryWatcher extends App { self =>
               }
           } :: secondaries.iterator.flatMap { case (name, secondary) =>
             cfg.lookup(name).map { info =>
-              new Thread {
-                setName("Worker for secondary " + name)
+              w.cleanOrphanedJobs(info)
 
-                override def run() {
-                  w.mainloop(info, secondary, finished)
+              1 to config.secondaryConfig.instances(name).numWorkers map { n =>
+                new Thread {
+                  setName(s"Worker $n for secondary $name")
+
+                  override def run() {
+                    w.mainloop(info, secondary, finished)
+                  }
                 }
               }
             }.orElse {
               log.warn("Secondary {} is defined, but there is no record in the secondary config table", name)
               None
             }
-          }.toList
+          }.toList.flatten
         }
 
       threads.foreach(_.start())

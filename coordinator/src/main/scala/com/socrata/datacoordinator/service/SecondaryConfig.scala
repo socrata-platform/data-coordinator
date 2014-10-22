@@ -11,6 +11,7 @@ case class SecondaryGroupConfig(
 
 case class SecondaryInstanceConfig(
     secondaryType: String,
+    numWorkers: Int,
     config: Config
 )
 
