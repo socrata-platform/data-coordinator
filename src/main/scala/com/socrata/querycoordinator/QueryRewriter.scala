@@ -148,17 +148,23 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
     colIdx match {
       case Some(idx: Int) =>
         // All we have to do is replace the first argument with the rollup column reference since it is just being used
-        // as a comparison that result in a boolean.
+        // as a comparison that result in a boolean, then rewrite the b and c expressions.
         // ie. 'foo_date BETWEEN date_trunc_y("2014/01/01") AND date_trunc_y("2019/05/05")' just has to replace foo_date with
         // rollup column "c<n>"
-        val newParams = Seq(ColumnRef[ColumnId, SoQLAnalysisType](rollupColumnId(idx), SoQLFloatingTimestamp)(fc.position), lower, upper)
-        Some(fc.copy(parameters = newParams)(fc.position, fc.position))
+        for {
+          lowerRewrite <- rewriteExpr(lower, rollupColIdx)
+          upperRewrite <- rewriteExpr(upper, rollupColIdx)
+          newParams <- Some(Seq(ColumnRef[ColumnId, SoQLAnalysisType](rollupColumnId(idx), SoQLFloatingTimestamp)(fc.position), lowerRewrite, upperRewrite))
+        } yield fc.copy(parameters = newParams)(fc.position, fc.position)
       case _ => None
     }
   }
 
   /** Recursively maps the Expr based on the rollupColIdx map, returning either
     * a mapped expression or None if the expression couldn't be mapped.
+    *
+    * Note that every case here needs to ensure to map every expression recursively
+    * to ensure it is either a literal or mapped to the rollup.
     */
   def rewriteExpr(e: Expr, rollupColIdx: Map[Expr, Int]): Option[Expr] = {
     log.trace("Attempting to match expr: {}", e)
