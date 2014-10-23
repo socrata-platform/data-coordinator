@@ -271,6 +271,7 @@ object SecondaryWatcher extends App { self =>
           }.toList.flatten
         }
 
+      claimTimeManagerThread.start()
       workerThreads.foreach(_.start())
 
       log.info("Going to sleep...")
