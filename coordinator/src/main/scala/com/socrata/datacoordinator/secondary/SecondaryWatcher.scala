@@ -219,13 +219,16 @@ object SecondaryWatcher extends App { self =>
     val SIGTERM = new Signal("TERM")
     val SIGINT = new Signal("INT")
 
-    val finished = new CountDownLatch(1)
+    /** Flags when we want to start shutting down, don't process new work */
+    val initiateShutdown = new CountDownLatch(1)
+    /** Flags when we have stopped processing work and are ready to actually shutdown */
+    val completeShutdown = new CountDownLatch(1)
 
     val signalHandler = new SignalHandler {
       val firstSignal = new java.util.concurrent.atomic.AtomicBoolean(true)
       def handle(signal: Signal) {
         log.info("Signalling shutdown")
-        finished.countDown()
+        initiateShutdown.countDown()
       }
     }
 
@@ -236,17 +239,19 @@ object SecondaryWatcher extends App { self =>
       oldSIGTERM = Signal.handle(SIGTERM, signalHandler)
       oldSIGINT = Signal.handle(SIGINT, signalHandler)
 
-      val threads =
+      val claimTimeManagerThread = new Thread {
+        setName("SecondaryWatcher claim time manager")
+
+        override def run() {
+          cm.mainloop(completeShutdown)
+        }
+      }
+
+      val workerThreads =
         using(dsInfo.dataSource.getConnection()) { conn =>
           val cfg = new SqlSecondaryConfig(conn, common.timingReport)
 
-          new Thread {
-              setName("SecondaryWatcher claim time manager")
-
-              override def run() {
-                cm.mainloop(finished)
-              }
-          } :: secondaries.iterator.flatMap { case (name, secondary) =>
+ secondaries.iterator.flatMap { case (name, secondary) =>
             cfg.lookup(name).map { info =>
               w.cleanOrphanedJobs(info)
 
@@ -255,7 +260,7 @@ object SecondaryWatcher extends App { self =>
                   setName(s"Worker $n for secondary $name")
 
                   override def run() {
-                    w.mainloop(info, secondary, finished)
+                    w.mainloop(info, secondary, initiateShutdown)
                   }
                 }
               }
@@ -266,13 +271,19 @@ object SecondaryWatcher extends App { self =>
           }.toList.flatten
         }
 
-      threads.foreach(_.start())
+      claimTimeManagerThread.start()
+      workerThreads.foreach(_.start())
 
       log.info("Going to sleep...")
-      finished.await()
+      initiateShutdown.await()
 
-      log.info("Waiting for threads to stop...")
-      threads.foreach(_.join())
+      log.info("Waiting for worker threads to stop...")
+      workerThreads.foreach(_.join())
+
+      // Can't shutdown claim time manager until workers stop or their jobs might be stolen
+      log.info("Shutting down claim time manager...")
+      completeShutdown.countDown()
+      claimTimeManagerThread.join()
     } finally {
       log.info("Un-hooking SIGTERM and SIGINT")
       if(oldSIGTERM != null) Signal.handle(SIGTERM, oldSIGTERM)
