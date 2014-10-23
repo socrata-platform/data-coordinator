@@ -87,6 +87,76 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
     case _ => false
   }
 
+  /**
+   * Looks at the rollup columns supplied and tries to find one of the supplied functions whose first parameter operates
+   * on the given ColumnRef.  If there are multiple matches, returns the first matching function.  Every function supplied
+   * must take at least one parameter.
+   */
+  private def findFunctionOnColumn(rollupColIdx: Map[Expr, Int], functions: Seq[Function[_]], colRef: ColumnRef[_,_]): Option[Int] = {
+    val possibleColIdxs = functions.map { function =>
+      rollupColIdx.find {
+        case (fc: FunctionCall[_, _], _) if fc.function.function == function && fc.parameters.head == colRef => true
+        case _ => false
+      }.map(_._2)
+    }
+    possibleColIdxs.flatten.headOption
+  }
+
+  /** An in order hierarchy of floating timestamp date truncation functions, from least granular to most granular.  */
+  private val dateTruncHierarchy = Seq(SoQLFunctions.FloatingTimeStampTruncY,
+                                       SoQLFunctions.FloatingTimeStampTruncYm,
+                                       SoQLFunctions.FloatingTimeStampTruncYmd)
+
+  /**
+   * This tries to rewrite a between expression on floating timestamps to use an aggregated rollup column.
+   * These functions have a hierarchy, so a query for a given level of truncation can be served by any other
+   * truncation that is at least as long, eg. ymd can answer ym queries.
+   *
+   * This is slightly different than the more general expression rewrites because BETWEEN returns a boolean, so
+   * there is no need to apply the date aggregation function on the ColumnRef.  In fact, we do not want to
+   * apply the aggregation function on the ColumnRef because that will end up being bad for query execution
+   * performance in most cases.
+   *
+   * @param fc A NOT BETWEEN or BETWEEN function call.
+   */
+  private def rewriteDateTruncBetweenExpr(rollupColIdx: Map[Expr, Int], fc: FunctionCall[ColumnId, SoQLAnalysisType]): Option[Expr] = {
+    assert(fc.function.function == SoQLFunctions.Between || fc.function.function == SoQLFunctions.NotBetween)
+    val maybeColRef +: lower +: upper +: _ = fc.parameters
+
+    /** The common date truncation function shared between the lower and upper bounds of the between */
+    val commonTruncFunction = (lower, upper) match {
+      case (lowerFc: FunctionCall[_, _], upperFc: FunctionCall[_,_]) =>
+        (lowerFc.function.function, upperFc.function.function) match {
+          case (l, u) if l == u && dateTruncHierarchy.contains(l) => Some(l)
+          case _ => None
+        }
+      case _ => None
+    }
+
+    /** The column index in the rollup that matches the common truncation function, either exactly or at a more granular level */
+    val colIdx = maybeColRef match {
+      case colRef: ColumnRef[_,_] if colRef.typ == SoQLFloatingTimestamp =>
+        for {
+          // we can rewrite to any date_trunc_xx that is the same or after the desired one in the hierarchy
+          possibleTruncFunctions <- commonTruncFunction.map { tf => dateTruncHierarchy.dropWhile { f => f != tf } }
+          idx <- findFunctionOnColumn(rollupColIdx, possibleTruncFunctions, colRef)
+        } yield idx
+      case _ => None
+    }
+
+    /** Now rewrite the BETWEEN to use the rollup, if possible. */
+    colIdx match {
+      case Some(idx: Int) =>
+        // All we have to do is replace the first argument with the rollup column reference since it is just being used
+        // as a comparison that result in a boolean.
+        // ie. 'foo_date BETWEEN date_trunc_y("2014/01/01") AND date_trunc_y("2019/05/05")' just has to replace foo_date with
+        // rollup column "c<n>"
+        val newParams = Seq(ColumnRef[ColumnId, SoQLAnalysisType](rollupColumnId(idx), SoQLFloatingTimestamp)(fc.position), lower, upper)
+        Some(fc.copy(parameters = newParams)(fc.position, fc.position))
+      case _ => None
+    }
+  }
+
   /** Recursively maps the Expr based on the rollupColIdx map, returning either
     * a mapped expression or None if the expression couldn't be mapped.
     */
@@ -106,6 +176,13 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
           newSumCol <- Some(ColumnRef[ColumnId, SoQLAnalysisType](rollupColumnId(idx), SoQLNumber)(fc.position))
           newFc <- Some(FunctionCall[ColumnId, SoQLAnalysisType](mf, Seq(newSumCol))(fc.position, fc.position))
         } yield newFc
+      // If this is a between function operating on floating timestamps, and arguments b and c are both date aggregates,
+      // then try to rewrite argument a to use a rollup.
+      case fc: FunctionCall[ColumnId, SoQLAnalysisType]
+          if (fc.function.function == SoQLFunctions.Between || fc.function.function == SoQLFunctions.NotBetween) &&
+             fc.function.bindings.values.forall(_ == SoQLFloatingTimestamp) &&
+             fc.function.bindings.values.tail.forall(dateTruncHierarchy contains _) =>
+        rewriteDateTruncBetweenExpr(rollupColIdx, fc)
       case fc: FunctionCall[ColumnId, SoQLAnalysisType] if fc.function.isAggregate == false =>
         // if we have the exact same function in rollup and query, just turn it into a column ref in the rollup
         val functionMatch = for {
