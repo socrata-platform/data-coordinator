@@ -34,6 +34,9 @@ class TestQueryRewriterDateTrunc extends TestQueryRewriterBase {
   val rewrittenQueryRym = "SELECT c2 as ward, sum(c3) as count WHERE c1 BETWEEN date_trunc_ym('2011-02-01') AND date_trunc_ym('2012-05-02') GROUP BY c2"
   val rewrittenQueryAnalysisRym = analyzeRewrittenQuery("r_ymd", rewrittenQueryRym)
 
+  val rewrittenQueryNotBetweenRym = "SELECT c2 as ward, sum(c3) as count WHERE c1 NOT BETWEEN date_trunc_ym('2011-02-01') AND date_trunc_ym('2012-05-02') GROUP BY c2"
+  val rewrittenQueryAnalysisNotBetweenRym = analyzeRewrittenQuery("r_ymd", rewrittenQueryNotBetweenRym)
+
   val rewrittenQueryRy = "SELECT c2 as ward, sum(c3) as count WHERE c1 BETWEEN date_trunc_y('2011-02-01') AND date_trunc_y('2012-05-02') GROUP BY c2"
   val rewrittenQueryAnalysisRy = analyzeRewrittenQuery("r_y", rewrittenQueryRy)
 
@@ -70,7 +73,7 @@ class TestQueryRewriterDateTrunc extends TestQueryRewriterBase {
     rewrites should have size (0)
   }
 
-  test("date_trunc_ymd") {
+  test("BETWEEN date_trunc_ymd") {
     val q = "SELECT ward, count(*) AS count WHERE " +
       "crime_date BETWEEN date_trunc_ymd('2011-02-01') AND date_trunc_ymd('2012-05-02') GROUP BY ward"
     val queryAnalysis = analyzeQuery(q)
@@ -84,7 +87,7 @@ class TestQueryRewriterDateTrunc extends TestQueryRewriterBase {
   }
 
 
-  test("date_trunc_ym") {
+  test("BETWEEN date_trunc_ym") {
     val q = "SELECT ward, count(*) AS count WHERE " +
       "crime_date BETWEEN date_trunc_ym('2011-02-01') AND date_trunc_ym('2012-05-02') GROUP BY ward"
     val queryAnalysis = analyzeQuery(q)
@@ -100,7 +103,7 @@ class TestQueryRewriterDateTrunc extends TestQueryRewriterBase {
   }
 
 
-  test("date_trunc_y") {
+  test("BETWEEN date_trunc_y") {
     val q = "SELECT ward, count(*) AS count WHERE " +
       "crime_date BETWEEN date_trunc_y('2011-02-01') AND date_trunc_y('2012-05-02') GROUP BY ward"
     val queryAnalysis = analyzeQuery(q)
@@ -115,5 +118,21 @@ class TestQueryRewriterDateTrunc extends TestQueryRewriterBase {
     rewrites.get("r_y").get should equal(rewrittenQueryAnalysisRy)
 
     rewrites should have size (3)
+  }
+
+
+  test("NOT BETWEEN date_trunc_ym") {
+    val q = "SELECT ward, count(*) AS count WHERE " +
+      "crime_date NOT BETWEEN date_trunc_ym('2011-02-01') AND date_trunc_ym('2012-05-02') GROUP BY ward"
+    val queryAnalysis = analyzeQuery(q)
+
+    val rewrites = rewriter.possibleRewrites(queryAnalysis, rollupAnalysis)
+
+    rewrites should contain key ("r_ymd")
+    rewrites.get("r_ymd").get should equal(rewrittenQueryAnalysisNotBetweenRym)
+    rewrites should contain key ("r_ym")
+    rewrites.get("r_ym").get should equal(rewrittenQueryAnalysisNotBetweenRym)
+
+    rewrites should have size (2)
   }
 }

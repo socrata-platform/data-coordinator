@@ -117,10 +117,10 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
    * apply the aggregation function on the ColumnRef because that will end up being bad for query execution
    * performance in most cases.
    *
-   * @param fc A BETWEEN function call.
+   * @param fc A NOT BETWEEN or BETWEEN function call.
    */
   private def rewriteDateTruncBetweenExpr(rollupColIdx: Map[Expr, Int], fc: FunctionCall[ColumnId, SoQLAnalysisType]): Option[Expr] = {
-    assert(fc.function.function == SoQLFunctions.Between)
+    assert(fc.function.function == SoQLFunctions.Between || fc.function.function == SoQLFunctions.NotBetween)
     val maybeColRef +: lower +: upper +: _ = fc.parameters
 
     /** The common date truncation function shared between the lower and upper bounds of the between */
@@ -179,7 +179,7 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
       // If this is a between function operating on floating timestamps, and arguments b and c are both date aggregates,
       // then try to rewrite argument a to use a rollup.
       case fc: FunctionCall[ColumnId, SoQLAnalysisType]
-          if fc.function.function == SoQLFunctions.Between &&
+          if (fc.function.function == SoQLFunctions.Between || fc.function.function == SoQLFunctions.NotBetween) &&
              fc.function.bindings.values.forall(_ == SoQLFloatingTimestamp) &&
              fc.function.bindings.values.tail.forall(dateTruncHierarchy contains _) =>
         rewriteDateTruncBetweenExpr(rollupColIdx, fc)
