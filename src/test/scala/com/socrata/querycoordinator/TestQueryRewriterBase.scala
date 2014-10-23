@@ -15,7 +15,8 @@ class TestQueryRewriterBase extends TestBase {
     ":wido-ward" -> SoQLType.typesByName(TypeName("number")),
     "crim-typ3" -> SoQLType.typesByName(TypeName("text")),
     "dont-roll" -> SoQLType.typesByName(TypeName("text")),
-    "crim-date" -> SoQLType.typesByName(TypeName("floating_timestamp"))
+    "crim-date" -> SoQLType.typesByName(TypeName("floating_timestamp")),
+    "some-date" -> SoQLType.typesByName(TypeName("floating_timestamp"))
   )
 
   /** QueryRewriter wants a Schema object to have a little stronger typing, so make one */
@@ -27,7 +28,8 @@ class TestQueryRewriterBase extends TestBase {
     ColumnName("ward") -> ":wido-ward",
     ColumnName("crime_type") -> "crim-typ3",
     ColumnName("dont_create_rollups") -> "dont-roll",
-    ColumnName("crime_date") -> "crim-date"
+    ColumnName("crime_date") -> "crim-date",
+    ColumnName("some_date") -> "some-date"
   )
 
   /** The dataset context, used for parsing the query */
