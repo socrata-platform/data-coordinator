@@ -15,12 +15,12 @@ import com.socrata.http.server.curator.CuratorBroker
 import com.socrata.http.server.livenesscheck.LivenessCheckResponder
 import com.socrata.http.server.util.{EntityTag, Precondition}
 import com.socrata.soql.environment.ColumnName
-import com.socrata.thirdparty.curator.CuratorFromConfig
+import com.socrata.thirdparty.curator.{CuratorFromConfig, DiscoveryFromConfig}
 import com.socrata.thirdparty.typesafeconfig.Propertizer
 import com.typesafe.config.{Config, ConfigFactory}
 import java.net.{InetSocketAddress, InetAddress}
 import java.util.concurrent.{CountDownLatch, TimeUnit, Executors}
-import org.apache.curator.x.discovery.{ServiceInstanceBuilder, ServiceInstance, ServiceDiscoveryBuilder}
+import org.apache.curator.x.discovery.{ServiceInstanceBuilder, ServiceInstance}
 import org.apache.log4j.PropertyConfigurator
 import org.joda.time.DateTime
 import scala.util.Random
@@ -295,19 +295,19 @@ object Main {
         try {
           tableDropper.start()
           logTableCleanup.start()
-          val address = serviceConfig.advertisement.address
+          val address = serviceConfig.discovery.address
           for {
             curator <- CuratorFromConfig(serviceConfig.curator)
-            discovery <- managed(ServiceDiscoveryBuilder.builder(classOf[AuxiliaryData]).
-              client(curator).
-              basePath(serviceConfig.advertisement.basePath).
-              build())
+            discovery <- DiscoveryFromConfig(classOf[AuxiliaryData], curator, serviceConfig.discovery)
             pong <- managed(new LivenessCheckResponder(new InetSocketAddress(InetAddress.getByName(address), 0)))
           } {
-            discovery.start()
             pong.start()
             val auxData = new AuxiliaryData(livenessCheckInfo = Some(pong.livenessCheckInfo))
-            serv.run(serviceConfig.network.port, new CuratorBroker(discovery, address, serviceConfig.advertisement.name + "." + serviceConfig.instance, Some(auxData)))
+            serv.run(serviceConfig.network.port,
+                     new CuratorBroker(discovery,
+                                       address,
+                                       serviceConfig.discovery.name + "." + serviceConfig.instance,
+                                       Some(auxData)))
           }
         } finally {
           finished.countDown()
