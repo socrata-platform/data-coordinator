@@ -15,12 +15,15 @@ object Coordinator {
       Seq(
         "net.ceedubs"    %% "ficus"         % "1.0.0",
         "com.mchange"     % "c3p0"          % "0.9.5-pre8",
-        "com.socrata"    %% "socrata-http-curator-broker" % "2.3.1",
-        "com.socrata"    %% "socrata-thirdparty-utils" % "2.5.0",
+        "com.socrata"    %% "socrata-http-curator-broker" % "2.3.3",
+        "com.socrata"    %% "socrata-thirdparty-utils" % "2.5.3",
         "com.sun.jna"     % "jna"           % "3.0.9",
         "com.typesafe"    % "config"        % "1.2.1",
         "io.dropwizard.metrics" % "metrics-jetty9"   % "3.1.0",
-        "io.dropwizard.metrics" % "metrics-graphite"   % "3.1.0",
+        // "io.dropwizard.metrics" % "metrics-graphite"   % "3.1.0",
+        // See CORE-3635: use lower version of graphite to work around Graphite reconnect issues
+        "com.codahale.metrics" % "metrics-graphite" % "3.0.2" exclude(
+                                 "com.codahale.metrics", "metrics-core"),
         "net.sf.opencsv"  % "opencsv"       % "2.3",
         "nl.grons"       %% "metrics-scala" % "3.3.0",
         "org.clojure"     % "clojure"       % "1.5.1",
