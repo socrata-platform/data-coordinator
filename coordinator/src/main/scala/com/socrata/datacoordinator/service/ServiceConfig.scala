@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator.service
 
 import com.socrata.datacoordinator.common.DataSourceConfig
-import com.socrata.thirdparty.curator.CuratorConfig
+import com.socrata.thirdparty.curator.{CuratorConfig, DiscoveryConfig}
 import com.typesafe.config.Config
 import java.util.concurrent.TimeUnit
 import scala.concurrent.duration.{MILLISECONDS, FiniteDuration, Duration}
@@ -11,7 +11,7 @@ class ServiceConfig(val config: Config, root: String) {
   val secondary = new SecondaryConfig(config.getConfig(k("secondary")))
   val network = new NetworkConfig(config, k("network"))
   val curator = new CuratorConfig(config, k("curator"))
-  val advertisement = new AdvertisementConfig(config, k("service-advertisement"))
+  val discovery = new DiscoveryConfig(config, k("service-advertisement"))
   val dataSource = new DataSourceConfig(config, k("database"))
   val logProperties = config.getConfig(k("log4j"))
   val commandReadLimit = config.getBytes(k("command-read-limit")).longValue

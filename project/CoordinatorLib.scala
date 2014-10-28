@@ -9,7 +9,7 @@ object CoordinatorLib {
       "com.mchange"         % "c3p0"          % "0.9.5-pre8" % "optional",
       "com.rojoma"         %% "rojoma-json"   % "2.4.3",
       "com.rojoma"         %% "simple-arm"    % "1.1.10",
-      "com.socrata"        %% "socrata-thirdparty-utils" % "2.5.0",
+      "com.socrata"        %% "socrata-thirdparty-utils" % "2.5.3",
       "com.socrata"        %% "soql-brita"    % "1.3.0",
       "com.socrata"        %% "soql-environment" % "0.2.1",
       "com.typesafe"       %% "scalalogging-slf4j" % "1.1.0",
