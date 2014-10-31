@@ -1,12 +1,12 @@
 package com.socrata.datacoordinator.common
 
-import com.typesafe.config.{ConfigException, Config}
+import com.typesafe.config.Config
 import javax.sql.DataSource
 import java.sql.Connection
 import java.io.OutputStream
 import org.postgresql.ds.PGSimpleDataSource
 import com.socrata.datacoordinator.truth.universe.sql.{PostgresCopyIn, C3P0WrappedPostgresCopyIn}
-import com.socrata.thirdparty.typesafeconfig.{Propertizer, ConfigClass}
+import com.socrata.thirdparty.typesafeconfig.{C3P0Propertizer, ConfigClass}
 import com.mchange.v2.c3p0.DataSources
 import com.rojoma.simplearm.{SimpleArm, Managed}
 
@@ -34,7 +34,7 @@ object DataSourceFromConfig {
         dataSource.setApplicationName(config.applicationName)
         config.poolOptions match {
           case Some(poolOptions) =>
-            val overrideProps = Propertizer("", poolOptions)
+            val overrideProps = C3P0Propertizer("", poolOptions)
             val pooled = DataSources.pooledDataSource(dataSource, null, overrideProps)
             try {
               f(DSInfo(pooled, C3P0WrappedPostgresCopyIn))

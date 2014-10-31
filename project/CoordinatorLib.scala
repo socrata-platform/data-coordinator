@@ -6,10 +6,10 @@ object CoordinatorLib {
     libraryDependencies ++= Seq(
       "com.google.protobuf" % "protobuf-java" % "2.4.1",
       "com.h2database"      % "h2"            % "1.3.166" % "test,it",
-      "com.mchange"         % "c3p0"          % "0.9.5-pre8" % "optional",
+      "com.mchange"         % "c3p0"          % "0.9.5-pre9" % "optional",
       "com.rojoma"         %% "rojoma-json"   % "2.4.3",
       "com.rojoma"         %% "simple-arm"    % "1.1.10",
-      "com.socrata"        %% "socrata-thirdparty-utils" % "2.5.3",
+      "com.socrata"        %% "socrata-thirdparty-utils" % "2.6.0",
       "com.socrata"        %% "soql-brita"    % "1.3.0",
       "com.socrata"        %% "soql-environment" % "0.2.1",
       "com.typesafe"       %% "scalalogging-slf4j" % "1.1.0",
