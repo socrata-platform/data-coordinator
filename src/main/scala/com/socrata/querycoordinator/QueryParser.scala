@@ -1,31 +1,31 @@
 package com.socrata.querycoordinator
 
-import com.socrata.soql.types.{SoQLAnalysisType, SoQLType}
-import com.socrata.soql.environment.{DatasetContext, ColumnName}
-import com.socrata.soql.collection.OrderedMap
-import com.socrata.soql.{SoQLAnalysis, SoQLAnalyzer}
-import com.socrata.soql.exceptions.SoQLException
 
-import QueryParser._
-import com.socrata.soql.SoQLAnalysis
+import com.socrata.soql.{SoQLAnalysis, SoQLAnalyzer}
+import com.socrata.soql.collection.OrderedMap
+import com.socrata.soql.environment.{ColumnName, DatasetContext}
+import com.socrata.soql.exceptions.SoQLException
+import com.socrata.soql.types.{SoQLAnalysisType, SoQLType}
+import com.typesafe.scalalogging.slf4j.Logging
 
 class QueryParser(analyzer: SoQLAnalyzer[SoQLAnalysisType], maxRows: Option[Int], defaultRowsLimit: Int) {
 
-  private def go(columnIdMapping: Map[ColumnName, String], schema: Map[String, SoQLType])(f: DatasetContext[SoQLAnalysisType] => SoQLAnalysis[ColumnName, SoQLAnalysisType]): Result =
-    dsContext(columnIdMapping, schema) match {
-      case Right(ds) =>
-        try {
-          limitRows(f(ds)) match {
-            case Right(analysis) => SuccessfulParse(analysis.mapColumnIds(columnIdMapping))
-            case Left(result) => result
-          }
-        } catch {
-          case e: SoQLException =>
-            AnalysisError(e)
-        }
-      case Left(unknownColumnIds) =>
-        UnknownColumnIds(unknownColumnIds)
+  import QueryParser._
+
+  private def go(columnIdMapping: Map[ColumnName, String], schema: Map[String, SoQLType])
+                (f: DatasetContext[SoQLAnalysisType] => SoQLAnalysis[ColumnName, SoQLAnalysisType])
+                : Result = {
+    val ds = dsContext(columnIdMapping, schema)
+    try {
+      limitRows(f(ds)) match {
+        case Right(analysis) => SuccessfulParse(analysis.mapColumnIds(columnIdMapping))
+        case Left(result) => result
+      }
+    } catch {
+      case e: SoQLException =>
+        AnalysisError(e)
     }
+  }
 
   private def limitRows(analysis: SoQLAnalysis[ColumnName, SoQLAnalysisType]): Either[Result, SoQLAnalysis[ColumnName, SoQLAnalysisType]] = {
     analysis.limit match {
@@ -45,21 +45,29 @@ class QueryParser(analyzer: SoQLAnalyzer[SoQLAnalysisType], maxRows: Option[Int]
     go(columnIdMapping, schema)(analyzer.analyzeSplitQuery(selection, where, groupBy, having, orderBy, limit, offset, search)(_))
 }
 
-object QueryParser {
+object QueryParser extends Logging {
   sealed abstract class Result
   case class SuccessfulParse(analysis: SoQLAnalysis[String, SoQLAnalysisType]) extends Result
   case class AnalysisError(problem: SoQLException) extends Result
   case class UnknownColumnIds(columnIds: Set[String]) extends Result
   case class RowLimitExceeded(max: BigInt) extends Result
 
-  def dsContext(columnIdMapping: Map[ColumnName, String], rawSchema: Map[String, SoQLType]): Either[Set[String], DatasetContext[SoQLAnalysisType]] =
+  /**
+   * Make schema which is a mapping of column name to datatype
+   * by going through the raw schema of column id to datatype map.
+   * Ignore columns that exist in truth but missing in secondary.
+   * @param columnIdMapping column name to column id map (supposedly from soda fountain)
+   * @param rawSchema column id to datatype map like ( xxxx-yyyy -> text, ... ) (supposedly from secondary)
+   * @return column name to datatype map like ( field_name -> text, ... )
+   */
+  def dsContext(columnIdMapping: Map[ColumnName, String], rawSchema: Map[String, SoQLType]): DatasetContext[SoQLAnalysisType] =
     try {
-      val unknownColumnIds = columnIdMapping.values.iterator.filterNot(rawSchema.contains).toSet
-      if (unknownColumnIds.isEmpty)
-        Right(new DatasetContext[SoQLAnalysisType] {
-          val schema: OrderedMap[ColumnName, SoQLAnalysisType] = OrderedMap(columnIdMapping.mapValues(rawSchema).toSeq.sortBy(_._1): _*)
-        })
-      else
-        Left(unknownColumnIds)
+      val knownColumnIdMapping = columnIdMapping.filter { case (k, v) => rawSchema.contains(v) }
+      if (columnIdMapping.size != knownColumnIdMapping.size) {
+        logger.info(s"truth has columns unknown to secondary ${columnIdMapping.size} ${knownColumnIdMapping.size}")
+      }
+      new DatasetContext[SoQLAnalysisType] {
+        val schema: OrderedMap[ColumnName, SoQLAnalysisType] = OrderedMap(knownColumnIdMapping.mapValues(rawSchema).toSeq.sortBy(_._1): _*)
+      }
     }
 }

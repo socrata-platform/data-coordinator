@@ -33,10 +33,7 @@ class TestQueryRewriterBase extends TestBase {
   )
 
   /** The dataset context, used for parsing the query */
-  val dsContext = QueryParser.dsContext(columnIdMapping, rawSchema) match {
-    case Right(ctx) => ctx
-    case Left(unknownColumnIds) => throw new RuntimeException("Unknown column ids:" + unknownColumnIds)
-  }
+  val dsContext = QueryParser.dsContext(columnIdMapping, rawSchema)
 
   /** Analyze the query and map to column ids, just like we have in real life. */
   def analyzeQuery(q: String) = analyzer.analyzeFullQuery(q)(dsContext).mapColumnIds(columnIdMapping)

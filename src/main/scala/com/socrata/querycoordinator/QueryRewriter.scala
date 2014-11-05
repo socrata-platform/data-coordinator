@@ -336,14 +336,7 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
   // maps prefixed column name to type
   private def prefixedDsContext(schema: Schema) = {
     val columnIdMap = schema.schema.map { case (k,v) => addRollupPrefix(k) -> k }
-    QueryParser.dsContext(columnIdMap , schema.schema) match {
-      case Right(ctx) => ctx
-      case Left(unknownColumnIds) =>
-        // Ok, we are cheating here to avoid properly exposing this error .  Thing is we shouldn't be able to
-        // get here without the query already being parsed, and the query can't be parsed if there are
-        // unknown column ids.
-        throw new RuntimeException("Found ColumnIds in the name mapping that aren't in the schema, but the QueryParser should have already caught this!")
-    }
+    QueryParser.dsContext(columnIdMap , schema.schema)
   }
 
   def analyzeRollups(schema: Schema, rollups: Seq[RollupInfo]): Map[RollupName,Anal] = {

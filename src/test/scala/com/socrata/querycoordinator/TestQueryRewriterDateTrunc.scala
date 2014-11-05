@@ -48,10 +48,7 @@ class TestQueryRewriterDateTrunc extends TestQueryRewriterBase {
 
     val rollupNoopColumnNameMap = rewrittenRawSchema.map { case (k, v) => ColumnName(k) -> k}
 
-    val rollupDsContext = QueryParser.dsContext(rollupNoopColumnNameMap, rewrittenRawSchema) match {
-      case Right(ctx) => ctx
-      case Left(unknownColumnIds) => throw new RuntimeException("Unknown column ids:" + unknownColumnIds)
-    }
+    val rollupDsContext = QueryParser.dsContext(rollupNoopColumnNameMap, rewrittenRawSchema)
 
     val rewrittenQueryAnalysis = analyzer.analyzeFullQuery(q)(rollupDsContext).mapColumnIds(rollupNoopColumnNameMap)
     rewrittenQueryAnalysis
