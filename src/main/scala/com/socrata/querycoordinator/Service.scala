@@ -1,36 +1,33 @@
 package com.socrata.querycoordinator
 
-import com.google.common.collect.{HashBiMap, BiMap}
-import com.rojoma.json.ast.{JString, JNumber, JValue, JObject}
+import java.io._
+
+import scala.annotation.tailrec
+import scala.concurrent.duration._
+import scala.util.control.ControlThrowable
+
+import com.rojoma.json.ast.{JNumber, JObject, JString, JValue}
 import com.rojoma.json.codec.JsonCodec
 import com.rojoma.json.io._
 import com.rojoma.json.util.JsonUtil
-import com.rojoma.simplearm.Managed
 import com.rojoma.simplearm.util._
-import com.socrata.http.client.{Response, RequestBuilder, HttpClient}
+import com.socrata.http.client.RequestBuilder
 import com.socrata.http.common.AuxiliaryData
+import com.socrata.http.common.util.HttpUtils
 import com.socrata.http.server.HttpResponse
 import com.socrata.http.server.implicits._
 import com.socrata.http.server.responses._
 import com.socrata.http.server.routing.SimpleResource
 import com.socrata.http.server.routing.SimpleRouteContext._
 import com.socrata.http.server.util.RequestId
-import com.socrata.soql.collection.OrderedMap
-import com.socrata.soql.environment.{TypeName, ColumnName, DatasetContext}
-import com.socrata.soql.exceptions._
 import com.socrata.soql.SoQLAnalysis
-import com.socrata.soql.SoQLAnalyzer
-import com.socrata.soql.types.{SoQLType, SoQLAnalysisType}
-import com.socrata.thirdparty.asynchttpclient.{FAsyncHandler, BodyHandler}
-import java.io._
-import java.util.Locale
-import javax.servlet.http.{HttpServletResponse, HttpServletRequest}
+import com.socrata.soql.environment.ColumnName
+import com.socrata.soql.exceptions._
+import com.socrata.soql.types.SoQLAnalysisType
+import javax.servlet.http.{HttpServletRequest, HttpServletResponse}
 import org.apache.curator.x.discovery.ServiceInstance
-import scala.annotation.tailrec
-import scala.annotation.unchecked.uncheckedVariance
-import scala.collection.JavaConverters._
-import scala.concurrent.duration._
-import scala.util.control.ControlThrowable
+import org.joda.time.{DateTime, Interval}
+import org.joda.time.format.ISODateTimeFormat
 
 /**
  * Main HTTP resource servicing class
@@ -214,6 +211,8 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
       val dataset = Option(req.getParameter("ds")).getOrElse {
         finishRequest(noDatasetResponse)
       }
+      val sfDataVersion = req.header("X-SODA2-DataVersion").map(_.toLong).get
+      val sfLastModified = req.dateTimeHeader("X-SODA2-LastModified").get
 
       val forcedSecondaryName = Option(req.getParameter("store"))
       val noRollup = Option(req.getParameter("no_rollup")).isDefined
@@ -261,7 +260,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
           instance <- Option(secondaryProvider.provider(name).getInstance())
           base <- Some(reqBuilder(instance))
           result <- schemaFetcher(base.receiveTimeoutMS(getSchemaTimeout.toMillis.toInt), dataset, copy) match {
-            case SchemaFetcher.Successful(newSchema) => Some(true)
+            case SchemaFetcher.Successful(newSchema, _, _) => Some(true)
             case SchemaFetcher.NoSuchDatasetInSecondary => Some(false)
             case other =>
               log.warn("Unexpected response when fetching schema from secondary: {}", other)
@@ -295,11 +294,12 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
       // That last step is the most complex, because it is a
       // potentially long-running thing, and can cause a retry
       // if the upstream says "the schema just changed".
-      val base = reqBuilder(secondary(dataset, chosenSecondaryName))
+      val second = secondary(dataset, chosenSecondaryName)
+      val base = reqBuilder(second)
       log.info("Base URI: " + base.url)
       def getAndCacheSchema(dataset: String, copy: Option[String]) =
         schemaFetcher(base.receiveTimeoutMS(getSchemaTimeout.toMillis.toInt), dataset, copy) match {
-          case SchemaFetcher.Successful(newSchema) =>
+          case SchemaFetcher.Successful(newSchema, _, _) =>
             schemaCache(dataset, copy, newSchema)
             newSchema
           case SchemaFetcher.NoSuchDatasetInSecondary =>
@@ -377,6 +377,9 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
             val (rewrittenAnalysis, rollupName) = possiblyRewriteQuery(finalSchema, analysis)
             Some((finalSchema, rewrittenAnalysis, rollupName))
           case QueryExecutor.ToForward(responseCode, headers, body) =>
+            val qsDataVersion = headers("x-soda2-dataversion").head.toLong
+            val qsLastModified = HttpUtils.parseHttpDate(headers("last-modified").head)
+            logSchemaFreshness(second.getAddress, sfDataVersion, sfLastModified, qsDataVersion, qsLastModified)
             resp.setStatus(responseCode)
             for { (h,vs) <- headers; v <- vs } resp.addHeader(h, v)
             transferResponse(resp.getOutputStream, body)
@@ -426,6 +429,26 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
     } finally {
       Thread.currentThread.setName(originalThreadName)
     }
+  }
+
+  private def logSchemaFreshness(secondaryAddress: String,
+                                 sfDataVersion: Long,
+                                 sfLastModified: DateTime,
+                                 qsDataVersion: Long,
+                                 qsLastModified: DateTime): Unit = {
+    val DataVersionDiff = sfDataVersion - qsDataVersion
+    val timeDiff = new Interval(sfLastModified, qsLastModified).toDuration
+    if (DataVersionDiff == 0 && timeDiff.getMillis == 0)
+      log.info("schema from {} is identical", secondaryAddress)
+    else
+      log.info("schema from {} differs {} {} {} {} {}v {}m",
+        secondaryAddress,
+        sfDataVersion.toString,
+        sfLastModified.toString(ISODateTimeFormat.dateHourMinuteSecond),
+        qsDataVersion.toString,
+        qsLastModified.toString(ISODateTimeFormat.dateHourMinuteSecond),
+        DataVersionDiff.toString,
+        timeDiff.getStandardMinutes.toString)
   }
 
   private def transferResponse(out: OutputStream, in: InputStream) {
