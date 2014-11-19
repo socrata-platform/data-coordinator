@@ -26,6 +26,7 @@ import com.socrata.soql.exceptions._
 import com.socrata.soql.types.SoQLAnalysisType
 import javax.servlet.http.{HttpServletRequest, HttpServletResponse}
 import org.apache.curator.x.discovery.ServiceInstance
+import org.apache.http.HttpStatus
 import org.joda.time.{DateTime, Interval}
 import org.joda.time.format.ISODateTimeFormat
 
@@ -377,9 +378,17 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
             val (rewrittenAnalysis, rollupName) = possiblyRewriteQuery(finalSchema, analysis)
             Some((finalSchema, rewrittenAnalysis, rollupName))
           case QueryExecutor.ToForward(responseCode, headers, body) =>
-            val qsDataVersion = headers("x-soda2-dataversion").head.toLong
-            val qsLastModified = HttpUtils.parseHttpDate(headers("last-modified").head)
-            logSchemaFreshness(second.getAddress, sfDataVersion, sfLastModified, qsDataVersion, qsLastModified)
+            // Log data version difference if response is OK.  Ignore not modified response and others.
+            if (responseCode == HttpStatus.SC_OK) {
+              (headers("x-soda2-dataversion").headOption, headers("last-modified").headOption) match {
+                case (Some(qsDataVersion), Some(qsLastModified)) =>
+                  val qsdv = qsDataVersion.toLong
+                  val qslm = HttpUtils.parseHttpDate(qsLastModified)
+                  logSchemaFreshness(second.getAddress, sfDataVersion, sfLastModified, qsdv, qslm)
+                case _ =>
+                  log.warn("version related data not available from secondary")
+              }
+            }
             resp.setStatus(responseCode)
             for { (h,vs) <- headers; v <- vs } resp.addHeader(h, v)
             transferResponse(resp.getOutputStream, body)
@@ -437,17 +446,20 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
                                  qsDataVersion: Long,
                                  qsLastModified: DateTime): Unit = {
     val DataVersionDiff = sfDataVersion - qsDataVersion
-    val timeDiff = new Interval(sfLastModified, qsLastModified).toDuration
+    val wrongOrder = qsLastModified.isAfter(sfLastModified)
+    val timeDiff = (if (wrongOrder) new Interval(sfLastModified, qsLastModified)
+                    else new Interval(qsLastModified, sfLastModified)).toDuration
     if (DataVersionDiff == 0 && timeDiff.getMillis == 0)
       log.info("schema from {} is identical", secondaryAddress)
     else
-      log.info("schema from {} differs {} {} {} {} {}v {}m",
+      log.info("schema from {} differs {} {} {} {} {}v {}{}m",
         secondaryAddress,
         sfDataVersion.toString,
         sfLastModified.toString(ISODateTimeFormat.dateHourMinuteSecond),
         qsDataVersion.toString,
         qsLastModified.toString(ISODateTimeFormat.dateHourMinuteSecond),
         DataVersionDiff.toString,
+        (if (wrongOrder) "-" else ""),
         timeDiff.getStandardMinutes.toString)
   }
 
