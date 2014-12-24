@@ -506,6 +506,7 @@ class Service(serviceConfig: ServiceConfig,
         case DatasetDropper.Success =>
           OK ~>
             Header("X-SODA2-Truth-Last-Modified", dateTimeFormat.print(DateTime.now)) ~>
+            Header("X-SODA2-Truth-Copy-Number", 0.toString) ~>
             Header("X-SODA2-Truth-Version", 0.toString) ~>
             ContentType("application/json; charset=utf-8") ~> Content("[]")
         case DatasetDropper.FailureNotFound =>
