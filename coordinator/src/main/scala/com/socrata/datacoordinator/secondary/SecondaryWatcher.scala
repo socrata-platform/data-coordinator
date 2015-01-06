@@ -1,25 +1,26 @@
 package com.socrata.datacoordinator.secondary
 
-import com.rojoma.simplearm.Managed
-import com.rojoma.simplearm.util._
-import com.socrata.datacoordinator.common.DataSourceFromConfig.DSInfo
-import com.socrata.datacoordinator.common.{SoQLCommon, DataSourceFromConfig}
-import com.socrata.datacoordinator.secondary.sql.SqlSecondaryConfig
-import com.socrata.datacoordinator.truth.universe._
-import com.socrata.datacoordinator.util.{TimingReport, NullCache, StackedTimingReport, LoggedTimingReport,
-                                         MetricsTimingReport}
-import com.socrata.soql.types.{SoQLValue, SoQLType}
-import com.socrata.thirdparty.metrics.{MetricsOptions, MetricsReporter}
-import com.socrata.thirdparty.typesafeconfig.Propertizer
-import com.typesafe.config.{Config, ConfigFactory}
-import java.io.File
-import java.util.concurrent.{Executors, TimeUnit, CountDownLatch}
 import java.util.UUID
-import org.apache.log4j.PropertyConfigurator
-import org.joda.time.{DateTime, Seconds}
-import org.slf4j.LoggerFactory
+import java.util.concurrent.{CountDownLatch, Executors, TimeUnit}
+
 import scala.concurrent.duration._
 import scala.util.Random
+
+import com.rojoma.simplearm.Managed
+import com.rojoma.simplearm.util._
+import com.socrata.datacoordinator.common.{DataSourceFromConfig, SoQLCommon}
+import com.socrata.datacoordinator.common.DataSourceFromConfig.DSInfo
+import com.socrata.datacoordinator.secondary.sql.SqlSecondaryConfig
+import com.socrata.datacoordinator.truth.universe._
+import com.socrata.datacoordinator.util.{LoggedTimingReport, MetricsTimingReport, NullCache, StackedTimingReport, TimingReport}
+import com.socrata.http.server.util.RequestId
+import com.socrata.soql.types.{SoQLType, SoQLValue}
+import com.socrata.thirdparty.metrics.{MetricsOptions, MetricsReporter}
+import com.socrata.thirdparty.typesafeconfig.Propertizer
+import com.typesafe.config.ConfigFactory
+import org.apache.log4j.PropertyConfigurator
+import org.joda.time.{DateTime, Seconds}
+import org.slf4j.{LoggerFactory, MDC}
 import sun.misc.{Signal, SignalHandler}
 
 class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseType[CT, CV]],
@@ -37,6 +38,7 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
 
     val foundWorkToDo = for (job <- secondaryManifest.claimDatasetNeedingReplication(
                                       secondary.storeId, claimantId, claimTimeout)) yield {
+      MDC.put(RequestId.ReqIdHeader, RequestId.generate())
       log.info("Syncing {} into {}", job.datasetId, secondary.storeId)
       try {
         timingReport(
