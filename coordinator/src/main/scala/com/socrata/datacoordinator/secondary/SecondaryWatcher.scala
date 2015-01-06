@@ -59,6 +59,8 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
           case e: Exception =>
             log.error("Unexpected exception while releasing claim on dataset {} in secondary {}",
                       job.datasetId.asInstanceOf[AnyRef], secondary.storeId, e)
+        } finally {
+          MDC.remove(RequestId.ReqIdHeader)
         }
       }
     }
