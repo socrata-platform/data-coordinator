@@ -6,8 +6,8 @@ import com.socrata.datacoordinator.common.DataSourceFromConfig.DSInfo
 import com.socrata.datacoordinator.common.{SoQLCommon, DataSourceFromConfig}
 import com.socrata.datacoordinator.secondary.sql.SqlSecondaryConfig
 import com.socrata.datacoordinator.truth.universe._
-import com.socrata.datacoordinator.util.{TimingReport, NullCache, StackedTimingReport, LoggedTimingReport,
-                                         MetricsTimingReport}
+import com.socrata.datacoordinator.util._
+import com.socrata.http.server.util.RequestId
 import com.socrata.soql.types.{SoQLValue, SoQLType}
 import com.socrata.thirdparty.metrics.{MetricsOptions, MetricsReporter}
 import com.socrata.thirdparty.typesafeconfig.Propertizer
@@ -37,26 +37,31 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
 
     val foundWorkToDo = for (job <- secondaryManifest.claimDatasetNeedingReplication(
                                       secondary.storeId, claimantId, claimTimeout)) yield {
-      log.info("Syncing {} into {}", job.datasetId, secondary.storeId)
-      try {
-        timingReport(
-          "playback-to-secondary",
-          "truthDatasetId" -> job.datasetId.underlying,
-          "secondary" -> secondary.storeId,
-          "endingDataVersion" -> job.endingDataVersion
-        )(playbackToSecondary(secondary, job))
-      } catch {
-        case e: Exception =>
-          log.error("Unexpected exception while updating dataset {} in secondary {}; marking it as broken",
-                    job.datasetId.asInstanceOf[AnyRef], secondary.storeId, e)
-          secondaryManifest.markSecondaryDatasetBroken(job)
-      } finally {
+      timingReport(
+        "playback-to-secondary",
+        "tag:job-id" -> RequestId.generate(), // add job id tag to enclosing logs
+        "tag:dataset-id" -> job.datasetId, // add dataset id tag to enclosing logs
+        "truthDatasetId" -> job.datasetId.underlying,
+        "secondary" -> secondary.storeId,
+        "endingDataVersion" -> job.endingDataVersion
+      ) {
+        log.info(">> Syncing {} into {}", job.datasetId, secondary.storeId)
         try {
-          secondaryManifest.releaseClaimedDataset(job)
+          playbackToSecondary(secondary, job)
+          log.info("<< Sync done for {} into {}", job.datasetId, secondary.storeId)
         } catch {
           case e: Exception =>
-            log.error("Unexpected exception while releasing claim on dataset {} in secondary {}",
+            log.error("Unexpected exception while updating dataset {} in secondary {}; marking it as broken",
                       job.datasetId.asInstanceOf[AnyRef], secondary.storeId, e)
+            secondaryManifest.markSecondaryDatasetBroken(job)
+        } finally {
+          try {
+            secondaryManifest.releaseClaimedDataset(job)
+          } catch {
+            case e: Exception =>
+              log.error("Unexpected exception while releasing claim on dataset {} in secondary {}",
+                        job.datasetId.asInstanceOf[AnyRef], secondary.storeId, e)
+          }
         }
       }
     }
@@ -203,7 +208,7 @@ object SecondaryWatcher extends App { self =>
       dsInfo.copyIn,
       executor,
       _ => None,
-      new LoggedTimingReport(log) with StackedTimingReport with MetricsTimingReport,
+      new LoggedTimingReport(log) with StackedTimingReport with MetricsTimingReport with TaggableTimingReport,
       allowDdlOnPublishedCopies = false, // don't care,
       Duration.fromNanos(1L), // don't care
       config.instance,
