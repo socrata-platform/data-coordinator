@@ -26,7 +26,7 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
                                claimantId: UUID,
                                claimTimeout: FiniteDuration,
                                timingReport: TimingReport) {
-  import SecondaryWatcher._
+  import SecondaryWatcher.log
   private val rand = new Random()
   // splay the sleep time +/- 5s to prevent watchers from getting in lock step
   private val nextRuntimeSplay = (rand.nextInt(10000) - 5000).toLong
