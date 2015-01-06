@@ -52,7 +52,7 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
         } catch {
           case e: Exception =>
             log.error("Unexpected exception while updating dataset {} in secondary {}; marking it as broken",
-              job.datasetId.asInstanceOf[AnyRef], secondary.storeId, e)
+                      job.datasetId.asInstanceOf[AnyRef], secondary.storeId, e)
             secondaryManifest.markSecondaryDatasetBroken(job)
         } finally {
           try {
@@ -60,7 +60,7 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
           } catch {
             case e: Exception =>
               log.error("Unexpected exception while releasing claim on dataset {} in secondary {}",
-                job.datasetId.asInstanceOf[AnyRef], secondary.storeId, e)
+                        job.datasetId.asInstanceOf[AnyRef], secondary.storeId, e)
           }
         }
       }
