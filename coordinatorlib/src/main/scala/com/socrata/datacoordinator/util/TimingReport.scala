@@ -83,12 +83,9 @@ trait TaggableTimingReport extends TimingReport with Metrics {
 
     val (regKv, tagKv) = kv.partition { case (tag, value) => Tag.findFirstIn(tag).isEmpty }
 
-    val tagK = tagKv.collect { case (tag, value) =>
-      tag match {
-        case Tag(tag) =>
-          MDC.put(tag, value.toString)
-          tag
-      }
+    val tagK = tagKv.collect { case (Tag(tag), value) =>
+      MDC.put(tag, value.toString)
+      tag
     }
 
     try {
