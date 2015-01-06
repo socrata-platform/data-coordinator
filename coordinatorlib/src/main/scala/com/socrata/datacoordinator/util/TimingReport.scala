@@ -70,7 +70,7 @@ class LoggedTimingReport(log: Logger) extends TimingReport {
 }
 
 /**
- * Put keys with prefix - tag: in MDC so that enclosing log statements can be tagged using %X{name} and log config.
+ * Put keys with prefix - tag: in MDC so that enclosing log statements can be tagged using %X{name} in log config.
  * Example:
  *   key -> tag:job-id
  *   log4j.appender.console.props.layout.props.ConversionPattern -> "%X{job-id})"
