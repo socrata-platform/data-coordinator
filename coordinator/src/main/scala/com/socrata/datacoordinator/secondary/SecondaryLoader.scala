@@ -133,7 +133,7 @@ class SecondaryLoader(parentClassLoader: ClassLoader, secondaryConfig: com.socra
     val ctor =
       try { cls.getConstructor(classOf[Config]) }
       catch { case e: Exception => throw Nope("Unable to find constructor for " + desc.className + " from " + jar.getAbsolutePath, e) }
-    log.info("Instantiating secondary type \"" + desc.name + "\" from " + jar.getAbsolutePath + " with configuration " + mergedConfig.root.render)
+    log.info("Instantiating secondary type \"" + desc.name + "\" from " + jar.getAbsolutePath)
 
     try { ctor.newInstance(mergedConfig).asInstanceOf[Secondary[_,_]] }
     catch { case e: Exception => throw Nope("Unable to create a new instance of " + desc.className, e) }

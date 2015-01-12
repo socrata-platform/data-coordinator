@@ -185,7 +185,7 @@ object SecondaryWatcher extends App { self =>
   PropertyConfigurator.configure(Propertizer("log4j", config.log4j))
 
   val log = LoggerFactory.getLogger(classOf[SecondaryWatcher[_,_]])
-  log.info("Started SecondaryWatcher with config: \n" + rootConfig.root.render())
+  log.info("Starting secondary watcher...")
 
   val metricsOptions = MetricsOptions(config.metrics)
 
