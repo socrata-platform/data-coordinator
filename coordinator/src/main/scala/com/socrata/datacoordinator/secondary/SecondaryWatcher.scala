@@ -1,32 +1,33 @@
 package com.socrata.datacoordinator.secondary
 
+import java.util.UUID
+import java.util.concurrent.{CountDownLatch, Executors, TimeUnit}
+
+import scala.concurrent.duration._
+import scala.util.Random
+
 import com.rojoma.simplearm.Managed
 import com.rojoma.simplearm.util._
+import com.socrata.datacoordinator.common.{DataSourceFromConfig, SoQLCommon}
 import com.socrata.datacoordinator.common.DataSourceFromConfig.DSInfo
-import com.socrata.datacoordinator.common.{SoQLCommon, DataSourceFromConfig}
 import com.socrata.datacoordinator.secondary.sql.SqlSecondaryConfig
 import com.socrata.datacoordinator.truth.universe._
 import com.socrata.datacoordinator.util._
 import com.socrata.http.server.util.RequestId
-import com.socrata.soql.types.{SoQLValue, SoQLType}
+import com.socrata.soql.types.{SoQLType, SoQLValue}
 import com.socrata.thirdparty.metrics.{MetricsOptions, MetricsReporter}
 import com.socrata.thirdparty.typesafeconfig.Propertizer
-import com.typesafe.config.{Config, ConfigFactory}
-import java.io.File
-import java.util.concurrent.{Executors, TimeUnit, CountDownLatch}
-import java.util.UUID
+import com.typesafe.config.ConfigFactory
 import org.apache.log4j.PropertyConfigurator
 import org.joda.time.{DateTime, Seconds}
 import org.slf4j.LoggerFactory
-import scala.concurrent.duration._
-import scala.util.Random
 import sun.misc.{Signal, SignalHandler}
 
 class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseType[CT, CV]],
                                claimantId: UUID,
                                claimTimeout: FiniteDuration,
                                timingReport: TimingReport) {
-  import SecondaryWatcher.log
+  import com.socrata.datacoordinator.secondary.SecondaryWatcher.log
   private val rand = new Random()
   // splay the sleep time +/- 5s to prevent watchers from getting in lock step
   private val nextRuntimeSplay = (rand.nextInt(10000) - 5000).toLong
@@ -138,7 +139,7 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
 }
 
 class SecondaryWatcherClaimManager(dsInfo: DSInfo, claimantId: UUID, claimTimeout: FiniteDuration) {
-  import SecondaryWatcher.log
+  import com.socrata.datacoordinator.secondary.SecondaryWatcher.log
   val updateInterval = claimTimeout / 2
 
   def mainloop(finished: CountDownLatch) {
@@ -256,7 +257,7 @@ object SecondaryWatcher extends App { self =>
         using(dsInfo.dataSource.getConnection()) { conn =>
           val cfg = new SqlSecondaryConfig(conn, common.timingReport)
 
- secondaries.iterator.flatMap { case (name, secondary) =>
+          secondaries.iterator.flatMap { case (name, secondary) =>
             cfg.lookup(name).map { info =>
               w.cleanOrphanedJobs(info)
 
