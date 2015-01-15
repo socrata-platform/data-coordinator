@@ -10,22 +10,26 @@ import com.socrata.datacoordinator.util.TimingReport
 class SqlSecondaryConfig(conn: Connection, timingReport: TimingReport) extends SecondaryConfig {
   private def t = timingReport
 
-  def lookup(storeId: String): Option[SecondaryConfigInfo] =
-    using(conn.prepareStatement(
-        """SELECT store_id
-          |  ,next_run_time
-          |  ,interval_in_seconds
-          |FROM secondary_stores_config
-          |WHERE store_id = ?""".stripMargin)) { stmt =>
-      stmt.setString(1, storeId)
-      using(t("lookup-store-config", "store_id" -> storeId)(stmt.executeQuery())) { rs =>
-        if(rs.next()) {
-          Some(SecondaryConfigInfo(rs.getString("store_id"), new DateTime(rs.getTimestamp("next_run_time").getTime), rs.getInt("interval_in_seconds")))
-        } else {
-          None
-        }
-      }
+  def lookup(storeId: String): Option[SecondaryConfigInfo] = {
+    val sql = """
+      SELECT store_id, next_run_time, interval_in_seconds
+        FROM secondary_stores_config
+       WHERE store_id = ?""".stripMargin
+
+    for {
+      stmt <- managed(conn.prepareStatement(sql))
+      _ <- unmanaged(stmt.setString(1, storeId))
+      rs <- managed(stmt.executeQuery())
+    } yield {
+      if (rs.next())
+        Some(SecondaryConfigInfo(
+          rs.getString("store_id"),
+          new DateTime(rs.getTimestamp("next_run_time").getTime),
+          rs.getInt("interval_in_seconds")))
+      else
+        None
     }
+  }
 
   def create(secondaryInfo: SecondaryConfigInfo): SecondaryConfigInfo =
     using(conn.prepareStatement(
@@ -36,7 +40,7 @@ class SqlSecondaryConfig(conn: Connection, timingReport: TimingReport) extends S
       stmt.setString(1, secondaryInfo.storeId)
       stmt.setTimestamp(2, new Timestamp(secondaryInfo.nextRunTime.getMillis))
       stmt.setInt(3, secondaryInfo.runIntervalSeconds)
-      t("create-store-config", "store_id" -> secondaryInfo.storeId)(stmt.execute())
+      stmt.execute()
       secondaryInfo
     }
 
