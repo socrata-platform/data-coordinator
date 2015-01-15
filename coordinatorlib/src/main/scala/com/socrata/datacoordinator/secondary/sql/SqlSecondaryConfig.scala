@@ -21,13 +21,14 @@ class SqlSecondaryConfig(conn: Connection, timingReport: TimingReport) extends S
       _ <- unmanaged(stmt.setString(1, storeId))
       rs <- managed(stmt.executeQuery())
     } yield {
-      if (rs.next())
+      if (rs.next()) {
         Some(SecondaryConfigInfo(
           rs.getString("store_id"),
           new DateTime(rs.getTimestamp("next_run_time").getTime),
           rs.getInt("interval_in_seconds")))
-      else
+      } else {
         None
+      }
     }
   }
 
