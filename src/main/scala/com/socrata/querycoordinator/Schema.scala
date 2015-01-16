@@ -3,13 +3,13 @@ package com.socrata.querycoordinator
 import com.socrata.querycoordinator.util.SoQLTypeCodec
 import com.socrata.soql.types.SoQLType
 
-import com.rojoma.json.codec.JsonCodec
-import com.rojoma.json.ast.JValue
-import com.rojoma.json.matcher.{PObject, Variable}
+import com.rojoma.json.v3.codec.{JsonDecode, JsonEncode}
+import com.rojoma.json.v3.ast.JValue
+import com.rojoma.json.v3.matcher.{PObject, Variable}
 
 case class Schema(hash: String, schema: Map[String, SoQLType], pk: String)
 object Schema {
-  implicit object SchemaCodec extends JsonCodec[Schema] {
+  implicit object SchemaCodec extends JsonDecode[Schema] with JsonEncode[Schema] {
     private implicit val soQLTypeCodec = SoQLTypeCodec
 
     private val hashVar = Variable[String]()
@@ -26,8 +26,9 @@ object Schema {
       PSchema.generate(hashVar := hash, schemaVar := schema, pkVar := pk)
     }
 
-    def decode(x: JValue) = PSchema.matches(x) map { results =>
-      Schema(hashVar(results), schemaVar(results), pkVar(results))
+    def decode(x: JValue) = PSchema.matches(x) match {
+      case Right(results) => Right(Schema(hashVar(results), schemaVar(results), pkVar(results)))
+      case Left(ex) => Left(ex)
     }
   }
 }

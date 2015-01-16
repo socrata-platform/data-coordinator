@@ -6,15 +6,16 @@ import scala.annotation.tailrec
 import scala.concurrent.duration._
 import scala.util.control.ControlThrowable
 
-import com.rojoma.json.ast.{JNumber, JObject, JString, JValue}
-import com.rojoma.json.codec.JsonCodec
-import com.rojoma.json.io._
-import com.rojoma.json.util.JsonUtil
+import com.rojoma.json.v3.ast.{JNumber, JObject, JString, JValue}
+import com.rojoma.json.v3.codec.JsonEncode
+import com.rojoma.json.v3.io._
+import com.rojoma.json.v3.util.JsonUtil
 import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.v2.ResourceScope
 import com.socrata.http.client.RequestBuilder
 import com.socrata.http.common.AuxiliaryData
 import com.socrata.http.common.util.HttpUtils
-import com.socrata.http.server.HttpResponse
+import com.socrata.http.server.{HttpRequest, HttpResponse, HttpService}
 import com.socrata.http.server.implicits._
 import com.socrata.http.server.responses._
 import com.socrata.http.server.routing.SimpleResource
@@ -24,7 +25,7 @@ import com.socrata.soql.SoQLAnalysis
 import com.socrata.soql.environment.ColumnName
 import com.socrata.soql.exceptions._
 import com.socrata.soql.types.SoQLAnalysisType
-import javax.servlet.http.{HttpServletRequest, HttpServletResponse}
+import javax.servlet.http.{HttpServletResponse, HttpServletRequest}
 import org.apache.curator.x.discovery.ServiceInstance
 import org.apache.http.HttpStatus
 import org.joda.time.{DateTime, Interval}
@@ -45,7 +46,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
               secondaryInstance: SecondaryInstanceSelector,
               queryRewriter: QueryRewriter,
               rollupInfoFetcher: RollupInfoFetcher)
-  extends (HttpServletRequest => HttpResponse)
+  extends HttpService
 {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
 
@@ -114,21 +115,20 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
     val json = JObject(Map(
       "errorCode" -> JString(msg),
       "data" -> JObject(data.toMap)))
-    val text = CompactJsonWriter.toString(json)
-    Header("Content-type", "application/json; charset=utf-8") ~> Content(text)
+    Json(json)
   }
 
   def noSecondaryAvailable(dataset: String) = ServiceUnavailable ~> errContent(
     "query.datasource.unavailable",
     "dataset" -> JString(dataset))
 
-  def internalServerError = InternalServerError ~> Content("Internal server error")
+  def internalServerError = InternalServerError ~> Json("Internal server error")
   def notFoundResponse(dataset: String) = NotFound ~> errContent(
     "query.dataset.does-not-exist",
     "dataset" -> JString(dataset))
   def noDatasetResponse = BadRequest ~> errContent("req.no-dataset-specified")
   def noQueryResponse = BadRequest ~> errContent("req.no-query-specified")
-  def unknownColumnIds(columnIds: Set[String]) = BadRequest ~> errContent("req.unknown.column-ids", "columns" -> JsonCodec.toJValue(columnIds.toSeq))
+  def unknownColumnIds(columnIds: Set[String]) = BadRequest ~> errContent("req.unknown.column-ids", "columns" -> JsonEncode.toJValue(columnIds.toSeq))
   def rowLimitExceeded(max: BigInt) = BadRequest ~> errContent("req.row-limit-exceeded", "limit" -> JNumber(max))
   def noContentTypeResponse = internalServerError
   def unparsableContentTypeResponse = internalServerError
@@ -168,16 +168,22 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
       source <- managed(scala.io.Source.fromInputStream(stream)(scala.io.Codec.UTF8))
     } yield source.mkString
 
-    val response =
-      OK ~> ContentType("application/json; charset=utf-8") ~> Content(responseString)
+    override val get: HttpService = req => resp =>
+      OK ~> Json(responseString)
 
-    override val get = (_: HttpServletRequest) => response
   }
 
   object QueryResource extends QCResource {
-    override val get = process _
-    override val post = process _
-    override val put = process _
+
+    override def post = { req: HttpRequest => resp: HttpServletResponse =>
+      using(new ResourceScope) { rs =>
+        process(rs, req)(resp)
+      }
+    }
+
+    override def get = post
+
+    override def put = post
   }
 
   // Little dance because "/*" doesn't compile yet and I haven't
@@ -188,7 +194,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
     Route("/version", VersionResource)
   )
 
-  def apply(req: HttpServletRequest) =
+  def apply(req: HttpRequest) =
     routingTable(req.requestPath) match {
       case Some(resource) => resource(req)
       case None => NotFound
@@ -203,52 +209,53 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
                              limit: Option[String],
                              offset: Option[String])
 
-  private def process(req: HttpServletRequest)(resp: HttpServletResponse) {
+  private def process(resourceScope: ResourceScope, req: HttpRequest): HttpResponse = {
     val originalThreadName = Thread.currentThread.getName
+    val servReq = req.servletRequest
     try {
-      Thread.currentThread.setName(Thread.currentThread.getId + " / " + req.getMethod + " " + req.getRequestURI)
+      Thread.currentThread.setName(Thread.currentThread.getId + " / " + req.method + " " + req.servletRequest.getRequestURI)
 
-      val requestId = RequestId.getFromRequest(req)
-      val dataset = Option(req.getParameter("ds")).getOrElse {
+      val requestId = RequestId.getFromRequest(servReq)
+      val dataset = Option(servReq.getParameter("ds")).getOrElse {
         finishRequest(noDatasetResponse)
       }
       val sfDataVersion = req.header("X-SODA2-DataVersion").map(_.toLong).get
       val sfLastModified = req.dateTimeHeader("X-SODA2-LastModified").get
 
-      val forcedSecondaryName = Option(req.getParameter("store"))
-      val noRollup = Option(req.getParameter("no_rollup")).isDefined
+      val forcedSecondaryName = req.queryParameter("store")
+      val noRollup = req.queryParameter("no_rollup").isDefined
 
       forcedSecondaryName.map(ds => log.info("Forcing use of the secondary store instance: " + ds))
 
-      val query = Option(req.getParameter("q")).map(Left(_)).getOrElse {
+      val query = req.queryParameter("q").map(Left(_)).getOrElse {
         Right(FragmentedQuery(
-          select = Option(req.getParameter("select")),
-          where = Option(req.getParameter("where")),
-          group = Option(req.getParameter("group")),
-          having = Option(req.getParameter("having")),
-          search = Option(req.getParameter("search")),
-          order = Option(req.getParameter("order")),
-          limit = Option(req.getParameter("limit")),
-          offset = Option(req.getParameter("offset"))
+          select = req.queryParameter("select"),
+          where = req.queryParameter("where"),
+          group = req.queryParameter("group"),
+          having = req.queryParameter("having"),
+          search = req.queryParameter("search"),
+          order = req.queryParameter("order"),
+          limit = req.queryParameter("limit"),
+          offset = req.queryParameter("offset")
         ))
       }
 
-      val rowCount = Option(req.getParameter("rowCount"))
-      val copy = Option(req.getParameter("copy"))
+      val rowCount = req.queryParameter("rowCount")
+      val copy = req.queryParameter("copy")
 
-      val jsonizedColumnIdMap = Option(req.getParameter("idMap")).getOrElse {
-        return (BadRequest ~> Content("no idMap provided"))(resp)
+      val jsonizedColumnIdMap = Option(servReq.getParameter("idMap")).getOrElse {
+        finishRequest(BadRequest ~> Json("no idMap provided"))
       }
       val columnIdMap: Map[ColumnName, String] = try {
         JsonUtil.parseJson[Map[String,String]](jsonizedColumnIdMap) match {
-          case Some(rawMap) =>
+          case Right(rawMap) =>
             rawMap.map { case (col, typ) => ColumnName(col) -> typ }
-          case None =>
-            finishRequest(BadRequest ~> Content("idMap not an object whose values are strings"))
+          case Left(_) =>
+            finishRequest(BadRequest ~> Json("idMap not an object whose values are strings"))
         }
       } catch {
         case e: JsonReaderException =>
-          finishRequest(BadRequest ~> Content("idMap not parsable as JSON"))
+          finishRequest(BadRequest ~> Json("idMap not parsable as JSON"))
       }
       val precondition = req.precondition
       val ifModifiedSince = req.dateTimeHeader("If-Modified-Since")
@@ -353,7 +360,8 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
                        analyzedQuery: SoQLAnalysis[String, SoQLAnalysisType],
                        rollupName: Option[String],
                        requestId: String,
-                       resourceName: Option[String]) {
+                       resourceName: Option[String],
+                       resourceScope: ResourceScope): HttpResponse = {
         val extraHeaders = Map(RequestId.ReqIdHeader -> requestId) ++
                            resourceName.map(fbf => Map("X-Socrata-Resource" -> fbf)).getOrElse(Nil)
         val res = queryExecutor(base.receiveTimeoutMS(queryTimeout.toMillis.toInt),
@@ -365,7 +373,8 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
                                 rowCount,
                                 copy,
                                 rollupName,
-                                extraHeaders).map {
+                                extraHeaders,
+                                resourceScope).map {
           case QueryExecutor.NotFound =>
             chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
             finishRequest(notFoundResponse(dataset))
@@ -376,7 +385,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
             storeInCache(Some(newSchema), dataset, copy)
             val (finalSchema, analysis) = analyzeRequest(newSchema, true)
             val (rewrittenAnalysis, rollupName) = possiblyRewriteQuery(finalSchema, analysis)
-            Some((finalSchema, rewrittenAnalysis, rollupName))
+            Left((finalSchema, rewrittenAnalysis, rollupName))
           case QueryExecutor.ToForward(responseCode, headers, body) =>
             // Log data version difference if response is OK.  Ignore not modified response and others.
             if (responseCode == HttpStatus.SC_OK) {
@@ -389,14 +398,13 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
                   log.warn("version related data not available from secondary")
               }
             }
-            resp.setStatus(responseCode)
-            for { (h,vs) <- headers; v <- vs } resp.addHeader(h, v)
-            transferResponse(resp.getOutputStream, body)
-            None
+            val resp = transferHeaders(Status(responseCode), headers) ~>
+              Stream(out => transferResponse(out, body))
+            Right(resp)
         }
         res match { // bit of a dance because we can't tailrec from within map
-          case Some((s, q, r)) => executeQuery(s, q, r, requestId, resourceName)
-          case None => // ok
+          case Left((s, q, r)) => executeQuery(s, q, r, requestId, resourceName, resourceScope)
+          case Right(resp) => resp
         }
       }
 
@@ -430,11 +438,10 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
       }
       val (rewrittenAnalysis, rollupName) = possiblyRewriteQuery(finalSchema, analysis)
       executeQuery(finalSchema, rewrittenAnalysis, rollupName,
-                   requestId, Option(req.getHeader("X-Socrata-Resource")))
+        requestId, req.header("X-Socrata-Resource"), resourceScope)
     } catch {
       case FinishRequest(response) =>
-      if(resp.isCommitted) ???
-      else { resp.reset(); response(resp) }
+        response ~> (resetResponse _)
     } finally {
       Thread.currentThread.setName(originalThreadName)
     }
@@ -468,9 +475,24 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
     def loop() {
       in.read(buf) match {
         case -1 => // done
-        case n => out.write(buf, 0, n); loop()
+        case n =>
+          out.write(buf, 0, n);
+          loop()
       }
     }
     loop()
+  }
+
+  private def transferHeaders(resp: HttpResponse, headers: Map[String, Seq[String]]): HttpResponse = {
+    headers.foldLeft(resp) { case (acc, (h: String, vs: Seq[String])) =>
+      vs.foldLeft(acc) { (acc2, v: String) =>
+        acc2 ~> Header(h, v)
+      }
+    }
+  }
+
+  private def resetResponse(response: HttpServletResponse): Unit = {
+    if (response.isCommitted) ???
+    else response.reset()
   }
 }

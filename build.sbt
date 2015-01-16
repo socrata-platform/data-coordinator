@@ -11,9 +11,9 @@ resolvers += "Open Source Geospatial Foundation Repository" at "http://download.
 
 libraryDependencies ++= Seq(
   "com.google.protobuf" % "protobuf-java"               % "2.4.1",
-  "com.rojoma"         %% "rojoma-json"                 % "2.4.3",
-  "com.socrata"        %% "socrata-http-client"         % "2.3.3",
-  "com.socrata"        %% "socrata-http-curator-broker" % "2.3.3" exclude("org.slf4j", "slf4j-simple") exclude ("org.jboss.netty", "netty" /* see ZOOKEEPER-1681 */),
+  "com.rojoma"         %% "rojoma-json-v3"              % "3.2.0",
+  "com.socrata"        %% "socrata-http-client"         % "3.0.1",
+  "com.socrata"        %% "socrata-http-curator-broker" % "3.0.1" exclude("org.slf4j", "slf4j-simple") exclude ("org.jboss.netty", "netty" /* see ZOOKEEPER-1681 */),
   "com.socrata"        %% "socrata-thirdparty-utils"    % "2.5.3",
   "com.socrata"        %% "soql-stdlib"                 % "0.4.0" exclude ("javax.media", "jai_core"),
   "com.typesafe"        % "config"                      % "1.0.0",
