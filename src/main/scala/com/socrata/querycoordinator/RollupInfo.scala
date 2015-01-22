@@ -1,6 +1,6 @@
 package com.socrata.querycoordinator
 
-import com.rojoma.json.util.AutomaticJsonCodecBuilder
+import com.rojoma.json.v3.util.AutomaticJsonCodecBuilder
 import com.socrata.querycoordinator.util.SoQLTypeCodec
 
 case class RollupInfo(name: String, soql: String)

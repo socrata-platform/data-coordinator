@@ -61,8 +61,8 @@ object Main extends App {
 
   for {
     executor <- managed(Executors.newFixedThreadPool(5))
-    pingProvider <- managed(new InetLivenessChecker(5.seconds, 1.second, 5, executor))
-    httpClient <- managed(new HttpClientHttpClient(pingProvider, executor, userAgent = "Query Coordinator"))
+    httpClientConfig <- unmanaged(HttpClientHttpClient.defaultOptions.withUserAgent("Query Coordinator"))
+    httpClient <- managed(new HttpClientHttpClient(executor, httpClientConfig))
     curator <- CuratorFromConfig(config.curator)
     discovery <- DiscoveryFromConfig(classOf[AuxiliaryData], curator, config.discovery)
     dataCoordinatorProviderProvider <- managed(new ServiceProviderProvider(
@@ -72,7 +72,6 @@ object Main extends App {
                             new InetSocketAddress(InetAddress.getByName(config.discovery.address), 0)))
     reporter <- MetricsReporter.managed(config.metrics)
   } {
-    pingProvider.start()
     pongProvider.start()
 
     def teeStream(in: InputStream) = new TeeToTempInputStream(in)

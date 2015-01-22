@@ -1,12 +1,14 @@
 package com.socrata.querycoordinator
 
-import com.rojoma.json.ast.{JString, JObject, JValue}
-import com.rojoma.json.codec.JsonCodec
-import com.rojoma.json.io.{FusedBlockJsonEventIterator, JsonReader}
+import com.rojoma.json.v3.ast.{JString, JObject, JValue}
+import com.rojoma.json.v3.codec.{JsonDecode, JsonEncode}
+import com.rojoma.json.v3.io.{FusedBlockJsonEventIterator, JsonReader}
 import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.v2.ResourceScope
 import com.rojoma.simplearm.{SimpleArm, Managed}
 import com.socrata.http.client.exceptions.{LivenessCheckFailed, HttpClientTimeoutException}
 import com.socrata.http.client.{Response, RequestBuilder, HttpClient}
+import com.socrata.http.server.HttpRequest
 import com.socrata.http.server.implicits._
 import com.socrata.http.server.util.{PreconditionRenderer, Precondition}
 import com.socrata.querycoordinator.QueryExecutor.SchemaHashMismatch
@@ -46,7 +48,8 @@ class QueryExecutor(httpClient: HttpClient,
             rowCount: Option[String],
             copy: Option[String],
             rollupName: Option[String],
-            extraHeaders: Map[String, String]): Managed[Result] = {
+            extraHeaders: Map[String, String],
+            resourceScope: ResourceScope): Managed[Result] = {
     val serializedAnalysis = serializeAnalysis(analysis)
     val params = List(qpDataset -> dataset, qpQuery -> serializedAnalysis, qpSchemaHash -> schema.hash) ++
       rowCount.map(rc => List(qpRowCount -> rc)).getOrElse(Nil) ++
@@ -62,27 +65,26 @@ class QueryExecutor(httpClient: HttpClient,
       def flatMap[A](f: Result => A): A = {
         var handedOffToUser = false
         try {
-          for(result <- httpClient.execute(request)) yield {
-            val op = result.resultCode match {
-              case HttpServletResponse.SC_NOT_FOUND =>
-                NotFound
-              case HttpServletResponse.SC_CONFLICT =>
-                readSchemaHashMismatch(result, result.asInputStream()) match {
-                  case Right(newSchema) =>
-                    SchemaHashMismatch(newSchema)
-                  case Left(newStream) =>
-                    try {
-                      forward(result, newStream)
-                    } finally {
-                       newStream.close()
-                    }
-                }
-              case _ =>
-                forward(result)
-            }
-            handedOffToUser = true
-            f(op)
+          val result = resourceScope.open(httpClient.executeUnmanaged(request))
+          val op = result.resultCode match {
+            case HttpServletResponse.SC_NOT_FOUND =>
+              NotFound
+            case HttpServletResponse.SC_CONFLICT =>
+              readSchemaHashMismatch(result, result.inputStream()) match {
+                case Right(newSchema) =>
+                  SchemaHashMismatch(newSchema)
+                case Left(newStream) =>
+                  try {
+                    forward(result, newStream)
+                  } finally {
+                    newStream.close()
+                  }
+              }
+            case _ =>
+              forward(result)
           }
+          handedOffToUser = true
+          f(op)
         } catch {
           case e: Throwable if handedOffToUser => // bypass all later cases
             throw e
@@ -127,12 +129,12 @@ class QueryExecutor(httpClient: HttpClient,
       return None
     }
 
-    val schema = JsonCodec[Schema].decode(data).getOrElse {
-      log.error("data object is not a valid Schema")
-      return None
+    JsonDecode[Schema].decode(data) match {
+      case Right(schema) => Some(schema)
+      case Left(err) =>
+        log.error("data object is not a valid Schema")
+        None
     }
-
-    Some(schema)
   }
 
   @tailrec
@@ -154,7 +156,7 @@ class QueryExecutor(httpClient: HttpClient,
     ToForward(result.resultCode, result.headerNames.iterator.map { h => h -> (result.headers(h) : Seq[String]) }.toMap, data)
 
   private def forward(result: Response): ToForward =
-    forward(result, result.asInputStream())
+    forward(result, result.inputStream())
 }
 
 object QueryExecutor {

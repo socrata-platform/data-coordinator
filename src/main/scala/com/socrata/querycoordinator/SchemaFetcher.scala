@@ -2,7 +2,8 @@ package com.socrata.querycoordinator
 
 import java.io.IOException
 
-import com.rojoma.json.io.JsonReaderException
+import com.rojoma.json.v3.io.JsonReaderException
+import com.rojoma.simplearm.util._
 import com.socrata.http.client.{HttpClient, RequestBuilder, Response}
 import com.socrata.http.client.exceptions.{HttpClientException, HttpClientTimeoutException, LivenessCheckFailed}
 import com.socrata.http.common.util.HttpUtils
@@ -16,14 +17,12 @@ class SchemaFetcher(httpClient: HttpClient) {
   def apply(base: RequestBuilder, dataset: String, copy: Option[String]): Result = {
     def processResponse(response: Response): Result = response.resultCode match {
       case HttpServletResponse.SC_OK =>
-        try {
-          val dataVersion = response.headers("X-SODA2-DataVersion")(0).toLong
-          val lastModified = HttpUtils.parseHttpDate(response.headers("Last-Modified")(0))
-          response.asValue[Schema]().fold(NonSchemaResponse : Result) {
-            schema => Successful(schema, dataVersion, lastModified)
-          }
-        } catch {
-          case e: JsonReaderException =>
+        val dataVersion = response.headers("X-SODA2-DataVersion")(0).toLong
+        val lastModified = HttpUtils.parseHttpDate(response.headers("Last-Modified")(0))
+        response.value[Schema]() match {
+          case Right(schema) => Successful(schema, dataVersion, lastModified)
+          case Left(err) =>
+            log.warn("cannot decode schema {}", err)
             NonSchemaResponse
         }
       case HttpServletResponse.SC_NOT_FOUND =>
@@ -37,7 +36,7 @@ class SchemaFetcher(httpClient: HttpClient) {
     val request = base.p("schema").q(params : _*).get
 
     try {
-      httpClient.execute(request).map(processResponse)
+      httpClient.execute(request).run(processResponse)
     } catch {
       case e: HttpClientTimeoutException =>
         TimeoutFromSecondary

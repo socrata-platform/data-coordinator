@@ -4,6 +4,7 @@ import com.rojoma.json.util.JsonArrayIterator.ElementDecodeException
 import com.socrata.http.client.{Response, RequestBuilder, HttpClient}
 import javax.servlet.http.HttpServletResponse
 import com.rojoma.json.io.JsonReaderException
+import com.rojoma.simplearm.util._
 
 import RollupInfoFetcher._
 import com.socrata.http.client.exceptions.{LivenessCheckFailed, HttpClientException, HttpClientTimeoutException}
@@ -20,7 +21,7 @@ class RollupInfoFetcher(httpClient: HttpClient) {
     def processResponse(response: Response): Result = response.resultCode match {
       case HttpServletResponse.SC_OK =>
         try {
-            Successful(response.asArray[RollupInfo]().toList)
+          Successful(response.array[RollupInfo]().toList)
         } catch {
           case e @ (_ : JsonReaderException | _ : ElementDecodeException) =>
             NonRollupInfoResponse
@@ -36,7 +37,7 @@ class RollupInfoFetcher(httpClient: HttpClient) {
     val request = base.p("rollups").q(params: _*).get
 
     try {
-      httpClient.execute(request).map(processResponse)
+      httpClient.execute(request).run(processResponse)
     } catch {
       case e: HttpClientTimeoutException =>
         TimeoutFromSecondary
