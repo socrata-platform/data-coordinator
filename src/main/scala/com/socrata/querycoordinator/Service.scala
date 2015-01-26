@@ -227,7 +227,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
 
       forcedSecondaryName.map(ds => log.info("Forcing use of the secondary store instance: " + ds))
 
-      val query = req.queryParameter("q").map(Left(_)).getOrElse {
+      val query = Option(servReq.getParameter("q")).map(Left(_)).getOrElse {
         Right(FragmentedQuery(
           select = Option(servReq.getParameter("select")),
           where = Option(servReq.getParameter("where")),
