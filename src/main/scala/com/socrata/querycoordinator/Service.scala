@@ -229,19 +229,19 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
 
       val query = req.queryParameter("q").map(Left(_)).getOrElse {
         Right(FragmentedQuery(
-          select = req.queryParameter("select"),
-          where = req.queryParameter("where"),
-          group = req.queryParameter("group"),
-          having = req.queryParameter("having"),
-          search = req.queryParameter("search"),
-          order = req.queryParameter("order"),
-          limit = req.queryParameter("limit"),
-          offset = req.queryParameter("offset")
+          select = Option(servReq.getParameter("select")),
+          where = Option(servReq.getParameter("where")),
+          group = Option(servReq.getParameter("group")),
+          having = Option(servReq.getParameter("having")),
+          search = Option(servReq.getParameter("search")),
+          order = Option(servReq.getParameter("order")),
+          limit = Option(servReq.getParameter("limit")),
+          offset = Option(servReq.getParameter("offset"))
         ))
       }
 
-      val rowCount = req.queryParameter("rowCount")
-      val copy = req.queryParameter("copy")
+      val rowCount = Option(servReq.getParameter("rowCount"))
+      val copy = Option(servReq.getParameter("copy"))
 
       val jsonizedColumnIdMap = Option(servReq.getParameter("idMap")).getOrElse {
         finishRequest(BadRequest ~> Json("no idMap provided"))
