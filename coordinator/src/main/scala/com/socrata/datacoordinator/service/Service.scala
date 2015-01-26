@@ -19,7 +19,7 @@ import com.socrata.http.server.routing._
 import com.socrata.http.server.util.handlers.{ThreadRenamingHandler, NewLoggingHandler}
 import com.socrata.http.server.util.{StrongEntityTag, EntityTag, Precondition, ErrorAdapter}
 import com.socrata.http.server.util.RequestId.ReqIdHeader
-import com.socrata.http.server.{ServerBroker, HttpResponse, SocrataServerJetty, HttpService}
+import com.socrata.http.server._
 import com.socrata.soql.environment.TypeName
 import com.socrata.thirdparty.metrics.{SocrataHttpSupport, Metrics, MetricsOptions, MetricsReporter}
 import java.io._
@@ -36,6 +36,10 @@ object Service {
   type datasetContentsFunc = Either[Schema, (EntityTag, Seq[SchemaField],
                                              Option[UserColumnId], String,
                                              Long, Iterator[Array[JValue]])] => Unit
+
+  private val JsonContentType = "application/json; charset=utf-8"
+
+  private val TextContentType = "Content-type: text/plain; charset=utf-8"
 }
 
 import Service._
@@ -96,20 +100,20 @@ class Service(serviceConfig: ServiceConfig,
   object SecondaryManifestsResource extends SodaResource {
     override val get = doGetSecondaries _
 
-    def doGetSecondaries(req: HttpServletRequest): HttpResponse =
-      OK ~> ContentType("application/json; charset=utf-8") ~> Write(JsonUtil.writeJson(_, secondaries.toSeq, buffer = true))
+    def doGetSecondaries(req: HttpRequest): HttpResponse =
+      OK ~> Json(secondaries.toSeq)
   }
 
   case class SecondaryManifestResource(storeId: String) extends SodaResource {
     override def get = doGetSecondaryManifest
 
-    def doGetSecondaryManifest(req: HttpServletRequest): HttpResponse = {
+    def doGetSecondaryManifest(req: HttpRequest): HttpResponse = {
       if(!secondaries(storeId)) return NotFound
       val ds = datasetsInStore(storeId)
       val dsConverted = ds.foldLeft(Map.empty[String, Long]) { (acc, kv) =>
         acc + (formatDatasetId(kv._1) -> kv._2)
       }
-      OK ~> ContentType("application/json; charset=utf-8") ~> Write(JsonUtil.writeJson(_, dsConverted, buffer = true))
+      OK ~> Json(dsConverted)
     }
   }
 
@@ -117,17 +121,17 @@ class Service(serviceConfig: ServiceConfig,
     override def get = doGetDataVersionInSecondary
     override def post = doUpdateVersionInSecondary
 
-    def doGetDataVersionInSecondary(req: HttpServletRequest): HttpResponse = {
+    def doGetDataVersionInSecondary(req: HttpRequest): HttpResponse = {
       if(!secondaries(storeId)) return NotFound
       versionInStore(storeId, datasetId) match {
         case Some(v) =>
-          OK ~> ContentType("application/json; charset=utf-8") ~> Write(JsonUtil.writeJson(_, Map("version" -> v), buffer = true))
+          OK ~> Json(Map("version" -> v))
         case None =>
           NotFound
       }
     }
 
-    def doUpdateVersionInSecondary(req: HttpServletRequest): HttpResponse = {
+    def doUpdateVersionInSecondary(req: HttpRequest): HttpResponse = {
       val defaultSecondaryGroups: Set[String] = serviceConfig.secondary.defaultGroups
       val groupRe = "_(.*)_".r
       storeId match {
@@ -143,9 +147,9 @@ class Service(serviceConfig: ServiceConfig,
   case class SecondariesOfDatasetResource(datasetId: DatasetId) extends SodaResource {
     override def get = doGetSecondariesOfDataset
 
-    def doGetSecondariesOfDataset(req: HttpServletRequest): HttpResponse = {
+    def doGetSecondariesOfDataset(req: HttpRequest): HttpResponse = {
       val ss = secondariesOfDataset(datasetId)
-      OK ~> ContentType("application/json; charset=utf-8") ~> Write(JsonUtil.writeJson(_, ss, buffer = true))
+      OK ~> Json(ss)
     }
   }
 
@@ -207,7 +211,7 @@ class Service(serviceConfig: ServiceConfig,
       "errorCode" -> JString(errorCode),
       "data" -> JObject(data.toMap)
     ))
-    codeSetter ~> ContentType("application/json; charset=utf-8") ~> Write { w =>
+    codeSetter ~> Write(JsonContentType) { w =>
       JsonUtil.writeJson(w, response, pretty = true, buffer = true)
     }
   }
@@ -371,10 +375,10 @@ class Service(serviceConfig: ServiceConfig,
     val dateTimeFormat = ISODateTimeFormat.dateTime
     def notFound = (_: Any) => notFoundError(datasetIdRaw)
 
-    def doCreateDataset(req: HttpServletRequest)(resp: HttpServletResponse) {
+    def doCreateDataset(req: HttpRequest)(resp: HttpServletResponse) {
       using(tempFileProvider()) { tmp =>
         val responseBuilder = withMutationScriptResults {
-          jsonStream(req, commandReadLimit) match {
+          jsonStream(req.servletRequest, commandReadLimit) match {
             case Right((events, boundResetter)) =>
               val iteratorOrError = try {
                 Right(JsonArrayIterator[JValue](events))
@@ -387,7 +391,7 @@ class Service(serviceConfig: ServiceConfig,
                   OK ~>
                     Header("X-SODA2-Truth-Last-Modified", dateTimeFormat.print(lastModified)) ~>
                     Header("X-SODA2-Truth-Version", dataVersion.toString) ~>
-                    ContentType("application/json; charset=utf-8") ~>
+                    ContentType(JsonContentType) ~>
                     Stream { w =>
                       val bw = new BufferedOutputStream(w)
                       bw.write('[')
@@ -412,9 +416,9 @@ class Service(serviceConfig: ServiceConfig,
       }
     }
 
-    def doListDatasets(req: HttpServletRequest): HttpResponse = {
+    def doListDatasets(req: HttpRequest): HttpResponse = {
       val ds = datasets()
-      OK ~> ContentType("application/json; charset=utf-8") ~> Write { w =>
+      OK ~> Write(JsonContentType) { w =>
         val bw = new BufferedWriter(w)
         val jw = new CompactJsonWriter(bw)
         bw.write('[')
@@ -431,11 +435,11 @@ class Service(serviceConfig: ServiceConfig,
   }
 
   case class DatasetSchemaResource(datasetId: DatasetId) extends SodaResource {
-    override def get = { (req: HttpServletRequest) =>
+    override def get = { (req: HttpRequest) =>
       val result = for {
         schema <- getSchema(datasetId)
       } yield {
-        OK ~> ContentType("application/json; charset=utf-8") ~> Write { w =>
+        OK ~> Write(JsonContentType) { w =>
           JsonUtil.writeJson(w, jsonifySchema(schema))
         }
       }
@@ -452,10 +456,10 @@ class Service(serviceConfig: ServiceConfig,
 
     val dateTimeFormat = ISODateTimeFormat.dateTime
 
-    def doMutation(req: HttpServletRequest)(resp: HttpServletResponse) {
+    def doMutation(req: HttpRequest)(resp: HttpServletResponse) {
       using(tempFileProvider()) { tmp =>
         val responseBuilder = withMutationScriptResults {
-          jsonStream(req, commandReadLimit) match {
+          jsonStream(req.servletRequest, commandReadLimit) match {
             case Right((events, boundResetter)) =>
               val iteratorOrError = try {
                 Right(JsonArrayIterator[JValue](events))
@@ -469,7 +473,7 @@ class Service(serviceConfig: ServiceConfig,
                                     iterator.map { ev => boundResetter(); mutateRate.mark(); ev },
                                     tmp)
                   OK ~>
-                    ContentType("application/json; charset=utf-8") ~>
+                    ContentType(JsonContentType) ~>
                     Header("X-SODA2-Truth-Last-Modified", dateTimeFormat.print(lastModified)) ~>
                     Header("X-SODA2-Truth-Version", version.toString) ~>
                     Header("X-SODA2-Truth-Copy-Number", copyNumber.toString) ~>
@@ -501,14 +505,14 @@ class Service(serviceConfig: ServiceConfig,
       }
     }
 
-    def doDeleteDataset(req: HttpServletRequest): HttpResponse = {
+    def doDeleteDataset(req: HttpRequest): HttpResponse = {
       deleteDataset(datasetId) match {
         case DatasetDropper.Success =>
           OK ~>
             Header("X-SODA2-Truth-Last-Modified", dateTimeFormat.print(DateTime.now)) ~>
             Header("X-SODA2-Truth-Copy-Number", 0.toString) ~>
             Header("X-SODA2-Truth-Version", 0.toString) ~>
-            ContentType("application/json; charset=utf-8") ~> Content("[]")
+            Content(JsonContentType, "[]")
         case DatasetDropper.FailureNotFound =>
           notFoundError(formatDatasetId(datasetId))
         case DatasetDropper.FailureWriteLock =>
@@ -518,45 +522,49 @@ class Service(serviceConfig: ServiceConfig,
 
     val suffixHashAlg = "SHA1"
     val suffixHashLen = MessageDigest.getInstance(suffixHashAlg).getDigestLength
-    def doExportFile(req: HttpServletRequest): HttpResponse = {
+    def doExportFile(req: HttpRequest): HttpResponse = {
+      val servReq = req.servletRequest
       val precondition = req.precondition
-      val schemaHash = Option(req.getParameter("schemaHash"))
+      val schemaHash = Option(servReq.getParameter("schemaHash"))
       val ifModifiedSince = req.dateTimeHeader("If-Modified-Since")
-      val onlyColumns = Option(req.getParameterValues("c")).map(_.flatMap { c => norm(c).split(',').map(new UserColumnId(_)) }).map(UserColumnIdSet(_ : _*))
-      val limit = Option(req.getParameter("limit")).map { limStr =>
+      val onlyColumns = Option(servReq.getParameterValues("c")).map(_.flatMap { c =>
+        norm(c).split(',').map(new UserColumnId(_)) }).map(UserColumnIdSet(_ : _*))
+      val limit = Option(servReq.getParameter("limit")).map { limStr =>
         try {
           limStr.toLong
         } catch {
           case _: NumberFormatException =>
-            return BadRequest ~> Content("Bad limit")
+            return BadRequest ~> Content(TextContentType, "Bad limit")
         }
       }
-      val offset = Option(req.getParameter("offset")).map { offStr =>
+      val offset = Option(servReq.getParameter("offset")).map { offStr =>
         try {
           offStr.toLong
         } catch {
           case _: NumberFormatException =>
-            return BadRequest ~> Content("Bad offset")
+            return BadRequest ~> Content(TextContentType, "Bad offset")
         }
       }
-      val copy = Option(req.getParameter("copy")).getOrElse("latest").toLowerCase match {
+      val copy = Option(servReq.getParameter("copy")).getOrElse("latest").toLowerCase match {
         case "latest" => LatestCopy
         case "published" => PublishedCopy
         case "working" => WorkingCopy
         case other =>
           try { Snapshot(other.toInt) }
           catch { case _: NumberFormatException =>
-            return BadRequest ~> Content("Bad copy selector")
+            return BadRequest ~> Content(TextContentType, "Bad copy selector")
           }
       }
-      val sorted = Option(req.getParameter("sorted")).getOrElse("true").toLowerCase match {
+      val sorted = Option(servReq.getParameter("sorted")).getOrElse("true").toLowerCase match {
         case "true" =>
           true
         case "false" =>
-          if(limit.isDefined || offset.isDefined) return BadRequest ~> Content("Cannot page through an unsorted export")
+          if(limit.isDefined || offset.isDefined) {
+            return BadRequest ~> Content(TextContentType, "Cannot page through an unsorted export")
+          }
           false
         case _ =>
-          return BadRequest ~> Content("Bad sorted selector")
+          return BadRequest ~> Content(TextContentType, "Bad sorted selector")
       }
       val suffix = locally {
         val md = MessageDigest.getInstance(suffixHashAlg)
@@ -638,9 +646,9 @@ class Service(serviceConfig: ServiceConfig,
     } yield source.mkString
 
     val response =
-      OK ~> ContentType("application/json; charset=utf-8") ~> Content(responseString)
+      OK ~> Content(JsonContentType, responseString)
 
-    override val get = (_: HttpServletRequest) => response
+    override val get = (_: HttpRequest) => response
   }
 
   implicit object DatasetIdExtractor extends Extractor[DatasetId] {
@@ -667,7 +675,7 @@ class Service(serviceConfig: ServiceConfig,
     )
   }
 
-  private def handler(req: HttpServletRequest): HttpResponse = {
+  private def handler(req: HttpRequest): HttpResponse = {
     router(req.requestPath) match {
       case Some(result) =>
         result(req)
@@ -679,7 +687,7 @@ class Service(serviceConfig: ServiceConfig,
   private val errorHandlingHandler = new ErrorAdapter(handler) {
     type Tag = String
     def onException(tag: Tag): HttpResponse = {
-      InternalServerError ~> ContentType("application/json; charset=utf-8") ~> Write { w =>
+      InternalServerError ~> Write(JsonContentType) { w =>
         w.write(s"""{"errorCode":"internal","data":{"tag":"$tag"}}""")
       }
     }
