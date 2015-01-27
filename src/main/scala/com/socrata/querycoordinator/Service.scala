@@ -168,7 +168,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
       source <- managed(scala.io.Source.fromInputStream(stream)(scala.io.Codec.UTF8))
     } yield source.mkString
 
-    override val get: HttpService = req => resp =>
+    override val get: HttpService = req =>
       OK ~> Json(responseString)
 
   }
