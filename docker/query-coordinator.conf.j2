@@ -1,18 +1,4 @@
 com.socrata.query-coordinator {
-  log4j {
-    rootLogger = [ INFO, console ]
-    appender {
-      console.class = org.apache.log4j.ConsoleAppender
-
-      console.props {
-        layout.class = org.apache.log4j.PatternLayout
-        layout.props {
-          ConversionPattern = "%d %p [%t] (%X{X-Socrata-RequestId}) [%X{X-Socrata-Resource}] %c{1} %m%n"
-        }
-      }
-    }
-  }
-
   metrics {
     log-metrics = {{ LOG_METRICS }}
     enable-graphite = {{ ENABLE_GRAPHITE }}
