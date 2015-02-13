@@ -1,0 +1,33 @@
+com.socrata.query-coordinator {
+  log4j {
+    rootLogger = [ INFO, console ]
+    appender {
+      console.class = org.apache.log4j.ConsoleAppender
+
+      console.props {
+        layout.class = org.apache.log4j.PatternLayout
+        layout.props {
+          ConversionPattern = "%d %p [%t] (%X{X-Socrata-RequestId}) [%X{X-Socrata-Resource}] %c{1} %m%n"
+        }
+      }
+    }
+  }
+
+  metrics {
+    log-metrics = {{ LOG_METRICS }}
+    enable-graphite = {{ ENABLE_GRAPHITE }}
+    graphite-host = "{{ GRAPHITE_HOST }}"
+    graphite-port = "{{ GRAPHITE_PORT }}"
+  }
+
+  network {
+    port = 6030
+  }
+
+  curator.ensemble = {{ ZOOKEEPER_ENSEMBLE }}
+  service-advertisement.address = "{{ ARK_HOST }}"
+
+  all-secondary-instance-names = [{{ PG_SECONDARY_INSTANCES }}]
+
+}
+
