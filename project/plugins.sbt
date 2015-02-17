@@ -3,7 +3,7 @@ resolvers ++= Seq(
   "DiversIT repo" at "http://repository-diversit.forge.cloudbees.com/release"
 )
 
-addSbtPlugin("com.socrata" % "socrata-cloudbees-sbt" % "1.3.3")
+addSbtPlugin("com.socrata" % "socrata-cloudbees-sbt" % "1.3.4")
 
 lazy val root = project.in(file(".")).dependsOn(scalabuff)
 
