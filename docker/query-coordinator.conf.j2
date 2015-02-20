@@ -12,8 +12,8 @@ com.socrata.query-coordinator {
 
   curator.ensemble = {{ ZOOKEEPER_ENSEMBLE }}
   service-advertisement.address = "{{ ARK_HOST }}"
-
+  liveness-check.port = 6031
+ 
   all-secondary-instance-names = [{{ SECONDARY_INSTANCES }}]
-
 }
 
