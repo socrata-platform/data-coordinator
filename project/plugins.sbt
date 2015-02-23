@@ -2,7 +2,7 @@ resolvers ++= Seq(
   "socrata releases" at "https://repository-socrata-oss.forge.cloudbees.com/release"
 )
 
-addSbtPlugin("com.socrata" % "socrata-cloudbees-sbt" % "1.3.1")
+addSbtPlugin("com.socrata" % "socrata-cloudbees-sbt" % "1.3.4")
 
 lazy val root = project.in(file(".")).dependsOn(scalabuff)
 
