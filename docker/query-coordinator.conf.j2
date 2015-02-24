@@ -1,0 +1,16 @@
+com.socrata.query-coordinator {
+  curator.ensemble = {{ ZOOKEEPER_ENSEMBLE }}
+  service-advertisement.address = "{{ ARK_HOST }}"
+  network.port = 6030
+  liveness-check.port = 6031
+ 
+  all-secondary-instance-names = [{{ SECONDARY_INSTANCES }}]
+
+  metrics {
+    log-metrics = {{ LOG_METRICS }}
+    enable-graphite = {{ ENABLE_GRAPHITE }}
+    graphite-host = "{{ GRAPHITE_HOST }}"
+    graphite-port = "{{ GRAPHITE_PORT }}"
+  }
+}
+

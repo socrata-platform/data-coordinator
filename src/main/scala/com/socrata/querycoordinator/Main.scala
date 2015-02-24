@@ -68,8 +68,7 @@ object Main extends App {
     dataCoordinatorProviderProvider <- managed(new ServiceProviderProvider(
       discovery,
       new strategies.RoundRobinStrategy))
-    pongProvider <- managed(new LivenessCheckResponder(
-                            new InetSocketAddress(InetAddress.getByName(config.discovery.address), 0)))
+    pongProvider <- managed(new LivenessCheckResponder(config.livenessCheck))
     reporter <- MetricsReporter.managed(config.metrics)
   } {
     pongProvider.start()
