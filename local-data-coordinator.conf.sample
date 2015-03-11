@@ -29,11 +29,3 @@ com.socrata.coordinator.service = ${com.socrata.coordinator.common} {
 
 com.socrata.coordinator.secondary-watcher = ${com.socrata.coordinator.common} {
 }
-
-com.socrata.coordinator.backup.transmitter = ${com.socrata.coordinator.common} {
-  network.backup-host = "localhost"
-}
-
-com.socrata.coordinator.backup.receiver = ${com.socrata.coordinator.common} {
-  database.database = "datacoordinator_backup"
-}

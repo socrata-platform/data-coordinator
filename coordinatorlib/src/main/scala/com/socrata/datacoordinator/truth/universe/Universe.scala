@@ -91,10 +91,6 @@ trait DatasetMapWriterProvider { this: TypeUniverse =>
   val datasetMapWriter: DatasetMapWriter[CT]
 }
 
-trait BackupDatasetMapWriterProvider { this: TypeUniverse =>
-  val backupDatasetMapWriter: BackupDatasetMap[CT]
-}
-
 trait DatasetMutatorProvider { this: TypeUniverse =>
   val datasetMutator: DatasetMutator[CT, CV]
 }
