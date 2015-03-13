@@ -5,8 +5,8 @@ import scala.language.existentials
 import java.nio.charset.StandardCharsets.UTF_8
 import java.io.{Reader, InputStreamReader, FilenameFilter, File}
 import java.net.URLClassLoader
-import com.rojoma.json.util.{JsonUtil, AutomaticJsonCodecBuilder, JsonKey}
-import com.rojoma.json.io.JsonReaderException
+import com.rojoma.json.v3.util.{JsonUtil, AutomaticJsonCodecBuilder, JsonKey}
+import com.rojoma.json.v3.io.JsonReaderException
 import scala.util.control.ControlThrowable
 import com.typesafe.config._
 import scala.collection.JavaConverters._
@@ -41,7 +41,7 @@ class SecondaryLoader(parentClassLoader: ClassLoader, secondaryConfig: com.socra
           if(stream == null) throw Nope("No secondary-manifest.json in " + jar.getAbsolutePath)
           val desc = withStreamResource(resourceCl, jar, "secondary-manifest.json") { reader =>
             try {
-              JsonUtil.readJson[SecondaryDescription](reader).getOrElse {
+              JsonUtil.readJson[SecondaryDescription](reader).right.toOption.getOrElse {
                 throw Nope("Unable to parse a SecondaryDescription from " + jar.getAbsolutePath)
               }
             } catch {
@@ -115,7 +115,7 @@ class SecondaryLoader(parentClassLoader: ClassLoader, secondaryConfig: com.socra
     if(stream == null) throw Nope("No secondary-manifest.json in " + jar.getAbsolutePath)
     val desc = withStreamResource(cl, jar, "secondary-manifest.json") { reader =>
       try {
-        JsonUtil.readJson[SecondaryDescription](reader).getOrElse {
+        JsonUtil.readJson[SecondaryDescription](reader).right.toOption.getOrElse {
           throw Nope("Unable to parse a SecondaryDescription from " + jar.getAbsolutePath)
         }
       } catch {

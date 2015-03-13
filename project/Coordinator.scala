@@ -2,32 +2,36 @@ import sbt._
 import Keys._
 
 import com.rojoma.simplearm.util._
-import com.rojoma.json.util.JsonUtil.writeJson
+import com.rojoma.json.v3.util.JsonUtil.writeJson
 
 import sbtassembly.Plugin.AssemblyKeys._
 import sbtassembly.Plugin.MergeStrategy
+
+import Dependencies._
 
 object Coordinator {
   lazy val settings: Seq[Setting[_]] = BuildSettings.projectSettings(assembly = true) ++ Seq(
     resourceGenerators in Compile <+= (resourceManaged in Compile, name in Compile, version in Compile, scalaVersion in Compile) map genVersion,
     libraryDependencies <++= (scalaVersion) { (scalaVersion) =>
       Seq(
-        "net.ceedubs"    %% "ficus"         % "1.0.0",
-        "com.mchange"     % "c3p0"          % "0.9.5-pre9",
+        c3po,
+        metricsScala,
+        slf4jLog4j12,
+        socrataThirdPartyUtils,
+        typesafeConfig,
+
         "com.socrata"    %% "socrata-http-curator-broker" % "3.0.1",
-        "com.socrata"    %% "socrata-thirdparty-utils" % "2.6.0",
         "com.sun.jna"     % "jna"           % "3.0.9",
-        "com.typesafe"    % "config"        % "1.2.1",
         "io.dropwizard.metrics" % "metrics-jetty9"   % "3.1.0",
         // "io.dropwizard.metrics" % "metrics-graphite"   % "3.1.0",
         // See CORE-3635: use lower version of graphite to work around Graphite reconnect issues
         "com.codahale.metrics" % "metrics-graphite" % "3.0.2" exclude(
                                  "com.codahale.metrics", "metrics-core"),
+        "net.ceedubs"    %% "ficus"         % "1.0.0",
         "net.sf.opencsv"  % "opencsv"       % "2.3",
-        "nl.grons"       %% "metrics-scala" % "3.3.0",
         "org.clojure"     % "clojure"       % "1.5.1",
-        "org.scalacheck" %% "scalacheck"    % "1.10.0" % "test",
-        "org.slf4j"       % "slf4j-log4j12" % BuildSettings.slf4jVersion
+
+        TestDeps.scalaCheck % "test"
       )
     },
     mainClass in assembly := Some("com.socrata.datacoordinator.Launch"),

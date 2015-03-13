@@ -7,12 +7,12 @@ import scala.collection.mutable.LinkedHashMap
 import java.sql.Connection
 
 import com.rojoma.simplearm.util._
-import com.rojoma.json.ast._
-import com.rojoma.json.codec.JsonCodec
+import com.rojoma.json.v3.ast._
+import com.rojoma.json.v3.codec.JsonCodec
 
 import com.socrata.datacoordinator.truth.loader.DataLogger
 import com.socrata.datacoordinator.util.{RowUtils, Counter}
-import com.rojoma.json.util.JsonUtil
+import com.rojoma.json.v3.util.JsonUtil
 import com.socrata.datacoordinator.id.{ColumnId, RowId}
 
 class TestDataLogger(conn: Connection, logTableName: String, sidCol: ColumnId) extends DataLogger[TestColumnValue] {

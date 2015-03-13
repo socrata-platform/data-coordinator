@@ -15,7 +15,7 @@ import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.util.{RowVersionProvider, RowIdProvider, RowDataProvider, NoopTimingReport}
 import com.socrata.datacoordinator.id.{RowVersion, RowId, ColumnId}
 import com.socrata.datacoordinator.util.collection.{MutableColumnIdMap, ColumnIdMap}
-import com.rojoma.json.ast.{JString, JNumber, JValue}
+import com.rojoma.json.v3.ast.{JString, JNumber, JValue}
 
 class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with BeforeAndAfterAll {
   val executor = java.util.concurrent.Executors.newCachedThreadPool()

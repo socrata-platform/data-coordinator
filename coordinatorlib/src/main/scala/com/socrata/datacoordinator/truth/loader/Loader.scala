@@ -4,10 +4,6 @@ package truth.loader
 import scala.{collection => sc}
 
 import java.io.Closeable
-import com.socrata.datacoordinator.util.collection.ColumnIdSet
-import com.rojoma.json.ast.{JObject, JString, JValue}
-import com.rojoma.json.codec.JsonCodec
-import com.rojoma.json.util.{AutomaticJsonCodecBuilder, TagToValue, SimpleHierarchyCodecBuilder}
 import com.socrata.datacoordinator.id.RowVersion
 
 trait Loader[CV] extends Closeable {

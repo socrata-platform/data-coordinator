@@ -1,18 +1,18 @@
 package com.socrata.datacoordinator.id
 
-import com.rojoma.json.codec.JsonCodec
-import com.rojoma.json.ast.{JValue, JNumber}
+import com.rojoma.json.v3.codec.{DecodeError, JsonDecode, JsonEncode}
+import com.rojoma.json.v3.ast.{JValue, JNumber}
 
 class RowVersion(val underlying: Long) extends AnyVal {
   override def toString = s"RowVersion($underlying)"
 }
 
 object RowVersion {
-  implicit val jCodec = new JsonCodec[RowVersion] {
+  implicit val jCodec = new JsonDecode[RowVersion] with JsonEncode[RowVersion] {
     def encode(versionId: RowVersion) = JNumber(versionId.underlying)
     def decode(v: JValue) = v match {
-      case JNumber(n) => Some(new RowVersion(n.toLong))
-      case _ => None
+      case n: JNumber => Right(new RowVersion(n.toLong))
+      case other      => Left(DecodeError.InvalidType(JNumber, other.jsonType))
     }
   }
 

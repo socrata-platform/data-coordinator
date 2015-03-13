@@ -2,10 +2,10 @@ package com.socrata.datacoordinator.common.soql.sqlreps
 
 import com.socrata.datacoordinator.truth.sql.SqlColumnRep
 import com.socrata.soql.types.{SoQLNull, SoQLArray, SoQLValue, SoQLType}
-import com.rojoma.json.io.{JsonReader, CompactJsonWriter}
+import com.rojoma.json.v3.io.{JsonReader, CompactJsonWriter}
 import java.lang.StringBuilder
 import java.sql.{ResultSet, Types, PreparedStatement}
-import com.rojoma.json.ast.JArray
+import com.rojoma.json.v3.ast.JArray
 
 class ArrayRep (val base: String) extends RepUtils with SqlColumnRep[SoQLType, SoQLValue] {
   def representedType = SoQLArray

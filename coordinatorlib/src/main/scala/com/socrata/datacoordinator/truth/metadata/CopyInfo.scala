@@ -1,12 +1,12 @@
 package com.socrata.datacoordinator
 package truth.metadata
 
-import com.rojoma.json.util.{AutomaticJsonCodecBuilder, JsonKey}
+import com.rojoma.json.v3.util.{AutomaticJsonCodecBuilder, JsonKey}
 import com.socrata.datacoordinator.id.CopyId
 import org.joda.time.DateTime
-import com.rojoma.json.codec.JsonCodec
+import com.rojoma.json.v3.codec.{DecodeError, JsonDecode, JsonEncode}
 import org.joda.time.format.ISODateTimeFormat
-import com.rojoma.json.ast.{JString, JValue}
+import com.rojoma.json.v3.ast.{JString, JValue}
 
 sealed trait CopyInfoLike extends Product {
   val systemId: CopyId
@@ -25,19 +25,20 @@ case class UnanchoredCopyInfo(@JsonKey("sid") systemId: CopyId,
 object UnanchoredCopyInfo extends ((CopyId, Long, LifecycleStage, Long, DateTime) => UnanchoredCopyInfo) {
   override def toString = "UnanchoredCopyInfo"
 
-  private implicit object DateTimeCodec extends JsonCodec[DateTime] {
+  private implicit object DateTimeCodec extends JsonDecode[DateTime] with JsonEncode[DateTime] {
     val formatter = ISODateTimeFormat.dateTime
     val parser = ISODateTimeFormat.dateTimeParser
     def encode(x: DateTime): JValue = JString(formatter.print(x))
-    def decode(x: JValue): Option[DateTime] = x match {
+    def decode(x: JValue): JsonDecode.DecodeResult[DateTime] = x match {
       case JString(s) =>
         try {
-          Some(parser.parseDateTime(x.toString))
+          Right(parser.parseDateTime(x.toString()))
         } catch {
-          case _: IllegalArgumentException => None
+          case _: IllegalArgumentException =>
+            Left(DecodeError.InvalidValue(x))
         }
-      case _ =>
-        None
+      case other =>
+        Left(DecodeError.InvalidType(JString, other.jsonType))
     }
   }
   implicit val jCodec = AutomaticJsonCodecBuilder[UnanchoredCopyInfo]

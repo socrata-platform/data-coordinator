@@ -2,10 +2,8 @@ package com.socrata.datacoordinator
 package truth.metadata
 
 import com.socrata.datacoordinator.id.{UserColumnId, ColumnId}
-import com.rojoma.json.util.{AutomaticJsonCodecBuilder, JsonKey}
+import com.rojoma.json.v3.util.{AutomaticJsonCodecBuilder, JsonKey}
 import com.socrata.soql.environment.TypeName
-import com.rojoma.json.codec.JsonCodec
-import com.rojoma.json.ast.{JString, JValue}
 
 sealed trait AbstractColumnInfoLike extends Product {
   val systemId: ColumnId

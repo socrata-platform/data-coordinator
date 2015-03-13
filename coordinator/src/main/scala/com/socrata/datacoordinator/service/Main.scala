@@ -1,6 +1,6 @@
 package com.socrata.datacoordinator.service
 
-import com.rojoma.json.ast.{JString, JValue}
+import com.rojoma.json.v3.ast.{JString, JValue}
 import com.rojoma.simplearm.SimpleArm
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.common.{SoQLCommon, StandardDatasetMapLimits, DataSourceFromConfig}

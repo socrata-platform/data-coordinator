@@ -1,6 +1,6 @@
 package com.socrata.datacoordinator.util
 
-import com.rojoma.json.util.JsonUtil
+import com.rojoma.json.v3.util.JsonUtil
 import com.socrata.thirdparty.metrics.Metrics
 import org.slf4j.{MDC, Logger}
 

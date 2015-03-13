@@ -1,6 +1,6 @@
 package com.socrata.datacoordinator.common.soql.jsonreps
 
-import com.rojoma.json.ast._
+import com.rojoma.json.v3.ast._
 
 import com.socrata.datacoordinator.truth.json.JsonColumnRep
 import com.socrata.soql.types._
@@ -10,7 +10,7 @@ object DoubleRep extends JsonColumnRep[SoQLType, SoQLValue] {
   val representedType = SoQLDouble
 
   def fromJValue(input: JValue) = input match {
-    case JNumber(n) => Some(SoQLDouble(n.doubleValue))
+    case n: JNumber => Some(SoQLDouble(n.toDouble))
     case JNull => Some(SoQLNull)
     case JString(n) => try { Some(SoQLDouble(n.toDouble)) } catch { case e: NumberFormatException => None } // For NaN/Infinities
     case _ => None
