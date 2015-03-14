@@ -8,7 +8,7 @@ object Dependencies {
     val jodaTime        = "2.1"
     val rojomaJson      = "3.2.2"
     val rojomaSimpleArm = "1.1.10"
-    val scalaCheck      = "1.10.0"
+    val scalaCheck      = "1.11.0"
     val scalaTest       = "2.2.1"
     val slf4j           = "1.7.5"
     val soqlReference   = "0.5.0"

@@ -302,11 +302,13 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
 
   def mapToEvents[T](m: collection.Map[Int,T])(implicit codec: JsonEncode[T]): Iterator[JsonEvent] = {
     def elemToStream(kv: (Int, T)) =
-      new BuiltUpIterator(Iterator.single(FieldEvent(kv._1.toString)), JValueEventIterator(codec.encode(kv._2)))
+      new BuiltUpIterator(
+        Iterator.single(FieldEvent(kv._1.toString)(Position.Invalid)),
+        JValueEventIterator(codec.encode(kv._2)))
     new BuiltUpIterator(
-      Iterator.single(StartOfObjectEvent()),
+      Iterator.single(StartOfObjectEvent()(Position.Invalid)),
       m.iterator.flatMap(elemToStream),
-      Iterator.single(EndOfObjectEvent()))
+      Iterator.single(EndOfObjectEvent()(Position.Invalid)))
   }
 
   def toEventStream(inserted: collection.Map[Int, JValue],
@@ -314,15 +316,15 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
                     deleted: collection.Map[Int, JValue],
                     errors: collection.Map[Int, JValue]) = {
     new BuiltUpIterator(
-      Iterator(StartOfObjectEvent(), FieldEvent("inserted")),
+      Iterator(StartOfObjectEvent()(Position.Invalid), FieldEvent("inserted")(Position.Invalid)),
       mapToEvents(inserted),
-      Iterator.single(FieldEvent("updated")),
+      Iterator.single(FieldEvent("updated")(Position.Invalid)),
       mapToEvents(updated),
-      Iterator.single(FieldEvent("deleted")),
+      Iterator.single(FieldEvent("deleted")(Position.Invalid)),
       mapToEvents(deleted),
-      Iterator.single(FieldEvent("errors")),
+      Iterator.single(FieldEvent("errors")(Position.Invalid)),
       mapToEvents(errors),
-      Iterator.single(EndOfObjectEvent()))
+      Iterator.single(EndOfObjectEvent()(Position.Invalid)))
   }
 
   type UniverseWithProviders = Universe[CT, CV] with DatasetMutatorProvider

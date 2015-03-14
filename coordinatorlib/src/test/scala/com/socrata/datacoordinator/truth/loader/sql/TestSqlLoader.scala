@@ -8,7 +8,7 @@ import scala.collection.immutable.VectorBuilder
 
 import java.sql.{Connection, DriverManager}
 
-import org.scalatest.matchers.MustMatchers
+import org.scalatest.MustMatchers
 import org.scalatest.prop.PropertyChecks
 import com.rojoma.simplearm.util._
 

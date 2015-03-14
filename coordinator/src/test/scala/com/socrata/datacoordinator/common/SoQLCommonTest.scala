@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator.common
 
 import org.scalatest.FunSuite
-import org.scalatest.matchers.MustMatchers
+import org.scalatest.MustMatchers
 import com.socrata.soql.environment.ColumnName
 import com.socrata.datacoordinator.id.UserColumnId
 

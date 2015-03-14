@@ -1,6 +1,8 @@
 package com.socrata.datacoordinator
 package truth.loader.sql
 
+import com.rojoma.json.v3.codec.DecodeError.InvalidValue
+
 import scala.collection.immutable.VectorBuilder
 import scala.collection.mutable.LinkedHashMap
 
@@ -8,7 +10,7 @@ import java.sql.Connection
 
 import com.rojoma.simplearm.util._
 import com.rojoma.json.v3.ast._
-import com.rojoma.json.v3.codec.JsonCodec
+import com.rojoma.json.v3.codec._
 
 import com.socrata.datacoordinator.truth.loader.DataLogger
 import com.socrata.datacoordinator.util.{RowUtils, Counter}
@@ -20,7 +22,7 @@ class TestDataLogger(conn: Connection, logTableName: String, sidCol: ColumnId) e
 
   val list = new VectorBuilder[JValue]
 
-  implicit val jCodec = new JsonCodec[TestColumnValue] {
+  implicit val jCodec = new JsonDecode[TestColumnValue] with JsonEncode[TestColumnValue] {
     def encode(x: TestColumnValue) = x match {
       case StringValue(s) => JString(s)
       case LongValue(n) => JNumber(n)
@@ -28,10 +30,10 @@ class TestDataLogger(conn: Connection, logTableName: String, sidCol: ColumnId) e
     }
 
     def decode(x: JValue) = x match {
-      case JString(s) => Some(StringValue(s))
-      case JNumber(n) => Some(LongValue(n.toLong))
-      case JNull => Some(NullValue)
-      case _ => None
+      case JString(s) => Right(StringValue(s))
+      case n: JNumber => Right(LongValue(n.toLong))
+      case JNull => Right(NullValue)
+      case _ => Left(InvalidValue(x))
     }
   }
 
@@ -45,7 +47,7 @@ class TestDataLogger(conn: Connection, logTableName: String, sidCol: ColumnId) e
 
   def insert(systemID: RowId, row: Row[TestColumnValue]) {
     assert(row.get(sidCol) == Some(LongValue(systemID.underlying)))
-    list += JObject(Map("i" -> JsonCodec.toJValue(sortRow(row))))
+    list += JObject(Map("i" -> JsonEncode.toJValue(sortRow(row))))
   }
 
   def update(sid: RowId, oldRow: Option[Row[TestColumnValue]], newRow: Row[TestColumnValue]) {
@@ -53,13 +55,13 @@ class TestDataLogger(conn: Connection, logTableName: String, sidCol: ColumnId) e
     assert(oldRow.get.get(sidCol) == Some(LongValue(sid.underlying)))
     assert(newRow.get(sidCol) == Some(LongValue(sid.underlying)))
     val delta = RowUtils.delta(oldRow.get, newRow)
-    list += JObject(Map("u" -> JsonCodec.toJValue(List(oldRow.get, delta).map(sortRow))))
+    list += JObject(Map("u" -> JsonEncode.toJValue(List(oldRow.get, delta).map(sortRow))))
   }
 
   def delete(systemID: RowId, oldRow: Option[Row[TestColumnValue]]) {
     assert(oldRow.isDefined, "We should never generate None for old-row")
     assert(oldRow.get.get(sidCol) == Some(LongValue(systemID.underlying)))
-    list += JObject(Map("d" -> JsonCodec.toJValue(sortRow(oldRow.get))))
+    list += JObject(Map("d" -> JsonEncode.toJValue(sortRow(oldRow.get))))
   }
 
   def counterUpdated(nextCtr: Long) {

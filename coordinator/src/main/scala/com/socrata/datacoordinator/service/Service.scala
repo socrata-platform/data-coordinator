@@ -76,14 +76,14 @@ class Service(serviceConfig: ServiceConfig,
   def norm(s: String) = Normalizer.normalize(s, normalizationMode)
 
   def normalizeJson(token: JsonEvent): JsonEvent = {
-    def position(t: JsonEvent) = { t.position = token.position; t }
+    def position(t: JsonEvent) = t.positionedAt(token.position)
     token match {
       case StringEvent(s) =>
-        position(StringEvent(norm(s)))
+        position(StringEvent(norm(s))(token.position))
       case FieldEvent(s) =>
-        position(FieldEvent(norm(s)))
+        position(FieldEvent(norm(s))(token.position))
       case IdentifierEvent(s) =>
-        position(IdentifierEvent(norm(s)))
+        position(IdentifierEvent(norm(s))(token.position))
       case other =>
         other
     }
