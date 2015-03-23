@@ -8,7 +8,7 @@ import com.socrata.datacoordinator.truth.loader.{Delete, Update, Insert, Delogge
 import com.socrata.soql.types._
 import com.socrata.datacoordinator.truth.loader.Delogger.RowDataUpdated
 import com.socrata.datacoordinator.Row
-import com.rojoma.json.ast._
+import com.rojoma.json.v3.ast._
 import scala.collection.immutable.SortedMap
 import com.socrata.datacoordinator.truth.json.JsonColumnWriteRep
 

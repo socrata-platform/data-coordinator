@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator
 package service
 
-import com.rojoma.json.ast.{JArray, JBoolean, JObject, JValue}
+import com.rojoma.json.v3.ast.{JArray, JBoolean, JObject, JValue}
 import com.socrata.datacoordinator.id.{UserColumnId, RowVersion, ColumnId}
 import com.socrata.datacoordinator.truth.json.JsonColumnReadRep
 import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, AbstractColumnInfoLike}

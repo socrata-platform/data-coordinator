@@ -2,9 +2,9 @@ package com.socrata.datacoordinator
 package service
 
 import com.ibm.icu.util.ULocale
-import com.rojoma.json.ast._
-import com.rojoma.json.codec.JsonCodec
-import com.rojoma.json.io._
+import com.rojoma.json.v3.ast._
+import com.rojoma.json.v3.codec.{DecodeError, JsonDecode, JsonEncode}
+import com.rojoma.json.v3.io._
 import com.socrata.datacoordinator.id.{RollupName, UserColumnId, RowVersion, DatasetId}
 import com.socrata.datacoordinator.truth.json.JsonColumnRep
 import com.socrata.datacoordinator.truth.loader._
@@ -105,17 +105,17 @@ object Mutator {
 
   sealed abstract class MergeReplace
   object MergeReplace {
-    implicit val jCodec = new JsonCodec[MergeReplace] {
+    implicit val jCodec = new JsonDecode[MergeReplace] with JsonEncode[MergeReplace] {
       val MergeS = JString("merge")
       val ReplaceS = JString("replace")
       def encode(x: MergeReplace): JValue = x match {
         case Merge => MergeS
         case Replace => ReplaceS
       }
-      def decode(x: JValue): Option[MergeReplace] = x match {
-        case MergeS => Some(Merge)
-        case ReplaceS => Some(Replace)
-        case _ => None
+      def decode(x: JValue): JsonDecode.DecodeResult[MergeReplace] = x match {
+        case MergeS => Right(Merge)
+        case ReplaceS => Right(Replace)
+        case other => Left(DecodeError.InvalidValue(x))
       }
     }
   }
@@ -125,32 +125,32 @@ object Mutator {
   trait Accessor {
     def originalObject: JObject
     def fields: scala.collection.Map[String, JValue] = originalObject.fields
-    def get[T: JsonCodec](field: String): T
-    def getOption[T: JsonCodec](field: String): Option[T]
-    def getWithStrictDefault[T: JsonCodec](field: String, default: T): T
-    def getWithLazyDefault[T: JsonCodec](field: String, default: => T): T
+    def get[T: JsonDecode](field: String): T
+    def getOption[T: JsonDecode](field: String): Option[T]
+    def getWithStrictDefault[T: JsonDecode](field: String, default: T): T
+    def getWithLazyDefault[T: JsonDecode](field: String, default: => T): T
   }
 
   def withObjectFields[A](index: Long, value: JValue)(f: Accessor => A): A = value match {
     case obj: JObject =>
       f(new Accessor {
         val originalObject = obj
-        def get[T : JsonCodec](field: String) = {
+        def get[T : JsonDecode](field: String) = {
           val json = fields.getOrElse(field, throw MissingCommandField(originalObject, field)(index))
-          JsonCodec[T].decode(json).getOrElse(throw InvalidCommandFieldValue(obj, field, json)(index))
+          JsonDecode[T].decode(json).right.toOption.getOrElse(throw InvalidCommandFieldValue(obj, field, json)(index))
         }
-        def getWithStrictDefault[T : JsonCodec](field: String, default: T) = getWithLazyDefault(field, default)
-        def getWithLazyDefault[T : JsonCodec](field: String, default: => T) = {
+        def getWithStrictDefault[T : JsonDecode](field: String, default: T) = getWithLazyDefault(field, default)
+        def getWithLazyDefault[T : JsonDecode](field: String, default: => T) = {
           fields.get(field) match {
             case Some(json) =>
-              JsonCodec[T].decode(json).getOrElse(throw InvalidCommandFieldValue(obj, field, json)(index))
+              JsonDecode[T].decode(json).right.toOption.getOrElse(throw InvalidCommandFieldValue(obj, field, json)(index))
             case None =>
               default
           }
         }
-        def getOption[T : JsonCodec](field: String) =
+        def getOption[T : JsonDecode](field: String) =
           fields.get(field).map { json =>
-            JsonCodec[T].decode(json).getOrElse(throw InvalidCommandFieldValue(obj, field, json)(index))
+            JsonDecode[T].decode(json).right.toOption.getOrElse(throw InvalidCommandFieldValue(obj, field, json)(index))
           }
       })
     case other =>
@@ -300,13 +300,15 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
       new CommandStream(streamType, user, remainingCommands.buffered)
     }
 
-  def mapToEvents[T](m: collection.Map[Int,T])(implicit codec: JsonCodec[T]): Iterator[JsonEvent] = {
+  def mapToEvents[T](m: collection.Map[Int,T])(implicit codec: JsonEncode[T]): Iterator[JsonEvent] = {
     def elemToStream(kv: (Int, T)) =
-      new BuiltUpIterator(Iterator.single(FieldEvent(kv._1.toString)), JValueEventIterator(codec.encode(kv._2)))
+      new BuiltUpIterator(
+        Iterator.single(FieldEvent(kv._1.toString)(Position.Invalid)),
+        JValueEventIterator(codec.encode(kv._2)))
     new BuiltUpIterator(
-      Iterator.single(StartOfObjectEvent()),
+      Iterator.single(StartOfObjectEvent()(Position.Invalid)),
       m.iterator.flatMap(elemToStream),
-      Iterator.single(EndOfObjectEvent()))
+      Iterator.single(EndOfObjectEvent()(Position.Invalid)))
   }
 
   def toEventStream(inserted: collection.Map[Int, JValue],
@@ -314,15 +316,15 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
                     deleted: collection.Map[Int, JValue],
                     errors: collection.Map[Int, JValue]) = {
     new BuiltUpIterator(
-      Iterator(StartOfObjectEvent(), FieldEvent("inserted")),
+      Iterator(StartOfObjectEvent()(Position.Invalid), FieldEvent("inserted")(Position.Invalid)),
       mapToEvents(inserted),
-      Iterator.single(FieldEvent("updated")),
+      Iterator.single(FieldEvent("updated")(Position.Invalid)),
       mapToEvents(updated),
-      Iterator.single(FieldEvent("deleted")),
+      Iterator.single(FieldEvent("deleted")(Position.Invalid)),
       mapToEvents(deleted),
-      Iterator.single(FieldEvent("errors")),
+      Iterator.single(FieldEvent("errors")(Position.Invalid)),
       mapToEvents(errors),
-      Iterator.single(EndOfObjectEvent()))
+      Iterator.single(EndOfObjectEvent()(Position.Invalid)))
   }
 
   type UniverseWithProviders = Universe[CT, CV] with DatasetMutatorProvider

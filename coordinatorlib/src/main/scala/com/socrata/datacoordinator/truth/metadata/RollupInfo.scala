@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator
 package truth.metadata
 
-import com.rojoma.json.util.{AutomaticJsonCodecBuilder, JsonKey}
+import com.rojoma.json.v3.util.{AutomaticJsonCodecBuilder, JsonKey}
 import com.socrata.datacoordinator.id.RollupName
 
 sealed trait RollupInfoLike extends Product {

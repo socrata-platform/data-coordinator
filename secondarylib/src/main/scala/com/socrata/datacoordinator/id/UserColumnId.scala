@@ -1,18 +1,18 @@
 package com.socrata.datacoordinator.id
 
-import com.rojoma.json.codec.JsonCodec
-import com.rojoma.json.ast.{JValue, JString}
+import com.rojoma.json.v3.codec.{DecodeError, JsonDecode, JsonEncode}
+import com.rojoma.json.v3.ast.{JValue, JString}
 
 class UserColumnId(val underlying: String) extends AnyVal {
   override def toString = s"UserColumnId($underlying)"
 }
 
 object UserColumnId {
-  implicit val jCodec = new JsonCodec[UserColumnId] {
+  implicit val jCodec = new JsonDecode[UserColumnId] with JsonEncode[UserColumnId] {
     def encode(cid: UserColumnId) = JString(cid.underlying)
     def decode(v: JValue) = v match {
-      case JString(s) => Some(new UserColumnId(s))
-      case _ => None
+      case JString(s) => Right(new UserColumnId(s))
+      case other      => Left(DecodeError.InvalidType(JString, other.jsonType))
     }
   }
 

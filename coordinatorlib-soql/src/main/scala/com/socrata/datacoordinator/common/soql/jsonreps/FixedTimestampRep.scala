@@ -1,6 +1,6 @@
 package com.socrata.datacoordinator.common.soql.jsonreps
 
-import com.rojoma.json.ast._
+import com.rojoma.json.v3.ast._
 import org.joda.time.DateTime
 
 import com.socrata.datacoordinator.truth.json.JsonColumnRep

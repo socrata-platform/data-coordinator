@@ -1,10 +1,10 @@
 package com.socrata.datacoordinator.service
 
 import com.ibm.icu.text.Normalizer
-import com.rojoma.json.ast._
-import com.rojoma.json.codec.JsonCodec
-import com.rojoma.json.io._
-import com.rojoma.json.util.{JsonArrayIterator, AutomaticJsonCodecBuilder, JsonKey, JsonUtil}
+import com.rojoma.json.v3.ast._
+import com.rojoma.json.v3.codec.{JsonDecode, JsonEncode}
+import com.rojoma.json.v3.io._
+import com.rojoma.json.v3.util.{JsonArrayIterator, AutomaticJsonCodecBuilder, JsonKey, JsonUtil}
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.id.{UserColumnId, DatasetId}
 import com.socrata.datacoordinator.truth._
@@ -76,14 +76,14 @@ class Service(serviceConfig: ServiceConfig,
   def norm(s: String) = Normalizer.normalize(s, normalizationMode)
 
   def normalizeJson(token: JsonEvent): JsonEvent = {
-    def position(t: JsonEvent) = { t.position = token.position; t }
+    def position(t: JsonEvent) = t.positionedAt(token.position)
     token match {
       case StringEvent(s) =>
-        position(StringEvent(norm(s)))
+        position(StringEvent(norm(s))(token.position))
       case FieldEvent(s) =>
-        position(FieldEvent(norm(s)))
+        position(FieldEvent(norm(s))(token.position))
       case IdentifierEvent(s) =>
-        position(IdentifierEvent(norm(s)))
+        position(IdentifierEvent(norm(s))(token.position))
       case other =>
         other
     }
@@ -237,7 +237,7 @@ class Service(serviceConfig: ServiceConfig,
           import scala.language.reflectiveCalls
           err(resp, msg,
             "dataset" -> JString(formatDatasetId(dataset)),
-            "column" -> JsonCodec.toJValue(colId))
+            "column" -> JsonEncode.toJValue(colId))
         }
         e match {
           case Mutator.EmptyCommandStream() =>
@@ -280,7 +280,7 @@ class Service(serviceConfig: ServiceConfig,
             colErr("update.column.exists", dataset, name, Conflict)
           case Mutator.IllegalColumnId(id) =>
             err(BadRequest, "update.column.illegal-id",
-              "id" -> JsonCodec.toJValue(id))
+              "id" -> JsonEncode.toJValue(id))
           case Mutator.NoSuchType(typeName) =>
             err(BadRequest, "update.type.unknown",
               "type" -> JString(typeName.name))
@@ -291,12 +291,12 @@ class Service(serviceConfig: ServiceConfig,
           case Mutator.PrimaryKeyAlreadyExists(datasetName, userColumnId, existingColumn) =>
             err(BadRequest, "update.row-identifier.already-set",
               "dataset" -> JString(formatDatasetId(datasetName)),
-              "column" -> JsonCodec.toJValue(userColumnId),
-              "existing-column" -> JsonCodec.toJValue(userColumnId))
+              "column" -> JsonEncode.toJValue(userColumnId),
+              "existing-column" -> JsonEncode.toJValue(userColumnId))
           case Mutator.InvalidTypeForPrimaryKey(datasetName, userColumnId, typeName) =>
             err(BadRequest, "update.row-identifier.invalid-type",
               "dataset" -> JString(formatDatasetId(datasetName)),
-              "column" -> JsonCodec.toJValue(userColumnId),
+              "column" -> JsonEncode.toJValue(userColumnId),
               "type" -> JString(typeName.name))
           case Mutator.DeleteRowIdentifierNotAllowed(datasetId, columnId) =>
             colErr("update.row-identifier.delete", datasetId, columnId)
@@ -313,11 +313,11 @@ class Service(serviceConfig: ServiceConfig,
           case Mutator.UnknownColumnId(datasetName, cid) =>
             err(BadRequest, "update.row.unknown-column",
               "dataset" -> JString(formatDatasetId(datasetName)),
-              "column" -> JsonCodec.toJValue(cid))
+              "column" -> JsonEncode.toJValue(cid))
           case Mutator.InvalidValue(datasetName, userColumnId, typeName, value) =>
             err(BadRequest, "update.row.unparsable-value",
               "dataset" -> JString(formatDatasetId(datasetName)),
-              "column" -> JsonCodec.toJValue(userColumnId),
+              "column" -> JsonEncode.toJValue(userColumnId),
               "type" -> JString(typeName.name),
               "value" -> value)
           case Mutator.UpsertError(datasetName, NoPrimaryKey, _) =>
@@ -347,7 +347,7 @@ class Service(serviceConfig: ServiceConfig,
   private def writeResult(o: OutputStream, r: MutationScriptCommandResult, tmp: IndexedTempFile) {
     r match {
       case MutationScriptCommandResult.ColumnCreated(id, typname) =>
-        o.write(CompactJsonWriter.toString(JObject(Map("id" -> JsonCodec.toJValue(id), "type" -> JString(typname.name)))).getBytes(UTF_8))
+        o.write(CompactJsonWriter.toString(JObject(Map("id" -> JsonEncode.toJValue(id), "type" -> JString(typname.name)))).getBytes(UTF_8))
       case MutationScriptCommandResult.Uninteresting =>
         o.write('{')
         o.write('}')
@@ -596,10 +596,10 @@ class Service(serviceConfig: ServiceConfig,
                 jsonWriter.write(JString(locale))
                 rowIdCol.foreach { rid =>
                   out.write("\n ,\"pk\":")
-                  jsonWriter.write(JsonCodec.toJValue(rid))
+                  jsonWriter.write(JsonEncode.toJValue(rid))
                 }
                 out.write("\n ,\"schema\":")
-                jsonWriter.write(JsonCodec.toJValue(schema))
+                jsonWriter.write(JsonEncode.toJValue(schema))
                 out.write("\n }")
                 while(rows.hasNext) {
                   out.write("\n,")
@@ -634,7 +634,7 @@ class Service(serviceConfig: ServiceConfig,
     JObject(Map(
       "hash" -> JString(hash),
       "schema" -> jsonSchema,
-      "pk" -> JsonCodec.toJValue(pk),
+      "pk" -> JsonEncode.toJValue(pk),
       "locale" -> JString(locale)
     ))
   }

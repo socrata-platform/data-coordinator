@@ -1,6 +1,6 @@
 package com.socrata.datacoordinator.common.soql.jsonreps
 
-import com.rojoma.json.ast.{JString, JNull, JValue}
+import com.rojoma.json.v3.ast.{JString, JNull, JValue}
 import com.socrata.datacoordinator.truth.json.JsonColumnRep
 import com.socrata.soql.types._
 import com.vividsolutions.jts.geom.Geometry

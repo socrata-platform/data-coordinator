@@ -3,7 +3,7 @@ package com.socrata.datacoordinator.common.soql.jsonreps
 import com.socrata.datacoordinator.truth.json.JsonColumnRep
 import com.socrata.soql.types.{SoQLNull, SoQLValue, SoQLID, SoQLType}
 import com.socrata.soql.environment.ColumnName
-import com.rojoma.json.ast.{JNull, JString, JValue}
+import com.rojoma.json.v3.ast.{JNull, JString, JValue}
 import com.socrata.datacoordinator.common.soql.SoQLRep
 import com.socrata.datacoordinator.id.RowId
 

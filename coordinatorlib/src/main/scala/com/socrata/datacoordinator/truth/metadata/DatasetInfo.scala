@@ -1,10 +1,10 @@
 package com.socrata.datacoordinator
 package truth.metadata
 
-import com.rojoma.json.util.{JsonKey, AutomaticJsonCodecBuilder}
-import com.socrata.datacoordinator.id.{RowId, DatasetId}
-import com.rojoma.json.codec.JsonCodec
-import com.rojoma.json.ast.{JString, JValue}
+import com.rojoma.json.v3.util.{JsonKey, AutomaticJsonCodecBuilder}
+import com.socrata.datacoordinator.id.DatasetId
+import com.rojoma.json.v3.codec.{DecodeError, JsonDecode, JsonEncode}
+import com.rojoma.json.v3.ast.{JString, JValue}
 
 trait DatasetInfoLike extends Product {
   val systemId: DatasetId
@@ -24,16 +24,16 @@ case class UnanchoredDatasetInfo(@JsonKey("sid") systemId: DatasetId,
 
 object UnanchoredDatasetInfo extends ((DatasetId, Long, String, Array[Byte]) => UnanchoredDatasetInfo) {
   override def toString = "DatasetInfo"
-  private implicit val byteCodec = new JsonCodec[Array[Byte]] {
+  private implicit val byteCodec = new JsonDecode[Array[Byte]] with JsonEncode[Array[Byte]] {
     def encode(x: Array[Byte]): JValue =
       JString(new sun.misc.BASE64Encoder().encode(x))
 
-    def decode(x: JValue): Option[Array[Byte]] = x match {
+    def decode(x: JValue): JsonDecode.DecodeResult[Array[Byte]] = x match {
       case JString(s) =>
-        try { Some(new sun.misc.BASE64Decoder().decodeBuffer(s)) }
-        catch { case _: java.io.IOException => None }
-      case _ =>
-        None
+        try { Right(new sun.misc.BASE64Decoder().decodeBuffer(s)) }
+        catch { case _: java.io.IOException => Left(DecodeError.InvalidValue(x)) }
+      case other =>
+        Left(DecodeError.InvalidType(JString, other.jsonType))
     }
   }
   implicit val jCodec = AutomaticJsonCodecBuilder[UnanchoredDatasetInfo]
