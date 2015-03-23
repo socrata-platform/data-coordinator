@@ -1,0 +1,38 @@
+com.socrata.coordinator.service {
+  curator.ensemble = {{ ZOOKEEPER_ENSEMBLE }}
+  service-advertisement.address = "{{ ARK_HOST }}"
+  network.port = 6020
+  liveness-check.port = 6021
+
+  instance = alpha
+
+  database {
+    host = "{{ DATA_COORDINATOR_DB_HOST }}"
+    port = "{{ DATA_COORDINATOR_DB_PORT }}"
+    database = "{{ DATA_COORDINATOR_DB_NAME }}"
+    username = "{{ DATA_COORDINATOR_DB_USER }}"
+    {{ DATA_COORDINATOR_DB_PASSWORD_LINE }}
+  }
+
+  secondary {
+    defaultGroups = [pg]
+    groups {
+      pg {
+        numReplicas = 2
+        instances = [{{ SECONDARY_INSTANCES }}]
+      }
+    }
+    instances {
+      # this section is just so the config parsing doesn't blow up
+    }
+  }
+
+  metrics {
+    enable-graphite = {{ ENABLE_GRAPHITE }}
+    graphite-host = "{{ GRAPHITE_HOST }}"
+    graphite-port = "{{ GRAPHITE_PORT }}"
+    log-metrics = {{ LOG_METRICS }}
+  }
+
+  tablespace = """(format "ts%05d" (rand-int 1000))"""
+}
