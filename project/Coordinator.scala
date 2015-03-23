@@ -14,7 +14,7 @@ object Coordinator {
       Seq(
         "net.ceedubs"    %% "ficus"         % "1.0.0",
         "com.mchange"     % "c3p0"          % "0.9.5-pre9",
-        "com.socrata"    %% "socrata-http-curator-broker" % "3.0.1",
+        "com.socrata"    %% "socrata-http-curator-broker" % "3.1.1",
         "com.socrata"    %% "socrata-thirdparty-utils" % "2.6.0",
         "com.sun.jna"     % "jna"           % "3.0.9",
         "com.typesafe"    % "config"        % "1.2.1",

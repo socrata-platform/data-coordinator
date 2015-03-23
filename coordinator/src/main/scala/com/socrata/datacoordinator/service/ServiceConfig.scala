@@ -1,6 +1,7 @@
 package com.socrata.datacoordinator.service
 
 import com.socrata.datacoordinator.common.DataSourceConfig
+import com.socrata.http.server.livenesscheck.LivenessCheckConfig
 import com.socrata.thirdparty.curator.{CuratorConfig, DiscoveryConfig}
 import com.typesafe.config.Config
 import java.util.concurrent.TimeUnit
@@ -12,6 +13,7 @@ class ServiceConfig(val config: Config, root: String) {
   val network = new NetworkConfig(config, k("network"))
   val curator = new CuratorConfig(config, k("curator"))
   val discovery = new DiscoveryConfig(config, k("service-advertisement"))
+  val livenessCheck = new LivenessCheckConfig(config, k("liveness-check"))
   val dataSource = new DataSourceConfig(config, k("database"))
   val logProperties = config.getConfig(k("log4j"))
   val commandReadLimit = config.getBytes(k("command-read-limit")).longValue
