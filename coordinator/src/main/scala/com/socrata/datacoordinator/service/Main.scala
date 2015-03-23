@@ -299,7 +299,7 @@ object Main {
           for {
             curator <- CuratorFromConfig(serviceConfig.curator)
             discovery <- DiscoveryFromConfig(classOf[AuxiliaryData], curator, serviceConfig.discovery)
-            pong <- managed(new LivenessCheckResponder(new InetSocketAddress(InetAddress.getByName(address), 0)))
+            pong <- managed(new LivenessCheckResponder(serviceConfig.livenessCheck))
           } {
             pong.start()
             val auxData = new AuxiliaryData(livenessCheckInfo = Some(pong.livenessCheckInfo))

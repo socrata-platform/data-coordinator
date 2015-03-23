@@ -9,3 +9,4 @@ local-secondary-watcher.conf
 local-truth-backup-receiver.conf
 local-truth-backup-transmitter.conf
 .DS_Store
+coordinator/docker/*.jar
