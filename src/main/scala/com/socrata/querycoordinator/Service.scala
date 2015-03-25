@@ -176,9 +176,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
   object QueryResource extends QCResource {
 
     override def post = { req: HttpRequest => resp: HttpServletResponse =>
-      using(new ResourceScope) { rs =>
-        process(rs, req)(resp)
-      }
+      process(req)(resp)
     }
 
     override def get = post
@@ -209,7 +207,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
                              limit: Option[String],
                              offset: Option[String])
 
-  private def process(resourceScope: ResourceScope, req: HttpRequest): HttpResponse = {
+  private def process(req: HttpRequest): HttpResponse = {
     val originalThreadName = Thread.currentThread.getName
     val servReq = req.servletRequest
     try {
@@ -438,7 +436,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
       }
       val (rewrittenAnalysis, rollupName) = possiblyRewriteQuery(finalSchema, analysis)
       executeQuery(finalSchema, rewrittenAnalysis, rollupName,
-        requestId, req.header("X-Socrata-Resource"), resourceScope)
+        requestId, req.header("X-Socrata-Resource"), req.resourceScope)
     } catch {
       case FinishRequest(response) =>
         response ~> (resetResponse _)
