@@ -9,12 +9,15 @@ scalaVersion := "2.10.4"
 
 resolvers += "Open Source Geospatial Foundation Repository" at "http://download.osgeo.org/webdav/geotools"
 
+val socrataHttpVersion = "3.3.0"
+
 libraryDependencies ++= Seq(
   "com.google.protobuf" % "protobuf-java"               % "2.4.1",
   "com.rojoma"         %% "rojoma-json-v3"              % "3.2.0",
-  "com.socrata"        %% "socrata-http-client"         % "3.1.1",
-  "com.socrata"        %% "socrata-http-curator-broker" % "3.0.1" exclude("org.slf4j", "slf4j-simple") exclude ("org.jboss.netty", "netty" /* see ZOOKEEPER-1681 */),
-  "com.socrata"        %% "socrata-http-server"         % "3.1.1",
+  "com.socrata"        %% "socrata-http-client"         % socrataHttpVersion,
+  "com.socrata"        %% "socrata-http-curator-broker" % socrataHttpVersion
+     exclude("org.slf4j", "slf4j-simple") exclude ("org.jboss.netty", "netty" /* see ZOOKEEPER-1681 */),
+  "com.socrata"        %% "socrata-http-jetty"          % socrataHttpVersion,
   "com.socrata"        %% "socrata-thirdparty-utils"    % "2.5.3",
   "com.socrata"        %% "soql-stdlib"                 % "0.4.6" exclude ("javax.media", "jai_core"),
   "com.typesafe"        % "config"                      % "1.0.0",

@@ -104,6 +104,7 @@ object Main extends App {
       SocrataServerJetty.defaultOptions.
                          withPort(config.network.port).
                          withExtraHandlers(List(SocrataHttpSupport.getHandler(config.metrics))).
+                         withPoolOptions(SocrataServerJetty.Pool(config.threadpool)).
                          withBroker(broker)
     )
     log.info("Ready to go!  kicking off the server...")

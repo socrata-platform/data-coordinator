@@ -27,4 +27,5 @@ class QueryCoordinatorConfig(config: Config, root: String) extends ConfigClass(c
   val allSecondaryInstanceNames = getStringList("all-secondary-instance-names")
   val secondaryDiscoveryExpirationMillis = config.getMilliseconds(path("secondary-discovery-expiration"))
   val datasetMaxNopeCount = getInt("dataset-max-nope-count")
+  val threadpool = getRawConfig("threadpool")
 }
