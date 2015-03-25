@@ -1,5 +1,7 @@
 package com.socrata.querycoordinator
 
+import org.joda.time.{DateTimeConstants, LocalDateTime}
+
 import scala.util.{Failure, Success, Try}
 
 import com.socrata.soql.collection.OrderedMap
@@ -7,7 +9,7 @@ import com.socrata.soql.environment.ColumnName
 import com.socrata.soql.functions.SoQLFunctions._
 import com.socrata.soql.functions._
 import com.socrata.soql.typed
-import com.socrata.soql.typed.{TypedLiteral, NullLiteral}
+import com.socrata.soql.typed.{StringLiteral, TypedLiteral, NullLiteral}
 import com.socrata.soql.types._
 import com.socrata.soql.{SoQLAnalysis, SoQLAnalyzer}
 
@@ -165,6 +167,65 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
     }
   }
 
+  /**
+   * Returns the least granular date truncation function that can be applied to the timestamp
+   * without changing its value.
+   */
+  private[querycoordinator] def truncatedTo(soqlTs: SoQLFloatingTimestamp): Option[Function[SoQLFloatingTimestamp.type]] = {
+    val ts: LocalDateTime = soqlTs.value
+    if (ts.getMillisOfDay != 0) {
+      None
+    } else {
+      if (ts.getDayOfMonth != 1) {
+        Some(FloatingTimeStampTruncYmd)
+      } else {
+        if (ts.getMonthOfYear != DateTimeConstants.JANUARY) {
+          Some(FloatingTimeStampTruncYm)
+        } else {
+          Some(FloatingTimeStampTruncY)
+        }
+      }
+    }
+  }
+
+  /**
+   * Rewrite "less than" and "greater to or equal" to use rollup columns.  Note that date_trunc_xxx functions
+   * are a form of a floor function.  This means that date_trunc_xxx(column) >= value will always be
+   * the same as column >= value iff value could have been output by date_trunc_xxx.  Similar holds
+   * for Lt, only it has to be strictly less since floor rounds down.
+   *
+   * For example, column >= '2014-03-01' AND column < '2015-05-01' can be rewritten as
+   * date_trunc_ym(column) >= '2014-03-01' AND date_trunc_ym(column) < '2015-05-01' without changing
+   * the results.
+   *
+   * Note that while we wouldn't need any of the logic here if queries explicitly came in as filtering
+   * on date_trunc_xxx(column), we do not want to encourage that form of querying since is typically
+   * much more expensive when you can't hit a rollup table.
+   */
+  private def rewriteDateTruncGteLt(rollupColIdx: Map[Expr, Int], fc: FunctionCall): Option[Expr] = {
+    fc.function.function match {
+      case Lt | Gte =>
+        val left +: right +: _ = fc.parameters
+        (left, right) match {
+          // The left hand side should be a floating timestamp, and the right hand side will be a string being cast
+          // to a floating timestamp.  eg. my_floating_timestamp < '2010-01-01'::floating_timestamp
+          // While it is eminently reasonable to also accept them in flipped order, that is being left for later.
+          case (colRef: ColumnRef, cast: FunctionCall) if colRef.typ == SoQLFloatingTimestamp && cast.function.function == TextToFloatingTimestamp =>
+            val ts = cast.parameters.head.asInstanceOf[StringLiteral[_]]
+            for {
+              parsedTs <- SoQLFloatingTimestamp.StringRep.unapply(ts.value)
+              truncatedTo <- truncatedTo(SoQLFloatingTimestamp(parsedTs))
+              // we can rewrite to any date_trunc_xx that is the same or after the desired one in the hierarchy
+              possibleTruncFunctions <- Some(dateTruncHierarchy.dropWhile { f => f != truncatedTo })
+              rollupColIdx <- findFunctionOnColumn(rollupColIdx, possibleTruncFunctions, colRef)
+              newParams <- Some(Seq(typed.ColumnRef(rollupColumnId(rollupColIdx), SoQLFloatingTimestamp)(fc.position), right))
+            } yield fc.copy(parameters = newParams)(fc.position, fc.position)
+          case _ => None
+        }
+      case _ => None
+    }
+  }
+
   /** Recursively maps the Expr based on the rollupColIdx map, returning either
     * a mapped expression or None if the expression couldn't be mapped.
     *
@@ -197,6 +258,12 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
              fc.function.bindings.values.forall(_ == SoQLFloatingTimestamp) &&
              fc.function.bindings.values.tail.forall(dateTruncHierarchy contains _) =>
         rewriteDateTruncBetweenExpr(rollupColIdx, fc)
+
+      // If it is a >= or < with floating timestamp arguments, see if we can rewrite to date_trunc_xxx
+      case fc: FunctionCall
+          if (fc.function.function == Gte || fc.function.function == Lt) &&
+          fc.function.bindings.values.forall(_ == SoQLFloatingTimestamp) =>
+        rewriteDateTruncGteLt(rollupColIdx, fc)
 
       // non-aggregate functions
       case fc: FunctionCall if fc.function.isAggregate == false =>
