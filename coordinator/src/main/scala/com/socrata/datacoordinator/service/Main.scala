@@ -317,6 +317,11 @@ object Main {
   def secondariesToAdd(secondaryGroup: SecondaryGroupConfig, currentDatasetSecondaries: Set[String],
                        datasetId: DatasetId, secondaryGroupStr: String): Set[String] = {
 
+    /*
+     * The dataset may be in secondaries defined in other groups, but here we need to reason 
+     * only about secondaries in this group since selection is done group by group.  For example,
+     * if we need two replicas in this group then secondaries outside this group don't count.
+     */
     val currentDatasetSecondariesForGroup = currentDatasetSecondaries.intersect(secondaryGroup.instances)
     val desiredCopies = secondaryGroup.numReplicas
     val newCopiesRequired = Math.max(desiredCopies - currentDatasetSecondariesForGroup.size, 0)
