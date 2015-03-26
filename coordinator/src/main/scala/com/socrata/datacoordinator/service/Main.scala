@@ -44,29 +44,20 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
     }
 
   def ensureInSecondaryGroup(secondaryGroupStr: String, datasetId: DatasetId): Unit = {
-    val currentDatasetSecondaries = secondariesOfDataset(datasetId).keySet
     for(u <- common.universe) {
       val secondaryGroup = serviceConfig.secondary.groups.get(secondaryGroupStr).getOrElse(
         // TODO: proper error
         throw new Exception(s"Can't find secondary group ${secondaryGroupStr}")
       )
-      val desiredCopies: Int = secondaryGroup.numReplicas
-      val newCopiesRequired: Int = Math.max(desiredCopies - currentDatasetSecondaries.size, 0)
-      val secondariesInGroup: Set[String] = secondaryGroup.instances
 
-      log.info(s"Dataset ${datasetId} exists on ${currentDatasetSecondaries.size} secondaries, want it on ${desiredCopies} so need ${newCopiesRequired} new secondaries")
+      val currentDatasetSecondaries = secondariesOfDataset(datasetId).keySet
 
-      val newSecondaries = Random.shuffle((secondariesInGroup -- currentDatasetSecondaries).toList).take(newCopiesRequired)
-
-      if (newSecondaries.size < newCopiesRequired) {
-        // TODO: proper error
-        throw new Exception(s"Can't find ${desiredCopies} servers in secondary group ${secondaryGroupStr} to publish to")
-      }
-
-      log.info(s"Publishing dataset ${datasetId} to ${newSecondaries}")
+      val newSecondaries = Main.secondariesToAdd(secondaryGroup,
+        currentDatasetSecondaries,
+        datasetId,
+        secondaryGroupStr)
 
       newSecondaries.foreach(ensureInSecondary(_, datasetId))
-
     }
   }
 
@@ -320,5 +311,28 @@ object Main {
       }
       executorService.awaitTermination(Long.MaxValue, TimeUnit.SECONDS)
     }
+  }
+
+
+  def secondariesToAdd(secondaryGroup: SecondaryGroupConfig, currentDatasetSecondaries: Set[String],
+                       datasetId: DatasetId, secondaryGroupStr: String): Set[String] = {
+
+    val currentDatasetSecondariesForGroup = currentDatasetSecondaries.intersect(secondaryGroup.instances)
+    val desiredCopies = secondaryGroup.numReplicas
+    val newCopiesRequired = Math.max(desiredCopies - currentDatasetSecondariesForGroup.size, 0)
+    val secondariesInGroup = secondaryGroup.instances
+
+    log.info(s"Dataset ${datasetId} exists on ${currentDatasetSecondariesForGroup.size} secondaries in group, want it on ${desiredCopies} so need to find ${newCopiesRequired} new secondaries")
+
+    val newSecondaries = Random.shuffle((secondariesInGroup -- currentDatasetSecondariesForGroup).toList).take(newCopiesRequired).toSet
+
+    if (newSecondaries.size < newCopiesRequired) {
+      // TODO: proper error, this is configuration error though
+      throw new Exception(s"Can't find ${desiredCopies} servers in secondary group ${secondaryGroupStr} to publish to")
+    }
+
+    log.info(s"Dataset ${datasetId} should also be on ${newSecondaries}")
+
+    newSecondaries
   }
 }
