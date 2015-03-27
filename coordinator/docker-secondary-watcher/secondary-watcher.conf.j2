@@ -21,7 +21,7 @@ com.socrata.coordinator.secondary-watcher {
   }
 
   secondary {
-    path = /srv/secondary-watcher/plugins
+    path = {{ SERVER_ROOT}}/plugins
     # unused
     defaultGroups = []
     groups = { }
@@ -29,7 +29,7 @@ com.socrata.coordinator.secondary-watcher {
     # The derived image will include the secondary configuration information necessary for the
     # specific secondary type.  We run a separate secondary watcher per secondary type for
     # isolation and to independently control scaling.
-    include "/srv/secondary-watcher/secondary.conf"
+    include "{{ SERVER_ROOT }}/secondary.conf"
   }
 
   metrics {

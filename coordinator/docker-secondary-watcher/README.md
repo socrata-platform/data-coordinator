@@ -12,7 +12,6 @@ included in the secondary watcher config.
 
 * `DATA_COORDINATOR_DB_HOST` - Data Coordinator DB hostname
 * `DATA_COORDINATOR_DB_PASSWORD_LINE` - Full line of config for Data Coordinator DB password.  Designed to be either `password = "foo"` or `include /path/to/file`.
-* `ZOOKEEPER_ENSEMBLE` - The zookeeper cluster to talk to, in the form of `["10.0.0.1:2181", "10.0.0.2:2818"]`
 
 ## Optional Runtime Variables
 
