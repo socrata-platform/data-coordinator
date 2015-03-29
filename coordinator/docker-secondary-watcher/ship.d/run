@@ -16,7 +16,7 @@ fi
 exec su socrata -c '/usr/bin/java \
     -Xmx${JAVA_XMX} \
     -Xms${JAVA_XMX} \
-    -Dconfig.file=${SERVER_CONFIG} \
+    -Dconfig.file=${SERVER_ROOT}/${SERVER_CONFIG} \
     -jar $SERVER_ARTIFACT \
     com.socrata.datacoordinator.secondary.SecondaryWatcher \
     '
