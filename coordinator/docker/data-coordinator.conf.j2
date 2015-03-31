@@ -15,13 +15,8 @@ com.socrata.coordinator.service {
   }
 
   secondary {
-    defaultGroups = [pg]
-    groups {
-      pg {
-        numReplicas = 2
-        instances = [{{ SECONDARY_INSTANCES }}]
-      }
-    }
+    {{ SECONDARY_CONFIG }}
+
     instances {
       # this section is just so the config parsing doesn't blow up
     }
