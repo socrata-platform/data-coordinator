@@ -8,6 +8,16 @@ copied to `coordinator-assembly.jar` in this directory before building.
 * `DATA_COORDINATOR_DB_HOST` - Data Coordinator DB hostname
 * `DATA_COORDINATOR_DB_PASSWORD_LINE` - Full line of config for Data Coordinator DB password.  Designed to be either `password = "foo"` or `include /path/to/file`.
 * `ZOOKEEPER_ENSEMBLE` - The zookeeper cluster to talk to, in the form of `["10.0.0.1:2181", "10.0.0.2:2818"]`
+* `SECONDARY_CONFIG` - The configuration of what secondary instances and groups to use.  For example:
+    ```
+        defaultGroups = [pg]
+        groups {
+          pg {
+            numReplicas = 2
+            instances = [pg1, pg2, pg3]
+          }
+        }
+    ```
 
 ## Optional Runtime Variables
 
