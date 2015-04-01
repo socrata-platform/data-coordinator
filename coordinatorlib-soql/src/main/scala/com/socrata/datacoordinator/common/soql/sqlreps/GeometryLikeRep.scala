@@ -13,13 +13,15 @@ class GeometryLikeRep[T<:Geometry](repType: SoQLType, geometry: SoQLValue => T, 
   def representedType = repType
 
   def fromWkt(str: String) = repType.asInstanceOf[SoQLGeometryLike[T]].WktRep.unapply(str)
+  def fromWkb(bytes: Array[Byte]) = repType.asInstanceOf[SoQLGeometryLike[T]].WkbRep.unapply(bytes)
+  // TODO: Also write to database  using WKB, would be more efficient
   def toEWkt(v: SoQLValue) = v.typ.asInstanceOf[SoQLGeometryLike[T]].EWktRep(geometry(v), WGS84SRID)
 
   val physColumns: Array[String] = Array(base)
 
   val sqlTypes: Array[String] = Array(s"GEOMETRY(Geometry,$WGS84SRID)")
 
-  override def selectList: String = s"ST_AsText($base)"
+  override def selectList: String = s"ST_AsBinary($base)"
 
   override def templateForUpdate: String = s"$base=ST_GeomFromEWKT(?)"
 
@@ -41,10 +43,10 @@ class GeometryLikeRep[T<:Geometry](repType: SoQLType, geometry: SoQLValue => T, 
   }
 
   def fromResultSet(rs: ResultSet, start: Int): SoQLValue = {
-    val data = rs.getString(start)
+    val data = rs.getBytes(start)
     if(data == null) SoQLNull
 
-    fromWkt(data) match {
+    fromWkb(data) match {
       case Some(geometry) => value(geometry)
       case _ => SoQLNull
     }
