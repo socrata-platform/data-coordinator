@@ -19,11 +19,11 @@ class GeometryLikeRep[T<:Geometry](repType: SoQLType, geometry: SoQLValue => T, 
 
   val physColumns: Array[String] = Array(base)
 
-  val sqlTypes: Array[String] = Array(s"GEOMETRY(Geometry,$WGS84SRID)")
+  val sqlTypes: Array[String] = Array("GEOMETRY(Geometry," + WGS84SRID + ")")
 
-  override def selectList: String = s"ST_AsBinary($base)"
+  override def selectList: String = "ST_AsBinary(" + base + ")"
 
-  override def templateForUpdate: String = s"$base=ST_GeomFromEWKT(?)"
+  override def templateForUpdate: String = base + "ST_GeomFromEWKT(?)"
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue) {
     if(SoQLNull == v) { /* pass */ }
