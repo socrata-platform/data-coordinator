@@ -11,7 +11,7 @@ object Dependencies {
     val scalaCheck      = "1.11.0"
     val scalaTest       = "2.2.1"
     val slf4j           = "1.7.5"
-    val soqlReference   = "0.5.1-SNAPSHOT"
+    val soqlReference   = "0.5.1"
     val thirdPartyUtils = "3.0.0"
     val typesafeConfig  = "1.2.1"
   }
