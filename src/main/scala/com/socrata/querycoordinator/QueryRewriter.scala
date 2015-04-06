@@ -269,7 +269,7 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
             if findFunctionOnColumn(rollupColIdx, dateTruncHierarchy, colRef).isDefined =>
         for {
           colIdx <- findFunctionOnColumn(rollupColIdx, dateTruncHierarchy, colRef)
-        } yield fc.copy(parameters =  Seq(ColumnRef(rollupColumnId(colIdx), colRef.typ)(fc.position)))(fc.position, fc.position)
+        } yield fc.copy(parameters =  Seq(ColumnRef(rollupColumnId(colIdx), colRef.typ)(fc.position)))(fc.position, fc.functionNamePosition)
 
       // remaining non-aggregate functions
       case fc: FunctionCall if fc.function.isAggregate == false =>
