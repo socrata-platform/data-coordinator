@@ -9,7 +9,7 @@ import com.socrata.soql.environment.ColumnName
 import com.socrata.soql.functions.SoQLFunctions._
 import com.socrata.soql.functions._
 import com.socrata.soql.typed
-import com.socrata.soql.typed.{StringLiteral, TypedLiteral, NullLiteral}
+import com.socrata.soql.typed._
 import com.socrata.soql.types._
 import com.socrata.soql.{SoQLAnalysis, SoQLAnalyzer}
 
@@ -175,16 +175,12 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
     val ts: LocalDateTime = soqlTs.value
     if (ts.getMillisOfDay != 0) {
       None
+    } else if (ts.getDayOfMonth != 1) {
+      Some(FloatingTimeStampTruncYmd)
+    } else if (ts.getMonthOfYear != DateTimeConstants.JANUARY) {
+      Some(FloatingTimeStampTruncYm)
     } else {
-      if (ts.getDayOfMonth != 1) {
-        Some(FloatingTimeStampTruncYmd)
-      } else {
-        if (ts.getMonthOfYear != DateTimeConstants.JANUARY) {
-          Some(FloatingTimeStampTruncYm)
-        } else {
-          Some(FloatingTimeStampTruncY)
-        }
-      }
+      Some(FloatingTimeStampTruncY)
     }
   }
 
@@ -210,10 +206,10 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
           // The left hand side should be a floating timestamp, and the right hand side will be a string being cast
           // to a floating timestamp.  eg. my_floating_timestamp < '2010-01-01'::floating_timestamp
           // While it is eminently reasonable to also accept them in flipped order, that is being left for later.
-          case (colRef: ColumnRef, cast: FunctionCall) if colRef.typ == SoQLFloatingTimestamp && cast.function.function == TextToFloatingTimestamp =>
-            val ts = cast.parameters.head.asInstanceOf[StringLiteral[_]]
+          case (colRef@ColumnRef(_, SoQLFloatingTimestamp),
+                cast@FunctionCall(MonomorphicFunction(TextToFloatingTimestamp, _), Seq(StringLiteral(ts, _)))) =>
             for {
-              parsedTs <- SoQLFloatingTimestamp.StringRep.unapply(ts.value)
+              parsedTs <- SoQLFloatingTimestamp.StringRep.unapply(ts)
               truncatedTo <- truncatedTo(SoQLFloatingTimestamp(parsedTs))
               // we can rewrite to any date_trunc_xx that is the same or after the desired one in the hierarchy
               possibleTruncFunctions <- Some(dateTruncHierarchy.dropWhile { f => f != truncatedTo })
@@ -260,12 +256,22 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
         rewriteDateTruncBetweenExpr(rollupColIdx, fc)
 
       // If it is a >= or < with floating timestamp arguments, see if we can rewrite to date_trunc_xxx
-      case fc: FunctionCall
-          if (fc.function.function == Gte || fc.function.function == Lt) &&
-          fc.function.bindings.values.forall(_ == SoQLFloatingTimestamp) =>
+      case fc@FunctionCall(MonomorphicFunction(fnType, bindings), _)
+            if (fnType == Gte || fnType == Lt) &&
+                bindings.values.forall(_ == SoQLFloatingTimestamp) =>
         rewriteDateTruncGteLt(rollupColIdx, fc)
 
-      // non-aggregate functions
+      // Not null on a column can be translated to not null on a date_trunc_xxx(column)
+      // There is actually a much more general case on this where non-aggregate functions can
+      // be applied on top of other non-aggregate functions in many cases that we are not currently
+      // implementing.
+      case fc@FunctionCall(MonomorphicFunction(IsNotNull, _), Seq(colRef@ColumnRef(_, _)))
+            if findFunctionOnColumn(rollupColIdx, dateTruncHierarchy, colRef).isDefined =>
+        for {
+          colIdx <- findFunctionOnColumn(rollupColIdx, dateTruncHierarchy, colRef)
+        } yield fc.copy(parameters =  Seq(ColumnRef(rollupColumnId(colIdx), colRef.typ)(fc.position)))(fc.position, fc.position)
+
+      // remaining non-aggregate functions
       case fc: FunctionCall if fc.function.isAggregate == false =>
         // if we have the exact same function in rollup and query, just turn it into a column ref in the rollup
         val functionMatch = for {
