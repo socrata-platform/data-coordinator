@@ -343,7 +343,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
           val secondaryDatasetInfo = makeSecondaryDatasetInfo(copyCtx.datasetInfo)
           val secondaryCopyInfo = makeSecondaryCopyInfo(copyCtx.copyInfo)
           val secondarySchema = copyCtx.schema.mapValuesStrict(makeSecondaryColumnInfo)
-          val itRows = reader.rows()
+          val itRows = reader.rows(sorted=false)
           // Sigh. itRows is a simple-arm v1 Managed.  v2 has a monad map() which makes the code below
           // much, much shorter.
           val wrappedRows = new SimpleArm[Iterator[ColumnIdMap[CV]]] {
