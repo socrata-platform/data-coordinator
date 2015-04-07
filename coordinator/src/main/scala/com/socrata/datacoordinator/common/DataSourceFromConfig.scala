@@ -17,6 +17,7 @@ class DataSourceConfig(config: Config, root: String) extends ConfigClass(config,
   val username = getString("username")
   val password = getString("password")
   val applicationName = getString("app-name")
+  val tcpKeepAlive = optionally(getBoolean("tcp-keep-alive")).getOrElse(false)
   val poolOptions = optionally(getRawConfig("c3p0")) // these are the c3p0 configuration properties
 }
 
@@ -32,6 +33,7 @@ object DataSourceFromConfig {
         dataSource.setUser(config.username)
         dataSource.setPassword(config.password)
         dataSource.setApplicationName(config.applicationName)
+        dataSource.setTcpKeepAlive(config.tcpKeepAlive)
         config.poolOptions match {
           case Some(poolOptions) =>
             val overrideProps = C3P0Propertizer("", poolOptions)
