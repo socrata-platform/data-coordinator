@@ -169,7 +169,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
     } yield source.mkString
 
     override val get: HttpService = req =>
-      OK ~> Json(responseString)
+      OK ~> Content("application/json", responseString)
 
   }
 
