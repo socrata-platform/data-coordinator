@@ -164,6 +164,10 @@ class SecondaryWatcherClaimManager(dsInfo: DSInfo, claimantId: UUID, claimTimeou
   }
 
   private def updateDatasetClaimedAtTime() {
+    // TODO: We have a difficult to debug problem here if our connection pool isn't large enough to satisfy
+    // all our workers, since it can block claim updates and result in claims being overwritten.
+    // For now we are working around it by configuring a large pool and relying on worker config to control
+    // concurrency.  We could potentially have a separate pool for the claim manager.
     using(dsInfo.dataSource.getConnection()) { conn =>
       using(conn.prepareStatement(
         """UPDATE secondary_manifest
