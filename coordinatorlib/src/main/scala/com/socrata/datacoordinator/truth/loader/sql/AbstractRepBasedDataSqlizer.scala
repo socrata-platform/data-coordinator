@@ -12,7 +12,8 @@ import com.socrata.datacoordinator.util.collection.{ColumnIdSet, RowIdSet, Mutab
 import java.io.Closeable
 
 abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
-                                                   val datasetContext: RepBasedSqlDatasetContext[CT, CV])
+                                                   val datasetContext: RepBasedSqlDatasetContext[CT, CV],
+                                                   val softMaxBatchSize: Int = 1000000)
   extends DataSqlizer[CT, CV]
 {
   val typeContext = datasetContext.typeContext
@@ -26,8 +27,6 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
   val sidRep = repSchema(datasetContext.systemIdColumn).asInstanceOf[SqlPKableColumnRep[CT, CV]]
   val pkRep = repSchema(logicalPKColumnName).asInstanceOf[SqlPKableColumnRep[CT, CV]]
   val versionRep = repSchema(datasetContext.versionColumn)
-
-  def softMaxBatchSize = 2000000
 
   def sizeofDelete(id: CV) = pkRep.estimateSize(id)
 
