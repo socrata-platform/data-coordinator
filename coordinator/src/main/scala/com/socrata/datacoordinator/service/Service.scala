@@ -233,22 +233,21 @@ class Service(serviceConfig: ServiceConfig,
       false
     } else {
       val currThreads = numThreads.get()
-      if (currThreads >= serviceConfig.maxMutationThreads) {
-        log.info(s"tryGetMutationThread: too many threads ($currThreads), waiting for some to finish")
+      if (currThreads >= serviceConfig.maxMutationThreads ||
+          !numThreads.compareAndSet(currThreads, currThreads + 1)) {
+        if (currThreads >= serviceConfig.maxMutationThreads)
+          log.info(s"tryGetMutationThread: too many threads ($currThreads), waiting for some to finish")
         Thread sleep 100
         tryGetMutationThread(numTries - 1)
-      } else if (numThreads.compareAndSet(currThreads, currThreads + 1)) {
-        true
       } else {
-        Thread sleep 100
-        tryGetMutationThread(numTries - 1)
+        true
       }
     }
   }
 
   def withMutationScriptResults[T](f: => HttpResponse): HttpResponse = {
     if (!tryGetMutationThread()) {
-      return err(ServiceUnavailable, "mutation.threads.maxed.out")
+      return err(ServiceUnavailable, "mutation.threads.maxed-out")
     }
     try {
       f
