@@ -33,6 +33,8 @@ class ServiceConfig(val config: Config, root: String) {
                                      config.getDuration(k("log-table-cleanup-delete-every"), MILLISECONDS),
                                      TimeUnit.MILLISECONDS)
   val maxMutationThreads = config.getInt(k("max-mutation-threads"))
+  val mutationResourceTimeout = new FiniteDuration(config.getDuration(k("mutation-resource-timeout"),
+                                                   MILLISECONDS), TimeUnit.MILLISECONDS)
 
   require(instance.matches("[a-zA-Z0-9._]+"),
           "Instance names must consist of only ASCII letters, numbers, periods, and underscores")

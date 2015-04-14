@@ -227,9 +227,9 @@ class Service(serviceConfig: ServiceConfig,
   // Repeatedly tries to get a new thread by bumping numThreads, using
   // compareAndSet to make sure our value is valid
   @annotation.tailrec
-  private def tryGetMutationThread(numTries: Int = 100): Boolean = {
-    if (numTries <= 0) {
-      log.info("tryGetMutationThread: out of tries")
+  private def tryGetMutationThread(timeoutMs: Long, waitInterval: Int = 100): Boolean = {
+    if (timeoutMs <= 0) {
+      log.info("tryGetMutationThread: timed out")
       false
     } else {
       val currThreads = numThreads.get()
@@ -237,8 +237,8 @@ class Service(serviceConfig: ServiceConfig,
           !numThreads.compareAndSet(currThreads, currThreads + 1)) {
         if (currThreads >= serviceConfig.maxMutationThreads)
           log.info(s"tryGetMutationThread: too many threads ($currThreads), waiting for some to finish")
-        Thread sleep 100
-        tryGetMutationThread(numTries - 1)
+        Thread sleep waitInterval
+        tryGetMutationThread(timeoutMs - waitInterval, waitInterval)
       } else {
         true
       }
@@ -246,7 +246,7 @@ class Service(serviceConfig: ServiceConfig,
   }
 
   def withMutationScriptResults[T](f: => HttpResponse): HttpResponse = {
-    if (!tryGetMutationThread()) {
+    if (!tryGetMutationThread(serviceConfig.mutationResourceTimeout.toMillis)) {
       return err(ServiceUnavailable, "mutation.threads.maxed-out")
     }
     try {
