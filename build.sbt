@@ -9,7 +9,7 @@ scalaVersion := "2.10.4"
 
 resolvers += "Open Source Geospatial Foundation Repository" at "http://download.osgeo.org/webdav/geotools"
 
-val socrataHttpVersion = "3.3.0"
+val socrataHttpVersion = "3.3.1"
 
 libraryDependencies ++= Seq(
   "com.google.protobuf" % "protobuf-java"               % "2.4.1",
