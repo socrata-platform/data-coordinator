@@ -25,6 +25,7 @@ import com.socrata.thirdparty.metrics.{SocrataHttpSupport, Metrics, MetricsOptio
 import java.io._
 import java.nio.charset.StandardCharsets.UTF_8
 import java.security.MessageDigest
+import java.util.concurrent.atomic.AtomicInteger
 import javax.activation.{MimeTypeParseException, MimeType}
 import javax.servlet.http.{HttpServletResponse, HttpServletRequest}
 import org.apache.commons.codec.binary.Base64
@@ -40,6 +41,8 @@ object Service {
   private val JsonContentType = "application/json; charset=utf-8"
 
   private val TextContentType = "Content-type: text/plain; charset=utf-8"
+
+  val numThreads = new AtomicInteger
 }
 
 import Service._
@@ -221,7 +224,31 @@ class Service(serviceConfig: ServiceConfig,
       "dataset" -> JString(formatDatasetId(name)),
       "schema" -> jsonifySchema(schema))
 
+  // Repeatedly tries to get a new thread by bumping numThreads, using
+  // compareAndSet to make sure our value is valid
+  @annotation.tailrec
+  private def tryGetMutationThread(timeoutMs: Long, waitInterval: Int = 100): Boolean = {
+    if (timeoutMs <= 0) {
+      log.info("tryGetMutationThread: timed out")
+      false
+    } else {
+      val currThreads = numThreads.get()
+      if (currThreads >= serviceConfig.maxMutationThreads ||
+          !numThreads.compareAndSet(currThreads, currThreads + 1)) {
+        if (currThreads >= serviceConfig.maxMutationThreads)
+          log.info(s"tryGetMutationThread: too many threads ($currThreads), waiting for some to finish")
+        Thread sleep waitInterval
+        tryGetMutationThread(timeoutMs - waitInterval, waitInterval)
+      } else {
+        true
+      }
+    }
+  }
+
   def withMutationScriptResults[T](f: => HttpResponse): HttpResponse = {
+    if (!tryGetMutationThread(serviceConfig.mutationResourceTimeout.toMillis)) {
+      return err(ServiceUnavailable, "mutation.threads.maxed-out")
+    }
     try {
       f
     } catch {
@@ -341,6 +368,9 @@ class Service(serviceConfig: ServiceConfig,
             err(BadRequest, "update.version-on-new-row",
               "dataset" -> JString(formatDatasetId(datasetName)))
         }
+    } finally {
+      // Decrease the thread count
+      numThreads.decrementAndGet()
     }
   }
 

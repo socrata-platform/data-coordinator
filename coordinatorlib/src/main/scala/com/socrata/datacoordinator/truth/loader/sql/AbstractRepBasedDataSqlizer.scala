@@ -11,8 +11,17 @@ import com.socrata.datacoordinator.id.{ColumnId, RowId}
 import com.socrata.datacoordinator.util.collection.{ColumnIdSet, RowIdSet, MutableRowIdSet}
 import java.io.Closeable
 
+/**
+ * Abstract SQL adapter for data access
+ *
+ * @param softMaxBatchSize in bytes, the max size of each batch to insert.
+ * This is actually very tricky because the size is estimated from the SqlRep's estimatedSize
+ * method for each column value, but doesn't include the intermediate objects produced, which
+ * are actually the most expensive and may take 100x as much memory as the estimated size.
+ */
 abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
-                                                   val datasetContext: RepBasedSqlDatasetContext[CT, CV])
+                                                   val datasetContext: RepBasedSqlDatasetContext[CT, CV],
+                                                   val softMaxBatchSize: Int = 1000000)
   extends DataSqlizer[CT, CV]
 {
   val typeContext = datasetContext.typeContext
@@ -26,8 +35,6 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
   val sidRep = repSchema(datasetContext.systemIdColumn).asInstanceOf[SqlPKableColumnRep[CT, CV]]
   val pkRep = repSchema(logicalPKColumnName).asInstanceOf[SqlPKableColumnRep[CT, CV]]
   val versionRep = repSchema(datasetContext.versionColumn)
-
-  def softMaxBatchSize = 2000000
 
   def sizeofDelete(id: CV) = pkRep.estimateSize(id)
 
