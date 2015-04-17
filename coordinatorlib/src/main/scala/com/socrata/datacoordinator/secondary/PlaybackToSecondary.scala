@@ -114,7 +114,16 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
   }
 
   def apply(secondary: NamedSecondary[CT, CV], job: SecondaryRecord) {
-    new UpdateOp(secondary, job).go()
+    // Normally, UpdateOp will drop the dataset if it is not in truth.
+    // This check allows us to just drop a dataset in a specific secondary by
+    // running a SQL like:
+    //   UPDATE secondary_manifest set latest_secondary_lifecycle_stage = 'Discarded', latest_secondary_data_version = -1
+    //    WHERE dataset_system_id = $ID
+    // TODO: Add an endpoint to SODA Fountain.  Plumb it through Data Coordinator to do that.
+    if (job.startingLifecycleStage == metadata.LifecycleStage.Discarded && job.startingDataVersion <= 0)
+      new UpdateOp(secondary, job).drop()
+    else
+      new UpdateOp(secondary, job).go()
   }
 
   def drop(secondary: NamedSecondary[CT, CV], job: SecondaryRecord) {
