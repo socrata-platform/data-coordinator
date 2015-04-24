@@ -163,13 +163,11 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
   trait QCResource extends SimpleResource
 
   object VersionResource extends QCResource {
-    val responseString = for {
-      stream <- managed(getClass.getClassLoader.getResourceAsStream("query-coordinator-version.json"))
-      source <- managed(scala.io.Source.fromInputStream(stream)(scala.io.Codec.UTF8))
-    } yield source.mkString
+
+    val version = JsonUtil.renderJson(JObject(BuildInfo.toMap.mapValues(v => JString(v.toString))))
 
     override val get: HttpService = req =>
-      OK ~> Content("application/json", responseString)
+      OK ~> Content("application/json", version)
 
   }
 
@@ -413,7 +411,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
           rollupInfoFetcher(base.receiveTimeoutMS(getSchemaTimeout.toMillis.toInt), dataset, copy) match {
             case RollupInfoFetcher.Successful(rollups) =>
               val rewritten  = queryRewriter.bestRewrite(schema, analyzedQuery, rollups)
-              val (rollupName, analysis) = rewritten map {x => (Some(x._1), x._2) } getOrElse (None, analyzedQuery)
+              val (rollupName, analysis) = rewritten map {x => (Some(x._1), x._2) } getOrElse ((None, analyzedQuery))
               log.info(s"Rewrote query on dataset ${dataset} to rollup ${rollupName} with analysis ${analysis}")
               (analysis, rollupName)
             case RollupInfoFetcher.NoSuchDatasetInSecondary =>
