@@ -6,10 +6,10 @@ import com.rojoma.json.v3.codec.{JsonDecode, JsonEncode}
 import com.rojoma.json.v3.io._
 import com.rojoma.json.v3.util.{JsonArrayIterator, AutomaticJsonCodecBuilder, JsonKey, JsonUtil}
 import com.rojoma.simplearm.util._
-import com.socrata.datacoordinator.id.{UserColumnId, DatasetId}
+import com.socrata.datacoordinator.id.{RollupName, UserColumnId, DatasetId}
 import com.socrata.datacoordinator.truth._
 import com.socrata.datacoordinator.truth.loader._
-import com.socrata.datacoordinator.truth.metadata.{SchemaField, Schema}
+import com.socrata.datacoordinator.truth.metadata.{RollupInfo, SchemaField, Schema}
 import com.socrata.datacoordinator.truth.Snapshot
 import com.socrata.datacoordinator.util.collection.{UserColumnIdMap, UserColumnIdSet}
 import com.socrata.datacoordinator.util.IndexedTempFile
@@ -55,6 +55,7 @@ class Service(serviceConfig: ServiceConfig,
               processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) => ProcessMutationReturns,
               processCreation: (Iterator[JValue], IndexedTempFile) => ProcessCreationReturns,
               getSchema: DatasetId => Option[Schema],
+              getRollups: DatasetId => Option[Seq[RollupInfo]],
               datasetContents: (DatasetId, Option[String], CopySelector, Option[UserColumnIdSet],
                                 Option[Long], Option[Long], Precondition, Option[DateTime], Boolean) =>
                                datasetContentsFunc => Exporter.Result[Unit],
@@ -477,6 +478,19 @@ class Service(serviceConfig: ServiceConfig,
     }
   }
 
+  case class DatasetRollupResource(datasetId: DatasetId) extends SodaResource {
+    override def get = { (req: HttpRequest) =>
+      val result = for {
+        rollups <- getRollups(datasetId)
+      } yield {
+          OK ~> Write(JsonContentType) { w =>
+            JsonUtil.writeJson(w, rollups.map { r => r.unanchored })
+          }
+        }
+      result.getOrElse(notFoundError(formatDatasetId(datasetId)))
+    }
+  }
+
   val mutateRate = metrics.meter("mutation-rate", "rows")
 
   case class DatasetResource(datasetId: DatasetId) extends SodaResource {
@@ -686,6 +700,11 @@ class Service(serviceConfig: ServiceConfig,
       parseDatasetId(norm(s))
   }
 
+  implicit object RollupNameExtractor extends Extractor[RollupName] {
+    def extract(s: String): Option[RollupName] =
+      Some(new RollupName(s))
+  }
+
   val router = locally {
     import SimpleRouteContext._
     Routes(
@@ -695,6 +714,8 @@ class Service(serviceConfig: ServiceConfig,
       Route("/dataset/{String}", NotFoundDatasetResource),
       Route("/dataset/{DatasetId}", DatasetResource),
       Route("/dataset/{DatasetId}/schema", DatasetSchemaResource),
+
+      Route("/dataset-rollup/{DatasetId}", DatasetRollupResource),
 
       Route("/secondary-manifest", SecondaryManifestsResource),
       Route("/secondary-manifest/{String}", SecondaryManifestResource),
