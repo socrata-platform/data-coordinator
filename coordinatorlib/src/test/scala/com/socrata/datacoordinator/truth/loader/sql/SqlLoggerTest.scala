@@ -1,6 +1,6 @@
 package com.socrata.datacoordinator.truth.loader.sql
 
-import org.scalatest.matchers.MustMatchers
+import org.scalatest.MustMatchers
 import org.scalatest.FunSuite
 
 class SqlLoggerTest extends FunSuite with MustMatchers {

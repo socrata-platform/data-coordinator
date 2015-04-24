@@ -4,7 +4,7 @@ package truth.reader.sql
 import java.sql.{DriverManager, Connection}
 
 import org.scalatest.{BeforeAndAfterAll, FunSuite}
-import org.scalatest.matchers.MustMatchers
+import org.scalatest.MustMatchers
 import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.truth.sql.{ReadOnlyRepBasedSqlDatasetContext, SqlColumnReadRep}

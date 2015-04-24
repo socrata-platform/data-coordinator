@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator.id
 
 import org.scalatest.FunSuite
-import org.scalatest.matchers.MustMatchers
+import org.scalatest.MustMatchers
 
 import org.scalatest.prop.PropertyChecks
 

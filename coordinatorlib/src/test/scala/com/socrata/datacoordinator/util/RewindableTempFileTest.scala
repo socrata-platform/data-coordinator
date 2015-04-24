@@ -3,7 +3,7 @@ package com.socrata.datacoordinator.util
 import java.io.DataInputStream
 
 import org.scalatest.FunSuite
-import org.scalatest.matchers.MustMatchers
+import org.scalatest.MustMatchers
 import org.scalatest.prop.PropertyChecks
 
 import com.rojoma.simplearm.util._

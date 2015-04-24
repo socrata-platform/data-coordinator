@@ -3,7 +3,7 @@ package com.socrata.datacoordinator.truth
 import java.util.NoSuchElementException
 
 import org.scalatest.FunSuite
-import org.scalatest.matchers.MustMatchers
+import org.scalatest.MustMatchers
 import org.scalatest.prop.PropertyChecks
 
 class RowUserIdMapTest extends FunSuite with MustMatchers with PropertyChecks {
@@ -32,7 +32,7 @@ class RowUserIdMapTest extends FunSuite with MustMatchers with PropertyChecks {
     val map = new SimpleRowUserIdMap[Int, String]
 
     forAll { key: Int =>
-      val thrown = evaluating { map(key) } must produce [NoSuchElementException]
+      val thrown = the [NoSuchElementException] thrownBy { map(key) }
       thrown.getCause must be (null)
     }
   }
