@@ -32,7 +32,7 @@ import scala.util.Random
  * reason, we only do this if we have hit this case less than x times for this dataset.
  *
  */
-class SecondaryInstanceSelector(qcConfig: QueryCoordinatorConfig) extends Logging with Metrics {
+class SecondaryInstanceSelector(qcConfig: SecondarySelectorConfig) extends Logging with Metrics {
   /** dataset id to servers */
   // TODO: This map currently grows without bounds. Maybe make it an LRU cache?
   private val datasetMap = new mutable.HashMap[String, DatasetServers] with mutable.SynchronizedMap[String, DatasetServers]
