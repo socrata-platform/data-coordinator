@@ -8,6 +8,7 @@ object BuildSettings {
     Seq(
       // TODO: enable style checks
       com.socrata.sbtplugins.StylePlugin.StyleKeys.styleCheck := {},
+      com.socrata.sbtplugins.StylePlugin.StyleKeys.styleCheck in Compile := {},
       scalaVersion := "2.10.4",
       resolvers ++= Seq(
         "Open Source Geospatial Foundation Repository" at "http://download.osgeo.org/webdav/geotools",
