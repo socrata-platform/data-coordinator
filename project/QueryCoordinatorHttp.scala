@@ -2,6 +2,7 @@ import sbt._
 import sbt.Keys._
 import sbtbuildinfo.BuildInfoKeys._
 import sbtbuildinfo.{BuildInfoKey, BuildInfoOption}
+import scoverage.ScoverageSbtPlugin
 
 object QueryCoordinatorHttp {
 
@@ -19,6 +20,7 @@ object QueryCoordinatorHttp {
         BuildInfoKey.action("revision") { gitSha }),
       buildInfoPackage := "com.socrata.querycoordinator",
       buildInfoOptions += BuildInfoOption.ToMap,
+      ScoverageSbtPlugin.ScoverageKeys.coverageMinimum := 30,
       libraryDependencies ++= Seq(
         protobuf,
         rojomaJson,
