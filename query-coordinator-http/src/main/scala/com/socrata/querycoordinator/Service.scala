@@ -1,35 +1,33 @@
 package com.socrata.querycoordinator
 
 import java.io._
-
-import scala.annotation.tailrec
-import scala.concurrent.duration._
-import scala.util.control.ControlThrowable
+import javax.servlet.http.HttpServletResponse
 
 import com.rojoma.json.v3.ast.{JNumber, JObject, JString, JValue}
 import com.rojoma.json.v3.codec.JsonEncode
 import com.rojoma.json.v3.io._
 import com.rojoma.json.v3.util.JsonUtil
-import com.rojoma.simplearm.util._
 import com.rojoma.simplearm.v2.ResourceScope
 import com.socrata.http.client.RequestBuilder
 import com.socrata.http.common.AuxiliaryData
 import com.socrata.http.common.util.HttpUtils
-import com.socrata.http.server.{HttpRequest, HttpResponse, HttpService}
 import com.socrata.http.server.implicits._
 import com.socrata.http.server.responses._
 import com.socrata.http.server.routing.SimpleResource
 import com.socrata.http.server.routing.SimpleRouteContext._
 import com.socrata.http.server.util.RequestId
+import com.socrata.http.server.{HttpRequest, HttpResponse, HttpService}
 import com.socrata.soql.SoQLAnalysis
 import com.socrata.soql.environment.ColumnName
 import com.socrata.soql.exceptions._
 import com.socrata.soql.types.SoQLAnalysisType
-import javax.servlet.http.{HttpServletResponse, HttpServletRequest}
 import org.apache.curator.x.discovery.ServiceInstance
 import org.apache.http.HttpStatus
-import org.joda.time.{DateTime, Interval}
 import org.joda.time.format.ISODateTimeFormat
+import org.joda.time.{DateTime, Interval}
+
+import scala.concurrent.duration._
+import scala.util.control.ControlThrowable
 
 /**
  * Main HTTP resource servicing class
@@ -46,37 +44,49 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
               secondaryInstance: SecondaryInstanceSelector,
               queryRewriter: QueryRewriter,
               rollupInfoFetcher: RollupInfoFetcher)
-  extends HttpService
-{
+  extends HttpService {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
 
-  // FIXME: don't use this internal rojoma-json API.
-  def soqlErrorCode(e: SoQLException) =
-    "query.soql." + com.rojoma.`json-impl`.util.CamelSplit(e.getClass.getSimpleName).map(_.toLowerCase).mkString("-")
+  private[this] val responseBuffer = 4096
+  // TODO: configurable value?
+  private[this] val unexpectedError = "Unexpected response when fetching schema from secondary: {}"
+  private[this] val headerSocrataResource = "X-Socrata-Resource"
+  private[this] val qpHyphen = "-"
+  private[this] val qpFunction = "function"
+  private[this] val qpColumn = "column"
+  private[this] val qpName = "name"
+  private[this] val qpChar = "character"
+  private[this] val qpData = "data"
+  private[this] val qpDataset = "dataset"
+  private[this] val qpLimit = "limit"
 
-  def soqlErrorData(e: SoQLException): Map[String, JValue] = e match {
+  // FIXME: don't use this internal rojoma-json API.
+  def soqlErrorCode(e: SoQLException): String = "query.soql." +
+    com.rojoma.`json-impl`.util.CamelSplit(e.getClass.getSimpleName).map(_.toLowerCase).mkString(qpHyphen)
+
+  def soqlErrorData(e: SoQLException): Map[String, JValue] = e match { // scalastyle:ignore cyclomatic.complexity
     case AggregateInUngroupedContext(func, clause, _) =>
       Map(
-        "function" -> JString(func.name),
+        qpFunction -> JString(func.name),
         "clause" -> JString(clause))
     case ColumnNotInGroupBys(column, _) =>
-      Map("column" -> JString(column.name))
+      Map(qpColumn -> JString(column.name))
     case RepeatedException(column, _) =>
-      Map("column" -> JString(column.name))
+      Map(qpColumn -> JString(column.name))
     case DuplicateAlias(name, _) =>
-      Map("name" -> JString(name.name))
+      Map(qpName -> JString(name.name))
     case NoSuchColumn(column, _) =>
-      Map("column" -> JString(column.name))
+      Map(qpColumn -> JString(column.name))
     case CircularAliasDefinition(name, _) =>
-      Map("name" -> JString(name.name))
+      Map(qpName -> JString(name.name))
     case UnexpectedEscape(c, _) =>
-      Map("character" -> JString(c.toString))
+      Map(qpChar -> JString(c.toString))
     case BadUnicodeEscapeCharacter(c, _) =>
-      Map("character" -> JString(c.toString))
+      Map(qpChar -> JString(c.toString))
     case UnicodeCharacterOutOfRange(x, _) =>
       Map("number" -> JNumber(x))
     case UnexpectedCharacter(c, _) =>
-      Map("character" -> JString(c.toString))
+      Map(qpChar -> JString(c.toString))
     case UnexpectedEOF(_) =>
       Map.empty
     case UnterminatedString(_) =>
@@ -86,56 +96,68 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
       Map("message" -> JString(msg))
     case NoSuchFunction(name, arity, _) =>
       Map(
-        "function" -> JString(name.name),
+        qpFunction -> JString(name.name),
         "arity" -> JNumber(arity))
     case TypeMismatch(name, actual, _) =>
       Map(
-        "function" -> JString(name.name),
+        qpFunction -> JString(name.name),
         "type" -> JString(actual.name))
     case AmbiguousCall(name, _) =>
-      Map("function" -> JString(name.name))
+      Map(qpFunction -> JString(name.name))
   }
 
   def soqlErrorResponse(dataset: String, e: SoQLException): HttpResponse = BadRequest ~> errContent(
     soqlErrorCode(e),
-    "data" -> JObject(soqlErrorData(e) ++ Map(
-      "dataset" -> JString(dataset),
+    qpData -> JObject(soqlErrorData(e) ++ Map(
+      qpDataset -> JString(dataset),
       "position" -> JObject(Map(
         "row" -> JNumber(e.position.line),
-        "column" -> JNumber(e.position.column),
+        qpColumn -> JNumber(e.position.column),
         "line" -> JString(e.position.longString)
       ))
     ))
   )
 
   case class FinishRequest(response: HttpResponse) extends ControlThrowable
+
   def finishRequest(response: HttpResponse): Nothing = throw new FinishRequest(response)
 
-  def errContent(msg: String, data: (String, JValue)*) = {
+  def errContent(msg: String, data: (String, JValue)*): HttpResponse = {
     val json = JObject(Map(
       "errorCode" -> JString(msg),
-      "data" -> JObject(data.toMap)))
+      qpData -> JObject(data.toMap)))
     Json(json)
   }
 
-  def noSecondaryAvailable(dataset: String) = ServiceUnavailable ~> errContent(
+  def noSecondaryAvailable(dataset: String): HttpServletResponse => Unit = ServiceUnavailable ~> errContent(
     "query.datasource.unavailable",
-    "dataset" -> JString(dataset))
+    qpDataset -> JString(dataset))
 
-  def internalServerError = InternalServerError ~> Json("Internal server error")
-  def notFoundResponse(dataset: String) = NotFound ~> errContent(
+  def internalServerError: HttpResponse = InternalServerError ~> Json("Internal server error")
+
+  def notFoundResponse(dataset: String): HttpServletResponse => Unit = NotFound ~> errContent(
     "query.dataset.does-not-exist",
-    "dataset" -> JString(dataset))
-  def noDatasetResponse = BadRequest ~> errContent("req.no-dataset-specified")
-  def noQueryResponse = BadRequest ~> errContent("req.no-query-specified")
-  def unknownColumnIds(columnIds: Set[String]) = BadRequest ~> errContent("req.unknown.column-ids", "columns" -> JsonEncode.toJValue(columnIds.toSeq))
-  def rowLimitExceeded(max: BigInt) = BadRequest ~> errContent("req.row-limit-exceeded", "limit" -> JNumber(max))
-  def noContentTypeResponse = internalServerError
-  def unparsableContentTypeResponse = internalServerError
-  def notJsonResponseResponse = internalServerError
-  def upstreamTimeoutResponse = GatewayTimeout
+    qpDataset -> JString(dataset))
 
-  def reqBuilder(secondary: ServiceInstance[AuxiliaryData]) = {
+  def noDatasetResponse: HttpResponse = BadRequest ~> errContent("req.no-dataset-specified")
+
+  def noQueryResponse: HttpResponse = BadRequest ~> errContent("req.no-query-specified")
+
+  def unknownColumnIds(columnIds: Set[String]): HttpResponse = BadRequest ~>
+    errContent("req.unknown.column-ids", "columns" -> JsonEncode.toJValue(columnIds.toSeq))
+
+  def rowLimitExceeded(max: BigInt): HttpResponse = BadRequest ~>
+    errContent("req.row-limit-exceeded", qpLimit -> JNumber(max))
+
+  def noContentTypeResponse: HttpResponse = internalServerError
+
+  def unparsableContentTypeResponse: HttpResponse = internalServerError
+
+  def notJsonResponseResponse: HttpResponse = internalServerError
+
+  def upstreamTimeoutResponse: HttpResponse = GatewayTimeout
+
+  def reqBuilder(secondary: ServiceInstance[AuxiliaryData]): RequestBuilder = {
     val pingTarget = for {
       auxData <- Option(secondary.getPayload)
       pingInfo <- auxData.livenessCheckInfo
@@ -143,9 +165,9 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
     val b = RequestBuilder(secondary.getAddress).
       livenessCheckInfo(pingTarget).
       connectTimeoutMS(connectTimeout.toMillis.toInt)
-    if(secondary.getSslPort != null) {
+    if (Option(secondary.getSslPort).isEmpty) {
       b.secure(true).port(secondary.getSslPort)
-    } else if(secondary.getPort != null) {
+    } else if (Option(secondary.getPort).isEmpty) {
       b.port(secondary.getPort)
     } else {
       b
@@ -172,14 +194,14 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
   }
 
   object QueryResource extends QCResource {
-
-    override def post = { req: HttpRequest => resp: HttpServletResponse =>
-      process(req)(resp)
+    override def post: HttpRequest => HttpServletResponse => Unit = {
+      req: HttpRequest => resp: HttpServletResponse =>
+        process(req)(resp)
     }
 
-    override def get = post
+    override def get: HttpRequest => HttpServletResponse => Unit = post
 
-    override def put = post
+    override def put: HttpRequest => HttpServletResponse => Unit = post
   }
 
   // Little dance because "/*" doesn't compile yet and I haven't
@@ -190,7 +212,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
     Route("/version", VersionResource)
   )
 
-  def apply(req: HttpRequest) =
+  def apply(req: HttpRequest): HttpResponse =
     routingTable(req.requestPath) match {
       case Some(resource) => resource(req)
       case None => NotFound
@@ -205,11 +227,12 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
                              limit: Option[String],
                              offset: Option[String])
 
-  private def process(req: HttpRequest): HttpResponse = {
+  private def process(req: HttpRequest): HttpResponse = { // scalastyle:ignore cyclomatic.complexity method.length
     val originalThreadName = Thread.currentThread.getName
     val servReq = req.servletRequest
     try {
-      Thread.currentThread.setName(Thread.currentThread.getId + " / " + req.method + " " + req.servletRequest.getRequestURI)
+      Thread.currentThread.setName(
+        Thread.currentThread.getId + " / " + req.method + " " + req.servletRequest.getRequestURI)
 
       val requestId = RequestId.getFromRequest(servReq)
       val dataset = Option(servReq.getParameter("ds")).getOrElse {
@@ -221,7 +244,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
       val forcedSecondaryName = req.queryParameter("store")
       val noRollup = req.queryParameter("no_rollup").isDefined
 
-      forcedSecondaryName.map(ds => log.info("Forcing use of the secondary store instance: " + ds))
+      forcedSecondaryName.foreach(ds => log.info("Forcing use of the secondary store instance: " + ds))
 
       val query = Option(servReq.getParameter("q")).map(Left(_)).getOrElse {
         Right(FragmentedQuery(
@@ -231,7 +254,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
           having = Option(servReq.getParameter("having")),
           search = Option(servReq.getParameter("search")),
           order = Option(servReq.getParameter("order")),
-          limit = Option(servReq.getParameter("limit")),
+          limit = Option(servReq.getParameter(qpLimit)),
           offset = Option(servReq.getParameter("offset"))
         ))
       }
@@ -243,7 +266,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
         finishRequest(BadRequest ~> Json("no idMap provided"))
       }
       val columnIdMap: Map[ColumnName, String] = try {
-        JsonUtil.parseJson[Map[String,String]](jsonizedColumnIdMap) match {
+        JsonUtil.parseJson[Map[String, String]](jsonizedColumnIdMap) match {
           case Right(rawMap) =>
             rawMap.map { case (col, typ) => ColumnName(col) -> typ }
           case Left(_) =>
@@ -256,24 +279,8 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
       val precondition = req.precondition
       val ifModifiedSince = req.dateTimeHeader("If-Modified-Since")
 
-      def isInSecondary(name: String): Option[Boolean] = {
-        // TODO we should either create a separate less expensive method for checking if a dataset
-        // is in a secondary, or we should integrate this into schema caching if and when we
-        // build that.
-        for {
-          instance <- Option(secondaryProvider.provider(name).getInstance())
-          base <- Some(reqBuilder(instance))
-          result <- schemaFetcher(base.receiveTimeoutMS(getSchemaTimeout.toMillis.toInt), dataset, copy) match {
-            case SchemaFetcher.Successful(newSchema, _, _) => Some(true)
-            case SchemaFetcher.NoSuchDatasetInSecondary => Some(false)
-            case other =>
-              log.warn("Unexpected response when fetching schema from secondary: {}", other)
-              None
-          }
-        } yield result
-      }
 
-      def secondary(dataset: String, instanceName: Option[String]) = {
+      def secondary(dataset: String, instanceName: Option[String]): ServiceInstance[AuxiliaryData] = {
         val instance = for {
           name <- instanceName
           instance <- Option(secondaryProvider.provider(name).getInstance())
@@ -285,7 +292,9 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
         }
       }
 
-      val chosenSecondaryName = forcedSecondaryName.orElse { secondaryInstance.getInstanceName(dataset, isInSecondary) }
+      val chosenSecondaryName = forcedSecondaryName.orElse {
+        secondaryInstance.getInstanceName(dataset, isInSecondary(_, dataset, copy))
+      }
 
       // A little spaghetti never hurt anybody!
       // Ok, so the general flow of this code is:
@@ -301,7 +310,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
       val second = secondary(dataset, chosenSecondaryName)
       val base = reqBuilder(second)
       log.info("Base URI: " + base.url)
-      def getAndCacheSchema(dataset: String, copy: Option[String]) =
+      def getAndCacheSchema(dataset: String, copy: Option[String]): Schema =
         schemaFetcher(base.receiveTimeoutMS(getSchemaTimeout.toMillis.toInt), dataset, copy) match {
           case SchemaFetcher.Successful(newSchema, _, _) =>
             schemaCache(dataset, copy, newSchema)
@@ -312,13 +321,13 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
           case SchemaFetcher.TimeoutFromSecondary =>
             chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
             finishRequest(upstreamTimeoutResponse)
-          case other =>
-            log.error("Unexpected response when fetching schema from secondary: {}", other)
+          case other: SchemaFetcher.Result =>
+            log.error(unexpectedError, other)
             chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
             finishRequest(internalServerError)
         }
 
-      @tailrec
+      @annotation.tailrec
       def analyzeRequest(schema: Schema, isFresh: Boolean): (Schema, SoQLAnalysis[String, SoQLAnalysisType]) = {
         val parsedQuery = query match {
           case Left(q) =>
@@ -351,7 +360,7 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
         }
       }
 
-      @tailrec
+      @annotation.tailrec
       def executeQuery(schema: Schema,
                        analyzedQuery: SoQLAnalysis[String, SoQLAnalysisType],
                        rollupName: Option[String],
@@ -359,18 +368,18 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
                        resourceName: Option[String],
                        resourceScope: ResourceScope): HttpResponse = {
         val extraHeaders = Map(RequestId.ReqIdHeader -> requestId) ++
-                           resourceName.map(fbf => Map("X-Socrata-Resource" -> fbf)).getOrElse(Nil)
+          resourceName.map(fbf => Map(headerSocrataResource -> fbf)).getOrElse(Nil)
         val res = queryExecutor(base.receiveTimeoutMS(queryTimeout.toMillis.toInt),
-                                dataset,
-                                analyzedQuery,
-                                schema,
-                                precondition,
-                                ifModifiedSince,
-                                rowCount,
-                                copy,
-                                rollupName,
-                                extraHeaders,
-                                resourceScope).map {
+          dataset,
+          analyzedQuery,
+          schema,
+          precondition,
+          ifModifiedSince,
+          rowCount,
+          copy,
+          rollupName,
+          extraHeaders,
+          resourceScope).map {
           case QueryExecutor.NotFound =>
             chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
             finishRequest(notFoundResponse(dataset))
@@ -398,21 +407,23 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
               Stream(out => transferResponse(out, body))
             Right(resp)
         }
-        res match { // bit of a dance because we can't tailrec from within map
+        res match {
+          // bit of a dance because we can't tailrec from within map
           case Left((s, q, r)) => executeQuery(s, q, r, requestId, resourceName, resourceScope)
           case Right(resp) => resp
         }
       }
 
       def possiblyRewriteQuery(schema: Schema, analyzedQuery: SoQLAnalysis[String, SoQLAnalysisType]):
-          (SoQLAnalysis[String, SoQLAnalysisType], Option[String]) = {
-        if (noRollup) (analyzedQuery, None)
-        else {
+      (SoQLAnalysis[String, SoQLAnalysisType], Option[String]) = {
+        if (noRollup) {
+          (analyzedQuery, None)
+        } else {
           rollupInfoFetcher(base.receiveTimeoutMS(getSchemaTimeout.toMillis.toInt), dataset, copy) match {
             case RollupInfoFetcher.Successful(rollups) =>
-              val rewritten  = queryRewriter.bestRewrite(schema, analyzedQuery, rollups)
-              val (rollupName, analysis) = rewritten map {x => (Some(x._1), x._2) } getOrElse ((None, analyzedQuery))
-              log.info(s"Rewrote query on dataset ${dataset} to rollup ${rollupName} with analysis ${analysis}")
+              val rewritten = queryRewriter.bestRewrite(schema, analyzedQuery, rollups)
+              val (rollupName, analysis) = rewritten map { x => (Some(x._1), x._2) } getOrElse ((None, analyzedQuery))
+              log.info(s"Rewrote query on dataset $dataset to rollup $rollupName with analysis $analysis")
               (analysis, rollupName)
             case RollupInfoFetcher.NoSuchDatasetInSecondary =>
               chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
@@ -420,8 +431,8 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
             case RollupInfoFetcher.TimeoutFromSecondary =>
               chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
               finishRequest(upstreamTimeoutResponse)
-            case other =>
-              log.error("Unexpected response when fetching schema from secondary: {}", other)
+            case other: RollupInfoFetcher.Result =>
+              log.error(unexpectedError, other)
               chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
               finishRequest(internalServerError)
           }
@@ -430,17 +441,34 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
 
       val (finalSchema, analysis) = schemaDecache(dataset, copy) match {
         case Some(schema) => analyzeRequest(schema, false)
-        case None         => analyzeRequest(getAndCacheSchema(dataset, copy), true)
+        case None => analyzeRequest(getAndCacheSchema(dataset, copy), true)
       }
       val (rewrittenAnalysis, rollupName) = possiblyRewriteQuery(finalSchema, analysis)
       executeQuery(finalSchema, rewrittenAnalysis, rollupName,
-        requestId, req.header("X-Socrata-Resource"), req.resourceScope)
+        requestId, req.header(headerSocrataResource), req.resourceScope)
     } catch {
       case FinishRequest(response) =>
-        response ~> (resetResponse _)
+        response ~> resetResponse _
     } finally {
       Thread.currentThread.setName(originalThreadName)
     }
+  }
+
+  def isInSecondary(name: String, dataset: String, copy: Option[String]): Option[Boolean] = {
+    // TODO we should either create a separate less expensive method for checking if a dataset
+    // is in a secondary, or we should integrate this into schema caching if and when we
+    // build that.
+    for {
+      instance <- Option(secondaryProvider.provider(name).getInstance())
+      base <- Some(reqBuilder(instance))
+      result <- schemaFetcher(base.receiveTimeoutMS(getSchemaTimeout.toMillis.toInt), dataset, copy) match {
+        case SchemaFetcher.Successful(newSchema, _, _) => Some(true)
+        case SchemaFetcher.NoSuchDatasetInSecondary => Some(false)
+        case other: SchemaFetcher.Result =>
+          log.warn(unexpectedError, other)
+          None
+      }
+    } yield result
   }
 
   private def logSchemaFreshness(secondaryAddress: String,
@@ -450,11 +478,15 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
                                  qsLastModified: DateTime): Unit = {
     val DataVersionDiff = sfDataVersion - qsDataVersion
     val wrongOrder = qsLastModified.isAfter(sfLastModified)
-    val timeDiff = (if (wrongOrder) new Interval(sfLastModified, qsLastModified)
-                    else new Interval(qsLastModified, sfLastModified)).toDuration
-    if (DataVersionDiff == 0 && timeDiff.getMillis == 0)
+    val timeDiff = (if (wrongOrder) {
+      new Interval(sfLastModified, qsLastModified)
+    }
+    else {
+      new Interval(qsLastModified, sfLastModified)
+    }).toDuration
+    if (DataVersionDiff == 0 && timeDiff.getMillis == 0) {
       log.info("schema from {} is identical", secondaryAddress)
-    else
+    } else {
       log.info("schema from {} differs {} {} {} {} {}v {}{}m",
         secondaryAddress,
         sfDataVersion.toString,
@@ -462,17 +494,19 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
         qsDataVersion.toString,
         qsLastModified.toString(ISODateTimeFormat.dateHourMinuteSecond),
         DataVersionDiff.toString,
-        (if (wrongOrder) "-" else ""),
+        if (wrongOrder) qpHyphen else "",
         timeDiff.getStandardMinutes.toString)
+    }
   }
 
-  private def transferResponse(out: OutputStream, in: InputStream) {
-    val buf = new Array[Byte](4096)
-    def loop() {
+  private def transferResponse(out: OutputStream, in: InputStream): Unit = {
+    val buf = new Array[Byte](responseBuffer)
+    @annotation.tailrec
+    def loop(): Unit = {
       in.read(buf) match {
         case -1 => // done
-        case n =>
-          out.write(buf, 0, n);
+        case n: Int =>
+          out.write(buf, 0, n)
           loop()
       }
     }
@@ -487,8 +521,6 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
     }
   }
 
-  private def resetResponse(response: HttpServletResponse): Unit = {
-    if (response.isCommitted) ???
-    else response.reset()
-  }
+  private def resetResponse(response: HttpServletResponse): Unit =
+    if (response.isCommitted) ??? else response.reset()
 }

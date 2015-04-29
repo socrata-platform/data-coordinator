@@ -9,8 +9,7 @@ import com.socrata.soql.typed.ColumnRef
 import com.socrata.soql.types.{SoQLText, SoQLType}
 
 class QueryParserTest extends TestBase {
-
-  import QueryParserTest._
+  import QueryParserTest._ // scalastyle:ignore import.grouping
 
   test("SELECT * expands all columns") {
     val query = "select *"
@@ -21,9 +20,9 @@ class QueryParserTest extends TestBase {
     )
     val actual = qp.apply(query, truthColumns, upToDateSchema) match {
       case SuccessfulParse(analysis) => analysis.selection
-      case x => x
+      case x: QueryParser.Result => x
     }
-    actual should be (expected)
+    actual should be(expected)
   }
 
   test("SELECT * ignores missing columns") {
@@ -34,15 +33,15 @@ class QueryParserTest extends TestBase {
     )
     val actual = qp.apply(query, truthColumns, outdatedSchema) match {
       case SuccessfulParse(analysis) => analysis.selection
-      case x => x
+      case x: QueryParser.Result => x
     }
-    actual should be (expected)
+    actual should be(expected)
   }
 
   test("SELECT non existing column errs") {
     val query = "select b"
     val actual = qp.apply(query, truthColumns, outdatedSchema)
-    actual.getClass should be (classOf[AnalysisError])
+    actual.getClass should be(classOf[AnalysisError])
   }
 }
 
@@ -56,7 +55,7 @@ object QueryParserTest {
 
   val qp = new QueryParser(analyzer, Some(maxRowLimit), defaultRowLimit)
 
-  val truthColumns =  Map[ColumnName, String](ColumnName("a") -> "ai", ColumnName("b") -> "bi")
+  val truthColumns = Map[ColumnName, String](ColumnName("a") -> "ai", ColumnName("b") -> "bi")
 
   val upToDateSchema = Map[String, SoQLType]("ai" -> SoQLText, "bi" -> SoQLText)
 

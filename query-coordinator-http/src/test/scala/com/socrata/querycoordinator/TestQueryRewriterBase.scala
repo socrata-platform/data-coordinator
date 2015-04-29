@@ -1,9 +1,9 @@
 package com.socrata.querycoordinator
 
-import com.socrata.soql.SoQLAnalyzer
+import com.socrata.soql.{SoQLAnalysis, SoQLAnalyzer}
 import com.socrata.soql.environment.{ColumnName, TypeName}
 import com.socrata.soql.functions.{SoQLFunctionInfo, SoQLTypeInfo}
-import com.socrata.soql.types.SoQLType
+import com.socrata.soql.types.{SoQLAnalysisType, SoQLType}
 
 class TestQueryRewriterBase extends TestBase {
   val analyzer = new SoQLAnalyzer(SoQLTypeInfo, SoQLFunctionInfo)
@@ -36,7 +36,8 @@ class TestQueryRewriterBase extends TestBase {
   val dsContext = QueryParser.dsContext(columnIdMapping, rawSchema)
 
   /** Analyze the query and map to column ids, just like we have in real life. */
-  def analyzeQuery(q: String) = analyzer.analyzeFullQuery(q)(dsContext).mapColumnIds(columnIdMapping)
+  def analyzeQuery(q: String): SoQLAnalysis[rewriter.ColumnId, SoQLAnalysisType] =
+    analyzer.analyzeFullQuery(q)(dsContext).mapColumnIds(columnIdMapping)
 
   /** Silly half-assed function for debugging when things don't match */
   def compareProducts(a: Product, b: Product, indent: Int = 0): Unit = {
