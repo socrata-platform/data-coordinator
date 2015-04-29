@@ -10,7 +10,7 @@ object QueryCoordinatorHttp {
 
   lazy val settings: Seq[Setting[_]] = BuildSettings.projectSettings(true) ++
     Seq(
-      name := "query-coordinator-http",
+      name := "query-coordinator",
       buildInfoKeys := Seq[BuildInfoKey](
         name,
         version,
