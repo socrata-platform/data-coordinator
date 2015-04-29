@@ -12,6 +12,7 @@ object SecondarySelector {
       ScoverageSbtPlugin.ScoverageKeys.coverageMinimum := 0,
       libraryDependencies ++= Seq(
         socrataThirdpartyUtils,
+        sprayCaching,
         typesafeConfig,
         metricsScala,
         slf4j)

@@ -5,10 +5,13 @@ import com.typesafe.scalalogging.slf4j.Logging
 import java.util.concurrent.atomic.AtomicInteger
 import scala.annotation.tailrec
 import scala.collection.immutable.Queue
-import scala.collection.mutable
 import scala.compat.Platform
+import scala.concurrent.Await
+import scala.concurrent.duration._
+import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.Random
 
+import spray.caching.LruCache
 
 /**
  * Selects a Secondary Instance.
@@ -32,16 +35,19 @@ import scala.util.Random
  * reason, we only do this if we have hit this case less than x times for this dataset.
  *
  */
-class SecondaryInstanceSelector(qcConfig: SecondarySelectorConfig) extends Logging with Metrics {
+class SecondaryInstanceSelector(config: SecondarySelectorConfig) extends Logging with Metrics {
   /** dataset id to servers */
-  // TODO: This map currently grows without bounds. Maybe make it an LRU cache?
-  private val datasetMap = new mutable.HashMap[String, DatasetServers] with mutable.SynchronizedMap[String, DatasetServers]
+  // TODO: Do we want to keep cache hit ratio?
+  private val datasetMap = LruCache[DatasetServers](config.mapMaxCapacity,
+                                                    initialCapacity = math.min(config.mapMaxCapacity, 1000))
   /** a count of the number of times we haven't been able to find a server for a dataset. */
-  private val datasetNopesMap = new mutable.HashMap[String, AtomicInteger] with mutable.SynchronizedMap[String, AtomicInteger]
+  private val datasetNopesMap = LruCache[AtomicInteger](config.mapMaxCapacity,
+                                                        initialCapacity = math.min(config.mapMaxCapacity, 1000))
+  private val waitTime = 2.seconds
 
-  private val allServers = qcConfig.allSecondaryInstanceNames.map { s => Server(s)(Unknown) }.toVector
-  private val expirationMillis = qcConfig.secondaryDiscoveryExpirationMillis
-  private val datasetMaxNopeCount = qcConfig.datasetMaxNopeCount
+  private val allServers = config.allSecondaryInstanceNames.map { s => Server(s)(Unknown) }.toVector
+  private val expirationMillis = config.secondaryDiscoveryExpirationMillis
+  private val datasetMaxNopeCount = config.datasetMaxNopeCount
 
   // ****  Metrics metrics metrics ****
   private val datasetMapSize = metrics.gauge("datasetMap-size") { datasetMap.size }
@@ -70,7 +76,10 @@ class SecondaryInstanceSelector(qcConfig: SecondarySelectorConfig) extends Loggi
   }
 
   private def pastExpiration(s: Server) = Platform.currentTime > s.verifiedAt + expirationMillis
-  private def getNopesCount(dataset: String) = datasetNopesMap.getOrElseUpdate(dataset, new AtomicInteger())
+
+  private def getNopesCount(dataset: String) = {
+    Await.result(datasetNopesMap(dataset)(new AtomicInteger()), waitTime)
+  }
 
   /**
    * Can be called to report an error querying a given dataset on a given server.
@@ -78,8 +87,8 @@ class SecondaryInstanceSelector(qcConfig: SecondarySelectorConfig) extends Loggi
   def flagError(dataset: String, secondaryName: String) {
     // For now we are just going to do the dumb thing and mark it unknown so we
     // at least do a basic validation before we trying to use it again.
+    val dss = Await.result(datasetMap(dataset)(new DatasetServers), waitTime)
 
-    val dss = datasetMap.getOrElseUpdate(dataset, new DatasetServers)
     val s = Server(secondaryName)(Unknown)
 
     logger.warn("Notified of error for dataset {} on secondary {}, marking as unknown", dataset, secondaryName)
@@ -93,7 +102,7 @@ class SecondaryInstanceSelector(qcConfig: SecondarySelectorConfig) extends Loggi
 
   def getInstanceName(dataset:String, isInSecondary: (String => Option[Boolean])): Option[String] = {
     // datasetMap is a synchronized map, then  lock on dss for any access inside dss
-    val dss = datasetMap.getOrElseUpdate(dataset, new DatasetServers)
+    val dss = Await.result(datasetMap(dataset)(new DatasetServers), waitTime)
 
     @tailrec
     def getInstanceName0(): Option[String] = {
