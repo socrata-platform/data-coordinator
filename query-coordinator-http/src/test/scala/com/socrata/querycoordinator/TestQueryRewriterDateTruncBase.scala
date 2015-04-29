@@ -12,12 +12,9 @@ class TestQueryRewriterDateTruncBase extends TestQueryRewriterBase {
     * - a Seq of the soql types for each column in the rollup selection
     */
   val rollups = Seq(
-    ("r_ymd", "SELECT date_trunc_ymd(`_crim-date`), `:wido-ward`, count(*) " +
-      "GROUP BY date_trunc_ymd(`_crim-date`), `:wido-ward`"),
-    ("r_ym", "SELECT date_trunc_ym(`_crim-date`), `:wido-ward`, count(*) " +
-      "GROUP BY date_trunc_ym(`_crim-date`), `:wido-ward`"),
-    ("r_y", "SELECT date_trunc_y(`_crim-date`), `:wido-ward`, count(*) " +
-      "GROUP BY date_trunc_y(`_crim-date`), `:wido-ward`")
+    ("r_ymd", "SELECT date_trunc_ymd(`_crim-date`), `:wido-ward`, count(*) GROUP BY date_trunc_ymd(`_crim-date`), `:wido-ward`"),
+    ("r_ym", "SELECT date_trunc_ym(`_crim-date`), `:wido-ward`, count(*) GROUP BY date_trunc_ym(`_crim-date`), `:wido-ward`"),
+    ("r_y", "SELECT date_trunc_y(`_crim-date`), `:wido-ward`, count(*) GROUP BY date_trunc_y(`_crim-date`), `:wido-ward`")
   )
 
   val rollupInfos = rollups.map { x => new RollupInfo(x._1, x._2) }
