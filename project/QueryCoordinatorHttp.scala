@@ -2,12 +2,13 @@ import sbt._
 import sbt.Keys._
 import sbtbuildinfo.BuildInfoKeys._
 import sbtbuildinfo.{BuildInfoKey, BuildInfoOption}
+import scoverage.ScoverageSbtPlugin
 
 object QueryCoordinatorHttp {
 
   import Dependencies._
 
-  lazy val settings: Seq[Setting[_]] = BuildSettings.projectSettings() ++
+  lazy val settings: Seq[Setting[_]] = BuildSettings.projectSettings(true) ++
     Seq(
       name := "query-coordinator-http",
       buildInfoKeys := Seq[BuildInfoKey](
@@ -19,6 +20,7 @@ object QueryCoordinatorHttp {
         BuildInfoKey.action("revision") { gitSha }),
       buildInfoPackage := "com.socrata.querycoordinator",
       buildInfoOptions += BuildInfoOption.ToMap,
+      ScoverageSbtPlugin.ScoverageKeys.coverageMinimum := 30,
       libraryDependencies ++= Seq(
         protobuf,
         rojomaJson,
