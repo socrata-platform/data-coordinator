@@ -110,7 +110,8 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
   }
 
   /** An in order hierarchy of floating timestamp date truncation functions, from least granular to most granular.  */
-  private val dateTruncHierarchy = Seq(FloatingTimeStampTruncY,
+  private val dateTruncHierarchy = Seq(
+    FloatingTimeStampTruncY,
     FloatingTimeStampTruncYm,
     FloatingTimeStampTruncYmd)
 
@@ -154,8 +155,7 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
           lowerRewrite <- rewriteExpr(lower, rollupColIdx)
           upperRewrite <- rewriteExpr(upper, rollupColIdx)
           newParams <- Some(Seq(
-            typed.ColumnRef(rollupColumnId(idx),
-              SoQLFloatingTimestamp)(fc.position),
+            typed.ColumnRef(rollupColumnId(idx), SoQLFloatingTimestamp)(fc.position),
             lowerRewrite,
             upperRewrite))
         } yield fc.copy(parameters = newParams)(fc.position, fc.position)

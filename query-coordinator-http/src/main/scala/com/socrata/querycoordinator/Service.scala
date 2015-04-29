@@ -48,7 +48,6 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
 
   private[this] val responseBuffer = 4096
-  // TODO: configurable value?
   private[this] val unexpectedError = "Unexpected response when fetching schema from secondary: {}"
   private[this] val headerSocrataResource = "X-Socrata-Resource"
   private[this] val qpHyphen = "-"
@@ -369,7 +368,8 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
                        resourceScope: ResourceScope): HttpResponse = {
         val extraHeaders = Map(RequestId.ReqIdHeader -> requestId) ++
           resourceName.map(fbf => Map(headerSocrataResource -> fbf)).getOrElse(Nil)
-        val res = queryExecutor(base.receiveTimeoutMS(queryTimeout.toMillis.toInt),
+        val res = queryExecutor(
+          base.receiveTimeoutMS(queryTimeout.toMillis.toInt),
           dataset,
           analyzedQuery,
           schema,
@@ -379,7 +379,8 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
           copy,
           rollupName,
           extraHeaders,
-          resourceScope).map {
+          resourceScope
+        ).map {
           case QueryExecutor.NotFound =>
             chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
             finishRequest(notFoundResponse(dataset))

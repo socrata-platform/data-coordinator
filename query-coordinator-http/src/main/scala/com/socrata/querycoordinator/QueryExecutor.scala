@@ -53,8 +53,7 @@ class QueryExecutor(httpClient: HttpClient,
       copy.map(c => List(qpCopy -> c)).getOrElse(Nil) ++
       rollupName.map(c => List(qpRollupName -> c)).getOrElse(Nil)
     val request = base.p(qpQuery).
-      addHeaders(PreconditionRenderer(precondition) ++
-      ifModifiedSince.map("If-Modified-Since" -> _.toHttpDate)).
+      addHeaders(PreconditionRenderer(precondition) ++ ifModifiedSince.map("If-Modified-Since" -> _.toHttpDate)).
       addHeaders(extraHeaders).
       form(params)
 
