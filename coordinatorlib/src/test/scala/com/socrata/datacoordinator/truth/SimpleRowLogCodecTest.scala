@@ -3,7 +3,7 @@ package truth
 
 import com.socrata.datacoordinator.truth.loader.Insert
 import org.scalatest.FunSuite
-import org.scalatest.matchers.MustMatchers
+import org.scalatest.MustMatchers
 import org.scalatest.prop.PropertyChecks
 import java.io.ByteArrayOutputStream
 import com.google.protobuf.{CodedInputStream, CodedOutputStream}

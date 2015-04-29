@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator.util
 
 import org.scalatest.FunSuite
-import org.scalatest.matchers.MustMatchers
+import org.scalatest.MustMatchers
 
 class TemplateReplacerTest extends FunSuite with MustMatchers {
   test("replace at start of string") {
@@ -30,6 +30,6 @@ class TemplateReplacerTest extends FunSuite with MustMatchers {
   }
 
   test("Unknown variable throws the right exception") {
-    evaluating { TemplateReplacer("%X%", Map.empty) } must produce[UnboundVariableException]
+    an [UnboundVariableException] must be thrownBy { TemplateReplacer("%X%", Map.empty) }
   }
 }

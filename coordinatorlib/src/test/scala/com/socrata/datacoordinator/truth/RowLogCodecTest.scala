@@ -9,7 +9,7 @@ import com.socrata.datacoordinator.truth.loader.{Update, Insert, Delete}
 import com.socrata.datacoordinator.util.RowUtils
 import com.socrata.datacoordinator.util.collection.MutableColumnIdMap
 import org.scalatest.FunSuite
-import org.scalatest.matchers.MustMatchers
+import org.scalatest.MustMatchers
 import org.scalatest.prop.PropertyChecks
 
 class RowLogCodecTest extends FunSuite with MustMatchers with PropertyChecks {
@@ -210,15 +210,15 @@ class RowLogCodecTest extends FunSuite with MustMatchers with PropertyChecks {
       override def read(): Int = throw ex
     })
 
-    val thrownInvalidProtoBuf = evaluating {
+    val thrownInvalidProtoBuf = the [RowLogTruncatedException] thrownBy {
       codec.extract(exStream(invalidProtoBufEx))
-    } must produce [RowLogTruncatedException]
+    }
 
     thrownInvalidProtoBuf.getCause must equal (invalidProtoBufEx)
 
-    val thrownEOF = evaluating {
+    val thrownEOF = the [RowLogTruncatedException] thrownBy {
       codec.extract(exStream(eofEx))
-    } must produce [RowLogTruncatedException]
+    }
 
     thrownEOF.getCause must equal (eofEx)
   }
@@ -229,9 +229,9 @@ class RowLogCodecTest extends FunSuite with MustMatchers with PropertyChecks {
       whenever (!validOps.contains(operation)) {
         val opBytes = withOutput(_.writeRawByte(operation)).toArray
 
-        val thrown = evaluating {
+        val thrown = the [UnknownRowLogOperationException] thrownBy {
           codec.extract(CodedInputStream.newInstance(opBytes))
-        } must produce [UnknownRowLogOperationException]
+        }
 
         thrown.operationCode must equal (operation)
       }

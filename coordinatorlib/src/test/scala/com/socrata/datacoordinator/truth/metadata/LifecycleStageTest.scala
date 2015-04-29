@@ -1,6 +1,6 @@
 package com.socrata.datacoordinator.truth.metadata
 
-import org.scalatest.matchers.MustMatchers
+import org.scalatest.MustMatchers
 import org.scalatest.FunSuite
 
 class LifecycleStageTest extends FunSuite with MustMatchers {

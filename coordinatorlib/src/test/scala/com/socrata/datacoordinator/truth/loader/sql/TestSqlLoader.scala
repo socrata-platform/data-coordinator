@@ -118,7 +118,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
   def simpleReportWriter() = new SimpleReportWriter[TestColumnValue]
 
   test("building a report before finished fails (simple report writer)") {
-    val e = evaluating { simpleReportWriter().report } must produce [AssertionError]
+    val e = the [AssertionError] thrownBy { simpleReportWriter().report }
     e.getMessage must include ("report() called without being finished first")
   }
 
@@ -1070,8 +1070,8 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
     val genUpsert = for {
       id <- genId
-      num <- Gen.frequency(2 -> Arbitrary.arbitrary[Long].map(Some(_)), 1 -> Gen.value(None))
-      data <- Gen.frequency(2 -> Arbitrary.arbitrary[String].map(Some(_)), 1 -> Gen.value(None))
+      num <- Gen.frequency(2 -> Arbitrary.arbitrary[Long].map(Some(_)), 1 -> Gen.const(None))
+      data <- Gen.frequency(2 -> Arbitrary.arbitrary[String].map(Some(_)), 1 -> Gen.const(None))
     } yield Upsert(id, num, data.map(_.filterNot(_ == '\0')))
 
     val genDelete = genId.map(Delete(_))
@@ -1199,9 +1199,9 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     val genId = Gen.choose(0L, 100L)
 
     val genUpsert = for {
-      id <- Gen.frequency(1 -> genId.map(Some(_)), 2 -> Gen.value(None))
-      num <- Gen.frequency(2 -> Arbitrary.arbitrary[Long].map(Some(_)), 1 -> Gen.value(None))
-      data <- Gen.frequency(2 -> Arbitrary.arbitrary[String].map(Some(_)), 1 -> Gen.value(None))
+      id <- Gen.frequency(1 -> genId.map(Some(_)), 2 -> Gen.const(None))
+      num <- Gen.frequency(2 -> Arbitrary.arbitrary[Long].map(Some(_)), 1 -> Gen.const(None))
+      data <- Gen.frequency(2 -> Arbitrary.arbitrary[String].map(Some(_)), 1 -> Gen.const(None))
     } yield Upsert(id, num, data.map(_.filterNot(_ == '\0')))
 
     val genDelete = genId.map(Delete(_))

@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator.truth.metadata.sql
 
 import org.scalatest.{BeforeAndAfterAll, FunSuite}
-import org.scalatest.matchers.MustMatchers
+import org.scalatest.MustMatchers
 import java.sql.{SQLException, Connection, DriverManager}
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.truth.metadata._
@@ -119,7 +119,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
       tables.setUserPrimaryKey(ci1)
 
-      evaluating(tables.setUserPrimaryKey(ci2)) must produce [SQLException]
+      an [SQLException] must be thrownBy (tables.setUserPrimaryKey(ci2))
     }
   }
 
@@ -145,7 +145,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       val vi = tables.create("en_US")
       tables.addColumn(vi, c("col1"), t("typ"), "colbase")
 
-      evaluating(tables.addColumn(vi, c("col1"), t("typ2"), "colbase2")) must produce [ColumnAlreadyExistsException]
+      an [ColumnAlreadyExistsException] must be thrownBy (tables.addColumn(vi, c("col1"), t("typ2"), "colbase2"))
     }
   }
 
@@ -199,7 +199,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       val vi2 = tables.publish(vi1)
 
       vi2.lifecycleStage must be (LifecycleStage.Published)
-      evaluating { tables.dropCopy(vi2) } must produce [CopyInWrongStateForDropException]
+      an [CopyInWrongStateForDropException] must be thrownBy { tables.dropCopy(vi2) }
     }
   }
 
@@ -208,7 +208,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
       val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID)
       val vi = tables.create("en_US")
       vi.lifecycleStage must be (LifecycleStage.Unpublished)
-      evaluating { tables.dropCopy(vi) } must produce [CannotDropInitialWorkingCopyException]
+      an [CannotDropInitialWorkingCopyException] must be thrownBy { tables.dropCopy(vi) }
     }
   }
 

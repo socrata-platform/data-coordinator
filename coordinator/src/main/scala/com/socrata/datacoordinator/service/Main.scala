@@ -238,7 +238,17 @@ object Main {
           }
         }
 
-        val serv = new Service(serviceConfig, operations.processMutation, operations.processCreation, getSchema _,
+        def getRollups(datasetId: DatasetId) = {
+          for {
+            u <- common.universe
+            dsInfo <- u.datasetMapReader.datasetInfo(datasetId)
+          } yield {
+            val latest = u.datasetMapReader.latest(dsInfo)
+            u.datasetMapReader.rollups(latest).toSeq
+          }
+        }
+
+        val serv = new Service(serviceConfig, operations.processMutation, operations.processCreation, getSchema _, getRollups,
           operations.exporter, secondaries, operations.datasetsInStore, operations.versionInStore,
           operations.ensureInSecondary, operations.ensureInSecondaryGroup, operations.secondariesOfDataset, operations.listDatasets, operations.deleteDataset,
           serviceConfig.commandReadLimit, common.internalNameFromDatasetId, common.datasetIdFromInternalName, operations.makeReportTemporaryFile)

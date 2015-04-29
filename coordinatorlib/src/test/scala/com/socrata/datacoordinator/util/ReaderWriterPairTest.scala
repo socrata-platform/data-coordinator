@@ -3,7 +3,7 @@ package com.socrata.datacoordinator.util
 import java.util.concurrent.ArrayBlockingQueue
 
 import org.scalatest.FunSuite
-import org.scalatest.matchers.MustMatchers
+import org.scalatest.MustMatchers
 import org.scalatest.prop.PropertyChecks
 import org.scalacheck.{Arbitrary, Gen}
 import java.io.IOException
@@ -45,10 +45,10 @@ class ReaderWriterPairTest extends FunSuite with MustMatchers with PropertyCheck
       whenever(size > 0 && count > 0 && ss.exists(_.nonEmpty)) {
         val rwp = new ReaderWriterPair(size, count)
         rwp.reader.close()
-        evaluating {
+        an [IOException] must be thrownBy {
           for(s <- ss) rwp.writer.write(s)
           rwp.writer.flush()
-        } must produce[IOException]
+        }
       }
     }
   }

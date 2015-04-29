@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator.truth.loader
 
 import org.scalatest.{Assertions, FunSuite}
-import org.scalatest.matchers.MustMatchers
+import org.scalatest.MustMatchers
 
 class DeloggerTest extends FunSuite with MustMatchers with Assertions {
   import Delogger._
