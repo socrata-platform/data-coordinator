@@ -4,7 +4,7 @@ import sbtbuildinfo.BuildInfoKeys._
 import sbtbuildinfo.{BuildInfoKey, BuildInfoOption}
 import scoverage.ScoverageSbtPlugin
 
-object QueryCoordinatorHttp {
+object QueryCoordinator {
 
   import Dependencies._
 
