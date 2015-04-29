@@ -1,10 +1,12 @@
 import sbt._
+import sbtassembly.AssemblyKeys
 import sbtbuildinfo.BuildInfoPlugin
 
 object Build extends sbt.Build {
   lazy val build = Project(
     "query-coordinator",
-    file(".")
+    file("."),
+    settings = Seq(AssemblyKeys.assembly := file(".")) // no root assembly
   ).settings(BuildSettings.buildSettings : _*)
    .aggregate(queryCoordinatorHttp, secondarySelector)
 
