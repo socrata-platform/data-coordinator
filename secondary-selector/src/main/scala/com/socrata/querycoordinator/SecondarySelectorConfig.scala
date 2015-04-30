@@ -12,5 +12,5 @@ trait SecondarySelectorConfig extends ConfigClass {
 
   val datasetMaxNopeCount: Int = getInt("dataset-max-nope-count")
 
-  val mapMaxCapacity: Int = getInt("secondary-selector-map-max-capacity")
+  val maxCacheEntries: Int = getInt("secondary-selector-max-cache-entries")
 }

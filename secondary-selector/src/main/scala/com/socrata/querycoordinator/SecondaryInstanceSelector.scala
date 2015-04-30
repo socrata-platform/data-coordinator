@@ -38,11 +38,9 @@ import spray.caching.LruCache
 class SecondaryInstanceSelector(config: SecondarySelectorConfig) extends Logging with Metrics {
   /** dataset id to servers */
   // TODO: Do we want to keep cache hit ratio?
-  private val datasetMap = LruCache[DatasetServers](config.mapMaxCapacity,
-                                                    initialCapacity = math.min(config.mapMaxCapacity, 1000))
+  private val datasetMap = LruCache[DatasetServers](config.maxCacheEntries)
   /** a count of the number of times we haven't been able to find a server for a dataset. */
-  private val datasetNopesMap = LruCache[AtomicInteger](config.mapMaxCapacity,
-                                                        initialCapacity = math.min(config.mapMaxCapacity, 1000))
+  private val datasetNopesMap = LruCache[AtomicInteger](config.maxCacheEntries)
   private val waitTime = 2.seconds
 
   private val allServers = config.allSecondaryInstanceNames.map { s => Server(s)(Unknown) }.toVector
