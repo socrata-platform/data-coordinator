@@ -181,7 +181,7 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
    * without changing its value.
    */
   private[querycoordinator] def truncatedTo(soqlTs: SoQLFloatingTimestamp)
-  : Option[Function[SoQLFloatingTimestamp.type]] = {
+    : Option[Function[SoQLFloatingTimestamp.type]] = {
     val ts: LocalDateTime = soqlTs.value
     if (ts.getMillisOfDay != 0) {
       None
@@ -322,8 +322,7 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
   }
 
 
-  def rewriteOrderBy(obsOpt: Option[Seq[OrderBy]], rollupColIdx: Map[Expr, Int]):
-  Option[Option[Seq[OrderBy]]] = {
+  def rewriteOrderBy(obsOpt: Option[Seq[OrderBy]], rollupColIdx: Map[Expr, Int]): Option[Option[Seq[OrderBy]]] = {
     log.debug(s"Attempting to map order by expression '${obsOpt}'") // scalastyle:ignore multiple.string.literals
 
     // it is silly if the rollup has an order by, but we really don't care.
