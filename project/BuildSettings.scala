@@ -4,11 +4,9 @@ import sbtassembly.AssemblyKeys
 
 object BuildSettings {
   def buildSettings: Seq[Setting[_]] =
-    Defaults.itSettings ++
-    Seq(
-      // TODO: enable style checks
-      com.socrata.sbtplugins.StylePlugin.StyleKeys.styleCheck := {},
-      com.socrata.sbtplugins.StylePlugin.StyleKeys.styleCheck in Compile := {},
+    Defaults.itSettings ++ Seq(
+      // TODO: enable coverage build failure
+      scoverage.ScoverageSbtPlugin.ScoverageKeys.coverageFailOnMinimum := false,
       scalaVersion := "2.10.4",
       resolvers ++= Seq(
         "Open Source Geospatial Foundation Repository" at "http://download.osgeo.org/webdav/geotools",

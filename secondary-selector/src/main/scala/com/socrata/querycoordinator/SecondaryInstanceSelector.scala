@@ -1,8 +1,10 @@
 package com.socrata.querycoordinator
 
+import java.util.concurrent.atomic.AtomicInteger
+
 import com.socrata.thirdparty.metrics.Metrics
 import com.typesafe.scalalogging.slf4j.Logging
-import java.util.concurrent.atomic.AtomicInteger
+
 import scala.annotation.tailrec
 import scala.collection.immutable.Queue
 import scala.compat.Platform
@@ -12,7 +14,6 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.Random
 
 import spray.caching.LruCache
-
 /**
  * Selects a Secondary Instance.
  *
@@ -55,12 +56,16 @@ class SecondaryInstanceSelector(config: SecondarySelectorConfig) extends Logging
   // the code assumes a Server is immutable
   private case class Server(name: String)(val state: ServerState) {
     val verifiedAt: Long = Platform.currentTime
-    override def toString =  s"Server($name => $state)"
+
+    override def toString: String = s"Server($name => $state)"
   }
 
   private sealed abstract class ServerState
+
   private case object There extends ServerState
+
   private case object NotThere extends ServerState
+
   private case object Unknown extends ServerState
 
   private class DatasetServers {
@@ -82,7 +87,7 @@ class SecondaryInstanceSelector(config: SecondarySelectorConfig) extends Logging
   /**
    * Can be called to report an error querying a given dataset on a given server.
    */
-  def flagError(dataset: String, secondaryName: String) {
+  def flagError(dataset: String, secondaryName: String): Unit = {
     // For now we are just going to do the dumb thing and mark it unknown so we
     // at least do a basic validation before we trying to use it again.
     val dss = Await.result(datasetMap(dataset)(new DatasetServers), waitTime)
@@ -98,29 +103,12 @@ class SecondaryInstanceSelector(config: SecondarySelectorConfig) extends Logging
     }
   }
 
-  def getInstanceName(dataset:String, isInSecondary: (String => Option[Boolean])): Option[String] = {
+  def getInstanceName(dataset: String, isInSecondary: (String => Option[Boolean])): Option[String] = {
     // datasetMap is a synchronized map, then  lock on dss for any access inside dss
     val dss = Await.result(datasetMap(dataset)(new DatasetServers), waitTime)
-
     @tailrec
-    def getInstanceName0(): Option[String] = {
-      // Convert any expired nots to unknowns, and set immutable candidates Vector
-      val candidates = dss.synchronized[Vector[Server]] {
-        val (expiredNots, remainingNots) = dss.nots.span(s => pastExpiration(s))
-
-        dss.nots = remainingNots
-        dss.candidates = dss.candidates ++ expiredNots.map {
-          s =>
-            logger.debug("State transition for dataset {} on secondary {} from {} to {} on expiration", dataset, s.name, s.state, Unknown)
-            Server(s.name)(Unknown)
-        }
-
-        logger.trace("Current candidates for dataset {}: {}", dataset, dss.candidates)
-        logger.trace("Current non-candidates for dataset {}: {}", dataset, dss.nots)
-
-        dss.candidates
-      }
-
+    def getInstanceName0: Option[String] = {
+      val candidates = candidatesVector(dataset, dss)
       if (candidates.isEmpty) {
         // if it wraps, reset.  it isn't going to wrap.
         if (getNopesCount(dataset).incrementAndGet() < 0) getNopesCount(dataset).set(0)
@@ -131,27 +119,10 @@ class SecondaryInstanceSelector(config: SecondarySelectorConfig) extends Logging
         val candidate = candidates(Random.nextInt(candidates.length))
         logger.trace("Candidate {} for dataset {}", candidate, dataset)
 
-        val newCandidateState = candidate.state match {
-          case There if pastExpiration(candidate) => Unknown
-          case There => There
-          case Unknown =>
-            try {
-              logger.trace("Asking candidate {} if it has dataset {}", candidate, dataset)
-              isInSecondary(candidate.name) match {
-                case Some(true) => There
-                case Some(false) => NotThere
-                // might want to think about smarter logic for this case at some point
-                case None => NotThere
-              }
-            } catch {
-              case ex: RuntimeException =>
-                logger.warn(s"Exception trying to check if candidate $candidate has dataset $dataset", ex)
-                NotThere
-            }
-        }
-
+        val newCandidateState: ServerState = manufactureNewCandidateState(dataset, isInSecondary, candidate)
         if (newCandidateState != candidate.state) {
-          logger.debug("State transition for dataset {} on secondary {} from {} to {}", dataset, candidate.name, candidate.state, newCandidateState)
+          logger.debug("State transition for dataset {} on secondary {} from {} to {}",
+            dataset, candidate.name, candidate.state, newCandidateState)
           val newServer = Server(candidate.name)(newCandidateState)
 
           dss.synchronized {
@@ -163,7 +134,7 @@ class SecondaryInstanceSelector(config: SecondarySelectorConfig) extends Logging
             dss.nots = dss.nots.filterNot(_ == candidate)
 
             newCandidateState match {
-              case There | Unknown =>  dss.candidates = dss.candidates :+ newServer
+              case There | Unknown => dss.candidates = dss.candidates :+ newServer
               case NotThere => dss.nots = dss.nots :+ newServer
             }
           }
@@ -171,21 +142,68 @@ class SecondaryInstanceSelector(config: SecondarySelectorConfig) extends Logging
 
         newCandidateState match {
           case There => Some(candidate.name)
-          case Unknown | NotThere => getInstanceName0()
+          case Unknown | NotThere => getInstanceName0
         }
       }
     }
 
+    syncDSS(dataset, dss)
+    val instanceName = getInstanceName0
+    logger.info("Decided to access dataset {} in secondary instance {}", dataset, instanceName)
+    instanceName
+  }
+
+  // Convert any expired nots to unknowns, and set immutable candidates Vector
+  private def candidatesVector(dataset: String, dss: DatasetServers): Vector[Server] = {
+    dss.synchronized[Vector[Server]] {
+      val (expiredNots, remainingNots) = dss.nots.span(s => pastExpiration(s))
+
+      dss.nots = remainingNots
+      dss.candidates = dss.candidates ++ expiredNots.map {
+        s =>
+          logger.debug("State transition for dataset {} on secondary {} from {} to {} on expiration",
+            dataset, s.name, s.state, Unknown)
+          Server(s.name)(Unknown)
+      }
+
+      logger.trace("Current candidates for dataset {}: {}", dataset, dss.candidates)
+      logger.trace("Current non-candidates for dataset {}: {}", dataset, dss.nots)
+
+      dss.candidates
+    }
+  }
+
+  private def manufactureNewCandidateState(dataset: String,
+                                           isInSecondary: (String) => Option[Boolean],
+                                           candidate: Server): ServerState = {
+    candidate.state match {
+      case There if pastExpiration(candidate) => Unknown
+      case There => There
+      case Unknown =>
+        try {
+          logger.trace("Asking candidate {} if it has dataset {}", candidate, dataset)
+          isInSecondary(candidate.name) match {
+            case Some(true) => There
+            case Some(false) => NotThere
+            // might want to think about smarter logic for this case at some point
+            case None => NotThere
+          }
+        } catch {
+          case ex: RuntimeException =>
+            logger.warn(s"Exception trying to check if candidate $candidate has dataset $dataset", ex)
+            NotThere
+        }
+    }
+  }
+
+  private def syncDSS(dataset: String, dss: DatasetServers): Unit = {
     dss.synchronized {
       if (dss.candidates.isEmpty && getNopesCount(dataset).get < datasetMaxNopeCount) {
-        logger.debug("Got request for dataset {} with no candidates and low nope count, resetting nots and candidates", dataset)
+        logger.debug("Got request for dataset {} with no candidates and low nope count, resetting nots and candidates",
+          dataset)
         dss.candidates = allServers
         dss.nots = Queue()
       }
     }
-
-    val instanceName = getInstanceName0()
-    logger.info("Decided to access dataset {} in secondary instance {}", dataset, instanceName)
-    instanceName
   }
 }
