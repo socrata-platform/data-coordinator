@@ -23,7 +23,6 @@ import org.joda.time.DateTime
 class QueryExecutor(httpClient: HttpClient,
                     analysisSerializer: AnalysisSerializer[String, SoQLAnalysisType],
                     teeStreamProvider: InputStream => TeeToTempInputStream) {
-  private[this] val log = org.slf4j.LoggerFactory.getLogger(classOf[QueryExecutor])
 
   private val qpDataset = "dataset"
   private val qpQuery = "query"
@@ -129,6 +128,8 @@ class QueryExecutor(httpClient: HttpClient,
 
 object QueryExecutor {
 
+  private val log = org.slf4j.LoggerFactory.getLogger(classOf[QueryExecutor])
+
   sealed abstract class Result
 
   case object NotFound extends Result
@@ -141,12 +142,12 @@ object QueryExecutor {
 
   def checkSchemaHashMismatch(json: JValue): Option[Schema] = {
     for {
-      obj: JObject <- json.cast[JObject]
-      errorCode: JValue <- obj.get("errorCode")
+      obj: JObject <- json.cast[JObject].orElse { log.error("Response is not a JSON object"); None }
+      errorCode: JValue <- obj.get("errorCode").orElse { log.error("Response is missing errorCode field"); None }
       errorCodeSchemaMismatch <- if (errorCode == JString("internal.schema-mismatch")) Some(1) else None
-      data: JValue <- obj.get("data")
+      data: JValue <- obj.get("data").orElse { log.error("Response does not contain a data field"); None }
       schema: Schema <- JsonDecode[Schema].decode(data) match {
-        case Left(decodeError) => None
+        case Left(decodeError) => log.error("data object is not a valid Schema"); None
         case Right(schema) => Some(schema)
       }
     } yield schema
