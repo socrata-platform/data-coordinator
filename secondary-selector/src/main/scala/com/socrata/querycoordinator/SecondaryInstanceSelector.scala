@@ -47,12 +47,8 @@ class SecondaryInstanceSelector(qcConfig: SecondarySelectorConfig) extends Loggi
   private val datasetMaxNopeCount = qcConfig.datasetMaxNopeCount
 
   // ****  Metrics metrics metrics ****
-  private val datasetMapSize = metrics.gauge("datasetMap-size") {
-    datasetMap.size
-  }
-  private val datasetNopesMapSize = metrics.gauge("datasetNopesMap-size") {
-    datasetNopesMap.size
-  }
+  private val datasetMapSize = metrics.gauge("datasetMap-size") { datasetMap.size }
+  private val datasetNopesMapSize = metrics.gauge("datasetNopesMap-size") { datasetNopesMap.size }
 
   // equality is only on name
   // the code assumes a Server is immutable
