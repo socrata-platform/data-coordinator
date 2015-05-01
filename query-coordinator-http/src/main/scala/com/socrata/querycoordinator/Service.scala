@@ -47,17 +47,17 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
   extends HttpService {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
 
-  private[this] val responseBuffer = 4096
-  private[this] val unexpectedError = "Unexpected response when fetching schema from secondary: {}"
-  private[this] val headerSocrataResource = "X-Socrata-Resource"
-  private[this] val qpHyphen = "-"
-  private[this] val qpFunction = "function"
-  private[this] val qpColumn = "column"
-  private[this] val qpName = "name"
-  private[this] val qpChar = "character"
-  private[this] val qpData = "data"
-  private[this] val qpDataset = "dataset"
-  private[this] val qpLimit = "limit"
+  private val responseBuffer = 4096
+  private val unexpectedError = "Unexpected response when fetching schema from secondary: {}"
+  private val headerSocrataResource = "X-Socrata-Resource"
+  private val qpHyphen = "-"
+  private val qpFunction = "function"
+  private val qpColumn = "column"
+  private val qpName = "name"
+  private val qpChar = "character"
+  private val qpData = "data"
+  private val qpDataset = "dataset"
+  private val qpLimit = "limit"
 
   // FIXME: don't use this internal rojoma-json API.
   def soqlErrorCode(e: SoQLException): String = "query.soql." +
