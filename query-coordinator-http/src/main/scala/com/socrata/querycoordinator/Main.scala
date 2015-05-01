@@ -1,40 +1,43 @@
 package com.socrata.querycoordinator
 
-import com.google.protobuf.CodedOutputStream
+import java.io.InputStream
+import java.util.concurrent.{ExecutorService, Executors}
+
 import com.rojoma.json.ast.JString
 import com.rojoma.simplearm.Resource
 import com.rojoma.simplearm.util._
-import com.socrata.http.client.{HttpClientHttpClient, InetLivenessChecker}
+import com.socrata.http.client.HttpClientHttpClient
 import com.socrata.http.common.AuxiliaryData
+import com.socrata.http.server.SocrataServerJetty
 import com.socrata.http.server.curator.CuratorBroker
 import com.socrata.http.server.livenesscheck.LivenessCheckResponder
-import com.socrata.http.server.SocrataServerJetty
-import com.socrata.http.server.util.handlers.{ThreadRenamingHandler, NewLoggingHandler}
 import com.socrata.http.server.util.RequestId.ReqIdHeader
+import com.socrata.http.server.util.handlers.{NewLoggingHandler, ThreadRenamingHandler}
 import com.socrata.querycoordinator.util.TeeToTempInputStream
 import com.socrata.soql.functions.{SoQLFunctionInfo, SoQLTypeInfo}
 import com.socrata.soql.types.SoQLAnalysisType
 import com.socrata.soql.{AnalysisSerializer, SoQLAnalyzer}
 import com.socrata.thirdparty.curator.{CuratorFromConfig, DiscoveryFromConfig}
-import com.socrata.thirdparty.metrics.{SocrataHttpSupport, MetricsReporter}
+import com.socrata.thirdparty.metrics.{MetricsReporter, SocrataHttpSupport}
 import com.socrata.thirdparty.typesafeconfig.Propertizer
 import com.typesafe.config.{Config, ConfigFactory}
-import java.io.InputStream
-import java.net.{InetSocketAddress, InetAddress}
-import java.util.concurrent.{ExecutorService, Executors}
 import org.apache.curator.x.discovery.{ServiceInstanceBuilder, strategies}
 import org.apache.log4j.PropertyConfigurator
-import scala.concurrent.duration._
 
 final abstract class Main
 
 object Main extends App {
+  PropertyConfigurator.configure(Propertizer("log4j", config.log4j))
+  val log = org.slf4j.LoggerFactory.getLogger(classOf[Main])
+
   def withDefaultAddress(config: Config): Config = {
     val ifaces = ServiceInstanceBuilder.getAllLocalIPs
-    if(ifaces.isEmpty) config
-    else {
+    if (ifaces.isEmpty) {
+      config
+    } else {
       val first = JString(ifaces.iterator.next().getHostAddress)
-      val addressConfig = ConfigFactory.parseString("com.socrata.query-coordinator.service-advertisement.address=" + first)
+      val addressConfig =
+        ConfigFactory.parseString("com.socrata.query-coordinator.service-advertisement.address=" + first)
       config.withFallback(addressConfig)
     }
   }
@@ -43,24 +46,21 @@ object Main extends App {
     new QueryCoordinatorConfig(withDefaultAddress(ConfigFactory.load()), "com.socrata.query-coordinator")
   } catch {
     case e: Exception =>
-      Console.err.println(e)
+      log.error(e.toString)
       sys.exit(1)
   }
 
-  PropertyConfigurator.configure(Propertizer("log4j", config.log4j))
-
-  val log = org.slf4j.LoggerFactory.getLogger(classOf[Main])
-
   val analyzer = new SoQLAnalyzer(SoQLTypeInfo, SoQLFunctionInfo)
-  def typeSerializer(typ: SoQLAnalysisType) = typ.canonical.name.name
+  def typeSerializer(typ: SoQLAnalysisType): String = typ.canonical.name.name
   val analysisSerializer = new AnalysisSerializer[String, SoQLAnalysisType](identity, typeSerializer)
 
   implicit object executorResource extends Resource[ExecutorService]{
-    def close(a: ExecutorService) { a.shutdown() }
+    def close(a: ExecutorService): Unit = { a.shutdown() }
   }
 
+  val threadPoolSize = 5
   for {
-    executor <- managed(Executors.newFixedThreadPool(5))
+    executor <- managed(Executors.newFixedThreadPool(threadPoolSize))
     httpClientConfig <- unmanaged(HttpClientHttpClient.defaultOptions.withUserAgent("Query Coordinator"))
     httpClient <- managed(new HttpClientHttpClient(executor, httpClientConfig))
     curator <- CuratorFromConfig(config.curator)
@@ -73,7 +73,7 @@ object Main extends App {
   } {
     pongProvider.start()
 
-    def teeStream(in: InputStream) = new TeeToTempInputStream(in)
+    def teeStream(in: InputStream): TeeToTempInputStream = new TeeToTempInputStream(in)
 
     val secondaryInstanceSelector = new SecondaryInstanceSelector(config)
 

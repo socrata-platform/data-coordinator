@@ -5,23 +5,27 @@ import java.io._
 /**
  * @note unlike most streams, this does NOT take ownership of the underlying stream.
  */
-class TeeToTempInputStream(underlying: InputStream, inMemoryBufferSize: Int = 10240, tempDir: File = new File(sys.props("java.io.tmpdir"))) extends InputStream {
+// TODO: configurable default memory buffer size
+class TeeToTempInputStream(underlying: InputStream,
+                           inMemoryBufferSize: Int = 10240, // scalastyle:ignore magic.number
+                           tempDir: File = new File(sys.props("java.io.tmpdir"))) extends InputStream {
   private[this] val inMemoryBuffer = new Array[Byte](inMemoryBufferSize)
   private[this] var inMemoryBufferPtr = 0
-  private[this] var tempFile: RandomAccessFile = null
+  private[this] var tempFile: RandomAccessFile = null // scalastyle:ignore null
   private[this] var restreamed = false
+  private[this] val restreamReadErrorMessage = "Cannot read after restream has been called"
 
-  private def augmentBuffer(c: Byte) {
-    if(inMemoryBufferPtr == inMemoryBufferSize) flushTempFile()
+  private def augmentBuffer(c: Byte): Unit = {
+    if (inMemoryBufferPtr == inMemoryBufferSize) flushTempFile()
     inMemoryBuffer(inMemoryBufferPtr) = c
     inMemoryBufferPtr += 1
   }
 
-  private def augmentBuffer(buf: Array[Byte], offset: Int, len: Int) {
-    if(len <= inMemoryBufferSize - inMemoryBufferPtr) {
+  private def augmentBuffer(buf: Array[Byte], offset: Int, len: Int): Unit = {
+    if (len <= inMemoryBufferSize - inMemoryBufferPtr) {
       System.arraycopy(buf, offset, inMemoryBuffer, inMemoryBufferPtr, len)
       inMemoryBufferPtr += len
-    } else if(len > inMemoryBufferSize) {
+    } else if (len > inMemoryBufferSize) {
       flushTempFile()
       tempFile.write(buf, offset, len)
     } else {
@@ -31,9 +35,9 @@ class TeeToTempInputStream(underlying: InputStream, inMemoryBufferSize: Int = 10
     }
   }
 
-  private def openTempFile() {
-    assert(tempFile == null)
-    val fileName = File.createTempFile("tee",".tmp", tempDir)
+  private def openTempFile(): Unit = {
+    assert(Option(tempFile).isEmpty)
+    val fileName = File.createTempFile("tee", ".tmp", tempDir)
     try {
       tempFile = new RandomAccessFile(fileName, "rw")
     } finally {
@@ -41,32 +45,32 @@ class TeeToTempInputStream(underlying: InputStream, inMemoryBufferSize: Int = 10
     }
   }
 
-  private def flushTempFile() {
-    if(tempFile == null) openTempFile()
+  private def flushTempFile(): Unit = {
+    if (Option(tempFile).isEmpty) openTempFile()
     tempFile.write(inMemoryBuffer, 0, inMemoryBufferPtr)
     inMemoryBufferPtr = 0
   }
 
   def read(): Int = {
-    if(restreamed) throw new IllegalStateException("Cannot read after restream has been called")
+    if (restreamed) throw new IllegalStateException(restreamReadErrorMessage)
     underlying.read() match {
       case -1 => -1
-      case c => augmentBuffer(c.toByte); c
+      case c: Int => augmentBuffer(c.toByte); c
     }
   }
 
   override def read(buf: Array[Byte], offset: Int, length: Int): Int = {
-    if(restreamed) throw new IllegalStateException("Cannot read after restream has been called")
+    if (restreamed) throw new IllegalStateException(restreamReadErrorMessage)
     underlying.read(buf, offset, length) match {
       case -1 => -1
-      case n => augmentBuffer(buf, offset, n); n
+      case n: Int => augmentBuffer(buf, offset, n); n
     }
   }
 
   def restream(): InputStream = {
-    if(restreamed) throw new IllegalStateException("Can only restream once")
+    if (restreamed) throw new IllegalStateException("Can only restream once")
     restreamed = true
-    if(tempFile == null) {
+    if (Option(tempFile).isEmpty) {
       new ByteArrayInputStream(inMemoryBuffer, 0, inMemoryBufferPtr)
     } else {
       flushTempFile()
@@ -75,7 +79,7 @@ class TeeToTempInputStream(underlying: InputStream, inMemoryBufferSize: Int = 10
     }
   }
 
-  override def close() {
-    if(tempFile != null && !restreamed) tempFile.close()
+  override def close(): Unit = {
+    if (Option(tempFile).nonEmpty && !restreamed) tempFile.close()
   }
 }

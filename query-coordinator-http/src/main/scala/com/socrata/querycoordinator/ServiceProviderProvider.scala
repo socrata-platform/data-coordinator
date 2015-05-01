@@ -1,11 +1,14 @@
 package com.socrata.querycoordinator
 
-import scala.collection.JavaConverters._
 import java.io.Closeable
-import org.apache.curator.x.discovery.{ProviderStrategy, ServiceProvider, ServiceDiscovery}
 import java.util.concurrent.ConcurrentHashMap
 
-class ServiceProviderProvider[T](serviceDiscovery: ServiceDiscovery[T], providerStrategy: ProviderStrategy[T]) extends Closeable {
+import org.apache.curator.x.discovery.{ProviderStrategy, ServiceDiscovery, ServiceProvider}
+
+import scala.collection.JavaConverters._
+
+class ServiceProviderProvider[T](serviceDiscovery: ServiceDiscovery[T],
+                                 providerStrategy: ProviderStrategy[T]) extends Closeable {
   private val providers = new ConcurrentHashMap[String, ServiceProvider[T]]
   private var closed = false
 
@@ -33,7 +36,7 @@ class ServiceProviderProvider[T](serviceDiscovery: ServiceDiscovery[T], provider
     }
   }
 
-  def close() = synchronized {
+  def close(): Unit = synchronized {
     providers.values.asScala.foreach(_.close())
     providers.clear()
     closed = true

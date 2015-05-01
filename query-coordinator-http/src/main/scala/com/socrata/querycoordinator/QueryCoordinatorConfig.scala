@@ -3,16 +3,15 @@ package com.socrata.querycoordinator
 import java.util.concurrent.TimeUnit
 
 import com.socrata.http.server.livenesscheck.LivenessCheckConfig
-
-import scala.concurrent.duration._
-
 import com.socrata.thirdparty.curator.{CuratorConfig, DiscoveryConfig}
 import com.socrata.thirdparty.metrics.MetricsOptions
 import com.socrata.thirdparty.typesafeconfig.ConfigClass
 import com.typesafe.config.Config
 
-class QueryCoordinatorConfig(config: Config, root: String) extends ConfigClass(config, root) with SecondarySelectorConfig {
+import scala.concurrent.duration._
 
+class QueryCoordinatorConfig(config: Config, root: String)
+  extends ConfigClass(config, root) with SecondarySelectorConfig {
   val log4j = getRawConfig("log4j")
   val curator = new CuratorConfig(config, path("curator"))
   val discovery = new DiscoveryConfig(config, path("service-advertisement"))
