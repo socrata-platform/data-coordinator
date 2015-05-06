@@ -42,7 +42,9 @@ class SecondaryInstanceSelector(config: SecondarySelectorConfig) extends Logging
   private val datasetMap = LruCache[DatasetServers](config.maxCacheEntries)
   /** a count of the number of times we haven't been able to find a server for a dataset. */
   private val datasetNopesMap = LruCache[AtomicInteger](config.maxCacheEntries)
-  private val waitTime = 2.seconds
+
+  // The LRU calls use Future.  But we are really doing synchrnized calls in the same process.
+  private val waitTime = Duration.Inf
 
   private val allServers = config.allSecondaryInstanceNames.map { s => Server(s)(Unknown) }.toVector
   private val expirationMillis = config.secondaryDiscoveryExpirationMillis
