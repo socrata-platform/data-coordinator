@@ -164,9 +164,9 @@ class Service(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
     val b = RequestBuilder(secondary.getAddress).
       livenessCheckInfo(pingTarget).
       connectTimeoutMS(connectTimeout.toMillis.toInt)
-    if (Option(secondary.getSslPort).isEmpty) {
+    if (Option(secondary.getSslPort).nonEmpty) {
       b.secure(true).port(secondary.getSslPort)
-    } else if (Option(secondary.getPort).isEmpty) {
+    } else if (Option(secondary.getPort).nonEmpty) {
       b.port(secondary.getPort)
     } else {
       b

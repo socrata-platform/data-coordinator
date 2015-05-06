@@ -27,8 +27,6 @@ import org.apache.log4j.PropertyConfigurator
 final abstract class Main
 
 object Main extends App {
-  PropertyConfigurator.configure(Propertizer("log4j", config.log4j))
-  val log = org.slf4j.LoggerFactory.getLogger(classOf[Main])
 
   def withDefaultAddress(config: Config): Config = {
     val ifaces = ServiceInstanceBuilder.getAllLocalIPs
@@ -46,9 +44,12 @@ object Main extends App {
     new QueryCoordinatorConfig(withDefaultAddress(ConfigFactory.load()), "com.socrata.query-coordinator")
   } catch {
     case e: Exception =>
-      log.error(e.toString)
+      print(e.toString)
       sys.exit(1)
   }
+
+  PropertyConfigurator.configure(Propertizer("log4j", config.log4j))
+  val log = org.slf4j.LoggerFactory.getLogger(classOf[Main])
 
   val analyzer = new SoQLAnalyzer(SoQLTypeInfo, SoQLFunctionInfo)
   def typeSerializer(typ: SoQLAnalysisType): String = typ.canonical.name.name
