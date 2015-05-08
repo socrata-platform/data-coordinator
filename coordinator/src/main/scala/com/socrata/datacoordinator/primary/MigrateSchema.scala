@@ -37,5 +37,6 @@ object MigrateSchema extends App {
 
     SchemaMigrator(databaseTree, operation, numChanges)
   }
-  private lazy val databaseTree = "com.socrata.coordinator.common.database"
+
+  private lazy val databaseTree = s"${com.socrata.datacoordinator.service.Main.configRoot}.database"
 }
