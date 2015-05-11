@@ -1,6 +1,7 @@
 package com.socrata.datacoordinator.primary
 
 import java.util.NoSuchElementException
+import com.socrata.datacoordinator.service.Main
 import com.socrata.datacoordinator.truth.migration.Migration.MigrationOperation
 
 /**
@@ -38,5 +39,5 @@ object MigrateSchema extends App {
     SchemaMigrator(databaseTree, operation, numChanges)
   }
 
-  private lazy val databaseTree = s"${com.socrata.datacoordinator.service.Main.configRoot}.database"
+  private lazy val databaseTree = s"${Main.configRoot}.database"
 }
