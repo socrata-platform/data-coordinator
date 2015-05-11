@@ -164,19 +164,21 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
 object Main {
   lazy val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
 
+  val configRoot = "com.socrata.coordinator.service"
+
   def withDefaultAddress(config: Config): Config = {
     val ifaces = ServiceInstanceBuilder.getAllLocalIPs
     if(ifaces.isEmpty) config
     else {
       val first = JString(ifaces.iterator.next().getHostAddress)
-      val addressConfig = ConfigFactory.parseString("com.socrata.coordinator.service.service-advertisement.address=" + first)
+      val addressConfig = ConfigFactory.parseString(s"$configRoot.service-advertisement.address=" + first)
       config.withFallback(addressConfig)
     }
   }
 
   def main(args: Array[String]) {
     val serviceConfig = try {
-      new ServiceConfig(withDefaultAddress(ConfigFactory.load()), "com.socrata.coordinator.service")
+      new ServiceConfig(withDefaultAddress(ConfigFactory.load()), configRoot)
     } catch {
       case e: Exception =>
         Console.err.println(e)
