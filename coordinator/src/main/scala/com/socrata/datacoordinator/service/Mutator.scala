@@ -72,6 +72,7 @@ object Mutator {
                                      currentLifecycleStage: LifecycleStage,
                                      expected: Set[LifecycleStage])(val index: Long) extends MutationException
   case class InitialCopyDrop(name: DatasetId)(val index: Long) extends MutationException
+  case class OperationAfterDrop(name: DatasetId)(val index: Long) extends MutationException
   case class IllegalColumnId(id: UserColumnId)(val index: Long) extends MutationException
   case class NoSuchColumn(dataset: DatasetId, id: UserColumnId)(val index: Long) extends MutationException
   case class NoSuchType(name: TypeName)(val index: Long) extends MutationException
@@ -467,6 +468,11 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
                (maybeCtx: mutator.CopyContext) = maybeCtx match {
       case mutator.CopyOperationComplete(ctx) =>
         doProcess(ctx)
+      case error: mutator.CopyContextError =>
+        processError(index, datasetId, mutator)(error)
+    }
+
+    def processError(index: Long, datasetId: DatasetId, mutator: DatasetMutator[CT, CV])(error: mutator.CopyContextError) = error match {
       case mutator.IncorrectLifecycleStage(currentStage, expectedStages) =>
         throw IncorrectLifecycleStage(datasetId, currentStage, expectedStages)(index)
       case mutator.DatasetDidNotExist() =>
@@ -502,10 +508,16 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
                                     checkHash(idx, schemaHash, _)).map(process(idx, datasetId, mutator))
         case DropWorkingCopyMutation(idx, datasetId, schemaHash) =>
           mutator.dropCopy(user)(datasetId, checkHash(idx, schemaHash, _)).map {
-            case cc: mutator.CopyContext =>
-              process(idx, datasetId, mutator)(cc)
+            case cc: mutator.CopyContextError =>
+              processError(idx, datasetId, mutator)(cc)
             case mutator.InitialWorkingCopy =>
               throw InitialCopyDrop(datasetId)(idx)
+            case mutator.DropComplete =>
+              if(commands.nextCommand().isDefined) {
+                throw OperationAfterDrop(datasetId)(0)
+              } else {
+                (datasetId, Nil)
+              }
           }
       }
     } catch {
