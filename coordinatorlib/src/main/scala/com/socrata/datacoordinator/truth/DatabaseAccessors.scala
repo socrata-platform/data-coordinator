@@ -339,7 +339,8 @@ object DatasetMutator {
       def drop() {
         datasetMap.dropCopy(copyInfo)
         schemaLoader.drop(copyInfo)
-        copyCtx.copyInfo = datasetMap.latest(copyInfo.datasetInfo)
+        // Do not update copyCtx.copyInfo or previously published dataVersion will be bumped
+        // copyCtx.copyInfo = datasetMap.latest(copyInfo.datasetInfo)
       }
 
       def createOrUpdateRollup(name: RollupName, soql: String) {
