@@ -67,6 +67,15 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[SoQLValue] {
       case SoQLMultiPolygon(mp) =>
         target.writeRawByte(17)
         target.writeBytesNoTag(ByteString.copyFrom(SoQLMultiPolygon.WkbRep(mp)))
+      case SoQLPolygon(p) =>
+        target.writeRawByte(18)
+        target.writeBytesNoTag(ByteString.copyFrom(SoQLPolygon.WkbRep(p)))
+      case SoQLLine(l) =>
+        target.writeRawByte(19)
+        target.writeBytesNoTag(ByteString.copyFrom(SoQLLine.WkbRep(l)))
+      case SoQLMultiPoint(mp) =>
+        target.writeRawByte(20)
+        target.writeBytesNoTag(ByteString.copyFrom(SoQLMultiPoint.WkbRep(mp)))
       case SoQLNull =>
         target.writeRawByte(-1)
     }
@@ -128,6 +137,21 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[SoQLValue] {
       case 17 =>
         SoQLMultiPolygon.WkbRep.unapply(source.readBytes.toByteArray) match {
           case Some(multipolygon) => SoQLMultiPolygon(multipolygon)
+          case _ => sys.error("Unable to parse object from log!")
+        }
+      case 18 =>
+        SoQLPolygon.WkbRep.unapply(source.readBytes.toByteArray) match {
+          case Some(polygon) => SoQLPolygon(polygon)
+          case _ => sys.error("Unable to parse object from log!")
+        }
+      case 19 =>
+        SoQLLine.WkbRep.unapply(source.readBytes.toByteArray) match {
+          case Some(line) => SoQLLine(line)
+          case _ => sys.error("Unable to parse object from log!")
+        }
+      case 20 =>
+        SoQLMultiPoint.WkbRep.unapply(source.readBytes.toByteArray) match {
+          case Some(multipoint) => SoQLMultiPoint(multipoint)
           case _ => sys.error("Unable to parse object from log!")
         }
       case -1 =>
