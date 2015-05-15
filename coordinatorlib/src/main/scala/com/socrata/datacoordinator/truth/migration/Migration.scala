@@ -27,7 +27,6 @@ object Migration {
                 operation: MigrationOperation = MigrationOperation.Migrate,
                 numChanges: Int = 1,
                 changeLogPath: String = MigrationScriptPath) {
-    LogFactory.getLogger().setLogLevel("warning")
     val liquibase = new Liquibase(changeLogPath, new ClassLoaderResourceAccessor, new JdbcConnection(conn))
     val database = conn.getCatalog
 
