@@ -2,6 +2,7 @@ package com.socrata.datacoordinator.truth.migration
 
 import liquibase.Liquibase
 import liquibase.database.jvm.JdbcConnection
+import liquibase.logging.LogFactory
 import liquibase.resource.ClassLoaderResourceAccessor
 
 import java.sql.Connection
@@ -26,7 +27,6 @@ object Migration {
                 operation: MigrationOperation = MigrationOperation.Migrate,
                 numChanges: Int = 1,
                 changeLogPath: String = MigrationScriptPath) {
-
     val liquibase = new Liquibase(changeLogPath, new ClassLoaderResourceAccessor, new JdbcConnection(conn))
     val database = conn.getCatalog
 
