@@ -304,6 +304,9 @@ class Service(serviceConfig: ServiceConfig,
           case Mutator.InitialCopyDrop(name) =>
             err(Conflict, "update.dataset.initial-copy-drop",
               "dataset" -> JString(formatDatasetId(name)))
+          case Mutator.OperationAfterDrop(name) =>
+            err(BadRequest, "update.dataset.operation-after-drop",
+              "dataset" -> JString(formatDatasetId(name)))
           case Mutator.ColumnAlreadyExists(dataset, name) =>
             colErr("update.column.exists", dataset, name, Conflict)
           case Mutator.IllegalColumnId(id) =>
