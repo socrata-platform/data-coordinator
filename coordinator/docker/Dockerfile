@@ -1,7 +1,8 @@
 FROM socrata/java
 
-# TODO expose JMX
 EXPOSE 6020 6021
+ENV JMX_PORT 6029
+EXPOSE 6029
 
 ENV SERVER_ROOT /srv/data-coordinator
 ENV SERVER_ARTIFACT coordinator-assembly.jar

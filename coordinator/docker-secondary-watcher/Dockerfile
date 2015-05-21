@@ -1,7 +1,8 @@
 FROM socrata/java
 
-# TODO expose JMX
-# EXPOSE 
+# EXPOSE
+ENV JMX_PORT 6299
+EXPOSE 6299
 
 ENV SERVER_ROOT /srv/secondary-watcher
 ENV SERVER_ARTIFACT coordinator-assembly.jar
