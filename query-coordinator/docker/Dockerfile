@@ -1,7 +1,8 @@
 FROM socrata/java
 
-# TODO expose JMX
 EXPOSE 6030 6031
+ENV JMX_PORT 6039
+EXPOSE 6039
 
 ENV SERVER_ROOT /srv/query-coordinator/
 # TODO sbt task to copy latest jar into docker/
