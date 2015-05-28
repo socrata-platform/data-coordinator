@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
+    <changeSet author="evan" id="20150528-add-column-retry-num">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="secondary_manifest" columnName="retry_num"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="secondary_manifest">
+            <column name="retry_num" type="BIGINT" defaultValueNumeric="0">
+            </column>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>
