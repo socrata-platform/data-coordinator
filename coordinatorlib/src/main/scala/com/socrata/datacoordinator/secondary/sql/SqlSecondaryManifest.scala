@@ -95,7 +95,8 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
     }
   }
 
-  def claimDatasetNeedingReplication(storeId: String, claimantId: UUID, claimTimeout: FiniteDuration):Option[SecondaryRecord] = {
+  def claimDatasetNeedingReplication(storeId: String, claimantId: UUID, claimTimeout: FiniteDuration):
+      Option[SecondaryRecord] = {
     val job = using(conn.prepareStatement(
       """SELECT dataset_system_id
         |  ,latest_secondary_data_version
@@ -203,7 +204,12 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
     }
   }
 
-  def completedReplicationTo(storeId: String, claimantId: UUID, datasetId: DatasetId, dataVersion: Long, lifecycleStage: metadata.LifecycleStage, cookie: Option[String]) {
+  def completedReplicationTo(storeId: String,
+                             claimantId: UUID,
+                             datasetId: DatasetId,
+                             dataVersion: Long,
+                             lifecycleStage: metadata.LifecycleStage,
+                             cookie: Option[String]) {
     using(conn.prepareStatement(
       """UPDATE secondary_manifest
         |SET latest_secondary_data_version = ?
