@@ -1,28 +1,28 @@
 package com.socrata.datacoordinator.common
 
-import com.socrata.datacoordinator.{Row, MutableRow}
-import com.socrata.datacoordinator.service.{SchemaFinder, MutatorCommon}
-import com.socrata.soql.types._
-import com.socrata.soql.environment.{ColumnName, TypeName}
-import com.socrata.soql.brita.{AsciiIdentifierFilter, IdentifierFilter}
-import com.socrata.datacoordinator.common.soql.{SoQLRowLogCodec, SoQLRep, SoQLTypeContext}
-import com.socrata.datacoordinator.truth.metadata.{DatasetCopyContext, DatasetInfo, AbstractColumnInfoLike, ColumnInfo}
-import com.socrata.datacoordinator.truth.json.{JsonColumnWriteRep, JsonColumnRep, JsonColumnReadRep}
-import java.util.concurrent.ExecutorService
-import com.socrata.datacoordinator.truth.universe.sql.{PostgresUniverse, PostgresCommonSupport}
-import org.joda.time.DateTime
-import com.socrata.datacoordinator.util.collection.{MutableColumnIdSet, UserColumnIdMap, ColumnIdSet, ColumnIdMap}
-import com.socrata.datacoordinator.truth.loader.RowPreparer
-import com.socrata.datacoordinator.id.{UserColumnId, DatasetId, RowVersion, RowId}
-import java.sql.Connection
-import java.io.{File, OutputStream, Reader}
-import com.socrata.datacoordinator.util.{NullCache, Cache, TransferrableContextTimingReport}
-import javax.sql.DataSource
 import com.rojoma.simplearm.{SimpleArm, Managed}
-import com.socrata.soql.types.obfuscation.{Quadifier, CryptProvider}
-import scala.concurrent.duration.{FiniteDuration, Duration}
-import java.security.SecureRandom
+import com.socrata.datacoordinator.common.soql.{SoQLRowLogCodec, SoQLRep, SoQLTypeContext}
+import com.socrata.datacoordinator.id.{UserColumnId, DatasetId, RowVersion, RowId}
+import com.socrata.datacoordinator.service.{SchemaFinder, MutatorCommon}
+import com.socrata.datacoordinator.truth.json.{JsonColumnWriteRep, JsonColumnRep, JsonColumnReadRep}
+import com.socrata.datacoordinator.truth.loader.RowPreparer
+import com.socrata.datacoordinator.truth.metadata.{DatasetCopyContext, DatasetInfo, AbstractColumnInfoLike, ColumnInfo}
+import com.socrata.datacoordinator.truth.universe.sql.{PostgresUniverse, PostgresCommonSupport}
 import com.socrata.datacoordinator.truth.universe.{SchemaFinderProvider, CacheProvider}
+import com.socrata.datacoordinator.util.collection.{MutableColumnIdSet, UserColumnIdMap, ColumnIdSet, ColumnIdMap}
+import com.socrata.datacoordinator.util.{NullCache, Cache, TransferrableContextTimingReport}
+import com.socrata.datacoordinator.{Row, MutableRow}
+import com.socrata.soql.brita.{AsciiIdentifierFilter, IdentifierFilter}
+import com.socrata.soql.environment.{ColumnName, TypeName}
+import com.socrata.soql.types._
+import com.socrata.soql.types.obfuscation.{Quadifier, CryptProvider}
+import java.io.{File, OutputStream, Reader}
+import java.security.SecureRandom
+import java.sql.Connection
+import java.util.concurrent.ExecutorService
+import javax.sql.DataSource
+import org.joda.time.DateTime
+import scala.concurrent.duration.{FiniteDuration, Duration}
 
 object SoQLSystemColumns { sc =>
   val id = new UserColumnId(":id")
