@@ -12,6 +12,9 @@ import com.socrata.datacoordinator.util.collection.{ColumnIdSet, MutableColumnId
 import com.socrata.datacoordinator.id.{RowId, ColumnId}
 
 class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
+
+  Class.forName("org.h2.Driver") // force driver to load
+
   def datasetContext(s: ColumnIdMap[SqlColumnReadRep[TestColumnType, TestColumnValue]]) = new ReadOnlyRepBasedSqlDatasetContext[TestColumnType, TestColumnValue] {
     val schema = s
     val typeContext = TestTypeContext
