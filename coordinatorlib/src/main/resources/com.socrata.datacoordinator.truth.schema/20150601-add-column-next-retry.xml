@@ -10,14 +10,15 @@
             </not>
         </preConditions>
         <sql>
-            ALTER TABLE secondary_manifest ADD next_retry TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
-            DROP INDEX IF EXISTS secondary_manifest_next_retry;
-            CREATE INDEX secondary_manifest_next_retry ON secondary_manifest(next_retry);
+            ALTER TABLE secondary_manifest ADD next_retry TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP;
+            DROP INDEX IF EXISTS secondary_manifest_order;
+            CREATE INDEX secondary_manifest_order ON secondary_manifest (store_id, (broken_at IS NULL), next_retry, (latest_data_version > latest_secondary_data_version), went_out_of_sync_at);
         </sql>
         <rollback>
             <sql>
                 ALTER TABLE secondary_manifest DROP COLUMN next_retry;
-                DROP INDEX IF EXISTS secondary_manifest_next_retry;
+                DROP INDEX IF EXISTS secondary_manifest_order;
+                CREATE INDEX secondary_manifest_order ON secondary_manifest (store_id, (broken_at IS NULL), (latest_data_version > latest_secondary_data_version), went_out_of_sync_at);
             </sql>
         </rollback>
     </changeSet>
