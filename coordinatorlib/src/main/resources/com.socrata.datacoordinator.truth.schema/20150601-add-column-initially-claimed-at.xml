@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
+    <changeSet author="evan" id="20150601-add-column-next-retry">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="secondary_manifest" columnName="initially_claimed_at"/>
+            </not>
+        </preConditions>
+        <sql>
+            ALTER TABLE secondary_manifest ADD initially_claimed_at TIMESTAMP WITH TIME ZONE;
+        </sql>
+        <rollback>
+            <sql>
+                ALTER TABLE secondary_manifest DROP COLUMN initially_claimed_at;
+            </sql>
+        </rollback>
+    </changeSet>
+</databaseChangeLog>

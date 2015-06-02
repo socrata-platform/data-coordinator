@@ -168,11 +168,12 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
   }
 
   def markDatasetClaimedForReplication(job: SecondaryRecord) {
+    val initClaimedAtSql = if (job.retryNum == 0) ",initially_claimed_at = CURRENT_TIMESTAMP" else ""
     using(conn.prepareStatement(
-      """UPDATE secondary_manifest
+      s"""UPDATE secondary_manifest
         |SET claimed_at = CURRENT_TIMESTAMP
         |  ,claimant_id = ?
-        |WHERE store_id = ?
+        |$initClaimedAtSql WHERE store_id = ?
         |  AND dataset_system_id = ?""".stripMargin)) { stmt =>
       stmt.setObject(1, job.claimantId)
       stmt.setString(2, job.storeId)
