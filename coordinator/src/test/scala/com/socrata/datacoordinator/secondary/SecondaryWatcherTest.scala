@@ -43,10 +43,10 @@ class SecondaryWatcherTest extends FunSuite with MustMatchers with MockFactory {
     NullCache
   )
 
-  test("dataset marked broken on error") {
+  test("dataset marked broken on error when out of retries") {
     val testManifest = mock[SecondaryManifest]
 
-    val w = new SecondaryWatcher(common.universe, watcherId, claimTimeout, common.timingReport) {
+    val w = new SecondaryWatcher(common.universe, watcherId, claimTimeout, 10.seconds, 2, common.timingReport) {
       override protected def getManifest(u: Universe[common.CT, common.CV] with
                                          SecondaryManifestProvider with PlaybackToSecondaryProvider):
         SecondaryManifest = testManifest
@@ -57,7 +57,7 @@ class SecondaryWatcherTest extends FunSuite with MustMatchers with MockFactory {
       val job = SecondaryRecord(testStoreId, watcherId, new DatasetId(10),
                                 startingDataVersion = 2L, endingDataVersion = 2L,
                                 startingLifecycleStage = LS.Published,
-                                retryNum = 0, initialCookie = None)
+                                retryNum = 2, initialCookie = None)
       (testManifest.claimDatasetNeedingReplication _).expects(testStoreId, watcherId, claimTimeout).
                                                       returns(Some(job))
 
@@ -71,8 +71,35 @@ class SecondaryWatcherTest extends FunSuite with MustMatchers with MockFactory {
 
       // Run the watcher run() method
       w.run(u, new NamedSecondary(testStoreId, testSecondary))
+    }
+  }
 
-      // Check that dataset marked broken
+  test("dataset retry info updated when not out of retries") {
+    val testManifest = mock[SecondaryManifest]
+
+    val w = new SecondaryWatcher(common.universe, watcherId, claimTimeout, 10.seconds, 2, common.timingReport) {
+      override protected def getManifest(u: Universe[common.CT, common.CV] with
+                                         SecondaryManifestProvider with PlaybackToSecondaryProvider):
+        SecondaryManifest = testManifest
+    }
+
+    val datasetId = new DatasetId(10)
+
+    for { u <- common.universe } {
+      val job = SecondaryRecord(testStoreId, watcherId, datasetId,
+                                startingDataVersion = 2L, endingDataVersion = 2L,
+                                startingLifecycleStage = LS.Published,
+                                retryNum = 0, initialCookie = None)
+      (testManifest.claimDatasetNeedingReplication _).expects(testStoreId, watcherId, claimTimeout).
+                                                      returns(Some(job))
+
+      // Mock a secondary, set up expectations
+      val testSecondary = mock[Secondary[common.CT, common.CV]]
+
+      (testManifest.updateRetryInfo _).expects(testStoreId, datasetId, 1, 10)
+
+      // Run the watcher run() method
+      w.run(u, new NamedSecondary(testStoreId, testSecondary))
     }
   }
 }
