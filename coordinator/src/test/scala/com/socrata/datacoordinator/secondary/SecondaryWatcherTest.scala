@@ -47,7 +47,7 @@ class SecondaryWatcherTest extends FunSuite with MustMatchers with MockFactory {
     val testManifest = mock[SecondaryManifest]
 
     val w = new SecondaryWatcher(common.universe, watcherId, claimTimeout, 10.seconds, 2, common.timingReport) {
-      override protected def getManifest(u: Universe[common.CT, common.CV] with
+      override protected def manifest(u: Universe[common.CT, common.CV] with
                                          SecondaryManifestProvider with PlaybackToSecondaryProvider):
         SecondaryManifest = testManifest
     }
@@ -78,7 +78,7 @@ class SecondaryWatcherTest extends FunSuite with MustMatchers with MockFactory {
     val testManifest = mock[SecondaryManifest]
 
     val w = new SecondaryWatcher(common.universe, watcherId, claimTimeout, 10.seconds, 2, common.timingReport) {
-      override protected def getManifest(u: Universe[common.CT, common.CV] with
+      override protected def manifest(u: Universe[common.CT, common.CV] with
                                          SecondaryManifestProvider with PlaybackToSecondaryProvider):
         SecondaryManifest = testManifest
     }

@@ -35,14 +35,14 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
   private val nextRuntimeSplay = (rand.nextInt(10000) - 5000).toLong
 
   // allow for overriding for easy testing
-  protected def getManifest(u: Universe[CT, CV] with SecondaryManifestProvider with PlaybackToSecondaryProvider):
+  protected def manifest(u: Universe[CT, CV] with SecondaryManifestProvider with PlaybackToSecondaryProvider):
       SecondaryManifest = u.secondaryManifest
 
   def run(u: Universe[CT, CV] with SecondaryManifestProvider with PlaybackToSecondaryProvider,
           secondary: NamedSecondary[CT, CV]): Boolean = {
     import u._
 
-    val foundWorkToDo = for (job <- getManifest(u).claimDatasetNeedingReplication(
+    val foundWorkToDo = for (job <- manifest(u).claimDatasetNeedingReplication(
                                       secondary.storeId, claimantId, claimTimeout)) yield {
       timingReport(
         "playback-to-secondary",
@@ -63,16 +63,16 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
               val retryBackoff = backoffInterval.toSeconds * Math.pow(2, job.retryNum)
               log.warn("Unexpected exception while updating dataset {} in secondary {}, retrying in {}...",
                        job.datasetId.asInstanceOf[AnyRef], secondary.storeId, retryBackoff.toString, e)
-              getManifest(u).updateRetryInfo(secondary.storeId, job.datasetId, job.retryNum + 1,
+              manifest(u).updateRetryInfo(secondary.storeId, job.datasetId, job.retryNum + 1,
                                              retryBackoff.toInt)
             } else {
               log.error("Unexpected exception while updating dataset {} in secondary {}; marking it as broken",
                         job.datasetId.asInstanceOf[AnyRef], secondary.storeId, e)
-              getManifest(u).markSecondaryDatasetBroken(job)
+              manifest(u).markSecondaryDatasetBroken(job)
             }
         } finally {
           try {
-            getManifest(u).releaseClaimedDataset(job)
+            manifest(u).releaseClaimedDataset(job)
           } catch {
             case e: Exception =>
               log.error("Unexpected exception while releasing claim on dataset {} in secondary {}",
