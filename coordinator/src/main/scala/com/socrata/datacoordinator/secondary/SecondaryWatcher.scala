@@ -27,16 +27,20 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
                                claimantId: UUID,
                                claimTimeout: FiniteDuration,
                                timingReport: TimingReport) {
-  import com.socrata.datacoordinator.secondary.SecondaryWatcher.log
+  val log = LoggerFactory.getLogger(classOf[SecondaryWatcher[_,_]])
   private val rand = new Random()
   // splay the sleep time +/- 5s to prevent watchers from getting in lock step
   private val nextRuntimeSplay = (rand.nextInt(10000) - 5000).toLong
+
+  // allow for overriding for easy testing
+  protected def getManifest(u: Universe[CT, CV] with SecondaryManifestProvider with PlaybackToSecondaryProvider):
+      SecondaryManifest = u.secondaryManifest
 
   def run(u: Universe[CT, CV] with SecondaryManifestProvider with PlaybackToSecondaryProvider,
           secondary: NamedSecondary[CT, CV]): Boolean = {
     import u._
 
-    val foundWorkToDo = for (job <- secondaryManifest.claimDatasetNeedingReplication(
+    val foundWorkToDo = for (job <- getManifest(u).claimDatasetNeedingReplication(
                                       secondary.storeId, claimantId, claimTimeout)) yield {
       timingReport(
         "playback-to-secondary",
@@ -54,10 +58,10 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
           case e: Exception =>
             log.error("Unexpected exception while updating dataset {} in secondary {}; marking it as broken",
                       job.datasetId.asInstanceOf[AnyRef], secondary.storeId, e)
-            secondaryManifest.markSecondaryDatasetBroken(job)
+            getManifest(u).markSecondaryDatasetBroken(job)
         } finally {
           try {
-            secondaryManifest.releaseClaimedDataset(job)
+            getManifest(u).releaseClaimedDataset(job)
           } catch {
             case e: Exception =>
               log.error("Unexpected exception while releasing claim on dataset {} in secondary {}",

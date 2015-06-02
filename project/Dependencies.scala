@@ -3,12 +3,14 @@ import sbt._
 object Dependencies {
   object versions {
     val c3po            = "0.9.5-pre9"
+    val h2              = "1.3.166"
     val metricsScala    = "3.3.0"
     val jodaConvert     = "1.2"
     val jodaTime        = "2.1"
     val rojomaJson      = "3.2.2"
     val rojomaSimpleArm = "1.1.10"
     val scalaCheck      = "1.11.0"
+    val scalaMock       = "3.2"
     val scalaTest       = "2.2.1"
     val slf4j           = "1.7.5"
     val soqlReference   = "0.5.3"
@@ -37,7 +39,9 @@ object Dependencies {
   val typesafeConfig = "com.typesafe" % "config" % versions.typesafeConfig
 
   object TestDeps {
+    val h2          = "com.h2database"  % "h2"           % versions.h2
     val scalaCheck  = "org.scalacheck" %% "scalacheck"   % versions.scalaCheck
+    val scalaMock   = "org.scalamock"  %% "scalamock-scalatest-support" % versions.scalaMock
     val scalaTest   = "org.scalatest"  %% "scalatest"    % versions.scalaTest
     val slf4jSimple = "org.slf4j"       % "slf4j-simple" % versions.slf4j
   }

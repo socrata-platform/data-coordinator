@@ -12,6 +12,7 @@ case class SecondaryRecord(storeId: String,
                            startingDataVersion: Long,
                            startingLifecycleStage: metadata.LifecycleStage,
                            endingDataVersion: Long,
+                           retryNum: Int,
                            initialCookie: Option[String])
 
 class DatasetAlreadyInSecondary(val storeId: String, val DatasetId: DatasetId) extends Exception
@@ -40,6 +41,7 @@ trait SecondaryManifest {
                              dataVersion: Long,
                              lifecycleStage: metadata.LifecycleStage,
                              newCookie: Option[String])
+  def updateRetryNum(storeId: String, datasetId: DatasetId, retryNum: Int)
 }
 
 case class NamedSecondary[CT, CV](storeId: String, store: Secondary[CT, CV])

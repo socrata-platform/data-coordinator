@@ -102,6 +102,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
         |  ,latest_secondary_data_version
         |  ,latest_secondary_lifecycle_stage
         |  ,latest_data_version
+        |  ,retry_num
         |  ,cookie
         |FROM secondary_manifest
         |WHERE store_id = ?
@@ -123,6 +124,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
             startingDataVersion = rs.getLong("latest_secondary_data_version") + 1,
             startingLifecycleStage = rs.getLifecycleStage("latest_secondary_lifecycle_stage"),
             endingDataVersion = rs.getLong("latest_data_version"),
+            retryNum = rs.getInt("retry_num"),
             initialCookie = Option(rs.getString("cookie")))
           markDatasetClaimedForReplication(j)
           Some(j)
@@ -140,6 +142,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
         |  ,latest_secondary_data_version
         |  ,latest_secondary_lifecycle_stage
         |  ,latest_data_version
+        |  ,retry_num
         |  ,cookie
         |FROM secondary_manifest
         |WHERE claimant_id = ?
@@ -155,6 +158,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
             startingDataVersion = rs.getLong("latest_secondary_data_version") + 1,
             startingLifecycleStage = rs.getLifecycleStage("latest_secondary_lifecycle_stage"),
             endingDataVersion = rs.getLong("latest_data_version"),
+            retryNum = rs.getInt("retry_num"),
             initialCookie = Option(rs.getString("cookie")))
           releaseClaimedDataset(j)
         }
@@ -228,6 +232,19 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
       stmt.setObject(4, claimantId)
       stmt.setString(5, storeId)
       stmt.setDatasetId(6, datasetId)
+      stmt.executeUpdate()
+    }
+  }
+
+  def updateRetryNum(storeId: String, datasetId: DatasetId, retryNum: Int) {
+    using(conn.prepareStatement(
+      """UPDATE secondary_manifest
+        |SET retry_num = ?
+        |WHERE store_id = ?
+        |  AND dataset_system_id = ?""".stripMargin)) { stmt =>
+      stmt.setInt(1, retryNum)
+      stmt.setString(2, storeId)
+      stmt.setDatasetId(3, datasetId)
       stmt.executeUpdate()
     }
   }

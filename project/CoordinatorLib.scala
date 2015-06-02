@@ -27,7 +27,7 @@ object CoordinatorLib {
       TestDeps.scalaCheck  % "test,it",
       TestDeps.scalaTest   % "it",
       TestDeps.slf4jSimple % "test,it",
-      "com.h2database"     % "h2" % "1.3.166" % "test,it"
+      TestDeps.h2          % "test,it"
     )
   )
 
