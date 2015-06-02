@@ -107,6 +107,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
         |FROM secondary_manifest
         |WHERE store_id = ?
         |  AND broken_at IS NULL
+        |  AND next_retry < now()
         |  AND latest_data_version > latest_secondary_data_version
         |  AND (claimant_id is NULL
         |    OR claimed_at < (CURRENT_TIMESTAMP - CAST (? AS INTERVAL)))
@@ -236,15 +237,17 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
     }
   }
 
-  def updateRetryNum(storeId: String, datasetId: DatasetId, retryNum: Int) {
+  def updateRetryInfo(storeId: String, datasetId: DatasetId, retryNum: Int, nextRetryDelaySecs: Int) {
     using(conn.prepareStatement(
       """UPDATE secondary_manifest
         |SET retry_num = ?
+        |  ,next_retry = CURRENT_TIMESTAMP + INTERVAL '? seconds'
         |WHERE store_id = ?
         |  AND dataset_system_id = ?""".stripMargin)) { stmt =>
       stmt.setInt(1, retryNum)
-      stmt.setString(2, storeId)
-      stmt.setDatasetId(3, datasetId)
+      stmt.setInt(2, nextRetryDelaySecs)
+      stmt.setString(3, storeId)
+      stmt.setDatasetId(4, datasetId)
       stmt.executeUpdate()
     }
   }

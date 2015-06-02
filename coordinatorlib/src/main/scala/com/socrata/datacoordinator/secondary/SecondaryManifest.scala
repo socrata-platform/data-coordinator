@@ -41,7 +41,7 @@ trait SecondaryManifest {
                              dataVersion: Long,
                              lifecycleStage: metadata.LifecycleStage,
                              newCookie: Option[String])
-  def updateRetryNum(storeId: String, datasetId: DatasetId, retryNum: Int)
+  def updateRetryInfo(storeId: String, datasetId: DatasetId, retryNum: Int, nextRetryDelaySecs: Int)
 }
 
 case class NamedSecondary[CT, CV](storeId: String, store: Secondary[CT, CV])
