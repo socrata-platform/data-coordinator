@@ -11,10 +11,13 @@
         </preConditions>
         <sql>
             ALTER TABLE secondary_manifest ADD next_retry TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP;
+            DROP INDEX IF EXISTS secondary_manifest_next_retry;
+            CREATE INDEX secondary_manifest_next_retry ON secondary_manifest(next_retry);
         </sql>
         <rollback>
             <sql>
                 ALTER TABLE secondary_manifest DROP COLUMN next_retry;
+                DROP INDEX IF EXISTS secondary_manifest_next_retry;
             </sql>
         </rollback>
     </changeSet>
