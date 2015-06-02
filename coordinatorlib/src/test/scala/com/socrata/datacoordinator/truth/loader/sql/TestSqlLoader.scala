@@ -18,6 +18,9 @@ import com.socrata.datacoordinator.util.collection.{MutableColumnIdMap, ColumnId
 import com.rojoma.json.v3.ast.{JString, JNumber, JValue}
 
 class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with BeforeAndAfterAll {
+
+  Class.forName("org.h2.Driver") // force driver to load
+
   val executor = java.util.concurrent.Executors.newCachedThreadPool()
 
   override def afterAll() {
