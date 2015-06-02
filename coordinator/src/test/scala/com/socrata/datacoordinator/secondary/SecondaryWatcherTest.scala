@@ -18,6 +18,9 @@ import com.socrata.datacoordinator.truth.metadata.{LifecycleStage => LS}
 import com.socrata.datacoordinator.util._
 
 class SecondaryWatcherTest extends FunSuite with MustMatchers with MockFactory {
+
+  Class.forName("org.h2.Driver") // force driver to load
+
   val ds = new JdbcDataSource
   ds.setURL("jdbc:h2:mem:")
 
