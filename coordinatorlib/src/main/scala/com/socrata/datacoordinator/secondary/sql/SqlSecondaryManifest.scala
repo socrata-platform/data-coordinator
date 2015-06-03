@@ -167,13 +167,14 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
     }
   }
 
+  // NOTE: claimed_at is updated in SecondaryWatcherClaimManager.  initially_claimed_at is not.
   def markDatasetClaimedForReplication(job: SecondaryRecord) {
-    val initClaimedAtSql = if (job.retryNum == 0) ",initially_claimed_at = CURRENT_TIMESTAMP" else ""
     using(conn.prepareStatement(
-      s"""UPDATE secondary_manifest
+      """UPDATE secondary_manifest
         |SET claimed_at = CURRENT_TIMESTAMP
+        |  ,initially_claimed_at = CURRENT_TIMESTAMP
         |  ,claimant_id = ?
-        |$initClaimedAtSql WHERE store_id = ?
+        |WHERE store_id = ?
         |  AND dataset_system_id = ?""".stripMargin)) { stmt =>
       stmt.setObject(1, job.claimantId)
       stmt.setString(2, job.storeId)
