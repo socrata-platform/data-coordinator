@@ -107,7 +107,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
         |FROM secondary_manifest
         |WHERE store_id = ?
         |  AND broken_at IS NULL
-        |  AND next_retry < now()
+        |  AND next_retry <= now()
         |  AND latest_data_version > latest_secondary_data_version
         |  AND (claimant_id is NULL
         |    OR claimed_at < (CURRENT_TIMESTAMP - CAST (? AS INTERVAL)))
