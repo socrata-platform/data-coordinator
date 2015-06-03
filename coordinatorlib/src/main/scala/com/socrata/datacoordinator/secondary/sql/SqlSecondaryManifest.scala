@@ -95,16 +95,19 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
     }
   }
 
-  def claimDatasetNeedingReplication(storeId: String, claimantId: UUID, claimTimeout: FiniteDuration):Option[SecondaryRecord] = {
+  def claimDatasetNeedingReplication(storeId: String, claimantId: UUID, claimTimeout: FiniteDuration):
+      Option[SecondaryRecord] = {
     val job = using(conn.prepareStatement(
       """SELECT dataset_system_id
         |  ,latest_secondary_data_version
         |  ,latest_secondary_lifecycle_stage
         |  ,latest_data_version
+        |  ,retry_num
         |  ,cookie
         |FROM secondary_manifest
         |WHERE store_id = ?
         |  AND broken_at IS NULL
+        |  AND next_retry < now()
         |  AND latest_data_version > latest_secondary_data_version
         |  AND (claimant_id is NULL
         |    OR claimed_at < (CURRENT_TIMESTAMP - CAST (? AS INTERVAL)))
@@ -122,6 +125,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
             startingDataVersion = rs.getLong("latest_secondary_data_version") + 1,
             startingLifecycleStage = rs.getLifecycleStage("latest_secondary_lifecycle_stage"),
             endingDataVersion = rs.getLong("latest_data_version"),
+            retryNum = rs.getInt("retry_num"),
             initialCookie = Option(rs.getString("cookie")))
           markDatasetClaimedForReplication(j)
           Some(j)
@@ -139,6 +143,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
         |  ,latest_secondary_data_version
         |  ,latest_secondary_lifecycle_stage
         |  ,latest_data_version
+        |  ,retry_num
         |  ,cookie
         |FROM secondary_manifest
         |WHERE claimant_id = ?
@@ -154,6 +159,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
             startingDataVersion = rs.getLong("latest_secondary_data_version") + 1,
             startingLifecycleStage = rs.getLifecycleStage("latest_secondary_lifecycle_stage"),
             endingDataVersion = rs.getLong("latest_data_version"),
+            retryNum = rs.getInt("retry_num"),
             initialCookie = Option(rs.getString("cookie")))
           releaseClaimedDataset(j)
         }
@@ -161,10 +167,12 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
     }
   }
 
+  // NOTE: claimed_at is updated in SecondaryWatcherClaimManager.  initially_claimed_at is not.
   def markDatasetClaimedForReplication(job: SecondaryRecord) {
     using(conn.prepareStatement(
       """UPDATE secondary_manifest
         |SET claimed_at = CURRENT_TIMESTAMP
+        |  ,initially_claimed_at = CURRENT_TIMESTAMP
         |  ,claimant_id = ?
         |WHERE store_id = ?
         |  AND dataset_system_id = ?""".stripMargin)) { stmt =>
@@ -203,7 +211,12 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
     }
   }
 
-  def completedReplicationTo(storeId: String, claimantId: UUID, datasetId: DatasetId, dataVersion: Long, lifecycleStage: metadata.LifecycleStage, cookie: Option[String]) {
+  def completedReplicationTo(storeId: String,
+                             claimantId: UUID,
+                             datasetId: DatasetId,
+                             dataVersion: Long,
+                             lifecycleStage: metadata.LifecycleStage,
+                             cookie: Option[String]) {
     using(conn.prepareStatement(
       """UPDATE secondary_manifest
         |SET latest_secondary_data_version = ?
@@ -222,6 +235,21 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
       stmt.setObject(4, claimantId)
       stmt.setString(5, storeId)
       stmt.setDatasetId(6, datasetId)
+      stmt.executeUpdate()
+    }
+  }
+
+  def updateRetryInfo(storeId: String, datasetId: DatasetId, retryNum: Int, nextRetryDelaySecs: Int) {
+    using(conn.prepareStatement(
+      """UPDATE secondary_manifest
+        |SET retry_num = ?
+        |  ,next_retry = CURRENT_TIMESTAMP + INTERVAL '? seconds'
+        |WHERE store_id = ?
+        |  AND dataset_system_id = ?""".stripMargin)) { stmt =>
+      stmt.setInt(1, retryNum)
+      stmt.setInt(2, nextRetryDelaySecs)
+      stmt.setString(3, storeId)
+      stmt.setDatasetId(4, datasetId)
       stmt.executeUpdate()
     }
   }

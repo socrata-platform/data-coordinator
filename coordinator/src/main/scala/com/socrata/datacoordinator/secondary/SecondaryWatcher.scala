@@ -26,17 +26,23 @@ import sun.misc.{Signal, SignalHandler}
 class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseType[CT, CV]],
                                claimantId: UUID,
                                claimTimeout: FiniteDuration,
+                               backoffInterval: FiniteDuration,
+                               maxRetries: Int,
                                timingReport: TimingReport) {
-  import com.socrata.datacoordinator.secondary.SecondaryWatcher.log
+  val log = LoggerFactory.getLogger(classOf[SecondaryWatcher[_,_]])
   private val rand = new Random()
   // splay the sleep time +/- 5s to prevent watchers from getting in lock step
   private val nextRuntimeSplay = (rand.nextInt(10000) - 5000).toLong
+
+  // allow for overriding for easy testing
+  protected def manifest(u: Universe[CT, CV] with SecondaryManifestProvider with PlaybackToSecondaryProvider):
+      SecondaryManifest = u.secondaryManifest
 
   def run(u: Universe[CT, CV] with SecondaryManifestProvider with PlaybackToSecondaryProvider,
           secondary: NamedSecondary[CT, CV]): Boolean = {
     import u._
 
-    val foundWorkToDo = for (job <- secondaryManifest.claimDatasetNeedingReplication(
+    val foundWorkToDo = for (job <- manifest(u).claimDatasetNeedingReplication(
                                       secondary.storeId, claimantId, claimTimeout)) yield {
       timingReport(
         "playback-to-secondary",
@@ -47,17 +53,26 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
         "endingDataVersion" -> job.endingDataVersion
       ) {
         log.info(">> Syncing {} into {}", job.datasetId, secondary.storeId)
+        if (job.retryNum > 0) log.info("Retry #{} of {}", job.retryNum, maxRetries)
         try {
           playbackToSecondary(secondary, job)
           log.info("<< Sync done for {} into {}", job.datasetId, secondary.storeId)
         } catch {
           case e: Exception =>
-            log.error("Unexpected exception while updating dataset {} in secondary {}; marking it as broken",
-                      job.datasetId.asInstanceOf[AnyRef], secondary.storeId, e)
-            secondaryManifest.markSecondaryDatasetBroken(job)
+            if (job.retryNum < maxRetries) {
+              val retryBackoff = backoffInterval.toSeconds * Math.pow(2, job.retryNum)
+              log.warn("Unexpected exception while updating dataset {} in secondary {}, retrying in {}...",
+                       job.datasetId.asInstanceOf[AnyRef], secondary.storeId, retryBackoff.toString, e)
+              manifest(u).updateRetryInfo(secondary.storeId, job.datasetId, job.retryNum + 1,
+                                             retryBackoff.toInt)
+            } else {
+              log.error("Unexpected exception while updating dataset {} in secondary {}; marking it as broken",
+                        job.datasetId.asInstanceOf[AnyRef], secondary.storeId, e)
+              manifest(u).markSecondaryDatasetBroken(job)
+            }
         } finally {
           try {
-            secondaryManifest.releaseClaimedDataset(job)
+            manifest(u).releaseClaimedDataset(job)
           } catch {
             case e: Exception =>
               log.error("Unexpected exception while releasing claim on dataset {} in secondary {}",
@@ -223,7 +238,8 @@ object SecondaryWatcher extends App { self =>
       NullCache
     )
 
-    val w = new SecondaryWatcher(common.universe, config.watcherId, config.claimTimeout, common.timingReport)
+    val w = new SecondaryWatcher(common.universe, config.watcherId, config.claimTimeout,
+                                 config.backoffInterval, config.maxRetries, common.timingReport)
     val cm = new SecondaryWatcherClaimManager(dsInfo, config.watcherId, config.claimTimeout)
 
     val SIGTERM = new Signal("TERM")

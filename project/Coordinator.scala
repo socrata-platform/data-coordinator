@@ -30,7 +30,9 @@ object Coordinator {
         "net.sf.opencsv"  % "opencsv"       % "2.3",
         "org.clojure"     % "clojure"       % "1.5.1",
 
-        TestDeps.scalaCheck % "test"
+        TestDeps.scalaCheck % "test",
+        TestDeps.scalaMock  % "test",
+        TestDeps.h2         % "test"
       )
     },
     mainClass in assembly := Some("com.socrata.datacoordinator.Launch"),
