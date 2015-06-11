@@ -16,6 +16,36 @@ copied to `coordinator-assembly.jar` in this directory before building.
             numReplicas = 2
             instances = [pg1, pg2, pg3]
           }
+          spandex {
+            numReplicas = 1
+            instances = [spandex]
+          }
+        }
+        instances {
+          pg1 {
+            secondaryType = pg
+            # stub config unused
+            numWorkers = 0
+            config = { }
+          },
+          pg2 {
+            secondaryType = pg
+            # stub config unused
+            numWorkers = 0
+            config = { }
+          },
+          pg3 {
+            secondaryType = pg
+            # stub config unused
+            numWorkers = 0
+            config = { }
+          },
+          spandex {
+            secondaryType = spandex
+            # stub config unused
+            numWorkers = 0
+            config = { }
+          }
         }
     ```
 
