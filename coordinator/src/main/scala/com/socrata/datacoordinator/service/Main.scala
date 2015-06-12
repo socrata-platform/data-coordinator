@@ -28,6 +28,14 @@ import scala.util.Random
 class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Main])
 
+  def secondaryInstances: Set[String] =
+    for {
+      u <- common.universe
+      ss <- u.secondaryConfig.list
+    } yield {
+      ss.storeId
+    }
+
   def ensureInSecondary(storeId: String, datasetId: DatasetId): Unit =
     for(u <- common.universe) {
       try {
@@ -187,8 +195,6 @@ object Main {
 
     PropertyConfigurator.configure(Propertizer("log4j", serviceConfig.logProperties))
 
-    val secondaries: Set[String] = serviceConfig.secondary.groups.flatMap(_._2.instances).toSet
-
     for(dsInfo <- DataSourceFromConfig(serviceConfig.dataSource)) {
       val executorService = Executors.newCachedThreadPool()
       try {
@@ -251,7 +257,7 @@ object Main {
         }
 
         val serv = new Service(serviceConfig, operations.processMutation, operations.processCreation, getSchema, getRollups,
-          operations.exporter, secondaries, operations.datasetsInStore, operations.versionInStore,
+          operations.exporter, operations.secondaryInstances, operations.datasetsInStore, operations.versionInStore,
           operations.ensureInSecondary, operations.ensureInSecondaryGroup, operations.secondariesOfDataset, operations.listDatasets, operations.deleteDataset,
           serviceConfig.commandReadLimit, common.internalNameFromDatasetId, common.datasetIdFromInternalName, operations.makeReportTemporaryFile)
 

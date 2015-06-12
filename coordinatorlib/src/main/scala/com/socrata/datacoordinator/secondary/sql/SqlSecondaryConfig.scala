@@ -1,14 +1,36 @@
 package com.socrata.datacoordinator.secondary
 package sql
 
-import java.sql.{Timestamp, Connection}
+import java.sql.{Connection, ResultSet, Timestamp}
 
-import org.joda.time.DateTime
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.util.TimingReport
+import org.joda.time.DateTime
 
 class SqlSecondaryConfig(conn: Connection, timingReport: TimingReport) extends SecondaryConfig {
   private def t = timingReport
+
+  private def secondaryConfigInfo(rs: ResultSet): SecondaryConfigInfo = {
+    SecondaryConfigInfo(rs.getString("store_id"),
+      new DateTime(rs.getTimestamp("next_run_time").getTime),
+      rs.getInt("interval_in_seconds"))
+  }
+
+  def list: Set[SecondaryConfigInfo] = {
+    @annotation.tailrec
+    def accumulate(acc: Set[SecondaryConfigInfo], rs: ResultSet): Set[SecondaryConfigInfo] =
+      if (rs.next()) accumulate(acc + secondaryConfigInfo(rs), rs) else acc
+
+    val sql =
+      """SELECT store_id, next_run_time, interval_in_seconds
+        |  FROM secondary_stores_config
+      """.stripMargin
+
+    for {
+      stmt <- managed(conn.prepareStatement(sql))
+      rs <- managed(stmt.executeQuery())
+    } yield accumulate(Set.empty, rs)
+  }
 
   def lookup(storeId: String): Option[SecondaryConfigInfo] = {
     val sql = """
@@ -20,16 +42,7 @@ class SqlSecondaryConfig(conn: Connection, timingReport: TimingReport) extends S
       stmt <- managed(conn.prepareStatement(sql))
       _ <- unmanaged(stmt.setString(1, storeId))
       rs <- managed(stmt.executeQuery())
-    } yield {
-      if (rs.next()) {
-        Some(SecondaryConfigInfo(
-          rs.getString("store_id"),
-          new DateTime(rs.getTimestamp("next_run_time").getTime),
-          rs.getInt("interval_in_seconds")))
-      } else {
-        None
-      }
-    }
+    } yield if (rs.next()) Some(secondaryConfigInfo(rs)) else None
   }
 
   def create(secondaryInfo: SecondaryConfigInfo): SecondaryConfigInfo =
