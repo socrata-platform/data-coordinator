@@ -16,6 +16,10 @@ com.socrata.coordinator.service {
 
   secondary {
     {{ SECONDARY_CONFIG }}
+
+    instances {
+      # this section is just so the config parsing doesn't blow up
+    }
   }
 
   metrics {
