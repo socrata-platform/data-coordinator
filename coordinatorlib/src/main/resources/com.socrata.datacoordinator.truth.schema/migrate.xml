@@ -16,6 +16,7 @@
     <include file="com.socrata.datacoordinator.truth.schema/20150528-add-column-retry-num.xml"/>
     <include file="com.socrata.datacoordinator.truth.schema/20150601-add-column-next-retry.xml"/>
     <include file="com.socrata.datacoordinator.truth.schema/20150601-add-column-initially-claimed-at.xml"/>
+    <include file="com.socrata.datacoordinator.truth.schema/20150615-add-table-secondary-groups-config.xml"/>
 
     <!-- run-on-change migrations: recreation of triggers typically comes after other changes that they may depend on -->
     <include file="com.socrata.datacoordinator.truth.schema/triggers/update-dataset-log-trigger.xml"/>
