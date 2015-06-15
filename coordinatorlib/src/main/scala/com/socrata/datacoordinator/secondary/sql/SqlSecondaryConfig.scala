@@ -10,16 +10,10 @@ import org.joda.time.DateTime
 class SqlSecondaryConfig(conn: Connection, timingReport: TimingReport) extends SecondaryConfig {
   private def t = timingReport
 
-  private def secondaryConfigInfo(rs: ResultSet): SecondaryConfigInfo = {
-    SecondaryConfigInfo(rs.getString("store_id"),
-      new DateTime(rs.getTimestamp("next_run_time").getTime),
-      rs.getInt("interval_in_seconds"))
-  }
-
   def list: Set[SecondaryConfigInfo] = {
     @annotation.tailrec
     def accumulate(acc: Set[SecondaryConfigInfo], rs: ResultSet): Set[SecondaryConfigInfo] =
-      if (rs.next()) accumulate(acc + secondaryConfigInfo(rs), rs) else acc
+      if (rs.next()) accumulate(acc + SecondaryConfigInfo(rs), rs) else acc
 
     val sql =
       """SELECT store_id, next_run_time, interval_in_seconds
@@ -42,7 +36,7 @@ class SqlSecondaryConfig(conn: Connection, timingReport: TimingReport) extends S
       stmt <- managed(conn.prepareStatement(sql))
       _ <- unmanaged(stmt.setString(1, storeId))
       rs <- managed(stmt.executeQuery())
-    } yield if (rs.next()) Some(secondaryConfigInfo(rs)) else None
+    } yield if (rs.next()) Some(SecondaryConfigInfo(rs)) else None
   }
 
   def create(secondaryInfo: SecondaryConfigInfo): SecondaryConfigInfo =
