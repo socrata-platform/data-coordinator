@@ -7,13 +7,29 @@ import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.util.TimingReport
 import org.joda.time.DateTime
 
-class SqlSecondaryConfig(conn: Connection, timingReport: TimingReport) extends SecondaryConfig {
+class SqlSecondaryInfo(conn: Connection, timingReport: TimingReport) extends SecondaryInfo {
   private def t = timingReport
 
-  def list: Set[SecondaryConfigInfo] = {
+  def groups: Set[SecondaryGroupInfo] = {
     @annotation.tailrec
-    def accumulate(acc: Set[SecondaryConfigInfo], rs: ResultSet): Set[SecondaryConfigInfo] =
-      if (rs.next()) accumulate(acc + SecondaryConfigInfo(rs), rs) else acc
+    def accumulate(acc: Set[SecondaryGroupInfo], rs: ResultSet): Set[SecondaryGroupInfo] =
+      if (rs.next()) accumulate(acc + SecondaryGroupInfo(rs), rs) else acc
+
+    val sql =
+      """SELECT group_id,
+        |  FROM secondary_groups_config
+      """.stripMargin
+
+    for {
+      stmt <- managed(conn.prepareStatement(sql))
+      rs <- managed(stmt.executeQuery())
+    } yield accumulate(Set.empty, rs)
+  }
+
+  def instances: Set[SecondaryInstanceInfo] = {
+    @annotation.tailrec
+    def accumulate(acc: Set[SecondaryInstanceInfo], rs: ResultSet): Set[SecondaryInstanceInfo] =
+      if (rs.next()) accumulate(acc + SecondaryInstanceInfo(rs), rs) else acc
 
     val sql =
       """SELECT store_id, next_run_time, interval_in_seconds
@@ -26,7 +42,7 @@ class SqlSecondaryConfig(conn: Connection, timingReport: TimingReport) extends S
     } yield accumulate(Set.empty, rs)
   }
 
-  def lookup(storeId: String): Option[SecondaryConfigInfo] = {
+  def instance(storeId: String): Option[SecondaryInstanceInfo] = {
     val sql = """
       SELECT store_id, next_run_time, interval_in_seconds
         FROM secondary_stores_config
@@ -36,10 +52,10 @@ class SqlSecondaryConfig(conn: Connection, timingReport: TimingReport) extends S
       stmt <- managed(conn.prepareStatement(sql))
       _ <- unmanaged(stmt.setString(1, storeId))
       rs <- managed(stmt.executeQuery())
-    } yield if (rs.next()) Some(SecondaryConfigInfo(rs)) else None
+    } yield if (rs.next()) Some(SecondaryInstanceInfo(rs)) else None
   }
 
-  def create(secondaryInfo: SecondaryConfigInfo): SecondaryConfigInfo =
+  def create(secondaryInfo: SecondaryInstanceInfo): SecondaryInstanceInfo =
     using(conn.prepareStatement(
       """INSERT INTO secondary_stores_config (store_id
         |  ,next_run_time

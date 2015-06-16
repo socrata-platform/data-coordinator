@@ -1,10 +1,11 @@
 package com.socrata.datacoordinator.service
 
 import com.socrata.datacoordinator.id.DatasetId
+import com.socrata.datacoordinator.secondary.SecondaryGroupInfo
 import org.scalatest.{MustMatchers, FunSuite}
 
 class MainTest extends FunSuite with MustMatchers {
-  private val sg1 = SecondaryGroupConfig(2, Set("pg1", "pg2", "pg3"))
+  private val sg1 = SecondaryGroupInfo("pg", default = true, Set("pg1", "pg2", "pg3"), 2)
   private val ds = new DatasetId(1234)
 
   test("do nothing if already have sufficient") {
@@ -24,6 +25,5 @@ class MainTest extends FunSuite with MustMatchers {
     newSecondaries must have size 2
     newSecondaries.intersect(sg1.instances) must have size 2
   }
-
 
 }

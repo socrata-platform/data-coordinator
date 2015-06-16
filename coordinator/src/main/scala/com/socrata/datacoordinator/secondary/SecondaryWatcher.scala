@@ -3,14 +3,11 @@ package com.socrata.datacoordinator.secondary
 import java.util.UUID
 import java.util.concurrent.{CountDownLatch, Executors, TimeUnit}
 
-import scala.concurrent.duration._
-import scala.util.Random
-
 import com.rojoma.simplearm.Managed
 import com.rojoma.simplearm.util._
-import com.socrata.datacoordinator.common.{DataSourceFromConfig, SoQLCommon}
 import com.socrata.datacoordinator.common.DataSourceFromConfig.DSInfo
-import com.socrata.datacoordinator.secondary.sql.SqlSecondaryConfig
+import com.socrata.datacoordinator.common.{DataSourceFromConfig, SoQLCommon}
+import com.socrata.datacoordinator.secondary.sql.SqlSecondaryInfo
 import com.socrata.datacoordinator.truth.universe._
 import com.socrata.datacoordinator.util._
 import com.socrata.http.server.util.RequestId
@@ -22,6 +19,9 @@ import org.apache.log4j.PropertyConfigurator
 import org.joda.time.{DateTime, Seconds}
 import org.slf4j.LoggerFactory
 import sun.misc.{Signal, SignalHandler}
+
+import scala.concurrent.duration._
+import scala.util.Random
 
 class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseType[CT, CV]],
                                claimantId: UUID,
@@ -108,43 +108,43 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
    * Cleanup any orphaned jobs created by this watcher exiting uncleanly.  Needs to be run
    * without any workers running (ie. at startup).
    */
-  private def cleanOrphanedJobs(secondaryConfigInfo: SecondaryConfigInfo): Unit = {
+  private def cleanOrphanedJobs(instance: SecondaryInstanceInfo): Unit = {
     // At lean up any orphaned jobs which may have been created by this watcher
     for { u <- universe } yield {
-      u.secondaryManifest.cleanOrphanedClaimedDatasets(secondaryConfigInfo.storeId, claimantId)
+      u.secondaryManifest.cleanOrphanedClaimedDatasets(instance.storeId, claimantId)
     }
   }
 
-  def mainloop(secondaryConfigInfo: SecondaryConfigInfo, secondary: Secondary[CT, CV], finished: CountDownLatch) {
+  def mainloop(instance: SecondaryInstanceInfo, secondary: Secondary[CT, CV], finished: CountDownLatch) {
     var lastWrote = new DateTime(0L)
-    var nextRunTime = bestNextRunTime(secondaryConfigInfo.storeId,
-      secondaryConfigInfo.nextRunTime,
-      secondaryConfigInfo.runIntervalSeconds)
+    var nextRunTime = bestNextRunTime(instance.storeId,
+      instance.nextRunTime,
+      instance.runIntervalSeconds)
 
-    var done = maybeSleep(secondaryConfigInfo.storeId, nextRunTime, finished)
+    var done = maybeSleep(instance.storeId, nextRunTime, finished)
     while (!done) {
       try {
         for {u <- universe} yield {
           import u._
 
-          while (run(u, new NamedSecondary(secondaryConfigInfo.storeId, secondary)) && finished.getCount != 0) {
+          while (run(u, new NamedSecondary(instance.storeId, secondary)) && finished.getCount != 0) {
             // loop until we either have no more work or we are told to exit
           }
 
-          nextRunTime = bestNextRunTime(secondaryConfigInfo.storeId,
-            nextRunTime.plus(Seconds.seconds(secondaryConfigInfo.runIntervalSeconds)),
-            secondaryConfigInfo.runIntervalSeconds)
+          nextRunTime = bestNextRunTime(instance.storeId,
+            nextRunTime.plus(Seconds.seconds(instance.runIntervalSeconds)),
+            instance.runIntervalSeconds)
 
           // we only actually write at most once every 15 minutes...
           val now = DateTime.now()
           if (now.getMillis - lastWrote.getMillis >= 15 * 60 * 1000) {
             log.info("Writing new next-runtime: {}", nextRunTime)
-            secondaryConfig.updateNextRunTime(secondaryConfigInfo.storeId, nextRunTime)
+            secondaryInfo.updateNextRunTime(instance.storeId, nextRunTime)
           }
           lastWrote = now
         }
 
-        done = maybeSleep(secondaryConfigInfo.storeId, nextRunTime, finished)
+        done = maybeSleep(instance.storeId, nextRunTime, finished)
       } catch {
         case e: Exception =>
           log.error("Unexpected exception while updating claimedAt time for secondary sync jobs claimed by watcherId " + claimantId.toString(), e)
@@ -198,7 +198,7 @@ class SecondaryWatcherClaimManager(dsInfo: DSInfo, claimantId: UUID, claimTimeou
 object SecondaryWatcher extends App { self =>
   type UniverseType[CT, CV] = Universe[CT, CV] with SecondaryManifestProvider with
                                                     PlaybackToSecondaryProvider with
-                                                    SecondaryConfigProvider
+                                                    SecondaryInfoProvider
 
   val rootConfig = ConfigFactory.load()
   val config = new SecondaryWatcherConfig(rootConfig, "com.socrata.coordinator.secondary-watcher")
@@ -273,12 +273,11 @@ object SecondaryWatcher extends App { self =>
         }
       }
 
+      val truthSecondaries = for { u <- common.universe } yield u.secondaryInfo
       val workerThreads =
-        using(dsInfo.dataSource.getConnection()) { conn =>
-          val cfg = new SqlSecondaryConfig(conn, common.timingReport)
-
-          secondaries.iterator.flatMap { case (name, secondary) =>
-            cfg.lookup(name).map { info =>
+        secondaries.iterator.flatMap {
+          case (name, secondary) =>
+            truthSecondaries.instance(name).map { info =>
               w.cleanOrphanedJobs(info)
 
               1 to config.secondaryConfig.instances(name).numWorkers map { n =>
@@ -295,7 +294,6 @@ object SecondaryWatcher extends App { self =>
               None
             }
           }.toList.flatten
-        }
 
       claimTimeManagerThread.start()
       workerThreads.foreach(_.start())

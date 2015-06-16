@@ -7,6 +7,7 @@ import com.rojoma.json.v3.io._
 import com.rojoma.json.v3.util.{JsonArrayIterator, AutomaticJsonCodecBuilder, JsonKey, JsonUtil}
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.id.{RollupName, UserColumnId, DatasetId}
+import com.socrata.datacoordinator.secondary.SecondaryInfo
 import com.socrata.datacoordinator.truth._
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.metadata.{RollupInfo, SchemaField, Schema}
@@ -59,8 +60,7 @@ class Service(serviceConfig: ServiceConfig,
               datasetContents: (DatasetId, Option[String], CopySelector, Option[UserColumnIdSet],
                                 Option[Long], Option[Long], Precondition, Option[DateTime], Boolean) =>
                                datasetContentsFunc => Exporter.Result[Unit],
-
-              secondaries: Set[String],
+              secondaryInfo: SecondaryInfo,
               datasetsInStore: (String) => Map[DatasetId, Long],
               versionInStore: (String, DatasetId) => Option[Long],
               ensureInSecondary: (String, DatasetId) => Unit,
@@ -105,14 +105,14 @@ class Service(serviceConfig: ServiceConfig,
     override val get = doGetSecondaries _
 
     def doGetSecondaries(req: HttpRequest): HttpResponse =
-      OK ~> Json(secondaries.toSeq)
+      OK ~> Json(secondaryInfo.instances.map(_.storeId).toSeq)
   }
 
   case class SecondaryManifestResource(storeId: String) extends SodaResource {
     override def get = doGetSecondaryManifest
 
     def doGetSecondaryManifest(req: HttpRequest): HttpResponse = {
-      if(!secondaries(storeId)) return NotFound
+      if(secondaryInfo.instance(storeId).isEmpty) return NotFound
       val ds = datasetsInStore(storeId)
       val dsConverted = ds.foldLeft(Map.empty[String, Long]) { (acc, kv) =>
         acc + (formatDatasetId(kv._1) -> kv._2)
@@ -126,7 +126,7 @@ class Service(serviceConfig: ServiceConfig,
     override def post = doUpdateVersionInSecondary
 
     def doGetDataVersionInSecondary(req: HttpRequest): HttpResponse = {
-      if(!secondaries(storeId)) return NotFound
+      if(secondaryInfo.instance(storeId).isEmpty) return NotFound
       versionInStore(storeId, datasetId) match {
         case Some(v) =>
           OK ~> Json(Map("version" -> v))
@@ -136,12 +136,11 @@ class Service(serviceConfig: ServiceConfig,
     }
 
     def doUpdateVersionInSecondary(req: HttpRequest): HttpResponse = {
-      val defaultSecondaryGroups: Set[String] = serviceConfig.secondary.defaultGroups
       val groupRe = "_(.*)_".r
       storeId match {
-        case "_DEFAULT_" => defaultSecondaryGroups.foreach(ensureInSecondaryGroup(_, datasetId))
-        case groupRe(g) if serviceConfig.secondary.groups.contains(g) => ensureInSecondaryGroup(g, datasetId)
-        case secondary if secondaries(storeId) => ensureInSecondary(secondary, datasetId)
+        case "_DEFAULT_" => secondaryInfo.defaultGroups.foreach(g => ensureInSecondaryGroup(g.groupId, datasetId))
+        case groupRe(g) if secondaryInfo.groups.exists(_.groupId == g) => ensureInSecondaryGroup(g, datasetId)
+        case secondary if secondaryInfo.instance(storeId).isDefined => ensureInSecondary(secondary, datasetId)
         case _ => return NotFound
       }
       OK
