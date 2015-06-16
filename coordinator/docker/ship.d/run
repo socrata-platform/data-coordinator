@@ -3,6 +3,12 @@ set -ev
 
 /bin/env_parse ${SERVER_CONFIG}.j2
 
+su socrata -c '/usr/bin/java \
+    -Dconfig.file=${SERVER_CONFIG} \
+    -jar $SERVER_ARTIFACT \
+    com.socrata.datacoordinator.primary.MigrateSchema migrate \
+    '
+
 exec su socrata -c '/usr/bin/java \
     -Xmx${JAVA_XMX} \
     -Xms${JAVA_XMX} \
