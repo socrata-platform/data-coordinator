@@ -247,10 +247,8 @@ object Main {
           }
         }
 
-        def getSecondaryInfo = for { u <- common.universe } yield u.secondaryInfo
-
         val serv = new Service(serviceConfig, operations.processMutation, operations.processCreation, getSchema, getRollups,
-          operations.exporter, getSecondaryInfo, operations.datasetsInStore, operations.versionInStore,
+          operations.exporter, common, operations.datasetsInStore, operations.versionInStore,
           operations.ensureInSecondary, operations.ensureInSecondaryGroup, operations.secondariesOfDataset, operations.listDatasets, operations.deleteDataset,
           serviceConfig.commandReadLimit, common.internalNameFromDatasetId, common.datasetIdFromInternalName, operations.makeReportTemporaryFile)
 
