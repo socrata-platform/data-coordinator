@@ -12,17 +12,17 @@ object SecondaryInstanceInfo {
       rs.getInt("interval_in_seconds"))
 }
 
-case class SecondaryGroupInfo(groupId: String, default: Boolean, instances: Set[String], numReplicas: Int)
+case class SecondaryGroupInfo(groupId: String, isDefault: Boolean, instances: Set[String], numReplicas: Int)
 object SecondaryGroupInfo {
   def apply(rs: ResultSet): SecondaryGroupInfo =
     SecondaryGroupInfo(rs.getString("id"),
-      rs.getBoolean("default"),
+      rs.getBoolean("is_default"),
       rs.getString("instances").split("[ ,;]").toSet.map((s: String) => s.trim),
       rs.getInt("num_replicas"))
 }
 
 trait SecondaryInfo {
-  def defaultGroups: Set[SecondaryGroupInfo] = groups.filter(_.default)
+  def defaultGroups: Set[SecondaryGroupInfo] = groups.filter(_.isDefault)
   def groups: Set[SecondaryGroupInfo]
   def instances: Set[SecondaryInstanceInfo]
   def instance(storeId: String): Option[SecondaryInstanceInfo]

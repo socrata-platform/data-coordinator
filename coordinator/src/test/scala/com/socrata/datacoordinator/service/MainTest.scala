@@ -5,7 +5,7 @@ import com.socrata.datacoordinator.secondary.SecondaryGroupInfo
 import org.scalatest.{MustMatchers, FunSuite}
 
 class MainTest extends FunSuite with MustMatchers {
-  private val sg1 = SecondaryGroupInfo("pg", default = true, Set("pg1", "pg2", "pg3"), 2)
+  private val sg1 = SecondaryGroupInfo("pg", isDefault = true, Set("pg1", "pg2", "pg3"), 2)
   private val ds = new DatasetId(1234)
 
   test("do nothing if already have sufficient") {

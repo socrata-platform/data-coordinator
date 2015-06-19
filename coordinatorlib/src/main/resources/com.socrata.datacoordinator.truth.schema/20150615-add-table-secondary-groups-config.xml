@@ -10,10 +10,10 @@
             </not>
         </preConditions>
         <createTable tableName="secondary_groups_config">
-            <column name="id" type="VARCHAR(40)">
+            <column name="group_id" type="VARCHAR(40)">
                 <constraints nullable="false" primaryKey="true" unique="true"/>
             </column>
-            <column name="default" type="BOOLEAN" defaultValue="false"/>
+            <column name="is_default" type="BOOLEAN" defaultValue="false"/>
             <column name="instances" type="VARCHAR(1024)" defaultValue="">
                 <constraints nullable="false"/>
             </column>

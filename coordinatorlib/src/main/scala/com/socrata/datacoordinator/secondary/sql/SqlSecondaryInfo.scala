@@ -16,7 +16,7 @@ class SqlSecondaryInfo(conn: Connection, timingReport: TimingReport) extends Sec
       if (rs.next()) accumulate(acc + SecondaryGroupInfo(rs), rs) else acc
 
     val sql =
-      """SELECT group_id,
+      """SELECT group_id, is_default, instances, num_replicas
         |  FROM secondary_groups_config
       """.stripMargin
 

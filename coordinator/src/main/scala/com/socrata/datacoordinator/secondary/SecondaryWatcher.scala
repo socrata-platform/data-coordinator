@@ -273,11 +273,10 @@ object SecondaryWatcher extends App { self =>
         }
       }
 
-      val truthSecondaries = for { u <- common.universe } yield u.secondaryInfo
-      val workerThreads =
+      val workerThreads = for { u <- common.universe } yield {
         secondaries.iterator.flatMap {
           case (name, secondary) =>
-            truthSecondaries.instance(name).map { info =>
+            u.secondaryInfo.instance(name).map { info =>
               w.cleanOrphanedJobs(info)
 
               1 to config.secondaryConfig.instances(name).numWorkers map { n =>
@@ -293,7 +292,8 @@ object SecondaryWatcher extends App { self =>
               log.warn("Secondary {} is defined, but there is no record in the secondary config table", name)
               None
             }
-          }.toList.flatten
+        }.toList.flatten
+      }
 
       claimTimeManagerThread.start()
       workerThreads.foreach(_.start())
