@@ -137,12 +137,14 @@ class Service(serviceConfig: ServiceConfig,
 
     def doUpdateVersionInSecondary(req: HttpRequest): HttpResponse = {
       val groupRe = "_(.*)_".r
-      for { u <- common.universe } yield { storeId match {
-        case "_DEFAULT_" => u.secondaryInfo.defaultGroups.foreach(g => ensureInSecondaryGroup(g.groupId, datasetId))
-        case groupRe(g) if u.secondaryInfo.groups.exists(_.groupId == g) => ensureInSecondaryGroup(g, datasetId)
-        case secondary if u.secondaryInfo.instance(storeId).isDefined => ensureInSecondary(secondary, datasetId)
-        case _ => return NotFound
-      }}
+      for {u <- common.universe} yield {
+        storeId match {
+          case "_DEFAULT_" => u.secondaryInfo.defaultGroups.foreach(g => ensureInSecondaryGroup(g.groupId, datasetId))
+          case groupRe(g) if u.secondaryInfo.groups.exists(_.groupId == g) => ensureInSecondaryGroup(g, datasetId)
+          case secondary if u.secondaryInfo.instance(storeId).isDefined => ensureInSecondary(secondary, datasetId)
+          case _ => return NotFound
+        }
+      }
       OK
     }
   }

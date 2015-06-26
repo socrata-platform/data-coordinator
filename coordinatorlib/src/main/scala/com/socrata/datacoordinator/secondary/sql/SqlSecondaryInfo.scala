@@ -43,10 +43,11 @@ class SqlSecondaryInfo(conn: Connection, timingReport: TimingReport) extends Sec
   }
 
   def instance(storeId: String): Option[SecondaryInstanceInfo] = {
-    val sql = """
-      SELECT store_id, next_run_time, interval_in_seconds
-        FROM secondary_stores_config
-       WHERE store_id = ?""".stripMargin
+    val sql =
+      """SELECT store_id, next_run_time, interval_in_seconds
+        |  FROM secondary_stores_config
+        | WHERE store_id = ?
+      """.stripMargin
 
     for {
       stmt <- managed(conn.prepareStatement(sql))
@@ -60,7 +61,8 @@ class SqlSecondaryInfo(conn: Connection, timingReport: TimingReport) extends Sec
       """INSERT INTO secondary_stores_config (store_id
         |  ,next_run_time
         |  ,interval_in_seconds
-        |) VALUES (?, ?, ?)""".stripMargin)) { stmt =>
+        |) VALUES (?, ?, ?)
+      """.stripMargin)) { stmt =>
       stmt.setString(1, secondaryInfo.storeId)
       stmt.setTimestamp(2, new Timestamp(secondaryInfo.nextRunTime.getMillis))
       stmt.setInt(3, secondaryInfo.runIntervalSeconds)
@@ -71,8 +73,9 @@ class SqlSecondaryInfo(conn: Connection, timingReport: TimingReport) extends Sec
   def updateNextRunTime(storeId: String, newNextRunTime: DateTime) {
     using(conn.prepareStatement(
       """UPDATE secondary_stores_config
-        |SET next_run_time = ?
-        |WHERE store_id = ?""".stripMargin)) { stmt =>
+        |   SET next_run_time = ?
+        | WHERE store_id = ?
+      """.stripMargin)) { stmt =>
       stmt.setTimestamp(1, new Timestamp(newNextRunTime.getMillis))
       stmt.setString(2, storeId)
       t("update-next-runtime", "store-id" -> storeId)(stmt.execute())

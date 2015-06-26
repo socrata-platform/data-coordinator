@@ -28,7 +28,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Main])
 
   def ensureInSecondary(storeId: String, datasetId: DatasetId): Unit =
-    for { u <- common.universe } {
+    for(u <- common.universe) {
       try {
         u.datasetMapWriter.datasetInfo(datasetId, serviceConfig.writeLockTimeout) match {
           case Some(_) =>
@@ -43,7 +43,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
     }
 
   def ensureInSecondaryGroup(secondaryGroupStr: String, datasetId: DatasetId): Unit = {
-    for { u <- common.universe } {
+    for(u <- common.universe) {
       val secondaryGroup = u.secondaryInfo.groups.find(_.groupId == secondaryGroupStr).getOrElse(
         // TODO: proper error
         throw new Exception(s"Can't find secondary group $secondaryGroupStr")
@@ -61,19 +61,19 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
   }
 
   def datasetsInStore(storeId: String): Map[DatasetId, Long] =
-    for { u <- common.universe } yield {
+    for(u <- common.universe) yield {
       u.secondaryManifest.datasets(storeId)
     }
 
   def versionInStore(storeId: String, datasetId: DatasetId): Option[Long] =
-    for { u <- common.universe } yield {
+    for(u <- common.universe) yield {
       for {
         result <- u.secondaryManifest.readLastDatasetInfo(storeId, datasetId)
       } yield result._1
     }
 
   def secondariesOfDataset(datasetId: DatasetId): Map[String, Long] =
-    for { u <- common.universe } yield {
+    for(u <- common.universe) yield {
       val secondaryManifest = u.secondaryManifest
       secondaryManifest.stores(datasetId)
     }
@@ -81,25 +81,25 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
   private def mutator(tmp: IndexedTempFile) = new Mutator(tmp, common.Mutator)
 
   def processMutation(datasetId: DatasetId, input: Iterator[JValue], tmp: IndexedTempFile) = {
-    for { u <- common.universe } yield {
+    for(u <- common.universe) yield {
       mutator(tmp).updateScript(u, datasetId, input)
     }
   }
 
   def processCreation(input: Iterator[JValue], tmp: IndexedTempFile) = {
-    for { u <- common.universe } yield {
+    for(u <- common.universe) yield {
       mutator(tmp).createScript(u, input)
     }
   }
 
   def listDatasets(): Seq[DatasetId] = {
-    for { u <- common.universe } yield {
+    for(u <- common.universe) yield {
       u.datasetMapReader.allDatasetIds()
     }
   }
 
   def deleteDataset(datasetId: DatasetId) = {
-    for { u <- common.universe } yield {
+    for(u <- common.universe) yield {
       u.datasetDropper.dropDataset(datasetId)
     }
   }
@@ -115,7 +115,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
     ifModifiedSince: Option[DateTime],
     sorted: Boolean
    )(f: Either[Schema, (EntityTag, Seq[SchemaField], Option[UserColumnId], String, Long, Iterator[Array[JValue]])] => Unit): Exporter.Result[Unit] = {
-    for { u <- common.universe } yield {
+    for(u <- common.universe) yield {
       Exporter.export(u, id, copy, columns, limit, offset, precondition, ifModifiedSince, sorted) { (entityTag, copyCtx, approxRowCount, it) =>
         val schema = u.schemaFinder.getSchema(copyCtx)
 
@@ -186,7 +186,7 @@ object Main {
 
     PropertyConfigurator.configure(Propertizer("log4j", serviceConfig.logProperties))
 
-    for { dsInfo <- DataSourceFromConfig(serviceConfig.dataSource) } {
+    for(dsInfo <- DataSourceFromConfig(serviceConfig.dataSource)) {
       val executorService = Executors.newCachedThreadPool()
       try {
         val common = locally {
@@ -258,7 +258,7 @@ object Main {
           override def run() {
             do {
               try {
-                for { u <- common.universe } {
+                for(u <- common.universe) {
                   while(finished.getCount > 0 && u.tableCleanup.cleanupPendingDrops()) {
                     u.commit()
                   }
@@ -276,7 +276,7 @@ object Main {
           override def run() {
             do {
               try {
-                for { u <- common.universe } {
+                for(u <- common.universe) {
                   while (finished.getCount > 0 && u.logTableCleanup.cleanupOldVersions()) {
                     u.commit()
                     // a simple knob to allow us to slow the log table cleanup down without
