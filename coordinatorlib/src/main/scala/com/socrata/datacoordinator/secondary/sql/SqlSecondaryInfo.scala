@@ -16,7 +16,7 @@ class SqlSecondaryInfo(conn: Connection, timingReport: TimingReport) extends Sec
       if (rs.next()) accumulate(acc + SecondaryGroupInfo(rs), rs) else acc
 
     val sql =
-      """SELECT group_id, is_default, instances, num_replicas
+      """SELECT group_name, is_default, instances, num_replicas
         |  FROM secondary_groups_config
       """.stripMargin
 
@@ -94,7 +94,7 @@ object SecondaryInstanceInfo {
 case class SecondaryGroupInfo(groupId: String, isDefault: Boolean, instances: Set[String], numReplicas: Int)
 object SecondaryGroupInfo {
   def apply(rs: ResultSet): SecondaryGroupInfo =
-    SecondaryGroupInfo(rs.getString("id"),
+    SecondaryGroupInfo(rs.getString("group_name"),
       rs.getBoolean("is_default"),
       rs.getArray("instances").getArray.asInstanceOf[Array[String]].toSet,
       rs.getInt("num_replicas"))
