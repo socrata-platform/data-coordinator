@@ -126,7 +126,6 @@ class Service(serviceConfig: ServiceConfig,
     override def post = doUpdateVersionInSecondary
 
     def doGetDataVersionInSecondary(req: HttpRequest): HttpResponse = {
-      if (for { u <- common.universe } yield u.secondaryInfo.instance(storeId).isEmpty) return NotFound
       versionInStore(storeId, datasetId) match {
         case Some(v) =>
           OK ~> Json(Map("version" -> v))
