@@ -6,7 +6,8 @@ import com.rojoma.json.v3.ast.{JString, JValue}
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.common.{DataSourceFromConfig, SoQLCommon}
 import com.socrata.datacoordinator.id.{ColumnId, DatasetId, UserColumnId}
-import com.socrata.datacoordinator.secondary.{DatasetAlreadyInSecondary, SecondaryGroupInfo}
+import com.socrata.datacoordinator.secondary.DatasetAlreadyInSecondary
+import com.socrata.datacoordinator.secondary.sql.SecondaryGroupInfo
 import com.socrata.datacoordinator.truth.CopySelector
 import com.socrata.datacoordinator.truth.metadata.{DatasetCopyContext, Schema, SchemaField}
 import com.socrata.datacoordinator.util.collection.UserColumnIdSet

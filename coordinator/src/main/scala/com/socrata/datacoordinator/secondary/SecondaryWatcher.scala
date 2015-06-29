@@ -7,7 +7,7 @@ import com.rojoma.simplearm.Managed
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.common.DataSourceFromConfig.DSInfo
 import com.socrata.datacoordinator.common.{DataSourceFromConfig, SoQLCommon}
-import com.socrata.datacoordinator.secondary.sql.SqlSecondaryInfo
+import com.socrata.datacoordinator.secondary.sql.SecondaryInstanceInfo
 import com.socrata.datacoordinator.truth.universe._
 import com.socrata.datacoordinator.util._
 import com.socrata.http.server.util.RequestId

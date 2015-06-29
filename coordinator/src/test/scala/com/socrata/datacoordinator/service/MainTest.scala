@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator.service
 
 import com.socrata.datacoordinator.id.DatasetId
-import com.socrata.datacoordinator.secondary.SecondaryGroupInfo
+import com.socrata.datacoordinator.secondary.sql.SecondaryGroupInfo
 import org.scalatest.{MustMatchers, FunSuite}
 
 class MainTest extends FunSuite with MustMatchers {

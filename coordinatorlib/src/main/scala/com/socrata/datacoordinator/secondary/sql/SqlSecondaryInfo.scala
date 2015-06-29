@@ -82,3 +82,20 @@ class SqlSecondaryInfo(conn: Connection, timingReport: TimingReport) extends Sec
     }
   }
 }
+
+case class SecondaryInstanceInfo(storeId: String, nextRunTime: DateTime, runIntervalSeconds: Int)
+object SecondaryInstanceInfo {
+  def apply(rs: ResultSet): SecondaryInstanceInfo =
+    SecondaryInstanceInfo(rs.getString("store_id"),
+      new DateTime(rs.getTimestamp("next_run_time").getTime),
+      rs.getInt("interval_in_seconds"))
+}
+
+case class SecondaryGroupInfo(groupId: String, isDefault: Boolean, instances: Set[String], numReplicas: Int)
+object SecondaryGroupInfo {
+  def apply(rs: ResultSet): SecondaryGroupInfo =
+    SecondaryGroupInfo(rs.getString("id"),
+      rs.getBoolean("is_default"),
+      rs.getArray("instances").getArray.asInstanceOf[Array[String]].toSet,
+      rs.getInt("num_replicas"))
+}
