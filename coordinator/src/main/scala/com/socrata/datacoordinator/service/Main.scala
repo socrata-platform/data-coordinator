@@ -7,7 +7,7 @@ import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.common.{DataSourceFromConfig, SoQLCommon}
 import com.socrata.datacoordinator.id.{ColumnId, DatasetId, UserColumnId}
 import com.socrata.datacoordinator.secondary.DatasetAlreadyInSecondary
-import com.socrata.datacoordinator.secondary.sql.SecondaryGroupInfo
+import com.socrata.datacoordinator.secondary.sql.{SecondaryGroupInfo, SecondaryInstanceInfo}
 import com.socrata.datacoordinator.truth.CopySelector
 import com.socrata.datacoordinator.truth.metadata.{DatasetCopyContext, Schema, SchemaField}
 import com.socrata.datacoordinator.util.collection.UserColumnIdSet
@@ -72,6 +72,9 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
         result <- u.secondaryManifest.readLastDatasetInfo(storeId, datasetId)
       } yield result._1
     }
+
+  def secondaryGroups(): Set[SecondaryGroupInfo] = for(u <- common.universe) yield u.secondaryInfo.groups
+  def secondaryInstances(): Set[SecondaryInstanceInfo] = for(u <- common.universe) yield u.secondaryInfo.instances
 
   def secondariesOfDataset(datasetId: DatasetId): Map[String, Long] =
     for(u <- common.universe) yield {
@@ -249,7 +252,7 @@ object Main {
         }
 
         val serv = new Service(serviceConfig, operations.processMutation, operations.processCreation, getSchema, getRollups,
-          operations.exporter, common, operations.datasetsInStore, operations.versionInStore,
+          operations.exporter, operations.secondaryGroups, operations.secondaryInstances, operations.datasetsInStore, operations.versionInStore,
           operations.ensureInSecondary, operations.ensureInSecondaryGroup, operations.secondariesOfDataset, operations.listDatasets, operations.deleteDataset,
           serviceConfig.commandReadLimit, common.internalNameFromDatasetId, common.datasetIdFromInternalName, operations.makeReportTemporaryFile)
 

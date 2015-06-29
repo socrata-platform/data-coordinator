@@ -1,35 +1,33 @@
 package com.socrata.datacoordinator.service
 
-import com.ibm.icu.text.Normalizer
-import com.rojoma.json.v3.ast._
-import com.rojoma.json.v3.codec.{JsonDecode, JsonEncode}
-import com.rojoma.json.v3.io._
-import com.rojoma.json.v3.util.{JsonArrayIterator, AutomaticJsonCodecBuilder, JsonKey, JsonUtil}
-import com.rojoma.simplearm.util._
-import com.socrata.datacoordinator.common.SoQLCommon
-import com.socrata.datacoordinator.id.{RollupName, UserColumnId, DatasetId}
-import com.socrata.datacoordinator.truth._
-import com.socrata.datacoordinator.truth.loader._
-import com.socrata.datacoordinator.truth.metadata.{RollupInfo, SchemaField, Schema}
-import com.socrata.datacoordinator.truth.Snapshot
-import com.socrata.datacoordinator.util.collection.{UserColumnIdMap, UserColumnIdSet}
-import com.socrata.datacoordinator.util.IndexedTempFile
-import com.socrata.http.server.implicits._
-import com.socrata.http.server.responses._
-import com.socrata.http.server.routing._
-import com.socrata.http.server.util.handlers.{ThreadRenamingHandler, NewLoggingHandler}
-import com.socrata.http.server.util.{StrongEntityTag, EntityTag, Precondition, ErrorAdapter}
-import com.socrata.http.server.util.RequestId.ReqIdHeader
-import com.socrata.http.server._
-import com.socrata.soql.environment.TypeName
-import com.socrata.thirdparty.metrics.{SocrataHttpSupport, Metrics, MetricsOptions, MetricsReporter}
 import java.io._
 import java.nio.charset.StandardCharsets.UTF_8
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicInteger
-import javax.activation.{MimeTypeParseException, MimeType}
-import javax.servlet.http.{HttpServletResponse, HttpServletRequest}
-import org.apache.commons.codec.binary.Base64
+import javax.activation.{MimeType, MimeTypeParseException}
+import javax.servlet.http.{HttpServletRequest, HttpServletResponse}
+
+import com.ibm.icu.text.Normalizer
+import com.rojoma.json.v3.ast._
+import com.rojoma.json.v3.codec.JsonEncode
+import com.rojoma.json.v3.io._
+import com.rojoma.json.v3.util.{JsonArrayIterator, JsonUtil}
+import com.rojoma.simplearm.util._
+import com.socrata.datacoordinator.id.{DatasetId, RollupName, UserColumnId}
+import com.socrata.datacoordinator.secondary.sql.{SecondaryGroupInfo, SecondaryInstanceInfo}
+import com.socrata.datacoordinator.truth.loader._
+import com.socrata.datacoordinator.truth.metadata.{RollupInfo, Schema, SchemaField}
+import com.socrata.datacoordinator.truth.{Snapshot, _}
+import com.socrata.datacoordinator.util.IndexedTempFile
+import com.socrata.datacoordinator.util.collection.UserColumnIdSet
+import com.socrata.http.server.implicits._
+import com.socrata.http.server.responses._
+import com.socrata.http.server.routing._
+import com.socrata.http.server.util.handlers.{ThreadRenamingHandler, NewLoggingHandler}
+import com.socrata.http.server.util.RequestId.ReqIdHeader
+import com.socrata.http.server.util.{StrongEntityTag, EntityTag, Precondition, ErrorAdapter}
+import com.socrata.http.server._
+import com.socrata.thirdparty.metrics.{Metrics, MetricsOptions, MetricsReporter, SocrataHttpSupport}
 import org.joda.time.DateTime
 import org.joda.time.format.ISODateTimeFormat
 
@@ -46,7 +44,7 @@ object Service {
   val numThreads = new AtomicInteger
 }
 
-import Service._
+import com.socrata.datacoordinator.service.Service._
 
 /**
  * The main HTTP REST resource servicing class for the data coordinator.
@@ -60,7 +58,8 @@ class Service(serviceConfig: ServiceConfig,
               datasetContents: (DatasetId, Option[String], CopySelector, Option[UserColumnIdSet],
                                 Option[Long], Option[Long], Precondition, Option[DateTime], Boolean) =>
                                datasetContentsFunc => Exporter.Result[Unit],
-              common: SoQLCommon,
+              secondaryGroups: () => Set[SecondaryGroupInfo],
+              secondaryInstances: () => Set[SecondaryInstanceInfo],
               datasetsInStore: (String) => Map[DatasetId, Long],
               versionInStore: (String, DatasetId) => Option[Long],
               ensureInSecondary: (String, DatasetId) => Unit,
@@ -105,14 +104,14 @@ class Service(serviceConfig: ServiceConfig,
     override val get = doGetSecondaries _
 
     def doGetSecondaries(req: HttpRequest): HttpResponse =
-      OK ~> Json(for { u <- common.universe } yield u.secondaryInfo.instances.map(_.storeId).toSeq)
+      OK ~> Json(secondaryInstances().map(_.storeId).toSeq)
   }
 
   case class SecondaryManifestResource(storeId: String) extends SodaResource {
     override def get = doGetSecondaryManifest
 
     def doGetSecondaryManifest(req: HttpRequest): HttpResponse = {
-      if (for { u <- common.universe } yield u.secondaryInfo.instance(storeId).isEmpty) return NotFound
+      if (!secondaryInstances().exists(_.storeId == storeId)) return NotFound
       val ds = datasetsInStore(storeId)
       val dsConverted = ds.foldLeft(Map.empty[String, Long]) { (acc, kv) =>
         acc + (formatDatasetId(kv._1) -> kv._2)
@@ -136,13 +135,11 @@ class Service(serviceConfig: ServiceConfig,
 
     def doUpdateVersionInSecondary(req: HttpRequest): HttpResponse = {
       val groupRe = "_(.*)_".r
-      for {u <- common.universe} yield {
-        storeId match {
-          case "_DEFAULT_" => u.secondaryInfo.defaultGroups.foreach(g => ensureInSecondaryGroup(g.groupId, datasetId))
-          case groupRe(g) if u.secondaryInfo.groups.exists(_.groupId == g) => ensureInSecondaryGroup(g, datasetId)
-          case secondary if u.secondaryInfo.instance(storeId).isDefined => ensureInSecondary(secondary, datasetId)
-          case _ => return NotFound
-        }
+      storeId match {
+        case "_DEFAULT_" => secondaryGroups().filter(_.isDefault).foreach(g => ensureInSecondaryGroup(g.groupId, datasetId))
+        case groupRe(group) if secondaryGroups().exists(_.groupId == group) => ensureInSecondaryGroup(group, datasetId)
+        case instance if secondaryInstances().exists(_.storeId == storeId) => ensureInSecondary(instance, datasetId)
+        case _ => return NotFound
       }
       OK
     }
