@@ -1,5 +1,7 @@
 package com.socrata.datacoordinator.truth.sql
 
+import java.sql.Connection
+
 import scala.io.{Source, Codec}
 
 import com.rojoma.simplearm.util._
@@ -15,6 +17,7 @@ object DatabasePopulator {
                      tableName: String,
                      userUidLen: Int,
                      operationLen: Int,
+                     user: String,
                      tablespace: Option[String]): String =
     TemplateReplacer(
       load("table_log.tmpl.sql"),
@@ -23,6 +26,7 @@ object DatabasePopulator {
         "user_uid_len" -> userUidLen.toString,
         "table_name" -> tableName,
         "operation_len" -> operationLen.toString,
+        "user" -> user, // table owner
         "tablespace" -> tablespace.fold("") { ts => "TABLESPACE " + ts }
       ))
 }
