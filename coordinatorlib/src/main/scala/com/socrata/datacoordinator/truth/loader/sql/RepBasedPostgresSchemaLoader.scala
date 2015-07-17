@@ -42,12 +42,14 @@ class RepBasedPostgresSchemaLoader[CT, CV](conn: Connection, logger: Logger[CT, 
     val ts: Option[String] =
       tablespaceOfTable(copyInfo.datasetInfo.auditTableName).getOrElse(tablespace(copyInfo.datasetInfo.auditTableName))
     using(conn.createStatement()) { stmt =>
-      stmt.execute("CREATE TABLE " + copyInfo.dataTableName + " ()" + postgresTablespaceSuffixFor(ts))
+      stmt.execute("CREATE TABLE " + copyInfo.dataTableName + " ()" + postgresTablespaceSuffixFor(ts) + ";" +
+                   ChangeOwner.sql(conn, copyInfo.dataTableName))
       stmt.execute(DatabasePopulator.logTableCreate(
         copyInfo.datasetInfo.auditTableName,
         copyInfo.datasetInfo.logTableName,
         40, // max user uid length
         SqlLogger.maxOpLength,
+        ChangeOwner.canonicalUser(conn),
         ts))
     }
     logger.workingCopyCreated(copyInfo)
