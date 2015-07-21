@@ -1,7 +1,6 @@
-import sbt._
-import Keys._
-
 import Dependencies._
+import sbt.Keys._
+import sbt._
 
 object CoordinatorLib {
   lazy val settings: Seq[Setting[_]] = BuildSettings.projectSettings(protobuf=true) ++ Seq(
@@ -25,12 +24,10 @@ object CoordinatorLib {
       "org.xerial.snappy"   % "snappy-java"              % "1.1.0-M3",
 
       TestDeps.scalaCheck  % "test,it",
-      TestDeps.scalaTest   % "it",
       TestDeps.slf4jSimple % "test,it",
       TestDeps.h2          % "test,it"
     )
   )
-
 
   lazy val configs: Seq[Configuration] = BuildSettings.projectConfigs
 }

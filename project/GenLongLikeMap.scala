@@ -1,5 +1,6 @@
-import java.nio.charset.StandardCharsets.UTF_8
 import java.io.{FileOutputStream, OutputStreamWriter}
+import java.nio.charset.StandardCharsets.UTF_8
+
 import sbt._
 
 object GenLongLikeMap {
@@ -67,13 +68,13 @@ class """ + targetClassName + """[+V] private[""" + lastElemOf(targetPackage) + 
 
   @inline def get(t: """ + sourceType + """) = {
     val x = unsafeUnderlying.get(t.underlying)
-    if(x.asInstanceOf[AnyRef] eq null) None
+    if (x.asInstanceOf[AnyRef] eq null) None
     else Some(x)
   }
 
   @inline def apply(t: """ + sourceType + """) = {
     val x = unsafeUnderlying.get(t.underlying)
-    if(x.asInstanceOf[AnyRef] eq null) throw new NoSuchElementException("No key " + t)
+    if (x.asInstanceOf[AnyRef] eq null) throw new NoSuchElementException("No key " + t)
     x
   }
 
@@ -113,13 +114,13 @@ class """ + targetClassName + """[+V] private[""" + lastElemOf(targetPackage) + 
 
   @inline def getOrElse[B >: V](k: """ + sourceType + """, v: => B): B = {
     val result = unsafeUnderlying.get(k.underlying)
-    if(result == null) v
+    if (result == null) v
     else result
   }
 
   @inline def getOrElseStrict[B >: V](k: """ + sourceType + """, v: B): B = {
     val result = unsafeUnderlying.get(k.underlying)
-    if(result == null) v
+    if (result == null) v
     else result
   }
 
@@ -176,7 +177,7 @@ class """ + targetClassName + """[+V] private[""" + lastElemOf(targetPackage) + 
     val it = unsafeUnderlying.iterator
     while(it.hasNext) {
       it.advance()
-      f(new """ + sourceType + """(it.key), it.value)
+      f((new """ + sourceType + """(it.key), it.value))
     }
   }
 
@@ -193,7 +194,7 @@ class """ + targetClassName + """[+V] private[""" + lastElemOf(targetPackage) + 
     val it = unsafeUnderlying.iterator
     while(it.hasNext) {
       it.advance()
-      if(f(new """ + sourceType + """(it.key), it.value)) x.put(it.key, it.value)
+      if (f(new """ + sourceType + """(it.key), it.value)) x.put(it.key, it.value)
     }
     new """ + targetClassName + """[V](x)
   }
@@ -203,7 +204,7 @@ class """ + targetClassName + """[+V] private[""" + lastElemOf(targetPackage) + 
     val it = unsafeUnderlying.iterator
     while(it.hasNext) {
       it.advance()
-      if(!f(new """ + sourceType + """(it.key), it.value)) x.put(it.key, it.value)
+      if (!f(new """ + sourceType + """(it.key), it.value)) x.put(it.key, it.value)
     }
     new """ + targetClassName + """[V](x)
   }
@@ -258,7 +259,7 @@ object """ + targetClassName + """ {
   private def copyToTMap[V](m: Map[""" + sourceType + """, V]) = {
     val result = new TLongObjectHashMap[V]
     for((k, v) <- m) {
-      if(v.asInstanceOf[AnyRef] eq null) throw new NullPointerException("Cannot store null values here")
+      if (v.asInstanceOf[AnyRef] eq null) throw new NullPointerException("Cannot store null values here")
       result.put(k.underlying, v)
     }
     result
@@ -288,14 +289,14 @@ class """ + targetClassName + """[V](private var _underlying: TLongObjectHashMap
   def underlying = _underlying
 
   def freeze() = {
-    if(underlying == null) throw new NullPointerException
+    if (underlying == null) throw new NullPointerException
     val result = new """ + immutableVersion + """[V](underlying)
     _underlying = null
     result
   }
 
   def frozenCopy() = {
-    if(underlying == null) throw new NullPointerException
+    if (underlying == null) throw new NullPointerException
     val tmp = new TLongObjectHashMap[V](_underlying)
     new """ + immutableVersion + """[V](tmp)
   }
@@ -310,13 +311,13 @@ class """ + targetClassName + """[V](private var _underlying: TLongObjectHashMap
 
   @inline def get(t: """ + sourceType + """) = {
     val x = underlying.get(t.underlying)
-    if(x.asInstanceOf[AnyRef] eq null) None
+    if (x.asInstanceOf[AnyRef] eq null) None
     else Some(x)
   }
 
   @inline def apply(t: """ + sourceType + """) = {
     val x = underlying.get(t.underlying)
-    if(x.asInstanceOf[AnyRef] eq null) throw new NoSuchElementException("No key " + t)
+    if (x.asInstanceOf[AnyRef] eq null) throw new NoSuchElementException("No key " + t)
     x
   }
 
@@ -368,13 +369,13 @@ class """ + targetClassName + """[V](private var _underlying: TLongObjectHashMap
   }
 
   @inline def update(k: """ + sourceType + """, v: V) {
-    if(v.asInstanceOf[AnyRef] eq null) throw new NullPointerException("Cannot store null values here")
+    if (v.asInstanceOf[AnyRef] eq null) throw new NullPointerException("Cannot store null values here")
     underlying.put(k.underlying, v)
   }
 
   @inline def getOrElse[B >: V](k: """ + sourceType + """, v: => B): B = {
     val result = underlying.get(k.underlying)
-    if(result == null) v
+    if (result == null) v
     else result
   }
 
@@ -462,13 +463,13 @@ class """ + targetClassName + """(val unsafeUnderlying: TLongSet) extends (""" +
   }
 
   def intersect(that: """ + targetClassName + """): """ + targetClassName + """ = {
-    if(this.unsafeUnderlying.size <= that.unsafeUnderlying.size) {
+    if (this.unsafeUnderlying.size <= that.unsafeUnderlying.size) {
       val filter = that.unsafeUnderlying
       val it = unsafeUnderlying.iterator
       val target = new TLongHashSet
       while(it.hasNext) {
         val elem = it.next()
-        if(filter.contains(elem)) target.add(elem)
+        if (filter.contains(elem)) target.add(elem)
       }
       new """ + targetClassName + """(target)
     } else {
@@ -506,7 +507,7 @@ class """ + targetClassName + """(val unsafeUnderlying: TLongSet) extends (""" +
     val result = new TLongHashSet
     unsafeUnderlying.forEach(new TLongProcedure {
       def execute(l: Long) = {
-        if(f(new """ + sourceType + """(l))) result.add(l)
+        if (f(new """ + sourceType + """(l))) result.add(l)
         true
       }
     })
@@ -517,7 +518,7 @@ class """ + targetClassName + """(val unsafeUnderlying: TLongSet) extends (""" +
     val result = new TLongHashSet
     unsafeUnderlying.forEach(new TLongProcedure {
       def execute(l: Long) = {
-        if(!f(new """ + sourceType + """(l))) result.add(l)
+        if (!f(new """ + sourceType + """(l))) result.add(l)
         true
       }
     })
@@ -529,7 +530,7 @@ class """ + targetClassName + """(val unsafeUnderlying: TLongSet) extends (""" +
     val no = new TLongHashSet
     unsafeUnderlying.forEach(new TLongProcedure {
       def execute(l: Long) = {
-        if(f(new """ + sourceType + """(l))) yes.add(l)
+        if (f(new """ + sourceType + """(l))) yes.add(l)
         else no.add(l)
         true
       }
@@ -599,7 +600,7 @@ class """ + targetClassName + """(private var _underlying: TLongSet) extends (""
   }
 
   def freeze() = {
-    if(underlying == null) throw new NullPointerException
+    if (underlying == null) throw new NullPointerException
     val result = new """ + sourceClass + """Set(underlying)
     _underlying = null
     result

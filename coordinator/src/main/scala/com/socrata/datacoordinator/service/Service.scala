@@ -687,15 +687,7 @@ class Service(serviceConfig: ServiceConfig,
   }
 
   object VersionResource extends SodaResource {
-    val responseString = for {
-      stream <- managed(getClass.getClassLoader.getResourceAsStream("data-coordinator-version.json"))
-      source <- managed(scala.io.Source.fromInputStream(stream)(scala.io.Codec.UTF8))
-    } yield source.mkString
-
-    val response =
-      OK ~> Content(JsonContentType, responseString)
-
-    override val get = (_: HttpRequest) => response
+    override val get: HttpService = (_: HttpRequest) => OK ~> Content(JsonContentType, buildinfo.BuildInfo.toJson)
   }
 
   implicit object DatasetIdExtractor extends Extractor[DatasetId] {

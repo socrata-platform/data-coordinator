@@ -139,7 +139,7 @@ class UserColumnIdMap[+V] private[collection](val unsafeUnderlying: java.util.Ha
     val it = unsafeUnderlying.entrySet.iterator
     while(it.hasNext) {
       val ent = it.next()
-      f(new UserColumnId(ent.getKey), ent.getValue)
+      f((new UserColumnId(ent.getKey), ent.getValue))
     }
   }
 

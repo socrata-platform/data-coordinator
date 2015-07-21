@@ -33,6 +33,7 @@ object DataCoordinator extends Build {
     coordinatorLib, coordinatorLibSoql)
 
   lazy val secondaryLib = p("secondarylib", SecondaryLib)
+    .enablePlugins(sbtbuildinfo.BuildInfoPlugin)
 
   lazy val dummySecondary = p("dummy-secondary", DummySecondary,
     secondaryLib % "provided")

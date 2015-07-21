@@ -1,17 +1,9 @@
-import sbt._
-import Keys._
-
-import com.rojoma.simplearm.util._
-import com.rojoma.json.v3.util.JsonUtil.writeJson
-
-import sbtassembly.Plugin.AssemblyKeys._
-import sbtassembly.Plugin.MergeStrategy
-
 import Dependencies._
+import sbt.Keys._
+import sbt._
 
 object Coordinator {
   lazy val settings: Seq[Setting[_]] = BuildSettings.projectSettings(assembly = true) ++ Seq(
-    resourceGenerators in Compile <+= (resourceManaged in Compile, name in Compile, version in Compile, scalaVersion in Compile) map genVersion,
     libraryDependencies <++= (scalaVersion) { (scalaVersion) =>
       Seq(
         c3po,
@@ -35,38 +27,8 @@ object Coordinator {
         TestDeps.h2         % "test"
       )
     },
-    mainClass in assembly := Some("com.socrata.datacoordinator.Launch"),
-    mergeStrategy in assembly <<= (mergeStrategy in assembly) { old =>
-      {
-        case "about.html" => MergeStrategy.rename
-        case x => old(x)
-      }
-    }
+    mainClass in sbtassembly.AssemblyKeys.assembly := Some("com.socrata.datacoordinator.Launch")
   )
 
   lazy val configs: Seq[Configuration] = BuildSettings.projectConfigs
-
-  def genVersion(resourceManaged: File, name: String, version: String, scalaVersion: String): Seq[File] = {
-    val file = resourceManaged / "data-coordinator-version.json"
-
-    val revision = Process(Seq("git", "describe", "--always", "--dirty", "--long")).!!.split("\n")(0)
-
-    val result = Map(
-      "service" -> name,
-      "version" -> version,
-      "revision" -> revision,
-      "scala" -> scalaVersion
-    ) ++ sys.env.get("BUILD_TAG").map("build" -> _)
-
-    resourceManaged.mkdirs()
-    for {
-      stream <- managed(new java.io.FileOutputStream(file))
-      w <- managed(new java.io.OutputStreamWriter(stream, "UTF-8"))
-    } {
-      writeJson(w, result, pretty = true)
-      w.write("\n")
-    }
-
-    Seq(file)
-  }
 }
