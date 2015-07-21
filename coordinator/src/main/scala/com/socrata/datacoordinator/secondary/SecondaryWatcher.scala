@@ -154,7 +154,7 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
 }
 
 class SecondaryWatcherClaimManager(dsInfo: DSInfo, claimantId: UUID, claimTimeout: FiniteDuration) {
-  import com.socrata.datacoordinator.secondary.SecondaryWatcher.log
+  val log = LoggerFactory.getLogger(classOf[SecondaryWatcherClaimManager])
   val updateInterval = claimTimeout / 2
 
   def mainloop(finished: CountDownLatch) {

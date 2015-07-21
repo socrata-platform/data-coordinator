@@ -131,7 +131,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
             val col = copyCtx.schema(new ColumnId(cidRaw))
             SchemaField(col.userColumnId, col.typ.name.name)
           }
-          f(Right(
+          f(Right((
             entityTag,
             orderedSchema,
             pkColName,
@@ -147,7 +147,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
                 i += 1
               }
               arr
-            })
+            }))
           )
         }
       }

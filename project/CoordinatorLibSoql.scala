@@ -1,7 +1,6 @@
-import sbt._
-import Keys._
-
 import Dependencies._
+import sbt.Keys._
+import sbt._
 
 object CoordinatorLibSoql {
   lazy val settings: Seq[Setting[_]] = BuildSettings.projectSettings() ++ Seq(

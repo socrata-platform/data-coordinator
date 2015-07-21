@@ -11,7 +11,6 @@ object Dependencies {
     val rojomaSimpleArm = "1.1.10"
     val scalaCheck      = "1.11.0"
     val scalaMock       = "3.2"
-    val scalaTest       = "2.2.1"
     val slf4j           = "1.7.5"
     val soqlReference   = "0.5.3"
     val thirdPartyUtils = "3.1.2"
@@ -42,7 +41,6 @@ object Dependencies {
     val h2          = "com.h2database"  % "h2"           % versions.h2
     val scalaCheck  = "org.scalacheck" %% "scalacheck"   % versions.scalaCheck
     val scalaMock   = "org.scalamock"  %% "scalamock-scalatest-support" % versions.scalaMock
-    val scalaTest   = "org.scalatest"  %% "scalatest"    % versions.scalaTest
     val slf4jSimple = "org.slf4j"       % "slf4j-simple" % versions.slf4j
   }
 }

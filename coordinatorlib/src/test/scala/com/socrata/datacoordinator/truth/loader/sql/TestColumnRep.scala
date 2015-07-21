@@ -80,12 +80,14 @@ class StringRep(columnId: ColumnId) extends TestColumnRep(columnId) {
     start + 1
   }
 
-  def sql_in(literals: Iterable[TestColumnValue]) = {
+  def sql_in(literals: Iterable[TestColumnValue]): String = {
     val sb = new StringBuilder("(").append(base).append(" IN (")
     val it = literals.iterator
     sb.append(it.next())
-    while(it.hasNext) {
-      sb.append(',').append('\'', escape('\'', it.next().asInstanceOf[StringValue].value))
+    while (it.hasNext) {
+      sb.append(",'")
+      sb.append(escape('\'', it.next().asInstanceOf[StringValue].value))
+      sb.append("'")
     }
     sb.append("))")
     sb.toString

@@ -1,9 +1,7 @@
 *~
-/target/
-/project/target/
-/project/project/target/
-/.idea/
-/.idea_modules/
+target/
+.idea/
+.idea_modules/
 local-data-coordinator.conf
 local-secondary-watcher.conf
 .DS_Store

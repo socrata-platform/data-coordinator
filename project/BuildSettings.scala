@@ -1,19 +1,22 @@
-import sbt._
-import Keys._
-
-import com.socrata.cloudbeessbt.SocrataCloudbeesSbt
-import scalabuff.ScalaBuffPlugin
-
 import Dependencies._
+import sbt.Keys._
+import sbt._
+import scoverage.ScoverageSbtPlugin.ScoverageKeys._
+
+import scalabuff.ScalaBuffPlugin
 
 object BuildSettings {
   val buildSettings: Seq[Setting[_]] =
-    SocrataCloudbeesSbt.socrataBuildSettings ++
       Defaults.itSettings ++
       inConfig(UnitTest)(Defaults.testSettings) ++
       inConfig(ExploratoryTest)(Defaults.testSettings) ++
       Seq(
-        scalaVersion := "2.10.4",
+        // protobuff generated file(s) must be excluded from coverage
+        coverageExcludedPackages := "%s;%s".format("com.socrata.datacoordinator.truth.loader.sql.messages", coverageExcludedPackages.value),
+        // TODO: enable code coverage build failures
+        coverageFailOnMinimum := false,
+        // TODO: enable scalastyle build failures
+        com.socrata.sbtplugins.StylePlugin.StyleKeys.styleFailOnError in Compile := false,
         testOptions in Test ++= Seq(
           Tests.Argument(TestFrameworks.ScalaTest, "-oFD")
         ),
@@ -22,8 +25,7 @@ object BuildSettings {
         scalacOptions += "-language:implicitConversions",
         libraryDependencies ++=
           Seq(
-            slf4jApi,
-            TestDeps.scalaTest % "test"
+            slf4jApi
           )
       )
 
@@ -31,8 +33,7 @@ object BuildSettings {
 
   def projectSettings(assembly: Boolean = false, protobuf: Boolean = false): Seq[Setting[_]] =
     BuildSettings.buildSettings ++
-      SocrataCloudbeesSbt.socrataProjectSettings(assembly) ++
-      (if(protobuf) ScalaBuffPlugin.scalabuffSettings else Seq.empty) ++
+      (if (protobuf) ScalaBuffPlugin.scalabuffSettings else Seq.empty) ++
       Seq(
         fork in test := true
       )
