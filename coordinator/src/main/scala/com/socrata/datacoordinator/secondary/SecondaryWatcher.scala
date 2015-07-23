@@ -235,6 +235,7 @@ object SecondaryWatcher extends App { self =>
       config.tmpdir,
       Duration.fromNanos(1L), // don't care
       Duration.fromNanos(1L), // don't care
+      Duration.fromNanos(1L),
       NullCache
     )
 

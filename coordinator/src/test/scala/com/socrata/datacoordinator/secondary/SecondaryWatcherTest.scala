@@ -42,7 +42,8 @@ class SecondaryWatcherTest extends FunSuite with MustMatchers with MockFactory {
     "primus-test",
     new java.io.File(System.getProperty("java.io.tmpdir")).getAbsoluteFile,
     Duration.fromNanos(1L), // don't care
-    Duration.fromNanos(1L), // don't care
+    Duration.fromNanos(1L), // don't care 
+    Duration.fromNanos(1L),
     NullCache
   )
 
