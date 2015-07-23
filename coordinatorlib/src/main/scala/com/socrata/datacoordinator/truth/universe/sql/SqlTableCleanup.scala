@@ -2,6 +2,7 @@ package com.socrata.datacoordinator.truth.universe
 package sql
 
 import java.sql.Connection
+import scala.concurrent.duration.FiniteDuration
 
 import com.rojoma.simplearm.util._
 import scala.concurrent.duration.FiniteDuration
