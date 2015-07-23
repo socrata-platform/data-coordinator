@@ -30,4 +30,11 @@ com.socrata.coordinator.service {
   }
 
   tablespace = """(format "ts%05d" (rand-int 1000))"""
+
+  jetty-threadpool {
+    min-threads = 10
+    max-threads = 100
+    idle-timeout = 5 minutes
+    queue-length = 5000
+  }
 }
