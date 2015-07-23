@@ -2,10 +2,11 @@ package com.socrata.datacoordinator.truth.universe
 package sql
 
 import java.sql.Connection
+import scala.concurrent.duration.FiniteDuration
 
 import com.rojoma.simplearm.util._
 
-class SqlTableCleanup(conn: Connection, daysDelay: Int = 1) extends TableCleanup {
+class SqlTableCleanup(conn: Connection, daysDelay: FiniteDuration) extends TableCleanup {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[SqlTableCleanup])
   def cleanupPendingDrops(): Boolean = {
     using(conn.createStatement()) { stmt =>

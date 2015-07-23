@@ -54,6 +54,7 @@ class SoQLCommon(dataSource: DataSource,
                  tmpDir: File,
                  logTableCleanupDeleteOlderThan: FiniteDuration,
                  logTableCleanupDeleteEvery: FiniteDuration,
+                 tableCleanupDelay: FiniteDuration,
                  cache: Cache)
 { common =>
   type CT = SoQLType
@@ -133,7 +134,7 @@ class SoQLCommon(dataSource: DataSource,
 
     val logTableCleanupDeleteOlderThan = common.logTableCleanupDeleteOlderThan
     val logTableCleanupDeleteEvery = common.logTableCleanupDeleteEvery
-
+    val tableCleanupDelay = common.tableCleanupDelay
     val newRowCodec = common.newRowLogCodec _
 
     def isSystemColumn(ci: AbstractColumnInfoLike): Boolean =

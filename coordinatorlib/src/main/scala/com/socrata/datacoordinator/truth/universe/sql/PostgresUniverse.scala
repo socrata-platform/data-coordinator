@@ -43,12 +43,12 @@ trait PostgresCommonSupport[CT, CV] {
   def rowPreparer(transactionStart: DateTime, ctx: DatasetCopyContext[CT], replaceUpdatedRows: Boolean): RowPreparer[CV]
 
   def writeLockTimeout: Duration
-
+   
   def tmpDir: File
-
+  
   def logTableCleanupDeleteOlderThan: FiniteDuration
   def logTableCleanupDeleteEvery: FiniteDuration
-
+  def tableCleanupDelay:FiniteDuration
   lazy val loaderProvider = new AbstractSqlLoaderProvider(executor, typeContext, repFor, isSystemColumn) with PostgresSqlLoaderProvider[CT, CV] {
     def copyIn(conn: Connection, sql: String, output: OutputStream => Unit): Long =
       copyInProvider(conn, sql, output)
@@ -189,7 +189,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
     new SqlDatasetDropper(conn, writeLockTimeout, datasetMapWriter)
 
   lazy val tableCleanup: TableCleanup =
-    new SqlTableCleanup(conn)
+    new SqlTableCleanup(conn, tableCleanupDelay)
 
   lazy val logTableCleanup: LogTableCleanup =
     new SqlLogTableCleanup(conn, logTableCleanupDeleteOlderThan, logTableCleanupDeleteEvery)
