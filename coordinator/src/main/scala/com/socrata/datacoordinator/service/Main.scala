@@ -222,7 +222,7 @@ object Main {
             serviceConfig.reports.directory,
             serviceConfig.logTableCleanupDeleteOlderThan,
             serviceConfig.logTableCleanupDeleteEvery,
-            serviceConfig.tableCleanupDelay,
+            //serviceConfig.tableCleanupDelay,
             NullCache
           )
         }
