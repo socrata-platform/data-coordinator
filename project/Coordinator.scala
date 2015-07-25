@@ -11,7 +11,7 @@ object Coordinator {
         slf4jLog4j12,
         socrataThirdPartyUtils,
         typesafeConfig,
-        "com.socrata"    %% "socrata-http-curator-broker" % "3.3.0",
+        "com.socrata"    %% "socrata-http-curator-broker" % "3.3.3",
         "com.sun.jna"     % "jna"           % "3.0.9",
         "io.dropwizard.metrics" % "metrics-jetty9"   % "3.1.0",
         // "io.dropwizard.metrics" % "metrics-graphite"   % "3.1.0",
