@@ -7,11 +7,11 @@ import scala.concurrent.duration.FiniteDuration
 import com.rojoma.simplearm.util._
 import scala.concurrent.duration.FiniteDuration
 
-class SqlTableCleanup(conn: Connection, daysDelay: FiniteDuration) extends TableCleanup {
+class SqlTableCleanup(conn: Connection, delay: FiniteDuration) extends TableCleanup {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[SqlTableCleanup])
   def cleanupPendingDrops(): Boolean = {
     using(conn.createStatement()) { stmt =>
-      using(stmt.executeQuery(s"SELECT id, table_name FROM pending_table_drops WHERE queued_at < now() - ('$daysDelay day' :: INTERVAL) ORDER BY id LIMIT 1 FOR UPDATE")) { rs =>
+      using(stmt.executeQuery(s"SELECT id, table_name FROM pending_table_drops WHERE queued_at < now() - ('${delay.toSeconds}'::INTERVAL) ORDER BY id LIMIT 1 FOR UPDATE")) { rs =>
         if(rs.next()) {
           val id = rs.getLong("id")
           val tableName = rs.getString("table_name")
