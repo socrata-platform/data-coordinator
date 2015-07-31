@@ -1,14 +1,12 @@
 package com.socrata.datacoordinator.truth.universe
 
 import com.rojoma.simplearm.Managed
-
-import com.socrata.datacoordinator.truth.loader._
-import com.socrata.datacoordinator.truth.metadata._
+import com.socrata.datacoordinator.secondary.{PlaybackToSecondary, SecondaryInfo, SecondaryManifest}
 import com.socrata.datacoordinator.truth._
+import com.socrata.datacoordinator.truth.loader._
+import com.socrata.datacoordinator.truth.metadata.{DatasetInfo, SchemaFinder, _}
 import com.socrata.datacoordinator.util._
-import com.socrata.datacoordinator.secondary.{SecondaryConfig, PlaybackToSecondary, SecondaryManifest}
 import org.joda.time.DateTime
-import com.socrata.datacoordinator.truth.metadata.{DatasetInfo, SchemaFinder}
 
 // Not sure I'll need all of these!  Certainly not all of them are implemented.
 // The idea behind these traits is that they encapsulate "things which need a Connection".
@@ -107,8 +105,8 @@ trait PlaybackToSecondaryProvider { this: TypeUniverse =>
   val playbackToSecondary: PlaybackToSecondary[CT, CV]
 }
 
-trait SecondaryConfigProvider {
-  val secondaryConfig: SecondaryConfig
+trait SecondaryInfoProvider {
+  val secondaryInfo: SecondaryInfo
 }
 
 trait DatasetContentsCopierProvider { this: TypeUniverse =>

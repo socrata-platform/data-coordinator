@@ -1,29 +1,27 @@
 package com.socrata.datacoordinator.truth.universe
 package sql
 
-import java.util.concurrent.ExecutorService
+import java.io.{File, OutputStream}
 import java.sql.Connection
-import java.io.{File, Reader, OutputStream}
+import java.util.concurrent.ExecutorService
 
-import org.joda.time.DateTime
+import com.mchange.v2.c3p0.C3P0ProxyConnection
 import com.rojoma.simplearm.SimpleArm
 import com.rojoma.simplearm.util._
-
-import com.socrata.datacoordinator.truth.metadata._
-import com.socrata.datacoordinator.truth.sql.{PostgresDatabaseMutator, PostgresDatabaseReader, RepBasedSqlDatasetContext, SqlColumnRep}
+import com.socrata.datacoordinator.id.DatasetId
+import com.socrata.datacoordinator.secondary.sql.{SqlSecondaryInfo, SqlSecondaryManifest}
+import com.socrata.datacoordinator.secondary.{PlaybackToSecondary, SecondaryManifest}
 import com.socrata.datacoordinator.truth._
-import com.socrata.datacoordinator.truth.metadata.sql._
-import com.socrata.datacoordinator.secondary.{SecondaryManifest, PlaybackToSecondary}
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.loader.sql._
-import com.socrata.datacoordinator.secondary.sql.{SqlSecondaryConfig, SqlSecondaryManifest}
+import com.socrata.datacoordinator.truth.metadata.sql._
+import com.socrata.datacoordinator.truth.metadata._
+import com.socrata.datacoordinator.truth.sql.{PostgresDatabaseMutator, PostgresDatabaseReader, RepBasedSqlDatasetContext, SqlColumnRep}
 import com.socrata.datacoordinator.util._
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
-import scala.concurrent.duration.{FiniteDuration, Duration}
-import com.socrata.datacoordinator.id.DatasetId
-import com.socrata.datacoordinator.truth.metadata.DatasetInfo
-import com.socrata.datacoordinator.truth.metadata.ColumnInfo
-import com.socrata.datacoordinator.truth.metadata.CopyInfo
+import org.joda.time.DateTime
+
+import scala.concurrent.duration.{Duration, FiniteDuration}
 
 trait PostgresCommonSupport[CT, CV] {
   val executor: ExecutorService
@@ -62,7 +60,6 @@ object PostgresCopyIn extends ((Connection, String, OutputStream => Unit) => Lon
 }
 
 object C3P0WrappedPostgresCopyIn extends ((Connection, String, OutputStream => Unit) => Long) {
-  import com.mchange.v2.c3p0.C3P0ProxyConnection
 
   private val method = PostgresCopyIn.getClass.getMethod("apply", classOf[Connection], classOf[String], classOf[OutputStream => Unit])
 
@@ -80,7 +77,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
     with PlaybackToSecondaryProvider
     with DeloggerProvider
     with LoggerProvider
-    with SecondaryConfigProvider
+    with SecondaryInfoProvider
     with PrevettedLoaderProvider
     with LoaderProvider
     with TruncatorProvider
@@ -144,8 +141,8 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
   lazy val datasetMapWriter: DatasetMapWriter[CT] =
     new PostgresDatasetMapWriter(conn, typeContext.typeNamespace, timingReport, obfuscationKeyGenerator, initialCounterValue)
 
-  lazy val secondaryConfig =
-    new SqlSecondaryConfig(conn, timingReport)
+  lazy val secondaryInfo =
+    new SqlSecondaryInfo(conn, timingReport)
 
   def datasetContextFactory(schema: ColumnIdMap[ColumnInfo[CT]]): RepBasedSqlDatasetContext[CT, CV] = {
     RepBasedSqlDatasetContext(

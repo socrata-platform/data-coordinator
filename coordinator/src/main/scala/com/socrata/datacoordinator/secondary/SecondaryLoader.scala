@@ -27,7 +27,6 @@ class SecondaryLoader(parentClassLoader: ClassLoader, secondaryConfig: com.socra
       def accept(dir: File, name: String): Boolean = name.endsWith(".jar")
     })).getOrElse(Array.empty).toSeq
 
-
     log.info("Loading secondary types...")
     val secondaryTypesMap = jars.foldLeft(Map.empty[String, File]) { (acc, jar) =>
       log.info("Investigating secondary in " + jar.getAbsolutePath)
@@ -38,7 +37,7 @@ class SecondaryLoader(parentClassLoader: ClassLoader, secondaryConfig: com.socra
         // a specific secondary implementation jar for debugging.
         for (resourceCl <- managed(new URLClassLoader(Array(jar.toURI.toURL), null))) yield {
           val stream = resourceCl.getResourceAsStream("secondary-manifest.json")
-          if(stream == null) throw Nope("No secondary-manifest.json in " + jar.getAbsolutePath)
+          if (stream == null) throw Nope("No secondary-manifest.json in " + jar.getAbsolutePath)
           val desc = withStreamResource(resourceCl, jar, "secondary-manifest.json") { reader =>
             try {
               JsonUtil.readJson[SecondaryDescription](reader).right.toOption.getOrElse {
@@ -49,25 +48,25 @@ class SecondaryLoader(parentClassLoader: ClassLoader, secondaryConfig: com.socra
                 throw Nope("Unable to parse " + jar.getAbsolutePath + " as JSON", e)
             }
           }
-          if(acc.contains(desc.name)) throw Nope("A secondary type named " + desc.name + " already exists")
+          if (acc.contains(desc.name)) throw Nope("A secondary type named " + desc.name + " already exists")
 
           log.info("Found secondary type " + desc.name)
 
           acc + (desc.name -> jar)
         }
       } catch {
-      case Nope(msg, null) => log.warn(msg); acc
-      case Nope(msg, ex) => log.warn(msg, ex); acc
+        case Nope(msg, null) => log.warn(msg); acc
+        case Nope(msg, ex) => log.warn(msg, ex); acc
+      }
     }
-  }
 
     log.info("Loading secondary instances...")
-    val secondaryMap = secondaryConfig.instances.foldLeft(Map.empty[String, Secondary[_,_]]) { case (acc, (instanceName, instanceConfig)) =>
+    secondaryConfig.instances.foldLeft(Map.empty[String, Secondary[_, _]]) { case (acc, (instanceName, instanceConfig)) =>
       log.info("Loading secondary instance " + instanceName)
       try {
-        val jar = secondaryTypesMap.get(instanceConfig.secondaryType).getOrElse {
+        val jar = secondaryTypesMap.getOrElse(instanceConfig.secondaryType, {
           throw Nope("Unable to find secondary instance type " + instanceConfig.secondaryType)
-        }
+        })
 
         val secondary = loadSecondary(jar, instanceConfig.config)
         acc + (instanceName -> secondary)
@@ -76,14 +75,6 @@ class SecondaryLoader(parentClassLoader: ClassLoader, secondaryConfig: com.socra
         case Nope(msg, ex) => log.warn(msg, ex); acc
       }
     }
-
-    secondaryConfig.groups.values.foreach { g =>
-      g.instances.foreach { i =>
-        secondaryMap.get(i).orElse(throw Nope("Unable to find instance " + i))
-      }
-    }
-
-    secondaryMap
   }
 
   private def withStreamResource[T](cl: ClassLoader, jar: File, name: String)(f: Reader => T): T = {

@@ -1,28 +1,28 @@
 package com.socrata.datacoordinator.service
 
+import java.util.concurrent.{CountDownLatch, Executors, TimeUnit}
+
 import com.rojoma.json.v3.ast.{JString, JValue}
-import com.rojoma.simplearm.SimpleArm
 import com.rojoma.simplearm.util._
-import com.socrata.datacoordinator.common.{SoQLCommon, StandardDatasetMapLimits, DataSourceFromConfig}
-import com.socrata.datacoordinator.id.{UserColumnId, ColumnId, DatasetId}
-import com.socrata.datacoordinator.secondary.{DatasetAlreadyInSecondary, SecondaryLoader}
+import com.socrata.datacoordinator.common.{DataSourceFromConfig, SoQLCommon}
+import com.socrata.datacoordinator.id.{ColumnId, DatasetId, UserColumnId}
+import com.socrata.datacoordinator.secondary.DatasetAlreadyInSecondary
+import com.socrata.datacoordinator.secondary.sql.{SecondaryGroupInfo, SecondaryInstanceInfo}
 import com.socrata.datacoordinator.truth.CopySelector
-import com.socrata.datacoordinator.truth.metadata.{SchemaField, Schema, DatasetCopyContext}
+import com.socrata.datacoordinator.truth.metadata.{DatasetCopyContext, Schema, SchemaField}
 import com.socrata.datacoordinator.util.collection.UserColumnIdSet
-import com.socrata.datacoordinator.util.{NullCache, IndexedTempFile, StackedTimingReport, LoggedTimingReport}
+import com.socrata.datacoordinator.util.{IndexedTempFile, LoggedTimingReport, NullCache, StackedTimingReport}
 import com.socrata.http.common.AuxiliaryData
 import com.socrata.http.server.curator.CuratorBroker
 import com.socrata.http.server.livenesscheck.LivenessCheckResponder
 import com.socrata.http.server.util.{EntityTag, Precondition}
-import com.socrata.soql.environment.ColumnName
 import com.socrata.thirdparty.curator.{CuratorFromConfig, DiscoveryFromConfig}
 import com.socrata.thirdparty.typesafeconfig.Propertizer
 import com.typesafe.config.{Config, ConfigFactory}
-import java.net.{InetSocketAddress, InetAddress}
-import java.util.concurrent.{CountDownLatch, TimeUnit, Executors}
-import org.apache.curator.x.discovery.{ServiceInstanceBuilder, ServiceInstance}
+import org.apache.curator.x.discovery.ServiceInstanceBuilder
 import org.apache.log4j.PropertyConfigurator
 import org.joda.time.DateTime
+
 import scala.util.Random
 
 class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
@@ -45,9 +45,9 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
 
   def ensureInSecondaryGroup(secondaryGroupStr: String, datasetId: DatasetId): Unit = {
     for(u <- common.universe) {
-      val secondaryGroup = serviceConfig.secondary.groups.get(secondaryGroupStr).getOrElse(
+      val secondaryGroup = u.secondaryInfo.groups.find(_.groupId == secondaryGroupStr).getOrElse(
         // TODO: proper error
-        throw new Exception(s"Can't find secondary group ${secondaryGroupStr}")
+        throw new Exception(s"Can't find secondary group $secondaryGroupStr")
       )
 
       val currentDatasetSecondaries = secondariesOfDataset(datasetId).keySet
@@ -72,6 +72,9 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
         result <- u.secondaryManifest.readLastDatasetInfo(storeId, datasetId)
       } yield result._1
     }
+
+  def secondaryGroups(): Set[SecondaryGroupInfo] = for(u <- common.universe) yield u.secondaryInfo.groups
+  def secondaryInstances(): Set[SecondaryInstanceInfo] = for(u <- common.universe) yield u.secondaryInfo.instances
 
   def secondariesOfDataset(datasetId: DatasetId): Map[String, Long] =
     for(u <- common.universe) yield {
@@ -187,8 +190,6 @@ object Main {
 
     PropertyConfigurator.configure(Propertizer("log4j", serviceConfig.logProperties))
 
-    val secondaries = serviceConfig.secondary.instances.keySet
-
     for(dsInfo <- DataSourceFromConfig(serviceConfig.dataSource)) {
       val executorService = Executors.newCachedThreadPool()
       try {
@@ -251,8 +252,8 @@ object Main {
           }
         }
 
-        val serv = new Service(serviceConfig, operations.processMutation, operations.processCreation, getSchema _, getRollups,
-          operations.exporter, secondaries, operations.datasetsInStore, operations.versionInStore,
+        val serv = new Service(serviceConfig, operations.processMutation, operations.processCreation, getSchema, getRollups,
+          operations.exporter, operations.secondaryGroups, operations.secondaryInstances, operations.datasetsInStore, operations.versionInStore,
           operations.ensureInSecondary, operations.ensureInSecondaryGroup, operations.secondariesOfDataset, operations.listDatasets, operations.deleteDataset,
           serviceConfig.commandReadLimit, common.internalNameFromDatasetId, common.datasetIdFromInternalName, operations.makeReportTemporaryFile)
 
@@ -280,7 +281,7 @@ object Main {
           override def run() {
             do {
               try {
-                for (u <- common.universe) {
+                for(u <- common.universe) {
                   while (finished.getCount > 0 && u.logTableCleanup.cleanupOldVersions()) {
                     u.commit()
                     // a simple knob to allow us to slow the log table cleanup down without
@@ -327,9 +328,8 @@ object Main {
   }
 
 
-  def secondariesToAdd(secondaryGroup: SecondaryGroupConfig, currentDatasetSecondaries: Set[String],
+  def secondariesToAdd(secondaryGroup: SecondaryGroupInfo, currentDatasetSecondaries: Set[String],
                        datasetId: DatasetId, secondaryGroupStr: String): Set[String] = {
-
     /*
      * The dataset may be in secondaries defined in other groups, but here we need to reason 
      * only about secondaries in this group since selection is done group by group.  For example,
@@ -340,16 +340,16 @@ object Main {
     val newCopiesRequired = Math.max(desiredCopies - currentDatasetSecondariesForGroup.size, 0)
     val secondariesInGroup = secondaryGroup.instances
 
-    log.info(s"Dataset ${datasetId} exists on ${currentDatasetSecondariesForGroup.size} secondaries in group, want it on ${desiredCopies} so need to find ${newCopiesRequired} new secondaries")
+    log.info(s"Dataset $datasetId exists on ${currentDatasetSecondariesForGroup.size} secondaries in group, want it on $desiredCopies so need to find $newCopiesRequired new secondaries")
 
     val newSecondaries = Random.shuffle((secondariesInGroup -- currentDatasetSecondariesForGroup).toList).take(newCopiesRequired).toSet
 
     if (newSecondaries.size < newCopiesRequired) {
       // TODO: proper error, this is configuration error though
-      throw new Exception(s"Can't find ${desiredCopies} servers in secondary group ${secondaryGroupStr} to publish to")
+      throw new Exception(s"Can't find $desiredCopies servers in secondary group $secondaryGroupStr to publish to")
     }
 
-    log.info(s"Dataset ${datasetId} should also be on ${newSecondaries}")
+    log.info(s"Dataset $datasetId should also be on $newSecondaries")
 
     newSecondaries
   }
