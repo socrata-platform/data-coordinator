@@ -54,7 +54,7 @@ class SoQLCommon(dataSource: DataSource,
                  tmpDir: File,
                  logTableCleanupDeleteOlderThan: FiniteDuration,
                  logTableCleanupDeleteEvery: FiniteDuration,
-                 //tableCleanupDelay: FiniteDuration,
+                 tableCleanupDelay: FiniteDuration,
                  cache: Cache)
 { common =>
   type CT = SoQLType
@@ -132,7 +132,7 @@ class SoQLCommon(dataSource: DataSource,
 
     val tmpDir = common.tmpDir
     
-    //val tableCleanupDelay = common.tableCleanupDelay
+    val tableCleanupDelay = common.tableCleanupDelay
     val logTableCleanupDeleteOlderThan = common.logTableCleanupDeleteOlderThan
     val logTableCleanupDeleteEvery = common.logTableCleanupDeleteEvery
     val newRowCodec = common.newRowLogCodec _

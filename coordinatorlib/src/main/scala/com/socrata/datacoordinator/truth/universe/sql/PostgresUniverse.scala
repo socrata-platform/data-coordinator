@@ -48,7 +48,7 @@ trait PostgresCommonSupport[CT, CV] {
   
   def logTableCleanupDeleteOlderThan: FiniteDuration
   def logTableCleanupDeleteEvery: FiniteDuration
-  //def tableCleanupDelay: FiniteDuration
+  def tableCleanupDelay: FiniteDuration
 
   lazy val loaderProvider = new AbstractSqlLoaderProvider(executor, typeContext, repFor, isSystemColumn) with PostgresSqlLoaderProvider[CT, CV] {
     def copyIn(conn: Connection, sql: String, output: OutputStream => Unit): Long =
@@ -194,7 +194,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
     new SqlDatasetRemover(conn, writeLockTimeout, datasetMapWriter)
 
   lazy val tableCleanup: TableCleanup =
-    new SqlTableCleanup(conn) //, tableCleanupDelay)
+    new SqlTableCleanup(conn, tableCleanupDelay)
 
   lazy val logTableCleanup: LogTableCleanup =
     new SqlLogTableCleanup(conn, logTableCleanupDeleteOlderThan, logTableCleanupDeleteEvery)
