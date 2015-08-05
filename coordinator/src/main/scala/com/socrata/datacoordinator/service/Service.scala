@@ -68,6 +68,7 @@ class Service(serviceConfig: ServiceConfig,
               secondariesOfDataset: DatasetId => Map[String, Long],
               datasets: () => Seq[DatasetId],
               deleteDataset: DatasetId => DatasetDropper.Result,
+              removeDataset: DatasetId => DatasetRemover.Result,
               commandReadLimit: Long,
               formatDatasetId: DatasetId => String,
               parseDatasetId: String => Option[DatasetId],
@@ -498,7 +499,8 @@ class Service(serviceConfig: ServiceConfig,
 
   case class DatasetResource(datasetId: DatasetId) extends SodaResource {
     override def post = doMutation
-    override def delete = doDeleteDataset
+    //override def delete = doDeleteDataset
+    override def delete = doRemoveDataset
     override def get = doExportFile
 
     val dateTimeFormat = ISODateTimeFormat.dateTime
@@ -565,6 +567,23 @@ class Service(serviceConfig: ServiceConfig,
         case DatasetDropper.FailureWriteLock =>
           writeLockError(datasetId)
       }
+    }
+
+    def doRemoveDataset (req: HttpRequest): HttpResponse = {
+        removeDataset(datasetId) match {
+        case DatasetRemover.Success =>
+        OK ~>
+        Header("X-SODA2-Truth-Last-Modified", dateTimeFormat.print(DateTime.now)) ~>
+        Header("X-SODA2-Truth-Copy-Number", 0.toString) ~>
+        Header("X-SODA2-Truth-Version", 0.toString) ~>
+        Content(JsonContentType, "[]")
+        case DatasetRemover.FailureNotFound =>
+        notFoundError(formatDatasetId(datasetId))
+        case DatasetRemover.FailureWriteLock =>
+        writeLockError(datasetId)
+
+      }
+
     }
 
     val suffixHashAlg = "SHA1"

@@ -105,6 +105,12 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
     }
   }
 
+  def removeDataset (datasetId: DatasetId) = {
+    for (u <- common.universe) yield {
+      u.datasetRemover.removeDataset(datasetId)
+    }
+  }
+
   def exporter(
     id: DatasetId,
     schemaHash: Option[String],
@@ -253,52 +259,11 @@ object Main {
 
         val serv = new Service(serviceConfig, operations.processMutation, operations.processCreation, getSchema _, getRollups,
           operations.exporter, secondaries, operations.datasetsInStore, operations.versionInStore,
-          operations.ensureInSecondary, operations.ensureInSecondaryGroup, operations.secondariesOfDataset, operations.listDatasets, operations.deleteDataset,
+          operations.ensureInSecondary, operations.ensureInSecondaryGroup, operations.secondariesOfDataset, operations.listDatasets, operations.deleteDataset, operations.removeDataset,
           serviceConfig.commandReadLimit, common.internalNameFromDatasetId, common.datasetIdFromInternalName, operations.makeReportTemporaryFile)
 
         val finished = new CountDownLatch(1)
-        val tableDropper = new Thread() {
-          setName("table dropper")
-          override def run() {
-            do {
-              try {
-                for(u <- common.universe) {
-                  while(finished.getCount > 0 && u.tableCleanup.cleanupPendingDrops()) {
-                    u.commit()
-                  }
-                }
-              } catch {
-                case e: Exception =>
-                  log.error("Unexpected error while dropping tables", e)
-              }
-            } while(!finished.await(30, TimeUnit.SECONDS))
-          }
-        }
-
-        val logTableCleanup = new Thread() {
-          setName("logTableCleanup thread")
-          override def run() {
-            do {
-              try {
-                for (u <- common.universe) {
-                  while (finished.getCount > 0 && u.logTableCleanup.cleanupOldVersions()) {
-                    u.commit()
-                    // a simple knob to allow us to slow the log table cleanup down without
-                    // requiring complicated things.
-                    finished.await(serviceConfig.logTableCleanupSleepTime.toMillis, TimeUnit.MILLISECONDS)
-                  }
-                }
-              } catch {
-                case e: Exception =>
-                  log.error("Unexpected error while cleaning log tables", e)
-              }
-            } while(!finished.await(30, TimeUnit.SECONDS))
-          }
-        }
-
         try {
-          tableDropper.start()
-          logTableCleanup.start()
           val address = serviceConfig.discovery.address
           for {
             curator <- CuratorFromConfig(serviceConfig.curator)
@@ -316,9 +281,6 @@ object Main {
         } finally {
           finished.countDown()
         }
-
-        log.info("Waiting for table dropper to terminate")
-        tableDropper.join()
       } finally {
         executorService.shutdown()
       }

@@ -6,6 +6,7 @@ import scala.concurrent.duration.FiniteDuration
 
 import com.rojoma.simplearm.util._
 import scala.concurrent.duration.FiniteDuration
+import com.socrata.datacoordinator.truth.metadata.DatasetMapWriter
 
 class SqlTableCleanup(conn: Connection, delay: FiniteDuration) extends TableCleanup {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[SqlTableCleanup])

@@ -119,6 +119,10 @@ trait DatasetDropperProvider {
   def datasetDropper: DatasetDropper
 }
 
+trait DatasetRemoverProvider {
+  def datasetRemover: DatasetRemover
+}
+
 trait TableCleanupProvider {
   def tableCleanup: TableCleanup
 }
