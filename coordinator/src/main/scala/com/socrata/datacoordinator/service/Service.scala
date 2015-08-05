@@ -777,6 +777,7 @@ class Service(serviceConfig: ServiceConfig,
                      SocrataServerJetty.defaultOptions.
                        withPort(port).
                        withExtraHandlers(List(SocrataHttpSupport.getHandler(metricsOptions))).
+                       withPoolOptions(SocrataServerJetty.Pool(serviceConfig.jettyThreadpool)).
                        withBroker(broker))
       server.run()
     }
