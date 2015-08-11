@@ -23,10 +23,10 @@ class SqlDatasetDropper[CT](conn: Connection, writeLockTimeout: Duration, datase
         using(new SqlTableDropper(conn)) { td =>
           for(copy <- datasetMap.allCopies(di)) {
             //TODO: Ask if the system_id is the same for all dataset copies
-            td.scheduleForDropping(copy.dataTableName)
+            td.delete(copy.dataTableName)
           }
-          td.scheduleForDropping(di.logTableName)
-          td.scheduleForDropping(di.auditTableName)
+          td.delete(di.logTableName)
+          td.delete(di.auditTableName)
           td.go()
         }
 
