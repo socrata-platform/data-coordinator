@@ -45,9 +45,9 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
 
   def ensureInSecondaryGroup(secondaryGroupStr: String, datasetId: DatasetId): Unit = {
     for(u <- common.universe) {
-      val secondaryGroup = serviceConfig.secondary.groups.get(secondaryGroupStr).getOrElse(
+      val secondaryGroup = serviceConfig.secondary.groups.getOrElse(secondaryGroupStr,
         // TODO: proper error
-        throw new Exception(s"Can't find secondary group ${secondaryGroupStr}")
+        throw new Exception(s"Can't find secondary group $secondaryGroupStr")
       )
 
       val currentDatasetSecondaries = secondariesOfDataset(datasetId).keySet
@@ -187,7 +187,7 @@ object Main {
 
     PropertyConfigurator.configure(Propertizer("log4j", serviceConfig.logProperties))
 
-    val secondaries = serviceConfig.secondary.instances.keySet
+    val secondaries: Set[String] = serviceConfig.secondary.groups.flatMap(_._2.instances).toSet
 
     for(dsInfo <- DataSourceFromConfig(serviceConfig.dataSource)) {
       val executorService = Executors.newCachedThreadPool()
@@ -251,7 +251,7 @@ object Main {
           }
         }
 
-        val serv = new Service(serviceConfig, operations.processMutation, operations.processCreation, getSchema _, getRollups,
+        val serv = new Service(serviceConfig, operations.processMutation, operations.processCreation, getSchema, getRollups,
           operations.exporter, secondaries, operations.datasetsInStore, operations.versionInStore,
           operations.ensureInSecondary, operations.ensureInSecondaryGroup, operations.secondariesOfDataset, operations.listDatasets, operations.deleteDataset,
           serviceConfig.commandReadLimit, common.internalNameFromDatasetId, common.datasetIdFromInternalName, operations.makeReportTemporaryFile)
