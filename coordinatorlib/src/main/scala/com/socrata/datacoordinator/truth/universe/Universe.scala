@@ -119,10 +119,6 @@ trait DatasetDropperProvider {
   def datasetDropper: DatasetDropper
 }
 
-trait TableCleanupProvider {
-  def tableCleanup: TableCleanup
-}
-
 trait LogTableCleanupProvider {
   def logTableCleanup: LogTableCleanup
 }

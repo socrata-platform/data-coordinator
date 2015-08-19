@@ -20,7 +20,10 @@ class SqlTableDropper(conn: Connection) extends Closeable {
   }
 
   def scheduleForDropping (tableName: String): Unit = {
-   stmt.executeUpdate("INSERT INTO pending_table_drops (table_name, queued_at) values (?, now())")
+    val sql = "INSERT INTO pending_table_drops (table_name, queued_at) values (? ,now())"
+    val query = conn.prepareStatement(sql)
+    query.setString(1, tableName)
+    query.executeUpdate()
   }
 
 }

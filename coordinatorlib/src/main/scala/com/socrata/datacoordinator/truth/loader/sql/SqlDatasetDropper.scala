@@ -11,7 +11,6 @@ import com.socrata.datacoordinator.truth.DatasetIdInUseByWriterException
 
 //This method was used in a previous implementation of table dropper, where data coordinator put tables first in pending_table_drops
 //Then at a later date, deletes all the datasets in pending_table_drops
-//The To dos refer to that task and are no longer relevant, keeping them around for documentation.
 class SqlDatasetDropper[CT](conn: Connection, writeLockTimeout: Duration, datasetMap: DatasetMapWriter[CT]) extends DatasetDropper {
   def dropDataset(datasetId: DatasetId) = {
     try {
@@ -22,7 +21,6 @@ class SqlDatasetDropper[CT](conn: Connection, writeLockTimeout: Duration, datase
 
         using(new SqlTableDropper(conn)) { td =>
           for(copy <- datasetMap.allCopies(di)) {
-            //TODO: Ask if the system_id is the same for all dataset copies
             td.delete(copy.dataTableName)
           }
           td.delete(di.logTableName)
@@ -31,8 +29,6 @@ class SqlDatasetDropper[CT](conn: Connection, writeLockTimeout: Duration, datase
         }
 
         updateSecondaryAndBackupInfo(datasetId, fakeVersion)
-
-        //TODO: Remove this instruction to delete metadata right away (cop_map, rollup_map, dataset_map, column_map)
         datasetMap.delete(di)
 
         DatasetDropper.Success
