@@ -215,6 +215,7 @@ class Service(serviceConfig: ServiceConfig,
       "errorCode" -> JString(errorCode),
       "data" -> JObject(data.toMap)
     ))
+    log.info(errorCode)
     codeSetter ~> Write(JsonContentType) { w =>
       JsonUtil.writeJson(w, response, pretty = true, buffer = true)
     }
