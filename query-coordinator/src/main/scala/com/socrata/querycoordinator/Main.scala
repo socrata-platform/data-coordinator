@@ -108,7 +108,8 @@ object Main extends App {
                          withPoolOptions(SocrataServerJetty.Pool(config.threadpool)).
                          withBroker(broker)
     )
-    log.info("Ready to go!  kicking off the server...")
+    log.info("Ready to go!  kicking off the server - downstream query servers {}...",
+             config.allSecondaryInstanceNames.mkString("[", ", ", "]"))
     serv.run()
   }
 
