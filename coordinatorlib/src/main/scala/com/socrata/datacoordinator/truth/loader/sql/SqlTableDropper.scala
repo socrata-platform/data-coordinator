@@ -19,11 +19,4 @@ class SqlTableDropper(conn: Connection) extends Closeable {
     stmt.executeUpdate("DROP TABLE IF EXISTS " + tableName)
   }
 
-  def scheduleForDropping (tableName: String): Unit = {
-    val sql = "INSERT INTO pending_table_drops (table_name, queued_at) values (? ,now())"
-    val query = conn.prepareStatement(sql)
-    query.setString(1, tableName)
-    query.executeUpdate()
-  }
-
 }
