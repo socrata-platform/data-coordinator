@@ -9,6 +9,8 @@ import com.rojoma.simplearm.util._
 import java.io.Closeable
 import com.socrata.datacoordinator.truth.DatasetIdInUseByWriterException
 
+//This method was used in a previous implementation of table dropper, where data coordinator put tables first in pending_table_drops
+//Then at a later date, deletes all the datasets in pending_table_drops
 class SqlDatasetDropper[CT](conn: Connection, writeLockTimeout: Duration, datasetMap: DatasetMapWriter[CT]) extends DatasetDropper {
   def dropDataset(datasetId: DatasetId) = {
     try {
@@ -19,10 +21,10 @@ class SqlDatasetDropper[CT](conn: Connection, writeLockTimeout: Duration, datase
 
         using(new SqlTableDropper(conn)) { td =>
           for(copy <- datasetMap.allCopies(di)) {
-            td.scheduleForDropping(copy.dataTableName)
+            td.delete(copy.dataTableName)
           }
-          td.scheduleForDropping(di.logTableName)
-          td.scheduleForDropping(di.auditTableName)
+          td.delete(di.logTableName)
+          td.delete(di.auditTableName)
           td.go()
         }
 

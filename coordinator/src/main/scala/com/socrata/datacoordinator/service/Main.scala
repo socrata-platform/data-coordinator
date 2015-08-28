@@ -222,7 +222,6 @@ object Main {
             serviceConfig.reports.directory,
             serviceConfig.logTableCleanupDeleteOlderThan,
             serviceConfig.logTableCleanupDeleteEvery,
-            //serviceConfig.tableCleanupDelay,
             NullCache
           )
         }
@@ -257,24 +256,6 @@ object Main {
           serviceConfig.commandReadLimit, common.internalNameFromDatasetId, common.datasetIdFromInternalName, operations.makeReportTemporaryFile)
 
         val finished = new CountDownLatch(1)
-        val tableDropper = new Thread() {
-          setName("table dropper")
-          override def run() {
-            do {
-              try {
-                for(u <- common.universe) {
-                  while(finished.getCount > 0 && u.tableCleanup.cleanupPendingDrops()) {
-                    u.commit()
-                  }
-                }
-              } catch {
-                case e: Exception =>
-                  log.error("Unexpected error while dropping tables", e)
-              }
-            } while(!finished.await(30, TimeUnit.SECONDS))
-          }
-        }
-
         val logTableCleanup = new Thread() {
           setName("logTableCleanup thread")
           override def run() {
@@ -296,8 +277,8 @@ object Main {
           }
         }
 
+
         try {
-          tableDropper.start()
           logTableCleanup.start()
           val address = serviceConfig.discovery.address
           for {
@@ -316,9 +297,6 @@ object Main {
         } finally {
           finished.countDown()
         }
-
-        log.info("Waiting for table dropper to terminate")
-        tableDropper.join()
       } finally {
         executorService.shutdown()
       }

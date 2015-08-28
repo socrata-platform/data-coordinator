@@ -431,6 +431,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
       stmt.setLong(2, columnInfo.copyInfo.systemId.underlying)
       stmt.setString(3, userColumnId.underlying)
       stmt.setString(4, typeNamespace.nameForType(typ))
+      stmt.setString(4, typeNamespace.nameForType(typ))
       stmt.setString(5, physicalColumnBaseBase)
       try {
         t("add-column-with-id", "dataset_id" -> copyInfo.datasetInfo.systemId, "copy_num" -> copyInfo.copyNumber, "column_id" -> systemId)(stmt.execute())

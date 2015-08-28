@@ -568,6 +568,7 @@ class Service(serviceConfig: ServiceConfig,
       }
     }
 
+
     val suffixHashAlg = "SHA1"
     val suffixHashLen = MessageDigest.getInstance(suffixHashAlg).getDigestLength
     def doExportFile(req: HttpRequest): HttpResponse = {
