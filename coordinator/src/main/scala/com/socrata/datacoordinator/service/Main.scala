@@ -15,7 +15,7 @@ import com.socrata.http.server.curator.CuratorBroker
 import com.socrata.http.server.livenesscheck.LivenessCheckResponder
 import com.socrata.http.server.util.{EntityTag, Precondition}
 import com.socrata.soql.environment.ColumnName
-import com.socrata.thirdparty.curator.{CuratorFromConfig, DiscoveryFromConfig}
+import com.socrata.curator.{CuratorFromConfig, DiscoveryFromConfig}
 import com.socrata.thirdparty.typesafeconfig.Propertizer
 import com.typesafe.config.{Config, ConfigFactory}
 import java.net.{InetSocketAddress, InetAddress}

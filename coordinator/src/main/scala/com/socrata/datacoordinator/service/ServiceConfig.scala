@@ -2,7 +2,7 @@ package com.socrata.datacoordinator.service
 
 import com.socrata.datacoordinator.common.DataSourceConfig
 import com.socrata.http.server.livenesscheck.LivenessCheckConfig
-import com.socrata.thirdparty.curator.{CuratorConfig, DiscoveryConfig}
+import com.socrata.curator.{CuratorConfig, DiscoveryConfig}
 import com.typesafe.config.Config
 import java.util.concurrent.TimeUnit
 import scala.concurrent.duration.{MILLISECONDS, FiniteDuration, Duration}

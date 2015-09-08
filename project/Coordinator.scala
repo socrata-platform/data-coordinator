@@ -9,6 +9,7 @@ object Coordinator {
         c3po,
         metricsScala,
         slf4jLog4j12,
+        socrataCuratorUtils,
         socrataThirdPartyUtils,
         typesafeConfig,
         "com.socrata"    %% "socrata-http-curator-broker" % "3.3.3",
