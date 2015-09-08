@@ -27,6 +27,7 @@ object QueryCoordinator {
         socrataHttpClient,
         socrataHttpCuratorBroker,
         socrataHttpJetty,
+        socrataCuratorUtils,
         socrataThirdpartyUtils,
         soqlStdlib,
         typesafeConfig,

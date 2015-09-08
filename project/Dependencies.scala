@@ -6,8 +6,9 @@ object Dependencies {
     val socrataHttpVersion = "3.3.1"
     val protobuf = "2.4.1"
     val rojomaJson = "3.2.0"
-    val socrataThirdpartyUtils = "3.1.2"
-    val soqlStdlib = "0.5.4"
+    val socrataCuratorUtils = "1.0.1"
+    val socrataThirdpartyUtils = "4.0.1"
+    val soqlStdlib = "0.7.3"
     val sprayCaching = "1.2.2"
     val typesafeConfig = "1.0.0"
     val metricsJetty = "3.1.0"
@@ -24,6 +25,7 @@ object Dependencies {
   val socrataHttpClient = "com.socrata" %% "socrata-http-client" % versions.socrataHttpVersion
   val socrataHttpCuratorBroker = "com.socrata" %% "socrata-http-curator-broker" % versions.socrataHttpVersion exclude("org.slf4j", "slf4j-simple") exclude ("org.jboss.netty", "netty" /* see ZOOKEEPER-1681 */)
   val socrataHttpJetty = "com.socrata" %% "socrata-http-jetty" % versions.socrataHttpVersion
+  val socrataCuratorUtils = "com.socrata" %% "socrata-curator-utils" % versions.socrataCuratorUtils
   val socrataThirdpartyUtils = "com.socrata" %% "socrata-thirdparty-utils" % versions.socrataThirdpartyUtils
   val soqlStdlib = "com.socrata" %% "soql-stdlib" % versions.soqlStdlib exclude ("javax.media", "jai_core")
   val sprayCaching = "io.spray" % "spray-caching" % versions.sprayCaching

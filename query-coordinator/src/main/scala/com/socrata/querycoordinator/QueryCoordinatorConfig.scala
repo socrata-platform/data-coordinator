@@ -3,7 +3,7 @@ package com.socrata.querycoordinator
 import java.util.concurrent.TimeUnit
 
 import com.socrata.http.server.livenesscheck.LivenessCheckConfig
-import com.socrata.thirdparty.curator.{CuratorConfig, DiscoveryConfig}
+import com.socrata.curator.{CuratorConfig, DiscoveryConfig}
 import com.socrata.thirdparty.metrics.MetricsOptions
 import com.socrata.thirdparty.typesafeconfig.ConfigClass
 import com.typesafe.config.Config
