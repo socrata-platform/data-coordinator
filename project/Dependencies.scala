@@ -12,8 +12,9 @@ object Dependencies {
     val scalaCheck      = "1.11.0"
     val scalaMock       = "3.2"
     val slf4j           = "1.7.5"
-    val soqlReference   = "0.5.3"
-    val thirdPartyUtils = "3.1.2"
+    val soqlReference   = "0.7.3"
+    val thirdPartyUtils = "4.0.1"
+    val curatorUtils = "1.0.1"
     val typesafeConfig  = "1.2.1"
   }
 
@@ -30,6 +31,7 @@ object Dependencies {
   val jodaConvert = "org.joda"  % "joda-convert" % versions.jodaConvert
   val jodaTime    = "joda-time" % "joda-time"    % versions.jodaTime
 
+  val socrataCuratorUtils = "com.socrata" %% "socrata-curator-utils" % versions.curatorUtils
   val socrataThirdPartyUtils = "com.socrata" %% "socrata-thirdparty-utils" % versions.thirdPartyUtils
 
   val soqlEnvironment = "com.socrata" %% "soql-environment" % versions.soqlReference
