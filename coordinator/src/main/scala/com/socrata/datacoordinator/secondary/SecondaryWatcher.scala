@@ -206,6 +206,7 @@ object SecondaryWatcher extends App { self =>
 
   val log = LoggerFactory.getLogger(classOf[SecondaryWatcher[_,_]])
   log.info("Starting secondary watcher...")
+  log.info(com.socrata.datacoordinator.BuildInfo.toJson)
 
   val metricsOptions = MetricsOptions(config.metrics)
 

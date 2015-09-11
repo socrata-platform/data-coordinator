@@ -1,6 +1,7 @@
 import Dependencies._
 import sbt.Keys._
 import sbt._
+import sbtbuildinfo.BuildInfoKeys
 import scoverage.ScoverageSbtPlugin.ScoverageKeys._
 
 import scalabuff.ScalaBuffPlugin
@@ -17,6 +18,7 @@ object BuildSettings {
         coverageFailOnMinimum := false,
         // TODO: enable scalastyle build failures
         com.socrata.sbtplugins.StylePlugin.StyleKeys.styleFailOnError in Compile := false,
+        BuildInfoKeys.buildInfoPackage := "com.socrata.datacoordinator",
         testOptions in Test ++= Seq(
           Tests.Argument(TestFrameworks.ScalaTest, "-oFD")
         ),

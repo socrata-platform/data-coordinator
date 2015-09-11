@@ -688,7 +688,8 @@ class Service(serviceConfig: ServiceConfig,
   }
 
   object VersionResource extends SodaResource {
-    override val get: HttpService = (_: HttpRequest) => OK ~> Content(JsonContentType, buildinfo.BuildInfo.toJson)
+    override val get: HttpService = (_: HttpRequest) =>
+      OK ~> Content(JsonContentType, com.socrata.datacoordinator.BuildInfo.toJson)
   }
 
   implicit object DatasetIdExtractor extends Extractor[DatasetId] {
