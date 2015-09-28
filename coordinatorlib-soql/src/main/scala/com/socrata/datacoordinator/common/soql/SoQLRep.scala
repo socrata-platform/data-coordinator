@@ -29,7 +29,8 @@ object SoQLRep {
     SoQLLine -> (ci => new GeometryLikeRep[LineString](SoQLLine, _.asInstanceOf[SoQLLine].value, SoQLLine(_), ci.physicalColumnBase)),
     SoQLMultiLine -> (ci => new sqlreps.GeometryLikeRep[MultiLineString](SoQLMultiLine, _.asInstanceOf[SoQLMultiLine].value, SoQLMultiLine(_), ci.physicalColumnBase)),
     SoQLPolygon -> (ci => new GeometryLikeRep[Polygon](SoQLPolygon, _.asInstanceOf[SoQLPolygon].value, SoQLPolygon(_), ci.physicalColumnBase)),
-    SoQLMultiPolygon -> (ci => new sqlreps.GeometryLikeRep[MultiPolygon](SoQLMultiPolygon, _.asInstanceOf[SoQLMultiPolygon].value, SoQLMultiPolygon(_), ci.physicalColumnBase))
+    SoQLMultiPolygon -> (ci => new sqlreps.GeometryLikeRep[MultiPolygon](SoQLMultiPolygon, _.asInstanceOf[SoQLMultiPolygon].value, SoQLMultiPolygon(_), ci.physicalColumnBase)),
+    SoQLBlob -> (ci => new sqlreps.BlobRep(ci.physicalColumnBase))
   )
 
   def sqlRep(columnInfo: ColumnInfo[SoQLType]): SqlColumnRep[SoQLType, SoQLValue] =
@@ -52,7 +53,8 @@ object SoQLRep {
     SoQLLine -> new csvreps.GeometryLikeRep[LineString](SoQLLine, SoQLLine(_)),
     SoQLMultiLine -> new csvreps.GeometryLikeRep[MultiLineString](SoQLMultiLine, SoQLMultiLine(_)),
     SoQLPolygon -> new csvreps.GeometryLikeRep[Polygon](SoQLPolygon, SoQLPolygon(_)),
-    SoQLMultiPolygon -> new csvreps.GeometryLikeRep[MultiPolygon](SoQLMultiPolygon, SoQLMultiPolygon(_))
+    SoQLMultiPolygon -> new csvreps.GeometryLikeRep[MultiPolygon](SoQLMultiPolygon, SoQLMultiPolygon(_)),
+    SoQLBlob -> csvreps.BlobRep
   )
   def csvRep(columnInfo: ColumnInfo[SoQLType]): CsvColumnRep[SoQLType, SoQLValue] =
     csvRepFactories(columnInfo.typ)
@@ -76,7 +78,8 @@ object SoQLRep {
     SoQLLine -> new jsonreps.GeometryLikeRep[LineString](SoQLLine, _.asInstanceOf[SoQLLine].value, SoQLLine(_)),
     SoQLMultiLine -> new jsonreps.GeometryLikeRep[MultiLineString](SoQLMultiLine, _.asInstanceOf[SoQLMultiLine].value, SoQLMultiLine(_)),
     SoQLPolygon -> new jsonreps.GeometryLikeRep[Polygon](SoQLPolygon, _.asInstanceOf[SoQLPolygon].value, SoQLPolygon(_)),
-    SoQLMultiPolygon -> new jsonreps.GeometryLikeRep[MultiPolygon](SoQLMultiPolygon, _.asInstanceOf[SoQLMultiPolygon].value, SoQLMultiPolygon(_))
+    SoQLMultiPolygon -> new jsonreps.GeometryLikeRep[MultiPolygon](SoQLMultiPolygon, _.asInstanceOf[SoQLMultiPolygon].value, SoQLMultiPolygon(_)),
+    SoQLBlob -> jsonreps.BlobRep
   )
 
   trait IdObfuscationContext {

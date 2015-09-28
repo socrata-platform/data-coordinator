@@ -12,9 +12,9 @@ object Dependencies {
     val scalaCheck      = "1.11.0"
     val scalaMock       = "3.2"
     val slf4j           = "1.7.5"
-    val soqlReference   = "0.7.3"
+    val soqlReference   = "0.8.1"
     val thirdPartyUtils = "4.0.1"
-    val curatorUtils = "1.0.1"
+    val curatorUtils = "1.0.3"
     val typesafeConfig  = "1.2.1"
   }
 
