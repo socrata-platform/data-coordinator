@@ -76,6 +76,9 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[SoQLValue] {
       case SoQLMultiPoint(mp) =>
         target.writeRawByte(20)
         target.writeBytesNoTag(ByteString.copyFrom(SoQLMultiPoint.WkbRep(mp)))
+      case SoQLBlob(id) =>
+        target.writeRawByte(21)
+        target.writeStringNoTag(id)
       case SoQLNull =>
         target.writeRawByte(-1)
     }
@@ -154,6 +157,8 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[SoQLValue] {
           case Some(multipoint) => SoQLMultiPoint(multipoint)
           case _ => sys.error("Unable to parse object from log!")
         }
+      case 21 =>
+        SoQLBlob(source.readString())
       case -1 =>
         SoQLNull
     }
