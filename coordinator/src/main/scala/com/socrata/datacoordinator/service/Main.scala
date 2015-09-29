@@ -1,26 +1,25 @@
 package com.socrata.datacoordinator.service
 
 import com.rojoma.json.v3.ast.{JString, JValue}
-import com.rojoma.simplearm.SimpleArm
 import com.rojoma.simplearm.util._
-import com.socrata.datacoordinator.common.{SoQLCommon, StandardDatasetMapLimits, DataSourceFromConfig}
+import com.socrata.datacoordinator.common.{SoQLCommon, DataSourceFromConfig}
 import com.socrata.datacoordinator.id.{UserColumnId, ColumnId, DatasetId}
-import com.socrata.datacoordinator.secondary.{DatasetAlreadyInSecondary, SecondaryLoader}
+import com.socrata.datacoordinator.resources._
+import com.socrata.datacoordinator.secondary.{DatasetAlreadyInSecondary}
 import com.socrata.datacoordinator.truth.CopySelector
 import com.socrata.datacoordinator.truth.metadata.{SchemaField, Schema, DatasetCopyContext}
 import com.socrata.datacoordinator.util.collection.UserColumnIdSet
 import com.socrata.datacoordinator.util.{NullCache, IndexedTempFile, StackedTimingReport, LoggedTimingReport}
 import com.socrata.http.common.AuxiliaryData
+import com.socrata.http.server._
 import com.socrata.http.server.curator.CuratorBroker
 import com.socrata.http.server.livenesscheck.LivenessCheckResponder
 import com.socrata.http.server.util.{EntityTag, Precondition}
-import com.socrata.soql.environment.ColumnName
 import com.socrata.curator.{CuratorFromConfig, DiscoveryFromConfig}
 import com.socrata.thirdparty.typesafeconfig.Propertizer
 import com.typesafe.config.{Config, ConfigFactory}
-import java.net.{InetSocketAddress, InetAddress}
 import java.util.concurrent.{CountDownLatch, TimeUnit, Executors}
-import org.apache.curator.x.discovery.{ServiceInstanceBuilder, ServiceInstance}
+import org.apache.curator.x.discovery.{ServiceInstanceBuilder}
 import org.apache.log4j.PropertyConfigurator
 import org.joda.time.DateTime
 import scala.util.Random
@@ -61,23 +60,26 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
     }
   }
 
-  def datasetsInStore(storeId: String): Map[DatasetId, Long] =
-    for(u <- common.universe) yield {
+  def datasetsInStore(storeId: String): Map[DatasetId, Long] = {
+    for (u <- common.universe) yield {
       u.secondaryManifest.datasets(storeId)
     }
+  }
 
-  def versionInStore(storeId: String, datasetId: DatasetId): Option[Long] =
-    for(u <- common.universe) yield {
+  def versionInStore(storeId: String, datasetId: DatasetId): Option[Long] = {
+    for (u <- common.universe) yield {
       for {
         result <- u.secondaryManifest.readLastDatasetInfo(storeId, datasetId)
       } yield result._1
     }
+  }
 
-  def secondariesOfDataset(datasetId: DatasetId): Map[String, Long] =
-    for(u <- common.universe) yield {
+  def secondariesOfDataset(datasetId: DatasetId): Map[String, Long] = {
+    for (u <- common.universe) yield {
       val secondaryManifest = u.secondaryManifest
       secondaryManifest.stores(datasetId)
     }
+  }
 
   private def mutator(tmp: IndexedTempFile) = new Mutator(tmp, common.Mutator)
 
@@ -115,9 +117,11 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
     precondition: Precondition,
     ifModifiedSince: Option[DateTime],
     sorted: Boolean
-   )(f: Either[Schema, (EntityTag, Seq[SchemaField], Option[UserColumnId], String, Long, Iterator[Array[JValue]])] => Unit): Exporter.Result[Unit] = {
+   )(f: Either[Schema, (EntityTag, Seq[SchemaField], Option[UserColumnId], String, Long,
+    Iterator[Array[JValue]])] => Unit): Exporter.Result[Unit] = {
     for(u <- common.universe) yield {
-      Exporter.export(u, id, copy, columns, limit, offset, precondition, ifModifiedSince, sorted) { (entityTag, copyCtx, approxRowCount, it) =>
+      Exporter.export(u, id, copy, columns, limit, offset, precondition, ifModifiedSince, sorted)
+      { (entityTag, copyCtx, approxRowCount, it) =>
         val schema = u.schemaFinder.getSchema(copyCtx)
 
         if(schemaHash.isDefined && (Some(schema.hash) != schemaHash)) {
@@ -125,7 +129,8 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
         } else {
           val jsonReps = common.jsonReps(copyCtx.datasetInfo)
           val jsonSchema = copyCtx.schema.mapValuesStrict { ci => jsonReps(ci.typ) }
-          val unwrappedCids = copyCtx.schema.values.toSeq.filter { ci => jsonSchema.contains(ci.systemId) }.sortBy(_.userColumnId).map(_.systemId.underlying).toArray
+          val unwrappedCids = copyCtx.schema.values.toSeq.filter { ci => jsonSchema.contains(ci.systemId) }
+            .sortBy(_.userColumnId).map(_.systemId.underlying).toArray
           val pkColName = copyCtx.pkCol.map(_.userColumnId)
           val orderedSchema = unwrappedCids.map { cidRaw =>
             val col = copyCtx.schema(new ColumnId(cidRaw))
@@ -251,10 +256,35 @@ object Main {
           }
         }
 
-        val serv = new Service(serviceConfig, operations.processMutation, operations.processCreation, getSchema, getRollups,
-          operations.exporter, secondaries, operations.datasetsInStore, operations.versionInStore,
-          operations.ensureInSecondary, operations.ensureInSecondaryGroup, operations.secondariesOfDataset, operations.listDatasets, operations.deleteDataset,
-          serviceConfig.commandReadLimit, common.internalNameFromDatasetId, common.datasetIdFromInternalName, operations.makeReportTemporaryFile)
+
+        val notFoundDatasetResource = NotFoundDatasetResource(_: Option[String], common.internalNameFromDatasetId,
+          operations.makeReportTemporaryFile, operations.processCreation,
+          operations.listDatasets, _: (=> HttpResponse) => HttpResponse, serviceConfig.commandReadLimit)
+        val datasetResource = DatasetResource(_: DatasetId, operations.makeReportTemporaryFile,
+          serviceConfig.commandReadLimit, operations.processMutation, operations.deleteDataset,
+          operations.exporter, _: (=> HttpResponse) => HttpResponse, common.internalNameFromDatasetId)
+        val datasetSchemaResource = DatasetSchemaResource(_: DatasetId, getSchema, common.internalNameFromDatasetId)
+        val datasetRollupResource = DatasetRollupResource(_: DatasetId, getRollups, common.internalNameFromDatasetId)
+        val secondaryManifestsResource = SecondaryManifestsResource(_: Option[String], secondaries,
+          operations.datasetsInStore, common.internalNameFromDatasetId)
+        val datasetSecondaryStatusResource = DatasetSecondaryStatusResource(_: Option[String], _:DatasetId, secondaries,
+          operations.versionInStore, serviceConfig, operations.ensureInSecondary,
+          operations.ensureInSecondaryGroup, common.internalNameFromDatasetId)
+        val secondariesOfDatasetResource = SecondariesOfDatasetResource(_: DatasetId, operations.secondariesOfDataset,
+          common.internalNameFromDatasetId)
+
+
+
+        val serv = new Service(serviceConfig = serviceConfig,
+          formatDatasetId = common.internalNameFromDatasetId,
+          parseDatasetId = common.datasetIdFromInternalName,
+          notFoundDatasetResource = notFoundDatasetResource,
+          datasetResource = datasetResource,
+          datasetSchemaResource = datasetSchemaResource,
+          datasetRollupResource = datasetRollupResource,
+          secondaryManifestsResource = secondaryManifestsResource,
+          datasetSecondaryStatusResource = datasetSecondaryStatusResource,
+          secondariesOfDatasetResource = secondariesOfDatasetResource)
 
         val finished = new CountDownLatch(1)
         val tableDropper = new Thread() {
@@ -340,9 +370,12 @@ object Main {
     val newCopiesRequired = Math.max(desiredCopies - currentDatasetSecondariesForGroup.size, 0)
     val secondariesInGroup = secondaryGroup.instances
 
-    log.info(s"Dataset ${datasetId} exists on ${currentDatasetSecondariesForGroup.size} secondaries in group, want it on ${desiredCopies} so need to find ${newCopiesRequired} new secondaries")
+    log.info(s"Dataset ${datasetId} exists on ${currentDatasetSecondariesForGroup.size} secondaries in group, " +
+      s"want it on ${desiredCopies} so need to find ${newCopiesRequired} new secondaries")
 
-    val newSecondaries = Random.shuffle((secondariesInGroup -- currentDatasetSecondariesForGroup).toList).take(newCopiesRequired).toSet
+    val newSecondaries = Random.shuffle((secondariesInGroup -- currentDatasetSecondariesForGroup).toList)
+      .take(newCopiesRequired)
+      .toSet
 
     if (newSecondaries.size < newCopiesRequired) {
       // TODO: proper error, this is configuration error though
