@@ -17,4 +17,5 @@ fi
 
 COMMAND=${1:-migrate}
 echo Running datacoordinator.primary.MigrateSchema "$COMMAND" "$2"...
-java -Dconfig.file="$CONFIG" -jar "$JARFILE" com.socrata.datacoordinator.primary.MigrateSchema "$COMMAND" "$2"
+ARGS=( $COMMAND $2 )
+java -Dconfig.file="$CONFIG" -jar "$JARFILE" com.socrata.datacoordinator.primary.MigrateSchema "${ARGS[@]}"
