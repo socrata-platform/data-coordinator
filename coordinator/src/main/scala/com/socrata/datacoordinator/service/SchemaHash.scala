@@ -30,11 +30,11 @@ object SchemaHash {
     sha1.update(locale.getBytes(UTF_8))
     sha1.update(255.toByte)
 
-    val pk = cols.find(_.isUserPrimaryKey).orElse(cols.find(_.isSystemPrimaryKey)).getOrElse {
-      sys.error("No primary key defined on dataset?")
+    val pkOpt = cols.find(_.isUserPrimaryKey).orElse(cols.find(_.isSystemPrimaryKey))
+    pkOpt.foreach { pk =>
+      sha1.update(pk.userColumnId.underlying.getBytes(UTF_8))
+      sha1.update(255.toByte)
     }
-    sha1.update(pk.userColumnId.underlying.getBytes(UTF_8))
-    sha1.update(255.toByte)
 
     java.util.Arrays.sort(cols, new Comparator[ColumnInfo[CT]] {
       val o = Ordering[UserColumnId]

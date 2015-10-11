@@ -73,7 +73,8 @@ object DatasetReader {
       def approximateRowCount = llCtx.approximateRowCount(copyCtx)
 
       def rows(keySet: ColumnIdSet, limit: Option[Long], offset: Option[Long], sorted: Boolean): Managed[Iterator[ColumnIdMap[CV]]] =
-        llCtx.rows(copyCtx.verticalSlice { col => keySet.contains(col.systemId) }, copyCtx.pkCol_!.systemId, limit = limit, offset = offset, sorted = sorted)
+        llCtx.rows(copyCtx.verticalSlice( col => keySet.contains(col.systemId), copyCtx.systemIdCol_!),
+          copyCtx.pkCol_!.systemId, limit = limit, offset = offset, sorted = sorted)
     }
 
     def openDataset(datasetId: DatasetId, copySelector: CopySelector): Managed[Option[ReadContext]] =

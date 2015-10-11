@@ -60,7 +60,7 @@ object Exporter {
                   toRemove.foreach(m -= _)
                   m.freeze()
                 }
-                Success(f(entityTag, copyCtx.verticalSlice { ci => selectedSchema.keySet(ci.systemId) },
+                Success(f(entityTag, copyCtx.verticalSlice(ci => selectedSchema.keySet(ci.systemId), copyCtx.systemIdCol_!),
                   approximateRowCount,
                   if(selectedSchema.contains(copyCtx.pkCol_!.systemId)) it
                   else it.map(_ - copyCtx.pkCol_!.systemId)))
