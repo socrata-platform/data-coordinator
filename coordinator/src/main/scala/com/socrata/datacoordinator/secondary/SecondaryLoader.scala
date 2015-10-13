@@ -56,17 +56,17 @@ class SecondaryLoader(parentClassLoader: ClassLoader, secondaryConfig: com.socra
           acc + (desc.name -> jar)
         }
       } catch {
-      case Nope(msg, null) => log.warn(msg); acc
-      case Nope(msg, ex) => log.warn(msg, ex); acc
+        case Nope(msg, null) => log.warn(msg); acc
+        case Nope(msg, ex) => log.warn(msg, ex); acc
+      }
     }
-  }
 
     log.info("Loading secondary instances...")
     val secondaryMap = secondaryConfig.instances.foldLeft(Map.empty[String, Secondary[_,_]]) { case (acc, (instanceName, instanceConfig)) =>
       log.info("Loading secondary instance " + instanceName)
       try {
         val jar = secondaryTypesMap.get(instanceConfig.secondaryType).getOrElse {
-          throw Nope("Unable to find secondary instance type " + instanceConfig.secondaryType)
+          throw Nope(s"Unable to find secondary instance type ${instanceConfig.secondaryType}, is the jar present and readable in '${dir}'?")
         }
 
         val secondary = loadSecondary(jar, instanceConfig.config)
