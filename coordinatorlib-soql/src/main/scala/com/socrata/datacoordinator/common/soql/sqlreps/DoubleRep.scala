@@ -22,7 +22,7 @@ class DoubleRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLT
   def sql_in(literals: Iterable[SoQLValue]): String =
     literals.iterator.map(dbl).mkString(s"($base in (", ",", "))")
 
-  def count: String = "count(" + base + ")"
+  def count: String = s"count($base)"
 
   def templateForSingleLookup: String = s"($base = ?)"
 

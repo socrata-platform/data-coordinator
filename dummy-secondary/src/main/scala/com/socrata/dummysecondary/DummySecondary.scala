@@ -69,7 +69,7 @@ class DummySecondary(config: Config) extends Secondary[Any, Any] {
         ???
     }
     println("Current cookie: " + cookie)
-    readLine("New qcookie? ") match {
+    readLine("New cookie? ") match {
       case "" => cookie
       case other => Some(other)
     }

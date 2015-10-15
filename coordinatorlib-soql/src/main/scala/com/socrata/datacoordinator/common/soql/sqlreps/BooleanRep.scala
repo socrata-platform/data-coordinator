@@ -27,7 +27,7 @@ class BooleanRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQL
       lit.asInstanceOf[SoQLBoolean].value.toString
     }.mkString(s"($base in (", ",", "))")
 
-  def count: String = "count(" + base + ")"
+  def count: String = s"count($base)"
 
   def templateForSingleLookup: String = s"($base = ?)"
 

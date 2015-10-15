@@ -21,7 +21,7 @@ class NumberLikeRep(repType: SoQLType, num: SoQLValue => java.math.BigDecimal, v
   def sql_in(literals: Iterable[SoQLValue]): String =
     literals.iterator.map(num).mkString(s"($base in (", ",", "))")
 
-  def count: String = "count(" + base + ")"
+  def count: String = s"count($base)"
 
   def templateForSingleLookup: String = s"($base = ?)"
 

@@ -23,7 +23,7 @@ class IDRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType,
       lit.asInstanceOf[SoQLID].value
     }.mkString(s"($base in (", ",", "))")
 
-  def count: String = "count(" + base + ")"
+  def count: String = s"count($base)"
 
   def templateForSingleLookup: String = s"($base = ?)"
 
