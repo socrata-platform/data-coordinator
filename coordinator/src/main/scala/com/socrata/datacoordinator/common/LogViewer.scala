@@ -19,11 +19,17 @@ object LogViewer extends App {
   val to = args(2).toLong
 
   val idRep = new JsonColumnWriteRep[SoQLType, SoQLValue] {
-    def toJValue(value: SoQLValue): JValue = if(SoQLNull == value) JNull else JString("sid-" + value.asInstanceOf[SoQLID].value)
+    def toJValue(value: SoQLValue): JValue = {
+      if(SoQLNull == value) JNull
+      else JString("sid-" + value.asInstanceOf[SoQLID].value)
+    }
     val representedType: SoQLType = SoQLID
   }
   val versionRep = new JsonColumnWriteRep[SoQLType, SoQLValue] {
-    def toJValue(value: SoQLValue): JValue = if(SoQLNull == value) JNull else JString("ver-" + value.asInstanceOf[SoQLVersion].value)
+    def toJValue(value: SoQLValue): JValue = {
+      if(SoQLNull == value) JNull
+      else JString("ver-" + value.asInstanceOf[SoQLVersion].value)
+    }
     val representedType: SoQLType = SoQLVersion
   }
   val jsonReps = SoQLRep.jsonRepFactoriesMinusIdAndVersion ++ Map(
@@ -31,7 +37,7 @@ object LogViewer extends App {
     SoQLVersion -> versionRep
   )
 
-  def jsonify(row: Row[SoQLValue]) =
+  def jsonify(row: Row[SoQLValue]): JObject =
     JObject(SortedMap[String,JObject]() ++ row.iterator.map { case (cid, v) =>
       cid.underlying.toString -> jsonReps(v.typ).toJValue(v)
     })

@@ -8,6 +8,8 @@ import com.socrata.datacoordinator.truth.sql.SqlPKableColumnRep
 import com.socrata.soql.types._
 
 class IDRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType, SoQLValue] {
+  val SIZE_GUESSTIMATE = 30
+
   def templateForMultiLookup(n: Int): String =
     s"($base in (${(1 to n).map(_ => "?").mkString(",")}))"
 
@@ -21,7 +23,7 @@ class IDRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType,
       lit.asInstanceOf[SoQLID].value
     }.mkString(s"($base in (", ",", "))")
 
-  def count = "count(" + base + ")"
+  def count: String = "count(" + base + ")"
 
   def templateForSingleLookup: String = s"($base = ?)"
 
@@ -40,7 +42,7 @@ class IDRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType,
 
   val sqlTypes: Array[String] = Array("BIGINT")
 
-  def csvifyForInsert(sb: StringBuilder, v: SoQLValue) {
+  def csvifyForInsert(sb: StringBuilder, v: SoQLValue): Unit = {
     if(SoQLNull == v) { /* pass */ }
     else sb.append(v.asInstanceOf[SoQLID].value)
   }
@@ -50,8 +52,7 @@ class IDRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType,
     start + 1
   }
 
-  def estimateSize(v: SoQLValue): Int =
-    30
+  def estimateSize(v: SoQLValue): Int = SIZE_GUESSTIMATE
 
   def fromResultSet(rs: ResultSet, start: Int): SoQLID =
     SoQLID(rs.getLong(start))

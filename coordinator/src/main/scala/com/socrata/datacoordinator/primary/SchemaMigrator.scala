@@ -11,7 +11,7 @@ import com.rojoma.simplearm.util._
  * Performs Liquibase migrations on the truth store.
  */
 object SchemaMigrator {
-  def apply(databaseTree: String, operation: MigrationOperation, numChanges: Int = 1) {
+  def apply(databaseTree: String, operation: MigrationOperation, numChanges: Int = 1): Unit = {
     val config = ConfigFactory.load
     for {
       dataSourceInfo <- DataSourceFromConfig(new DataSourceConfig(config, databaseTree))

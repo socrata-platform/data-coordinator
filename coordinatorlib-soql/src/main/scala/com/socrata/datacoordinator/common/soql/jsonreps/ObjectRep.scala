@@ -9,13 +9,13 @@ import com.socrata.soql.environment.ColumnName
 object ObjectRep extends JsonColumnRep[SoQLType, SoQLValue] {
   val representedType = SoQLObject
 
-  def fromJValue(input: JValue) = input match {
+  def fromJValue(input: JValue): Option[SoQLValue] = input match {
     case obj: JObject => Some(SoQLObject(obj))
     case JNull => Some(SoQLNull)
     case _ => None
   }
 
-  def toJValue(input: SoQLValue) = input match {
+  def toJValue(input: SoQLValue): JValue = input match {
     case SoQLObject(obj) => obj
     case SoQLNull => JNull
     case _ => stdBadValue

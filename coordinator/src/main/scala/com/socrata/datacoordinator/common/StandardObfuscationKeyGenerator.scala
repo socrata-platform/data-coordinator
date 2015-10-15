@@ -6,7 +6,7 @@ object StandardObfuscationKeyGenerator extends (() => Array[Byte]) {
   val rng = new SecureRandom
   val len = 72 /* Magic */
 
-  def apply() = {
+  def apply(): Array[Byte] = {
     val cs = new Array[Byte](len)
     rng.nextBytes(cs)
     cs

@@ -6,11 +6,11 @@ import com.socrata.datacoordinator.truth.metadata.LifecycleStage
 
 package object sql {
   implicit class DatasetIdSetter(val __underlying: PreparedStatement) extends AnyVal {
-    def setDatasetId(idx: Int, value: DatasetId) {
+    def setDatasetId(idx: Int, value: DatasetId): Unit = {
       val x: Long = value.underlying
       __underlying.setObject(idx, x, Types.OTHER)
     }
-    def setLifecycleStage(idx: Int, value: LifecycleStage) {
+    def setLifecycleStage(idx: Int, value: LifecycleStage): Unit = {
       val x = value.name()
       __underlying.setString(idx, x)
     }

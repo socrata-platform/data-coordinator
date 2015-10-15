@@ -18,9 +18,9 @@ class ByteBufferInputStream(bb: ByteBuffer) extends InputStream {
     }
   }
 
-  override def available = bb.remaining()
+  override def available: Int = bb.remaining()
 
   // exactly like "available" but without the "it is never correct to use this
   // to allocate a buffer" caveat.
-  def remaining = bb.remaining
+  def remaining: Int = bb.remaining
 }

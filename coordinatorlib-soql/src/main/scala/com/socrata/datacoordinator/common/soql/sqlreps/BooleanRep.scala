@@ -27,7 +27,7 @@ class BooleanRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQL
       lit.asInstanceOf[SoQLBoolean].value.toString
     }.mkString(s"($base in (", ",", "))")
 
-  def count = "count(" + base + ")"
+  def count: String = "count(" + base + ")"
 
   def templateForSingleLookup: String = s"($base = ?)"
 
@@ -46,7 +46,7 @@ class BooleanRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQL
 
   val sqlTypes: Array[String] = Array("BOOLEAN")
 
-  def csvifyForInsert(sb: StringBuilder, v: SoQLValue) {
+  def csvifyForInsert(sb: StringBuilder, v: SoQLValue): Unit = {
     if(SoQLNull == v) { /* pass */ }
     else sb.append(v.asInstanceOf[SoQLBoolean].value)
   }

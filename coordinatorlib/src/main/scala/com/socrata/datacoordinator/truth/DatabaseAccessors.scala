@@ -22,7 +22,8 @@ trait LowLevelDatabaseReader[CT, CV] {
     def loadDataset(latest: CopyInfo): DatasetCopyContext[CT]
 
     def approximateRowCount(copyCtx: DatasetCopyContext[CT]): Long
-    def rows(copyCtx: DatasetCopyContext[CT], sidCol: ColumnId, limit: Option[Long], offset: Option[Long], sorted: Boolean): Managed[Iterator[ColumnIdMap[CV]]]
+    def rows(copyCtx: DatasetCopyContext[CT], sidCol: ColumnId, limit: Option[Long],
+             offset: Option[Long], sorted: Boolean): Managed[Iterator[ColumnIdMap[CV]]]
   }
 
   def openDatabase: Managed[ReadContext]
@@ -35,10 +36,11 @@ trait LowLevelDatabaseMutator[CT, CV] {
     def logger(info: DatasetInfo, user: String): Logger[CT, CV]
     def schemaLoader(logger: Logger[CT, CV]): SchemaLoader[CT]
     def datasetContentsCopier(logger: Logger[CT, CV]): DatasetContentsCopier[CT]
-    def withDataLoader[A](copyCtx: DatasetCopyContext[CT], logger: Logger[CT, CV], reportWriter: ReportWriter[CV], replaceUpdatedRows: Boolean)(f: Loader[CV] => A): (Long, A)
-    def truncate(table: CopyInfo, logger: Logger[CT, CV])
+    def withDataLoader[A](copyCtx: DatasetCopyContext[CT], logger: Logger[CT, CV], reportWriter: ReportWriter[CV],
+                          replaceUpdatedRows: Boolean)(f: Loader[CV] => A): (Long, A)
+    def truncate(table: CopyInfo, logger: Logger[CT, CV]): Unit
 
-    def finishDatasetTransaction(username: String, copyInfo: CopyInfo, updateLastUpdated: Boolean)
+    def finishDatasetTransaction(username: String, copyInfo: CopyInfo, updateLastUpdated: Boolean): Unit
 
     def loadLatestVersionOfDataset(datasetId: DatasetId, lockTimeout: Duration): Option[DatasetCopyContext[CT]]
   }
@@ -57,10 +59,11 @@ trait DatasetReader[CT, CV] {
 
   trait ReadContext {
     val copyCtx: DatasetCopyContext[CT]
-    def copyInfo = copyCtx.copyInfo
-    def schema = copyCtx.schema
+    def copyInfo: CopyInfo = copyCtx.copyInfo
+    def schema: ColumnIdMap[ColumnInfo[CT]] = copyCtx.schema
     def approximateRowCount: Long
-    def rows(cids: ColumnIdSet = schema.keySet, limit: Option[Long] = None, offset: Option[Long] = None, sorted: Boolean = true): Managed[Iterator[ColumnIdMap[CV]]]
+    def rows(cids: ColumnIdSet = schema.keySet, limit: Option[Long] = None, offset: Option[Long] = None,
+             sorted: Boolean = true): Managed[Iterator[ColumnIdMap[CV]]]
   }
 
   def openDataset(datasetId: DatasetId, copy: CopySelector): Managed[Option[ReadContext]]
@@ -70,10 +73,12 @@ trait DatasetReader[CT, CV] {
 object DatasetReader {
   private class Impl[CT, CV](val databaseReader: LowLevelDatabaseReader[CT, CV]) extends DatasetReader[CT, CV] {
     class S(val copyCtx: DatasetCopyContext[CT], llCtx: databaseReader.ReadContext) extends ReadContext {
-      def approximateRowCount = llCtx.approximateRowCount(copyCtx)
+      def approximateRowCount: Long = llCtx.approximateRowCount(copyCtx)
 
-      def rows(keySet: ColumnIdSet, limit: Option[Long], offset: Option[Long], sorted: Boolean): Managed[Iterator[ColumnIdMap[CV]]] =
-        llCtx.rows(copyCtx.verticalSlice { col => keySet.contains(col.systemId) }, copyCtx.pkCol_!.systemId, limit = limit, offset = offset, sorted = sorted)
+      def rows(keySet: ColumnIdSet, limit: Option[Long], offset: Option[Long],
+               sorted: Boolean): Managed[Iterator[ColumnIdMap[CV]]] =
+        llCtx.rows(copyCtx.verticalSlice { col => keySet.contains(col.systemId) }, copyCtx.pkCol_!.systemId,
+                   limit = limit, offset = offset, sorted = sorted)
     }
 
     def openDataset(datasetId: DatasetId, copySelector: CopySelector): Managed[Option[ReadContext]] =
@@ -128,8 +133,8 @@ trait DatasetMutator[CT, CV] {
 
     def unmakeUserPrimaryKey(ci: ColumnInfo[CT]): ColumnInfo[CT]
 
-    def dropColumns(columns: Iterable[ColumnInfo[CT]])
-    def truncate()
+    def dropColumns(columns: Iterable[ColumnInfo[CT]]): Unit
+    def truncate(): Unit
 
     sealed trait RowDataUpdateJob {
       def jobNumber: Int
@@ -137,9 +142,9 @@ trait DatasetMutator[CT, CV] {
     case class DeleteJob(jobNumber: Int, id: CV, version: Option[Option[RowVersion]]) extends RowDataUpdateJob
     case class UpsertJob(jobNumber: Int, row: Row[CV]) extends RowDataUpdateJob
 
-    def upsert(inputGenerator: Iterator[RowDataUpdateJob], reportWriter: ReportWriter[CV], replaceUpdatedRows: Boolean)
+    def upsert(inputGenerator: Iterator[RowDataUpdateJob], reportWriter: ReportWriter[CV], replaceUpdatedRows: Boolean): Unit
 
-    def createOrUpdateRollup(name: RollupName, soql: String)
+    def createOrUpdateRollup(name: RollupName, soql: String): Unit
     def dropRollup(name: RollupName): Option[RollupInfo]
   }
 
@@ -166,25 +171,26 @@ trait DatasetMutator[CT, CV] {
 object DatasetMutator {
   private class Impl[CT, CV](val databaseMutator: LowLevelDatabaseMutator[CT, CV], lockTimeout: Duration) extends DatasetMutator[CT, CV] {
     type TrueMutationContext = S
-    class S(var copyCtx: MutableDatasetCopyContext[CT], llCtx: databaseMutator.MutationContext, logger: Logger[CT, CV], val schemaLoader: SchemaLoader[CT]) extends MutationContext {
-      def copyInfo = copyCtx.copyInfo
-      def schema = copyCtx.currentSchema
-      def primaryKey = schema.values.find(_.isUserPrimaryKey).orElse(schema.values.find(_.isSystemPrimaryKey)).getOrElse {
+    class S(var copyCtx: MutableDatasetCopyContext[CT], llCtx: databaseMutator.MutationContext,
+            logger: Logger[CT, CV], val schemaLoader: SchemaLoader[CT]) extends MutationContext {
+      def copyInfo: CopyInfo = copyCtx.copyInfo
+      def schema: ColumnIdMap[ColumnInfo[CT]] = copyCtx.currentSchema
+      def primaryKey: ColumnInfo[CT] = schema.values.find(_.isUserPrimaryKey).orElse(schema.values.find(_.isSystemPrimaryKey)).getOrElse {
         sys.error("No primary key on this dataset?")
       }
-      def versionColumn = schema.values.find(_.isVersion).getOrElse {
+      def versionColumn: ColumnInfo[CT] = schema.values.find(_.isVersion).getOrElse {
         sys.error("No version column on this dataset?")
       }
-      def columnInfo(id: ColumnId) = copyCtx.columnInfoOpt(id)
-      def columnInfo(name: UserColumnId) = copyCtx.columnInfoOpt(name)
+      def columnInfo(id: ColumnId): Option[ColumnInfo[CT]] = copyCtx.columnInfoOpt(id)
+      def columnInfo(name: UserColumnId): Option[ColumnInfo[CT]] = copyCtx.columnInfoOpt(name)
 
       var doingRows = false
-      def checkDoingRows() {
+      def checkDoingRows(): Unit = {
         if(doingRows) throw new IllegalStateException("Cannot perform operation while rows are being processed")
       }
 
-      def now = llCtx.now
-      def datasetMap = llCtx.datasetMap
+      def now: DateTime = llCtx.now
+      def datasetMap: DatasetMapWriter[CT] = llCtx.datasetMap
 
       def addColumns(columnsToAdd: Iterable[ColumnToAdd]): Iterable[ColumnInfo[CT]] = {
         checkDoingRows()
@@ -197,7 +203,7 @@ object DatasetMutator {
         newColumns
       }
 
-      def dropColumns(columns: Iterable[ColumnInfo[CT]]) {
+      def dropColumns(columns: Iterable[ColumnInfo[CT]]): Unit = {
         checkDoingRows()
         val cs = columns.toVector
         for(ci <- cs) {
@@ -255,7 +261,7 @@ object DatasetMutator {
         result
       }
 
-      def datasetContentsCopier = llCtx.datasetContentsCopier(logger)
+      def datasetContentsCopier: DatasetContentsCopier[CT] = llCtx.datasetContentsCopier(logger)
 
       def makeWorkingCopy(copyData: Boolean): CopyInfo = {
         val dataCopier = if(copyData) Some(datasetContentsCopier) else None
@@ -315,12 +321,13 @@ object DatasetMutator {
         copyInfo
       }
 
-      def truncate() {
+      def truncate(): Unit = {
         checkDoingRows()
         llCtx.truncate(copyInfo, logger)
       }
 
-      def upsert(inputGenerator: Iterator[RowDataUpdateJob], reportWriter: ReportWriter[CV], replaceUpdatedRows: Boolean) {
+      def upsert(inputGenerator: Iterator[RowDataUpdateJob], reportWriter: ReportWriter[CV],
+                 replaceUpdatedRows: Boolean): Unit = {
         checkDoingRows()
         try {
           doingRows = true
@@ -336,14 +343,14 @@ object DatasetMutator {
         }
       }
 
-      def drop() {
+      def drop(): Unit = {
         datasetMap.dropCopy(copyInfo)
         schemaLoader.drop(copyInfo)
         // Do not update copyCtx.copyInfo or previously published dataVersion will be bumped
         // copyCtx.copyInfo = datasetMap.latest(copyInfo.datasetInfo)
       }
 
-      def createOrUpdateRollup(name: RollupName, soql: String) {
+      def createOrUpdateRollup(name: RollupName, soql: String): Unit = {
         val info: RollupInfo = datasetMap.createOrUpdateRollup(copyInfo, name, soql)
         logger.rollupCreatedOrUpdated(info)
       }
@@ -405,7 +412,8 @@ object DatasetMutator {
         }
     }
 
-    def firstOp[U](as: String, datasetId: DatasetId, targetStage: LifecycleStage, op: S => U, check: DatasetCopyContext[CT] => Unit) = new SimpleArm[CopyContext] {
+    def firstOp[U](as: String, datasetId: DatasetId, targetStage: LifecycleStage, op: S => U,
+                   check: DatasetCopyContext[CT] => Unit) = new SimpleArm[CopyContext] {
       def flatMap[A](f: CopyContext => A): A =
         go(as, datasetId, UpdateCanOccur, {
           case None =>
@@ -421,10 +429,12 @@ object DatasetMutator {
         })
     }
 
-    def createCopy(as: String)(datasetId: DatasetId, copyData: Boolean, check: DatasetCopyContext[CT] => Unit): Managed[CopyContext] =
+    def createCopy(as: String)(datasetId: DatasetId, copyData: Boolean,
+                               check: DatasetCopyContext[CT] => Unit): Managed[CopyContext] =
       firstOp(as, datasetId, LifecycleStage.Published, _.makeWorkingCopy(copyData), check)
 
-    def publishCopy(as: String)(datasetId: DatasetId, snapshotsToKeep: Option[Int], check: DatasetCopyContext[CT] => Unit): Managed[CopyContext] =
+    def publishCopy(as: String)(datasetId: DatasetId, snapshotsToKeep: Option[Int],
+                                check: DatasetCopyContext[CT] => Unit): Managed[CopyContext] =
       new SimpleArm[CopyContext] {
         def flatMap[B](f: CopyContext => B): B = {
           firstOp(as, datasetId, LifecycleStage.Unpublished, _.publish(), check).map {

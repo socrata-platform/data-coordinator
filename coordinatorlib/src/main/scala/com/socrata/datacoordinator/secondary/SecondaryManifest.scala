@@ -23,25 +23,25 @@ class DatasetAlreadyInSecondary(val storeId: String, val DatasetId: DatasetId) e
 trait SecondaryManifest {
   def readLastDatasetInfo(storeId: String, datasetId: DatasetId): Option[(Long, Option[String])]
   @throws(classOf[DatasetAlreadyInSecondary])
-  def addDataset(storeId: String, datasetId: DatasetId)
-  def dropDataset(storeId: String, datasetId: DatasetId)
+  def addDataset(storeId: String, datasetId: DatasetId): Unit
+  def dropDataset(storeId: String, datasetId: DatasetId): Unit
 
   def datasets(storeId: String): Map[DatasetId, Long]
   def stores(datasetId: DatasetId): Map[String, Long]
 
-  def cleanOrphanedClaimedDatasets(storeId: String, claimantId: UUID)
+  def cleanOrphanedClaimedDatasets(storeId: String, claimantId: UUID): Unit
   def claimDatasetNeedingReplication(storeId: String,
                                      claimantId: UUID,
                                      claimTimeout: FiniteDuration): Option[SecondaryRecord]
-  def releaseClaimedDataset(job: SecondaryRecord)
-  def markSecondaryDatasetBroken(job: SecondaryRecord)
+  def releaseClaimedDataset(job: SecondaryRecord): Unit
+  def markSecondaryDatasetBroken(job: SecondaryRecord): Unit
   def completedReplicationTo(storeId: String,
                              claimantId: UUID,
                              datasetId: DatasetId,
                              dataVersion: Long,
                              lifecycleStage: metadata.LifecycleStage,
                              newCookie: Option[String])
-  def updateRetryInfo(storeId: String, datasetId: DatasetId, retryNum: Int, nextRetryDelaySecs: Int)
+  def updateRetryInfo(storeId: String, datasetId: DatasetId, retryNum: Int, nextRetryDelaySecs: Int): Unit
 }
 
 case class NamedSecondary[CT, CV](storeId: String, store: Secondary[CT, CV])

@@ -42,7 +42,7 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
           secondary: NamedSecondary[CT, CV]): Boolean = {
     import u._
 
-    val foundWorkToDo = for (job <- manifest(u).claimDatasetNeedingReplication(
+    val foundWorkToDo = for(job <- manifest(u).claimDatasetNeedingReplication(
                                       secondary.storeId, claimantId, claimTimeout)) yield {
       timingReport(
         "playback-to-secondary",
@@ -53,13 +53,13 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
         "endingDataVersion" -> job.endingDataVersion
       ) {
         log.info(">> Syncing {} into {}", job.datasetId, secondary.storeId)
-        if (job.retryNum > 0) log.info("Retry #{} of {}", job.retryNum, maxRetries)
+        if(job.retryNum > 0) log.info("Retry #{} of {}", job.retryNum, maxRetries)
         try {
           playbackToSecondary(secondary, job)
           log.info("<< Sync done for {} into {}", job.datasetId, secondary.storeId)
         } catch {
           case e: Exception =>
-            if (job.retryNum < maxRetries) {
+            if(job.retryNum < maxRetries) {
               val retryBackoff = backoffInterval.toSeconds * Math.pow(2, job.retryNum)
               log.warn("Unexpected exception while updating dataset {} in secondary {}, retrying in {}...",
                        job.datasetId.asInstanceOf[AnyRef], secondary.storeId, retryBackoff.toString, e)
@@ -115,19 +115,19 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
     }
   }
 
-  def mainloop(secondaryConfigInfo: SecondaryConfigInfo, secondary: Secondary[CT, CV], finished: CountDownLatch) {
+  def mainloop(secondaryConfigInfo: SecondaryConfigInfo, secondary: Secondary[CT, CV], finished: CountDownLatch): Unit = {
     var lastWrote = new DateTime(0L)
     var nextRunTime = bestNextRunTime(secondaryConfigInfo.storeId,
       secondaryConfigInfo.nextRunTime,
       secondaryConfigInfo.runIntervalSeconds)
 
     var done = maybeSleep(secondaryConfigInfo.storeId, nextRunTime, finished)
-    while (!done) {
+    while(!done) {
       try {
         for {u <- universe} yield {
           import u._
 
-          while (run(u, new NamedSecondary(secondaryConfigInfo.storeId, secondary)) && finished.getCount != 0) {
+          while(run(u, new NamedSecondary(secondaryConfigInfo.storeId, secondary)) && finished.getCount != 0) {
             // loop until we either have no more work or we are told to exit
           }
 
@@ -137,7 +137,7 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
 
           // we only actually write at most once every 15 minutes...
           val now = DateTime.now()
-          if (now.getMillis - lastWrote.getMillis >= 15 * 60 * 1000) {
+          if(now.getMillis - lastWrote.getMillis >= 15 * 60 * 1000) {
             log.info("Writing new next-runtime: {}", nextRunTime)
             secondaryConfig.updateNextRunTime(secondaryConfigInfo.storeId, nextRunTime)
           }
@@ -147,7 +147,8 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
         done = maybeSleep(secondaryConfigInfo.storeId, nextRunTime, finished)
       } catch {
         case e: Exception =>
-          log.error("Unexpected exception while updating claimedAt time for secondary sync jobs claimed by watcherId " + claimantId.toString(), e)
+          log.error("Unexpected exception while updating claimedAt time for secondary sync jobs claimed by watcherId " +
+                    claimantId.toString(), e)
       }
     }
   }
@@ -157,7 +158,7 @@ class SecondaryWatcherClaimManager(dsInfo: DSInfo, claimantId: UUID, claimTimeou
   val log = LoggerFactory.getLogger(classOf[SecondaryWatcherClaimManager])
   val updateInterval = claimTimeout / 2
 
-  def mainloop(finished: CountDownLatch) {
+  def mainloop(finished: CountDownLatch): Unit = {
     var lastUpdate = DateTime.now()
 
     var done = awaitEither(finished, updateInterval.toMillis)
@@ -178,7 +179,7 @@ class SecondaryWatcherClaimManager(dsInfo: DSInfo, claimantId: UUID, claimTimeou
     finished.await(interval, TimeUnit.MILLISECONDS)
   }
 
-  private def updateDatasetClaimedAtTime() {
+  private def updateDatasetClaimedAtTime(): Unit = {
     // TODO: We have a difficult to debug problem here if our connection pool isn't large enough to satisfy
     // all our workers, since it can block claim updates and result in claims being overwritten.
     // For now we are working around it by configuring a large pool and relying on worker config to control
@@ -211,7 +212,7 @@ object SecondaryWatcher extends App { self =>
   val metricsOptions = MetricsOptions(config.metrics)
 
   Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
-    def uncaughtException(t: Thread, e: Throwable) {
+    def uncaughtException(t: Thread, e: Throwable): Unit = {
       log.error(s"Uncaught exception in thread ${t.getName}, exiting", e)
       sys.exit(1)
     }
@@ -254,7 +255,7 @@ object SecondaryWatcher extends App { self =>
 
     val signalHandler = new SignalHandler {
       val firstSignal = new java.util.concurrent.atomic.AtomicBoolean(true)
-      def handle(signal: Signal) {
+      def handle(signal: Signal): Unit = {
         log.info("Signalling shutdown")
         initiateShutdown.countDown()
       }
@@ -270,7 +271,7 @@ object SecondaryWatcher extends App { self =>
       val claimTimeManagerThread = new Thread {
         setName("SecondaryWatcher claim time manager")
 
-        override def run() {
+        override def run(): Unit = {
           cm.mainloop(completeShutdown)
         }
       }
@@ -287,7 +288,7 @@ object SecondaryWatcher extends App { self =>
                 new Thread {
                   setName(s"Worker $n for secondary $name")
 
-                  override def run() {
+                  override def run(): Unit = {
                     w.mainloop(info, secondary, initiateShutdown)
                   }
                 }

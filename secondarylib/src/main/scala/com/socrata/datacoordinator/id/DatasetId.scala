@@ -10,7 +10,7 @@ class DatasetId(val underlying: Long) extends AnyVal {
 object DatasetId {
   implicit val jCodec = new JsonDecode[DatasetId] with JsonEncode[DatasetId] {
     def encode(datasetId: DatasetId) = JNumber(datasetId.underlying)
-    def decode(v: JValue) = v match {
+    def decode(v: JValue): Either[DecodeError, DatasetId] = v match {
       case n: JNumber => Right(new DatasetId(n.toLong))
       case other      => Left(DecodeError.InvalidType(JNumber, other.jsonType))
     }

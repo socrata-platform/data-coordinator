@@ -13,7 +13,7 @@ class BlobRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType, SoQ
 
   val sqlTypes: Array[String] = Array("TEXT")
 
-  def csvifyForInsert(sb: StringBuilder, v: SoQLValue) {
+  def csvifyForInsert(sb: StringBuilder, v: SoQLValue): Unit = {
     if(SoQLNull == v) { /* pass */ }
     else csvescape(sb, v.asInstanceOf[SoQLBlob].value)
   }

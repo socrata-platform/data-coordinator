@@ -18,13 +18,13 @@ object DateRep extends JsonColumnRep[SoQLType, SoQLValue] {
   private def printTimestamp(d: LocalDate): String =
     SoQLDate.StringRep(d)
 
-  def fromJValue(input: JValue) = input match {
+  def fromJValue(input: JValue): Option[SoQLValue] = input match {
     case JString(s) => tryParseTimestamp(s)
     case JNull => Some(SoQLNull)
     case _ => None
   }
 
-  def toJValue(input: SoQLValue) = input match {
+  def toJValue(input: SoQLValue): JValue = input match {
     case SoQLDate(date) => JString(printTimestamp(date))
     case SoQLNull => JNull
     case _ => stdBadValue

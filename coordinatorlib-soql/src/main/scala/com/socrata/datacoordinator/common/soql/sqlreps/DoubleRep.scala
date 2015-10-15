@@ -17,12 +17,12 @@ class DoubleRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLT
     start + 1
   }
 
-  def dbl(v: SoQLValue) = v.asInstanceOf[SoQLDouble].value
+  def dbl(v: SoQLValue): Double = v.asInstanceOf[SoQLDouble].value
 
   def sql_in(literals: Iterable[SoQLValue]): String =
     literals.iterator.map(dbl).mkString(s"($base in (", ",", "))")
 
-  def count = "count(" + base + ")"
+  def count: String = "count(" + base + ")"
 
   def templateForSingleLookup: String = s"($base = ?)"
 
@@ -39,7 +39,7 @@ class DoubleRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLT
 
   val sqlTypes: Array[String] = Array("DOUBLE PRECISION")
 
-  def csvifyForInsert(sb: StringBuilder, v: SoQLValue) {
+  def csvifyForInsert(sb: StringBuilder, v: SoQLValue): Unit = {
     if(SoQLNull == v) { /* pass */ }
     else sb.append(dbl(v))
   }

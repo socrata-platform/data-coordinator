@@ -8,15 +8,17 @@ object IDRep extends CsvColumnRep[SoQLType, SoQLValue] {
 
   val representedType = SoQLID
 
-  def decode(row: IndexedSeq[String], indices: IndexedSeq[Int]) = {
+  def decode(row: IndexedSeq[String], indices: IndexedSeq[Int]): Option[SoQLValue] = {
     assert(indices.size == size)
     val x = row(indices(0))
-    if(x.isEmpty) Some(SoQLNull)
-    else try {
-      Some(SoQLID(row(indices(0)).toLong))
-    } catch {
-      case _: NumberFormatException =>
-        None
+    if(x.isEmpty) {
+      Some(SoQLNull)
+    } else {
+      try {
+        Some(SoQLID(row(indices(0)).toLong))
+      } catch {
+        case _: NumberFormatException => None
+      }
     }
   }
 }

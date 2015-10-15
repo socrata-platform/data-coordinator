@@ -9,14 +9,14 @@ import com.socrata.soql.environment.ColumnName
 object DoubleRep extends JsonColumnRep[SoQLType, SoQLValue] {
   val representedType = SoQLDouble
 
-  def fromJValue(input: JValue) = input match {
+  def fromJValue(input: JValue): Option[SoQLValue] = input match {
     case n: JNumber => Some(SoQLDouble(n.toDouble))
     case JNull => Some(SoQLNull)
     case JString(n) => try { Some(SoQLDouble(n.toDouble)) } catch { case e: NumberFormatException => None } // For NaN/Infinities
     case _ => None
   }
 
-  def toJValue(input: SoQLValue) = input match {
+  def toJValue(input: SoQLValue): JValue = input match {
     case SoQLDouble(d) =>
       if(d.isInfinite || d.isNaN) JString(d.toString)
       else JNumber(d)

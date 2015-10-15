@@ -8,19 +8,19 @@ import com.vividsolutions.jts.geom.Geometry
 class GeometryLikeRep[T <: Geometry](repType: SoQLType, geometry: SoQLValue => T, value: T => SoQLValue) extends JsonColumnRep[SoQLType, SoQLValue] {
   val representedType = repType
 
-  def fromWkt(str: String) = repType.asInstanceOf[SoQLGeometryLike[T]].WktRep.unapply(str)
-  def fromWkb64(str: String) = repType.asInstanceOf[SoQLGeometryLike[T]].Wkb64Rep.unapply(str)
-  def toWkb64(v: SoQLValue) = v.typ.asInstanceOf[SoQLGeometryLike[T]].Wkb64Rep(geometry(v))
+  def fromWkt(str: String): Option[T] = repType.asInstanceOf[SoQLGeometryLike[T]].WktRep.unapply(str)
+  def fromWkb64(str: String): Option[T] = repType.asInstanceOf[SoQLGeometryLike[T]].Wkb64Rep.unapply(str)
+  def toWkb64(v: SoQLValue): String = v.typ.asInstanceOf[SoQLGeometryLike[T]].Wkb64Rep(geometry(v))
 
-  def fromJValue(input: JValue) = input match {
+  def fromJValue(input: JValue): Option[SoQLValue] = input match {
     // Fall back to WKT in case we deal with an old PG-soql-server still outputting WKT
     case JString(s) => fromWkb64(s).orElse(fromWkt(s)).map(geometry => value(geometry))
     case JNull => Some(SoQLNull)
     case _ => None
   }
 
-  def toJValue(input: SoQLValue) = {
-    if (SoQLNull == input) JNull
+  def toJValue(input: SoQLValue): JValue = {
+    if(SoQLNull == input) JNull
     else JString(toWkb64(input))
   }
 }

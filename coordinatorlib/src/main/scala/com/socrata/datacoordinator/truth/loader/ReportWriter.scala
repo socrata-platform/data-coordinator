@@ -13,10 +13,10 @@ import com.socrata.datacoordinator.util.TIntObjectHashMapWrapper
   *       `finishe()` method is called.
   */
 trait ReportWriter[-CV] {
-  def inserted(job: Int, result: IdAndVersion[CV])
-  def updated(job: Int, result: IdAndVersion[CV])
-  def deleted(job: Int, result: CV)
-  def error(job: Int, result: Failure[CV])
+  def inserted(job: Int, result: IdAndVersion[CV]): Unit
+  def updated(job: Int, result: IdAndVersion[CV]): Unit
+  def deleted(job: Int, result: CV): Unit
+  def error(job: Int, result: Failure[CV]): Unit
 
   var finished: Boolean = false
 }

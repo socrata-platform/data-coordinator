@@ -11,15 +11,17 @@ object TimeRep extends CsvColumnRep[SoQLType, SoQLValue] {
 
   val tsParser = DateTimeFormat.forPattern("hh:mm aa").withZoneUTC
 
-  def decode(row: IndexedSeq[String], indices: IndexedSeq[Int]) = {
+  def decode(row: IndexedSeq[String], indices: IndexedSeq[Int]): Option[SoQLValue] = {
     assert(indices.size == size)
     val x = row(indices(0))
-    if(x.isEmpty) Some(SoQLNull)
-    else try {
-      Some(SoQLTime(tsParser.parseLocalTime(x)))
-    } catch {
-      case e: IllegalArgumentException =>
-        None
+    if(x.isEmpty) {
+      Some(SoQLNull)
+    } else {
+      try {
+        Some(SoQLTime(tsParser.parseLocalTime(x)))
+      } catch {
+        case e: IllegalArgumentException => None
+      }
     }
   }
 }

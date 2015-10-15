@@ -10,7 +10,7 @@ class CopyId(val underlying: Long) extends AnyVal {
 object CopyId {
   implicit val jCodec = new JsonDecode[CopyId] with JsonEncode[CopyId] {
     def encode(versionId: CopyId) = JNumber(versionId.underlying)
-    def decode(v: JValue) = v match {
+    def decode(v: JValue): Either[DecodeError, CopyId] = v match {
       case n: JNumber => Right(new CopyId(n.toLong))
       case other      => Left(DecodeError.InvalidType(JNumber, other.jsonType))
     }

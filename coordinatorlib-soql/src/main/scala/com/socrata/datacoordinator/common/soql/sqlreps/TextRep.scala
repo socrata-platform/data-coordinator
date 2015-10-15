@@ -27,7 +27,7 @@ class TextRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
       sqlescape(lit.asInstanceOf[SoQLText].value)
     }.mkString(s"($base in (", ",", "))")
 
-  def count = "count(" + base + ")"
+  def count: String = "count(" + base + ")"
 
   def templateForSingleLookup: String = s"($base = ?)"
 

@@ -8,12 +8,12 @@ import scala.Some
 import com.socrata.datacoordinator.secondary.DatasetInfo
 
 class DummySecondary(config: Config) extends Secondary[Any, Any] {
-  def shutdown() {}
+  def shutdown(): Unit = {}
 
   val wantsWorkingCopies: Boolean = config.getBoolean("wants-working-copies")
 
   /** The dataset has been deleted. */
-  def dropDataset(datasetInternalName: String, cookie: Secondary.Cookie) {
+  def dropDataset(datasetInternalName: String, cookie: Secondary.Cookie): Unit = {
     println("Deleted dataset " + datasetInternalName)
   }
 
@@ -35,7 +35,10 @@ class DummySecondary(config: Config) extends Secondary[Any, Any] {
    * @return The `copyNumber`s of all snapshot copies in this secondary.
    */
   def snapshots(datasetInternalName: String, cookie: Secondary.Cookie): Set[Long] =
-    readLine("Copy numbers of all snapshot for " + datasetInternalName + "? (" + cookie + ") ").split(',').map(_.toLong).toSet
+    readLine("Copy numbers of all snapshot for " + datasetInternalName + "? (" + cookie + ") ")
+      .split(',')
+      .map(_.toLong)
+      .toSet
 
   /**
    * Order this secondary to drop a snapshot.  This should ignore the request
@@ -52,7 +55,8 @@ class DummySecondary(config: Config) extends Secondary[Any, Any] {
     * already has this dataVersion.
     * @return a new cookie to store in the secondary map
     */
-  def version(datasetInfo: DatasetInfo, dataVersion: Long, cookie: Secondary.Cookie, events: Iterator[Event[Any, Any]]): Secondary.Cookie = {
+  def version(datasetInfo: DatasetInfo, dataVersion: Long, cookie: Secondary.Cookie,
+              events: Iterator[Event[Any, Any]]): Secondary.Cookie = {
     println("Got a new version of " + datasetInfo.internalName)
     println("Version " + dataVersion)
     println("Current cookie: " + cookie)
@@ -65,7 +69,7 @@ class DummySecondary(config: Config) extends Secondary[Any, Any] {
         ???
     }
     println("Current cookie: " + cookie)
-    readLine("New cookie? ") match {
+    readLine("New qcookie? ") match {
       case "" => cookie
       case other => Some(other)
     }

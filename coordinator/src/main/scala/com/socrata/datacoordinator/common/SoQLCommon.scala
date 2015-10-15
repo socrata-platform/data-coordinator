@@ -39,7 +39,7 @@ object SoQLSystemColumns { sc =>
 
   val allSystemColumnIds = schemaFragment.keySet
 
-  def isSystemColumnId(name: UserColumnId) =
+  def isSystemColumnId(name: UserColumnId): Boolean =
     name.underlying.startsWith(":") && !name.underlying.startsWith(":@")
 }
 
@@ -72,7 +72,7 @@ class SoQLCommon(dataSource: DataSource,
       None
     }
   }
-  def internalNameFromDatasetId(datasetId: DatasetId) =
+  def internalNameFromDatasetId(datasetId: DatasetId): String =
     internalNamePrefix + datasetId.underlying
 
   val datasetMapLimits = StandardDatasetMapLimits
@@ -83,11 +83,11 @@ class SoQLCommon(dataSource: DataSource,
 
   def idObfuscationContextFor(cryptProvider: CryptProvider) = new SoQLID.StringRep(cryptProvider)
   def versionObfuscationContextFor(cryptProvider: CryptProvider) = new SoQLVersion.StringRep(cryptProvider)
-  def generateObfuscationKey() = CryptProvider.generateKey()
+  def generateObfuscationKey(): Array[Byte] = CryptProvider.generateKey()
   val initialCounterValue = 0L
 
   val sqlRepFor = SoQLRep.sqlRep _
-  def jsonReps(datasetInfo: DatasetInfo) = {
+  def jsonReps(datasetInfo: DatasetInfo): (SoQLType => JsonColumnRep[SoQLType, SoQLValue]) = {
     val cp = new CryptProvider(datasetInfo.obfuscationKey)
     SoQLRep.jsonRep(idObfuscationContextFor(cp), versionObfuscationContextFor(cp))
   }
@@ -100,7 +100,7 @@ class SoQLCommon(dataSource: DataSource,
       replaceAll("_+$", "").
       toLowerCase
 
-  def isSystemColumnId(name: UserColumnId) =
+  def isSystemColumnId(name: UserColumnId): Boolean =
     SoQLSystemColumns.isSystemColumnId(name)
 
   val universe: Managed[PostgresUniverse[CT, CV] with SchemaFinderProvider] = new SimpleArm[PostgresUniverse[CT, CV] with SchemaFinderProvider] {
