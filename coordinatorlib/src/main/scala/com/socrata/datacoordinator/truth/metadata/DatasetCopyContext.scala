@@ -4,14 +4,16 @@ import com.socrata.datacoordinator.util.collection.{MutableColumnIdMap, ColumnId
 import com.socrata.datacoordinator.id.{UserColumnId, ColumnId}
 import com.socrata.datacoordinator.util.RotateSchema
 
-class DatasetCopyContext[CT](val copyInfo: CopyInfo, val schema: ColumnIdMap[ColumnInfo[CT]]) {
+class DatasetCopyContext[CT](val copyInfo: CopyInfo,
+                             val schema: ColumnIdMap[ColumnInfo[CT]],
+                             val sid: Option[ColumnInfo[CT]] = None) {
   require(schema.values.forall(_.copyInfo eq copyInfo))
   def datasetInfo = copyInfo.datasetInfo
 
   lazy val schemaByUserColumnId = RotateSchema(schema)
   lazy val userIdCol = schema.values.find(_.isUserPrimaryKey)
   lazy val systemIdCol = schema.values.find(_.isSystemPrimaryKey)
-  def systemIdCol_! = systemIdCol.getOrElse {
+  def systemIdCol_! = systemIdCol.orElse(sid).getOrElse {
     sys.error("No system PK defined on this dataset?")
   }
   lazy val versionCol = schema.values.find(_.isVersion)
@@ -19,9 +21,11 @@ class DatasetCopyContext[CT](val copyInfo: CopyInfo, val schema: ColumnIdMap[Col
     sys.error("No version column defined on this dataset?")
   }
   lazy val pkCol = userIdCol.orElse(systemIdCol)
-  lazy val pkCol_! = userIdCol.getOrElse(systemIdCol_!)
 
-  def verticalSlice(f: ColumnInfo[CT] => Boolean) = new DatasetCopyContext(copyInfo, schema.filter { case (_, col) => f(col) })
+  lazy val pkCol_! = pkCol.orElse(sid).getOrElse(sys.error("no system id col"))
+
+  def verticalSlice(f: ColumnInfo[CT] => Boolean, sid: ColumnInfo[CT]) =
+    new DatasetCopyContext(copyInfo, schema.filter { case (_, col) => f(col) }, Some(sid))
 
   def thaw() = new MutableDatasetCopyContext[CT](copyInfo, new MutableColumnIdMap(schema))
 }

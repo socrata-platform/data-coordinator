@@ -120,7 +120,10 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
       Exporter.export(u, id, copy, columns, limit, offset, precondition, ifModifiedSince, sorted) { (entityTag, copyCtx, approxRowCount, it) =>
         val schema = u.schemaFinder.getSchema(copyCtx)
 
-        if(schemaHash.isDefined && (Some(schema.hash) != schemaHash)) {
+        val copyCtxAfterSelect = copyCtx.verticalSlice(ci => columns.map(set => set.contains(ci.userColumnId)).getOrElse(true),
+          copyCtx.systemIdCol_!)
+        val verticalSliceSchemaHash = u.schemaFinder.schemaHash(copyCtxAfterSelect)
+        if (schemaHash.isDefined && (Some(verticalSliceSchemaHash) != schemaHash)) {
           f(Left(schema))
         } else {
           val jsonReps = common.jsonReps(copyCtx.datasetInfo)
