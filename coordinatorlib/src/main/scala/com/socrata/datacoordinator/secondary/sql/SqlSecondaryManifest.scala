@@ -243,7 +243,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
     using(conn.prepareStatement(
       """UPDATE secondary_manifest
         |SET retry_num = ?
-        |  ,next_retry = CURRENT_TIMESTAMP + INTERVAL ?
+        |  ,next_retry = CURRENT_TIMESTAMP + (? :: INTERVAL)
         |WHERE store_id = ?
         |  AND dataset_system_id = ?""".stripMargin)) { stmt =>
       stmt.setInt(1, retryNum)
