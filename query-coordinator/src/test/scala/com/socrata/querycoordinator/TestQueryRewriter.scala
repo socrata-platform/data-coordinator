@@ -15,11 +15,14 @@ class TestQueryRewriter extends TestQueryRewriterBase {
     ("r1", "SELECT `_dxyz-num1`, count(`_dxyz-num1`) GROUP BY `_dxyz-num1`"),
     ("r2", "SELECT count(`:wido-ward`), `:wido_ward` GROUP BY `:wido-ward`"),
     ("r3", "SELECT `:wido-ward`, count(*) GROUP BY `:wido-ward`"),
-    ("r4", "SELECT `:wido-ward`, `_crim-typ3`, count(*), `_dxyz-num1`, `_crim-date` GROUP BY `:wido-ward`, `_crim-typ3`, `_dxyz-num1`, `_crim-date`"),
+    ("r4", "SELECT `:wido-ward`, `_crim-typ3`, count(*), `_dxyz-num1`, " +
+      "`_crim-date` GROUP BY `:wido-ward`, `_crim-typ3`, `_dxyz-num1`, `_crim-date`"),
     ("r5", "SELECT `_crim-typ3`, count(1) group by `_crim-typ3`"),
     ("r6", "SELECT `:wido-ward`, `_crim-typ3`"),
-    ("r7", "SELECT `:wido-ward`, min(`_dxyz-num1`), max(`_dxyz-num1`), sum(`_dxyz-num1`), count(*) GROUP BY `:wido-ward`"),
-    ("r8", "SELECT date_trunc_ym(`_crim-date`), `:wido-ward`, count(*) GROUP BY date_trunc_ym(`_crim-date`), `:wido-ward`")
+    ("r7", "SELECT `:wido-ward`, min(`_dxyz-num1`), max(`_dxyz-num1`), " +
+      "sum(`_dxyz-num1`), count(*) GROUP BY `:wido-ward`"),
+    ("r8", "SELECT date_trunc_ym(`_crim-date`), `:wido-ward`, " +
+      "count(*) GROUP BY date_trunc_ym(`_crim-date`), `:wido-ward`")
   )
 
   val rollupInfos = rollups.map { x => new RollupInfo(x._1, x._2) }
@@ -121,7 +124,8 @@ class TestQueryRewriter extends TestQueryRewriterBase {
     val q = "SELECT crime_type, ward, 1, count(*) AS ward_count GROUP BY crime_type, ward LIMIT 100 OFFSET 200"
     val queryAnalysis = analyzeQuery(q)
 
-    val rewrittenQuery = "SELECT c2 AS crime_type, c1 as ward, 1, sum(c3) AS ward_count GROUP by c2, c1 LIMIT 100 OFFSET 200"
+    val rewrittenQuery =
+      "SELECT c2 AS crime_type, c1 as ward, 1, sum(c3) AS ward_count GROUP by c2, c1 LIMIT 100 OFFSET 200"
 
     val rewrittenQueryAnalysis = analyzeRewrittenQuery("r4", rewrittenQuery)
 
@@ -172,10 +176,12 @@ class TestQueryRewriter extends TestQueryRewriterBase {
 
 
   test("order by - query crime_type, ward, count(*)") {
-    val q = "SELECT crime_type, ward, count(*) AS ward_count GROUP BY crime_type, ward ORDER BY count(*) desc, crime_type"
+    val q =
+      "SELECT crime_type, ward, count(*) AS ward_count GROUP BY crime_type, ward ORDER BY count(*) desc, crime_type"
     val queryAnalysis = analyzeQuery(q)
 
-    val rewrittenQuery = "SELECT c2 AS crime_type, c1 as ward, sum(c3) AS ward_count GROUP by c2, c1 ORDER BY sum(c3) desc, c2"
+    val rewrittenQuery =
+      "SELECT c2 AS crime_type, c1 as ward, sum(c3) AS ward_count GROUP by c2, c1 ORDER BY sum(c3) desc, c2"
 
     val rewrittenQueryAnalysis = analyzeRewrittenQuery("r4", rewrittenQuery)
 
@@ -189,10 +195,12 @@ class TestQueryRewriter extends TestQueryRewriterBase {
 
 
   test("map query ward, date_trunc_ym(crime_date), count(*)") {
-    val q = "SELECT ward, date_trunc_ym(crime_date) as d, count(*) AS ward_count GROUP BY ward, date_trunc_ym(crime_date)"
+    val q =
+      "SELECT ward, date_trunc_ym(crime_date) as d, count(*) AS ward_count GROUP BY ward, date_trunc_ym(crime_date)"
     val queryAnalysis = analyzeQuery(q)
 
-    val rewrittenQueryR4 = "SELECT c1 AS ward, date_trunc_ym(c5) as d, sum(c3) AS ward_count GROUP by c1, date_trunc_ym(c5)"
+    val rewrittenQueryR4 =
+      "SELECT c1 AS ward, date_trunc_ym(c5) as d, sum(c3) AS ward_count GROUP by c1, date_trunc_ym(c5)"
 
     val rewrittenQueryAnalysisR4 = analyzeRewrittenQuery("r4", rewrittenQueryR4)
 

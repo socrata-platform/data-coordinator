@@ -7,11 +7,16 @@ import org.scalatest._
 class QueryExecutorTest extends FunSuite with ShouldMatchers {
   // TODO: test apply(...)
 
+  val deadBeef = "dead-beef"
+  val name = "name"
+  val priKey = "pri-key"
+  val age = "age"
+
   private def schemaEquivalent(a: Schema, b: Schema): Boolean =
     a.hash == b.hash && a.pk == b.pk && a.schema == b.schema
 
   test("check schema hash mismatch") {
-    val schema = Schema("dead-beef", Map("name" -> SoQLText, "age" -> SoQLNumber), "pri-key")
+    val schema = Schema(deadBeef, Map(name -> SoQLText, age -> SoQLNumber), priKey)
     val obj = JObject(Map(
       "errorCode" -> JString("internal.schema-mismatch"),
       "data" -> Schema.SchemaCodec.encode(schema)
@@ -21,7 +26,7 @@ class QueryExecutorTest extends FunSuite with ShouldMatchers {
   }
 
   test("check schema hash mismatch - other errors yield none") {
-    val schema = Schema("dead-beef", Map("name" -> SoQLText, "age" -> SoQLNumber), "pri-key")
+    val schema = Schema(deadBeef, Map(name -> SoQLText, age -> SoQLNumber), priKey)
     val obj = JObject(Map(
       "errorCode" -> JString("out-of-memory"),
       "data" -> Schema.SchemaCodec.encode(schema)

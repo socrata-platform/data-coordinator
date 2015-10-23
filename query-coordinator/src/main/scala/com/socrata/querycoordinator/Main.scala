@@ -13,6 +13,7 @@ import com.socrata.http.server.curator.CuratorBroker
 import com.socrata.http.server.livenesscheck.LivenessCheckResponder
 import com.socrata.http.server.util.RequestId.ReqIdHeader
 import com.socrata.http.server.util.handlers.{NewLoggingHandler, ThreadRenamingHandler}
+import com.socrata.querycoordinator.resources.{VersionResource, QueryResource}
 import com.socrata.querycoordinator.util.TeeToTempInputStream
 import com.socrata.soql.functions.{SoQLFunctionInfo, SoQLTypeInfo}
 import com.socrata.soql.types.SoQLAnalysisType
@@ -78,19 +79,29 @@ object Main extends App {
 
     val secondaryInstanceSelector = new SecondaryInstanceSelector(config)
 
-    val handler = new Service(
-      dataCoordinatorProviderProvider,
-      new SchemaFetcher(httpClient),
-      new QueryParser(analyzer, config.maxRows, config.defaultRowsLimit),
-      new QueryExecutor(httpClient, analysisSerializer, teeStream),
-      config.connectTimeout,
-      config.schemaTimeout,
-      config.queryTimeout,
-      (_, _, _) => (),
-      (_, _) => None,
-      secondaryInstanceSelector,
-      new QueryRewriter(analyzer),
-      new RollupInfoFetcher(httpClient))
+    val secondary = Secondary(
+      secondaryProvider = dataCoordinatorProviderProvider,
+      schemaFetcher = new SchemaFetcher(httpClient),
+      secondaryInstance = secondaryInstanceSelector,
+      connectTimeout = config.connectTimeout,
+      schemaTimeout = config.schemaTimeout
+    )
+
+    val queryResource = QueryResource(
+      secondary = secondary,
+      schemaFetcher = new SchemaFetcher(httpClient),
+      queryParser = new QueryParser(analyzer, config.maxRows, config.defaultRowsLimit),
+      queryExecutor = new QueryExecutor(httpClient, analysisSerializer, teeStream),
+      schemaTimeout = config.schemaTimeout,
+      queryTimeout = config.queryTimeout,
+      schemaCache = (_, _, _) => (),
+      schemaDecache = (_, _) => None,
+      secondaryInstance = secondaryInstanceSelector,
+      queryRewriter = new QueryRewriter(analyzer),
+      rollupInfoFetcher = new RollupInfoFetcher(httpClient)
+    )
+
+    val handler = Service(queryResource, VersionResource())
 
     val auxData = new AuxiliaryData(Some(pongProvider.livenessCheckInfo))
 
