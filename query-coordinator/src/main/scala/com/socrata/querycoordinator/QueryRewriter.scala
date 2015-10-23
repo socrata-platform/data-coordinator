@@ -43,13 +43,18 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
     }
   }
 
-  def rewriteGroupBy(qOpt: GroupBy, rOpt: GroupBy, rollupColIdx: Map[Expr, Int]): Option[GroupBy] = {
+  def rewriteGroupBy(qOpt: GroupBy, rOpt: GroupBy, qSelection: Selection,
+      rollupColIdx: Map[Expr, Int]): Option[GroupBy] = {
     (qOpt, rOpt) match {
-      // If the query has no group by, then either the rollup has no group by so they match, or
-      // the rollup does have one, in which case the analysis will ensure that if there are
-      // any aggregate functions in the selection, then all of the other columns are compatible
-      // (ie. no columnrefs without aggregate functions).
-      case (None, _) => Some(None)
+      // If the query has no group by and the rollup has no group by then all is well
+      case (None, None) => Some(None)
+      // If the query isn't grouped but the rollup is, everything in the selection must be an aggregate.
+      // For example, a "SELECT sum(cost) where type='Boat'" could be satisfied by a rollup grouped by type.
+      // We rely on the selection rewrite to ensure the columns are there, validate if it is self aggregatable, etc.
+      case (None, Some(_)) if qSelection.forall {
+        case (_, f: FunctionCall) if f.function.isAggregate => true
+        case _ => false
+      } => Some(None)
       // if the query is grouping, every grouping in the query must grouped in the rollup.
       // The analysis already validated there are no un-grouped columns in the selection
       // that aren't in the group by.
@@ -353,7 +358,7 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
       val rollupColIdx = r.selection.values.zipWithIndex.toMap
 
       val selection = rewriteSelection(q.selection, r.selection, rollupColIdx)
-      val groupBy = rewriteGroupBy(q.groupBy, r.groupBy, rollupColIdx)
+      val groupBy = rewriteGroupBy(q.groupBy, r.groupBy, q.selection, rollupColIdx)
       val where = rewriteWhere(q.where, r, rollupColIdx)
       val orderBy = rewriteOrderBy(q.orderBy, rollupColIdx)
 
