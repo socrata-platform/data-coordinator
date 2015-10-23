@@ -270,4 +270,20 @@ class TestQueryRewriter extends TestQueryRewriterBase {
 
     rewrites should have size 1
   }
+
+  test("don't map query 'select ward' to grouped rollups") {
+    val q = "SELECT ward"
+    val queryAnalysis = analyzeQuery(q)
+
+    val rewrittenQuery = "SELECT c1 AS ward"
+
+    val rewrittenQueryAnalysis = analyzeRewrittenQuery("r6", rewrittenQuery)
+
+    val rewrites = rewriter.possibleRewrites(queryAnalysis, rollupAnalysis)
+
+    rewrites should contain key "r6"
+    rewrites.get("r6").get should equal(rewrittenQueryAnalysis)
+
+    rewrites should have size 1
+  }
 }
