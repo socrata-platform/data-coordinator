@@ -14,7 +14,8 @@ object DataCoordinator extends Build {
         coordinatorLibSoql,
         coordinator,
         secondaryLib,
-        dummySecondary)
+        dummySecondary,
+        coordinatorExternal)
     } yield proj : ProjectReference
 
   private def p(name: String, settings: { def settings: Seq[Setting[_]]; def configs: Seq[Configuration] }, dependencies: ClasspathDep[ProjectReference]*) =
@@ -23,6 +24,8 @@ object DataCoordinator extends Build {
       configs(settings.configs : _*).
       dependsOn(dependencies: _*)
 
+  lazy val coordinatorExternal = p("coordinator-external", CoordinatorExternal)
+
   lazy val coordinatorLib = p("coordinatorlib", CoordinatorLib,
     secondaryLib)
 
@@ -30,11 +33,12 @@ object DataCoordinator extends Build {
     coordinatorLib)
 
   lazy val coordinator = p("coordinator", Coordinator,
-    coordinatorLib, coordinatorLibSoql)
+    coordinatorLib, coordinatorLibSoql, coordinatorExternal)
 
   lazy val secondaryLib = p("secondarylib", SecondaryLib)
     .enablePlugins(sbtbuildinfo.BuildInfoPlugin)
 
   lazy val dummySecondary = p("dummy-secondary", DummySecondary,
     secondaryLib % "provided")
+
 }

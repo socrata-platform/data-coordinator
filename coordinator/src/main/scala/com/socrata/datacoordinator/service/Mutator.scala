@@ -48,20 +48,11 @@ object Mutator {
                                      datasetId: DatasetId,
                                      schemaHash: Option[String]) extends StreamType
 
+  // MutationExceptions
   sealed abstract class MutationException(msg: String = null, cause: Throwable = null)
   extends Exception(msg, cause) {
     def index: Long
   }
-
-  sealed abstract class InvalidCommandStreamException(msg: String = null, cause: Throwable = null)
-      extends MutationException(msg, cause)
-  case class EmptyCommandStream()(val index: Long) extends InvalidCommandStreamException
-  case class CommandIsNotAnObject(value: JValue)(val index: Long) extends InvalidCommandStreamException
-  case class MissingCommandField(obj: JObject, field: String) (val index: Long) extends InvalidCommandStreamException
-  case class InvalidCommandFieldValue(obj: JObject,
-                                      field: String,
-                                      value: JValue) (val index: Long) extends InvalidCommandStreamException
-  case class MismatchedSchemaHash(name: DatasetId, schema: Schema)(val index: Long) extends InvalidCommandStreamException
 
   case class InvalidLocale(locale: String)(val index: Long) extends MutationException
   case class NoSuchDataset(name: DatasetId)(val index: Long) extends MutationException
@@ -91,7 +82,23 @@ object Mutator {
                                           op: String)(val index: Long) extends MutationException
   case class DeleteRowIdentifierNotAllowed(dataset: DatasetId,
                                            id: UserColumnId)(val index: Long) extends MutationException
+  case class UpsertError(dataset: DatasetId, failure: Failure[JValue], versionToJson: RowVersion => JValue)
+                        (val index: Long) extends MutationException
+  case class RowLacksPrimaryKey(dataset: DatasetId)(val index: Long) extends MutationException
 
+  // InvalidCommandStreamExceptions
+  sealed abstract class InvalidCommandStreamException(msg: String = null, cause: Throwable = null)
+    extends MutationException(msg, cause)
+  case class EmptyCommandStream()(val index: Long) extends InvalidCommandStreamException
+  case class CommandIsNotAnObject(value: JValue)(val index: Long) extends InvalidCommandStreamException
+  case class MissingCommandField(obj: JObject, field: String) (val index: Long) extends InvalidCommandStreamException
+  case class InvalidCommandFieldValue(obj: JObject,
+                                      field: String,
+                                      value: JValue) (val index: Long) extends InvalidCommandStreamException
+  case class MismatchedSchemaHash(name: DatasetId, schema: Schema)(val index: Long) extends InvalidCommandStreamException
+
+
+  // RowDataExceptions
   sealed abstract class RowDataException extends MutationException {
     def subindex: Int
   }
@@ -101,8 +108,7 @@ object Mutator {
                          (val index: Long, val subindex: Int) extends RowDataException
   case class UnknownColumnId(dataset: DatasetId, column: UserColumnId)
                             (val index: Long, val subindex: Int) extends RowDataException
-  case class UpsertError(dataset: DatasetId, failure: Failure[JValue], versionToJson: RowVersion => JValue)
-                        (val index: Long) extends MutationException
+
 
   sealed abstract class MergeReplace
   object MergeReplace {
