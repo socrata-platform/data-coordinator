@@ -24,9 +24,9 @@ class FloatingTimestampRep(val base: String) extends RepUtils with SqlPKableColu
     start + 1
   }
 
-  def literalize(t: LocalDateTime) =
-    literalizeTo(new StringBuilder, t).toString
-  def literalizeTo(sb: StringBuilder, t: LocalDateTime) = {
+  def literalize(t: LocalDateTime): String = literalizeTo(new StringBuilder, t).toString
+
+  def literalizeTo(sb: StringBuilder, t: LocalDateTime): StringBuilder = {
     sb.append('(').append(timestampType).append(" '")
     printer.printTo(sb, t)
     sb.append("')")
@@ -37,7 +37,7 @@ class FloatingTimestampRep(val base: String) extends RepUtils with SqlPKableColu
       literalize(lit.asInstanceOf[SoQLFloatingTimestamp].value)
     }.mkString(s"($base in (", ",", "))")
 
-  def count = "count(" + base + ")"
+  def count: String = s"count($base)"
 
   def templateForSingleLookup: String = s"($base = $placeholder)"
 

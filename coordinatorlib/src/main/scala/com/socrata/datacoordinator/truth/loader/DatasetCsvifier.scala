@@ -13,5 +13,5 @@ trait DatasetCsvifier[CV] {
     * `""` is used.  This is consistent with the way postgresql imports CSV
     * files (and in fact this CSV can be `COPY`'d into a postgresql table
     * unmanipulated). */
-  def csvify(target: Writer, columns: Seq[ColumnId])
+  def csvify(target: Writer, columns: Seq[ColumnId]): Unit
 }

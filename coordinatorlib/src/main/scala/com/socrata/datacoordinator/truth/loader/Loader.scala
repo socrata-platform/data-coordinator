@@ -7,8 +7,8 @@ import java.io.Closeable
 import com.socrata.datacoordinator.id.RowVersion
 
 trait Loader[CV] extends Closeable {
-  def upsert(jobId: Int, row: Row[CV])
-  def delete(jobId: Int, id: CV, version: Option[Option[RowVersion]])
+  def upsert(jobId: Int, row: Row[CV]): Unit
+  def delete(jobId: Int, id: CV, version: Option[Option[RowVersion]]): Unit
 
   /** Flushes any changes which have accumulated in-memory.
     *
@@ -18,7 +18,7 @@ trait Loader[CV] extends Closeable {
     * @note If any changes were made and this method is not called, the database
     *       transaction MUST be rolled back.
     */
-  def finish()
+  def finish(): Unit
 }
 
 case class IdAndVersion[+CV](id: CV, version: RowVersion)

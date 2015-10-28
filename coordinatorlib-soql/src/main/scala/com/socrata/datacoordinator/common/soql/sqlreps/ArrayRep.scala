@@ -10,13 +10,13 @@ import com.rojoma.json.v3.ast.JArray
 class ArrayRep (val base: String) extends RepUtils with SqlColumnRep[SoQLType, SoQLValue] {
   def representedType = SoQLArray
 
-  def string(v: SoQLValue) = CompactJsonWriter.toString(v.asInstanceOf[SoQLArray].value)
+  def string(v: SoQLValue): String = CompactJsonWriter.toString(v.asInstanceOf[SoQLArray].value)
 
   val physColumns: Array[String] = Array(base)
 
   val sqlTypes: Array[String] = Array("TEXT")
 
-  def csvifyForInsert(sb: StringBuilder, v: SoQLValue) {
+  def csvifyForInsert(sb: StringBuilder, v: SoQLValue): Unit = {
     if(SoQLNull == v) { /* pass */ }
     else csvescape(sb, string(v))
   }

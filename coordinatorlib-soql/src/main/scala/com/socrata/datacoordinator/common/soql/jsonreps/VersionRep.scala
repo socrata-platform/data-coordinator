@@ -8,13 +8,10 @@ import com.socrata.datacoordinator.common.soql.SoQLRep
 import com.socrata.datacoordinator.id.RowVersion
 
 class VersionRep(StringRep: SoQLVersion.StringRep) extends JsonColumnRep[SoQLType, SoQLValue] {
-  def fromJValue(input: JValue) = input match {
-    case JString(StringRep(version)) =>
-      Some(version)
-    case JNull =>
-      Some(SoQLNull)
-    case _ =>
-      None
+  def fromJValue(input: JValue): Option[SoQLValue] = input match {
+    case JString(StringRep(version)) => Some(version)
+    case JNull => Some(SoQLNull)
+    case _ => None
   }
 
   def toJValue(value: SoQLValue): JValue = value match {

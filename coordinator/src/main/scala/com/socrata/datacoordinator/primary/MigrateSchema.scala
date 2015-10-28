@@ -13,11 +13,12 @@ object MigrateSchema extends App {
    * Performs a Liquibase schema migration.
    * @param args(0) Migration operation to perform.
    * */
-  override def main(args: Array[String]) {
+  override def main(args: Array[String]): Unit = {
     // Verify that one argument was passed
-    if (args.length < 1 || args.length > 2)
+    if(args.length < 1 || args.length > 2) {
       throw new IllegalArgumentException(
         s"Incorrect number of arguments - expected 1 or 2 but received ${args.length}")
+    }
 
     val numChanges = args.length match {
       case 1 => 1
@@ -26,9 +27,9 @@ object MigrateSchema extends App {
 
     // Verify that the argument provided is actually a valid operation
     val operation = {
-      try
+      try {
         MigrationOperation.withName(args(0).toLowerCase.capitalize)
-      catch {
+      } catch {
         case ex: NoSuchElementException =>
           throw new IllegalArgumentException(
             s"No such migration operation: ${args(0)}. " +

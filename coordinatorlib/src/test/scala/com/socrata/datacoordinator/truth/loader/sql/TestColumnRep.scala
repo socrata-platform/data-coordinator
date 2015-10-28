@@ -84,7 +84,7 @@ class StringRep(columnId: ColumnId) extends TestColumnRep(columnId) {
     val sb = new StringBuilder("(").append(base).append(" IN (")
     val it = literals.iterator
     sb.append(it.next())
-    while (it.hasNext) {
+    while(it.hasNext) {
       sb.append(",'")
       sb.append(escape('\'', it.next().asInstanceOf[StringValue].value))
       sb.append("'")

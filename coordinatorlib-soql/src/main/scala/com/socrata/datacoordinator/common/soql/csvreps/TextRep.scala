@@ -8,7 +8,7 @@ object TextRep extends CsvColumnRep[SoQLType, SoQLValue] {
 
   val representedType = SoQLText
 
-  def decode(row: IndexedSeq[String], indices: IndexedSeq[Int]) = {
+  def decode(row: IndexedSeq[String], indices: IndexedSeq[Int]): Option[SoQLValue] = {
     assert(indices.size == size)
     Some(SoQLText(row(indices(0))))
   }

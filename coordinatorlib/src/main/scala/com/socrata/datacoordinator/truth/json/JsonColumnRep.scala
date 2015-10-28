@@ -19,11 +19,11 @@ trait JsonColumnWriteRep[CT, CV] extends JsonColumnCommonRep[CT, CV] {
 trait JsonColumnRep[CT, CV] extends JsonColumnReadRep[CT, CV] with JsonColumnWriteRep[CT, CV]
 
 class CodecBasedJsonColumnRep[CT, CV, TrueCV : JsonDecode : JsonEncode](val representedType: CT, unwrapper: CV => TrueCV, wrapper: TrueCV => CV, NullValue: CV) extends JsonColumnRep[CT, CV] {
-  def fromJValue(input: JValue) =
+  def fromJValue(input: JValue): Option[CV] =
     if(input == JNull) Some(NullValue)
     else JsonDecode[TrueCV].decode(input).right.toOption.map(wrapper)
 
-  def toJValue(input: CV) =
+  def toJValue(input: CV): JValue =
     if(NullValue == input) JNull
     else JsonEncode[TrueCV].encode(unwrapper(input))
 }

@@ -27,7 +27,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
       }
     }
 
-  def addDataset(storeId: String, datasetId: DatasetId) {
+  def addDataset(storeId: String, datasetId: DatasetId): Unit = {
     try {
       using(conn.prepareStatement(
         """INSERT INTO secondary_manifest (store_id, dataset_system_id, latest_data_version)
@@ -48,7 +48,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
     }
   }
 
-  def dropDataset(storeId: String, datasetId: DatasetId) {
+  def dropDataset(storeId: String, datasetId: DatasetId): Unit = {
     using(conn.prepareStatement("DELETE FROM secondary_manifest WHERE store_id = ? AND dataset_system_id = ?")) { stmt =>
       stmt.setString(1, storeId)
       stmt.setDatasetId(2, datasetId)
@@ -137,7 +137,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
     job
   }
 
-  def cleanOrphanedClaimedDatasets(storeId: String, claimantId: UUID) {
+  def cleanOrphanedClaimedDatasets(storeId: String, claimantId: UUID): Unit = {
     using(conn.prepareStatement(
       """SELECT  dataset_system_id
         |  ,latest_secondary_data_version
@@ -168,7 +168,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
   }
 
   // NOTE: claimed_at is updated in SecondaryWatcherClaimManager.  initially_claimed_at is not.
-  def markDatasetClaimedForReplication(job: SecondaryRecord) {
+  def markDatasetClaimedForReplication(job: SecondaryRecord): Unit = {
     using(conn.prepareStatement(
       """UPDATE secondary_manifest
         |SET claimed_at = CURRENT_TIMESTAMP
@@ -183,7 +183,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
     }
   }
 
-  def releaseClaimedDataset(job: SecondaryRecord) {
+  def releaseClaimedDataset(job: SecondaryRecord): Unit = {
     using(conn.prepareStatement(
       """UPDATE secondary_manifest
         |SET claimed_at = NULL
@@ -199,7 +199,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
   }
 
 
-  def markSecondaryDatasetBroken(job: SecondaryRecord) {
+  def markSecondaryDatasetBroken(job: SecondaryRecord): Unit = {
     using(conn.prepareStatement(
       """UPDATE secondary_manifest
         |SET broken_at = CURRENT_TIMESTAMP
@@ -216,7 +216,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
                              datasetId: DatasetId,
                              dataVersion: Long,
                              lifecycleStage: metadata.LifecycleStage,
-                             cookie: Option[String]) {
+                             cookie: Option[String]): Unit = {
     using(conn.prepareStatement(
       """UPDATE secondary_manifest
         |SET latest_secondary_data_version = ?
@@ -239,7 +239,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
     }
   }
 
-  def updateRetryInfo(storeId: String, datasetId: DatasetId, retryNum: Int, nextRetryDelaySecs: Int) {
+  def updateRetryInfo(storeId: String, datasetId: DatasetId, retryNum: Int, nextRetryDelaySecs: Int): Unit = {
     using(conn.prepareStatement(
       """UPDATE secondary_manifest
         |SET retry_num = ?

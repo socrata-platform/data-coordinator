@@ -7,7 +7,7 @@ import com.socrata.datacoordinator.util.collection.ColumnIdMap
 trait Secondary[CT, CV] {
   import Secondary.Cookie
 
-  def shutdown()
+  def shutdown(): Unit
 
   def wantsWorkingCopies: Boolean
 

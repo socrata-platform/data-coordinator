@@ -8,7 +8,7 @@ object BlobRep extends CsvColumnRep[SoQLType, SoQLValue] {
 
   val representedType = SoQLBlob
 
-  def decode(row: IndexedSeq[String], indices: IndexedSeq[Int]) = {
+  def decode(row: IndexedSeq[String], indices: IndexedSeq[Int]): Some[SoQLBlob] = {
     assert(indices.size == size)
     Some(SoQLBlob(row(indices(0))))
   }

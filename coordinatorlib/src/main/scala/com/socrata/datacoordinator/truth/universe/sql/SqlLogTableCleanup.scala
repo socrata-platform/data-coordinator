@@ -20,7 +20,7 @@ class SqlLogTableCleanup(conn: Connection, deleteOlderThan: FiniteDuration, dele
             |LIMIT 1 FOR UPDATE
             """.stripMargin)) {
           rs =>
-            if (rs.next()) {
+            if(rs.next()) {
               Some(rs.getLong("system_id"))
             } else {
               None
@@ -39,7 +39,7 @@ class SqlLogTableCleanup(conn: Connection, deleteOlderThan: FiniteDuration, dele
                 |WHERE at_time < NOW() - ('${deleteOlderThan.toSeconds} second' :: INTERVAL)
                 """.stripMargin)) {
               rs =>
-                if (rs.next()) {
+                if(rs.next()) {
                   rs.getLong("deletable_version") match {
                     case 0 => None // getLong returns 0 if NULL
                     case n => Some(n)

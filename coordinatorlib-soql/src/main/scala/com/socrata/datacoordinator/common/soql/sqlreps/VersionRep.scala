@@ -7,13 +7,15 @@ import com.socrata.datacoordinator.truth.sql.SqlColumnRep
 import com.socrata.soql.types.{SoQLType, SoQLValue, SoQLNull, SoQLVersion}
 
 class VersionRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType, SoQLValue] {
+  val SIZE_GUESSTIMATE = 30
+
   def representedType: SoQLType = SoQLVersion
 
   val physColumns: Array[String] = Array(base)
 
   val sqlTypes: Array[String] = Array("BIGINT")
 
-  def csvifyForInsert(sb: StringBuilder, v: SoQLValue) {
+  def csvifyForInsert(sb: StringBuilder, v: SoQLValue): Unit = {
     if(SoQLNull == v) { /* pass */ }
     else sb.append(v.asInstanceOf[SoQLVersion].value)
   }
@@ -23,8 +25,7 @@ class VersionRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType, 
     start + 1
   }
 
-  def estimateSize(v: SoQLValue): Int =
-    30
+  def estimateSize(v: SoQLValue): Int = SIZE_GUESSTIMATE
 
   def fromResultSet(rs: ResultSet, start: Int): SoQLVersion =
     SoQLVersion(rs.getLong(start))

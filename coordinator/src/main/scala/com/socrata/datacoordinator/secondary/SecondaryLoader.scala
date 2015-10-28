@@ -18,7 +18,8 @@ object SecondaryDescription {
   implicit val jCodec = AutomaticJsonCodecBuilder[SecondaryDescription]
 }
 
-class SecondaryLoader(parentClassLoader: ClassLoader, secondaryConfig: com.socrata.datacoordinator.service.SecondaryConfig) {
+class SecondaryLoader(parentClassLoader: ClassLoader,
+                      secondaryConfig: com.socrata.datacoordinator.service.SecondaryConfig) {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[SecondaryLoader])
 
   def loadSecondaries(): Map[String, Secondary[_, _]] = {
@@ -36,7 +37,7 @@ class SecondaryLoader(parentClassLoader: ClassLoader, secondaryConfig: com.socra
         // Don't inherit from data coordinator class loader so that it will not
         // be confused with other resources even when the parent is associated with
         // a specific secondary implementation jar for debugging.
-        for (resourceCl <- managed(new URLClassLoader(Array(jar.toURI.toURL), null))) yield {
+        for(resourceCl <- managed(new URLClassLoader(Array(jar.toURI.toURL), null))) yield {
           val stream = resourceCl.getResourceAsStream("secondary-manifest.json")
           if(stream == null) throw Nope("No secondary-manifest.json in " + jar.getAbsolutePath)
           val desc = withStreamResource(resourceCl, jar, "secondary-manifest.json") { reader =>
@@ -62,19 +63,19 @@ class SecondaryLoader(parentClassLoader: ClassLoader, secondaryConfig: com.socra
     }
 
     log.info("Loading secondary instances...")
-    val secondaryMap = secondaryConfig.instances.foldLeft(Map.empty[String, Secondary[_,_]]) { case (acc, (instanceName, instanceConfig)) =>
-      log.info("Loading secondary instance " + instanceName)
-      try {
-        val jar = secondaryTypesMap.get(instanceConfig.secondaryType).getOrElse {
-          throw Nope(s"Unable to find secondary instance type ${instanceConfig.secondaryType}, is the jar present and readable in '${dir}'?")
-        }
+    val secondaryMap = secondaryConfig.instances.foldLeft(Map.empty[String, Secondary[_,_]]) {
+      case (acc, (instanceName, instanceConfig)) =>
+        log.info("Loading secondary instance " + instanceName)
+        try {
+          val jar = secondaryTypesMap.getOrElse(instanceConfig.secondaryType,
+            throw Nope(s"Unable to find secondary instance type ${instanceConfig.secondaryType}, is the jar present and readable in '${dir}'?"))
 
-        val secondary = loadSecondary(jar, instanceConfig.config)
-        acc + (instanceName -> secondary)
-      } catch {
-        case Nope(msg, null) => log.warn(msg); acc
-        case Nope(msg, ex) => log.warn(msg, ex); acc
-      }
+          val secondary = loadSecondary(jar, instanceConfig.config)
+          acc + (instanceName -> secondary)
+        } catch {
+          case Nope(msg, null) => log.warn(msg); acc
+          case Nope(msg, ex) => log.warn(msg, ex); acc
+        }
     }
 
     secondaryConfig.groups.values.foreach { g =>
@@ -126,17 +127,26 @@ class SecondaryLoader(parentClassLoader: ClassLoader, secondaryConfig: com.socra
 
     val mergedConfig = config.withFallback(loadBaseConfig(cl, jar))
 
-    val cls =
-      try { cl.loadClass(desc.className) }
-      catch { case e: Exception => throw Nope("Unable to load class " + desc.className + " from " + jar.getAbsolutePath, e) }
+    val cls = try {
+      cl.loadClass(desc.className)
+    } catch {
+      case e: Exception => throw Nope("Unable to load class " + desc.className + " from " + jar.getAbsolutePath, e)
+    }
+
     if(!classOf[Secondary[_,_]].isAssignableFrom(cls)) throw Nope(desc.className + " is not a subclass of Secondary")
-    val ctor =
-      try { cls.getConstructor(classOf[Config]) }
-      catch { case e: Exception => throw Nope("Unable to find constructor for " + desc.className + " from " + jar.getAbsolutePath, e) }
+
+    val ctor = try {
+      cls.getConstructor(classOf[Config])
+    } catch {
+      case e: Exception => throw Nope("Unable to find constructor for " + desc.className + " from " + jar.getAbsolutePath, e)
+    }
     log.info("Instantiating secondary type \"" + desc.name + "\" from " + jar.getAbsolutePath)
 
-    try { ctor.newInstance(mergedConfig).asInstanceOf[Secondary[_,_]] }
-    catch { case e: Exception => throw Nope("Unable to create a new instance of " + desc.className, e) }
+    try {
+      ctor.newInstance(mergedConfig).asInstanceOf[Secondary[_,_]]
+    } catch {
+      case e: Exception => throw Nope("Unable to create a new instance of " + desc.className, e)
+    }
   }
 
   private case class Nope(message: String, cause: Throwable = null) extends Throwable(message, cause) with ControlThrowable

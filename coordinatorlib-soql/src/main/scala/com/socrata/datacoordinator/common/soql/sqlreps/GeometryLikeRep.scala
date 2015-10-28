@@ -10,12 +10,12 @@ class GeometryLikeRep[T<:Geometry](repType: SoQLType, geometry: SoQLValue => T, 
   extends RepUtils with SqlColumnRep[SoQLType, SoQLValue]  {
   private val WGS84SRID = 4326
 
-  def representedType = repType
+  def representedType: SoQLType = repType
 
-  def fromWkt(str: String) = repType.asInstanceOf[SoQLGeometryLike[T]].WktRep.unapply(str)
-  def fromWkb(bytes: Array[Byte]) = repType.asInstanceOf[SoQLGeometryLike[T]].WkbRep.unapply(bytes)
+  def fromWkt(str: String): Option[T] = repType.asInstanceOf[SoQLGeometryLike[T]].WktRep.unapply(str)
+  def fromWkb(bytes: Array[Byte]): Option[T] = repType.asInstanceOf[SoQLGeometryLike[T]].WkbRep.unapply(bytes)
   // TODO: Also write to database  using WKB, would be more efficient
-  def toEWkt(v: SoQLValue) = v.typ.asInstanceOf[SoQLGeometryLike[T]].EWktRep(geometry(v), WGS84SRID)
+  def toEWkt(v: SoQLValue): String = v.typ.asInstanceOf[SoQLGeometryLike[T]].EWktRep(geometry(v), WGS84SRID)
 
   val physColumns: Array[String] = Array(base)
 
@@ -25,20 +25,20 @@ class GeometryLikeRep[T<:Geometry](repType: SoQLType, geometry: SoQLValue => T, 
 
   override def templateForUpdate: String = base + "=ST_GeomFromEWKT(?)"
 
-  def csvifyForInsert(sb: StringBuilder, v: SoQLValue) {
+  def csvifyForInsert(sb: StringBuilder, v: SoQLValue): Unit = {
     if(SoQLNull == v) { /* pass */ }
     else csvescape(sb, toEWkt(v))
   }
 
   def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
-    if (SoQLNull == v) stmt.setNull(start, Types.VARCHAR)
+    if(SoQLNull == v) stmt.setNull(start, Types.VARCHAR)
     else stmt.setString(start, toEWkt(v))
 
     start + 1
   }
 
   def estimateSize(v: SoQLValue): Int = {
-    if (SoQLNull == v) standardNullInsertSize
+    if(SoQLNull == v) standardNullInsertSize
     else toEWkt(v).length
   }
 

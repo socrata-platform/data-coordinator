@@ -26,13 +26,13 @@ object SoQLTypeContext extends TypeContext[SoQLType, SoQLValue] {
     private val typesByTypeName = SoQLType.typesByName.values.foldLeft(Map.empty[String, SoQLType]) { (acc, typ) =>
       acc + (typ.name.caseFolded -> typ)
     }
-    def typeForName(datasetInfo: DatasetInfo, name: String) = typesByTypeName(name)
+    def typeForName(datasetInfo: DatasetInfo, name: String): SoQLType = typesByTypeName(name)
 
-    def nameForType(typ: SoQLType) = typ.name.caseFolded
+    def nameForType(typ: SoQLType): String = typ.name.caseFolded
 
     def typeForUserType(name: TypeName): Option[SoQLType] = typesByTypeName.get(name.caseFolded)
 
-    def userTypeForType(typ: SoQLType) = typ.name
+    def userTypeForType(typ: SoQLType): TypeName = typ.name
   }
 
   def makeIdMap[T](idColumnType: SoQLType): RowUserIdMap[SoQLValue, T] =
@@ -40,12 +40,12 @@ object SoQLTypeContext extends TypeContext[SoQLType, SoQLValue] {
       new RowUserIdMap[SoQLValue, T] {
         val map = new MutableRowIdMap[T]
 
-        def put(x: SoQLValue, v: T) {
+        def put(x: SoQLValue, v: T): Unit = {
           val id = new RowId(x.asInstanceOf[SoQLID].value)
           map(id) = v
         }
 
-        def remove(x: SoQLValue) {
+        def remove(x: SoQLValue): Unit = {
           val id = new RowId(x.asInstanceOf[SoQLID].value)
           map -= id
         }
@@ -60,7 +60,7 @@ object SoQLTypeContext extends TypeContext[SoQLType, SoQLValue] {
           map.get(id)
         }
 
-        def clear() {
+        def clear(): Unit = {
           map.clear()
         }
 
@@ -81,7 +81,7 @@ object SoQLTypeContext extends TypeContext[SoQLType, SoQLValue] {
           }
         }
 
-        def keysIterator = map.keys.map { rid => SoQLID(rid.underlying) }
+        def keysIterator: Iterator[SoQLID] = map.keys.map { rid => SoQLID(rid.underlying) }
 
         def valuesIterator: Iterator[T] =
           map.values.iterator

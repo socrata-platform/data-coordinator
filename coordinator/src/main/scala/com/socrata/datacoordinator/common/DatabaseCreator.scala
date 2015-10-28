@@ -5,7 +5,7 @@ import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.truth.migration.Migration
 
 object DatabaseCreator {
-  def apply(databaseTree: String) {
+  def apply(databaseTree: String): Unit = {
     val config = ConfigFactory.load()
     println(config.root.render)
 

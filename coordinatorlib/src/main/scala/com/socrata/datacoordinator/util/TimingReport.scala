@@ -22,7 +22,7 @@ trait StackedTimingReport extends TimingReport with TransferrableContextTimingRe
 
   type Context = List[String]
 
-  def context = contextLocal.get
+  def context: List[String] = contextLocal.get
 
   abstract override def apply[T](name: String, kv: (String, Any)*)(f: => T): T = {
     contextLocal.set(name :: context)
@@ -61,7 +61,7 @@ class LoggedTimingReport(log: Logger) extends TimingReport {
     } finally {
       val end = System.nanoTime()
       val timeInMs = (end - start) / 1000000
-      if (log.isInfoEnabled) {
+      if(log.isInfoEnabled) {
         log.info("{}: {}ms; {}", name, timeInMs.asInstanceOf[AnyRef],
                                  JsonUtil.renderJson(kv.map { case (k,v) => (k, String.valueOf(v)) }))
       }

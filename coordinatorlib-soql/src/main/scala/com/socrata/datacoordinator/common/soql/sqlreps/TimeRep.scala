@@ -7,15 +7,15 @@ import org.joda.time.LocalTime
 
 import com.socrata.datacoordinator.truth.sql.SqlPKableColumnRep
 import com.socrata.soql.types.{SoQLNull, SoQLValue, SoQLTime, SoQLType}
-import org.joda.time.format.ISODateTimeFormat
+import org.joda.time.format.{DateTimeFormatter, ISODateTimeFormat}
 
 class TimeRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType, SoQLValue] {
   import TimeRep._
 
-  def printer = ISODateTimeFormat.time
-  def parser = ISODateTimeFormat.localTimeParser
+  def printer: DateTimeFormatter = ISODateTimeFormat.time
+  def parser: DateTimeFormatter = ISODateTimeFormat.localTimeParser
 
-  override def templateForInsert = placeholder
+  override def templateForInsert: String = placeholder
 
   def templateForMultiLookup(n: Int): String =
     s"($base in (${Iterator.fill(n)(placeholder).mkString(",")}))"
@@ -27,9 +27,9 @@ class TimeRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
     start + 1
   }
 
-  def literalize(t: LocalTime) =
-    literalizeTo(new StringBuilder, t).toString
-  def literalizeTo(sb: StringBuilder, t: LocalTime) = {
+  def literalize(t: LocalTime): String = literalizeTo(new StringBuilder, t).toString
+
+  def literalizeTo(sb: StringBuilder, t: LocalTime): StringBuilder = {
     sb.append('(').append(timeType).append(" '")
     printer.printTo(sb, t)
     sb.append("')")
@@ -40,7 +40,7 @@ class TimeRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
       literalize(lit.asInstanceOf[SoQLTime].value)
     }.mkString(s"($base in (", ",", "))")
 
-  def count = "count(" + base + ")"
+  def count: String = s"count($base)"
 
   def templateForSingleLookup: String = s"($base = $placeholder)"
 
@@ -61,7 +61,7 @@ class TimeRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
 
   val sqlTypes: Array[String] = Array(timeType)
 
-  def csvifyForInsert(sb: StringBuilder, v: SoQLValue) {
+  def csvifyForInsert(sb: StringBuilder, v: SoQLValue): Unit = {
     if(SoQLNull == v) { /* pass */ }
     else printer.printTo(sb, v.asInstanceOf[SoQLTime].value)
   }

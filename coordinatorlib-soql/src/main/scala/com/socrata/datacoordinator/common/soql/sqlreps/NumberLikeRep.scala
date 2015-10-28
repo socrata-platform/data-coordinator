@@ -8,7 +8,7 @@ import com.socrata.datacoordinator.truth.sql.SqlPKableColumnRep
 import com.socrata.soql.types.{SoQLNull, SoQLValue, SoQLType}
 
 class NumberLikeRep(repType: SoQLType, num: SoQLValue => java.math.BigDecimal, value: java.math.BigDecimal => SoQLValue, val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType, SoQLValue] {
-  def representedType = repType
+  def representedType: SoQLType = repType
 
   def templateForMultiLookup(n: Int): String =
     s"($base in (${(1 to n).map(_ => "?").mkString(",")}))"
@@ -21,7 +21,7 @@ class NumberLikeRep(repType: SoQLType, num: SoQLValue => java.math.BigDecimal, v
   def sql_in(literals: Iterable[SoQLValue]): String =
     literals.iterator.map(num).mkString(s"($base in (", ",", "))")
 
-  def count = "count(" + base + ")"
+  def count: String = s"count($base)"
 
   def templateForSingleLookup: String = s"($base = ?)"
 
@@ -38,7 +38,7 @@ class NumberLikeRep(repType: SoQLType, num: SoQLValue => java.math.BigDecimal, v
 
   val sqlTypes: Array[String] = Array("NUMERIC")
 
-  def csvifyForInsert(sb: StringBuilder, v: SoQLValue) {
+  def csvifyForInsert(sb: StringBuilder, v: SoQLValue): Unit = {
     if(SoQLNull == v) { /* pass */ }
     else sb.append(num(v))
   }

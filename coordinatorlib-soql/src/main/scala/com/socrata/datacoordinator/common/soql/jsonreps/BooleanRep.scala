@@ -11,13 +11,13 @@ import com.socrata.soql.environment.ColumnName
 object BooleanRep extends JsonColumnRep[SoQLType, SoQLValue] {
   val representedType = SoQLBoolean
 
-  def fromJValue(input: JValue) = input match {
+  def fromJValue(input: JValue): Option[SoQLValue] = input match {
     case JBoolean(b) => Some(SoQLBoolean.canonicalValue(b))
     case JNull => Some(SoQLNull)
     case _ => None
   }
 
-  def toJValue(input: SoQLValue) = input match {
+  def toJValue(input: SoQLValue): JValue = input match {
     case SoQLBoolean(b) => JBoolean(b)
     case SoQLNull => JNull
     case _ => stdBadValue

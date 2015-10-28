@@ -13,9 +13,9 @@ object UserColumnIdSet {
 }
 
 class UserColumnIdSet(val unsafeUnderlying: java.util.Set[String]) extends (UserColumnId => Boolean) {
-  def apply(x: UserColumnId) = unsafeUnderlying.contains(x.underlying)
+  def apply(x: UserColumnId): Boolean = unsafeUnderlying.contains(x.underlying)
 
-  def contains(x: UserColumnId) = unsafeUnderlying.contains(x.underlying)
+  def contains(x: UserColumnId): Boolean = unsafeUnderlying.contains(x.underlying)
 
   def iterator: Iterator[UserColumnId] = new Iterator[UserColumnId] {
     val it = unsafeUnderlying.iterator
@@ -38,31 +38,31 @@ class UserColumnIdSet(val unsafeUnderlying: java.util.Set[String]) extends (User
     }
   }
 
-  def -(x: UserColumnId) = {
+  def -(x: UserColumnId): UserColumnIdSet = {
     val copy = new java.util.HashSet(unsafeUnderlying)
     copy.remove(x.underlying)
     new UserColumnIdSet(copy)
   }
 
-  def --(xs: UserColumnIdSet) = {
+  def --(xs: UserColumnIdSet): UserColumnIdSet = {
     val copy = new java.util.HashSet(unsafeUnderlying)
     copy.removeAll(xs.unsafeUnderlying)
     new UserColumnIdSet(copy)
   }
 
-  def foreach[U](f: UserColumnId => U) {
+  def foreach[U](f: UserColumnId => U): Unit = {
     val it = unsafeUnderlying.iterator
     while(it.hasNext) {
       f(new UserColumnId(it.next()))
     }
   }
 
-  def size = unsafeUnderlying.size
+  def size: Int = unsafeUnderlying.size
 
-  def isEmpty = unsafeUnderlying.isEmpty
-  def nonEmpty = !unsafeUnderlying.isEmpty
+  def isEmpty: Boolean = unsafeUnderlying.isEmpty
+  def nonEmpty: Boolean = !unsafeUnderlying.isEmpty
 
-  def filter(f: UserColumnId => Boolean) = {
+  def filter(f: UserColumnId => Boolean): UserColumnIdSet = {
     val result = new java.util.HashSet[String]
     val it = unsafeUnderlying.iterator
     while(it.hasNext) {
@@ -72,7 +72,7 @@ class UserColumnIdSet(val unsafeUnderlying: java.util.Set[String]) extends (User
     new UserColumnIdSet(result)
   }
 
-  def filterNot(f: UserColumnId => Boolean) = {
+  def filterNot(f: UserColumnId => Boolean): UserColumnIdSet = {
     val result = new java.util.HashSet[String]
     val it = unsafeUnderlying.iterator
     while(it.hasNext) {
@@ -82,7 +82,7 @@ class UserColumnIdSet(val unsafeUnderlying: java.util.Set[String]) extends (User
     new UserColumnIdSet(result)
   }
 
-  def partition(f: UserColumnId => Boolean) = {
+  def partition(f: UserColumnId => Boolean): (UserColumnIdSet, UserColumnIdSet) = {
     val yes = new java.util.HashSet[String]
     val no = new java.util.HashSet[String]
     val it = unsafeUnderlying.iterator
@@ -95,7 +95,7 @@ class UserColumnIdSet(val unsafeUnderlying: java.util.Set[String]) extends (User
     (new UserColumnIdSet(yes), new UserColumnIdSet(no))
   }
 
-  def toSet = {
+  def toSet: Set[UserColumnId] = {
     val b = Set.newBuilder[UserColumnId]
     val it = unsafeUnderlying.iterator
     while(it.hasNext) {
@@ -104,11 +104,11 @@ class UserColumnIdSet(val unsafeUnderlying: java.util.Set[String]) extends (User
     b.result()
   }
 
-  override def hashCode = unsafeUnderlying.hashCode
-  override def equals(o: Any) = o match {
+  override def hashCode: Int = unsafeUnderlying.hashCode
+  override def equals(o: Any): Boolean = o match {
     case that: UserColumnIdSet => this.unsafeUnderlying == that.unsafeUnderlying
     case _ => false
   }
 
-  override def toString = unsafeUnderlying.toString
+  override def toString: String = unsafeUnderlying.toString
 }

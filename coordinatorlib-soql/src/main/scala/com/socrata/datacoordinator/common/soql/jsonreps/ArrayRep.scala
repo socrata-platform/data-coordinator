@@ -9,13 +9,13 @@ import com.socrata.soql.environment.ColumnName
 object ArrayRep extends JsonColumnRep[SoQLType, SoQLValue] {
   val representedType = SoQLArray
 
-  def fromJValue(input: JValue) = input match {
+  def fromJValue(input: JValue): Option[SoQLValue] = input match {
     case arr: JArray => Some(SoQLArray(arr))
     case JNull => Some(SoQLNull)
     case _ => None
   }
 
-  def toJValue(input: SoQLValue) = input match {
+  def toJValue(input: SoQLValue): JValue = input match {
     case SoQLArray(arr) => arr
     case SoQLNull => JNull
     case _ => stdBadValue

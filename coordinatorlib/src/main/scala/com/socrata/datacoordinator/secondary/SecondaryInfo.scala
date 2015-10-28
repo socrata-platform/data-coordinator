@@ -7,5 +7,5 @@ case class SecondaryConfigInfo(storeId: String, nextRunTime: DateTime, runInterv
 trait SecondaryConfig {
   def lookup(storeId: String): Option[SecondaryConfigInfo]
   def create(secondaryInfo: SecondaryConfigInfo): SecondaryConfigInfo
-  def updateNextRunTime(storeId: String, newNextRunTime: DateTime)
+  def updateNextRunTime(storeId: String, newNextRunTime: DateTime): Unit
 }

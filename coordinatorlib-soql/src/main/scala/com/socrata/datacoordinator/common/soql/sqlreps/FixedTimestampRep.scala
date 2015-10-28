@@ -13,6 +13,8 @@ import org.joda.time.format.{DateTimeFormatterBuilder, ISODateTimeFormat, DateTi
 class FixedTimestampRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType, SoQLValue] {
   import FixedTimestampRep._
 
+  val SIZE_GUESSTIMATE = 30
+
   def templateForMultiLookup(n: Int): String =
     s"($base in (${Iterator.fill(n)("?").mkString(",")}))"
 
@@ -21,13 +23,13 @@ class FixedTimestampRep(val base: String) extends RepUtils with SqlPKableColumnR
     start + 1
   }
 
-  def literalize(t: DateTime) = {
+  def literalize(t: DateTime): String = {
     val sb = new StringBuilder
     literalizeTo(sb, t)
     sb.toString
   }
 
-  def literalizeTo(sb: StringBuilder, t: DateTime) {
+  def literalizeTo(sb: StringBuilder, t: DateTime): StringBuilder = {
     sb.append('(').append(timestampType).append(" '")
     printer.printTo(sb, t)
     sb.append("')")
@@ -38,7 +40,7 @@ class FixedTimestampRep(val base: String) extends RepUtils with SqlPKableColumnR
       literalize(lit.asInstanceOf[SoQLFixedTimestamp].value)
     }.mkString(s"($base in (", ",", "))")
 
-  def count = "count(" + base + ")"
+  def count: String = s"count($base)"
 
   def templateForSingleLookup: String = s"($base = ?)"
 
@@ -72,7 +74,7 @@ class FixedTimestampRep(val base: String) extends RepUtils with SqlPKableColumnR
 
   def estimateSize(v: SoQLValue): Int =
     if(SoQLNull == v) standardNullInsertSize
-    else 30
+    else SIZE_GUESSTIMATE
 
   def fromResultSet(rs: ResultSet, start: Int): SoQLValue = {
     val ts = rs.getTimestamp(start)

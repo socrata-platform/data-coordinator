@@ -39,20 +39,20 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
     private var currentStage = initialStage
     private var lookahead: Delogger.LogEvent[CV] = null
 
-    def stageBeforeNextEvent = currentStage
+    def stageBeforeNextEvent: metadata.LifecycleStage = currentStage
 
-    def stageAfterNextEvent = computeNextStage(head)
+    def stageAfterNextEvent: metadata.LifecycleStage = computeNextStage(head)
 
-    def hasNext = lookahead != null || underlying.hasNext
+    def hasNext: Boolean = lookahead != null || underlying.hasNext
 
-    def head = {
+    def head: Delogger.LogEvent[CV] = {
       if(lookahead == null) lookahead = advance()
       lookahead
     }
 
     private def advance() = underlying.next()
 
-    def next() = {
+    def next(): Delogger.LogEvent[CV] = {
       val ev =
         if(lookahead == null) {
           advance()
@@ -65,7 +65,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
       ev
     }
 
-    def finalLifecycleStage() = {
+    def finalLifecycleStage(): metadata.LifecycleStage = {
       while(hasNext) next()
       currentStage
     }
@@ -87,12 +87,12 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
   class StageLimitedIterator(underlying: LifecycleStageTrackingIterator) extends Iterator[Delogger.LogEvent[CV]] {
     private val wantedStage = underlying.stageBeforeNextEvent
 
-    def hasNext = underlying.hasNext && underlying.stageAfterNextEvent == wantedStage
-    def next() =
+    def hasNext: Boolean = underlying.hasNext && underlying.stageAfterNextEvent == wantedStage
+    def next(): Delogger.LogEvent[CV] =
       if(hasNext) underlying.next()
       else Iterator.empty.next()
 
-    def finish() = while(hasNext) next()
+    def finish(): Unit = while(hasNext) next()
   }
 
   // Instruments via metrics and logging the iteration of rows/events
@@ -103,30 +103,30 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
     var itemNum = 0
     val meter = metrics.meter(name, "rows")
 
-    def hasNext = underlying.hasNext
-    def next() = {
+    def hasNext: Boolean = underlying.hasNext
+    def next(): T = {
       meter.mark()
       itemNum += 1
-      if (itemNum % loggingRate == 0)
+      if(itemNum % loggingRate == 0)
         logger.info("[{}] {}: {} rows/events processed", name, datasetName, itemNum.toString)
       underlying.next()
     }
   }
 
-  def apply(secondary: NamedSecondary[CT, CV], job: SecondaryRecord) {
+  def apply(secondary: NamedSecondary[CT, CV], job: SecondaryRecord): Unit = {
     // Normally, UpdateOp will drop the dataset if it is not in truth.
     // This check allows us to just drop a dataset in a specific secondary by
     // running a SQL like:
     //   UPDATE secondary_manifest set latest_secondary_lifecycle_stage = 'Discarded', latest_secondary_data_version = -1
     //    WHERE dataset_system_id = $ID
     // TODO: Add an endpoint to SODA Fountain.  Plumb it through Data Coordinator to do that.
-    if (job.startingLifecycleStage == metadata.LifecycleStage.Discarded && job.startingDataVersion <= 0)
+    if(job.startingLifecycleStage == metadata.LifecycleStage.Discarded && job.startingDataVersion <= 0)
       new UpdateOp(secondary, job).drop()
     else
       new UpdateOp(secondary, job).go()
   }
 
-  def drop(secondary: NamedSecondary[CT, CV], job: SecondaryRecord) {
+  def drop(secondary: NamedSecondary[CT, CV], job: SecondaryRecord): Unit = {
     new UpdateOp(secondary, job).drop()
   }
 
@@ -166,7 +166,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
     private var currentLifecycleStage = job.startingLifecycleStage
     private val datasetMapReader = u.datasetMapReader
 
-    def go() {
+    def go(): Unit = {
       datasetMapReader.datasetInfo(datasetId) match {
         case Some(datasetInfo) =>
           logger.info("Found dataset " + datasetInfo.systemId + " in truth")
@@ -235,12 +235,12 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
         None
     }
 
-    private def setLifecycleStage(newStage: metadata.LifecycleStage, info: metadata.DatasetInfo) {
+    private def setLifecycleStage(newStage: metadata.LifecycleStage, info: metadata.DatasetInfo): Unit = {
       logger.info("{}: New lifecycle stage: {}", info.systemId.toString, newStage)
       currentLifecycleStage = newStage
     }
 
-    def playbackLog(datasetInfo: metadata.DatasetInfo, dataVersion: Long) {
+    def playbackLog(datasetInfo: metadata.DatasetInfo, dataVersion: Long): Unit = {
       logger.trace("Playing back version {}", dataVersion.toString)
       val finalLifecycleStage = for {
         delogger <- managed(u.delogger(datasetInfo))
@@ -251,18 +251,18 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
                                                       datasetInfo.systemId.toString,
                                                       rawIt)
         val it = new LifecycleStageTrackingIterator(instrumentedIt, currentLifecycleStage)
-        if (secondary.store.wantsWorkingCopies) {
+        if(secondary.store.wantsWorkingCopies) {
           logger.trace("Secondary store wants working copies; just blindly sending everything")
           currentCookie = secondary.store.version(secondaryDatasetInfo, dataVersion,
                                                   currentCookie, it.flatMap(convertEvent))
         } else {
-          while (it.hasNext) {
-            if (currentLifecycleStage != metadata.LifecycleStage.Published) {
+          while(it.hasNext) {
+            if(currentLifecycleStage != metadata.LifecycleStage.Published) {
               logger.trace("Current lifecycle stage in the secondary is {}; " +
                         "skipping data until I find a publish event", currentLifecycleStage)
               // skip until it IS published, then resync
-              while (it.hasNext && it.stageAfterNextEvent != metadata.LifecycleStage.Published) it.next()
-              if (it.hasNext) {
+              while(it.hasNext && it.stageAfterNextEvent != metadata.LifecycleStage.Published) it.next()
+              if(it.hasNext) {
                 logger.trace("There is more.  Resyncing")
                 throw new InternalResyncForPickySecondary
               } else {
@@ -272,7 +272,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
             } else {
               logger.trace("Sending events for a published copy")
               val publishedIt = new StageLimitedIterator(it)
-              if (publishedIt.hasNext) {
+              if(publishedIt.hasNext) {
                 logger.trace("Sendsendsendsend")
                 currentCookie = secondary.store.version(secondaryDatasetInfo,
                                                         dataVersion,
@@ -295,15 +295,15 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
       setLifecycleStage(finalLifecycleStage, datasetInfo)
     }
 
-    def drop() {
+    def drop(): Unit = {
       timingReport("drop", "dataset" -> datasetId) {
         secondary.store.dropDataset(datasetIdFormatter(datasetId), currentCookie)
         dropFromSecondaryMap()
       }
     }
 
-    def resync() {
-      while (true) {
+    def resync(): Unit = {
+      while(true) {
         try {
           timingReport("resync", "dataset" -> datasetId) {
             val w = u.datasetMapWriter
@@ -313,16 +313,16 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
                 val latest = w.latest(datasetInfo)
                 val latestDataVersion = latest.dataVersion
                 val latestLifecycleStage = latest.lifecycleStage
-                for (copy <- allCopies) {
+                for(copy <- allCopies) {
                   val secondaryDatasetInfo = makeSecondaryDatasetInfo(copy.datasetInfo)
                   timingReport("copy", "number" -> copy.copyNumber) {
-                    if (copy.lifecycleStage == metadata.LifecycleStage.Discarded) {
+                    if(copy.lifecycleStage == metadata.LifecycleStage.Discarded) {
                       currentCookie = secondary.store.dropCopy(secondaryDatasetInfo.internalName,
                                                                copy.copyNumber,
                                                                currentCookie)
-                    } else if (copy.lifecycleStage != metadata.LifecycleStage.Unpublished) {
+                    } else if(copy.lifecycleStage != metadata.LifecycleStage.Unpublished) {
                       syncCopy(copy)
-                    } else if (secondary.store.wantsWorkingCopies) {
+                    } else if(secondary.store.wantsWorkingCopies) {
                       syncCopy(copy)
                     } else { /* ok */ }
                   }
@@ -337,12 +337,12 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
           case ResyncSecondaryException(reason) =>
             logger.warn("Received resync while resyncing.  Resyncing as requested after waiting 10 seconds. " +
                      " Reason: " + reason)
-            Thread.sleep(10L * 1000);
+            Thread.sleep(10L * 1000)
         }
       }
     }
 
-    def syncCopy(copyInfo: metadata.CopyInfo) {
+    def syncCopy(copyInfo: metadata.CopyInfo): Unit = {
       timingReport("sync-copy",
                    "secondary" -> secondary.storeId,
                    "dataset" -> copyInfo.datasetInfo.systemId,
@@ -376,7 +376,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
       }
     }
 
-    def updateSecondaryMap(newLastDataVersion: Long, newLifecycleStage: metadata.LifecycleStage) {
+    def updateSecondaryMap(newLastDataVersion: Long, newLifecycleStage: metadata.LifecycleStage): Unit = {
       u.secondaryManifest.completedReplicationTo(secondary.storeId,
                                                  claimantId,
                                                  datasetId,
@@ -386,7 +386,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
       u.commit()
     }
 
-    def dropFromSecondaryMap() {
+    def dropFromSecondaryMap(): Unit = {
       u.secondaryManifest.dropDataset(secondary.storeId, datasetId)
       u.commit()
     }

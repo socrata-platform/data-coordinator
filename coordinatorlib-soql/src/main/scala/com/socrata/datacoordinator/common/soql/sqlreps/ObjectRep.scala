@@ -8,15 +8,15 @@ import java.sql.{ResultSet, Types, PreparedStatement}
 import com.rojoma.json.v3.ast.JObject
 
 class ObjectRep (val base: String) extends RepUtils with SqlColumnRep[SoQLType, SoQLValue] {
-  def representedType = SoQLObject
+  def representedType: SoQLType = SoQLObject
 
-  def string(v: SoQLValue) = CompactJsonWriter.toString(v.asInstanceOf[SoQLObject].value)
+  def string(v: SoQLValue): String = CompactJsonWriter.toString(v.asInstanceOf[SoQLObject].value)
 
   val physColumns: Array[String] = Array(base)
 
   val sqlTypes: Array[String] = Array("TEXT")
 
-  def csvifyForInsert(sb: StringBuilder, v: SoQLValue) {
+  def csvifyForInsert(sb: StringBuilder, v: SoQLValue): Unit = {
     if(SoQLNull == v) { /* pass */ }
     else csvescape(sb, string(v))
   }

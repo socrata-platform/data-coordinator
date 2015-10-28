@@ -11,7 +11,7 @@ import com.rojoma.json.v3.ast.{JObject, JArray}
 object SoQLRowLogCodec extends SimpleRowLogCodec[SoQLValue] {
   def rowDataVersion: Short = 0
 
-  // fixme; it'd be much better to do this in a manner simular to how column reps work
+  // fixme; it'd be much better to do this in a manner similar to how column reps work
 
   protected def writeValue(target: CodedOutputStream, v: SoQLValue) {
     v match {

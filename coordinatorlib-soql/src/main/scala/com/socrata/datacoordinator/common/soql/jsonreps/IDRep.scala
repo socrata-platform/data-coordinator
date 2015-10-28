@@ -9,10 +9,8 @@ import com.socrata.datacoordinator.id.RowId
 
 class IDRep(StringRep: SoQLID.StringRep) extends JsonColumnRep[SoQLType, SoQLValue] {
   def fromJValue(input: JValue): Option[SoQLID] = input match {
-    case JString(StringRep(id)) =>
-      Some(id)
-    case _ =>
-      None
+    case JString(StringRep(id)) => Some(id)
+    case _ => None
   }
 
   def toJValue(value: SoQLValue): JValue = value match {

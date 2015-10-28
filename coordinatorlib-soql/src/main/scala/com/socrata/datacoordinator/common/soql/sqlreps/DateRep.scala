@@ -15,7 +15,7 @@ class DateRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
   def printer = ISODateTimeFormat.date
   def parser = ISODateTimeFormat.localDateParser
 
-  override def templateForInsert = placeholder
+  override def templateForInsert: String = placeholder
 
   def templateForMultiLookup(n: Int): String =
     s"($base in (${Iterator.fill(n)(placeholder).mkString(",")}))"
@@ -27,9 +27,9 @@ class DateRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
     start + 1
   }
 
-  def literalize(t: LocalDate) =
-    literalizeTo(new StringBuilder, t)
-  def literalizeTo(sb: StringBuilder, t: LocalDate) = {
+  def literalize(t: LocalDate): StringBuilder = literalizeTo(new StringBuilder, t)
+
+  def literalizeTo(sb: StringBuilder, t: LocalDate): StringBuilder = {
     sb.append('(').append(dateType).append(" '")
     printer.printTo(sb, t)
     sb.append("')")
@@ -40,7 +40,7 @@ class DateRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
       literalize(lit.asInstanceOf[SoQLDate].value)
     }.mkString(s"($base in (", ",", "))")
 
-  def count = "count(" + base + ")"
+  def count: String = s"count($base)"
 
   def templateForSingleLookup: String = s"($base = $placeholder)"
 

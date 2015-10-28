@@ -63,35 +63,35 @@ final class SqlLoader[CT, CV](val connection: Connection,
     private val upsertIds = datasetContext.makeIdMap[AnyRef]()
     private var upsertSize = 0L
 
-    def += (op: DeleteOp) {
+    def += (op: DeleteOp): Unit = {
       deletionBuilder += op
       deleteSize += sqlizer.sizeofDelete(op.id)
       empty = false
     }
 
-    def += (op: UpsertOp) {
+    def += (op: UpsertOp): Unit = {
       addUpsert(op.id, op)
     }
 
-    def += (op: KnownToBeInsertOp) {
+    def += (op: KnownToBeInsertOp): Unit = {
       addUpsert(typeContext.makeValueFromSystemId(op.id), op)
       knownInserts = true
     }
 
-    private def addUpsert(id: CV, op: UpsertLike) {
+    private def addUpsert(id: CV, op: UpsertLike): Unit = {
       upsertBuilder += op
       upsertIds.put(id, this)
       upsertSize += sqlizer.sizeof(op.row)
       empty = false
     }
 
-    def isSufficientlyLarge = deleteSize + upsertSize > softMaxBatchSizeInBytes
-    def isEmpty = empty
-    def hasKnownInserts = knownInserts
+    def isSufficientlyLarge: Boolean = deleteSize + upsertSize > softMaxBatchSizeInBytes
+    def isEmpty: Boolean = empty
+    def hasKnownInserts: Boolean = knownInserts
 
-    def hasUpsertFor(id: CV) = upsertIds.contains(id)
-    def upserts = upsertBuilder.result()
-    def deletions = deletionBuilder.result()
+    def hasUpsertFor(id: CV): Boolean = upsertIds.contains(id)
+    def upserts: Vector[UpsertLike] = upsertBuilder.result()
+    def deletions: Vector[DeleteOp] = deletionBuilder.result()
   }
 
   // These are all updated only by the worker thread
@@ -103,7 +103,7 @@ final class SqlLoader[CT, CV](val connection: Connection,
 
   private var pendingException: Throwable = null
   private val connectionMutex = new Object
-  def checkAsyncJob() {
+  def checkAsyncJob(): Unit = {
     connectionMutex.synchronized {
       if(pendingException != null) {
         val e = pendingException
@@ -115,12 +115,12 @@ final class SqlLoader[CT, CV](val connection: Connection,
 
   var lastJobNum = -1
 
-  def checkJob(num: Int) {
+  def checkJob(num: Int): Unit = {
     if(num > lastJobNum) lastJobNum = num
     else throw new IllegalArgumentException("Job numbers must be strictly increasing")
   }
 
-  def flush() {
+  def flush(): Unit = {
     if(currentBatch.isEmpty) return
 
     timingReport("flush") {
@@ -152,14 +152,14 @@ final class SqlLoader[CT, CV](val connection: Connection,
     }
   }
 
-  def maybeFlush() {
+  def maybeFlush(): Unit = {
     if(currentBatch.isSufficientlyLarge) {
       log.debug("Flushing sufficiently-large batch of commands")
       flush()
     }
   }
 
-  def finish() {
+  def finish(): Unit = {
     log.debug("Flushing batch due to being finished")
     flush()
 
@@ -171,7 +171,7 @@ final class SqlLoader[CT, CV](val connection: Connection,
     reportWriter.finished = true
   }
 
-  def close() {
+  def close(): Unit = {
     connectionMutex.synchronized {
       checkAsyncJob()
     }
@@ -197,7 +197,7 @@ final class SqlLoader[CT, CV](val connection: Connection,
       case None => None
     }
 
-  def upsert(jobId: Int, row: Row[CV]) {
+  def upsert(jobId: Int, row: Row[CV]): Unit = {
     checkJob(jobId)
     idOf(row) match {
       case Some(id) =>
@@ -221,7 +221,7 @@ final class SqlLoader[CT, CV](val connection: Connection,
     maybeFlush()
   }
 
-  def delete(jobId: Int, id: CV, version: Option[Option[RowVersion]]) {
+  def delete(jobId: Int, id: CV, version: Option[Option[RowVersion]]): Unit = {
     checkJob(jobId)
     if(currentBatch.hasUpsertFor(id)) {
       log.debug("Delete forced a flush; potential pipeline stall")
@@ -316,7 +316,7 @@ final class SqlLoader[CT, CV](val connection: Connection,
     }
   }
 
-  def checkVersion[T](job: Int, id: CV, newVersion: Option[Option[RowVersion]], oldVersion: Option[RowVersion])(f: => T) {
+  def checkVersion[T](job: Int, id: CV, newVersion: Option[Option[RowVersion]], oldVersion: Option[RowVersion])(f: => T): Unit = {
     newVersion match {
       case None => f
       case Some(v) if v == oldVersion => f
@@ -442,7 +442,9 @@ final class SqlLoader[CT, CV](val connection: Connection,
 }
 
 object SqlLoader {
-  def apply[CT, CV](connection: Connection, preparer: RowPreparer[CV], sqlizer: DataSqlizer[CT, CV], dataLogger: DataLogger[CV], idProvider: RowIdProvider, versionProvider: RowVersionProvider, executor: Executor, reportWriter: ReportWriter[CV], timingReport: TransferrableContextTimingReport): SqlLoader[CT,CV] = {
+  def apply[CT, CV](connection: Connection, preparer: RowPreparer[CV], sqlizer: DataSqlizer[CT, CV], dataLogger: DataLogger[CV],
+                    idProvider: RowIdProvider, versionProvider: RowVersionProvider, executor: Executor, reportWriter: ReportWriter[CV],
+                    timingReport: TransferrableContextTimingReport): SqlLoader[CT,CV] = {
     new SqlLoader(connection, preparer, sqlizer, dataLogger, idProvider, versionProvider, executor, timingReport, reportWriter)
   }
 

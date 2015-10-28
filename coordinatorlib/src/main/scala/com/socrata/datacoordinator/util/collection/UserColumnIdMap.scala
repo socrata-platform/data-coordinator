@@ -20,21 +20,21 @@ object UserColumnIdMap {
 }
 
 class UserColumnIdMap[+V] private[collection](val unsafeUnderlying: java.util.HashMap[String, V @uncheckedVariance]) {
-  @inline def size = unsafeUnderlying.size
+  @inline def size: Int = unsafeUnderlying.size
 
-  @inline def isEmpty = unsafeUnderlying.isEmpty
+  @inline def isEmpty: Boolean = unsafeUnderlying.isEmpty
 
-  @inline def nonEmpty = !isEmpty
+  @inline def nonEmpty: Boolean = !isEmpty
 
-  @inline def contains(t: UserColumnId) = unsafeUnderlying.containsKey(t.underlying)
+  @inline def contains(t: UserColumnId): Boolean = unsafeUnderlying.containsKey(t.underlying)
 
-  @inline def get(t: UserColumnId) = {
+  @inline def get(t: UserColumnId): Option[V] = {
     val x = unsafeUnderlying.get(t.underlying)
     if(x.asInstanceOf[AnyRef] eq null) None
     else Some(x)
   }
 
-  @inline def apply(t: UserColumnId) = {
+  @inline def apply(t: UserColumnId): V = {
     val x = unsafeUnderlying.get(t.underlying)
     if(x.asInstanceOf[AnyRef] eq null) throw new NoSuchElementException("No key " + t)
     x

@@ -10,7 +10,7 @@ class ColumnId(val underlying: Long) extends AnyVal {
 object ColumnId {
   implicit val jCodec = new JsonDecode[ColumnId] with JsonEncode[ColumnId] {
     def encode(versionId: ColumnId) = JNumber(versionId.underlying)
-    def decode(v: JValue) = v match {
+    def decode(v: JValue): Either[DecodeError, ColumnId] = v match {
       case n: JNumber => Right(new ColumnId(n.toLong))
       case other      => Left(DecodeError.InvalidType(JNumber, other.jsonType))
     }
