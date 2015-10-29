@@ -1,28 +1,17 @@
 package com.socrata.querycoordinator
 
+import com.socrata.querycoordinator.QueryRewriter._
 import com.socrata.soql.collection.OrderedMap
 import com.socrata.soql.environment.ColumnName
 import com.socrata.soql.functions.SoQLFunctions._
 import com.socrata.soql.functions._
-import com.socrata.soql.typed._
 import com.socrata.soql.types._
 import com.socrata.soql.{SoQLAnalysis, SoQLAnalyzer, typed}
 import org.joda.time.{DateTimeConstants, LocalDateTime}
-
 import scala.util.{Failure, Success, Try}
 
 class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[QueryRewriter])
-  type RollupName = String
-  type ColumnId = String
-  type Expr = typed.CoreExpr[ColumnId, SoQLAnalysisType]
-  type Selection = OrderedMap[ColumnName, Expr]
-  type GroupBy = Option[Seq[Expr]]
-  type OrderBy = typed.OrderBy[ColumnId, SoQLAnalysisType]
-  type Where = Option[Expr]
-  type Anal = SoQLAnalysis[ColumnId, SoQLAnalysisType]
-  type FunctionCall = typed.FunctionCall[ColumnId, SoQLAnalysisType]
-  type ColumnRef = typed.ColumnRef[ColumnId, SoQLAnalysisType]
 
   def ensure(expr: Boolean, msg: String): Option[String] = if (!expr) Some(msg) else None
 
@@ -85,8 +74,8 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
     fc.function.function == CountStar ||
       (fc.function.function == Count &&
         fc.parameters.forall {
-          case e: NullLiteral[_] => false
-          case e: TypedLiteral[_] => true
+          case e: typed.NullLiteral[_] => false
+          case e: typed.TypedLiteral[_] => true
           case _ => false
         })
   }
@@ -169,8 +158,8 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
   }
 
   /** The common date truncation function shared between the lower and upper bounds of the between */
-  private def commonDateTrunc[T, U](lower: CoreExpr[T, U],
-                                    upper: CoreExpr[T, U]): Option[Function[SoQLAnalysisType]] = {
+  private def commonDateTrunc[T, U](lower: Expr,
+                                    upper: Expr): Option[Function[SoQLAnalysisType]] = {
     (lower, upper) match {
       case (lowerFc: FunctionCall, upperFc: FunctionCall) =>
         (lowerFc.function.function, upperFc.function.function) match {
@@ -221,8 +210,8 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
           // The left hand side should be a floating timestamp, and the right hand side will be a string being cast
           // to a floating timestamp.  eg. my_floating_timestamp < '2010-01-01'::floating_timestamp
           // While it is eminently reasonable to also accept them in flipped order, that is being left for later.
-          case (colRef@ColumnRef(_, SoQLFloatingTimestamp),
-          cast@FunctionCall(MonomorphicFunction(TextToFloatingTimestamp, _), Seq(StringLiteral(ts, _)))) =>
+          case (colRef@typed.ColumnRef(_, SoQLFloatingTimestamp),
+          cast@typed.FunctionCall(MonomorphicFunction(TextToFloatingTimestamp, _), Seq(typed.StringLiteral(ts, _)))) =>
             for {
               parsedTs <- SoQLFloatingTimestamp.StringRep.unapply(ts)
               truncatedTo <- truncatedTo(SoQLFloatingTimestamp(parsedTs))
@@ -248,7 +237,7 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
   def rewriteExpr(e: Expr, rollupColIdx: Map[Expr, Int]): Option[Expr] = { // scalastyle:ignore cyclomatic.complexity
     log.trace("Attempting to match expr: {}", e)
     e match {
-      case literal: TypedLiteral[_] => Some(literal) // This is literally a literal, so so literal.
+      case literal: typed.TypedLiteral[_] => Some(literal) // This is literally a literal, so so literal.
       // for a column reference we just need to map the column id
       case cr: ColumnRef => for {idx <- rollupColIdx.get(cr)} yield cr.copy(column = rollupColumnId(idx))(cr.position)
       // A count(*) or count(non-null-literal) on q gets mapped to a sum on any such column in rollup
@@ -267,7 +256,7 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
           fc.function.bindings.values.tail.forall(dateTruncHierarchy contains _) =>
         rewriteDateTruncBetweenExpr(rollupColIdx, fc)
       // If it is a >= or < with floating timestamp arguments, see if we can rewrite to date_trunc_xxx
-      case fc@FunctionCall(MonomorphicFunction(fnType, bindings), _)
+      case fc@typed.FunctionCall(MonomorphicFunction(fnType, bindings), _)
         if (fnType == Gte || fnType == Lt) &&
           bindings.values.forall(_ == SoQLFloatingTimestamp) =>
         rewriteDateTruncGteLt(rollupColIdx, fc)
@@ -275,12 +264,12 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
       // There is actually a much more general case on this where non-aggregate functions can
       // be applied on top of other non-aggregate functions in many cases that we are not currently
       // implementing.
-      case fc@FunctionCall(MonomorphicFunction(IsNotNull, _), Seq(colRef@ColumnRef(_, _)))
+      case fc@typed.FunctionCall(MonomorphicFunction(IsNotNull, _), Seq(colRef@typed.ColumnRef(_, _)))
         if findFunctionOnColumn(rollupColIdx, dateTruncHierarchy, colRef).isDefined =>
         for {
           colIdx <- findFunctionOnColumn(rollupColIdx, dateTruncHierarchy, colRef)
         } yield fc.copy(parameters =
-          Seq(ColumnRef(rollupColumnId(colIdx), colRef.typ)(fc.position)))(fc.position, fc.functionNamePosition)
+          Seq(typed.ColumnRef(rollupColumnId(colIdx), colRef.typ)(fc.position)))(fc.position, fc.functionNamePosition)
       case fc: FunctionCall if !fc.function.isAggregate => rewriteNonagg(rollupColIdx, fc)
       // If the function is "self aggregatable" we can apply it on top of an already aggregated rollup
       // column, eg. select foo, bar, max(x) max_x group by foo, bar --> select foo, max(max_x) group by foo
@@ -294,7 +283,7 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
 
   // remaining non-aggregate functions
   private def rewriteNonagg(rollupColIdx: Map[Expr, Int],
-                            fc: FunctionCall): Option[CoreExpr[ColumnId, SoQLAnalysisType] with Serializable] = {
+                            fc: FunctionCall): Option[typed.CoreExpr[ColumnId, SoQLAnalysisType] with Serializable] = {
     // if we have the exact same function in rollup and query, just turn it into a column ref in the rollup
     val functionMatch = for {
       idx <- rollupColIdx.get(fc)
@@ -349,6 +338,10 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
   }
 
 
+  def possibleRewrites(schema: Schema, q: Anal, rollups: Seq[RollupInfo]): Map[RollupName, Anal] = {
+    possibleRewrites(q, analyzeRollups(schema, rollups))
+  }
+
   def possibleRewrites(q: Anal, rollups: Map[RollupName, Anal]): Map[RollupName, Anal] = {
     log.debug("looking for candidates to rewrite for query: {}", q)
     val candidates = rollups.mapValues { r =>
@@ -395,13 +388,6 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
     candidates.collect { case (k, Some(v)) => k -> v }
   }
 
-  def bestRewrite(q: Anal, rollups: Map[RollupName, Anal]): Option[(RollupName, Anal)] = {
-    possibleRewrites(q, rollups).headOption
-  }
-
-  def bestRewrite(schema: Schema, q: Anal, rollups: Seq[RollupInfo]): Option[(RollupName, Anal)] = {
-    possibleRewrites(q, analyzeRollups(schema, rollups)).headOption
-  }
 
   /**
    * For analyzing the rollup query, we need to map the dataset schema column ids to the "_" prefixed
@@ -446,4 +432,20 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
       case (k, Success(a)) => k -> a
     }
   }
+}
+
+
+object QueryRewriter {
+  import com.socrata.soql.typed._ // scalastyle:ignore import.grouping
+
+  type Anal = SoQLAnalysis[ColumnId, SoQLAnalysisType]
+  type ColumnId = String
+  type ColumnRef = typed.ColumnRef[ColumnId, SoQLAnalysisType]
+  type Expr = CoreExpr[ColumnId, SoQLAnalysisType]
+  type FunctionCall = typed.FunctionCall[ColumnId, SoQLAnalysisType]
+  type GroupBy = Option[Seq[Expr]]
+  type OrderBy = typed.OrderBy[ColumnId, SoQLAnalysisType]
+  type RollupName = String
+  type Selection = OrderedMap[ColumnName, Expr]
+  type Where = Option[Expr]
 }

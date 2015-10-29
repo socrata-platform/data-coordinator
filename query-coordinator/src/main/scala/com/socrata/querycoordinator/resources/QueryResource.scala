@@ -219,7 +219,8 @@ class QueryResource(secondary: Secondary,
         } else {
           rollupInfoFetcher(base.receiveTimeoutMS(schemaTimeout.toMillis.toInt), dataset, copy) match {
             case RollupInfoFetcher.Successful(rollups) =>
-              val rewritten = queryRewriter.bestRewrite(schema, analyzedQuery, rollups)
+              val rewritten = RollupScorer.bestRollup(
+                queryRewriter.possibleRewrites(schema, analyzedQuery, rollups).toSeq)
               val (rollupName, analysis) = rewritten map { x => (Some(x._1), x._2) } getOrElse ((None, analyzedQuery))
               log.info(s"Rewrote query on dataset $dataset to rollup $rollupName with analysis $analysis")
               (analysis, rollupName)

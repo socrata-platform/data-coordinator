@@ -1,5 +1,6 @@
 package com.socrata.querycoordinator
 
+import com.socrata.querycoordinator.QueryRewriter.{RollupName, Anal}
 import com.socrata.soql.SoQLAnalysis
 import com.socrata.soql.environment.ColumnName
 import com.socrata.soql.types.SoQLAnalysisType
@@ -15,14 +16,11 @@ class TestQueryRewriter extends TestQueryRewriterBase {
     ("r1", "SELECT `_dxyz-num1`, count(`_dxyz-num1`) GROUP BY `_dxyz-num1`"),
     ("r2", "SELECT count(`:wido-ward`), `:wido_ward` GROUP BY `:wido-ward`"),
     ("r3", "SELECT `:wido-ward`, count(*) GROUP BY `:wido-ward`"),
-    ("r4", "SELECT `:wido-ward`, `_crim-typ3`, count(*), `_dxyz-num1`, " +
-      "`_crim-date` GROUP BY `:wido-ward`, `_crim-typ3`, `_dxyz-num1`, `_crim-date`"),
+    ("r4", "SELECT `:wido-ward`, `_crim-typ3`, count(*), `_dxyz-num1`, `_crim-date` GROUP BY `:wido-ward`, `_crim-typ3`, `_dxyz-num1`, `_crim-date`"),
     ("r5", "SELECT `_crim-typ3`, count(1) group by `_crim-typ3`"),
     ("r6", "SELECT `:wido-ward`, `_crim-typ3`"),
-    ("r7", "SELECT `:wido-ward`, min(`_dxyz-num1`), max(`_dxyz-num1`), " +
-      "sum(`_dxyz-num1`), count(*) GROUP BY `:wido-ward`"),
-    ("r8", "SELECT date_trunc_ym(`_crim-date`), `:wido-ward`, " +
-      "count(*) GROUP BY date_trunc_ym(`_crim-date`), `:wido-ward`")
+    ("r7", "SELECT `:wido-ward`, min(`_dxyz-num1`), max(`_dxyz-num1`), sum(`_dxyz-num1`), count(*) GROUP BY `:wido-ward`"),
+    ("r8", "SELECT date_trunc_ym(`_crim-date`), `:wido-ward`, count(*) GROUP BY date_trunc_ym(`_crim-date`), `:wido-ward`")
   )
 
   val rollupInfos = rollups.map { x => new RollupInfo(x._1, x._2) }
@@ -30,7 +28,7 @@ class TestQueryRewriter extends TestQueryRewriterBase {
   /** Pull in the rollupAnalysis for easier debugging */
   val rollupAnalysis = rewriter.analyzeRollups(schema, rollupInfos)
 
-  val rollupRawSchemas = rollupAnalysis.mapValues { case analysis: rewriter.Anal =>
+  val rollupRawSchemas = rollupAnalysis.mapValues { case analysis: Anal =>
     analysis.selection.values.toSeq.zipWithIndex.map { case (expr, idx) =>
       rewriter.rollupColumnId(idx) -> expr.typ.canonical
     }.toMap
