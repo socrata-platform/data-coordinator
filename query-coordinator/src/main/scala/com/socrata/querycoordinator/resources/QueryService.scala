@@ -33,7 +33,7 @@ trait QueryService {
   val qpLimit = "limit"
   val qpPosition = "position"
   val qpLine = "line"
-
+  val qpObfuscateId = "obfuscateId"
 
   def soqlError(e: SoQLException): // scalastyle:ignore cyclomatic.complexity method.length
   (String, String, Map[String, JValue], Map[String, JValue]) = {

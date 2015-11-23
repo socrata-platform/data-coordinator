@@ -30,12 +30,13 @@ class QueryExecutor(httpClient: HttpClient,
   private val qpRowCount = "rowCount"
   private val qpCopy = "copy"
   private val qpRollupName = "rollupName"
+  private val qpObfuscateId = "obfuscateId"
 
   /**
    * @note Reusing the result will re-issue the request to the upstream server.  The serialization of the
    *       analysis will be re-used for each request.
    */
-  def apply(base: RequestBuilder, // scalastyle:ignore parameter.number
+  def apply(base: RequestBuilder, // scalastyle:ignore parameter.number method.length cyclomatic.complexity
             dataset: String,
             analysis: SoQLAnalysis[String, SoQLAnalysisType],
             schema: Schema,
@@ -44,13 +45,18 @@ class QueryExecutor(httpClient: HttpClient,
             rowCount: Option[String],
             copy: Option[String],
             rollupName: Option[String],
+            obfuscateId: Boolean,
             extraHeaders: Map[String, String],
             resourceScope: ResourceScope): Managed[Result] = {
     val serializedAnalysis = serializeAnalysis(analysis)
-    val params = List(qpDataset -> dataset, qpQuery -> serializedAnalysis, qpSchemaHash -> schema.hash) ++
+    val params = List(
+      qpDataset -> dataset,
+      qpQuery -> serializedAnalysis,
+      qpSchemaHash -> schema.hash) ++
       rowCount.map(rc => List(qpRowCount -> rc)).getOrElse(Nil) ++
       copy.map(c => List(qpCopy -> c)).getOrElse(Nil) ++
-      rollupName.map(c => List(qpRollupName -> c)).getOrElse(Nil)
+      rollupName.map(c => List(qpRollupName -> c)).getOrElse(Nil) ++
+      (if (!obfuscateId) List(qpObfuscateId -> "false" ) else Nil)
     val request = base.p(qpQuery).
       addHeaders(PreconditionRenderer(precondition) ++ ifModifiedSince.map("If-Modified-Since" -> _.toHttpDate)).
       addHeaders(extraHeaders).

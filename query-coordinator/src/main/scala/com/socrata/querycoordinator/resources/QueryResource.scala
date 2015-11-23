@@ -54,7 +54,7 @@ class QueryResource(secondary: Secondary,
 
 
   private def process(req: HttpRequest): HttpResponse = { // scalastyle:ignore cyclomatic.complexity method.length
-  val originalThreadName = Thread.currentThread.getName
+    val originalThreadName = Thread.currentThread.getName
     val servReq = req.servletRequest
     try {
       Thread.currentThread.setName(Thread.currentThread.getId + " / " + req.method + " " +
@@ -69,6 +69,7 @@ class QueryResource(secondary: Secondary,
 
       val forcedSecondaryName = req.queryParameter("store")
       val noRollup = req.queryParameter("no_rollup").isDefined
+      val obfuscateId = !Option(servReq.getParameter(qpObfuscateId)).exists(_ == "false")
 
       forcedSecondaryName.foreach(ds => log.info("Forcing use of the secondary store instance: " + ds))
 
@@ -175,6 +176,7 @@ class QueryResource(secondary: Secondary,
           rowCount,
           copy,
           rollupName,
+          obfuscateId,
           extraHeaders,
           resourceScope
         ).map {
