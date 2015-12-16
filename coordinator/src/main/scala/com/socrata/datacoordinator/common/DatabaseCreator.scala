@@ -7,7 +7,6 @@ import com.socrata.datacoordinator.truth.migration.Migration
 object DatabaseCreator {
   def apply(databaseTree: String): Unit = {
     val config = ConfigFactory.load()
-    println(config.root.render)
 
     for {
       dsInfo <- DataSourceFromConfig(new DataSourceConfig(config, databaseTree))
