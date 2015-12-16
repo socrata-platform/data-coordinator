@@ -79,6 +79,17 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[SoQLValue] {
       case SoQLBlob(id) =>
         target.writeRawByte(21)
         target.writeStringNoTag(id)
+      case SoQLLocation(lat, lng, address) =>
+        target.writeRawByte(22)
+        target.writeBoolNoTag(lat.isDefined)
+        if (lat.isDefined) {
+          target.writeStringNoTag(lat.map(_.toString).get)
+          target.writeStringNoTag(lng.map(_.toString).get)
+        }
+        target.writeBoolNoTag(address.isDefined)
+        if (address.isDefined) {
+          target.writeStringNoTag(address.get)
+        }
       case SoQLNull =>
         target.writeRawByte(-1)
     }
@@ -159,6 +170,18 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[SoQLValue] {
         }
       case 21 =>
         SoQLBlob(source.readString())
+      case 22 =>
+        val (lat, lng) =
+          if (source.readBool()) {
+            (Option(source.readString()).map(new java.math.BigDecimal(_)),
+             Option(source.readString()).map(new java.math.BigDecimal(_)))
+          } else {
+            (None, None)
+          }
+        val address =
+          if (source.readBool()) Option(source.readString())
+          else None
+        SoQLLocation(lat, lng, address)
       case -1 =>
         SoQLNull
     }
