@@ -44,7 +44,7 @@ class TestQueryRewriter extends TestQueryRewriterBase {
 
     val rollupDsContext = QueryParser.dsContext(rollupNoopColumnNameMap, rewrittenRawSchema)
 
-    val rewrittenQueryAnalysis = analyzer.analyzeFullQuery(q)(rollupDsContext).mapColumnIds(rollupNoopColumnNameMap)
+    val rewrittenQueryAnalysis = analyzer.analyzeUnchainedQuery(q)(rollupDsContext).mapColumnIds(rollupNoopColumnNameMap)
     rewrittenQueryAnalysis
   }
 

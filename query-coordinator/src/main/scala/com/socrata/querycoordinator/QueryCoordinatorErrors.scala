@@ -22,6 +22,10 @@ object QueryCoordinatorErrors {
     val noSuchFunction = "query.soql.no-such-function"
     val typeMismatch = "query.soql.type-mismatch"
     val ambiguousCall = "query.soql.ambiguous-call"
+    val nonBooleanHaving = "query.soql.non-boolean-having"
+    val nonBooleanWhere = "query.soql.non-boolean-where"
+    val nonGroupableGroup = "query.soql.non-groupable-group"
+    val unOrderableOrder = "query.soql.un-orderable-order"
   }
 
   object QueryErrors extends QCErrors {

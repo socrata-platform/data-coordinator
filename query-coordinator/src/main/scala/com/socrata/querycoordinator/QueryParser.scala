@@ -37,7 +37,7 @@ class QueryParser(analyzer: SoQLAnalyzer[SoQLAnalysisType], maxRows: Option[Int]
   }
 
   def apply(query: String, columnIdMapping: Map[ColumnName, String], schema: Map[String, SoQLType]): Result =
-    go(columnIdMapping, schema)(analyzer.analyzeFullQuery(query)(_))
+    go(columnIdMapping, schema)(analyzer.analyzeUnchainedQuery(query)(_))
 
   def apply(selection: Option[String], // scalastyle:ignore parameter.number
             where: Option[String],

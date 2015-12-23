@@ -44,57 +44,65 @@ trait QueryService {
     )
 
     e match {
-         case AggregateInUngroupedContext(func, clause, _) =>
-           (aggregateInUngroupedContext,
-             s"Aggregate function '${func.name}' used in ungrouped context: ${clause}; position: $position",
-            Map(qpFunction -> JString(func.name), "clause" -> JString(clause)), position)
-         case ColumnNotInGroupBys(column, _) =>
-           (columnNotInGroupBys, s"Column '${column.name}' is not in group by; position: $position",
-            Map(qpColumn -> JString(column.name)), position)
-         case RepeatedException(column, _) =>
-           (repeatedException, s"Repeated exception with column: ${column.name}; position: $position",
-            Map(qpColumn -> JString(column.name)), position)
-         case DuplicateAlias(name, _) =>
-           (duplicateAlias, s"Duplicate alias: ${name.name}; position: $position",
-            Map(qpName -> JString(name.name)), position)
-         case NoSuchColumn(column, _) =>
-           (noSuchColumn, s"No such column: ${column.name}; position: $position",
-            Map(qpColumn -> JString(column.name)), position)
-         case CircularAliasDefinition(name, _) =>
-           (circularAliasDefinition, s"Circular alias definition: ${name.name}; position: $position",
-            Map(qpName -> JString(name.name)), position)
-         case UnexpectedEscape(c, _) =>
-           (unexpectedEscape, s"Unexpected escape: ${c.toString}; position: $position",
-            Map(qpChar -> JString(c.toString)), position)
-         case BadUnicodeEscapeCharacter(c, _) =>
-           (badUnicodeEscapeCharacter, s"Bad unicode escape character: ${c.toString}; position: $position",
-            Map(qpChar -> JString(c.toString)), position)
-         case UnicodeCharacterOutOfRange(x, _) =>
-           (unicodeCharacterOutOfRange, s"Unicode character out of range: $x; position: $position",
-            Map("number" -> JNumber(x)), position)
-         case UnexpectedCharacter(c, _) =>
-           (unexpectedCharacter, s"Unexpected character: ${c.toString}; position: $position",
-            Map(qpChar -> JString(c.toString)), position)
-         case UnexpectedEOF(_) =>
-           (unexpectedEOF, s"Unexpected EOF; position: $position",
-            Map.empty, position)
-         case UnterminatedString(_) =>
-           (unterminatedString, s"Unterminated string; position: $position",
-            Map.empty, position)
-         case BadParse(msg, _) =>
-           // TODO: this needs to be machine-readable
-           (badParse, s"Bad parse: $msg; position: $position",
-            Map("message" -> JString(msg)), position)
-         case NoSuchFunction(name, arity, _) =>
-           (noSuchFunction, s"No such function '${name.name}'; arity=$arity; position: $position",
-            Map(qpFunction -> JString(name.name), "arity" -> JNumber(arity)), position)
-         case TypeMismatch(name, actual, _) =>
-           (typeMismatch, s"Type mismatch for ${name.name}, is ${actual.name}; position: $position",
-            Map(qpFunction -> JString(name.name), "type" -> JString(actual.name)), position)
-         case AmbiguousCall(name, _) =>
-           (ambiguousCall, s"Ambiguous call of function ${name.name}; position: $position",
-            Map(qpFunction -> JString(name.name)), position)
-     }
+     case AggregateInUngroupedContext(func, clause, _) =>
+       (aggregateInUngroupedContext,
+        s"Aggregate function '${func.name}' used in ungrouped context: ${clause}; position: $position",
+        Map(qpFunction -> JString(func.name), "clause" -> JString(clause)), position)
+     case ColumnNotInGroupBys(column, _) =>
+       (columnNotInGroupBys, s"Column '${column.name}' is not in group by; position: $position",
+        Map(qpColumn -> JString(column.name)), position)
+     case RepeatedException(column, _) =>
+       (repeatedException, s"Repeated exception with column: ${column.name}; position: $position",
+        Map(qpColumn -> JString(column.name)), position)
+     case DuplicateAlias(name, _) =>
+       (duplicateAlias, s"Duplicate alias: ${name.name}; position: $position",
+        Map(qpName -> JString(name.name)), position)
+     case NoSuchColumn(column, _) =>
+       (noSuchColumn, s"No such column: ${column.name}; position: $position",
+        Map(qpColumn -> JString(column.name)), position)
+     case CircularAliasDefinition(name, _) =>
+       (circularAliasDefinition, s"Circular alias definition: ${name.name}; position: $position",
+        Map(qpName -> JString(name.name)), position)
+     case UnexpectedEscape(c, _) =>
+       (unexpectedEscape, s"Unexpected escape: ${c.toString}; position: $position",
+        Map(qpChar -> JString(c.toString)), position)
+     case BadUnicodeEscapeCharacter(c, _) =>
+       (badUnicodeEscapeCharacter, s"Bad unicode escape character: ${c.toString}; position: $position",
+        Map(qpChar -> JString(c.toString)), position)
+     case UnicodeCharacterOutOfRange(x, _) =>
+       (unicodeCharacterOutOfRange, s"Unicode character out of range: $x; position: $position",
+        Map("number" -> JNumber(x)), position)
+     case UnexpectedCharacter(c, _) =>
+       (unexpectedCharacter, s"Unexpected character: ${c.toString}; position: $position",
+        Map(qpChar -> JString(c.toString)), position)
+     case UnexpectedEOF(_) =>
+       (unexpectedEOF, s"Unexpected EOF; position: $position",
+        Map.empty, position)
+     case UnterminatedString(_) =>
+       (unterminatedString, s"Unterminated string; position: $position",
+        Map.empty, position)
+     case BadParse(msg, _) =>
+       // TODO: this needs to be machine-readable
+       (badParse, s"Bad parse: $msg; position: $position",
+        Map("message" -> JString(msg)), position)
+     case NoSuchFunction(name, arity, _) =>
+       (noSuchFunction, s"No such function '${name.name}'; arity=$arity; position: $position",
+        Map(qpFunction -> JString(name.name), "arity" -> JNumber(arity)), position)
+     case TypeMismatch(name, actual, _) =>
+       (typeMismatch, s"Type mismatch for ${name.name}, is ${actual.name}; position: $position",
+        Map(qpFunction -> JString(name.name), "type" -> JString(actual.name)), position)
+     case AmbiguousCall(name, _) =>
+       (ambiguousCall, s"Ambiguous call of function ${name.name}; position: $position",
+        Map(qpFunction -> JString(name.name)), position)
+     case NonBooleanHaving(_, pos) =>
+       (nonBooleanHaving, "Non-boolean having", Map.empty, position)
+     case NonBooleanWhere(_, _) =>
+       (nonBooleanWhere, "Non-boolean where", Map.empty, position)
+     case NonGroupableGroupBy(_, _) =>
+       (nonGroupableGroup, "Non-groupable group by", Map.empty, position)
+     case UnorderableOrderBy(_, _) =>
+       (unOrderableOrder, "Un-orderable order by", Map.empty, position)
+    }
   }
 
   def soqlErrorResponse(dataset: String, e: SoQLException): HttpResponse = {

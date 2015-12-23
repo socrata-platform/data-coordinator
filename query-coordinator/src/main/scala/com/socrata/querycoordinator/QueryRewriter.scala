@@ -420,7 +420,7 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLAnalysisType]) {
     val dsContext = prefixedDsContext(schema)
     val rollupMap = rollups.map { r => (r.name, r.soql) }.toMap
     val analysisMap = rollupMap.mapValues { soql =>
-      Try(analyzer.analyzeFullQuery(soql)(dsContext).mapColumnIds(removeRollupPrefix))
+      Try(analyzer.analyzeUnchainedQuery(soql)(dsContext).mapColumnIds(removeRollupPrefix))
     }
 
     analysisMap.foreach {

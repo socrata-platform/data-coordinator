@@ -38,7 +38,7 @@ class TestQueryRewriterBase extends TestBase {
 
   /** Analyze the query and map to column ids, just like we have in real life. */
   def analyzeQuery(q: String): SoQLAnalysis[ColumnId, SoQLAnalysisType] =
-    analyzer.analyzeFullQuery(q)(dsContext).mapColumnIds(columnIdMapping)
+    analyzer.analyzeUnchainedQuery(q)(dsContext).mapColumnIds(columnIdMapping)
 
   /** Silly half-assed function for debugging when things don't match */
   def compareProducts(a: Product, b: Product, indent: Int = 0): Unit = {
