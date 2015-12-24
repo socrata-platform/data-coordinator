@@ -1,6 +1,6 @@
 package com.socrata.datacoordinator.common.soql
 
-import com.socrata.datacoordinator.common.soql.sqlreps.GeometryLikeRep
+import com.socrata.datacoordinator.common.soql.sqlreps.{LocationRep, GeometryLikeRep}
 import com.socrata.soql.types._
 import com.socrata.datacoordinator.truth.sql.SqlColumnRep
 import com.socrata.datacoordinator.truth.csv.CsvColumnRep
@@ -37,6 +37,7 @@ object SoQLRep {
                                                        SoQLPolygon(_), ci.physicalColumnBase)),
     SoQLMultiPolygon -> (ci => new sqlreps.GeometryLikeRep[MultiPolygon](SoQLMultiPolygon, _.asInstanceOf[SoQLMultiPolygon].value,
                                                                          SoQLMultiPolygon(_), ci.physicalColumnBase)),
+    SoQLLocation -> (ci => new LocationRep(ci.physicalColumnBase)),
     SoQLBlob -> (ci => new sqlreps.BlobRep(ci.physicalColumnBase))
   )
 
@@ -61,6 +62,7 @@ object SoQLRep {
     SoQLMultiLine -> new csvreps.GeometryLikeRep[MultiLineString](SoQLMultiLine, SoQLMultiLine(_)),
     SoQLPolygon -> new csvreps.GeometryLikeRep[Polygon](SoQLPolygon, SoQLPolygon(_)),
     SoQLMultiPolygon -> new csvreps.GeometryLikeRep[MultiPolygon](SoQLMultiPolygon, SoQLMultiPolygon(_)),
+    SoQLLocation -> csvreps.LocationRep,
     SoQLBlob -> csvreps.BlobRep
   )
   def csvRep(columnInfo: ColumnInfo[SoQLType]): CsvColumnRep[SoQLType, SoQLValue] =
@@ -86,6 +88,7 @@ object SoQLRep {
     SoQLMultiLine -> new jsonreps.GeometryLikeRep[MultiLineString](SoQLMultiLine, _.asInstanceOf[SoQLMultiLine].value, SoQLMultiLine(_)),
     SoQLPolygon -> new jsonreps.GeometryLikeRep[Polygon](SoQLPolygon, _.asInstanceOf[SoQLPolygon].value, SoQLPolygon(_)),
     SoQLMultiPolygon -> new jsonreps.GeometryLikeRep[MultiPolygon](SoQLMultiPolygon, _.asInstanceOf[SoQLMultiPolygon].value, SoQLMultiPolygon(_)),
+    SoQLLocation -> jsonreps.LocationRep,
     SoQLBlob -> jsonreps.BlobRep
   )
 
