@@ -43,7 +43,6 @@ case class DatasetResource(datasetId: DatasetId,
 
   val dateTimeFormat = ISODateTimeFormat.dateTime
   val mutateRate = metrics.meter("mutation-rate", "rows")
-  val preconditionFailed = datasetErrorResponse(PreconditionFailed, RequestError.PRECONDITION_FAILED)
   val suffixHashAlg = "SHA1"
   val suffixHashLen = MessageDigest.getInstance(suffixHashAlg).getDigestLength
 
@@ -121,8 +120,7 @@ case class DatasetResource(datasetId: DatasetId,
     }
   }
 
-
-  
+  private def preconditionFailed = datasetErrorResponse(PreconditionFailed, RequestError.PRECONDITION_FAILED)
 
   private def doExportFile(req: HttpRequest): HttpResponse = {
     val servReq = req.servletRequest
