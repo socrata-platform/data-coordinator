@@ -8,7 +8,7 @@ object Dependencies {
     val rojomaJson = "3.2.0"
     val socrataCuratorUtils = "1.0.1"
     val socrataThirdpartyUtils = "4.0.1"
-    val soqlStdlib = "1.0.4"
+    val soqlStdlib = "1.0.5"
     val sprayCaching = "1.2.2"
     val typesafeConfig = "1.0.0"
     val metricsJetty = "3.1.0"
