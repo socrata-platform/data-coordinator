@@ -48,7 +48,7 @@ class Secondary(secondaryProvider: ServiceProviderProvider[AuxiliaryData],
       instance <- Option(secondaryProvider.provider(name).getInstance())
       base <- Some(reqBuilder(instance))
       result <- schemaFetcher(base.receiveTimeoutMS(schemaTimeoutMillis), dataset, copy) match {
-        case SchemaFetcher.Successful(newSchema, _, _) =>
+        case SchemaFetcher.Successful(newSchema, _, _, _) =>
           Some(true)
         case SchemaFetcher.NoSuchDatasetInSecondary =>
           Some(false)

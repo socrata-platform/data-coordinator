@@ -4,6 +4,7 @@ import java.util.concurrent.TimeUnit
 
 import com.socrata.http.server.livenesscheck.LivenessCheckConfig
 import com.socrata.curator.{CuratorConfig, DiscoveryConfig}
+import com.socrata.querycoordinator.caching.cache.config.CacheConfig
 import com.socrata.thirdparty.metrics.MetricsOptions
 import com.socrata.thirdparty.typesafeconfig.ConfigClass
 import com.typesafe.config.Config
@@ -24,6 +25,8 @@ class QueryCoordinatorConfig(config: Config, root: String)
   val queryTimeout = config.getDuration(path("query-timeout"), TimeUnit.MILLISECONDS).millis
   val maxRows = optionally(getInt("max-rows"))
   val defaultRowsLimit = getInt("default-rows-limit")
+
+  val cache = getConfig("cache", new CacheConfig(_, _))
 
   val threadpool = getRawConfig("threadpool")
 }

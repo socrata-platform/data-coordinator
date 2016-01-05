@@ -16,9 +16,10 @@ class SchemaFetcher(httpClient: HttpClient) {
     def processResponse(response: Response): Result = response.resultCode match {
       case HttpServletResponse.SC_OK =>
         val dataVersion = response.headers("X-SODA2-DataVersion")(0).toLong
+        val copyNumber = response.headers("X-SODA2-CopyNumber")(0).toLong
         val lastModified = HttpUtils.parseHttpDate(response.headers("Last-Modified")(0))
         response.value[Schema]() match {
-          case Right(schema) => Successful(schema, dataVersion, lastModified)
+          case Right(schema) => Successful(schema, copyNumber, dataVersion, lastModified)
           case Left(err) =>
             log.warn("cannot decode schema {}", err)
             NonSchemaResponse
@@ -53,7 +54,7 @@ object SchemaFetcher {
 
   sealed abstract class Result
 
-  case class Successful(schema: Schema, dataVersion: Long, lastModified: DateTime) extends Result
+  case class Successful(schema: Schema, copyNumber: Long, dataVersion: Long, lastModified: DateTime) extends Result
 
   case object NonSchemaResponse extends Result
 
