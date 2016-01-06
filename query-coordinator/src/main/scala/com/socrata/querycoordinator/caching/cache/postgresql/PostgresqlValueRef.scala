@@ -4,8 +4,8 @@ import java.io.{ByteArrayInputStream, IOException, InputStream}
 import java.sql.Connection
 
 import com.rojoma.simplearm.v2.ResourceScope
-import com.socrata.querycoordinator.caching.StreamWrapper
 import com.socrata.querycoordinator.caching.cache.ValueRef
+import com.socrata.util.io.StreamWrapper
 
 class PostgresqlValueRef(connection: Connection, key: Long, scope: ResourceScope, streamWrapper: StreamWrapper) extends ValueRef {
   private var closed = false

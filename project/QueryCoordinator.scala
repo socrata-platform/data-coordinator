@@ -30,6 +30,7 @@ object QueryCoordinator {
         socrataHttpJetty,
         socrataCuratorUtils,
         socrataThirdpartyUtils,
+        socrataUtils,
         soqlStdlib,
         typesafeConfig,
         metricsJetty,

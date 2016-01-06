@@ -22,7 +22,8 @@ import com.socrata.http.server.util._
 import com.socrata.querycoordinator.QueryExecutor.{SchemaHashMismatch, ToForward, _}
 import com.socrata.querycoordinator.util.TeeToTempInputStream
 import com.socrata.querycoordinator.caching.cache.{CacheSession, ValueRef, CacheSessionProvider}
-import com.socrata.querycoordinator.caching.{SplitStream, SharedHandle}
+import com.socrata.querycoordinator.caching.SharedHandle
+import com.socrata.util.io.SplitStream
 import com.socrata.soql.types.SoQLAnalysisType
 import com.socrata.soql.{AnalysisSerializer, SoQLAnalysis}
 import org.joda.time.DateTime

@@ -4,7 +4,7 @@ import javax.sql.DataSource
 
 import com.rojoma.simplearm.v2._
 import com.socrata.querycoordinator.caching.cache._
-import com.socrata.querycoordinator.caching.StreamWrapper
+import com.socrata.util.io.StreamWrapper
 
 import scala.concurrent.duration.FiniteDuration
 

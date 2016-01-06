@@ -5,7 +5,7 @@ import java.net.URLEncoder
 
 import com.rojoma.simplearm.v2._
 import com.socrata.querycoordinator.caching.cache.{ValueRef, CacheSession}
-import com.socrata.querycoordinator.caching.StreamWrapper
+import com.socrata.util.io.StreamWrapper
 
 import scala.concurrent.duration.FiniteDuration
 

@@ -5,7 +5,8 @@ import java.nio.channels.FileChannel
 
 import com.rojoma.simplearm.v2.ResourceScope
 import com.socrata.querycoordinator.caching.cache.ValueRef
-import com.socrata.querycoordinator.caching.{StreamWrapper, CloseBlockingInputStream, FileChannelInputStream}
+import com.socrata.querycoordinator.caching.{CloseBlockingInputStream, FileChannelInputStream}
+import com.socrata.util.io.StreamWrapper
 
 class FileValueRef(fc: FileChannel, streamWrapper: StreamWrapper, scope: ResourceScope) extends ValueRef {
   private var closed = false

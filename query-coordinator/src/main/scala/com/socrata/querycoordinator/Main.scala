@@ -15,7 +15,7 @@ import com.socrata.http.server.curator.CuratorBroker
 import com.socrata.http.server.livenesscheck.LivenessCheckResponder
 import com.socrata.http.server.util.RequestId.ReqIdHeader
 import com.socrata.http.server.util.handlers.{NewLoggingHandler, ThreadRenamingHandler}
-import com.socrata.querycoordinator.caching.{StreamWrapper, Windower}
+import com.socrata.querycoordinator.caching.Windower
 import com.socrata.querycoordinator.resources.{VersionResource, QueryResource}
 import com.socrata.querycoordinator.util.TeeToTempInputStream
 import com.socrata.soql.functions.{SoQLFunctionInfo, SoQLTypeInfo}
@@ -27,6 +27,7 @@ import com.socrata.thirdparty.typesafeconfig.Propertizer
 import com.typesafe.config.{Config, ConfigFactory}
 import org.apache.curator.x.discovery.{ServiceInstanceBuilder, strategies}
 import org.apache.log4j.PropertyConfigurator
+import com.socrata.util.io.StreamWrapper
 
 final abstract class Main
 

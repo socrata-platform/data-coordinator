@@ -9,6 +9,7 @@ object Dependencies {
     val rojomaJson = "3.2.0"
     val socrataCuratorUtils = "1.0.1"
     val socrataThirdpartyUtils = "4.0.1"
+    val socrataUtils = "0.10.0"
     val soqlStdlib = "1.0.5"
     val sprayCaching = "1.2.2"
     val typesafeConfig = "1.0.0"
@@ -29,6 +30,7 @@ object Dependencies {
   val socrataHttpJetty = "com.socrata" %% "socrata-http-jetty" % versions.socrataHttpVersion
   val socrataCuratorUtils = "com.socrata" %% "socrata-curator-utils" % versions.socrataCuratorUtils
   val socrataThirdpartyUtils = "com.socrata" %% "socrata-thirdparty-utils" % versions.socrataThirdpartyUtils
+  val socrataUtils = "com.socrata" %% "socrata-utils" % versions.socrataUtils
   val soqlStdlib = "com.socrata" %% "soql-stdlib" % versions.soqlStdlib exclude ("javax.media", "jai_core")
   val sprayCaching = "io.spray" % "spray-caching" % versions.sprayCaching
   val typesafeConfig = "com.typesafe" % "config" % versions.typesafeConfig

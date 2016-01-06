@@ -1,7 +1,7 @@
 package com.socrata.querycoordinator.caching.cache.config
 
 import com.rojoma.simplearm.v2._
-import com.socrata.querycoordinator.caching.StreamWrapper
+import com.socrata.util.io.StreamWrapper
 import com.socrata.querycoordinator.caching.cache.noop.NoopCacheSessionProvider
 import com.socrata.querycoordinator.caching.cache.{CacheInit, CacheCleanerProvider, CacheSessionProvider}
 import com.socrata.querycoordinator.caching.cache.file.FileCacheSessionProvider

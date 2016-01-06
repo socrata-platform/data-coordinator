@@ -6,7 +6,8 @@ import javax.sql.DataSource
 
 import com.rojoma.simplearm.v2._
 import com.socrata.querycoordinator.caching.cache.{ValueRef, CacheSession}
-import com.socrata.querycoordinator.caching.{CloseBlockingOutputStream, StreamWrapper, ChunkingOutputStream}
+import com.socrata.querycoordinator.caching.{CloseBlockingOutputStream, ChunkingOutputStream}
+import com.socrata.util.io.StreamWrapper
 import org.postgresql.util.PSQLException
 
 import scala.concurrent.duration.FiniteDuration
