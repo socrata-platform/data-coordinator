@@ -22,6 +22,7 @@ object QueryCoordinator {
       buildInfoOptions += BuildInfoOption.ToMap,
       ScoverageSbtPlugin.ScoverageKeys.coverageMinimum := 30,
       libraryDependencies ++= Seq(
+        postgresql,
         protobuf,
         rojomaJson,
         socrataHttpClient,
@@ -29,6 +30,7 @@ object QueryCoordinator {
         socrataHttpJetty,
         socrataCuratorUtils,
         socrataThirdpartyUtils,
+        socrataUtils,
         soqlStdlib,
         typesafeConfig,
         metricsJetty,

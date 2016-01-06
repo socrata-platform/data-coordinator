@@ -1,11 +1,13 @@
 package com.socrata.querycoordinator
 
 import java.io.InputStream
-import java.util.concurrent.{ExecutorService, Executors}
+import java.util.concurrent.Executors
+
+import com.socrata.querycoordinator.caching.cache.CacheCleanerThread
+import com.socrata.querycoordinator.caching.cache.config.CacheSessionProviderFromConfig
 
 import com.rojoma.json.ast.JString
-import com.rojoma.simplearm.Resource
-import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.v2._
 import com.socrata.http.client.HttpClientHttpClient
 import com.socrata.http.common.AuxiliaryData
 import com.socrata.http.server.SocrataServerJetty
@@ -13,6 +15,7 @@ import com.socrata.http.server.curator.CuratorBroker
 import com.socrata.http.server.livenesscheck.LivenessCheckResponder
 import com.socrata.http.server.util.RequestId.ReqIdHeader
 import com.socrata.http.server.util.handlers.{NewLoggingHandler, ThreadRenamingHandler}
+import com.socrata.querycoordinator.caching.Windower
 import com.socrata.querycoordinator.resources.{VersionResource, QueryResource}
 import com.socrata.querycoordinator.util.TeeToTempInputStream
 import com.socrata.soql.functions.{SoQLFunctionInfo, SoQLTypeInfo}
@@ -24,6 +27,7 @@ import com.socrata.thirdparty.typesafeconfig.Propertizer
 import com.typesafe.config.{Config, ConfigFactory}
 import org.apache.curator.x.discovery.{ServiceInstanceBuilder, strategies}
 import org.apache.log4j.PropertyConfigurator
+import com.socrata.util.io.StreamWrapper
 
 final abstract class Main
 
@@ -56,9 +60,7 @@ object Main extends App {
   def typeSerializer(typ: SoQLAnalysisType): String = typ.canonical.name.name
   val analysisSerializer = new AnalysisSerializer[String, SoQLAnalysisType](identity, typeSerializer)
 
-  implicit object executorResource extends Resource[ExecutorService]{
-    def close(a: ExecutorService): Unit = { a.shutdown() }
-  }
+  implicit val execResource = Resource.executorShutdownNoTimeout
 
   val threadPoolSize = 5
   for {
@@ -70,11 +72,11 @@ object Main extends App {
     dataCoordinatorProviderProvider <- managed(new ServiceProviderProvider(
       discovery,
       new strategies.RoundRobinStrategy))
-    pongProvider <- managed(new LivenessCheckResponder(config.livenessCheck))
+    pongProvider <- managed(new LivenessCheckResponder(config.livenessCheck)).and(_.start())
     reporter <- MetricsReporter.managed(config.metrics)
+    cacheSessionProvider <- CacheSessionProviderFromConfig(config.cache, StreamWrapper.gzip).and(_.init())
+    cacheCleaner <- managed(new CacheCleanerThread(cacheSessionProvider, config.cache.cleanInterval)).and(_.start())
   } {
-    pongProvider.start()
-
     def teeStream(in: InputStream): TeeToTempInputStream = new TeeToTempInputStream(in)
 
     val secondaryInstanceSelector = new SecondaryInstanceSelector(config)
@@ -87,11 +89,14 @@ object Main extends App {
       schemaTimeout = config.schemaTimeout
     )
 
+    val windower = new Windower(config.cache.rowsPerWindow)
+    val maxWindowCount = config.cache.maxWindows
+
     val queryResource = QueryResource(
       secondary = secondary,
       schemaFetcher = new SchemaFetcher(httpClient),
       queryParser = new QueryParser(analyzer, config.maxRows, config.defaultRowsLimit),
-      queryExecutor = new QueryExecutor(httpClient, analysisSerializer, teeStream),
+      queryExecutor = new QueryExecutor(httpClient, analysisSerializer, teeStream, cacheSessionProvider, windower, maxWindowCount),
       schemaTimeout = config.schemaTimeout,
       queryTimeout = config.queryTimeout,
       schemaCache = (_, _, _) => (),

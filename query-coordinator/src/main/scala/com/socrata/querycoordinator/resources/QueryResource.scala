@@ -11,6 +11,7 @@ import com.socrata.http.server._
 import com.socrata.http.server.responses._
 import com.socrata.http.server.util.RequestId
 import com.socrata.querycoordinator._
+import com.socrata.querycoordinator.caching.SharedHandle
 import com.socrata.soql.SoQLAnalysis
 import com.socrata.soql.environment.ColumnName
 import com.socrata.soql.exceptions.{TypecheckException, NoSuchColumn, DuplicateAlias}
@@ -124,10 +125,10 @@ class QueryResource(secondary: Secondary,
       log.info("Base URI: " + base.url)
 
       @annotation.tailrec
-      def analyzeRequest(schema: Schema, isFresh: Boolean): (Schema, SoQLAnalysis[String, SoQLAnalysisType]) = {
+      def analyzeRequest(schema: Versioned[Schema], isFresh: Boolean): Versioned[(Schema, SoQLAnalysis[String, SoQLAnalysisType])] = {
         val parsedQuery = query match {
           case Left(q) =>
-            queryParser(q, columnIdMap, schema.schema)
+            queryParser(q, columnIdMap, schema.payload.schema)
           case Right(fq) =>
             queryParser(
               selection = fq.select,
@@ -139,15 +140,15 @@ class QueryResource(secondary: Secondary,
               offset = fq.offset,
               search = fq.search,
               columnIdMapping = columnIdMap,
-              schema = schema.schema
+              schema = schema.payload.schema
             )
         }
 
         parsedQuery match {
           case QueryParser.SuccessfulParse(analysis) =>
-            (schema, analysis)
+            schema.copy(payload = (schema.payload, analysis))
           case QueryParser.AnalysisError(_: DuplicateAlias | _: NoSuchColumn | _: TypecheckException) if !isFresh =>
-            analyzeRequest(getAndCacheSchema(dataset, copy), true)
+            analyzeRequest(getSchema(dataset, copy), true)
           case QueryParser.AnalysisError(e) =>
             finishRequest(soqlErrorResponse(dataset, e))
           case QueryParser.UnknownColumnIds(cids) =>
@@ -158,19 +159,20 @@ class QueryResource(secondary: Secondary,
       }
 
       @annotation.tailrec
-      def executeQuery(schema: Schema,
+      def executeQuery(schema: Versioned[Schema],
                        analyzedQuery: SoQLAnalysis[String, SoQLAnalysisType],
                        rollupName: Option[String],
                        requestId: String,
                        resourceName: Option[String],
                        resourceScope: ResourceScope): HttpResponse = {
+        val extendedScope = resourceScope.open(SharedHandle(new ResourceScope))
         val extraHeaders = Map(RequestId.ReqIdHeader -> requestId) ++
           resourceName.map(fbf => Map(headerSocrataResource -> fbf)).getOrElse(Nil)
-        val res = queryExecutor(
+        queryExecutor(
           base.receiveTimeoutMS(queryTimeout.toMillis.toInt),
           dataset,
           analyzedQuery,
-          schema,
+          schema.payload,
           precondition,
           ifModifiedSince,
           rowCount,
@@ -178,8 +180,11 @@ class QueryResource(secondary: Secondary,
           rollupName,
           obfuscateId,
           extraHeaders,
-          resourceScope
-        ).map {
+          schema.copyNumber,
+          schema.dataVersion,
+          schema.lastModified,
+          extendedScope
+        ) match {
           case QueryExecutor.NotFound =>
             chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
             finishRequest(notFoundResponse(dataset))
@@ -188,9 +193,10 @@ class QueryResource(secondary: Secondary,
             finishRequest(upstreamTimeoutResponse)
           case QueryExecutor.SchemaHashMismatch(newSchema) =>
             storeInCache(Some(newSchema), dataset, copy)
-            val (finalSchema, analysis) = analyzeRequest(newSchema, true)
+            val versionedInfo = analyzeRequest(getSchema(dataset, copy), true)
+            val (finalSchema, analysis) = versionedInfo.payload
             val (rewrittenAnalysis, rollupName) = possiblyRewriteQuery(finalSchema, analysis)
-            Left((finalSchema, rewrittenAnalysis, rollupName))
+            executeQuery(versionedInfo.copy(payload = finalSchema), rewrittenAnalysis, rollupName, requestId, resourceName, resourceScope)
           case QueryExecutor.ToForward(responseCode, headers, body) =>
             // Log data version difference if response is OK.  Ignore not modified response and others.
             if (responseCode == HttpStatus.SC_OK) {
@@ -203,14 +209,8 @@ class QueryResource(secondary: Secondary,
                   log.warn("version related data not available from secondary")
               }
             }
-            val resp = transferHeaders(Status(responseCode), headers) ~>
+            transferHeaders(Status(responseCode), headers) ~>
               Stream(out => transferResponse(out, body))
-            Right(resp)
-        }
-        res match {
-          // bit of a dance because we can't tailrec from within map
-          case Left((s, q, r)) => executeQuery(s, q, r, requestId, resourceName, resourceScope)
-          case Right(resp) => resp
         }
       }
 
@@ -240,11 +240,12 @@ class QueryResource(secondary: Secondary,
         }
       }
 
-      def getAndCacheSchema(dataset: String, copy: Option[String]): Schema = {
+      case class Versioned[T](payload: T, copyNumber: Long, dataVersion: Long, lastModified: DateTime)
+
+      def getSchema(dataset: String, copy: Option[String]): Versioned[Schema] = {
         schemaFetcher(base.receiveTimeoutMS(schemaTimeout.toMillis.toInt), dataset, copy) match {
-          case SchemaFetcher.Successful(newSchema, _, _) =>
-            schemaCache(dataset, copy, newSchema)
-            newSchema
+          case SchemaFetcher.Successful(s, c, d, l) =>
+            Versioned(s, c, d, l)
           case SchemaFetcher.NoSuchDatasetInSecondary =>
             chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
             finishRequest(notFoundResponse(dataset))
@@ -258,13 +259,10 @@ class QueryResource(secondary: Secondary,
         }
       }
 
-
-      val (finalSchema, analysis) = schemaDecache(dataset, copy) match {
-        case Some(schema) => analyzeRequest(schema, false)
-        case None => analyzeRequest(getAndCacheSchema(dataset, copy), true)
-      }
+      val versionInfo = analyzeRequest(getSchema(dataset, copy), true)
+      val (finalSchema, analysis) = versionInfo.payload
       val (rewrittenAnalysis, rollupName) = possiblyRewriteQuery(finalSchema, analysis)
-      executeQuery(finalSchema, rewrittenAnalysis, rollupName,
+      executeQuery(versionInfo.copy(payload = finalSchema), rewrittenAnalysis, rollupName,
         requestId, req.header(headerSocrataResource), req.resourceScope)
     } catch {
       case FinishRequest(response) =>

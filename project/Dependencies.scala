@@ -3,11 +3,13 @@ import sbt._
 object Dependencies {
 
   object versions {
+    val postgresql = "9.4.1207.jre7"
     val socrataHttpVersion = "3.3.1"
     val protobuf = "2.4.1"
     val rojomaJson = "3.2.0"
     val socrataCuratorUtils = "1.0.1"
     val socrataThirdpartyUtils = "4.0.1"
+    val socrataUtils = "0.10.0"
     val soqlStdlib = "1.0.5"
     val sprayCaching = "1.2.2"
     val typesafeConfig = "1.0.0"
@@ -20,6 +22,7 @@ object Dependencies {
     val scalaCheck = "1.11.5"
   }
 
+  val postgresql = "org.postgresql" % "postgresql" % versions.postgresql
   val protobuf = "com.google.protobuf" % "protobuf-java" % versions.protobuf
   val rojomaJson = "com.rojoma" %% "rojoma-json-v3" % versions.rojomaJson
   val socrataHttpClient = "com.socrata" %% "socrata-http-client" % versions.socrataHttpVersion
@@ -27,6 +30,7 @@ object Dependencies {
   val socrataHttpJetty = "com.socrata" %% "socrata-http-jetty" % versions.socrataHttpVersion
   val socrataCuratorUtils = "com.socrata" %% "socrata-curator-utils" % versions.socrataCuratorUtils
   val socrataThirdpartyUtils = "com.socrata" %% "socrata-thirdparty-utils" % versions.socrataThirdpartyUtils
+  val socrataUtils = "com.socrata" %% "socrata-utils" % versions.socrataUtils
   val soqlStdlib = "com.socrata" %% "soql-stdlib" % versions.soqlStdlib exclude ("javax.media", "jai_core")
   val sprayCaching = "io.spray" % "spray-caching" % versions.sprayCaching
   val typesafeConfig = "com.typesafe" % "config" % versions.typesafeConfig
