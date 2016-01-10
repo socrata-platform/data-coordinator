@@ -51,15 +51,19 @@ class QueryExecutor(httpClient: HttpClient,
   private implicit val hCodec = AutomaticJsonCodecBuilder[Headers]
 
   private def makeCacheKeyBase(dsId: String,
-                               query: SoQLAnalysis[String, SoQLAnalysisType],
+                               query: Seq[SoQLAnalysis[String, SoQLAnalysisType]],
                                schemaHash: String,
                                lastModified: DateTime,
                                copyNum: Long,
                                dataVer: Long,
                                rollupName: Option[String],
                                obfuscateId: Boolean,
-                               rowCount: Option[String]): String =
-    hexString(Hasher.hash(dsId, serializeAnalysis(SoQLAnalysisDepositioner(query)), schemaHash, lastModified.getMillis, copyNum, dataVer, rollupName, if(obfuscateId) 1L else 0L, rowCount))
+                               rowCount: Option[String]): String = {
+    val depositionedQuery = query.map(SoQLAnalysisDepositioner(_))
+    hexString(Hasher.hash(dsId, serializeAnalysis(depositionedQuery),
+      schemaHash, lastModified.getMillis, copyNum, dataVer, rollupName, if (obfuscateId) 1L else 0L, rowCount))
+  }
+
   private def hexString(bs: Array[Byte]) = bs.map("%02x".format(_)).mkString
   private def cacheKey(base: String, remainder: String): String = base + "." + remainder
 
@@ -71,7 +75,7 @@ class QueryExecutor(httpClient: HttpClient,
    */
   def apply(base: RequestBuilder, // scalastyle:ignore parameter.number method.length cyclomatic.complexity
             dataset: String,
-            analysis: SoQLAnalysis[String, SoQLAnalysisType],
+            analyses: Seq[SoQLAnalysis[String, SoQLAnalysisType]],
             schema: Schema,
             precondition: Precondition,
             ifModifiedSince: Option[DateTime],
@@ -85,23 +89,24 @@ class QueryExecutor(httpClient: HttpClient,
             currentLastModified: DateTime,
             resourceScopeHandle: SharedHandle[ResourceScope]): Result = {
     val rs = resourceScopeHandle.get
-    def go(theAnalysis: SoQLAnalysis[String, SoQLAnalysisType] = analysis): Result =
-      reallyApply(base, dataset, theAnalysis, schema, precondition, ifModifiedSince, rowCount, copy, rollupName, obfuscateId, extraHeaders, rs)
+    def go(theAnalyses: Seq[SoQLAnalysis[String, SoQLAnalysisType]] = analyses): Result =
+      reallyApply(base, dataset, theAnalyses, schema, precondition, ifModifiedSince, rowCount, copy, rollupName, obfuscateId, extraHeaders, rs)
 
     if(cacheSessionProvider == NoopCacheSessionProvider && !forceCacheEvenWhenNoop) return go()
     // checking preconditions will be handled below
-    if(analysis.limit.isEmpty) return go()
+    if(analyses.last.limit.isEmpty) return go()
 
-    val origLimit = analysis.limit.get
-    val origOffset = analysis.offset.getOrElse(BigInt(0))
+    val origLimit = analyses.last.limit.get
+    val origOffset = analyses.last.offset.getOrElse(BigInt(0))
     val (startWindow, endWindow) = windower(origLimit, origOffset)
     val newOffset = startWindow.window * windower.windowSize
     val newLimit = ((endWindow.window + 1) * windower.windowSize) - newOffset
     val totalWindows = endWindow.window - startWindow.window + 1
     if(totalWindows > maxWindowsToCache) return go()
 
-    val unlimitedAnalysis = analysis.copy[String, SoQLAnalysisType](limit = None, offset = None)
-    val readCacheKeyBase = makeCacheKeyBase(dataset, unlimitedAnalysis, schema.hash, currentLastModified, currentCopyNumber, currentDataVersion, rollupName, obfuscateId, rowCount)
+    val unlimitedAnalyses = analyses.dropRight(1) :+
+      analyses.last.copy[String, SoQLAnalysisType](limit = None, offset = None)
+    val readCacheKeyBase = makeCacheKeyBase(dataset, unlimitedAnalyses, schema.hash, currentLastModified, currentCopyNumber, currentDataVersion, rollupName, obfuscateId, rowCount)
 
     using(new ResourceScope()) { tmpScope =>
       val cacheSession = cacheSessionProvider.open(rs)
@@ -176,8 +181,9 @@ class QueryExecutor(httpClient: HttpClient,
           result
         case None =>
           log.info("Not in cache!")
-          val relimitedAnalysis = analysis.copy[String, SoQLAnalysisType](limit = Some(newLimit), offset = Some(newOffset))
-          go(theAnalysis = relimitedAnalysis) match {
+          val relimitedAnalyses = analyses.dropRight(1) :+
+            analyses.last.copy[String, SoQLAnalysisType](limit = Some(newLimit), offset = Some(newOffset))
+          go(theAnalyses = relimitedAnalyses) match {
             case ToForward(200, headers0, body) =>
               val headers = headers0 - "content-length" // we'll be manipulating the values, so remove that if it's set
 
@@ -190,7 +196,7 @@ class QueryExecutor(httpClient: HttpClient,
                 override def run(): Unit = {
                   using(resourceScopeHandle.duplicate()) { handle =>
                     ready.release()
-                    doCache(dataset, unlimitedAnalysis, schema, rollupName, obfuscateId, rowCount, headers, forCache, handle.get, cacheSession, startWindow.window, endWindow.window)
+                    doCache(dataset, unlimitedAnalyses, schema, rollupName, obfuscateId, rowCount, headers, forCache, handle.get, cacheSession, startWindow.window, endWindow.window)
                   }
                 }
               }
@@ -225,7 +231,7 @@ class QueryExecutor(httpClient: HttpClient,
   }
 
   private def doCache(dataset: String,
-                      unlimitedAnalysis: SoQLAnalysis[String, SoQLAnalysisType],
+                      unlimitedAnalyses: Seq[SoQLAnalysis[String, SoQLAnalysisType]],
                       schema: Schema,
                       rollupName: Option[String],
                       obfuscateId: Boolean,
@@ -246,7 +252,7 @@ class QueryExecutor(httpClient: HttpClient,
     }.getOrElse(abort("No last-modified in the response"))
     val copyNumber = httpHeaders.get("x-soda2-copynumber").map(_.head.toLong).getOrElse(abort("No copy number in the response"))
     val dataVersion = httpHeaders.get("x-soda2-dataversion").map(_.head.toLong).getOrElse(abort("No data version in the response"))
-    val cacheKeyBase = makeCacheKeyBase(dataset, unlimitedAnalysis, schema.hash, lastModified, copyNumber, dataVersion, rollupName, obfuscateId, rowCount)
+    val cacheKeyBase = makeCacheKeyBase(dataset, unlimitedAnalyses, schema.hash, lastModified, copyNumber, dataVersion, rollupName, obfuscateId, rowCount)
     cacheSession.createText(cacheKey(cacheKeyBase, "headers")) { out =>
       JsonUtil.writeJson(out, headers)
     }
@@ -303,7 +309,7 @@ class QueryExecutor(httpClient: HttpClient,
 
   private def reallyApply(base: RequestBuilder, // scalastyle:ignore parameter.number method.length cyclomatic.complexity
                           dataset: String,
-                          analysis: SoQLAnalysis[String, SoQLAnalysisType],
+                          analyses: Seq[SoQLAnalysis[String, SoQLAnalysisType]],
                           schema: Schema,
                           precondition: Precondition,
                           ifModifiedSince: Option[DateTime],
@@ -313,10 +319,10 @@ class QueryExecutor(httpClient: HttpClient,
                           obfuscateId: Boolean,
                           extraHeaders: Map[String, String],
                           resourceScope: ResourceScope): Result = {
-    val serializedAnalysis = serializeAnalysis(analysis)
+    val serializedAnalyses = serializeAnalysis(analyses)
     val params = List(
       qpDataset -> dataset,
-      qpQuery -> serializedAnalysis,
+      qpQuery -> serializedAnalyses,
       qpSchemaHash -> schema.hash) ++
       rowCount.map(rc => List(qpRowCount -> rc)).getOrElse(Nil) ++
       copy.map(c => List(qpCopy -> c)).getOrElse(Nil) ++
@@ -388,9 +394,9 @@ class QueryExecutor(httpClient: HttpClient,
     }
   }
 
-  private def serializeAnalysis(analysis: SoQLAnalysis[String, SoQLAnalysisType]): String = {
+  private def serializeAnalysis(analysis: Seq[SoQLAnalysis[String, SoQLAnalysisType]]): String = {
     val baos = new java.io.ByteArrayOutputStream
-    analysisSerializer(baos, Seq(analysis))
+    analysisSerializer(baos, analysis)
     new String(baos.toByteArray, StandardCharsets.ISO_8859_1)
   }
 

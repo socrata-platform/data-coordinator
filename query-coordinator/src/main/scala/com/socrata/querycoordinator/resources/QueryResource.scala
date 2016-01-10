@@ -125,7 +125,7 @@ class QueryResource(secondary: Secondary,
       log.info("Base URI: " + base.url)
 
       @annotation.tailrec
-      def analyzeRequest(schema: Versioned[Schema], isFresh: Boolean): Versioned[(Schema, SoQLAnalysis[String, SoQLAnalysisType])] = {
+      def analyzeRequest(schema: Versioned[Schema], isFresh: Boolean): Versioned[(Schema, Seq[SoQLAnalysis[String, SoQLAnalysisType]])] = {
         val parsedQuery = query match {
           case Left(q) =>
             queryParser(q, columnIdMap, schema.payload.schema)
@@ -160,7 +160,7 @@ class QueryResource(secondary: Secondary,
 
       @annotation.tailrec
       def executeQuery(schema: Versioned[Schema],
-                       analyzedQuery: SoQLAnalysis[String, SoQLAnalysisType],
+                       analyzedQuery: Seq[SoQLAnalysis[String, SoQLAnalysisType]],
                        rollupName: Option[String],
                        requestId: String,
                        resourceName: Option[String],
@@ -194,9 +194,9 @@ class QueryResource(secondary: Secondary,
           case QueryExecutor.SchemaHashMismatch(newSchema) =>
             storeInCache(Some(newSchema), dataset, copy)
             val versionedInfo = analyzeRequest(getSchema(dataset, copy), true)
-            val (finalSchema, analysis) = versionedInfo.payload
-            val (rewrittenAnalysis, rollupName) = possiblyRewriteQuery(finalSchema, analysis)
-            executeQuery(versionedInfo.copy(payload = finalSchema), rewrittenAnalysis, rollupName, requestId, resourceName, resourceScope)
+            val (finalSchema, analyses) = versionedInfo.payload
+            val (rewrittenAnalyses, rollupName) = possiblyRewriteOneAnalysisInQuery(finalSchema, analyses)
+            executeQuery(versionedInfo.copy(payload = finalSchema), rewrittenAnalyses, rollupName, requestId, resourceName, resourceScope)
           case QueryExecutor.ToForward(responseCode, headers, body) =>
             // Log data version difference if response is OK.  Ignore not modified response and others.
             if (responseCode == HttpStatus.SC_OK) {
@@ -214,8 +214,29 @@ class QueryResource(secondary: Secondary,
         }
       }
 
-      def possiblyRewriteQuery(schema: Schema, analyzedQuery: SoQLAnalysis[String, SoQLAnalysisType]):
-      (SoQLAnalysis[String, SoQLAnalysisType], Option[String]) = {
+      /**
+       * Scan from left to right (inner to outer), rewrite the first possible one.
+       * TODO: Find a better way to apply rollup?
+       */
+      def possiblyRewriteOneAnalysisInQuery(schema: Schema, analyzedQuery: Seq[SoQLAnalysis[String, SoQLAnalysisType]])
+        : (Seq[SoQLAnalysis[String, SoQLAnalysisType]], Option[String]) = {
+        analyzedQuery.foldLeft((Seq.empty[SoQLAnalysis[String, SoQLAnalysisType]], None: Option[String])) {
+          (acc, anal) =>
+            val existingRollupName = acc._2
+            existingRollupName match {
+              case Some(_) => (acc._1 :+ anal, existingRollupName)
+              case None =>
+                val (rewrittenAnal, rollupName) = possiblyRewriteQuery(schema, anal)
+                rollupName match {
+                  case Some(_) => (acc._1 :+ rewrittenAnal, rollupName)
+                  case None => (acc._1 :+ anal, None)
+                }
+            }
+        }
+      }
+
+      def possiblyRewriteQuery(schema: Schema, analyzedQuery: SoQLAnalysis[String, SoQLAnalysisType])
+        : (SoQLAnalysis[String, SoQLAnalysisType], Option[String]) = {
         if (noRollup) {
           (analyzedQuery, None)
         } else {
@@ -260,9 +281,9 @@ class QueryResource(secondary: Secondary,
       }
 
       val versionInfo = analyzeRequest(getSchema(dataset, copy), true)
-      val (finalSchema, analysis) = versionInfo.payload
-      val (rewrittenAnalysis, rollupName) = possiblyRewriteQuery(finalSchema, analysis)
-      executeQuery(versionInfo.copy(payload = finalSchema), rewrittenAnalysis, rollupName,
+      val (finalSchema, analyses) = versionInfo.payload
+      val (rewrittenAnalyses, rollupName) = possiblyRewriteOneAnalysisInQuery(finalSchema, analyses)
+      executeQuery(versionInfo.copy(payload = finalSchema), rewrittenAnalyses, rollupName,
         requestId, req.header(headerSocrataResource), req.resourceScope)
     } catch {
       case FinishRequest(response) =>
