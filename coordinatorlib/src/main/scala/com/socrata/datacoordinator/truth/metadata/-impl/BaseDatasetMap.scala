@@ -3,6 +3,7 @@ package `-impl`
 
 import com.socrata.datacoordinator.id.{RollupName, DatasetId}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
+import com.socrata.soql.environment.ColumnName
 import org.joda.time.DateTime
 
 trait BaseDatasetMapReader[CT] {
@@ -70,11 +71,15 @@ trait BaseDatasetMapWriter[CT] extends BaseDatasetMapReader[CT] {
     * @note Does not change the actual table; this just updates the bookkeeping. */
   def dropColumn(columnInfo: ColumnInfo[CT])
 
-  /** Changes the type and physical column base of a column in this dataset-copy.
-    * @note Does not change the actual table, or (if this column was a primary key) ensure that the new type is still
-    *       a valid PK type; this just updates the bookkeeping.
-    * @return The new column info. */
-  def convertColumn(columnInfo: ColumnInfo[CT], newType: CT, newPhysicalColumnBaseBase: String): ColumnInfo[CT]
+  /**
+   * Removes a computation strategy from this dataset-copy.
+   * @note Does not change the actual table; this just updates the bookkeeping. */
+  def dropComputationStrategy(columnInfo: ColumnInfo[CT]): ColumnInfo[CT]
+
+  /**
+   * Updates the field name of this dataset-copy
+   * @note Does not change the actual table; this just updates the bookkeeping. */
+  def updateFieldName(columnInfo: ColumnInfo[CT], newName: ColumnName): ColumnInfo[CT]
 
   /** Changes the system primary key column for this dataset-copy.
     * @note Does not change the actual table (or verify it is a valid column to use as a PK); this just updates

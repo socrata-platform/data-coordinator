@@ -9,6 +9,7 @@ object SecondaryLib {
       jodaTime,
       rojomaJson,
       rojomaSimpleArm,
+      soqlEnvironment,
       "net.sf.trove4j" % "trove4j" % "3.0.3"
     ),
     sourceGenerators in Compile <+= (sourceManaged in Compile) map { targetDir =>

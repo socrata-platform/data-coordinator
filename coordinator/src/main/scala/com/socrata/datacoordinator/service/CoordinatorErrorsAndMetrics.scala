@@ -15,10 +15,12 @@ import com.socrata.http.server._
 import com.socrata.http.server.responses._
 import com.socrata.datacoordinator.service.ServiceUtil._
 import com.socrata.http.server.util.EntityTag
+import com.socrata.soql.environment.ColumnName
 import com.socrata.thirdparty.metrics.Metrics
 import com.socrata.datacoordinator.common.util.DatasetIdNormalizer._
 import com.socrata.http.server.implicits._
 import com.socrata.datacoordinator.external._
+import com.socrata.datacoordinator.util.jsoncodecs._
 
 
 
@@ -31,6 +33,14 @@ class CoordinatorErrorsAndMetrics(formatDatasetId: DatasetId => String) extends 
     datasetErrorResponse(resp, msg,
       "dataset" -> JString(formatDatasetId(dataset)),
       "column" -> JsonEncode.toJValue(colId),
+      "commandIndex" -> JNumber(commandIndex))
+  }
+
+  def fieldNameErrorResponse(msg: String, commandIndex: Long, dataset: DatasetId, fieldName: ColumnName, resp: HttpResponse = BadRequest) = {
+    import scala.language.reflectiveCalls
+    datasetErrorResponse(resp, msg,
+      "dataset" -> JString(formatDatasetId(dataset)),
+      "field_name" -> JsonEncode.toJValue(fieldName),
       "commandIndex" -> JNumber(commandIndex))
   }
 
@@ -64,6 +74,12 @@ class CoordinatorErrorsAndMetrics(formatDatasetId: DatasetId => String) extends 
 
   def mismatchedSchema(code: String, datasetId: DatasetId, schema: Schema, data: (String, JValue)*): HttpResponse = {
     mismatchedSchema(code, formatDatasetId(datasetId), schema, data:_*)
+  }
+
+  def noSuchColumnLabel(code: String, datasetId: DatasetId, data: (String, JValue)*): HttpResponse = {
+    datasetErrorResponse(BadRequest, code,
+      "dataset" -> JString(formatDatasetId(datasetId)),
+      "data" -> JObject(data.toMap))
   }
 
 

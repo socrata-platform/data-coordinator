@@ -1,6 +1,7 @@
 package com.socrata.datacoordinator
 package truth
 
+import com.socrata.soql.environment.ColumnName
 import org.joda.time.DateTime
 import com.rojoma.simplearm.{SimpleArm, Managed}
 
@@ -11,7 +12,7 @@ import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.metadata.CopyPair
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
-import com.socrata.datacoordinator.id.{RollupName, UserColumnId, RowVersion, ColumnId, DatasetId}
+import com.socrata.datacoordinator.id._
 import scala.concurrent.duration.Duration
 
 trait LowLevelDatabaseReader[CT, CV] {
@@ -116,7 +117,7 @@ trait DatasetMutator[CT, CV] {
     def columnInfo(id: ColumnId): Option[ColumnInfo[CT]]
     def columnInfo(name: UserColumnId): Option[ColumnInfo[CT]]
 
-    case class ColumnToAdd(userColumnId: UserColumnId, typ: CT, physicalColumnBaseBase: String)
+    case class ColumnToAdd(userColumnId: UserColumnId, fieldName: Option[ColumnName], typ: CT, physicalColumnBaseBase: String, computationStrategyInfo: Option[ComputationStrategyInfo] = None)
 
     def addColumns(columns: Iterable[ColumnToAdd]): Iterable[ColumnInfo[CT]]
     def makeSystemPrimaryKey(ci: ColumnInfo[CT]): ColumnInfo[CT]
@@ -134,6 +135,8 @@ trait DatasetMutator[CT, CV] {
     def unmakeUserPrimaryKey(ci: ColumnInfo[CT]): ColumnInfo[CT]
 
     def dropColumns(columns: Iterable[ColumnInfo[CT]]): Unit
+    def dropComputationStrategy(column: ColumnInfo[CT]): Unit
+    def updateFieldName(column: ColumnInfo[CT], newName: ColumnName): Unit
     def truncate(): Unit
 
     sealed trait RowDataUpdateJob {
@@ -195,7 +198,7 @@ object DatasetMutator {
       def addColumns(columnsToAdd: Iterable[ColumnToAdd]): Iterable[ColumnInfo[CT]] = {
         checkDoingRows()
         val newColumns = columnsToAdd.toVector.map { cta =>
-          val newColumn = datasetMap.addColumn(copyInfo, cta.userColumnId, cta.typ, cta.physicalColumnBaseBase)
+          val newColumn = datasetMap.addColumn(copyInfo, cta.userColumnId, cta.fieldName, cta.typ, cta.physicalColumnBaseBase, cta.computationStrategyInfo)
           copyCtx.addColumn(newColumn)
           newColumn
         }
@@ -211,6 +214,18 @@ object DatasetMutator {
           copyCtx.removeColumn(ci.systemId)
         }
         schemaLoader.dropColumns(cs)
+      }
+
+      def dropComputationStrategy(column: ColumnInfo[CT]): Unit = {
+        val updated = datasetMap.dropComputationStrategy(column)
+        copyCtx.updateColumn(updated)
+        schemaLoader.dropComputationStrategy(updated)
+      }
+
+      def updateFieldName(column: ColumnInfo[CT], newName: ColumnName): Unit = {
+        val updated = datasetMap.updateFieldName(column, newName)
+        copyCtx.updateColumn(updated)
+        schemaLoader.updateFieldName(updated)
       }
 
       def makeSystemPrimaryKey(ci: ColumnInfo[CT]): ColumnInfo[CT] = {
