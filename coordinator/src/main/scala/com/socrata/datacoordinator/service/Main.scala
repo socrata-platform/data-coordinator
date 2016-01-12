@@ -7,7 +7,7 @@ import com.socrata.datacoordinator.id.{UserColumnId, ColumnId, DatasetId}
 import com.socrata.datacoordinator.resources._
 import com.socrata.datacoordinator.secondary.{DatasetAlreadyInSecondary}
 import com.socrata.datacoordinator.truth.CopySelector
-import com.socrata.datacoordinator.truth.metadata.{SchemaField, Schema, DatasetCopyContext}
+import com.socrata.datacoordinator.truth.metadata.{CompStratSchemaField, SchemaField, Schema, DatasetCopyContext}
 import com.socrata.datacoordinator.util.collection.UserColumnIdSet
 import com.socrata.datacoordinator.util.{NullCache, IndexedTempFile, StackedTimingReport, LoggedTimingReport}
 import com.socrata.http.common.AuxiliaryData
@@ -134,7 +134,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
           val pkColName = copyCtx.pkCol.map(_.userColumnId)
           val orderedSchema = unwrappedCids.map { cidRaw =>
             val col = copyCtx.schema(new ColumnId(cidRaw))
-            SchemaField(col.userColumnId, col.typ.name.name)
+            SchemaField(col.userColumnId, col.fieldName, col.computationStrategyInfo.map(CompStratSchemaField.convert), col.typ.name.name)
           }
           f(Right((
             entityTag,

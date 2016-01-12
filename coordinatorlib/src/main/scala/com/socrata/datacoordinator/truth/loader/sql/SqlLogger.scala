@@ -80,6 +80,8 @@ object SqlLogger {
   val Truncated = "truncate"
   val ColumnCreated = "colcreat"
   val ColumnRemoved = "coldel"
+  val ComputationStrategyRemoved = "unstrat"
+  val FieldNameUpdated = "fieldnam"
   val RowIdentifierSet = "ridcol"
   val RowIdentifierCleared = "noridcol"
   val SystemRowIdentifierChanged = "sidcol"

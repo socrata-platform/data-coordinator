@@ -5,7 +5,8 @@ import com.ibm.icu.util.ULocale
 import com.rojoma.json.v3.ast._
 import com.rojoma.json.v3.codec.{DecodeError, JsonDecode, JsonEncode}
 import com.rojoma.json.v3.io._
-import com.socrata.datacoordinator.id.{RollupName, UserColumnId, RowVersion, DatasetId}
+import com.rojoma.json.v3.util.{Strategy, JsonKeyStrategy, AutomaticJsonDecodeBuilder}
+import com.socrata.datacoordinator.id._
 import com.socrata.datacoordinator.truth.json.JsonColumnRep
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.metadata._
@@ -13,14 +14,12 @@ import com.socrata.datacoordinator.truth.universe._
 import com.socrata.datacoordinator.truth.{DatabaseInReadOnlyMode, TypeContext}
 import com.socrata.datacoordinator.truth.{DatasetIdInUseByWriterException, DatasetMutator}
 import com.socrata.datacoordinator.util.collection.UserColumnIdMap
-import com.socrata.datacoordinator.util.{Cache, IndexedTempFile, BuiltUpIterator, Counter}
+import com.socrata.datacoordinator.util.{IndexedTempFile, BuiltUpIterator, Counter}
 import com.socrata.soql.environment.{TypeName, ColumnName}
-import java.io.InputStreamReader
 import java.nio.charset.StandardCharsets.UTF_8
-import org.joda.time.DateTime
-import scala.annotation.tailrec
 import scala.collection.immutable.{NumericRange, VectorBuilder}
 import scala.collection.mutable
+import com.socrata.datacoordinator.util.jsoncodecs._
 
 sealed trait MutationScriptCommandResult
 object MutationScriptCommandResult {
@@ -66,8 +65,10 @@ object Mutator {
   case class OperationAfterDrop(name: DatasetId)(val index: Long) extends MutationException
   case class IllegalColumnId(id: UserColumnId)(val index: Long) extends MutationException
   case class NoSuchColumn(dataset: DatasetId, id: UserColumnId)(val index: Long) extends MutationException
+  case class NoComputationStrategy(dataset: DatasetId, id: UserColumnId)(val index: Long) extends MutationException
   case class NoSuchType(name: TypeName)(val index: Long) extends MutationException
   case class ColumnAlreadyExists(dataset: DatasetId, id: UserColumnId)(val index: Long) extends MutationException
+  case class FieldNameAlreadyExists(dataset: DatasetId, ColumnName: ColumnName)(val index: Long) extends MutationException
   case class PrimaryKeyAlreadyExists(dataset: DatasetId,
                                      id: UserColumnId,
                                      existingName: UserColumnId)(val index: Long) extends MutationException
@@ -96,7 +97,7 @@ object Mutator {
                                       field: String,
                                       value: JValue) (val index: Long) extends InvalidCommandStreamException
   case class MismatchedSchemaHash(name: DatasetId, schema: Schema)(val index: Long) extends InvalidCommandStreamException
-
+  case class NoSuchColumnLabel(name: DatasetId, label: String)(val index: Long) extends InvalidCommandStreamException
 
   // RowDataExceptions
   sealed abstract class RowDataException extends MutationException {
@@ -164,13 +165,22 @@ object Mutator {
       throw new CommandIsNotAnObject(other)(index)
   }
 
+  case class ColumnLabel(label: String)
+  implicit val columnLabelDecode = AutomaticJsonDecodeBuilder[ColumnLabel]
+
+  type ColumnIdSpec = Either[ColumnLabel, UserColumnId]
   sealed abstract class Command {
     def index: Long
   }
-  case class AddColumn(index: Long, id: Option[UserColumnId], nameHint: String, typ: TypeName) extends Command
-  case class DropColumn(index: Long, id: UserColumnId) extends Command
-  case class SetRowId(index: Long, id: UserColumnId) extends Command
-  case class DropRowId(index: Long, id: UserColumnId) extends Command
+  @JsonKeyStrategy(Strategy.Underscore)
+  case class ComputationStrategySpec(strategyType: StrategyType, recompute: Boolean, sourceColumnIds: Seq[ColumnIdSpec], parameters: JObject)
+  implicit val compStratSpec = AutomaticJsonDecodeBuilder[ComputationStrategySpec]
+  case class AddColumn(index: Long, id: Option[ColumnIdSpec], nameHint: String, ColumnName: Option[ColumnName], typ: TypeName, computationStrategy: Option[ComputationStrategySpec] = None) extends Command
+  case class DropColumn(index: Long, id: ColumnIdSpec) extends Command
+  case class DropComputationStrategy(index: Long, id: ColumnIdSpec) extends Command
+  case class UpdateFieldName(index: Long, id: ColumnIdSpec, fieldName: ColumnName) extends Command
+  case class SetRowId(index: Long, id: ColumnIdSpec) extends Command
+  case class DropRowId(index: Long, id: ColumnIdSpec) extends Command
   case class RowData(index: Long, truncate: Boolean, mergeReplace: MergeReplace,
                      nonfatalRowErrors: Set[Class[_ <: Failure[_]]]) extends Command
   case class CreateOrUpdateRollup(index: Long, name: RollupName, soql: String) extends Command
@@ -178,7 +188,8 @@ object Mutator {
 
   val AddColumnOp = "add column"
   val DropColumnOp = "drop column"
-  val RenameColumnOp = "rename column"
+  val DropComputationStrategyOp = "drop computation strategy"
+  val UpdateColumnNameOp = "update field name"
   val SetRowIdOp = "set row id"
   val DropRowIdOp = "drop row id"
   val RowDataOp = "row data"
@@ -189,13 +200,19 @@ object Mutator {
 trait MutatorCommon[CT, CV] {
   def physicalColumnBaseBase(nameHint: String, systemColumn: Boolean = false): String
   def isSystemColumnId(identifier: UserColumnId): Boolean
-  def systemSchema: UserColumnIdMap[CT]
+  def systemSchema: UserColumnIdMap[MutatorColumnInfo[CT]]
   def systemIdColumnId: UserColumnId
   def versionColumnId: UserColumnId
   def jsonReps(di: DatasetInfo): CT => JsonColumnRep[CT, CV]
   def allowDdlOnPublishedCopies: Boolean
   def typeContext: TypeContext[CT, CV]
   def genUserColumnId(): UserColumnId
+}
+
+trait MutatorColumnInfo[CT] {
+  def typ: CT
+  def fieldName: Option[ColumnName]
+  def computationStrategy: Option[ComputationStrategyInfo]
 }
 
 class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT, CV]) {
@@ -217,18 +234,27 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
 
         get[String]("c") match {
           case AddColumnOp =>
-            val id = getOption[UserColumnId]("id")
+            val id = getOption[ColumnIdSpec]("id")
             val typ = get[String]("type")
-            val nameHint = getWithStrictDefault("hint", typ)
-            AddColumn(index, id, nameHint, TypeName(typ))
+            val fieldName = getOption[ColumnName]("field_name")
+            val nameHint = fieldName.fold(getWithStrictDefault[String]("hint", typ))(_.name)
+            val computationStrategy = getOption[ComputationStrategySpec]("computation_strategy")
+            AddColumn(index, id, nameHint, fieldName, TypeName(typ), computationStrategy)
           case DropColumnOp =>
-            val column = get[UserColumnId]("column")
+            val column = get[ColumnIdSpec]("column")
             DropColumn(index, column)
+          case DropComputationStrategyOp =>
+            val column = get[ColumnIdSpec]("column")
+            DropComputationStrategy(index, column)
+          case UpdateColumnNameOp =>
+            val column = get[ColumnIdSpec]("column")
+            val fieldName = get[ColumnName]("field_name")
+            UpdateFieldName(index, column, fieldName)
           case SetRowIdOp =>
-            val column = get[UserColumnId]("column")
+            val column = get[ColumnIdSpec]("column")
             SetRowId(index, column)
           case DropRowIdOp =>
-            val column = get[UserColumnId]("column")
+            val column = get[ColumnIdSpec]("column")
             DropRowId(index, column)
           case CreateOrUpdateRollupOp =>
             val name = get[RollupName]("name")
@@ -495,8 +521,8 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
           }
         case CreateDatasetMutation(idx, localeName) =>
           for(ctx <- u.datasetMutator.createDataset(user)(localeName)) yield {
-            val cis = ctx.addColumns(systemSchema.toSeq.map { case (col, typ) =>
-              ctx.ColumnToAdd(col, typ, physicalColumnBaseBase(col.underlying, systemColumn = true))
+            val cis = ctx.addColumns(systemSchema.toSeq.map { case (col, colInfo) =>
+              ctx.ColumnToAdd(col, colInfo.fieldName, colInfo.typ, physicalColumnBaseBase(col.underlying, systemColumn = true), colInfo.computationStrategy)
             })
             for(ci <- cis) {
               val ci2 =
@@ -536,6 +562,10 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
 
   class Processor(mutator: DatasetMutator[CT, CV]#MutationContext) {
     val jsonRepFor = jsonReps(mutator.copyInfo.datasetInfo)
+    val labels = new mutable.HashMap[ColumnLabel, UserColumnId]
+
+    def idFor(idx: Long, label: ColumnLabel) =
+      labels.getOrElse(label, throw NoSuchColumnLabel(datasetId, label.label)(idx))
 
     val datasetId = mutator.copyInfo.datasetInfo.systemId
     def checkDDL(idx: Long) {
@@ -560,9 +590,22 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
     private val pendingDrops = new mutable.ListBuffer[UserColumnId]
 
     def isExistingColumn(cid: UserColumnId) =
-      (mutator.schema.iterator.map(_._2.userColumnId).exists(_ == cid) ||
+      (mutator.schema.iterator.map(_._2.userColumnId).contains(cid) ||
        pendingAdds.exists(_.userColumnId == cid)) &&
-      !pendingDrops.exists(_ == cid)
+      !pendingDrops.contains(cid)
+
+    def isExistingColumnName(cfn: ColumnName) = {
+      val pendingDropsSet = pendingDrops.toSet
+      mutator.schema.iterator.filterNot { c => pendingDropsSet(c._2.userColumnId)}.map(_._2.fieldName).contains(Some(cfn)) ||
+        pendingAdds.exists(_.fieldName == Some(cfn))
+    }
+
+    def isOtherExistingFieldName(cfn: ColumnName, cid: UserColumnId) = {
+      val pendingDropsSet = pendingDrops.toSet
+      mutator.schema.iterator.filterNot { c => pendingDropsSet(c._2.userColumnId)}.map(_._2).exists { col =>
+        col.fieldName == Some(cfn) && col.userColumnId != cid
+      } || pendingAdds.exists { col => col.fieldName == Some(cfn) && col.userColumnId != col.userColumnId }
+    }
 
     def createId(): UserColumnId = {
       var id = genUserColumnId()
@@ -598,39 +641,84 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
       addResults ++ dropResults
     }
 
+    def convertStrategy(idx:Long, spec: ComputationStrategySpec): ComputationStrategyInfo = {
+      val ComputationStrategySpec(strategyType, recompute, sourceColumnIds, parameters) = spec
+      def idOf(id: ColumnIdSpec) = id.fold(idFor(idx, _), identity)
+      // bit icky; using "label" here might not be distinctive enough
+      val magicKey = "label"
+      def convert(v: JValue): JValue = v match {
+        case a: JAtom => a
+        case JArray(arr) => JArray(arr.map(convert))
+        case JObject(fields) if fields.size == 1 && fields.contains(magicKey) && fields(magicKey).isInstanceOf[JString] =>
+          JString(idFor(idx, ColumnLabel(fields(magicKey).asInstanceOf[JString].string)).underlying)
+        case JObject(fields) => JObject(fields.mapValues(convert))
+      }
+
+      ComputationStrategyInfo(strategyType, recompute, sourceColumnIds.map(idOf), JObject(parameters.mapValues(convert)))
+    }
+
     def carryOutCommand(commands: CommandStream, cmd: Command): Seq[MutationScriptCommandResult] = {
       val pendingResults =
         if(!cmd.isInstanceOf[AddColumn] && pendingAdds.nonEmpty) flushPendingCommands()
         else if(!cmd.isInstanceOf[DropColumn] && pendingDrops.nonEmpty) flushPendingCommands()
         else Vector.empty
 
-      val newResults = cmd match {
-        case AddColumn(idx, None, nameHint, typName) =>
+      def processCommand(cmd: Command): Seq[MutationScriptCommandResult] = cmd match {
+        case AddColumn(idx, None, nameHint, fieldName, typName, computationStrategy) =>
+          fieldName.foreach { fn => if(isExistingColumnName(fn)) throw FieldNameAlreadyExists(datasetId, fn)(idx) }
+
           val typ = nameForTypeOpt(typName).getOrElse {
             throw NoSuchType(typName)(idx)
           }
           checkDDL(idx)
 
-          pendingAdds += mutator.ColumnToAdd(createId(), typ, physicalColumnBaseBase(nameHint))
+          pendingAdds += mutator.ColumnToAdd(createId(), fieldName, typ, physicalColumnBaseBase(nameHint), computationStrategy.map(convertStrategy(idx, _)))
           Nil
-        case AddColumn(idx, Some(id), nameHint, typName) =>
+        case ac@AddColumn(idx, Some(Left(label)), _, _, _, _) =>
+          val id = createId()
+          labels(label) = id
+          processCommand(ac.copy(id = Some(Right(id))))
+        case AddColumn(idx, Some(Right(id)), nameHint, fieldName, typName, computationStrategy) =>
           if(isSystemColumnId(id)) throw IllegalColumnId(id)(idx)
           if(isExistingColumn(id)) throw ColumnAlreadyExists(datasetId, id)(idx)
+          fieldName.foreach { fn => if(isExistingColumnName(fn)) throw FieldNameAlreadyExists(datasetId, fn)(idx) }
 
           val typ = nameForTypeOpt(typName).getOrElse {
             throw NoSuchType(typName)(idx)
           }
           checkDDL(idx)
-          pendingAdds += mutator.ColumnToAdd(id, typ, physicalColumnBaseBase(nameHint))
+          pendingAdds += mutator.ColumnToAdd(id, fieldName, typ, physicalColumnBaseBase(nameHint), computationStrategy.map(convertStrategy(idx, _)))
           Nil
-        case DropColumn(idx, id) =>
+        case dc@DropColumn(idx, Left(label)) =>
+          processCommand(dc.copy(id = Right(idFor(idx, label))))
+        case DropColumn(idx, Right(id)) =>
           if(!isExistingColumn(id)) throw NoSuchColumn(datasetId, id)(idx)
           if(isSystemColumnId(id)) throw InvalidSystemColumnOperation(datasetId, id, DropColumnOp)(idx)
           if(mutator.columnInfo(id).get.isUserPrimaryKey) throw DeleteRowIdentifierNotAllowed(datasetId, id)(idx)
           checkDDL(idx)
           pendingDrops += id
           Nil
-        case SetRowId(idx, id) =>
+        case dcs@DropComputationStrategy(idx, Left(label)) =>
+          processCommand(dcs.copy(id = Right(idFor(idx, label))))
+        case DropComputationStrategy(idx, Right(id)) =>
+          if(!isExistingColumn(id)) throw NoSuchColumn(datasetId, id)(idx)
+          val col = mutator.columnInfo(id).getOrElse { sys.error("I just verified column " + id + " existed?") }
+          if(col.computationStrategyInfo.isEmpty) throw  NoComputationStrategy(datasetId, id)(idx)
+          if(isSystemColumnId(id)) throw InvalidSystemColumnOperation(datasetId, id, DropComputationStrategyOp)(idx)
+
+          mutator.dropComputationStrategy(col)
+          Nil
+        case ufn@UpdateFieldName(idx, Left(label), _) =>
+          processCommand(ufn.copy(id = Right(idFor(idx, label))))
+        case UpdateFieldName(idx, Right(id), fieldName) =>
+          if(!isExistingColumn(id)) throw NoSuchColumn(datasetId, id)(idx)
+          if(isSystemColumnId(id)) throw InvalidSystemColumnOperation(datasetId, id, UpdateColumnNameOp)(idx)
+          if(isOtherExistingFieldName(fieldName, id)) throw FieldNameAlreadyExists(datasetId, fieldName)(idx)
+          mutator.updateFieldName(mutator.columnInfo(id).getOrElse(sys.error("I just verified column " + id + " existed?")), fieldName)
+          Seq(MutationScriptCommandResult.Uninteresting)
+        case sri@SetRowId(idx, Left(label)) =>
+          processCommand(sri.copy(id = Right(idFor(idx, label))))
+        case SetRowId(idx, Right(id)) =>
           mutator.columnInfo(id) match {
             case Some(colInfo) =>
               for(pkCol <- mutator.schema.values.find(_.isUserPrimaryKey))
@@ -653,7 +741,9 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
               throw NoSuchColumn(datasetId, id)(idx)
           }
           Seq(MutationScriptCommandResult.Uninteresting)
-        case DropRowId(idx, id) =>
+        case dri@DropRowId(idx, Left(label)) =>
+          processCommand(dri.copy(id = Right(idFor(idx, label))))
+        case DropRowId(idx, Right(id)) =>
           mutator.columnInfo(id) match {
             case Some(colInfo) =>
               if(!colInfo.isUserPrimaryKey) throw NotPrimaryKey(datasetId, id)(idx)
@@ -677,6 +767,8 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
           val data = processRowData(idx, commands.rawCommandStream, nonFatalRowErrors, mutator, mergeReplace)
           Seq(MutationScriptCommandResult.RowData(data.toJobRange))
       }
+
+      val newResults = processCommand(cmd)
 
       pendingResults ++ newResults
     }
