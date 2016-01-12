@@ -1,7 +1,10 @@
 package com.socrata.datacoordinator.truth.loader.sql.messages
 
+import com.rojoma.json.v3.io.CompactJsonWriter
+import com.socrata.datacoordinator.id.ColumnId
 import com.socrata.datacoordinator.truth.metadata
 import com.google.protobuf.ByteString
+import com.socrata.soql.environment.ColumnName
 import org.joda.time.DateTime
 
 object ToProtobuf {
@@ -13,7 +16,17 @@ object ToProtobuf {
       physicalColumnBaseBase = ci.physicalColumnBaseBase,
       isSystemPrimaryKey = ci.isSystemPrimaryKey,
       isUserPrimaryKey = ci.isUserPrimaryKey,
-      isVersion = ci.isVersion
+      isVersion = ci.isVersion,
+      fieldName = ci.fieldName.map(_.name),
+      computationStrategyInfo = ci.computationStrategyInfo.map(convert)
+    )
+
+  def convert(ci: metadata.ComputationStrategyInfo): com.socrata.datacoordinator.truth.loader.sql.messages.UnanchoredColumnInfo.ComputationStrategyInfo =
+    com.socrata.datacoordinator.truth.loader.sql.messages.UnanchoredColumnInfo.ComputationStrategyInfo(
+      strategyType = ci.strategyType.underlying,
+      recompute = ci.recompute,
+      sourceColumnIds = ci.sourceColumnIds.map(_.underlying).to[collection.immutable.Seq],
+      parameters = CompactJsonWriter.toString(ci.parameters)
     )
 
   def convert(ci: metadata.UnanchoredCopyInfo): UnanchoredCopyInfo =
@@ -48,4 +61,10 @@ object ToProtobuf {
       name = ri.name.underlying,
       soql = ri.soql
     )
+
+  def convert(columnName: ColumnName): String =
+    columnName.name
+
+  def convert(columnId: ColumnId): Long =
+    columnId.underlying
 }

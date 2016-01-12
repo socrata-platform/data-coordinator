@@ -30,6 +30,15 @@ message UnanchoredColumnInfo {
   required bool isSystemPrimaryKey = 5;
   required bool isUserPrimaryKey = 6;
   required bool isVersion = 7;
+  optional string fieldName = 8;
+  optional ComputationStrategyInfo computationStrategyInfo = 9;
+
+  message ComputationStrategyInfo {
+      required string strategyType = 1;
+      required bool recompute = 2;
+      repeated string sourceColumnIds = 3;
+      required string parameters = 4;
+  }
 }
 
 message UnanchoredRollupInfo {
@@ -96,6 +105,14 @@ message RollupDropped {
 
 message CounterUpdated {
   required int64 nextCounter = 1;
+}
+
+message ComputationStrategyRemoved {
+  required UnanchoredColumnInfo columnInfo = 1;
+}
+
+message FieldNameUpdated {
+  required UnanchoredColumnInfo columnInfo = 1;
 }
 
 message EndTransaction {
