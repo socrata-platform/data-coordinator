@@ -58,6 +58,7 @@ object ScriptCommandRequestError{
   val NON_OBJECT = "req.script.command.non-object"
   val MISSING_FIELD = "req.script.command.missing-field"
   val INVALID_FIELD = "req.script.command.invalid-field"
+  val UNKNOWN_LABEL = "req.script.command.unknown-label"
 }
 
 // Update Errors
@@ -77,6 +78,7 @@ object ColumnUpdateError{
   val ILLEGAL_ID = "update.column.illegal-id"
   val SYSTEM = "update.column.system"
   val NOT_FOUND = "update.column.not-found"
+  val NO_COMP = "update.column.no-computation-strategy"
 }
 
 class DatasetUpdateError extends UpdateError

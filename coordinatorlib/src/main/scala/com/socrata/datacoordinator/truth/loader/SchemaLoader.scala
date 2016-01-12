@@ -11,6 +11,9 @@ trait SchemaLoader[CT] {
   def addColumns(colInfo: Iterable[ColumnInfo[CT]])
   def dropColumns(colInfo: Iterable[ColumnInfo[CT]])
 
+  def dropComputationStrategy(colInfo: ColumnInfo[CT])
+  def updateFieldName(colInfo: ColumnInfo[CT])
+
   def makePrimaryKey(colInfo: ColumnInfo[CT])
   def makeSystemPrimaryKey(colInfo: ColumnInfo[CT])
   def makeVersion(colInfo: ColumnInfo[CT])

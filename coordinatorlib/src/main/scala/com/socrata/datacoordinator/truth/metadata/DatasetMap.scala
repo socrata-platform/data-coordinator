@@ -1,6 +1,7 @@
 package com.socrata.datacoordinator.truth.metadata
 
 import com.socrata.datacoordinator.id._
+import com.socrata.soql.environment.ColumnName
 import scala.concurrent.duration.Duration
 
 trait DatasetMapBase[CT] extends `-impl`.BaseDatasetMapReader[CT] {
@@ -48,7 +49,7 @@ trait DatasetMapWriter[CT] extends DatasetMapBase[CT] with `-impl`.BaseDatasetMa
     * @note Does not change the actual table; this just updates the bookkeeping.
     * @return The new column
     * @throws ColumnAlreadyExistsException if the column already exists */
-  def addColumn(copyInfo: CopyInfo, userColumnId: UserColumnId, typ: CT, physicalColumnBaseBase: String): ColumnInfo[CT]
+  def addColumn(copyInfo: CopyInfo, userColumnId: UserColumnId, fieldName: Option[ColumnName], typ: CT, physicalColumnBaseBase: String, computationStrategyInfo: Option[ComputationStrategyInfo]): ColumnInfo[CT]
 }
 
 trait BackupDatasetMap[CT] extends DatasetMapWriter[CT] with `-impl`.BaseDatasetMapWriter[CT] {
@@ -76,7 +77,7 @@ trait BackupDatasetMap[CT] extends DatasetMapWriter[CT] with `-impl`.BaseDataset
     * @return The new column
     * @throws ColumnAlreadyExistsException if the column already exists
     * @throws ColumnSystemIdAlreadyInUse if `systemId` already names a column on this copy of the table. */
-  def addColumnWithId(systemId: ColumnId, copyInfo: CopyInfo, userColumnId: UserColumnId, typ: CT, physicalColumnBaseBase: String): ColumnInfo[CT]
+  def addColumnWithId(systemId: ColumnId, copyInfo: CopyInfo, userColumnId: UserColumnId, fieldName: Option[ColumnName], typ: CT, physicalColumnBaseBase: String, computationStrategyInfo: Option[ComputationStrategyInfo]): ColumnInfo[CT]
 
   /** Creates a dataset with the specified attributes
     * @note Using this carelessly can get you into trouble.  In particular, this

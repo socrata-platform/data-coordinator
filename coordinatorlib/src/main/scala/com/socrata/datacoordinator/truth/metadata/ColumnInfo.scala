@@ -1,17 +1,27 @@
 package com.socrata.datacoordinator
 package truth.metadata
 
-import com.socrata.datacoordinator.id.{UserColumnId, ColumnId}
+import com.rojoma.json.v3.ast.JObject
+import com.socrata.datacoordinator.id.{StrategyType, UserColumnId, ColumnId}
 import com.rojoma.json.v3.util.{AutomaticJsonCodecBuilder, JsonKey}
-import com.socrata.soql.environment.TypeName
+import com.socrata.soql.environment.{ColumnName, TypeName}
+import com.socrata.datacoordinator.util.jsoncodecs._
+
+case class ComputationStrategyInfo(strategyType: StrategyType, recompute: Boolean, sourceColumnIds: Seq[UserColumnId], parameters: JObject)
+
+object ComputationStrategyInfo {
+  implicit val JCodec = AutomaticJsonCodecBuilder[ComputationStrategyInfo]
+}
 
 sealed trait AbstractColumnInfoLike extends Product {
   val systemId: ColumnId
   val userColumnId: UserColumnId
+  val fieldName: Option[ColumnName]
   val isSystemPrimaryKey: Boolean
   val isUserPrimaryKey: Boolean
   val isVersion: Boolean
   val typeName: String
+  val computationStrategyInfo: Option[ComputationStrategyInfo]
 }
 
 sealed trait ColumnInfoLike extends AbstractColumnInfoLike {
@@ -28,13 +38,15 @@ object ColumnInfoLike {
 
 case class UnanchoredColumnInfo(@JsonKey("sid") systemId: ColumnId,
                                 @JsonKey("cid") userColumnId: UserColumnId,
+                                @JsonKey("fld") fieldName: Option[ColumnName],
                                 @JsonKey("type") typeName: String,
                                 @JsonKey("base") physicalColumnBaseBase: String,
                                 @JsonKey("spk") isSystemPrimaryKey: Boolean,
                                 @JsonKey("upk") isUserPrimaryKey: Boolean,
-                                @JsonKey("ver") isVersion: Boolean) extends ColumnInfoLike
+                                @JsonKey("ver") isVersion: Boolean,
+                                @JsonKey("csinfo") computationStrategyInfo: Option[ComputationStrategyInfo]) extends ColumnInfoLike
 
-object UnanchoredColumnInfo extends ((ColumnId, UserColumnId, String, String, Boolean, Boolean, Boolean) => UnanchoredColumnInfo) {
+object UnanchoredColumnInfo extends ((ColumnId, UserColumnId, Option[ColumnName], String, String, Boolean, Boolean, Boolean, Option[ComputationStrategyInfo]) => UnanchoredColumnInfo) {
   override def toString = "UnanchoredColumnInfo"
   implicit val jCodec = AutomaticJsonCodecBuilder[UnanchoredColumnInfo]
 }
@@ -43,9 +55,20 @@ object UnanchoredColumnInfo extends ((ColumnId, UserColumnId, String, String, Bo
   * or [[com.socrata.datacoordinator.truth.metadata.DatasetMapWriter]].
   * @param tag Guard against a non-map accidentially instantiating this.
   */
-case class ColumnInfo[CT](copyInfo: CopyInfo, systemId: ColumnId, userColumnId: UserColumnId, typ: CT, physicalColumnBaseBase: String, isSystemPrimaryKey: Boolean, isUserPrimaryKey: Boolean, isVersion: Boolean)(implicit val typeNamespace: TypeNamespace[CT], tag: com.socrata.datacoordinator.truth.metadata.`-impl`.Tag)  extends ColumnInfoLike {
+case class ColumnInfo[CT](copyInfo: CopyInfo,
+                          systemId: ColumnId,
+                          userColumnId: UserColumnId,
+                          fieldName: Option[ColumnName],
+                          typ: CT,
+                          physicalColumnBaseBase: String,
+                          isSystemPrimaryKey: Boolean,
+                          isUserPrimaryKey: Boolean,
+                          isVersion: Boolean,
+                          computationStrategyInfo: Option[ComputationStrategyInfo])
+                         (implicit val typeNamespace: TypeNamespace[CT], tag: com.socrata.datacoordinator.truth.metadata.`-impl`.Tag)  extends ColumnInfoLike {
   lazy val typeName = typeNamespace.nameForType(typ)
-  def unanchored: UnanchoredColumnInfo = UnanchoredColumnInfo(systemId, userColumnId, typeName, physicalColumnBaseBase, isSystemPrimaryKey, isUserPrimaryKey, isVersion)
+  def unanchored: UnanchoredColumnInfo = UnanchoredColumnInfo(systemId, userColumnId, fieldName, typeName,
+    physicalColumnBaseBase, isSystemPrimaryKey, isUserPrimaryKey, isVersion, computationStrategyInfo)
 }
 
 trait TypeNamespace[CT] {

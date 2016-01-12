@@ -21,6 +21,6 @@
             <sql>
                 DROP TABLE computation_strategy_map
             </sql>
-        </rollback>
+        </rollback>Ma
     </changeSet>
 </databaseChangeLog>
