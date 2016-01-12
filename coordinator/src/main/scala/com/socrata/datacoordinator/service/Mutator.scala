@@ -594,17 +594,12 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
        pendingAdds.exists(_.userColumnId == cid)) &&
       !pendingDrops.contains(cid)
 
-    def isExistingColumnName(cfn: ColumnName) = {
-      val pendingDropsSet = pendingDrops.toSet
-      mutator.schema.iterator.filterNot { c => pendingDropsSet(c._2.userColumnId)}.map(_._2.fieldName).contains(Some(cfn)) ||
-        pendingAdds.exists(_.fieldName == Some(cfn))
-    }
-
-    def isOtherExistingFieldName(cfn: ColumnName, cid: UserColumnId) = {
+    // If some user column id is specified, will return true if the field name is a field name for some other column
+    def isExistingFieldName(cfn: ColumnName, cid: Option[UserColumnId] = None) = {
       val pendingDropsSet = pendingDrops.toSet
       mutator.schema.iterator.filterNot { c => pendingDropsSet(c._2.userColumnId)}.map(_._2).exists { col =>
-        col.fieldName == Some(cfn) && col.userColumnId != cid
-      } || pendingAdds.exists { col => col.fieldName == Some(cfn) && col.userColumnId != col.userColumnId }
+        col.fieldName == Some(cfn) && cid.forall(col.userColumnId != _)
+      } || pendingAdds.exists { col => col.fieldName == Some(cfn) && cid.forall(col.userColumnId != _) }
     }
 
     def createId(): UserColumnId = {
@@ -641,7 +636,7 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
       addResults ++ dropResults
     }
 
-    def convertStrategy(idx:Long, spec: ComputationStrategySpec): ComputationStrategyInfo = {
+    def convertStrategy(idx: Long, spec: ComputationStrategySpec): ComputationStrategyInfo = {
       val ComputationStrategySpec(strategyType, recompute, sourceColumnIds, parameters) = spec
       def idOf(id: ColumnIdSpec) = id.fold(idFor(idx, _), identity)
       // bit icky; using "label" here might not be distinctive enough
@@ -665,7 +660,7 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
 
       def processCommand(cmd: Command): Seq[MutationScriptCommandResult] = cmd match {
         case AddColumn(idx, None, nameHint, fieldName, typName, computationStrategy) =>
-          fieldName.foreach { fn => if(isExistingColumnName(fn)) throw FieldNameAlreadyExists(datasetId, fn)(idx) }
+          fieldName.foreach { fn => if(isExistingFieldName(fn)) throw FieldNameAlreadyExists(datasetId, fn)(idx) }
 
           val typ = nameForTypeOpt(typName).getOrElse {
             throw NoSuchType(typName)(idx)
@@ -681,7 +676,7 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
         case AddColumn(idx, Some(Right(id)), nameHint, fieldName, typName, computationStrategy) =>
           if(isSystemColumnId(id)) throw IllegalColumnId(id)(idx)
           if(isExistingColumn(id)) throw ColumnAlreadyExists(datasetId, id)(idx)
-          fieldName.foreach { fn => if(isExistingColumnName(fn)) throw FieldNameAlreadyExists(datasetId, fn)(idx) }
+          fieldName.foreach { fn => if(isExistingFieldName(fn)) throw FieldNameAlreadyExists(datasetId, fn)(idx) }
 
           val typ = nameForTypeOpt(typName).getOrElse {
             throw NoSuchType(typName)(idx)
@@ -707,13 +702,14 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
           if(isSystemColumnId(id)) throw InvalidSystemColumnOperation(datasetId, id, DropComputationStrategyOp)(idx)
 
           mutator.dropComputationStrategy(col)
-          Nil
+          Seq(MutationScriptCommandResult.Uninteresting)
         case ufn@UpdateFieldName(idx, Left(label), _) =>
           processCommand(ufn.copy(id = Right(idFor(idx, label))))
         case UpdateFieldName(idx, Right(id), fieldName) =>
           if(!isExistingColumn(id)) throw NoSuchColumn(datasetId, id)(idx)
           if(isSystemColumnId(id)) throw InvalidSystemColumnOperation(datasetId, id, UpdateColumnNameOp)(idx)
-          if(isOtherExistingFieldName(fieldName, id)) throw FieldNameAlreadyExists(datasetId, fieldName)(idx)
+          if(isExistingFieldName(fieldName, Some(id))) throw FieldNameAlreadyExists(datasetId, fieldName)(idx) // can update a column to have the same field name as before
+
           mutator.updateFieldName(mutator.columnInfo(id).getOrElse(sys.error("I just verified column " + id + " existed?")), fieldName)
           Seq(MutationScriptCommandResult.Uninteresting)
         case sri@SetRowId(idx, Left(label)) =>
