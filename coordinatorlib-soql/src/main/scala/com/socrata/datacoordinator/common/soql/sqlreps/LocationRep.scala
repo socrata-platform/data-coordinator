@@ -17,11 +17,17 @@ class LocationRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType,
 
   val sqlTypes: Array[String] = Array("GEOMETRY(Geometry," + WGS84SRID + ")", "TEXT")
 
-  override def selectList: String = Array(s"ST_AsBinary(${physColumns(0)})", physColumns(1)).mkString(",")
+  // sub-column offsets
+  val geomOffset = 0
+  val addressOffset = 1
+  val lastOffset = 2
+
+  override def selectList: String =
+    Array(s"ST_AsBinary(${physColumns(geomOffset)})", physColumns(addressOffset)).mkString(",")
 
   override def templateForUpdate: String = Array(
-    s"${physColumns(0)}=ST_GeomFromEWKT(?)",
-    s"${physColumns(1)}=?").mkString(",")
+    s"${physColumns(geomOffset)}=ST_GeomFromEWKT(?)",
+    s"${physColumns(addressOffset)}=?").mkString(",")
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue): Unit = {
     v match {
@@ -45,8 +51,8 @@ class LocationRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType,
 
   def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
     if (SoQLNull == v) {
-      stmt.setNull(start, Types.VARCHAR)
-      stmt.setNull(start, Types.VARCHAR)
+      stmt.setNull(start + geomOffset, Types.VARCHAR)
+      stmt.setNull(start + addressOffset, Types.VARCHAR)
     }
     else {
       val loc = v.asInstanceOf[SoQLLocation]
@@ -56,11 +62,11 @@ class LocationRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType,
         stmt.setNull(start, Types.VARCHAR)
       }
       loc.address match {
-        case Some(a) => stmt.setString(start + 1, a)
-        case None => stmt.setNull(start + 1, Types.VARCHAR)
+        case Some(a) => stmt.setString(start + addressOffset, a)
+        case None => stmt.setNull(start + addressOffset, Types.VARCHAR)
       }
     }
-    start + 2
+    start + lastOffset
   }
 
   def estimateSize(v: SoQLValue): Int =
@@ -74,7 +80,7 @@ class LocationRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType,
   private def geomNonEmpty(v: SoQLLocation) = v.latitude.isDefined && v.longitude.isDefined
 
   def fromResultSet(rs: ResultSet, start: Int): SoQLValue = {
-    val pointWkb = rs.getBytes(start)
+    val pointWkb = rs.getBytes(start + geomOffset)
     val pointLoc = SoQLPoint.WkbRep.unapply(pointWkb) match {
       case Some(point) =>
         SoQLLocation(Some(BigDecimal.valueOf(point.getY)),
@@ -83,7 +89,7 @@ class LocationRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType,
         SoQLLocation(None, None, None)
     }
 
-    val loc = pointLoc.copy(address = Option(rs.getString(start + 1)))
+    val loc = pointLoc.copy(address = Option(rs.getString(start + addressOffset)))
     if (geomNonEmpty(loc) || loc.address.isDefined) loc
     else SoQLNull
   }
