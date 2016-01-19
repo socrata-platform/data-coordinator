@@ -74,9 +74,9 @@ class PostgresDatabaseMutator[CT, CV](universe: Managed[Universe[CT, CV] with Lo
 
     def datasetMap = universe.datasetMapWriter
 
-    def withDataLoader[A](copyCtx: DatasetCopyContext[CT], logger: Logger[CT, CV], reportWriter: ReportWriter[CV], replaceUpdatedRows: Boolean)(f: (Loader[CV]) => A): (Long, A) = {
+    def withDataLoader[A](copyCtx: DatasetCopyContext[CT], logger: Logger[CT, CV], reportWriter: ReportWriter[CV], replaceUpdatedRows: Boolean, updateOnly: Boolean)(f: (Loader[CV]) => A): (Long, A) = {
       val dataProvider = new RowDataProvider(copyCtx.datasetInfo.nextCounterValue)
-      for(loader <- universe.loader(copyCtx, new RowIdProvider(dataProvider), new RowVersionProvider(dataProvider), logger, reportWriter, replaceUpdatedRows)) yield {
+      for(loader <- universe.loader(copyCtx, new RowIdProvider(dataProvider), new RowVersionProvider(dataProvider), logger, reportWriter, replaceUpdatedRows, updateOnly)) yield {
         val result = f(loader)
         loader.finish()
         (dataProvider.finish(), result)

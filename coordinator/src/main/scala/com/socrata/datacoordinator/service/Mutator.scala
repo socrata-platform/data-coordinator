@@ -182,7 +182,8 @@ object Mutator {
   case class SetRowId(index: Long, id: ColumnIdSpec) extends Command
   case class DropRowId(index: Long, id: ColumnIdSpec) extends Command
   case class RowData(index: Long, truncate: Boolean, mergeReplace: MergeReplace,
-                     nonfatalRowErrors: Set[Class[_ <: Failure[_]]]) extends Command
+                     nonfatalRowErrors: Set[Class[_ <: Failure[_]]],
+                     updateOnly: Boolean) extends Command
   case class CreateOrUpdateRollup(index: Long, name: RollupName, soql: String) extends Command
   case class DropRollup(index: Long, name: RollupName) extends Command
 
@@ -273,7 +274,8 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
               Failure.allFailures.getOrElse(nfe, throw new InvalidCommandFieldValue(originalObject,
                                             "nonfatal_row_errors", JString(nfe))(index))
             }.toSet
-            RowData(index, truncate, mergeReplace, nonFatalRowErrorsClasses)
+            val updateOnly = getWithStrictDefault[Boolean]("update_only", false)
+            RowData(index, truncate, mergeReplace, nonFatalRowErrorsClasses, updateOnly)
           case other =>
             throw InvalidCommandFieldValue(originalObject, "c", JString(other))(index)
         }
@@ -452,6 +454,12 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
         JObject(Map(
           "typ" -> JString("error"),
           "err" -> JString("version_on_new_row")
+        ))
+      case InsertInUpdateOnly(id) =>
+        JObject(Map(
+          "typ" -> JString("error"),
+          "err" -> JString("insert_in_update_only"),
+          "id" -> jsonifyId(id)
         ))
     }
 
@@ -758,9 +766,9 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
             case None => throw NoSuchRollup(name)(idx)
           }
 
-        case RowData(idx, truncate, mergeReplace, nonFatalRowErrors) =>
+        case RowData(idx, truncate, mergeReplace, nonFatalRowErrors, updateOnly) =>
           if(truncate) mutator.truncate()
-          val data = processRowData(idx, commands.rawCommandStream, nonFatalRowErrors, mutator, mergeReplace)
+          val data = processRowData(idx, commands.rawCommandStream, nonFatalRowErrors, updateOnly, mutator, mergeReplace)
           Seq(MutationScriptCommandResult.RowData(data.toJobRange))
       }
 
@@ -772,6 +780,7 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
     def processRowData(idx: Long,
                        rows: BufferedIterator[JValue],
                        nonFatalRowErrors: Set[Class[_ <: Failure[_]]],
+                       updateOnly: Boolean,
                        mutator: DatasetMutator[CT,CV]#MutationContext,
                        mergeReplace: MergeReplace): JsonReportWriter = {
       import mutator._
@@ -807,7 +816,7 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
             }
           }
         }
-        mutator.upsert(it, reportWriter, replaceUpdatedRows = mergeReplace == Replace)
+        mutator.upsert(it, reportWriter, replaceUpdatedRows = mergeReplace == Replace, updateOnly = updateOnly)
         if(rows.hasNext && JNull == rows.head) rows.next()
         checkForError()
         reportWriter

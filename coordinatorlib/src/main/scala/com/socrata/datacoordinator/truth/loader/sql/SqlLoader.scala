@@ -25,6 +25,7 @@ import scala.util.control.ControlThrowable
  */
 final class SqlLoader[CT, CV](val connection: Connection,
                               val rowPreparer: RowPreparer[CV],
+                              val updateOnly: Boolean,
                               val sqlizer: DataSqlizer[CT, CV],
                               val dataLogger: DataLogger[CV],
                               val idProvider: RowIdProvider,
@@ -369,7 +370,8 @@ final class SqlLoader[CT, CV](val connection: Connection,
           val preparedRow = rowPreparer.prepareForInsert(row, sid, version)
           val sidValue = preparedRow(datasetContext.systemIdColumn)
           if(seenOps.contains(sidValue)) killPreinsertUpdate(sidValue)
-          inserts += SqlLoader.DecoratedRow(job, sidValue, sid, version, SqlLoader.emptyRow, preparedRow)
+          if(updateOnly) reportWriter.error(job, InsertInUpdateOnly(sidValue))
+          else inserts += SqlLoader.DecoratedRow(job, sidValue, sid, version, SqlLoader.emptyRow, preparedRow)
         case u: UpsertOp =>
           unprocessedUpdates += u
           seenOps.put(u.id, u)
@@ -425,7 +427,8 @@ final class SqlLoader[CT, CV](val connection: Connection,
             val sid = idProvider.allocate()
             val version = versionProvider.allocate()
             val preparedRow = rowPreparer.prepareForInsert(op.row, sid, version)
-            inserts += SqlLoader.DecoratedRow(op.job, op.id, sid, version, SqlLoader.emptyRow, preparedRow)
+            if(updateOnly) reportWriter.error(op.job, InsertInUpdateOnly(op.id))
+            else inserts += SqlLoader.DecoratedRow(op.job, op.id, sid, version, SqlLoader.emptyRow, preparedRow)
           }
         case Some(oldRow) =>
           checkVersion(op.job, op.id, versionOf(op.row), Some(oldRow.version)) {
@@ -442,10 +445,10 @@ final class SqlLoader[CT, CV](val connection: Connection,
 }
 
 object SqlLoader {
-  def apply[CT, CV](connection: Connection, preparer: RowPreparer[CV], sqlizer: DataSqlizer[CT, CV], dataLogger: DataLogger[CV],
+  def apply[CT, CV](connection: Connection, preparer: RowPreparer[CV], updateOnly: Boolean, sqlizer: DataSqlizer[CT, CV], dataLogger: DataLogger[CV],
                     idProvider: RowIdProvider, versionProvider: RowVersionProvider, executor: Executor, reportWriter: ReportWriter[CV],
                     timingReport: TransferrableContextTimingReport): SqlLoader[CT,CV] = {
-    new SqlLoader(connection, preparer, sqlizer, dataLogger, idProvider, versionProvider, executor, timingReport, reportWriter)
+    new SqlLoader(connection, preparer, updateOnly, sqlizer, dataLogger, idProvider, versionProvider, executor, timingReport, reportWriter)
   }
 
   private case class DecoratedRow[CV](job: Int, id: CV, rowId: RowId, version: RowVersion, oldRow: Row[CV], newRow: Row[CV])

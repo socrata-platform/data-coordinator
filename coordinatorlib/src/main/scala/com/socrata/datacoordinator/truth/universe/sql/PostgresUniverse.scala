@@ -164,8 +164,8 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
   def prevettedLoader(copyCtx: DatasetCopyContext[CT], logger: Logger[CT, CV]) =
     new SqlPrevettedLoader(conn, sqlizerFactory(copyCtx.copyInfo, datasetContextFactory(copyCtx.schema)), logger)
 
-  def loader(copyCtx: DatasetCopyContext[CT], rowIdProvider: RowIdProvider, rowVersionProvider: RowVersionProvider, logger: Logger[CT, CV], reportWriter: ReportWriter[CV], replaceUpdatedRows: Boolean) =
-    managed(loaderProvider(conn, copyCtx, rowPreparer(transactionStart, copyCtx, replaceUpdatedRows), rowIdProvider, rowVersionProvider, logger, reportWriter, timingReport))
+  def loader(copyCtx: DatasetCopyContext[CT], rowIdProvider: RowIdProvider, rowVersionProvider: RowVersionProvider, logger: Logger[CT, CV], reportWriter: ReportWriter[CV], replaceUpdatedRows: Boolean, updateOnly: Boolean) =
+    managed(loaderProvider(conn, copyCtx, rowPreparer(transactionStart, copyCtx, replaceUpdatedRows), updateOnly, rowIdProvider, rowVersionProvider, logger, reportWriter, timingReport))
 
   lazy val lowLevelDatabaseReader = new PostgresDatabaseReader(conn, datasetMapReader, repFor)
 
