@@ -11,6 +11,7 @@ import com.socrata.datacoordinator.id.RowVersion
 
 class StupidSqlLoader[CT, CV](val connection: Connection,
                               val rowPreparer: RowPreparer[CV],
+                              val updateOnly: Boolean,
                               val sqlizer: DataSqlizer[CT, CV],
                               val dataLogger: DataLogger[CV],
                               val idProvider: RowIdProvider,
@@ -110,12 +111,15 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
                 val sid = idProvider.allocate()
                 val version = versionProvider.allocate()
                 val insertRow = rowPreparer.prepareForInsert(unpreparedRow, sid, version)
-                val (result, ()) = sqlizer.insertBatch(connection) { inserter =>
-                  inserter.insert(insertRow)
+                if(updateOnly) reportWriter.error(job, InsertInUpdateOnly(insertRow(datasetContext.systemIdColumn)))
+                else {
+                  val (result, ()) = sqlizer.insertBatch(connection) { inserter =>
+                    inserter.insert(insertRow)
+                  }
+                  assert(result == 1, "From insert: " + result)
+                  dataLogger.insert(sid, insertRow)
+                  reportWriter.inserted(job, IdAndVersion(insertRow(datasetContext.systemIdColumn), typeContext.makeRowVersionFromValue(insertRow(datasetContext.versionColumn))))
                 }
-                assert(result == 1, "From insert: " + result)
-                dataLogger.insert(sid, insertRow)
-                reportWriter.inserted(job, IdAndVersion(insertRow(datasetContext.systemIdColumn), typeContext.makeRowVersionFromValue(insertRow(datasetContext.versionColumn))))
               case Some(Some(_)) =>
                 reportWriter.error(job, VersionOnNewRow)
             }

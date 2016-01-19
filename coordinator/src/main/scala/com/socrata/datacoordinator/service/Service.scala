@@ -218,6 +218,11 @@ class Service(serviceConfig: ServiceConfig,
               datasetBadRequest(UpdateError.VERSION_ON_NEW_ROW,
                 "commandIndex" -> JNumber(em.index),
                 "dataset" -> JString(formatDatasetId(datasetName)))
+            case Mutator.UpsertError(datasetName, InsertInUpdateOnly(id), _) =>
+              datasetBadRequest(UpdateError.INSERT_IN_UPDATE_ONLY,
+                "commandIndex" -> JNumber(em.index),
+                "dataset" -> JString(formatDatasetId(datasetName)),
+                "id" -> id)
             case _ => // if we're not handling something, don't just eat it
               datasetBadRequest(RequestError.UNHANDLED_ERROR,
                 "error" -> JString(Option(em.getMessage).getOrElse(em.getClass.getName)))
