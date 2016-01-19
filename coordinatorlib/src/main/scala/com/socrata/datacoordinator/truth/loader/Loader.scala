@@ -53,7 +53,9 @@ object Failure {
     "no_such_row_to_delete" -> classOf[NoSuchRowToDelete[_]],
     "no_such_row_to_update" -> classOf[NoSuchRowToUpdate[_]],
     "no_primary_key" -> NoPrimaryKey.getClass.asInstanceOf[Class[NoPrimaryKey.type]],
-    "verison_mismatch" -> classOf[VersionMismatch[_]]
+    "verison_mismatch" -> classOf[VersionMismatch[_]], // FIXME: remove this one once we're sure no one is using it
+    "version_mismatch" -> classOf[VersionMismatch[_]],
+    "insert_in_update_only" -> classOf[InsertInUpdateOnly[_]]
   )
 }
 
@@ -71,4 +73,7 @@ case object NoPrimaryKey extends Failure[Nothing] {
 }
 case class VersionMismatch[CV](id: CV, expected: Option[RowVersion], actual: Option[RowVersion]) extends Failure[CV] {
   def map[B](f: CV => B) = VersionMismatch(f(id), expected, actual)
+}
+case class InsertInUpdateOnly[CV](id: CV) extends Failure[CV] {
+  def map[B](f: CV => B) = InsertInUpdateOnly(f(id))
 }
