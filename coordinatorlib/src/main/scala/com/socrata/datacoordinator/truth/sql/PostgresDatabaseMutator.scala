@@ -26,12 +26,12 @@ import com.socrata.datacoordinator.truth.metadata.CopyInfo
 
 // Does this need to be *Postgres*, or is all postgres-specific stuff encapsulated in its paramters?
 // Actually does this need to be in the sql package at all now that Universe exists?
-class PostgresDatabaseMutator[CT, CV](universe: Managed[Universe[CT, CV] with LoggerProvider with SchemaLoaderProvider with LoaderProvider with TruncatorProvider with DatasetContentsCopierProvider with DatasetMapWriterProvider])
+class PostgresDatabaseMutator[CT, CV](universe: Managed[Universe[CT, CV] with LoggerProvider with SchemaLoaderProvider with LoaderProvider with TruncatorProvider with DatasetContentsCopierProvider with DatasetMapWriterProvider with SecondaryManifestProvider])
   extends LowLevelDatabaseMutator[CT, CV]
 {
   // type LoaderProvider = (CopyInfo, ColumnIdMap[ColumnInfo], RowPreparer[CV], IdProvider, Logger[CV], ColumnInfo => SqlColumnRep[CT, CV]) => Loader[CV]
 
-  private class S(val universe: Universe[CT, CV] with LoggerProvider with SchemaLoaderProvider with LoaderProvider with TruncatorProvider with DatasetContentsCopierProvider with DatasetMapWriterProvider) extends MutationContext {
+  private class S(val universe: Universe[CT, CV] with LoggerProvider with SchemaLoaderProvider with LoaderProvider with TruncatorProvider with DatasetContentsCopierProvider with DatasetMapWriterProvider with SecondaryManifestProvider) extends MutationContext {
     lazy val now = universe.transactionStart
 
     final def loadLatestVersionOfDataset(datasetId: DatasetId, lockTimeout: Duration): Option[DatasetCopyContext[CT]] = {
@@ -42,6 +42,9 @@ class PostgresDatabaseMutator[CT, CV](universe: Managed[Universe[CT, CV] with Lo
         new DatasetCopyContext(latest, schema)
       }
     }
+
+    def outOfDateFeedbackSecondaries(datasetId: DatasetId): Set[String] =
+      universe.secondaryManifest.outOfDateFeedbackSecondaries(datasetId)
 
     def logger(datasetInfo: DatasetInfo, user: String): Logger[CT, CV] =
       universe.logger(datasetInfo, user)
