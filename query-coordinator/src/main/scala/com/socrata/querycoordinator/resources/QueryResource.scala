@@ -68,8 +68,8 @@ class QueryResource(secondary: Secondary,
       val sfDataVersion = req.header("X-SODA2-DataVersion").map(_.toLong).get
       val sfLastModified = req.dateTimeHeader("X-SODA2-LastModified").get
 
-      val forcedSecondaryName = req.queryParameter("store")
-      val noRollup = req.queryParameter("no_rollup").isDefined
+      val forcedSecondaryName = Option(servReq.getParameter("store"))
+      val noRollup = Option(servReq.getParameter("no_rollup")).isDefined
       val obfuscateId = !Option(servReq.getParameter(qpObfuscateId)).exists(_ == "false")
 
       forcedSecondaryName.foreach(ds => log.info("Forcing use of the secondary store instance: " + ds))
