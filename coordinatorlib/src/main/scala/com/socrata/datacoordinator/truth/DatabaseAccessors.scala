@@ -44,6 +44,8 @@ trait LowLevelDatabaseMutator[CT, CV] {
     def finishDatasetTransaction(username: String, copyInfo: CopyInfo, updateLastUpdated: Boolean): Unit
 
     def loadLatestVersionOfDataset(datasetId: DatasetId, lockTimeout: Duration): Option[DatasetCopyContext[CT]]
+
+    def outOfDateFeedbackSecondaries(datasetId: DatasetId): Set[String]
   }
 
   def openDatabase: Managed[MutationContext]
@@ -160,6 +162,7 @@ trait DatasetMutator[CT, CV] {
   sealed trait DropCopyContext
   sealed trait CopyContext
   sealed trait CopyContextError extends CopyContext
+  case class SecondariesNotUpToDate(secondaries: Set[String]) extends CopyContextError with DropCopyContext
   case class DatasetDidNotExist() extends CopyContextError with DropCopyContext // for some reason Scala 2.10.2 thinks a match isn't exhaustive if this is a case object
   case class IncorrectLifecycleStage(currentLifecycleStage: LifecycleStage, expectedLifecycleStages: Set[LifecycleStage]) extends CopyContextError with DropCopyContext
   case class CopyOperationComplete(mutationContext: TrueMutationContext) extends CopyContext
@@ -278,62 +281,72 @@ object DatasetMutator {
 
       def datasetContentsCopier: DatasetContentsCopier[CT] = llCtx.datasetContentsCopier(logger)
 
-      def makeWorkingCopy(copyData: Boolean): CopyInfo = {
-        val dataCopier = if(copyData) Some(datasetContentsCopier) else None
-        datasetMap.ensureUnpublishedCopy(copyInfo.datasetInfo) match {
-          case Left(_) =>
-            sys.error("Already a working copy") // TODO: Better error
-          case Right(CopyPair(oldCopy, newCopy)) =>
-            assert(oldCopy == copyInfo)
+      def checkFeedbackSecondaries(): Option[SecondariesNotUpToDate] = {
+        val ood = llCtx.outOfDateFeedbackSecondaries(copyInfo.datasetInfo.systemId)
+        if(ood.nonEmpty) Some(SecondariesNotUpToDate(ood))
+        else None
+      }
 
-            // Great.  Now we can actually do the data loading.
-            schemaLoader.create(newCopy)
-            val newSchema = datasetMap.schema(newCopy)
-            schemaLoader.addColumns(newSchema.values)
+      def makeWorkingCopy(copyData: Boolean): Either[CopyContextError, CopyInfo] = {
+        checkFeedbackSecondaries().toLeft {
+          val dataCopier = if(copyData) Some(datasetContentsCopier) else None
+          datasetMap.ensureUnpublishedCopy(copyInfo.datasetInfo) match {
+            case Left(_) =>
+              sys.error("Already a working copy") // TODO: Better error
+            case Right(CopyPair(oldCopy, newCopy)) =>
+              assert(oldCopy == copyInfo)
 
-            val newFrozenCopyContext = new DatasetCopyContext(newCopy, newSchema)
-            dataCopier.foreach(_.copy(oldCopy, newFrozenCopyContext))
-            val newCopyCtx = newFrozenCopyContext.thaw()
+              // Great.  Now we can actually do the data loading.
+              schemaLoader.create(newCopy)
+              val newSchema = datasetMap.schema(newCopy)
+              schemaLoader.addColumns(newSchema.values)
 
-            for(ci <- newCopyCtx.currentColumns) {
-              val maybeSystemIdCol = if(copyCtx.columnInfo(ci.systemId).isSystemPrimaryKey) {
-                val pkified = datasetMap.setSystemPrimaryKey(ci)
-                schemaLoader.makeSystemPrimaryKey(pkified)
-                newCopyCtx.addColumn(pkified)
-                pkified
-              } else {
-                ci
+              val newFrozenCopyContext = new DatasetCopyContext(newCopy, newSchema)
+              dataCopier.foreach(_.copy(oldCopy, newFrozenCopyContext))
+              val newCopyCtx = newFrozenCopyContext.thaw()
+
+              for(ci <- newCopyCtx.currentColumns) {
+                val maybeSystemIdCol = if(copyCtx.columnInfo(ci.systemId).isSystemPrimaryKey) {
+                  val pkified = datasetMap.setSystemPrimaryKey(ci)
+                  schemaLoader.makeSystemPrimaryKey(pkified)
+                  newCopyCtx.addColumn(pkified)
+                  pkified
+                } else {
+                  ci
+                }
+
+                val maybeUserIdCol = if(copyCtx.columnInfo(maybeSystemIdCol.systemId).isUserPrimaryKey) {
+                  val pkified = datasetMap.setUserPrimaryKey(maybeSystemIdCol)
+                  schemaLoader.makePrimaryKey(pkified)
+                  pkified
+                } else {
+                  maybeSystemIdCol
+                }
+
+                val maybeVersioncol = if(copyCtx.columnInfo(maybeUserIdCol.systemId).isVersion) {
+                  val verified = datasetMap.setVersion(maybeUserIdCol)
+                  schemaLoader.makeVersion(verified)
+                  verified
+                } else {
+                  maybeUserIdCol
+                }
+
+                if(maybeVersioncol ne ci) newCopyCtx.addColumn(maybeVersioncol)
               }
 
-              val maybeUserIdCol = if(copyCtx.columnInfo(maybeSystemIdCol.systemId).isUserPrimaryKey) {
-                val pkified = datasetMap.setUserPrimaryKey(maybeSystemIdCol)
-                schemaLoader.makePrimaryKey(pkified)
-                pkified
-              } else {
-                maybeSystemIdCol
-              }
-
-              val maybeVersioncol = if(copyCtx.columnInfo(maybeUserIdCol.systemId).isVersion) {
-                val verified = datasetMap.setVersion(maybeUserIdCol)
-                schemaLoader.makeVersion(verified)
-                verified
-              } else {
-                maybeUserIdCol
-              }
-
-              if(maybeVersioncol ne ci) newCopyCtx.addColumn(maybeVersioncol)
-            }
-
-            copyCtx = newCopyCtx
-            newCopy
+              copyCtx = newCopyCtx
+              newCopy
+          }
         }
       }
 
-      def publish(): CopyInfo = {
-        val newCi = datasetMap.publish(copyInfo)
-        logger.workingCopyPublished()
-        copyCtx = new DatasetCopyContext(newCi, datasetMap.schema(newCi)).thaw()
-        copyInfo
+      def publish(): Either[CopyContextError, CopyInfo] = {
+        checkFeedbackSecondaries().toLeft {
+          val newCi = datasetMap.publish(copyInfo)
+          logger.workingCopyPublished()
+          copyCtx = new DatasetCopyContext(newCi, datasetMap.schema(newCi)).thaw()
+          copyInfo
+        }
       }
 
       def truncate(): Unit = {
@@ -358,11 +371,13 @@ object DatasetMutator {
         }
       }
 
-      def drop(): Unit = {
-        datasetMap.dropCopy(copyInfo)
-        schemaLoader.drop(copyInfo)
-        // Do not update copyCtx.copyInfo or previously published dataVersion will be bumped
-        // copyCtx.copyInfo = datasetMap.latest(copyInfo.datasetInfo)
+      def drop(): Either[CopyContextError with DropCopyContext, Unit] = {
+        checkFeedbackSecondaries().toLeft {
+          datasetMap.dropCopy(copyInfo)
+          schemaLoader.drop(copyInfo)
+          // Do not update copyCtx.copyInfo or previously published dataVersion will be bumped
+          // copyCtx.copyInfo = datasetMap.latest(copyInfo.datasetInfo)
+        }
       }
 
       def createOrUpdateRollup(name: RollupName, soql: String): Unit = {
@@ -427,7 +442,7 @@ object DatasetMutator {
         }
     }
 
-    def firstOp[U](as: String, datasetId: DatasetId, targetStage: LifecycleStage, op: S => U,
+    def firstOp[U](as: String, datasetId: DatasetId, targetStage: LifecycleStage, op: S => Either[CopyContextError, U],
                    check: DatasetCopyContext[CT] => Unit) = new SimpleArm[CopyContext] {
       def flatMap[A](f: CopyContext => A): A =
         go(as, datasetId, UpdateCanOccur, {
@@ -436,8 +451,12 @@ object DatasetMutator {
           case Some(ctx) =>
             check(new DatasetCopyContext(ctx.copyInfo, ctx.schema))
             if(ctx.copyInfo.lifecycleStage == targetStage) {
-              op(ctx)
-              f(CopyOperationComplete(ctx))
+              op(ctx) match {
+                case Left(err) =>
+                  f(err)
+                case Right(_) =>
+                  f(CopyOperationComplete(ctx))
+              }
             } else {
               f(IncorrectLifecycleStage(ctx.copyInfo.lifecycleStage, Set(targetStage)))
             }
@@ -475,15 +494,21 @@ object DatasetMutator {
             f(DatasetDidNotExist())
           case Some(ctx) =>
             check(new DatasetCopyContext(ctx.copyInfo, ctx.schema))
-            try {
-              ctx.drop()
-            } catch {
-              case e: CopyInWrongStateForDropException =>
-                return f(IncorrectLifecycleStage(ctx.copyInfo.lifecycleStage, e.acceptableStates))
-              case _: CannotDropInitialWorkingCopyException =>
-                return f(InitialWorkingCopy)
+            val dropResult =
+              try {
+                ctx.drop()
+              } catch {
+                case e: CopyInWrongStateForDropException =>
+                  return f(IncorrectLifecycleStage(ctx.copyInfo.lifecycleStage, e.acceptableStates))
+                case _: CannotDropInitialWorkingCopyException =>
+                  return f(InitialWorkingCopy)
+              }
+            dropResult match {
+              case Left(err) =>
+                f(err)
+              case Right(_) =>
+                f(DropComplete)
             }
-            f(DropComplete)
         })
     }
   }
