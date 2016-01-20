@@ -253,4 +253,20 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
       stmt.executeUpdate()
     }
   }
+
+  def outOfDateFeedbackSecondaries(datasetId: DatasetId): Set[String] = { // store IDs =
+    using(conn.prepareStatement(
+      """SELECT sm.store_id
+        |  FROM secondary_manifest sm JOIN secondary_stores_config ssc ON sm.store_id = ssc.store_id
+        |  WHERE sm.dataset_system_id = ?
+        |        AND ssc.is_feedback_secondary
+        |        AND sm.latest_data_version <> sm.latest_secondary_data_version""".stripMargin)) { stmt =>
+      stmt.setDatasetId(1, datasetId)
+      using(stmt.executeQuery()) { rs =>
+        val result = Set.newBuilder[String]
+        while(rs.next()) result += rs.getString(1)
+        result.result()
+      }
+    }
+  }
 }

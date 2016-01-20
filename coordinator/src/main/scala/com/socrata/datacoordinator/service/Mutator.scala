@@ -55,6 +55,7 @@ object Mutator {
 
   case class InvalidLocale(locale: String)(val index: Long) extends MutationException
   case class NoSuchDataset(name: DatasetId)(val index: Long) extends MutationException
+  case class SecondaryStoresNotUpToDate(name: DatasetId, stores: Set[String])(val index: Long) extends MutationException
   case class NoSuchRollup(name: RollupName)(val index: Long) extends MutationException
   case class CannotAcquireDatasetWriteLock(name: DatasetId)(val index: Long) extends MutationException
   case class SystemInReadOnlyMode()(val index: Long) extends MutationException
@@ -517,6 +518,8 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
         throw IncorrectLifecycleStage(datasetId, currentStage, expectedStages)(index)
       case mutator.DatasetDidNotExist() =>
         throw NoSuchDataset(datasetId)(index)
+      case mutator.SecondariesNotUpToDate(stores) =>
+        throw SecondaryStoresNotUpToDate(datasetId, stores)(index)
     }
 
     try {
