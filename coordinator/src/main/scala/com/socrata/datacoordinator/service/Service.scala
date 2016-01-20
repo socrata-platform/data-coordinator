@@ -128,6 +128,11 @@ class Service(serviceConfig: ServiceConfig,
                 "value" -> value)
             case Mutator.NoSuchDataset(name) =>
               notFoundError(name, "commandIndex" -> JNumber(em.index))
+            case Mutator.SecondaryStoresNotUpToDate(name, stores) =>
+              datasetErrorResponse(Conflict, DatasetUpdateError.SECONDARIES_OUT_OF_DATE,
+                "commandIndex" -> JNumber(em.index),
+                "dataset" -> JString(formatDatasetId(name)),
+                "stores" -> JsonEncode.toJValue(stores))
             case Mutator.NoSuchRollup(name) =>
               datasetErrorResponse(NotFound, RollupDeleteError.DOES_NOT_EXIST,
                 "commandIndex" -> JNumber(em.index),

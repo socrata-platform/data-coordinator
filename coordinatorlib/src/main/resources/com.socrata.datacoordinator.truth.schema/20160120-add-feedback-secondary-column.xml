@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
+    <changeSet author="robertm" id="20160120-add-feedback-secondary-column">
+        <sql>
+            ALTER TABLE secondary_stores_config ADD COLUMN is_feedback_secondary BOOLEAN NOT NULL DEFAULT FALSE
+        </sql>
+        <rollback>
+            ALTER TABLE secondary_stores_config DROP COLUMN is_feedback_secondary
+        </rollback>
+    </changeSet>
+</databaseChangeLog>
