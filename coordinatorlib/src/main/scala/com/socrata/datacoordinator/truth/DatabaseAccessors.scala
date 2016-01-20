@@ -512,9 +512,9 @@ object DatasetMutator {
                 ctx.drop()
               } catch {
                 case e: CopyInWrongStateForDropException =>
-                  return f(IncorrectLifecycleStage(ctx.copyInfo.lifecycleStage, e.acceptableStates))
+                  Left(IncorrectLifecycleStage(ctx.copyInfo.lifecycleStage, e.acceptableStates))
                 case _: CannotDropInitialWorkingCopyException =>
-                  return f(InitialWorkingCopy)
+                  Left(InitialWorkingCopy)
               }
             dropResult match {
               case Left(err) =>
