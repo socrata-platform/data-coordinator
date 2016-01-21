@@ -209,7 +209,7 @@ case class DatasetResource(datasetId: DatasetId,
 
           found match {
             case Exporter.Success(_) => // ok good
-            case Exporter.NotFound => notFoundError(datasetId)
+            case Exporter.NotFound => notFoundError(datasetId)(resp)
             case Exporter.NotModified(etags) => notModified(etags.map(_.append(suffix)))(resp)
             case Exporter.PreconditionFailedBecauseNoMatch => preconditionFailed(resp)
           }
