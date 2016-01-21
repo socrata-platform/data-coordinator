@@ -68,6 +68,7 @@ object UpdateError{
   val TYPE_UNKNOWN = "update.type.unknown"
   val ROW_VERSION_MISMATCH = "update.row-version-mismatch"
   val VERSION_ON_NEW_ROW = "update.version-on-new-row"
+  val INSERT_IN_UPDATE_ONLY = "update.insert-in-update-only"
 }
 
 
