@@ -17,7 +17,7 @@ object SoQLRep {
     SoQLBoolean -> (ci => new sqlreps.BooleanRep(ci.physicalColumnBase)),
     SoQLNumber -> (ci => new sqlreps.NumberLikeRep(SoQLNumber, _.asInstanceOf[SoQLNumber].value,
                                                    SoQLNumber(_), ci.physicalColumnBase)),
-    SoQLMoney -> (ci => new sqlreps.NumberLikeRep(SoQLNumber, _.asInstanceOf[SoQLMoney].value,
+    SoQLMoney -> (ci => new sqlreps.NumberLikeRep(SoQLMoney, _.asInstanceOf[SoQLMoney].value,
                                                   SoQLMoney(_), ci.physicalColumnBase)),
     SoQLFixedTimestamp -> (ci => new sqlreps.FixedTimestampRep(ci.physicalColumnBase)),
     SoQLFloatingTimestamp -> (ci => new sqlreps.FloatingTimestampRep(ci.physicalColumnBase)),
