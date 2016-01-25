@@ -9,7 +9,6 @@
                 column_system_id      BIGINT          NOT NULL,
                 copy_system_id        BIGINT          NOT NULL,
                 strategy_type         TEXT            NOT NULL,
-                recompute             BOOLEAN         NOT NULL,
                 source_column_ids     TEXT[]          NOT NULL,
                 parameters            TEXT            NOT NULL,
 

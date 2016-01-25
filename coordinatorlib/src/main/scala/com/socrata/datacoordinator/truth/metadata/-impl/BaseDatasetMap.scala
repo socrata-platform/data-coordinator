@@ -72,11 +72,6 @@ trait BaseDatasetMapWriter[CT] extends BaseDatasetMapReader[CT] {
   def dropColumn(columnInfo: ColumnInfo[CT])
 
   /**
-   * Removes a computation strategy from this dataset-copy.
-   * @note Does not change the actual table; this just updates the bookkeeping. */
-  def dropComputationStrategy(columnInfo: ColumnInfo[CT]): ColumnInfo[CT]
-
-  /**
    * Updates the field name of this dataset-copy
    * @note Does not change the actual table; this just updates the bookkeeping. */
   def updateFieldName(columnInfo: ColumnInfo[CT], newName: ColumnName): ColumnInfo[CT]
