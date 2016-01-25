@@ -24,7 +24,6 @@ object ToProtobuf {
   def convert(ci: metadata.ComputationStrategyInfo): com.socrata.datacoordinator.truth.loader.sql.messages.UnanchoredColumnInfo.ComputationStrategyInfo =
     com.socrata.datacoordinator.truth.loader.sql.messages.UnanchoredColumnInfo.ComputationStrategyInfo(
       strategyType = ci.strategyType.underlying,
-      recompute = ci.recompute,
       sourceColumnIds = ci.sourceColumnIds.map(_.underlying).to[collection.immutable.Seq],
       parameters = CompactJsonWriter.toString(ci.parameters)
     )

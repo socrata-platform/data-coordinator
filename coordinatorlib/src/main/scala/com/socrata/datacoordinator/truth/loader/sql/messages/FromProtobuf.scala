@@ -24,7 +24,6 @@ object FromProtobuf {
   def convert(ci: com.socrata.datacoordinator.truth.loader.sql.messages.UnanchoredColumnInfo.ComputationStrategyInfo): metadata.ComputationStrategyInfo =
     metadata.ComputationStrategyInfo(
       strategyType = new StrategyType(ci.strategyType),
-      recompute = ci.recompute,
       sourceColumnIds = ci.sourceColumnIds.map(new UserColumnId(_)),
       parameters = JsonUtil.parseJson[JObject](ci.parameters).fold(err => sys.error(err.english), identity)
     )
