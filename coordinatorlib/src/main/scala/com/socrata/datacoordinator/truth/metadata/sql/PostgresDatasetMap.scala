@@ -167,7 +167,7 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
   }
 
   def schemaQuery = "SELECT system_id, user_column_id, field_name, type_name, physical_column_base_base, (is_system_primary_key IS NOT NULL) is_system_primary_key, (is_user_primary_key IS NOT NULL) is_user_primary_key, (is_version IS NOT NULL) is_version FROM column_map WHERE copy_system_id = ?;" +
-    "SELECT column_system_id, strategy_type, recompute, source_column_ids, parameters FROM computation_strategy_map WHERE copy_system_id = ?;"
+    "SELECT column_system_id, strategy_type, source_column_ids, parameters FROM computation_strategy_map WHERE copy_system_id = ?;"
   def schema(copyInfo: CopyInfo) = {
     using(conn.prepareStatement(schemaQuery)) { stmt =>
       stmt.setLong(1, copyInfo.systemId.underlying)
@@ -198,7 +198,6 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
         while (rs.next()) {
           val systemId = new ColumnId(rs.getLong("column_system_id"))
           val strategyType = new StrategyType(rs.getString("strategy_type"))
-          val recompute = rs.getBoolean("recompute")
           val sourceColumnIds = rs.getArray("source_column_ids").getArray.asInstanceOf[Array[String]].map(new UserColumnId(_))
           val parameters = try {
             JsonUtil.parseJson[JObject](rs.getString("parameters")).right.getOrElse {
@@ -208,7 +207,7 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
             case _: JsonReaderException =>
               sys.error("Invalid data in the database: the computation strategy parameters for the column " + systemId + " on copy " + copyInfo.copyNumber + " of dataset " + copyInfo.datasetInfo.systemId + " is not valid JSON")
           }
-          val csi = new ComputationStrategyInfo(strategyType, recompute, sourceColumnIds, parameters)
+          val csi = new ComputationStrategyInfo(strategyType, sourceColumnIds, parameters)
           result(systemId) = result(systemId).copy(computationStrategyInfo = Some(csi))
         }
       }
@@ -450,7 +449,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
   }
 
   def addColumnQuery = "INSERT INTO column_map (system_id, copy_system_id, user_column_id, field_name, field_name_casefolded, type_name, physical_column_base_base) VALUES (?, ?, ?, ?, ?, ?, ?)"
-  def addComputationStrategyQuery = "INSERT INTO computation_strategy_map (column_system_id, copy_system_id, strategy_type, recompute, source_column_ids, parameters) VALUES (?, ?, ?, ?, ?, ?)"
+  def addComputationStrategyQuery = "INSERT INTO computation_strategy_map (column_system_id, copy_system_id, strategy_type, source_column_ids, parameters) VALUES (?, ?, ?, ?, ?)"
   def addColumnWithId(systemId: ColumnId, copyInfo: CopyInfo, userColumnId: UserColumnId, fieldName: Option[ColumnName], typ: CT, physicalColumnBaseBase: String, computationStrategyInfo: Option[ComputationStrategyInfo] = None): ColumnInfo[CT] = {
     val columnInfo = ColumnInfo[CT](copyInfo, systemId, userColumnId, fieldName, typ, physicalColumnBaseBase, isSystemPrimaryKey = false, isUserPrimaryKey = false, isVersion = false, computationStrategyInfo)
 
@@ -475,15 +474,14 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
     }
 
     computationStrategyInfo.foreach { strategy =>
-      val ComputationStrategyInfo(strategyType, recompute, sourceColumnIds, parameters) = strategy
+      val ComputationStrategyInfo(strategyType, sourceColumnIds, parameters) = strategy
 
       using(conn.prepareStatement(addComputationStrategyQuery)) { stmt =>
         stmt.setLong(1, columnInfo.systemId.underlying)
         stmt.setLong(2, columnInfo.copyInfo.systemId.underlying)
         stmt.setString(3, strategyType.underlying)
-        stmt.setBoolean(4, recompute)
-        stmt.setArray(5, conn.createArrayOf("varchar", sourceColumnIds.map(_.underlying).toArray))
-        stmt.setString(6, CompactJsonWriter.toString(parameters))
+        stmt.setArray(4, conn.createArrayOf("varchar", sourceColumnIds.map(_.underlying).toArray))
+        stmt.setString(5, CompactJsonWriter.toString(parameters))
         try {
           t("add-column-computation-strategy-with-id", "dataset_id" -> copyInfo.datasetInfo.systemId, "copy_num" -> copyInfo.copyNumber, "column_id" -> systemId)(stmt.execute())
         } catch {

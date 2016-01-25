@@ -154,7 +154,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
                    isUserPrimaryKey = colInfo.isUserPrimaryKey,
                    isVersion = colInfo.isVersion,
                    colInfo.computationStrategyInfo.map { strategy =>
-                     ComputationStrategyInfo(strategy.strategyType, strategy.recompute, strategy.sourceColumnIds, strategy.parameters)
+                     ComputationStrategyInfo(strategy.strategyType, strategy.sourceColumnIds, strategy.parameters)
                    })
       case None =>
         sys.error("Typename " + colInfo.typeName + " got into the logs somehow!")
@@ -217,8 +217,6 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
         Some(ColumnCreated(makeSecondaryColumnInfo(info)))
       case Delogger.ColumnRemoved(info) =>
         Some(ColumnRemoved(makeSecondaryColumnInfo(info)))
-      case Delogger.ComputationStrategyRemoved(info) =>
-        Some(ComputationStrategyRemoved(makeSecondaryColumnInfo(info)))
       case Delogger.FieldNameUpdated(info) =>
         Some(FieldNameUpdated(makeSecondaryColumnInfo(info)))
       case Delogger.RowIdentifierSet(info) =>

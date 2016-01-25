@@ -9,15 +9,14 @@ import com.socrata.datacoordinator.util.jsoncodecs._
 
 case class CompStratSchemaField(@JsonKey("name") strategyType: StrategyType,
                                 @JsonKey("parameters") parameters: JObject,
-                                @JsonKey("recompute") recompute: Boolean,
                                 @JsonKey("source_columns") sourceColumnIds: Seq[UserColumnId])
 
 object CompStratSchemaField {
   implicit val jCodec = AutomaticJsonCodecBuilder[CompStratSchemaField]
 
   def convert(csi: ComputationStrategyInfo): CompStratSchemaField = {
-    val ComputationStrategyInfo(strategyType, recompute, sourceColumnIds, parameters) = csi
-    CompStratSchemaField(strategyType, parameters, recompute, sourceColumnIds)
+    val ComputationStrategyInfo(strategyType, sourceColumnIds, parameters) = csi
+    CompStratSchemaField(strategyType, parameters, sourceColumnIds)
   }
 }
 

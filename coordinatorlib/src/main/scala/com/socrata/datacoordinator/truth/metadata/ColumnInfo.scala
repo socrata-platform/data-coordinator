@@ -7,7 +7,7 @@ import com.rojoma.json.v3.util.{AutomaticJsonCodecBuilder, JsonKey}
 import com.socrata.soql.environment.{ColumnName, TypeName}
 import com.socrata.datacoordinator.util.jsoncodecs._
 
-case class ComputationStrategyInfo(strategyType: StrategyType, recompute: Boolean, sourceColumnIds: Seq[UserColumnId], parameters: JObject)
+case class ComputationStrategyInfo(strategyType: StrategyType, sourceColumnIds: Seq[UserColumnId], parameters: JObject)
 
 object ComputationStrategyInfo {
   implicit val JCodec = AutomaticJsonCodecBuilder[ComputationStrategyInfo]
