@@ -35,9 +35,8 @@ message UnanchoredColumnInfo {
 
   message ComputationStrategyInfo {
       required string strategyType = 1;
-      required bool recompute = 2;
-      repeated string sourceColumnIds = 3;
-      required string parameters = 4;
+      repeated string sourceColumnIds = 2;
+      required string parameters = 3;
   }
 }
 
@@ -105,10 +104,6 @@ message RollupDropped {
 
 message CounterUpdated {
   required int64 nextCounter = 1;
-}
-
-message ComputationStrategyRemoved {
-  required UnanchoredColumnInfo columnInfo = 1;
 }
 
 message FieldNameUpdated {

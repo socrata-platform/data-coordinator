@@ -174,8 +174,6 @@ class Service(serviceConfig: ServiceConfig,
                 "type" -> JString(typeName.name))
             case Mutator.NoSuchColumn(dataset, name) =>
               columnErrorResponse(ColumnUpdateError.NOT_FOUND, em.index, dataset, name)
-            case Mutator.NoComputationStrategy(dataset, name) =>
-              columnErrorResponse(ColumnUpdateError.NO_COMP, em.index, dataset, name)
             case Mutator.InvalidSystemColumnOperation(dataset, name, _) =>
               columnErrorResponse(ColumnUpdateError.SYSTEM, em.index, dataset, name)
             case Mutator.PrimaryKeyAlreadyExists(datasetName, userColumnId, existingColumn) =>

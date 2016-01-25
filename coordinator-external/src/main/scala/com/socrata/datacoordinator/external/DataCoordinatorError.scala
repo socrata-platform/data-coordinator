@@ -66,7 +66,6 @@ object ColumnUpdateError{
   val ILLEGAL_ID = "update.column.illegal-id"
   val SYSTEM = "update.column.system"
   val NOT_FOUND = "update.column.not-found"
-  val NO_COMP = "update.column.no-computation-strategy"
 }
 
 object DatasetUpdateError{

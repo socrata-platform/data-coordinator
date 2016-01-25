@@ -77,12 +77,6 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
     logLine(ColumnRemoved, messages.ColumnRemoved(convert(info.unanchored)))
   }
 
-  def computationStrategyRemoved(info: ColumnInfo[CT]): Unit = {
-    checkTxn()
-    flushRowData()
-    logLine(ComputationStrategyRemoved, messages.ComputationStrategyRemoved(convert(info.unanchored)))
-  }
-
   def fieldNameUpdated(info: ColumnInfo[CT]): Unit = {
     checkTxn()
     flushRowData()
