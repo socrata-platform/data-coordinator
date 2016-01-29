@@ -45,7 +45,7 @@ trait Secondary[CT, CV] {
   def version(datasetInfo: DatasetInfo, dataVersion: Long, cookie: Cookie, events: Iterator[Event[CT, CV]]): Cookie
 
   def resync(datasetInfo: DatasetInfo, copyInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo[CT]], cookie: Cookie,
-             rows: Managed[Iterator[ColumnIdMap[CV]]], rollups: Seq[RollupInfo]): Cookie
+             rows: Managed[Iterator[ColumnIdMap[CV]]], rollups: Seq[RollupInfo], isLatestCopy: Boolean): Cookie
 
 }
 
@@ -56,6 +56,20 @@ trait Secondary[CT, CV] {
   *       something is desperately wrong.
   */
 case class ResyncSecondaryException(reason: String = "No reason") extends Exception(reason)
+
+/**
+ * Thrown when a secondary decides that it cannot do an update _right now_ .
+ * The process propagating data to the secondary should try again later.
+ *
+ * @note secondary watcher will attempt to retry later indefinitely
+ */
+case class ReplayLaterSecondaryException(reason: String, cookie: Secondary.Cookie, cause: Throwable) extends Exception(reason, cause)
+
+object ReplayLaterSecondaryException {
+
+  def apply(reason: String, cookie: Secondary.Cookie): ReplayLaterSecondaryException = ReplayLaterSecondaryException(reason, cookie, null)
+
+}
 
 object Secondary {
   type Cookie = Option[String]
