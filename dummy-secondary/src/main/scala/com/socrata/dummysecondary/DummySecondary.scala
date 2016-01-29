@@ -77,7 +77,7 @@ class DummySecondary(config: Config) extends Secondary[Any, Any] {
 
   def resync(datasetInfo: DatasetInfo, copyInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo[Any]], cookie: Secondary.Cookie,
              rows: _root_.com.rojoma.simplearm.Managed[Iterator[com.socrata.datacoordinator.secondary.Row[Any]]],
-             rollups: Seq[RollupInfo]): Secondary.Cookie = {
+             rollups: Seq[RollupInfo], isLatestCopy: Boolean): Secondary.Cookie = {
     println("Got a resync request on " + datasetInfo.internalName)
     println("Copy: " + copyInfo)
     println("Current cookie: " + cookie)

@@ -10,7 +10,8 @@ object SecondaryLib {
       rojomaJson,
       rojomaSimpleArm,
       soqlEnvironment,
-      "net.sf.trove4j" % "trove4j" % "3.0.3"
+      "net.sf.trove4j" % "trove4j" % "3.0.3",
+      "com.socrata" %% "socrata-http-client" % "3.6.2"
     ),
     sourceGenerators in Compile <+= (sourceManaged in Compile) map { targetDir =>
       GenLongLikeMap(targetDir, "com.socrata.datacoordinator.util.collection", "com.socrata.datacoordinator.id", "ColumnId") ++
@@ -18,7 +19,6 @@ object SecondaryLib {
         GenLongLikeMap(targetDir, "com.socrata.datacoordinator.util.collection", "com.socrata.datacoordinator.id", "RowId")
     }
   )
-
 
   lazy val configs: Seq[Configuration] = BuildSettings.projectConfigs
 }

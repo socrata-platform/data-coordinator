@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
+    <changeSet author="Alexa Rust" id="20160203-add-replay-num-column">
+        <sql>
+            ALTER TABLE secondary_manifest ADD COLUMN replay_num BIGINT NOT NULL DEFAULT 0
+        </sql>
+        <rollback>
+            ALTER TABLE secondary_manifest DROP COLUMN replay_num
+        </rollback>
+    </changeSet>
+</databaseChangeLog>

@@ -16,6 +16,9 @@ class SecondaryWatcherConfig(config: Config, root: String) {
   val watcherId = UUID.fromString(config.getString(k("watcher-id")))
   val claimTimeout = config.getDuration(k("claim-timeout"), MILLISECONDS).longValue.millis
   val maxRetries = config.getInt(k("max-retries"))
+  val maxReplays = try { Some(config.getInt(k("max-replays"))) } catch { case e: Throwable => None }
   val backoffInterval = config.getDuration(k("backoff-interval"), MILLISECONDS).longValue.millis
+  val maxReplayWait = config.getDuration(k("max-replay-wait"), MILLISECONDS).longValue.millis
+  val replayWait = config.getDuration(k("replay-wait"), MILLISECONDS).longValue.millis
   val tmpdir = new java.io.File(config.getString(k("tmpdir"))).getAbsoluteFile
 }

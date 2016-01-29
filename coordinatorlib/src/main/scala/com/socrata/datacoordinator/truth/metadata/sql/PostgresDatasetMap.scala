@@ -264,21 +264,29 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
 }
 
 class PostgresDatasetMapReader[CT](val conn: Connection, tns: TypeNamespace[CT], timingReport: TimingReport) extends DatasetMapReader[CT] with BasePostgresDatasetMapReader[CT] {
+  private val log = org.slf4j.LoggerFactory.getLogger(classOf[BasePostgresDatasetMapReader[_]])
+
   implicit def typeNamespace = tns
   def t = timingReport
 
   def datasetInfoBySystemIdQuery = "SELECT system_id, next_counter_value, locale_name, obfuscation_key FROM dataset_map WHERE system_id = ?"
-  def datasetInfo(datasetId: DatasetId) =
+  def datasetInfo(datasetId: DatasetId, repeatableRead: Boolean = false) = {
+    if (repeatableRead) {
+      log.info("Attempting to change transaction isolation level...")
+      conn.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ)
+      log.info("Changed transaction isolation level to REPEATABLE READ")
+    }
     using(conn.prepareStatement(datasetInfoBySystemIdQuery)) { stmt =>
       stmt.setDatasetId(1, datasetId)
       using(t("lookup-dataset", "dataset_id" -> datasetId)(stmt.executeQuery())) { rs =>
-        if(rs.next()) {
+        if (rs.next()) {
           Some(DatasetInfo(rs.getDatasetId("system_id"), rs.getLong("next_counter_value"), rs.getString("locale_name"), rs.getBytes("obfuscation_key")))
         } else {
           None
         }
       }
     }
+  }
 }
 
 trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] with `-impl`.BaseDatasetMapWriter[CT] {
@@ -770,8 +778,8 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
     "INSERT INTO column_map (copy_system_id, system_id, user_column_id, field_name, field_name_casefolded, type_name, physical_column_base_base, is_system_primary_key, is_user_primary_key, is_version) " +
       "SELECT ?, system_id, user_column_id, field_name, field_name_casefolded, type_name, physical_column_base_base, null, null, null " +
       "FROM column_map WHERE copy_system_id = ?;" +
-    "INSERT INTO computation_strategy_map (copy_system_id, column_system_id, strategy_type, recompute, source_column_ids, parameters) " +
-      "SELECT ?, column_system_id, strategy_type, recompute, source_column_ids, parameters FROM computation_strategy_map " +
+    "INSERT INTO computation_strategy_map (copy_system_id, column_system_id, strategy_type, source_column_ids, parameters) " +
+      "SELECT ?, column_system_id, strategy_type, source_column_ids, parameters FROM computation_strategy_map " +
       "WHERE copy_system_id = ?"
   def copySchemaIntoUnpublishedCopy(oldCopy: CopyInfo, newCopy: CopyInfo) {
     using(conn.prepareStatement(ensureUnpublishedCopyQuery_columnMap)) { stmt =>
@@ -896,7 +904,7 @@ class PostgresDatasetMapWriter[CT](val conn: Connection, tns: TypeNamespace[CT],
       if(semiExclusive) "SHARE" else "UPDATE"
     )
   def resetTimeout = "SET LOCAL statement_timeout TO DEFAULT"
-  def datasetInfo(datasetId: DatasetId, timeout: Duration, semiExclusive: Boolean) = {
+  def datasetInfo(datasetId: DatasetId, timeout: Duration, semiExclusive: Boolean): Option[DatasetInfo] = {
     // For now we assume that we're the only one setting the statement_timeout
     // parameter.  If this turns out to be wrong, we'll have to SHOW the
     // parameter in order to
@@ -904,12 +912,13 @@ class PostgresDatasetMapWriter[CT](val conn: Connection, tns: TypeNamespace[CT],
     //   * save the value to restore.
     // One might think this would be better done as a stored procedure,
     // which can do the save/restore thing automatically -- see the paragraph
-    // that begins "If SET LOCAL is used within a function..." at
+    // that begins "If SET LOCAL i used within a function..." at
     //     http://www.postgresql.org/docs/9.2/static/sql-set.html
     // but unfortunately setting statement_timeout doesn't affect the
     // _current_ statement.  For this same reason we're not just doing all
     // three operations in a single "set timeout;query;restore timeout"
     // call.
+
     val savepoint = conn.setSavepoint()
     try {
       if(timeout.isFinite()) {
