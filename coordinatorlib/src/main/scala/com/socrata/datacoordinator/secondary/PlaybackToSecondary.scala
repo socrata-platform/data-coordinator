@@ -317,21 +317,24 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
             val w = u.datasetMapWriter
             w.datasetInfo(datasetId, datasetLockTimeout, semiExclusive = true) match {
               case Some(datasetInfo) =>
-                val allCopies = w.allCopies(datasetInfo)
+                val allCopies = w.allCopies(datasetInfo) // guarantied to be ordered by copy number
                 val latest = w.latest(datasetInfo)
                 val latestDataVersion = latest.dataVersion
                 val latestLifecycleStage = latest.lifecycleStage
                 for(copy <- allCopies) {
                   val secondaryDatasetInfo = makeSecondaryDatasetInfo(copy.datasetInfo)
                   timingReport("copy", "number" -> copy.copyNumber) {
+                    // secondary.store.resync(.) will be called
+                    // on copies in order by their copy number
+                    val isLatestCopy = copy.copyNumber == latest.copyNumber
                     if(copy.lifecycleStage == metadata.LifecycleStage.Discarded) {
                       currentCookie = secondary.store.dropCopy(secondaryDatasetInfo.internalName,
                                                                copy.copyNumber,
                                                                currentCookie)
                     } else if(copy.lifecycleStage != metadata.LifecycleStage.Unpublished) {
-                      syncCopy(copy)
+                      syncCopy(copy, isLatestCopy)
                     } else if(secondary.store.wantsWorkingCopies) {
-                      syncCopy(copy)
+                      syncCopy(copy, isLatestCopy)
                     } else { /* ok */ }
                   }
                 }
@@ -350,7 +353,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
       }
     }
 
-    def syncCopy(copyInfo: metadata.CopyInfo): Unit = {
+    def syncCopy(copyInfo: metadata.CopyInfo, isLatestCopy: Boolean): Unit = {
       timingReport("sync-copy",
                    "secondary" -> secondary.storeId,
                    "dataset" -> copyInfo.datasetInfo.systemId,
@@ -379,7 +382,8 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
                                                  secondarySchema,
                                                  currentCookie,
                                                  wrappedRows,
-                                                 rollups)
+                                                 rollups,
+                                                 isLatestCopy)
         }
       }
     }

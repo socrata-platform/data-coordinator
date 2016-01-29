@@ -15,7 +15,8 @@ object DataCoordinator extends Build {
         coordinator,
         secondaryLib,
         dummySecondary,
-        coordinatorExternal)
+        coordinatorExternal,
+        secondaryLibFeedback)
     } yield proj : ProjectReference
 
   private def p(name: String, settings: { def settings: Seq[Setting[_]]; def configs: Seq[Configuration] }, dependencies: ClasspathDep[ProjectReference]*) =
@@ -40,5 +41,8 @@ object DataCoordinator extends Build {
 
   lazy val dummySecondary = p("dummy-secondary", DummySecondary,
     secondaryLib % "provided")
+
+  lazy val secondaryLibFeedback = p("secondarylib-feedback", SecondaryLibFeedback,
+    secondaryLib, coordinatorLibSoql).enablePlugins(sbtbuildinfo.BuildInfoPlugin)
 
 }
