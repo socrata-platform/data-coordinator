@@ -158,9 +158,14 @@ class QueryResource(secondary: Secondary,
         }
       }
 
+      /**
+       * @param analyzedQuery analysis which may have a rollup applied
+       * @param analyzedQueryNoRollup original analysis without rollup
+       */
       @annotation.tailrec
       def executeQuery(schema: Versioned[Schema],
                        analyzedQuery: Seq[SoQLAnalysis[String, SoQLAnalysisType]],
+                       analyzedQueryNoRollup: Seq[SoQLAnalysis[String, SoQLAnalysisType]],
                        rollupName: Option[String],
                        requestId: String,
                        resourceName: Option[String],
@@ -196,21 +201,32 @@ class QueryResource(secondary: Secondary,
             val versionedInfo = analyzeRequest(getSchema(dataset, copy), true)
             val (finalSchema, analyses) = versionedInfo.payload
             val (rewrittenAnalyses, rollupName) = possiblyRewriteOneAnalysisInQuery(finalSchema, analyses)
-            executeQuery(versionedInfo.copy(payload = finalSchema), rewrittenAnalyses, rollupName, requestId, resourceName, resourceScope)
+            executeQuery(versionedInfo.copy(payload = finalSchema),
+                         rewrittenAnalyses, analyses, rollupName, requestId, resourceName, resourceScope)
           case QueryExecutor.ToForward(responseCode, headers, body) =>
             // Log data version difference if response is OK.  Ignore not modified response and others.
-            if (responseCode == HttpStatus.SC_OK) {
-              (headers("x-soda2-dataversion").headOption, headers("last-modified").headOption) match {
-                case (Some(qsDataVersion), Some(qsLastModified)) =>
-                  val qsdv = qsDataVersion.toLong
-                  val qslm = HttpUtils.parseHttpDate(qsLastModified)
-                  logSchemaFreshness(second.getAddress, sfDataVersion, sfLastModified, qsdv, qslm)
-                case _ =>
-                  log.warn("version related data not available from secondary")
-              }
+            responseCode match {
+              case HttpStatus.SC_OK =>
+                (headers("x-soda2-dataversion").headOption, headers("last-modified").headOption) match {
+                  case (Some(qsDataVersion), Some(qsLastModified)) =>
+                    val qsdv = qsDataVersion.toLong
+                    val qslm = HttpUtils.parseHttpDate(qsLastModified)
+                    logSchemaFreshness(second.getAddress, sfDataVersion, sfLastModified, qsdv, qslm)
+                  case _ =>
+                    log.warn("version related data not available from secondary")
+                }
+                transferHeaders(Status(responseCode), headers) ~> Stream(out => transferResponse(out, body))
+              case HttpStatus.SC_INTERNAL_SERVER_ERROR if
+                (analyzedQuery.ne(analyzedQueryNoRollup) && rollupName.isDefined) =>
+                // Rollup soql analysis passed but the sql asset behind in the secondary
+                // to support the rollup may be bad like missing rollup table.
+                // Retry w/o rollup to make queries more resilient.
+                log.warn(s"error in query with rollup ${rollupName.get}.  retry w/o rollup - $body")
+                executeQuery(schema, analyzedQueryNoRollup, analyzedQueryNoRollup,
+                             None, requestId, resourceName, resourceScope)
+              case _ =>
+                transferHeaders(Status(responseCode), headers) ~> Stream(out => transferResponse(out, body))
             }
-            transferHeaders(Status(responseCode), headers) ~>
-              Stream(out => transferResponse(out, body))
         }
       }
 
@@ -283,18 +299,16 @@ class QueryResource(secondary: Secondary,
       val versionInfo = analyzeRequest(getSchema(dataset, copy), true)
       val (finalSchema, analyses) = versionInfo.payload
       val (rewrittenAnalyses, rollupName) = possiblyRewriteOneAnalysisInQuery(finalSchema, analyses)
-      executeQuery(versionInfo.copy(payload = finalSchema), rewrittenAnalyses, rollupName,
-        requestId, req.header(headerSocrataResource), req.resourceScope)
+      executeQuery(versionInfo.copy(payload = finalSchema),
+                   rewrittenAnalyses, analyses, rollupName,
+                   requestId, req.header(headerSocrataResource), req.resourceScope)
     } catch {
       case FinishRequest(response) =>
         response ~> resetResponse _
     } finally {
       Thread.currentThread.setName(originalThreadName)
     }
-
-
   }
-
 
   private def transferResponse(out: OutputStream, in: InputStream): Unit = {
     val buf = new Array[Byte](responseBuffer)
