@@ -292,6 +292,27 @@ object Main {
           }
         }
 
+        def getSnapshots(datasetId: DatasetId) = {
+          for {
+            u <- common.universe
+            dsInfo <- u.datasetMapReader.datasetInfo(datasetId)
+          } yield {
+            u.datasetMapReader.snapshots(dsInfo).map(_.unanchored).toVector
+          }
+        }
+
+        def deleteSnapshot(datasetId: DatasetId, copyNum: Long) = {
+          for {
+            u <- common.universe
+            dsInfo <- u.datasetMapReader.datasetInfo(datasetId)
+            snapshot <- u.datasetMapReader.snapshots(dsInfo).find(_.copyNumber == copyNum)
+          } yield {
+            u.schemaLoader(NullLogger[u.CT, u.CV]).drop(snapshot) // NullLogger because DropSnapshot is no longer a visible thing
+            u.datasetMapWriter.dropCopy(snapshot)
+            snapshot.unanchored
+          }
+        }
+
         def getRollups(datasetId: DatasetId) = {
           for {
             u <- common.universe
@@ -310,6 +331,8 @@ object Main {
           serviceConfig.commandReadLimit, operations.processMutation, operations.deleteDataset,
           operations.exporter, _: (=> HttpResponse) => HttpResponse, common.internalNameFromDatasetId)
         val datasetSchemaResource = DatasetSchemaResource(_: DatasetId, getSchema, common.internalNameFromDatasetId)
+        val datasetSnapshotsResource = DatasetSnapshotsResource(_: DatasetId, getSnapshots, common.internalNameFromDatasetId)
+        val datasetSnapshotResource = DatasetSnapshotResource(_: DatasetId, _: Long, deleteSnapshot, common.internalNameFromDatasetId)
         val datasetRollupResource = DatasetRollupResource(_: DatasetId, getRollups, common.internalNameFromDatasetId)
         val secondaryManifestsResource = SecondaryManifestsResource(_: Option[String], secondaries,
           operations.datasetsInStore, common.internalNameFromDatasetId)
@@ -320,13 +343,14 @@ object Main {
           common.internalNameFromDatasetId)
 
 
-
         val serv = new Service(serviceConfig = serviceConfig,
           formatDatasetId = common.internalNameFromDatasetId,
           parseDatasetId = common.datasetIdFromInternalName,
           notFoundDatasetResource = notFoundDatasetResource,
           datasetResource = datasetResource,
           datasetSchemaResource = datasetSchemaResource,
+          datasetSnapshotsResource = datasetSnapshotsResource,
+          datasetSnapshotResource = datasetSnapshotResource,
           datasetRollupResource = datasetRollupResource,
           secondaryManifestsResource = secondaryManifestsResource,
           datasetSecondaryStatusResource = datasetSecondaryStatusResource,
@@ -407,7 +431,7 @@ object Main {
                        datasetId: DatasetId, secondaryGroupStr: String): Set[String] = {
 
     /*
-     * The dataset may be in secondaries defined in other groups, but here we need to reason 
+     * The dataset may be in secondaries defined in other groups, but here we need to reason
      * only about secondaries in this group since selection is done group by group.  For example,
      * if we need two replicas in this group then secondaries outside this group don't count.
      */

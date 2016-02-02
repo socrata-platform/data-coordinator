@@ -92,13 +92,12 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
     result.result()
   }
 
-  def lookupQuery = "SELECT system_id, copy_number, data_version, last_modified FROM copy_map WHERE dataset_system_id = ? AND lifecycle_stage = CAST(? AS dataset_lifecycle_stage) ORDER BY copy_number DESC OFFSET ? LIMIT 1"
-  def lookup(datasetInfo: DatasetInfo, stage: LifecycleStage, nth: Int = 0): Option[CopyInfo] = {
+  def lookupQuery = "SELECT system_id, copy_number, data_version, last_modified FROM copy_map WHERE dataset_system_id = ? AND lifecycle_stage = CAST(? AS dataset_lifecycle_stage)"
+  def lookup(datasetInfo: DatasetInfo, stage: LifecycleStage): Option[CopyInfo] = {
     using(conn.prepareStatement(lookupQuery)) { stmt =>
       stmt.setDatasetId(1, datasetInfo.systemId)
       stmt.setString(2, stage.name)
-      stmt.setInt(3, nth)
-      using(t("lookup-copy","dataset_id" -> datasetInfo.systemId,"lifecycle-stage"->stage,"n" -> nth)(stmt.executeQuery())) { rs =>
+      using(t("lookup-copy","dataset_id" -> datasetInfo.systemId,"lifecycle-stage"->stage)(stmt.executeQuery())) { rs =>
         if(rs.next()) {
           Some(CopyInfo(datasetInfo, new CopyId(rs.getLong("system_id")), rs.getLong("copy_number"), stage, rs.getLong("data_version"), toDateTime(rs.getTimestamp("last_modified"))))
         } else {
@@ -108,7 +107,20 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
     }
   }
 
-
+  def lookupCopyQuery = "SELECT system_id, copy_number, lifecycle_stage, data_version, last_modified FROM copy_map WHERE dataset_system_id = ? AND copy_number = ? ORDER BY copy_number"
+  def lookupCopy(datasetInfo: DatasetInfo, copyNumber: Long): Option[CopyInfo] = {
+    using(conn.prepareStatement(lookupCopyQuery)) { stmt =>
+      stmt.setDatasetId(1, datasetInfo.systemId)
+      stmt.setLong(2, copyNumber)
+      using(t("lookup-copy","dataset_id" -> datasetInfo.systemId,"copy_number"->copyNumber)(stmt.executeQuery())) { rs =>
+        if(rs.next()) {
+          Some(CopyInfo(datasetInfo, new CopyId(rs.getLong("system_id")), rs.getLong("copy_number"), rs.getLifecycleStage("lifecycle_stage"), rs.getLong("data_version"), toDateTime(rs.getTimestamp("last_modified"))))
+        } else {
+          None
+        }
+      }
+    }
+  }
 
   def previousVersionQuery = "SELECT system_id, copy_number, lifecycle_stage :: TEXT, data_version, last_modified FROM copy_map WHERE dataset_system_id = ? AND copy_number < ? AND lifecycle_stage <> 'Discarded' ORDER BY copy_number DESC LIMIT 1"
   def previousVersion(copyInfo: CopyInfo): Option[CopyInfo] = {
@@ -251,8 +263,8 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
   def published(datasetInfo: DatasetInfo) =
     lookup(datasetInfo, LifecycleStage.Published)
 
-  def snapshot(datasetInfo: DatasetInfo, age: Int) =
-    lookup(datasetInfo, LifecycleStage.Snapshotted, age)
+  def snapshot(datasetInfo: DatasetInfo, copyNumber: Long) =
+    lookupCopy(datasetInfo, copyNumber).filter(_.lifecycleStage == LifecycleStage.Snapshotted)
 
   def snapshotsQuery = "SELECT system_id, copy_number, lifecycle_stage :: TEXT, data_version, last_modified FROM copy_map WHERE dataset_system_id = ? AND lifecycle_stage = CAST(? AS dataset_lifecycle_stage) ORDER BY copy_number"
   def snapshots(datasetInfo: DatasetInfo): Vector[CopyInfo] =

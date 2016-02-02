@@ -149,7 +149,7 @@ case class DatasetResource(datasetId: DatasetId,
       case COPY_WORKING => WorkingCopy
       case other =>
         try {
-          Snapshot(other.toInt)
+          Snapshot(other.toLong)
         } catch {
           case _: NumberFormatException => return contentTypeBadRequest("Bad copy selector")
         }

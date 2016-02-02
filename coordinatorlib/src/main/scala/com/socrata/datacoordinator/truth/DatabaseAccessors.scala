@@ -58,7 +58,7 @@ sealed abstract class CopySelector
 case object LatestCopy extends CopySelector
 case object PublishedCopy extends CopySelector
 case object WorkingCopy extends CopySelector
-case class Snapshot(nth: Int) extends CopySelector
+case class Snapshot(copyNumber: Long) extends CopySelector
 
 trait DatasetReader[CT, CV] {
   val databaseReader: LowLevelDatabaseReader[CT, CV]
@@ -182,7 +182,7 @@ trait DatasetMutator[CT, CV] {
   case object DropComplete extends DropCopyContext
 
   def createCopy(as: String)(datasetId: DatasetId, copyData: Boolean, check: DatasetCopyContext[CT] => Unit): Managed[CopyContext]
-  def publishCopy(as: String)(datasetId: DatasetId, snapshotsToKeep: Option[Int], check: DatasetCopyContext[CT] => Unit): Managed[CopyContext]
+  def publishCopy(as: String)(datasetId: DatasetId, check: DatasetCopyContext[CT] => Unit): Managed[CopyContext]
   def dropCopy(as: String)(datasetId: DatasetId, check: DatasetCopyContext[CT] => Unit): Managed[DropCopyContext]
 }
 
@@ -473,19 +473,11 @@ object DatasetMutator {
                                check: DatasetCopyContext[CT] => Unit): Managed[CopyContext] =
       firstOp(as, datasetId, LifecycleStage.Published, _.makeWorkingCopy(copyData), check)
 
-    def publishCopy(as: String)(datasetId: DatasetId, snapshotsToKeep: Option[Int],
-                                check: DatasetCopyContext[CT] => Unit): Managed[CopyContext] =
+    def publishCopy(as: String)(datasetId: DatasetId, check: DatasetCopyContext[CT] => Unit): Managed[CopyContext] =
       new SimpleArm[CopyContext] {
         def flatMap[B](f: CopyContext => B): B = {
           firstOp(as, datasetId, LifecycleStage.Unpublished, _.publish(), check).map {
             case good@CopyOperationComplete(ctx) =>
-              for(count <- snapshotsToKeep) {
-                val toDrop = ctx.datasetMap.snapshots(ctx.copyInfo.datasetInfo).dropRight(count)
-                for(snapshot <- toDrop) {
-                  ctx.datasetMap.dropCopy(snapshot)
-                  ctx.schemaLoader.drop(snapshot)
-                }
-              }
               f(good)
             case noGood =>
               f(noGood)
