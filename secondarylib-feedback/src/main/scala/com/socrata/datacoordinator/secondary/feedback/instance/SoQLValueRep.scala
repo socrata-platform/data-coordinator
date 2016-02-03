@@ -3,7 +3,7 @@ package com.socrata.datacoordinator.secondary.feedback.instance
 import com.rojoma.json.v3.ast.JValue
 import com.socrata.datacoordinator.common.soql.SoQLRep
 import com.socrata.soql.types.obfuscation.CryptProvider
-import com.socrata.soql.types.{SoQLID, SoQLType, SoQLValue, SoQLVersion}
+import com.socrata.soql.types._
 
 object SoQLValueRep extends (Array[Byte] => SoQLType => SoQLValue => JValue) {
 
@@ -20,8 +20,11 @@ object SoQLValueRep extends (Array[Byte] => SoQLType => SoQLValue => JValue) {
 
 }
 
-object SoQLValueFor extends (SoQLValue => SoQLType) {
+object SoQLTypeFor extends (SoQLValue => Option[SoQLType]) {
 
-  def apply(value: SoQLValue) = value.typ
+  def apply(value: SoQLValue) = value match {
+    case SoQLNull => None
+    case other => Some(other.typ)
+  }
 
 }

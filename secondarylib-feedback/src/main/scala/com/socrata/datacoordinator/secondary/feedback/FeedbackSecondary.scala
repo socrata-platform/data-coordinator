@@ -5,7 +5,7 @@ import java.io.IOException
 import com.rojoma.json.v3.ast._
 import com.rojoma.json.v3.codec.JsonDecode
 import com.rojoma.json.v3.io.{JValueEventIterator, JsonReaderException}
-import com.rojoma.json.v3.util.{JsonUtil, AutomaticJsonCodecBuilder}
+import com.rojoma.json.v3.util.{NoTag, SimpleHierarchyCodecBuilder, JsonUtil, AutomaticJsonCodecBuilder}
 import com.rojoma.simplearm.Managed
 import com.socrata.datacoordinator.id.{ColumnId, UserColumnId, StrategyType}
 import com.socrata.datacoordinator.secondary
@@ -57,23 +57,29 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
   val log = org.slf4j.LoggerFactory.getLogger(classOf[FeedbackSecondary[CT,CV,RCI]])
 
   val httpClient: HttpClient
-  def hostAndPort(): (String, Int)
+  def hostAndPort(): Option[(String, Int)]
   val baseBatchSize: Int
+  val internalMutationScriptRetries: Int
   val mutationScriptRetries: Int
   val computationHandler: ComputationHandler[CT, CV, RCI]
   val repFor: Array[Byte] => CT => CV => JValue
-  val typeFor : CV => CT
+  val typeFor : CV => Option[CT]
   val statusMonitor: StatusMonitor
+
+  private val systemId = new UserColumnId(":id")
 
   /**
    * @return The batch size of mutation scripts and general processing; should be a function of `width` of dataset.
    */
-  def batchSize(width: Int): Int = 40000 // TODO: figure out what this should be
+  def batchSize(width: Int): Int = 10000 // TODO: figure out what this should be
 
   def toJValue(obfuscationKey: Array[Byte]): CV => JValue = {
     val reps = repFor(obfuscationKey);
     { value: CV =>
-      reps(typeFor(value))(value)
+     typeFor(value) match {
+       case Some(typ) => reps(typ)(value)
+       case None => JNull
+     }
     }
   }
 
@@ -133,7 +139,10 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
       }
 
       var result = cookie
-      if (dataVersion != oldCookie.current.dataVersion.underlying || oldCookie.current.retriesLeft > 0) {
+      if (dataVersion != oldCookie.current.dataVersion.underlying
+        || (oldCookie.current.computationRetriesLeft > 0 && oldCookie.current.mutationScriptRetriesLeft > 0)) {
+        // either we are not up to date on the data version or we still have retries left on the current version
+        // note: we set the retries left to 0 once we have succeeded for the current version
         val toJValueFunc = toJValue(datasetInfo.obfuscationKey)
         var newCookie = oldCookie.copy(oldCookie.current.copy(DataVersion(dataVersion)), oldCookie.previous)
 
@@ -178,7 +187,7 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
             case RowIdentifierCleared(columnInfo) =>
               newCookie = newCookie.copy(
                 current = newCookie.current.copy(
-                  primaryKey = new UserColumnId(":id")
+                  primaryKey = systemId
                 )
               )
               emptyIter
@@ -235,9 +244,11 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
         throw resyncException
       case replayLater: ReplayLaterSecondaryException =>
         throw replayLater
+      case brokenDataset: BrokenDatasetSecondaryException =>
+        throw brokenDataset
       case error : Throwable =>
-        log.warn(s"An unexpected error has occurred: ${error.getMessage}\n{}", error.getStackTrace.toString)
-        Some("I'm broken, help me!")
+        log.error(s"An unexpected error has occurred: ${error.getMessage}\n{}", error.getStackTrace.toString)
+        throw error
     }
   }
 
@@ -252,7 +263,7 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
 
       val primaryKey = schema.filter {
         case (colId, colInfo) => colInfo.isUserPrimaryKey
-      }.toSeq.map({ case (_, colInfo) => colInfo.id}).head
+      }.toSeq.map({ case (_, colInfo) => colInfo.id}).headOption.getOrElse(systemId)
 
       val columnIdMap = schema.toSeq.map({ case (colId, colInfo) => (colInfo.id, colId.underlying)}).toMap
 
@@ -270,7 +281,8 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
         primaryKey = primaryKey,
         columnIdMap = columnIdMap,
         strategyMap = strategyMap,
-        retriesLeft = computationHandler.computationRetries,
+        computationRetriesLeft = computationHandler.computationRetries,
+        mutationScriptRetriesLeft = mutationScriptRetries,
         obfuscationKey = datasetInfo.obfuscationKey,
         resync = false,
         extra = extra
@@ -290,12 +302,14 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
 
       FeedbackCookie.encode(newCookie)
     } catch {
-      case replayLater:ReplayLaterSecondaryException =>
+      case replayLater: ReplayLaterSecondaryException =>
         throw replayLater
+      case brokenDataset: BrokenDatasetSecondaryException =>
+        throw brokenDataset
       case error : Throwable =>
         // note: shouldn't ever throw a ResyncSecondaryException from inside resync
-        log.warn(s"An unexpected error has occurred: ${error.getMessage}\n{}", error.getStackTrace.toString)
-        Some("I'm broken, help me!")
+        log.error(s"An unexpected error has occurred: ${error.getMessage}\n{}", error.getStackTrace.toString)
+        throw error
     }
   }
 
@@ -305,7 +319,7 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
 
     val cookie = feedbackCookie.current
 
-    // this may throw a ResyncSecondaryException or a ReplayLaterSecondaryException
+    // this may throw a ResyncSecondaryException, a ReplayLaterSecondaryException, or a BrokenDatasetSecondaryException
     def feedback(datasetInternalName: String, rows: Iterator[Row], resync: Boolean = false): FeedbackCookie = {
       val width = cookie.columnIdMap.size
       val size = batchSize(width)
@@ -313,43 +327,88 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
       log.info("Processing update of dataset {} to version {} with batch_size = {}",
         datasetInternalName, cookie.dataVersion.underlying.toString, size.toString)
 
+      def b(retriesLeft: Int, message: String): Int = {
+        if (retriesLeft == 0) throw new BrokenDatasetSecondaryException(message)
+        retriesLeft
+      }
+
       var count = 0
       try {
         rows.grouped(size).foreach { batch =>
           count += 1
           val updates = computeUpdates(batch.toIterator)
-          val script = writeMutationScript(updates)
-          val result = postMutationScript(datasetInternalName, script)
-          result match {
-            case Success =>
-              log.info("Finished batch {} of approx. {} rows", count, size)
-              statusMonitor.update(datasetInternalName, cookie.dataVersion, size, count)
-            case ddne@DatasetDoesNotExist =>
-              log.info("Completed updating dataset {} to version {} early: {}", datasetInternalName, cookie.dataVersion.underlying.toString, ddne.english)
-              statusMonitor.remove(datasetInternalName, cookie.dataVersion, count)
+          writeMutationScript(updates) match {
+            case Some(script) =>
+              val result = postMutationScript(datasetInternalName, script)
+              result match {
+                case Success =>
+                  log.info("Finished batch {} of approx. {} rows", count, size)
+                  statusMonitor.update(datasetInternalName, cookie.dataVersion, size, count)
+                case ftddc@FailedToDiscoverDataCoordinator =>
+                  log.warn("Failed to discover data-coordinator; going to request to have this dataset replayed later")
+                  // we will retry this "indefinitely"; do not decrement retries left
+                  throw ReplayLaterSecondaryException(ftddc.english, FeedbackCookie.encode(feedbackCookie.copy(current = cookie.copy(resync = resync))))
+                case ddb@DataCoordinatorBusy =>
+                  log.info("Received a 409 from data-coordinator; going to request to have this dataset replayed later")
+                  // we will retry this "indefinitely"; do not decrement retries left
+                  throw ReplayLaterSecondaryException(ddb.english, FeedbackCookie.encode(feedbackCookie.copy(current = cookie.copy(resync = resync))))
+                case ddne@DatasetDoesNotExist =>
+                  log.info("Completed updating dataset {} to version {} early: {}", datasetInternalName, cookie.dataVersion.underlying.toString, ddne.english)
+                  statusMonitor.remove(datasetInternalName, cookie.dataVersion, count)
 
-              return feedbackCookie.copy(current = cookie.copy(retriesLeft = 0, resync = resync)) // nothing more to do and no need to try
-            case schemaChange =>
-              log.info("A schema change occurred breaking my upsert: {}; going to start a resync...", schemaChange.english)
-              throw ResyncSecondaryException(s"A schema change occurred breaking my upsert: ${schemaChange.english}")
+                  // nothing more to do here
+                  return feedbackCookie.copy(
+                    current = cookie.copy(
+                      computationRetriesLeft = 0,
+                      mutationScriptRetriesLeft = 0,
+                      resync = false
+                    )
+                  )
+                case schemaChange =>
+                  log.info("A schema change occurred breaking my upsert: {}; going to start a resync...", schemaChange.english)
+                  throw ResyncSecondaryException(s"A schema change occurred breaking my upsert: ${schemaChange.english}")
+              }
+            case None =>
+              log.info("Batch {} had no rows to update of approx. {} rows; no script posted.", count, size)
+              statusMonitor.update(datasetInternalName, cookie.dataVersion, size, count)
           }
         }
       } catch {
         case ComputationFailure(reason, cause) =>
           // Some failure has occurred in computation; we will only retry these exceptions so many times
+          val gaveUp = "Gave up replaying updates after too many failed computation attempts"
           val newCookie = feedbackCookie.copy(
-            current = cookie.copy(retriesLeft = cookie.retriesLeft - 1) // decrement retries
+            current = cookie.copy(
+              computationRetriesLeft = b(cookie.computationRetriesLeft - 1, gaveUp), // decrement retries
+              mutationScriptRetriesLeft = mutationScriptRetries, // reset mutation script retries
+              resync = resync
+            )
           )
-          throw ReplayLaterSecondaryException(reason, FeedbackCookie.encode(newCookie), cause)
+          throw ReplayLaterSecondaryException(reason, FeedbackCookie.encode(newCookie))
         case FeedbackFailure(reason, cause) =>
-          // We failed to post our mutation script to data-coordinator for some reason; we will retry this indefinitely
-          throw ReplayLaterSecondaryException(reason, FeedbackCookie.encode(feedbackCookie), cause) // do not decrement retries left
+          // We failed to post our mutation script to data-coordinator for some reason
+          val gaveUp = "Gave up replaying updates after too many failed mutation script attempts"
+          val newCookie = feedbackCookie.copy(
+            current = cookie.copy(
+              computationRetriesLeft = computationHandler.computationRetries, // reset computation retries
+              mutationScriptRetriesLeft = b(cookie.mutationScriptRetriesLeft - 1, gaveUp), // decrement retries
+              resync = resync
+            )
+          )
+          throw ReplayLaterSecondaryException(reason, FeedbackCookie.encode(newCookie))
       }
       log.info("Completed updating dataset {} to version {} after batch: {}",
         datasetInternalName, cookie.dataVersion.underlying.toString, count.toString)
       statusMonitor.remove(datasetInternalName, cookie.dataVersion, count)
 
-      feedbackCookie.copy(current = cookie.copy(retriesLeft = 0, resync = resync)) // do not need to try
+      // success!
+      feedbackCookie.copy(
+        current = cookie.copy(
+          computationRetriesLeft = 0,
+          mutationScriptRetriesLeft = 0,
+          resync = false
+        )
+      )
     }
 
     // this may throw a ComputationFailure exception
@@ -372,7 +431,10 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
         val filtered = updates.filter { case (colId: UserColumnId, value) =>
           extractJValue(row, colId) != value // don't update to current value
         }
-        val rowId = extractJValue(row, cookie.primaryKey)
+        val rowId = extractJValue(row, cookie.primaryKey) match {
+          case JNull => throw new Exception(s"Cannot find value for primary key ${cookie.primaryKey} in row: $row!")
+          case other => other
+        }
         if (filtered.nonEmpty) {
           Some(JObject(Map(
             cookie.primaryKey.underlying -> rowId
@@ -388,7 +450,7 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
       case Some(old) =>
         columns.forall { id =>
           val internal = new ColumnId(cookie.columnIdMap(id))
-          row.data(internal) == old(internal)
+          row.data(internal) == old(internal) // safe because updates contain _all_ row values (and this must be one)
         }
       case None => false
     }
@@ -408,20 +470,31 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
       results.toIterator
     }
 
-    private def extractJValue(row: secondary.Row[CV], userId: UserColumnId) =
-      toJValueFunc(row(new ColumnId(cookie.columnIdMap(userId))))
+    private def extractJValue(row: secondary.Row[CV], userId: UserColumnId): JValue = {
+      val internal = new ColumnId(cookie.columnIdMap(userId))
+      row.get(internal) match {
+        case Some(value) => toJValueFunc(value)
+        case None => JNull // inserts don't include column values where no value was given (must be null)
+      }
+    }
 
     // commands for mutation scripts
     val commands = Seq(
       JObject(Map(
-        "c" -> JString("normal"), "user" -> JString(computationHandler.user)
+        "c" -> JString("normal"),
+        "user" -> JString(computationHandler.user)
       )),
       JObject(Map(
-        "c" -> JString("row data"), "update_only" -> JBoolean.canonicalTrue, "nonfatal_row_errors" -> JArray(Array(JString("insert_in_update_only")))
+        "c" -> JString("row data"),
+        "update_only" -> JBoolean.canonicalTrue,
+        "nonfatal_row_errors" -> JArray(Array(JString("insert_in_update_only")))
       ))
     )
 
-    private def writeMutationScript(rowUpdates: Iterator[JObject]): JArray = JArray(commands ++ rowUpdates)
+    private def writeMutationScript(rowUpdates: Iterator[JObject]): Option[JArray] = {
+      if (!rowUpdates.hasNext) None
+      else Some(JArray(commands ++ rowUpdates))
+    }
 
     val UpdateDatasetDoesNotExist = "update.dataset.does-not-exist"
     val UpdateRowUnknownColumn = "update.row.unknown-column"
@@ -437,7 +510,7 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
       throw FeedbackFailure(message, cause)
     }
 
-    private def retrying[T](actions: => T, remainingAttempts: Int = mutationScriptRetries): T = {
+    private def retrying[T](actions: => T, remainingAttempts: Int = internalMutationScriptRetries): T = {
       val failure = try {
         return actions
       } catch {
@@ -457,6 +530,14 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
 
     case object Success extends MutationScriptResult {
       val english = "Successfully upserted rows"
+    }
+
+    case object FailedToDiscoverDataCoordinator extends MutationScriptResult {
+      val english = "Failed to discover data-coordinator host and port"
+    }
+
+    case object DataCoordinatorBusy extends MutationScriptResult {
+      val english = "Data-coordinator responded with 409"
     }
 
     case object DatasetDoesNotExist extends MutationScriptResult {
@@ -487,16 +568,19 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
 
     implicit val upCodec = AutomaticJsonCodecBuilder[Upsert]
     implicit val neCodec = AutomaticJsonCodecBuilder[NonfatalError]
-    implicit val reCodec = AutomaticJsonCodecBuilder[Response]
+    implicit val reCodec = SimpleHierarchyCodecBuilder[Response](NoTag).branch[Upsert].branch[NonfatalError].build
 
-    def datasetEndpoint: String = {
-      val (host, port) = hostAndPort
-      s"http://$host:$port/dataset/"
+    def datasetEndpoint: Option[String] = {
+      hostAndPort() match {
+        case Some((host, port)) => Some(s"http://$host:$port/dataset/")
+        case None => None
+      }
     }
 
     // this may throw a FeedbackFailure exception
     private def postMutationScript(datasetInternalName: String, script: JArray): MutationScriptResult = {
-      val builder = RequestBuilder(new java.net.URI(datasetEndpoint + datasetInternalName))
+      val endpoint = datasetEndpoint.getOrElse(return FailedToDiscoverDataCoordinator)
+      val builder = RequestBuilder(new java.net.URI(endpoint + datasetInternalName))
 
       def body = JValueEventIterator(script)
 
@@ -520,20 +604,20 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
               log.info("Posted mutation script with {} row updates in {}ms", script.length, (end - start) / 1000000)
               JsonDecode.fromJValue[JArray](logContentTypeFailure(resp.jValue())) match {
                 case Right(response) =>
-                  assert(response.elems.length == 1)
-                  JsonDecode.fromJValue[JArray](response) match {
+                  assert(response.elems.length == 1, "Response contains more than one element")
+                  JsonDecode.fromJValue[JArray](response.elems.head) match {
                     case Right(results) =>
-                      assert(results.elems.length == script.elems.length - 2)
+                      assert(results.elems.length == script.elems.length - 2, "Did not get one result for each upsert command that was sent")
                       val rows = script.elems.slice(2, script.elems.length)
                       results.elems.zip(rows).foreach { case (result, row) =>
                         JsonDecode.fromJValue[Response](result) match {
                           case Right(Upsert("update", _, _)) => // yay!
                           case Right(NonfatalError("error", "insert_in_update_only", Some(id))) =>
                             val JObject(fields) = JsonDecode.fromJValue[JObject](row).right.get // I just encoded this from a JObject
-                          val rowId = JsonDecode.fromJValue[JString](fields(cookie.primaryKey.underlying)).right.get.string
+                            val rowId = JsonDecode.fromJValue[JString](fields(cookie.primaryKey.underlying)).right.get.string
                             if (rowId != id) return PrimaryKeyColumnHasChanged // else the row has been deleted
                           case Right(other) =>
-                            fail(s"Unexpected response in array: $other")
+                            fail(s"Unexpected response in array: ${other.toString}")
                           case Left(e) =>
                             fail(s"Unable to interpret result in array: ${e.english}")
                         }
@@ -592,7 +676,7 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
               }
             case 409 =>
               // come back later!
-              throw fail("Received 409 from data-coordinator.") // no retry
+              DataCoordinatorBusy // no retry
             case other =>
               if (other == 500) {
                 log.warn("Scream! 500 from data-coordinator! Going to retry; my mutation script was: {}",

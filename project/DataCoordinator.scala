@@ -43,6 +43,6 @@ object DataCoordinator extends Build {
     secondaryLib % "provided")
 
   lazy val secondaryLibFeedback = p("secondarylib-feedback", SecondaryLibFeedback,
-    secondaryLib, coordinatorLibSoql).enablePlugins(sbtbuildinfo.BuildInfoPlugin)
+    secondaryLib, coordinatorLibSoql)
 
 }

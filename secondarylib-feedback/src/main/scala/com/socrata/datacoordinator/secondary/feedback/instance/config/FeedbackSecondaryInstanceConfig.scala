@@ -1,14 +1,22 @@
 package com.socrata.datacoordinator.secondary.feedback.instance.config
 
 import com.socrata.thirdparty.typesafeconfig.ConfigClass
-import com.typesafe.config.Config
+import com.typesafe.config.{ConfigUtil, Config}
 import org.apache.curator.framework.CuratorFrameworkFactory
 import org.apache.curator.retry
+import scala.collection.JavaConverters._
 
-class FeedbackSecondaryInstanceConfig(config: Config, instanceName: String) extends ConfigClass(config, instanceName) {
+class FeedbackSecondaryInstanceConfig(config: Config, root: String) extends ConfigClass(config, root) {
+  // handle blank root
+  override protected def path(key: String*): String = {
+    val fullKey = if (root.isEmpty) key else ConfigUtil.splitPath(root).asScala ++ key
+    ConfigUtil.joinPath(fullKey: _*)
+  }
+
   val baseBatchSize = getInt("base-batch-size")
+  val computationRetries = getInt("computation-retries")
+  val internalMutationScriptRetries = getInt("internal-mutation-script-retries")
   val mutationScriptRetries = getInt("mutation-script-retries")
-  val computationRetires = getInt("computation-retries")
   val curator = getConfig("curator", new CuratorConfig(_, _))
   val dataCoordinatorService = getString("data-coordinator-service")
 

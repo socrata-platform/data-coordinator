@@ -35,11 +35,12 @@ object FeedbackCookie {
 
 
 case class CookieSchema(dataVersion: DataVersion,
-                          copyNumber: CopyNumber,
-                          primaryKey: UserColumnId,
-                          columnIdMap: Map[UserColumnId, Long],
-                          strategyMap: Map[UserColumnId, ComputationStrategyInfo],
-                          obfuscationKey: Array[Byte],
-                          retriesLeft: Int,
-                          resync: Boolean,
-                          extra: JValue)
+                        copyNumber: CopyNumber,
+                        primaryKey: UserColumnId,
+                        columnIdMap: Map[UserColumnId, Long],
+                        strategyMap: Map[UserColumnId, ComputationStrategyInfo],
+                        obfuscationKey: Array[Byte],
+                        computationRetriesLeft: Int,
+                        mutationScriptRetriesLeft: Int,
+                        resync: Boolean,
+                        extra: JValue)

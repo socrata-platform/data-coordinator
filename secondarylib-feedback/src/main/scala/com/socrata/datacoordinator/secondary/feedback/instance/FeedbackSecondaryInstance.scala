@@ -39,29 +39,30 @@ abstract class FeedbackSecondaryInstance[RCI <: RowComputeInfo[SoQLValue]](confi
 
   protected val discovery = res(ServiceDiscoveryBuilder.builder(classOf[Void]).
     client(curator).
-    basePath(config.curator.namespace). // com.socrata/soda
+    basePath(config.curator.namespace).
     build())
   guarded(discovery.start())
 
   protected val provider = res(discovery.serviceProviderBuilder().
     providerStrategy(new strategies.RoundRobinStrategy).
-    serviceName(config.dataCoordinatorService). // data-coordinator
+    serviceName(config.dataCoordinatorService).
     build())
   guarded(provider.start())
 
   override val httpClient: HttpClient = res(new HttpClientHttpClient(executor))
 
-  override def hostAndPort(): (String, Int) = {
-    val instance = provider.getInstance()
-    (instance.getAddress, instance.getPort)
+  override def hostAndPort(): Option[(String, Int)] = {
+    Option(provider.getInstance()).map[(String, Int)](instance => (instance.getAddress, instance.getPort))
   }
 
   override val baseBatchSize: Int = config.baseBatchSize
 
+  override val internalMutationScriptRetries: Int = config.mutationScriptRetries
+
   override val mutationScriptRetries: Int = config.mutationScriptRetries
 
   override val repFor = SoQLValueRep
-  override val typeFor = SoQLValueFor
+  override val typeFor = SoQLTypeFor
 
   override val statusMonitor: StatusMonitor = new DummyStatusMonitor // TODO: replace with status monitor connected to ISS
 
