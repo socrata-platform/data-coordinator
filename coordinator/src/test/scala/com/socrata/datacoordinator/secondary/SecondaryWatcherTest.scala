@@ -50,7 +50,8 @@ class SecondaryWatcherTest extends FunSuite with MustMatchers with MockFactory {
   test("dataset marked broken on error when out of retries") {
     val testManifest = mock[SecondaryManifest]
 
-    val w = new SecondaryWatcher(common.universe, watcherId, claimTimeout, 10.seconds, 2, common.timingReport) {
+    val w = new SecondaryWatcher(common.universe, watcherId, claimTimeout,
+                                 10.seconds, 60.seconds, 10.minutes, 2, 10, common.timingReport) {
       override protected def manifest(u: Universe[common.CT, common.CV] with
                                          SecondaryManifestProvider with PlaybackToSecondaryProvider):
         SecondaryManifest = testManifest
@@ -61,7 +62,7 @@ class SecondaryWatcherTest extends FunSuite with MustMatchers with MockFactory {
       val job = SecondaryRecord(testStoreId, watcherId, new DatasetId(10),
                                 startingDataVersion = 2L, endingDataVersion = 2L,
                                 startingLifecycleStage = LS.Published,
-                                retryNum = 2, initialCookie = None)
+                                retryNum = 2, replayNum = 10, initialCookie = None)
       (testManifest.claimDatasetNeedingReplication _).expects(testStoreId, watcherId, claimTimeout).
                                                       returns(Some(job))
 
@@ -81,7 +82,8 @@ class SecondaryWatcherTest extends FunSuite with MustMatchers with MockFactory {
   test("dataset retry info updated when not out of retries") {
     val testManifest = mock[SecondaryManifest]
 
-    val w = new SecondaryWatcher(common.universe, watcherId, claimTimeout, 10.seconds, 2, common.timingReport) {
+    val w = new SecondaryWatcher(common.universe, watcherId, claimTimeout,
+                                 10.seconds, 60.seconds, 10.minutes, 2, 10, common.timingReport) {
       override protected def manifest(u: Universe[common.CT, common.CV] with
                                          SecondaryManifestProvider with PlaybackToSecondaryProvider):
         SecondaryManifest = testManifest
@@ -93,7 +95,7 @@ class SecondaryWatcherTest extends FunSuite with MustMatchers with MockFactory {
       val job = SecondaryRecord(testStoreId, watcherId, datasetId,
                                 startingDataVersion = 2L, endingDataVersion = 2L,
                                 startingLifecycleStage = LS.Published,
-                                retryNum = 0, initialCookie = None)
+                                retryNum = 0, replayNum = 0, initialCookie = None)
       (testManifest.claimDatasetNeedingReplication _).expects(testStoreId, watcherId, claimTimeout).
                                                       returns(Some(job))
 

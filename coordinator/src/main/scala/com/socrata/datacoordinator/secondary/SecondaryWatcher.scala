@@ -27,7 +27,10 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
                                claimantId: UUID,
                                claimTimeout: FiniteDuration,
                                backoffInterval: FiniteDuration,
+                               replayWait: FiniteDuration,
+                               maxReplayWait: FiniteDuration,
                                maxRetries: Int,
+                               maxReplays: Int,
                                timingReport: TimingReport) {
   val log = LoggerFactory.getLogger(classOf[SecondaryWatcher[_,_]])
   private val rand = new Random()
@@ -53,18 +56,35 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
         "endingDataVersion" -> job.endingDataVersion
       ) {
         log.info(">> Syncing {} into {}", job.datasetId, secondary.storeId)
+        if(job.replayNum > 0) log.info("Replay #{} of {}", job.replayNum, maxReplays)
         if(job.retryNum > 0) log.info("Retry #{} of {}", job.retryNum, maxRetries)
         try {
           playbackToSecondary(secondary, job)
           log.info("<< Sync done for {} into {}", job.datasetId, secondary.storeId)
         } catch {
+          case bdse@BrokenDatasetSecondaryException(reason) =>
+            log.error("Dataset version declared to be broken while updating dataset {} in secondary {}; marking it as broken",
+              job.datasetId.asInstanceOf[AnyRef], secondary.storeId, bdse)
+            manifest(u).markSecondaryDatasetBroken(job)
+          case rlse@ReplayLaterSecondaryException(reason, cookie) =>
+            if(job.replayNum < maxReplays) {
+              val replayAfter = Math.min(replayWait.toSeconds * Math.log(job.replayNum + 2), maxReplayWait.toSeconds)
+              log.info("Replay later requested while updating dataset {} in secondary {}, replaying in {}...",
+                job.datasetId.asInstanceOf[AnyRef], secondary.storeId, replayAfter.toString, rlse)
+              manifest(u).updateReplayInfo(secondary.storeId, job.datasetId, cookie, job.replayNum + 1,
+                replayAfter.toInt)
+            } else {
+              log.error("Ran out of replay attempts while updating dataset {} in secondary {}; marking it as broken",
+                job.datasetId.asInstanceOf[AnyRef], secondary.storeId, rlse)
+              manifest(u).markSecondaryDatasetBroken(job)
+            }
           case e: Exception =>
             if(job.retryNum < maxRetries) {
               val retryBackoff = backoffInterval.toSeconds * Math.pow(2, job.retryNum)
               log.warn("Unexpected exception while updating dataset {} in secondary {}, retrying in {}...",
                        job.datasetId.asInstanceOf[AnyRef], secondary.storeId, retryBackoff.toString, e)
               manifest(u).updateRetryInfo(secondary.storeId, job.datasetId, job.retryNum + 1,
-                                             retryBackoff.toInt)
+                retryBackoff.toInt)
             } else {
               log.error("Unexpected exception while updating dataset {} in secondary {}; marking it as broken",
                         job.datasetId.asInstanceOf[AnyRef], secondary.storeId, e)
@@ -241,8 +261,9 @@ object SecondaryWatcher extends App { self =>
       NullCache
     )
 
-    val w = new SecondaryWatcher(common.universe, config.watcherId, config.claimTimeout,
-                                 config.backoffInterval, config.maxRetries, common.timingReport)
+    val w = new SecondaryWatcher(common.universe, config.watcherId, config.claimTimeout, config.backoffInterval,
+                                 config.replayWait, config.maxReplayWait, config.maxRetries,
+                                 config.maxReplays.getOrElse(Integer.MAX_VALUE), common.timingReport)
     val cm = new SecondaryWatcherClaimManager(dsInfo, config.watcherId, config.claimTimeout)
 
     val SIGTERM = new Signal("TERM")

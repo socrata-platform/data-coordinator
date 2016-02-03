@@ -3,7 +3,7 @@ package secondary
 
 import com.rojoma.simplearm.util._
 import com.rojoma.simplearm.SimpleArm
-import com.socrata.datacoordinator.id.{RowId, DatasetId}
+import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.truth.loader.{Delogger, MissingVersion}
 import com.socrata.datacoordinator.truth.metadata
 import com.socrata.datacoordinator.truth.metadata._
@@ -161,8 +161,6 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
     }
   }
 
-
-
   private class UpdateOp(secondary: NamedSecondary[CT, CV],
                          job: SecondaryRecord)
   {
@@ -315,6 +313,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
         try {
           timingReport("resync", "dataset" -> datasetId) {
             val w = u.datasetMapWriter
+            u.rollback() // hopefully this doesn't break things...
             w.datasetInfo(datasetId, datasetLockTimeout) match {
               case Some(datasetInfo) =>
                 val allCopies = w.allCopies(datasetInfo) // guarantied to be ordered by copy number
@@ -338,6 +337,8 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
                     } else { /* ok */ }
                   }
                 }
+                // end transaction to not provoke a serialization error from touching the secondary_manifest table
+                u.commit()
                 updateSecondaryMap(latestDataVersion, latestLifecycleStage)
               case None =>
                 drop()
@@ -345,10 +346,18 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
           }
           return
         } catch {
-          case ResyncSecondaryException(reason) =>
-            logger.warn("Received resync while resyncing.  Resyncing as requested after waiting 10 seconds. " +
-                     " Reason: " + reason)
-            Thread.sleep(10L * 1000)
+          case e: Throwable =>
+            logger.info("Rolling back to end transaction due to thrown exception: {}", e.getMessage)
+            // we want to roll back our transaction to end it to avoid serialization errors
+            // when we try to update the secondary_manifest table
+            u.rollback()
+            e match {
+              case ResyncSecondaryException(reason) =>
+                logger.warn("Received resync while resyncing.  Resyncing as requested after waiting 10 seconds. " +
+                  " Reason: " + reason)
+                Thread.sleep(10L * 1000)
+              case _ => throw e
+            }
         }
       }
     }

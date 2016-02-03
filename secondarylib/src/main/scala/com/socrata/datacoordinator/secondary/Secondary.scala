@@ -60,16 +60,10 @@ case class ResyncSecondaryException(reason: String = "No reason") extends Except
 /**
  * Thrown when a secondary decides that it cannot do an update _right now_ .
  * The process propagating data to the secondary should try again later.
- *
- * @note secondary watcher will attempt to retry later indefinitely
  */
-case class ReplayLaterSecondaryException(reason: String, cookie: Secondary.Cookie, cause: Throwable) extends Exception(reason, cause)
+case class ReplayLaterSecondaryException(reason: String = "No reason", cookie: Secondary.Cookie) extends Exception(reason)
 
-object ReplayLaterSecondaryException {
-
-  def apply(reason: String, cookie: Secondary.Cookie): ReplayLaterSecondaryException = ReplayLaterSecondaryException(reason, cookie, null)
-
-}
+case class BrokenDatasetSecondaryException(reason: String = "No reason") extends Exception(reason)
 
 object Secondary {
   type Cookie = Option[String]
