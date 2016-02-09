@@ -130,7 +130,7 @@ object QueryParser extends Logging {
     try {
       val knownColumnIdMapping = columnIdMapping.filter { case (k, v) => rawSchema.contains(v) }
       if (columnIdMapping.size != knownColumnIdMapping.size) {
-        logger.info(s"truth has columns unknown to secondary ${columnIdMapping.size} ${knownColumnIdMapping.size}")
+        logger.error(s"truth has columns unknown to secondary ${columnIdMapping.size} ${knownColumnIdMapping.size}")
       }
       new DatasetContext[SoQLAnalysisType] {
         val schema: OrderedMap[ColumnName, SoQLAnalysisType] =
