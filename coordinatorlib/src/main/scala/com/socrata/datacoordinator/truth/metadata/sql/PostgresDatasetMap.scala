@@ -816,10 +816,12 @@ class PostgresDatasetMapWriter[CT](val conn: Connection, tns: TypeNamespace[CT],
   // Can't set parameters' values via prepared statement placeholders
   def setTimeout(timeoutMs: Int) =
     s"SET LOCAL statement_timeout TO $timeoutMs"
-  def datasetInfoBySystemIdQuery =
-    "SELECT system_id, next_counter_value, locale_name, obfuscation_key FROM dataset_map WHERE system_id = ? FOR UPDATE"
+  def datasetInfoBySystemIdQuery(semiExclusive: Boolean) =
+    "SELECT system_id, next_counter_value, locale_name, obfuscation_key FROM dataset_map WHERE system_id = ? FOR %s".format(
+      if(semiExclusive) "SHARE" else "UPDATE"
+    )
   def resetTimeout = "SET LOCAL statement_timeout TO DEFAULT"
-  def datasetInfo(datasetId: DatasetId, timeout: Duration) = {
+  def datasetInfo(datasetId: DatasetId, timeout: Duration, semiExclusive: Boolean) = {
     // For now we assume that we're the only one setting the statement_timeout
     // parameter.  If this turns out to be wrong, we'll have to SHOW the
     // parameter in order to
@@ -841,7 +843,7 @@ class PostgresDatasetMapWriter[CT](val conn: Connection, tns: TypeNamespace[CT],
         execute(setTimeout(ms))
       }
       val result =
-        using(conn.prepareStatement(datasetInfoBySystemIdQuery)) { stmt =>
+        using(conn.prepareStatement(datasetInfoBySystemIdQuery(semiExclusive))) { stmt =>
           stmt.setDatasetId(1, datasetId)
           try {
             t("lookup-dataset-for-update", "dataset_id" -> datasetId)(stmt.execute())

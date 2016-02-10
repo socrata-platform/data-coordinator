@@ -307,7 +307,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
         try {
           timingReport("resync", "dataset" -> datasetId) {
             val w = u.datasetMapWriter
-            w.datasetInfo(datasetId, datasetLockTimeout) match {
+            w.datasetInfo(datasetId, datasetLockTimeout, semiExclusive = true) match {
               case Some(datasetInfo) =>
                 val allCopies = w.allCopies(datasetInfo)
                 val latest = w.latest(datasetInfo)
