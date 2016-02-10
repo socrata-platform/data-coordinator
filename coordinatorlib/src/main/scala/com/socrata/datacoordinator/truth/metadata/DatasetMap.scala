@@ -17,12 +17,13 @@ class CannotDropInitialWorkingCopyException(val copyInfo: CopyInfo) extends Exce
 trait DatasetMapWriter[CT] extends DatasetMapBase[CT] with `-impl`.BaseDatasetMapWriter[CT] {
   /** Looks up a dataset record by its system ID.
     * @param timeout Amount of time to block before throwing.
+    * @param semiExclusive A hint that this will not actually be doing writes to this row.
     * @note An implementation should make a "best effort" to honor the timeout, but
     *       is permitted to wait less or more.  In particular, the postgresql implementation
     *       will only wait up to `Int.MaxValue` milliseconds unless the timeout is
     *       actually non-finite.
     * @throws DatasetIdInUseByWriterException if some other writer has been used to look up this dataset. */
-  def datasetInfo(datasetId: DatasetId, timeout: Duration): Option[DatasetInfo]
+  def datasetInfo(datasetId: DatasetId, timeout: Duration, semiExclusive: Boolean = false): Option[DatasetInfo]
 
   /** Creates a new dataset in the truthstore.
     * @note Does not actually create any tables; this just updates the bookkeeping.
