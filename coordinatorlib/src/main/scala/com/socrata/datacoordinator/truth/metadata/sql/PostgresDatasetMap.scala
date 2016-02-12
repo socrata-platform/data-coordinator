@@ -264,21 +264,29 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
 }
 
 class PostgresDatasetMapReader[CT](val conn: Connection, tns: TypeNamespace[CT], timingReport: TimingReport) extends DatasetMapReader[CT] with BasePostgresDatasetMapReader[CT] {
+  private val log = org.slf4j.LoggerFactory.getLogger(classOf[BasePostgresDatasetMapReader[_]])
+
   implicit def typeNamespace = tns
   def t = timingReport
 
   def datasetInfoBySystemIdQuery = "SELECT system_id, next_counter_value, locale_name, obfuscation_key FROM dataset_map WHERE system_id = ?"
-  def datasetInfo(datasetId: DatasetId) =
+  def datasetInfo(datasetId: DatasetId, repeatableRead: Boolean = false) = {
+    if (repeatableRead) {
+      log.info("Attempting to change transaction isolation level...")
+      conn.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ)
+      log.info("Changed transaction isolation level to REPEATABLE READ")
+    }
     using(conn.prepareStatement(datasetInfoBySystemIdQuery)) { stmt =>
       stmt.setDatasetId(1, datasetId)
       using(t("lookup-dataset", "dataset_id" -> datasetId)(stmt.executeQuery())) { rs =>
-        if(rs.next()) {
+        if (rs.next()) {
           Some(DatasetInfo(rs.getDatasetId("system_id"), rs.getLong("next_counter_value"), rs.getString("locale_name"), rs.getBytes("obfuscation_key")))
         } else {
           None
         }
       }
     }
+  }
 }
 
 trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] with `-impl`.BaseDatasetMapWriter[CT] {
@@ -888,19 +896,6 @@ class PostgresDatasetMapWriter[CT](val conn: Connection, tns: TypeNamespace[CT],
 
   def t = timingReport
 
-  private def datasetInfoBySystemIdQuery = "SELECT system_id, next_counter_value, locale_name, obfuscation_key FROM dataset_map WHERE system_id = ?"
-  private def datasetInfo(datasetId: DatasetId) =
-    using(conn.prepareStatement(datasetInfoBySystemIdQuery)) { stmt =>
-      stmt.setDatasetId(1, datasetId)
-      using(t("lookup-dataset", "dataset_id" -> datasetId)(stmt.executeQuery())) { rs =>
-        if(rs.next()) {
-          Some(DatasetInfo(rs.getDatasetId("system_id"), rs.getLong("next_counter_value"), rs.getString("locale_name"), rs.getBytes("obfuscation_key")))
-        } else {
-          None
-        }
-      }
-    }
-
   // Can't set parameters' values via prepared statement placeholders
   def setTimeout(timeoutMs: Int) =
     s"SET LOCAL statement_timeout TO $timeoutMs"
@@ -924,75 +919,8 @@ class PostgresDatasetMapWriter[CT](val conn: Connection, tns: TypeNamespace[CT],
     // three operations in a single "set timeout;query;restore timeout"
     // call.
 
-    // First we try (twice) with transaction isolation level `repeatable read`
-    def retrying[T](actions: => T, remainingAttempts: Int = 2): T = {
-      val serializationFailure = try {
-        return actions
-      } catch {
-        case e: PSQLException if e.getSQLState == "40001" => e
-      }
-      log.trace("Serialization error occurred: {}", serializationFailure.getMessage)
-      if (remainingAttempts > 0) {
-        log.trace("Going to retry query with transaction isolation level repeatable read")
-        retrying(actions, remainingAttempts - 1)
-      }
-      else throw serializationFailure
-    }
-
     val savepoint = conn.setSavepoint()
     try {
-      log.info("Attempting to change transaction isolation level...")
-      conn.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ)
-      log.info("Changed transaction isolation level to REPEATABLE READ")
-    } catch {
-      case e: SQLException =>
-        var search = true
-        var cause = e.getCause
-        while (search && cause != null) cause match {
-          case psqlEx: PSQLException =>
-            search = false
-            log.info("Exception occured: {}", psqlEx.getMessage)
-          case other =>
-            cause = other.getCause
-        }
-        if (cause == null) throw e
-    }
-
-    val isolationLevel = conn.getTransactionIsolation
-    if (isolationLevel == Connection.TRANSACTION_REPEATABLE_READ) {
-      val result = try {
-        val right = Right(retrying[Option[DatasetInfo]] {
-          datasetInfo(datasetId)
-        })
-        conn.releaseSavepoint(savepoint)
-        right
-      } catch {
-        case e: SQLException =>
-          var search = true
-          var cause = e.getCause
-          while (search && cause != null) cause match {
-            case psql: PSQLException =>
-              search = false
-              if (psql.getSQLState == "40001") {
-                log.trace("Ran out of retries after getting a serialization error.")
-                Left(psql)
-              } else {
-                throw e
-              }
-            case other =>
-              cause = other.getCause
-              if (cause == null) throw e
-          }
-          Left(e)
-      }
-      if (result.isRight) return result.right.get
-    }
-
-    log.info("Failed to do transaction in REPEATABLE READ; now trying with write lock...")
-
-    // Then we fallback to taking a write lock
-    try {
-      conn.rollback(savepoint)
       if(timeout.isFinite()) {
         val ms = timeout.toMillis.min(Int.MaxValue).max(1).toInt
         log.trace("Setting statement timeout to {}ms", ms)

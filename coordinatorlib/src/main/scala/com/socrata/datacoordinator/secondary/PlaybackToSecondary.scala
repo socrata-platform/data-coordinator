@@ -1,6 +1,8 @@
 package com.socrata.datacoordinator
 package secondary
 
+import java.sql.SQLException
+
 import com.rojoma.simplearm.util._
 import com.rojoma.simplearm.SimpleArm
 import com.socrata.datacoordinator.id.DatasetId
@@ -14,6 +16,7 @@ import com.socrata.datacoordinator.util.TimingReport
 import com.socrata.soql.environment.TypeName
 import com.socrata.thirdparty.metrics.Metrics
 import com.typesafe.scalalogging.slf4j.Logging
+import org.postgresql.util.PSQLException
 import scala.concurrent.duration.Duration
 import scala.util.control.ControlThrowable
 
@@ -308,57 +311,91 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
       }
     }
 
+    private def retrying[T](actions: => T, filter: Throwable => Unit): T = {
+      try {
+        return actions
+      } catch {
+        case e: Throwable =>
+          logger.info("Rolling back to end transaction due to thrown exception: {}", e.getMessage)
+          // we want to roll back our transaction to end it to avoid serialization errors
+          // when we try to update the secondary_manifest table
+          u.rollback()
+          filter(e)
+      }
+      retrying[T](actions, filter)
+    }
+
     def resync(): Unit = {
-      while(true) {
-        try {
-          timingReport("resync", "dataset" -> datasetId) {
-            val w = u.datasetMapWriter
-            w.datasetInfo(datasetId, datasetLockTimeout, semiExclusive = true) match {
-              case Some(datasetInfo) =>
-                val allCopies = w.allCopies(datasetInfo) // guarantied to be ordered by copy number
-                val latest = w.latest(datasetInfo)
-                val latestDataVersion = latest.dataVersion
-                val latestLifecycleStage = latest.lifecycleStage
-                for(copy <- allCopies) {
-                  val secondaryDatasetInfo = makeSecondaryDatasetInfo(copy.datasetInfo)
-                  timingReport("copy", "number" -> copy.copyNumber) {
-                    // secondary.store.resync(.) will be called
-                    // on copies in order by their copy number
-                    val isLatestCopy = copy.copyNumber == latest.copyNumber
-                    if(copy.lifecycleStage == metadata.LifecycleStage.Discarded) {
-                      currentCookie = secondary.store.dropCopy(secondaryDatasetInfo.internalName,
-                                                               copy.copyNumber,
-                                                               currentCookie)
-                    } else if(copy.lifecycleStage != metadata.LifecycleStage.Unpublished) {
-                      syncCopy(copy, isLatestCopy)
-                    } else if(secondary.store.wantsWorkingCopies) {
-                      syncCopy(copy, isLatestCopy)
-                    } else { /* ok */ }
-                  }
+      val latestCopyInfo = retrying[Option[metadata.CopyInfo]]({
+        timingReport("resync", "dataset" -> datasetId) {
+          u.commit()
+          val r = u.datasetMapReader
+          r.datasetInfo(datasetId, repeatableRead = true) match {
+            case Some(datasetInfo) =>
+              val allCopies = r.allCopies(datasetInfo) // guarantied to be ordered by copy number
+            val latest = r.latest(datasetInfo) // this is the newest _living_ copy
+              for (copy <- allCopies) {
+                val secondaryDatasetInfo = makeSecondaryDatasetInfo(copy.datasetInfo)
+                timingReport("copy", "number" -> copy.copyNumber) {
+                  // secondary.store.resync(.) will be called
+                  // on copies in order by their copy number
+                  val isLatestCopy = copy.copyNumber == latest.copyNumber
+                  if (copy.lifecycleStage == metadata.LifecycleStage.Discarded) {
+                    currentCookie = secondary.store.dropCopy(secondaryDatasetInfo.internalName,
+                      copy.copyNumber,
+                      currentCookie)
+                  } else if (copy.lifecycleStage != metadata.LifecycleStage.Unpublished) {
+                    syncCopy(copy, isLatestCopy)
+                  } else if (secondary.store.wantsWorkingCopies) {
+                    syncCopy(copy, isLatestCopy)
+                  } else {  /* ok */ }
                 }
-                // end transaction to not provoke a serialization error from touching the secondary_manifest table
-                u.commit()
-                updateSecondaryMap(latestDataVersion, latestLifecycleStage)
-              case None =>
-                drop()
+              }
+              // end transaction to not provoke a serialization error from touching the secondary_manifest table
+              u.commit()
+              Some(latest)
+            case None =>
+              drop()
+              None
+          }
+        }
+      }, { case e: Throwable =>
+        e match {
+          case ResyncSecondaryException(reason) =>
+            logger.warn("Received resync while resyncing.  Resyncing as requested after waiting 10 seconds. " +
+              " Reason: " + reason)
+            Thread.sleep(10L * 1000)
+          case _ => ignoreSerializationFailure(e)
+        }
+      })
+      retrying[Unit]({
+        latestCopyInfo.foreach { latest =>
+            timingReport("resync-update-secondary-map", "dataset" -> datasetId) {
+              updateSecondaryMap(latest.dataVersion, latest.lifecycleStage)
             }
           }
-          return
-        } catch {
-          case e: Throwable =>
-            logger.info("Rolling back to end transaction due to thrown exception: {}", e.getMessage)
-            // we want to roll back our transaction to end it to avoid serialization errors
-            // when we try to update the secondary_manifest table
-            u.rollback()
-            e match {
-              case ResyncSecondaryException(reason) =>
-                logger.warn("Received resync while resyncing.  Resyncing as requested after waiting 10 seconds. " +
-                  " Reason: " + reason)
-                Thread.sleep(10L * 1000)
-              case _ => throw e
-            }
-        }
+      }, ignoreSerializationFailure)
+    }
+
+    private def ignoreSerializationFailure(e: Throwable): Unit = e match {
+      case s: SQLException => extractPSQLException(s) match {
+        case Some(p) =>
+          if (p.getSQLState == "40001")
+            logger.warn("Serialization failure occurred during REPEATABLE READ transaction: {}", p.getMessage)
+          else
+            throw s
+        case None => throw s
       }
+      case _ => throw e
+    }
+
+    private def extractPSQLException(s: SQLException): Option[PSQLException] = {
+      var cause = s.getCause
+      while(cause != null) cause match {
+        case p: PSQLException => return Some(p)
+        case _ => cause = cause.getCause
+      }
+      None
     }
 
     def syncCopy(copyInfo: metadata.CopyInfo, isLatestCopy: Boolean): Unit = {

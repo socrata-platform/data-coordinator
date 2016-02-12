@@ -7,7 +7,8 @@ import com.socrata.soql.environment.ColumnName
 import org.joda.time.DateTime
 
 trait BaseDatasetMapReader[CT] {
-  /** Gets the newest copy, no matter what the lifecycle stage is. */
+  /** Gets the newest _live_ copy, no matter what the lifecycle stage is.
+    * @note this will not return a discarded copy or a snapshot */
   def latest(datasetInfo: DatasetInfo): CopyInfo
 
   /** Returns all copies for this dataset, INCLUDING DISCARDED ONES.  The
