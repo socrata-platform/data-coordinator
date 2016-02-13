@@ -31,19 +31,22 @@ class RepBasedDatasetExtractor[CT, CV](conn: Connection, dataTableName: String, 
     result.freeze()
   }
 
-  def allRows(limit: Option[Long], offset: Option[Long], sorted: Boolean): Managed[Iterator[Row[CV]]] = new SimpleArm[Iterator[Row[CV]]] {
+  def allRows(limit: Option[Long], offset: Option[Long], sorted: Boolean, rowId: Option[CV])
+    : Managed[Iterator[Row[CV]]] = new SimpleArm[Iterator[Row[CV]]] {
     def flatMap[B](f: (Iterator[Row[CV]]) => B): B = {
       if(schema.isEmpty) {
         f(Iterator.empty)
       } else {
         val colSelectors = cids.map { cid => schema(new ColumnId(cid)).selectList }
         val q = "SELECT " + colSelectors.mkString(",") + " FROM " + dataTableName +
+          (if (rowId.isDefined) " WHERE " + sidCol.templateForSingleLookup else "" ) +
           (if(sorted) " ORDER BY " + sidCol.orderBy() else "") +
           limit.map { l => " LIMIT " + l.max(0) }.getOrElse("") +
           offset.map { o => " OFFSET " + o.max(0) }.getOrElse("")
-        using(conn.createStatement()) { stmt =>
+        using(conn.prepareStatement(q)) { stmt =>
+          rowId.foreach(v => sidCol.prepareSingleLookup(stmt, v, 1))
           stmt.setFetchSize(1000)
-          using(stmt.executeQuery(q)) { rs =>
+          using(stmt.executeQuery()) { rs =>
             def loop(): Stream[Row[CV]] =
               if(rs.next()) {
                 rowify(rs) #:: loop()

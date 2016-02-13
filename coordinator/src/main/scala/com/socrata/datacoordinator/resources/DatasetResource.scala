@@ -35,7 +35,7 @@ case class DatasetResource(datasetId: DatasetId,
                            processMutation: (DatasetId, Iterator[JValue], IndexedTempFile) => ProcessMutationReturns,
                            deleteDataset: DatasetId => DatasetDropper.Result,
                            datasetContents: (DatasetId, Option[String], CopySelector, Option[UserColumnIdSet],
-                             Option[Long], Option[Long], Precondition, Option[DateTime], Boolean) =>
+                             Option[Long], Option[Long], Precondition, Option[DateTime], Boolean, Option[String]) =>
                              DatasetResource.datasetContentsFunc => Exporter.Result[Unit],
                            withMutationScriptResults: (=> HttpResponse) => HttpResponse,
                            formatDatasetId: DatasetId => String) extends ErrorHandlingSodaResource(formatDatasetId) {
@@ -163,6 +163,7 @@ case class DatasetResource(datasetId: DatasetId,
         false
       case _ => return contentTypeBadRequest("Bad sorted selector")
     }
+    val rowId = Option(servReq.getParameter("row_id"))
     val suffix = locally {
       val md = MessageDigest.getInstance(suffixHashAlg)
       md.update(formatDatasetId(datasetId).getBytes(UTF_8))
@@ -179,7 +180,7 @@ case class DatasetResource(datasetId: DatasetId,
         val upstreamPrecondition = newPrecond.map(_.dropRight(suffix.length))
         resp => {
           val found = datasetContents(datasetId, schemaHash, copy, onlyColumns, limit, offset,
-            upstreamPrecondition, ifModifiedSince, sorted) {
+            upstreamPrecondition, ifModifiedSince, sorted, rowId) {
             case Left(newSchema) =>
               mismatchedSchema(ExportRequestError.MISMATCHED_SCHEMA, datasetId, newSchema)(resp)
             case Right((etag, schema, rowIdCol, locale, approxRowCount, rows)) =>
@@ -212,6 +213,7 @@ case class DatasetResource(datasetId: DatasetId,
             case Exporter.NotFound => notFoundError(datasetId)(resp)
             case Exporter.NotModified(etags) => notModified(etags.map(_.append(suffix)))(resp)
             case Exporter.PreconditionFailedBecauseNoMatch => preconditionFailed(resp)
+            case Exporter.InvalidRowId => datasetBadRequest(ExportRequestError.INVALID_ROW_ID)(resp)
           }
         }
       case Left(Precondition.FailedBecauseNoMatch) =>
