@@ -159,10 +159,5 @@ object QueryParser extends Logging {
   }
 
   // And function is used for chain SoQL merge.
-  private val andFnBindings = SoQLFunctions.Neq.parameters.map {
-    case VariableType(name) => name -> SoQLBoolean
-    case _ => throw new Exception("Unexpected function signature")
-  }.toMap
-
-  private val andFn = MonomorphicFunction(SoQLFunctions.Neq, andFnBindings)
+  private val andFn = SoQLFunctions.And.monomorphic.get
 }
