@@ -17,6 +17,7 @@ object Exporter {
   case object NotFound extends Result[Nothing]
   case object PreconditionFailedBecauseNoMatch extends Result[Nothing]
   case class NotModified(etags: Seq[EntityTag]) extends Result[Nothing]
+  case object InvalidRowId extends Result[Nothing]
   case class Success[T](x: T) extends Result[T]
 
   def export[CT, CV, T](u: Universe[CT, CV] with DatasetReaderProvider,
@@ -27,7 +28,8 @@ object Exporter {
                         offset: Option[Long],
                         precondition: Precondition,
                         ifModifiedSince: Option[DateTime],
-                        sorted: Boolean)
+                        sorted: Boolean,
+                        rowId: Option[CV])
                        (f: (EntityTag, DatasetCopyContext[CT], Long, Iterator[Row[CV]]) => T): Result[T] = {
     val subResult = for {
       ctxOpt <- u.datasetReader.openDataset(id, copy)
@@ -52,7 +54,7 @@ object Exporter {
                 ss + (idCol.systemId -> idCol)
               }
 
-              for(it <- rows(properSchema.keySet, limit = limit, offset = offset, sorted = sorted)) yield {
+              for(it <- rows(properSchema.keySet, limit = limit, offset = offset, sorted = sorted, rowId)) yield {
                 val toRemove = properSchema.keySet -- selectedSchema.keySet
                 if(toRemove.isEmpty) it
                 else it.map { row =>

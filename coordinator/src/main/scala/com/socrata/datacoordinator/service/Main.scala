@@ -2,12 +2,14 @@ package com.socrata.datacoordinator.service
 
 import com.rojoma.json.v3.ast.{JString, JValue}
 import com.rojoma.simplearm.util._
+import com.socrata.datacoordinator.common.soql.SoQLRep
 import com.socrata.datacoordinator.common.{SoQLCommon, DataSourceFromConfig}
 import com.socrata.datacoordinator.id.{UserColumnId, ColumnId, DatasetId}
 import com.socrata.datacoordinator.resources._
 import com.socrata.datacoordinator.secondary.{DatasetAlreadyInSecondary}
 import com.socrata.datacoordinator.truth.CopySelector
 import com.socrata.datacoordinator.truth.metadata.{SchemaField, Schema, DatasetCopyContext}
+import com.socrata.datacoordinator.truth.universe.sql.PostgresUniverse
 import com.socrata.datacoordinator.util.collection.UserColumnIdSet
 import com.socrata.datacoordinator.util.{NullCache, IndexedTempFile, StackedTimingReport, LoggedTimingReport}
 import com.socrata.http.common.AuxiliaryData
@@ -16,6 +18,7 @@ import com.socrata.http.server.curator.CuratorBroker
 import com.socrata.http.server.livenesscheck.LivenessCheckResponder
 import com.socrata.http.server.util.{EntityTag, Precondition}
 import com.socrata.curator.{CuratorFromConfig, DiscoveryFromConfig}
+import com.socrata.soql.types.{SoQLType, SoQLValue}
 import com.socrata.thirdparty.typesafeconfig.Propertizer
 import com.typesafe.config.{Config, ConfigFactory}
 import java.util.concurrent.{CountDownLatch, TimeUnit, Executors}
@@ -116,47 +119,85 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
     offset: Option[Long],
     precondition: Precondition,
     ifModifiedSince: Option[DateTime],
-    sorted: Boolean
-   )(f: Either[Schema, (EntityTag, Seq[SchemaField], Option[UserColumnId], String, Long,
-    Iterator[Array[JValue]])] => Unit): Exporter.Result[Unit] = {
+    sorted: Boolean,
+    rowId: Option[String]
+   )(f: Either[Schema, (EntityTag, Seq[SchemaField], Option[UserColumnId],
+     String,
+     Long,
+     Iterator[Array[JValue]])] => Unit): Exporter.Result[Unit] = {
     for(u <- common.universe) yield {
-      Exporter.export(u, id, copy, columns, limit, offset, precondition, ifModifiedSince, sorted)
-      { (entityTag, copyCtx, approxRowCount, it) =>
-        val schema = u.schemaFinder.getSchema(copyCtx)
+      readRowId(u, id, copy, rowId) match {
+        case Right(rid) =>
+          Exporter.export(u, id, copy, columns, limit, offset, precondition, ifModifiedSince, sorted, rid)
+          { (entityTag, copyCtx, approxRowCount, it) =>
+            val schema = u.schemaFinder.getSchema(copyCtx)
 
-        if(schemaHash.isDefined && (Some(schema.hash) != schemaHash)) {
-          f(Left(schema))
-        } else {
-          val jsonReps = common.jsonReps(copyCtx.datasetInfo)
-          val jsonSchema = copyCtx.schema.mapValuesStrict { ci => jsonReps(ci.typ) }
-          val unwrappedCids = copyCtx.schema.values.toSeq.filter { ci => jsonSchema.contains(ci.systemId) }
-            .sortBy(_.userColumnId).map(_.systemId.underlying).toArray
-          val pkColName = copyCtx.pkCol.map(_.userColumnId)
-          val orderedSchema = unwrappedCids.map { cidRaw =>
-            val col = copyCtx.schema(new ColumnId(cidRaw))
-            SchemaField(col.userColumnId, col.typ.name.name)
-          }
-          f(Right((
-            entityTag,
-            orderedSchema,
-            pkColName,
-            copyCtx.datasetInfo.localeName,
-            approxRowCount,
-            it.map { row =>
-              val arr = new Array[JValue](unwrappedCids.length)
-              var i = 0
-              while(i != unwrappedCids.length) {
-                val cid = new ColumnId(unwrappedCids(i))
-                val rep = jsonSchema(cid)
-                arr(i) = rep.toJValue(row(cid))
-                i += 1
+            if(schemaHash.isDefined && (Some(schema.hash) != schemaHash)) {
+              f(Left(schema))
+            } else {
+              val jsonReps = common.jsonReps(copyCtx.datasetInfo)
+              val jsonSchema = copyCtx.schema.mapValuesStrict { ci => jsonReps(ci.typ) }
+              val unwrappedCids = copyCtx.schema.values.toSeq.filter { ci => jsonSchema.contains(ci.systemId) }
+                .sortBy(_.userColumnId).map(_.systemId.underlying).toArray
+              val pkColName = copyCtx.pkCol.map(_.userColumnId)
+              val orderedSchema = unwrappedCids.map { cidRaw =>
+                val col = copyCtx.schema(new ColumnId(cidRaw))
+                SchemaField(col.userColumnId, col.typ.name.name)
               }
-              arr
-            }))
-          )
-        }
+              f(Right((
+                entityTag,
+                orderedSchema,
+                pkColName,
+                copyCtx.datasetInfo.localeName,
+                approxRowCount,
+                it.map { row =>
+                  val arr = new Array[JValue](unwrappedCids.length)
+                  var i = 0
+                  while(i != unwrappedCids.length) {
+                    val cid = new ColumnId(unwrappedCids(i))
+                    val rep = jsonSchema(cid)
+                    arr(i) = rep.toJValue(row(cid))
+                    i += 1
+                  }
+                  arr
+                }))
+              )
+            }
+          }
+        case Left(err) => err
       }
     }
+  }
+
+  /**
+   * Read row identifier value in string form into SoQLValue.
+   * It is an error only when the column rep cannot parse a non-empty row id value.
+   * It is not an error if row id value does not exist but is valid.
+   */
+  private def readRowId(u: PostgresUniverse[SoQLType, SoQLValue],
+                        id: DatasetId,
+                        copy: CopySelector,
+                        rowId: Option[String]): Either[Exporter.Result[Unit], Option[SoQLValue]] = {
+
+    ( for {
+        rid <- rowId
+        // Missing dataset copy is not handled as error here.  It is handled further downstream.
+        ctxOpt <- u.datasetReader.openDataset(id, copy)
+        ctx <- ctxOpt
+      } yield {
+        ctx.copyCtx.userIdCol match {
+          case Some(_) => // dataset has custom row identifier
+            val rowIdRep = SoQLRep.csvRep(ctx.copyCtx.pkCol_!)
+            // optional row id type must be simple which is represented by a single csv string.
+            rowIdRep.decode(IndexedSeq(rid), IndexedSeq(0))
+                    .map(x => Right(Some(x)))
+                    .getOrElse(Left(Exporter.InvalidRowId))
+          case None => // no customer row identifier.  Use system row identifier.
+            val rowIdRep = common.jsonReps(ctx.copyCtx.datasetInfo)(ctx.copyCtx.pkCol_!.typ)
+            rowIdRep.fromJValue(JString(rid)).map(x => Right(Some(x))).getOrElse(Left(Exporter.InvalidRowId))
+        }
+      }
+    ).getOrElse(Right(None))
   }
 
   def makeReportTemporaryFile() =
