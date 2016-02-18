@@ -778,8 +778,8 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
     "INSERT INTO column_map (copy_system_id, system_id, user_column_id, field_name, field_name_casefolded, type_name, physical_column_base_base, is_system_primary_key, is_user_primary_key, is_version) " +
       "SELECT ?, system_id, user_column_id, field_name, field_name_casefolded, type_name, physical_column_base_base, null, null, null " +
       "FROM column_map WHERE copy_system_id = ?;" +
-    "INSERT INTO computation_strategy_map (copy_system_id, column_system_id, strategy_type, recompute, source_column_ids, parameters) " +
-      "SELECT ?, column_system_id, strategy_type, recompute, source_column_ids, parameters FROM computation_strategy_map " +
+    "INSERT INTO computation_strategy_map (copy_system_id, column_system_id, strategy_type, source_column_ids, parameters) " +
+      "SELECT ?, column_system_id, strategy_type, source_column_ids, parameters FROM computation_strategy_map " +
       "WHERE copy_system_id = ?"
   def copySchemaIntoUnpublishedCopy(oldCopy: CopyInfo, newCopy: CopyInfo) {
     using(conn.prepareStatement(ensureUnpublishedCopyQuery_columnMap)) { stmt =>
