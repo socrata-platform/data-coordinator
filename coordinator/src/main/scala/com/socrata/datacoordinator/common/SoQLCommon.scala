@@ -42,8 +42,7 @@ object SoQLSystemColumns { sc =>
   def isSystemColumnId(name: UserColumnId): Boolean =
     name.underlying.startsWith(":") && !name.underlying.startsWith(":@")
 
-  case class MutatorColInfo(t: SoQLType, id: UserColumnId) extends MutatorColumnInfo[SoQLType] {
-    def typ = t
+  case class MutatorColInfo(typ: SoQLType, id: UserColumnId) extends MutatorColumnInfo[SoQLType] {
     def fieldName = Some(ColumnName(id.underlying))
     def computationStrategy = None
   }

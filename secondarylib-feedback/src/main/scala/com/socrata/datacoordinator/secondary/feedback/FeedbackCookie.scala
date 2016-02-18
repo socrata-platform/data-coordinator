@@ -43,4 +43,29 @@ case class CookieSchema(dataVersion: DataVersion,
                         computationRetriesLeft: Int,
                         mutationScriptRetriesLeft: Int,
                         resync: Boolean,
-                        extra: JValue)
+                        extra: JValue) {
+
+  override def equals(any: Any): Boolean = {
+    if (any == null) return false
+    any match {
+      case other: CookieSchema =>
+        this.dataVersion == other.dataVersion &&
+          this.copyNumber == other.copyNumber &&
+          this.primaryKey == other.primaryKey &&
+          this.columnIdMap == other.columnIdMap &&
+          this.strategyMap == other.strategyMap &&
+          obfuscationKeyEquals(other.obfuscationKey) && // stupid arrays
+          this.computationRetriesLeft == other.computationRetriesLeft &&
+          this.mutationScriptRetriesLeft == other.mutationScriptRetriesLeft &&
+          this.resync == other.resync &&
+          this.extra == other.extra
+      case _ => false
+    }
+  }
+
+  private def obfuscationKeyEquals(other: Array[Byte]): Boolean = {
+    if (this.obfuscationKey == null) return other == null
+    if (other == null) return false
+    this.obfuscationKey.toSeq == other.toSeq
+  }
+}

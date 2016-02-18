@@ -5,11 +5,15 @@
     http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
     <changeSet author="Alexa Rust" id="20160111-add-column-field-name">
         <sql>
-            ALTER TABLE column_map ADD COLUMN field_name TEXT NULL,
-            ADD COLUMN field_name_casefolded TEXT NULL, ADD UNIQUE (copy_system_id, field_name);
+            ALTER TABLE column_map
+            ADD COLUMN field_name TEXT NULL,
+            ADD COLUMN field_name_casefolded TEXT NULL,
+            ADD UNIQUE (copy_system_id, field_name_casefolded);
         </sql>
         <rollback>
-            ALTER TABLE column_map DROP COLUMN field_name, DROP COLUMN field_name_casefolded;
+            ALTER TABLE column_map
+            DROP COLUMN field_name,
+            DROP COLUMN field_name_casefolded;
         </rollback>
     </changeSet>
 </databaseChangeLog>

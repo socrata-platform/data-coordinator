@@ -912,7 +912,7 @@ class PostgresDatasetMapWriter[CT](val conn: Connection, tns: TypeNamespace[CT],
     //   * save the value to restore.
     // One might think this would be better done as a stored procedure,
     // which can do the save/restore thing automatically -- see the paragraph
-    // that begins "If SET LOCAL i used within a function..." at
+    // that begins "If SET LOCAL is used within a function..." at
     //     http://www.postgresql.org/docs/9.2/static/sql-set.html
     // but unfortunately setting statement_timeout doesn't affect the
     // _current_ statement.  For this same reason we're not just doing all

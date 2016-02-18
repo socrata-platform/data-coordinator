@@ -37,7 +37,6 @@ class CoordinatorErrorsAndMetrics(formatDatasetId: DatasetId => String) extends 
   }
 
   def fieldNameErrorResponse(msg: String, commandIndex: Long, dataset: DatasetId, fieldName: ColumnName, resp: HttpResponse = BadRequest) = {
-    import scala.language.reflectiveCalls
     datasetErrorResponse(resp, msg,
       "dataset" -> JString(formatDatasetId(dataset)),
       "field_name" -> JsonEncode.toJValue(fieldName),
