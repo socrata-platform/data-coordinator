@@ -43,4 +43,37 @@ case class CookieSchema(dataVersion: DataVersion,
                         computationRetriesLeft: Int,
                         mutationScriptRetriesLeft: Int,
                         resync: Boolean,
-                        extra: JValue)
+                        extra: JValue) {
+
+  override def equals(any: Any): Boolean = {
+    any match {
+      case other: CookieSchema =>
+        this.dataVersion == other.dataVersion &&
+          this.copyNumber == other.copyNumber &&
+          this.primaryKey == other.primaryKey &&
+          this.columnIdMap == other.columnIdMap &&
+          this.strategyMap == other.strategyMap &&
+          java.util.Arrays.equals(this.obfuscationKey, other.obfuscationKey) && // stupid arrays
+          this.computationRetriesLeft == other.computationRetriesLeft &&
+          this.mutationScriptRetriesLeft == other.mutationScriptRetriesLeft &&
+          this.resync == other.resync &&
+          this.extra == other.extra
+      case _ => false
+    }
+  }
+
+  override def hashCode: Int = {
+    var code = 17
+    code = code * 41 + (if (dataVersion == null) 0 else dataVersion.hashCode)
+    code = code * 41 + (if (copyNumber == null) 0 else copyNumber.hashCode)
+    code = code * 41 + primaryKey.hashCode
+    code = code * 41 + (if (columnIdMap == null) 0 else columnIdMap.hashCode)
+    code = code * 41 + (if (strategyMap == null) 0 else strategyMap.hashCode)
+    code = code * 41 + java.util.Arrays.hashCode(obfuscationKey)
+    code = code * 41 + computationRetriesLeft.hashCode
+    code = code * 41 + mutationScriptRetriesLeft.hashCode
+    code = code * 41 + resync.hashCode
+    code = code * 41 + (if (extra == null) 0 else extra.hashCode)
+    code
+  }
+}

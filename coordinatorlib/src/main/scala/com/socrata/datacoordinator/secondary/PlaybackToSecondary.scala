@@ -359,14 +359,12 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
               None
           }
         }
-      }, { case e: Throwable =>
-        e match {
-          case ResyncSecondaryException(reason) =>
-            logger.warn("Received resync while resyncing.  Resyncing as requested after waiting 10 seconds. " +
-              " Reason: " + reason)
-            Thread.sleep(10L * 1000)
-          case _ => ignoreSerializationFailure(e)
-        }
+      }, {
+        case ResyncSecondaryException(reason) =>
+          logger.warn("Received resync while resyncing.  Resyncing as requested after waiting 10 seconds. " +
+            " Reason: " + reason)
+          Thread.sleep(10L * 1000)
+        case e: Throwable => ignoreSerializationFailure(e)
       })
       retrying[Unit]({
         latestCopyInfo.foreach { latest =>
