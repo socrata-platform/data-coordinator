@@ -3,6 +3,7 @@ package com.socrata.datacoordinator.truth.metadata
 import com.socrata.datacoordinator.util.collection.{MutableColumnIdMap, ColumnIdMap}
 import com.socrata.datacoordinator.id.{UserColumnId, ColumnId}
 import com.socrata.datacoordinator.util.RotateSchema
+import com.socrata.soql.environment.ColumnName
 
 class DatasetCopyContext[CT](val copyInfo: CopyInfo, val schema: ColumnIdMap[ColumnInfo[CT]]) {
   require(schema.values.forall(_.copyInfo eq copyInfo))
@@ -67,6 +68,11 @@ class MutableDatasetCopyContext[CT](var _copyInfo: CopyInfo, private var schema:
 
   def removeColumn(cid: ColumnId) {
     schema -= cid
+    _currentSchema = null
+  }
+
+  def updateColumn(updated: ColumnInfo[CT]): Unit = {
+    schema(updated.systemId) = updated
     _currentSchema = null
   }
 

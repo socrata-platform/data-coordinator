@@ -106,6 +106,10 @@ class RepBasedPostgresSchemaLoader[CT, CV](conn: Connection, logger: Logger[CT, 
     }
   }
 
+  def updateFieldName(columnInfo: ColumnInfo[CT]): Unit = {
+    logger.fieldNameUpdated(columnInfo)
+  }
+
   def makePrimaryKey(columnInfo: ColumnInfo[CT]) {
     makePrimaryKeyWithoutLogging(columnInfo)
     logger.rowIdentifierSet(columnInfo)

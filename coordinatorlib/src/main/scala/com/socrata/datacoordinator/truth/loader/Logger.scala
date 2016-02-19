@@ -8,6 +8,7 @@ trait Logger[CT, CV] extends DataLogger[CV] {
   def truncated(): Unit
   def columnCreated(info: ColumnInfo[CT]): Unit
   def columnRemoved(info: ColumnInfo[CT]): Unit
+  def fieldNameUpdated(info: ColumnInfo[CT]): Unit
   def rowIdentifierSet(newIdentifier: ColumnInfo[CT]): Unit
   def rowIdentifierCleared(oldIdentifier: ColumnInfo[CT]): Unit
   def systemIdColumnSet(info: ColumnInfo[CT]): Unit

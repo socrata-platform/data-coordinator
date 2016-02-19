@@ -8,6 +8,7 @@ import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.id.sql._
+import com.socrata.datacoordinator.secondary.Secondary.Cookie
 import scala.collection.immutable.VectorBuilder
 import com.socrata.datacoordinator.truth.metadata
 import com.socrata.datacoordinator.util.PostgresUniqueViolation
@@ -103,6 +104,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
         |  ,latest_secondary_lifecycle_stage
         |  ,latest_data_version
         |  ,retry_num
+        |  ,replay_num
         |  ,cookie
         |FROM secondary_manifest
         |WHERE store_id = ?
@@ -126,6 +128,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
             startingLifecycleStage = rs.getLifecycleStage("latest_secondary_lifecycle_stage"),
             endingDataVersion = rs.getLong("latest_data_version"),
             retryNum = rs.getInt("retry_num"),
+            replayNum = rs.getInt("replay_num"),
             initialCookie = Option(rs.getString("cookie")))
           markDatasetClaimedForReplication(j)
           Some(j)
@@ -144,6 +147,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
         |  ,latest_secondary_lifecycle_stage
         |  ,latest_data_version
         |  ,retry_num
+        |  ,replay_num
         |  ,cookie
         |FROM secondary_manifest
         |WHERE claimant_id = ?
@@ -160,6 +164,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
             startingLifecycleStage = rs.getLifecycleStage("latest_secondary_lifecycle_stage"),
             endingDataVersion = rs.getLong("latest_data_version"),
             retryNum = rs.getInt("retry_num"),
+            replayNum = rs.getInt("replay_num"),
             initialCookie = Option(rs.getString("cookie")))
           releaseClaimedDataset(j)
         }
@@ -251,6 +256,44 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
       stmt.setString(3, storeId)
       stmt.setDatasetId(4, datasetId)
       stmt.executeUpdate()
+    }
+  }
+
+  def updateReplayInfo(storeId: String, datasetId: DatasetId, cookie: Cookie, replayNum: Int, nextReplayDelaySecs: Int): Unit = {
+    using(conn.prepareStatement(
+      """UPDATE secondary_manifest
+        |SET cookie = ?
+        |  ,retry_num = ?
+        |  ,replay_num = ?
+        |  ,next_retry = CURRENT_TIMESTAMP + (? :: INTERVAL)
+        |WHERE store_id = ?
+        |  AND dataset_system_id = ?""".stripMargin)) { stmt =>
+      cookie match {
+        case Some(c) => stmt.setString(1, c)
+        case None => stmt.setNull(1, Types.VARCHAR)
+      }
+      stmt.setInt(2, 0) // start with fresh retry limit
+      stmt.setInt(3, replayNum)
+      stmt.setString(4, "%s seconds".format(nextReplayDelaySecs))
+      stmt.setString(5, storeId)
+      stmt.setDatasetId(6, datasetId)
+      stmt.executeUpdate()
+    }
+  }
+
+  def outOfDateFeedbackSecondaries(datasetId: DatasetId): Set[String] = { // store IDs =
+    using(conn.prepareStatement(
+      """SELECT sm.store_id
+        |  FROM secondary_manifest sm JOIN secondary_stores_config ssc ON sm.store_id = ssc.store_id
+        |  WHERE sm.dataset_system_id = ?
+        |        AND ssc.is_feedback_secondary
+        |        AND sm.latest_data_version <> sm.latest_secondary_data_version""".stripMargin)) { stmt =>
+      stmt.setDatasetId(1, datasetId)
+      using(stmt.executeQuery()) { rs =>
+        val result = Set.newBuilder[String]
+        while(rs.next()) result += rs.getString(1)
+        result.result()
+      }
     }
   }
 }

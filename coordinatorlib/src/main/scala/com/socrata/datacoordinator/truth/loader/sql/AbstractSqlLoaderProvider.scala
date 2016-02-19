@@ -11,11 +11,11 @@ import java.io.OutputStream
 import com.socrata.datacoordinator.util.{RowIdProvider, RowVersionProvider, TransferrableContextTimingReport, RowDataProvider}
 
 abstract class AbstractSqlLoaderProvider[CT, CV](val executor: ExecutorService, typeContext: TypeContext[CT, CV], repFor: ColumnInfo[CT] => SqlColumnRep[CT, CV], isSystemColumn: ColumnInfo[CT] => Boolean)
-  extends ((Connection, DatasetCopyContext[CT], RowPreparer[CV], RowIdProvider, RowVersionProvider, Logger[CT, CV], ReportWriter[CV], TransferrableContextTimingReport) => Loader[CV])
+  extends ((Connection, DatasetCopyContext[CT], RowPreparer[CV], Boolean, RowIdProvider, RowVersionProvider, Logger[CT, CV], ReportWriter[CV], TransferrableContextTimingReport) => Loader[CV])
 {
   def produce(tableName: String, datasetContext: RepBasedSqlDatasetContext[CT, CV]): DataSqlizer[CT, CV]
 
-  def apply(conn: Connection, copyCtx: DatasetCopyContext[CT], rowPreparer: RowPreparer[CV], idProvider: RowIdProvider, versionProvider: RowVersionProvider, logger: Logger[CT, CV], reportWriter: ReportWriter[CV], timingReport: TransferrableContextTimingReport) = {
+  def apply(conn: Connection, copyCtx: DatasetCopyContext[CT], rowPreparer: RowPreparer[CV], updateOnly: Boolean, idProvider: RowIdProvider, versionProvider: RowVersionProvider, logger: Logger[CT, CV], reportWriter: ReportWriter[CV], timingReport: TransferrableContextTimingReport) = {
     val tableName = copyCtx.copyInfo.dataTableName
 
     val repSchema = copyCtx.schema.mapValuesStrict(repFor)
@@ -34,7 +34,7 @@ abstract class AbstractSqlLoaderProvider[CT, CV](val executor: ExecutorService, 
       RepBasedSqlDatasetContext(typeContext, repSchema, userPrimaryKeyInfo, systemPrimaryKey, version, copyCtx.schema.filter { case (_, ci) => isSystemColumn(ci) }.keySet)
 
     val sqlizer = produce(tableName, datasetContext)
-    SqlLoader(conn, rowPreparer, sqlizer, logger, idProvider, versionProvider, executor, reportWriter, timingReport)
+    SqlLoader(conn, rowPreparer, updateOnly, sqlizer, logger, idProvider, versionProvider, executor, reportWriter, timingReport)
   }
 }
 

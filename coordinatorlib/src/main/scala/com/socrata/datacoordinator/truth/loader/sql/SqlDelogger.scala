@@ -144,6 +144,8 @@ class SqlDelogger[CV](connection: Connection,
           decodeColumnCreated(aux)
         case SqlLogger.ColumnRemoved =>
           decodeColumnRemoved(aux)
+        case SqlLogger.FieldNameUpdated =>
+          decodeFieldNameUpdated(aux)
         case SqlLogger.RowIdentifierSet =>
           decodeRowIdentifierSet(aux)
         case SqlLogger.RowIdentifierCleared =>
@@ -194,6 +196,11 @@ class SqlDelogger[CV](connection: Connection,
     def decodeColumnRemoved(aux: Array[Byte]) = {
       val msg = messages.ColumnRemoved.defaultInstance.mergeFrom(aux)
       Delogger.ColumnRemoved(convert(msg.columnInfo))
+    }
+
+    def decodeFieldNameUpdated(aux: Array[Byte]) = {
+      val msg = messages.FieldNameUpdated.defaultInstance.mergeFrom(aux)
+      Delogger.FieldNameUpdated(convert(msg.columnInfo))
     }
 
     def decodeRowIdentifierSet(aux: Array[Byte]) = {

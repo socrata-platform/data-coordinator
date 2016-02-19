@@ -77,6 +77,13 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
     logLine(ColumnRemoved, messages.ColumnRemoved(convert(info.unanchored)))
   }
 
+  def fieldNameUpdated(info: ColumnInfo[CT]): Unit = {
+    checkTxn()
+    flushRowData()
+    assert(info.fieldName.isDefined, "Got a field name updated without a field name?  This should be impossible.")
+    logLine(FieldNameUpdated, messages.FieldNameUpdated(convert(info.unanchored)))
+  }
+
   def rowIdentifierSet(info: ColumnInfo[CT]) {
     checkTxn()
     flushRowData()

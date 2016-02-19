@@ -2,6 +2,11 @@ package com.socrata.datacoordinator
 package truth.metadata
 package sql
 
+import com.rojoma.json.v3.ast.JObject
+import com.rojoma.json.v3.codec.JsonDecode
+import com.rojoma.json.v3.io.{CompactJsonWriter, JsonReaderException}
+import com.rojoma.json.v3.util.JsonUtil
+import com.socrata.soql.environment.ColumnName
 import scala.collection.immutable.VectorBuilder
 
 import java.sql._
@@ -13,19 +18,10 @@ import com.socrata.datacoordinator.truth.{DatabaseInReadOnlyMode, DatasetIdInUse
 import com.socrata.datacoordinator.id._
 import com.socrata.datacoordinator.util.{TimingReport, PostgresUniqueViolation}
 import com.socrata.datacoordinator.util.collection.MutableColumnIdMap
-import com.socrata.datacoordinator.truth.metadata.CopyPair
 import com.socrata.datacoordinator.truth.metadata.`-impl`._
 import scala.concurrent.duration.Duration
-import com.socrata.datacoordinator.truth.metadata.DatasetInfo
-import com.socrata.datacoordinator.truth.metadata.ColumnInfo
-import com.socrata.datacoordinator.truth.metadata.CopyInfo
 import com.socrata.datacoordinator.id.sql._
-import scala.Some
-import com.socrata.datacoordinator.truth.metadata.DatasetInfo
-import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import scala.Array
-import com.socrata.datacoordinator.truth.metadata.CopyPair
-import com.socrata.datacoordinator.truth.metadata.CopyInfo
 import org.joda.time.DateTime
 
 trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] {
@@ -170,27 +166,52 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
     }
   }
 
-  def schemaQuery = "SELECT system_id, user_column_id, type_name, physical_column_base_base, (is_system_primary_key IS NOT NULL) is_system_primary_key, (is_user_primary_key IS NOT NULL) is_user_primary_key, (is_version IS NOT NULL) is_version FROM column_map WHERE copy_system_id = ?"
+  def schemaQuery = "SELECT system_id, user_column_id, field_name, type_name, physical_column_base_base, (is_system_primary_key IS NOT NULL) is_system_primary_key, (is_user_primary_key IS NOT NULL) is_user_primary_key, (is_version IS NOT NULL) is_version FROM column_map WHERE copy_system_id = ?;" +
+    "SELECT column_system_id, strategy_type, source_column_ids, parameters FROM computation_strategy_map WHERE copy_system_id = ?;"
   def schema(copyInfo: CopyInfo) = {
     using(conn.prepareStatement(schemaQuery)) { stmt =>
       stmt.setLong(1, copyInfo.systemId.underlying)
-      using(t("schema-lookup","dataset_id"->copyInfo.datasetInfo.systemId,"copy_num"->copyInfo.copyNumber)(stmt.executeQuery())) { rs =>
-        val result = new MutableColumnIdMap[ColumnInfo[CT]]
-        while(rs.next()) {
+      stmt.setLong(2, copyInfo.systemId.underlying)
+      val result = new MutableColumnIdMap[ColumnInfo[CT]]
+      t("schema-lookup", "dataset_id" -> copyInfo.datasetInfo.systemId, "copy_num" -> copyInfo.copyNumber)(stmt.execute())
+      using(stmt.getResultSet) { rs =>
+        while (rs.next()) {
           val systemId = new ColumnId(rs.getLong("system_id"))
           val columnName = new UserColumnId(rs.getString("user_column_id"))
+          val fieldName = Option(rs.getString("field_name")).map(new ColumnName(_))
           result += systemId -> ColumnInfo(
             copyInfo,
             systemId,
             columnName,
+            fieldName,
             typeNamespace.typeForName(copyInfo.datasetInfo, rs.getString("type_name")),
             rs.getString("physical_column_base_base"),
             rs.getBoolean("is_system_primary_key"),
             rs.getBoolean("is_user_primary_key"),
-            rs.getBoolean("is_version"))
+            rs.getBoolean("is_version"),
+            None)
         }
-        result.freeze()
       }
+
+      if (!stmt.getMoreResults()) sys.error("I issued two queries, why don't I have two resultSets?")
+      using(stmt.getResultSet) { rs =>
+        while (rs.next()) {
+          val systemId = new ColumnId(rs.getLong("column_system_id"))
+          val strategyType = new StrategyType(rs.getString("strategy_type"))
+          val sourceColumnIds = rs.getArray("source_column_ids").getArray.asInstanceOf[Array[String]].map(new UserColumnId(_))
+          val parameters = try {
+            JsonUtil.parseJson[JObject](rs.getString("parameters")).right.getOrElse {
+              sys.error("Invalid data in the database: the computation strategy parameters for the column " + systemId + " on copy " + copyInfo.copyNumber + " of dataset " + copyInfo.datasetInfo.systemId + " is valid JSON but not an object")
+            }
+          } catch {
+            case _: JsonReaderException =>
+              sys.error("Invalid data in the database: the computation strategy parameters for the column " + systemId + " on copy " + copyInfo.copyNumber + " of dataset " + copyInfo.datasetInfo.systemId + " is not valid JSON")
+          }
+          val csi = new ComputationStrategyInfo(strategyType, sourceColumnIds, parameters)
+          result(systemId) = result(systemId).copy(computationStrategyInfo = Some(csi))
+        }
+      }
+      result.freeze()
     }
   }
 
@@ -243,21 +264,29 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
 }
 
 class PostgresDatasetMapReader[CT](val conn: Connection, tns: TypeNamespace[CT], timingReport: TimingReport) extends DatasetMapReader[CT] with BasePostgresDatasetMapReader[CT] {
+  private val log = org.slf4j.LoggerFactory.getLogger(classOf[BasePostgresDatasetMapReader[_]])
+
   implicit def typeNamespace = tns
   def t = timingReport
 
   def datasetInfoBySystemIdQuery = "SELECT system_id, next_counter_value, locale_name, obfuscation_key FROM dataset_map WHERE system_id = ?"
-  def datasetInfo(datasetId: DatasetId) =
+  def datasetInfo(datasetId: DatasetId, repeatableRead: Boolean = false) = {
+    if (repeatableRead) {
+      log.info("Attempting to change transaction isolation level...")
+      conn.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ)
+      log.info("Changed transaction isolation level to REPEATABLE READ")
+    }
     using(conn.prepareStatement(datasetInfoBySystemIdQuery)) { stmt =>
       stmt.setDatasetId(1, datasetId)
       using(t("lookup-dataset", "dataset_id" -> datasetId)(stmt.executeQuery())) { rs =>
-        if(rs.next()) {
+        if (rs.next()) {
           Some(DatasetInfo(rs.getDatasetId("system_id"), rs.getLong("next_counter_value"), rs.getString("locale_name"), rs.getBytes("obfuscation_key")))
         } else {
           None
         }
       }
     }
+  }
 }
 
 trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] with `-impl`.BaseDatasetMapWriter[CT] {
@@ -328,6 +357,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
   }
 
   // Yay no "DELETE ... CASCADE"!
+  def deleteQuery_computationStrategyMap = "DELETE FROM computation_strategy_map WHERE copy_system_id IN (SELECT system_id FROM copy_map WHERE dataset_system_id = ?)"
   def deleteQuery_columnMap = "DELETE FROM column_map WHERE copy_system_id IN (SELECT system_id FROM copy_map WHERE dataset_system_id = ?)"
   def deleteQuery_rollupMap = "DELETE FROM rollup_map WHERE copy_system_id IN (SELECT system_id FROM copy_map WHERE dataset_system_id = ?)"
   def deleteQuery_copyMap = "DELETE FROM copy_map WHERE dataset_system_id = ?"
@@ -342,6 +372,10 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
   }
 
   def deleteCopiesOf(datasetInfo: DatasetInfo) {
+    using(conn.prepareStatement(deleteQuery_computationStrategyMap)) { stmt =>
+      stmt.setDatasetId(1, datasetInfo.systemId)
+      t("delete-dataset-computation-strategies", "dataset_id" -> datasetInfo.systemId)(stmt.executeUpdate())
+    }
     using(conn.prepareStatement(deleteQuery_columnMap)) { stmt =>
       stmt.setDatasetId(1, datasetInfo.systemId)
       t("delete-dataset-columns", "dataset_id" -> datasetInfo.systemId)(stmt.executeUpdate())
@@ -410,7 +444,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
     }
   }
 
-  def addColumn(copyInfo: CopyInfo, userColumnId: UserColumnId, typ: CT, physicalColumnBaseBase: String): ColumnInfo[CT] = {
+  def addColumn(copyInfo: CopyInfo, userColumnId: UserColumnId, fieldName: Option[ColumnName], typ: CT, physicalColumnBaseBase: String, computationStrategyInfo: Option[ComputationStrategyInfo] = None): ColumnInfo[CT] = {
     val systemId =
       previousVersion(copyInfo) match {
         case Some(previousCopy) =>
@@ -419,19 +453,22 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
           findFirstFreeColumnId(copyInfo, copyInfo)
       }
 
-    addColumnWithId(systemId, copyInfo, userColumnId, typ, physicalColumnBaseBase)
+    addColumnWithId(systemId, copyInfo, userColumnId, fieldName, typ, physicalColumnBaseBase, computationStrategyInfo)
   }
 
-  def addColumnQuery = "INSERT INTO column_map (system_id, copy_system_id, user_column_id, type_name, physical_column_base_base) VALUES (?, ?, ?, ?, ?)"
-  def addColumnWithId(systemId: ColumnId, copyInfo: CopyInfo, userColumnId: UserColumnId, typ: CT, physicalColumnBaseBase: String): ColumnInfo[CT] = {
-    using(conn.prepareStatement(addColumnQuery)) { stmt =>
-      val columnInfo = ColumnInfo[CT](copyInfo, systemId, userColumnId, typ, physicalColumnBaseBase, isSystemPrimaryKey = false, isUserPrimaryKey = false, isVersion = false)
+  def addColumnQuery = "INSERT INTO column_map (system_id, copy_system_id, user_column_id, field_name, field_name_casefolded, type_name, physical_column_base_base) VALUES (?, ?, ?, ?, ?, ?, ?)"
+  def addComputationStrategyQuery = "INSERT INTO computation_strategy_map (column_system_id, copy_system_id, strategy_type, source_column_ids, parameters) VALUES (?, ?, ?, ?, ?)"
+  def addColumnWithId(systemId: ColumnId, copyInfo: CopyInfo, userColumnId: UserColumnId, fieldName: Option[ColumnName], typ: CT, physicalColumnBaseBase: String, computationStrategyInfo: Option[ComputationStrategyInfo] = None): ColumnInfo[CT] = {
+    val columnInfo = ColumnInfo[CT](copyInfo, systemId, userColumnId, fieldName, typ, physicalColumnBaseBase, isSystemPrimaryKey = false, isUserPrimaryKey = false, isVersion = false, computationStrategyInfo)
 
+    val result = using(conn.prepareStatement(addColumnQuery)) { stmt =>
       stmt.setLong(1, columnInfo.systemId.underlying)
       stmt.setLong(2, columnInfo.copyInfo.systemId.underlying)
       stmt.setString(3, userColumnId.underlying)
-      stmt.setString(4, typeNamespace.nameForType(typ))
-      stmt.setString(5, physicalColumnBaseBase)
+      stmt.setString(4, fieldName.map(_.name).orNull)
+      stmt.setString(5, fieldName.map(_.caseFolded).orNull)
+      stmt.setString(6, typeNamespace.nameForType(typ))
+      stmt.setString(7, physicalColumnBaseBase)
       try {
         t("add-column-with-id", "dataset_id" -> copyInfo.datasetInfo.systemId, "copy_num" -> copyInfo.copyNumber, "column_id" -> systemId)(stmt.execute())
       } catch {
@@ -439,10 +476,30 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
           throw new ColumnSystemIdAlreadyInUse(copyInfo, systemId)
         case PostgresUniqueViolation("copy_system_id", "user_column_id") =>
           throw new ColumnAlreadyExistsException(copyInfo, userColumnId)
+        case PostgresUniqueViolation("copy_system_id", "field_name_casefolded") =>
+          throw new FieldNameAlreadyInUse(copyInfo, fieldName.get /* Won't have gotten this error without the FN being set */)
       }
-
-      columnInfo
     }
+
+    computationStrategyInfo.foreach { strategy =>
+      val ComputationStrategyInfo(strategyType, sourceColumnIds, parameters) = strategy
+
+      using(conn.prepareStatement(addComputationStrategyQuery)) { stmt =>
+        stmt.setLong(1, columnInfo.systemId.underlying)
+        stmt.setLong(2, columnInfo.copyInfo.systemId.underlying)
+        stmt.setString(3, strategyType.underlying)
+        stmt.setArray(4, conn.createArrayOf("varchar", sourceColumnIds.map(_.underlying).toArray))
+        stmt.setString(5, CompactJsonWriter.toString(parameters))
+        try {
+          t("add-column-computation-strategy-with-id", "dataset_id" -> copyInfo.datasetInfo.systemId, "copy_num" -> copyInfo.copyNumber, "column_id" -> systemId)(stmt.execute())
+        } catch {
+          case PostgresUniqueViolation("copy_system_id", "column_system_id") =>
+            throw new ColumnSystemIdAlreadyInUse(copyInfo, systemId)
+        }
+      }
+    }
+
+    columnInfo
   }
 
   def unsafeCreateDatasetQuery = "INSERT INTO dataset_map (system_id, next_counter_value, locale_name, obfuscation_key) VALUES (?, ?, ?, ?)"
@@ -513,6 +570,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
 
   def dropColumnQuery = "DELETE FROM column_map WHERE copy_system_id = ? AND system_id = ?"
   def dropColumn(columnInfo: ColumnInfo[CT]) {
+    columnInfo.computationStrategyInfo.foreach{ _ => dropComputationStrategy(columnInfo) }
     using(conn.prepareStatement(dropColumnQuery)) { stmt =>
       stmt.setLong(1, columnInfo.copyInfo.systemId.underlying)
       stmt.setLong(2, columnInfo.systemId.underlying)
@@ -521,17 +579,34 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
     }
   }
 
-  def convertColumnQuery = "UPDATE column_map SET type_name = ?, physical_column_base_base = ? WHERE copy_system_id = ? AND system_id = ?"
-  def convertColumn(columnInfo: ColumnInfo[CT], newType: CT, newPhysicalColumnBaseBase: String): ColumnInfo[CT] =
-    using(conn.prepareStatement(convertColumnQuery)) { stmt =>
-      stmt.setString(1, typeNamespace.nameForType(newType))
-      stmt.setString(2, newPhysicalColumnBaseBase)
+  def dropComputationStrategyQuery = "DELETE FROM computation_strategy_map WHERE copy_system_id = ? AND column_system_id = ?"
+  def dropComputationStrategy(columnInfo: ColumnInfo[CT]): ColumnInfo[CT] = {
+    using(conn.prepareStatement(dropComputationStrategyQuery)) { stmt =>
+      stmt.setLong(1, columnInfo.copyInfo.systemId.underlying)
+      stmt.setLong(2, columnInfo.systemId.underlying)
+      val count = t("drop-computation-strategy", "dataset_id" -> columnInfo.copyInfo.datasetInfo.systemId, "copy_num" -> columnInfo.copyInfo.copyNumber, "column_id" -> columnInfo.systemId)(stmt.executeUpdate())
+      assert(count == 1, "Computation strategy did not exist to be dropped?")
+      columnInfo.copy(computationStrategyInfo = None)
+    }
+  }
+
+  def updateFieldNameQuery = "UPDATE column_map SET field_name = ?, field_name_casefolded = ? WHERE copy_system_id = ? AND system_id = ?"
+  def updateFieldName(columnInfo: ColumnInfo[CT], newName: ColumnName): ColumnInfo[CT] = {
+    using(conn.prepareStatement(updateFieldNameQuery)) { stmt =>
+      stmt.setString(1, newName.name)
+      stmt.setString(2, newName.caseFolded)
       stmt.setLong(3, columnInfo.copyInfo.systemId.underlying)
       stmt.setLong(4, columnInfo.systemId.underlying)
-      val count = t("convert-column", "dataset_id" -> columnInfo.copyInfo.datasetInfo.systemId, "copy_num" -> columnInfo.copyInfo.copyNumber, "column_id" -> columnInfo.systemId)(stmt.executeUpdate())
-      assert(count == 1, "Column did not exist to be converted?")
-      columnInfo.copy(typ = newType, physicalColumnBaseBase = newPhysicalColumnBaseBase)
+      val count = try {
+        t("update-field-name", "dataset_id" -> columnInfo.copyInfo.datasetInfo.systemId, "copy_num" -> columnInfo.copyInfo.copyNumber, "column_id" -> columnInfo.systemId)(stmt.executeUpdate())
+      } catch {
+        case PostgresUniqueViolation("copy_system_id", "field_name_casefolded") =>
+          throw new FieldNameAlreadyInUse(columnInfo.copyInfo, newName)
+      }
+      assert(count == 1, "Column did not exist to have its field name updated?")
+      columnInfo.copy(fieldName = Some(newName))
     }
+  }
 
   def setSystemPrimaryKeyQuery = "UPDATE column_map SET is_system_primary_key = 'Unit' WHERE copy_system_id = ? AND system_id = ?"
   def setSystemPrimaryKey(columnInfo: ColumnInfo[CT]) =
@@ -699,11 +774,19 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
         }
     }
 
-  def ensureUnpublishedCopyQuery_columnMap = "INSERT INTO column_map (copy_system_id, system_id, user_column_id, type_name, physical_column_base_base, is_system_primary_key, is_user_primary_key, is_version) SELECT ?, system_id, user_column_id, type_name, physical_column_base_base, null, null, null FROM column_map WHERE copy_system_id = ?"
+  def ensureUnpublishedCopyQuery_columnMap =
+    "INSERT INTO column_map (copy_system_id, system_id, user_column_id, field_name, field_name_casefolded, type_name, physical_column_base_base, is_system_primary_key, is_user_primary_key, is_version) " +
+      "SELECT ?, system_id, user_column_id, field_name, field_name_casefolded, type_name, physical_column_base_base, null, null, null " +
+      "FROM column_map WHERE copy_system_id = ?;" +
+    "INSERT INTO computation_strategy_map (copy_system_id, column_system_id, strategy_type, source_column_ids, parameters) " +
+      "SELECT ?, column_system_id, strategy_type, source_column_ids, parameters FROM computation_strategy_map " +
+      "WHERE copy_system_id = ?"
   def copySchemaIntoUnpublishedCopy(oldCopy: CopyInfo, newCopy: CopyInfo) {
     using(conn.prepareStatement(ensureUnpublishedCopyQuery_columnMap)) { stmt =>
       stmt.setLong(1, newCopy.systemId.underlying)
       stmt.setLong(2, oldCopy.systemId.underlying)
+      stmt.setLong(3, newCopy.systemId.underlying)
+      stmt.setLong(4, oldCopy.systemId.underlying)
       t("copy-schema-to-unpublished-copy", "dataset_id" -> oldCopy.datasetInfo.systemId, "old_copy_num" -> oldCopy.copyNumber, "new_copy_num" -> newCopy.copyNumber)(stmt.execute())
     }
   }
@@ -821,7 +904,7 @@ class PostgresDatasetMapWriter[CT](val conn: Connection, tns: TypeNamespace[CT],
       if(semiExclusive) "SHARE" else "UPDATE"
     )
   def resetTimeout = "SET LOCAL statement_timeout TO DEFAULT"
-  def datasetInfo(datasetId: DatasetId, timeout: Duration, semiExclusive: Boolean) = {
+  def datasetInfo(datasetId: DatasetId, timeout: Duration, semiExclusive: Boolean): Option[DatasetInfo] = {
     // For now we assume that we're the only one setting the statement_timeout
     // parameter.  If this turns out to be wrong, we'll have to SHOW the
     // parameter in order to
@@ -835,6 +918,7 @@ class PostgresDatasetMapWriter[CT](val conn: Connection, tns: TypeNamespace[CT],
     // _current_ statement.  For this same reason we're not just doing all
     // three operations in a single "set timeout;query;restore timeout"
     // call.
+
     val savepoint = conn.setSavepoint()
     try {
       if(timeout.isFinite()) {

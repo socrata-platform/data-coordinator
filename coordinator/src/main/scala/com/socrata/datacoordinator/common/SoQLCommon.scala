@@ -2,8 +2,8 @@ package com.socrata.datacoordinator.common
 
 import com.rojoma.simplearm.{SimpleArm, Managed}
 import com.socrata.datacoordinator.common.soql.{SoQLRowLogCodec, SoQLRep, SoQLTypeContext}
-import com.socrata.datacoordinator.id.{UserColumnId, DatasetId, RowVersion, RowId}
-import com.socrata.datacoordinator.service.{SchemaFinder, MutatorCommon}
+import com.socrata.datacoordinator.id._
+import com.socrata.datacoordinator.service.{MutatorColumnInfo, SchemaFinder, MutatorCommon}
 import com.socrata.datacoordinator.truth.json.{JsonColumnWriteRep, JsonColumnRep, JsonColumnReadRep}
 import com.socrata.datacoordinator.truth.loader.RowPreparer
 import com.socrata.datacoordinator.truth.metadata.{DatasetCopyContext, DatasetInfo, AbstractColumnInfoLike, ColumnInfo}
@@ -30,17 +30,22 @@ object SoQLSystemColumns { sc =>
   val updatedAt = new UserColumnId(":updated_at")
   val version = new UserColumnId(":version")
 
-  val schemaFragment = UserColumnIdMap(
-    id -> SoQLID,
-    version -> SoQLVersion,
-    createdAt -> SoQLFixedTimestamp,
-    updatedAt -> SoQLFixedTimestamp
+  val schemaFragment = UserColumnIdMap[MutatorColumnInfo[SoQLType]](
+    id -> MutatorColInfo(SoQLID, id),
+    version -> MutatorColInfo(SoQLVersion, version),
+    createdAt -> MutatorColInfo(SoQLFixedTimestamp, createdAt),
+    updatedAt -> MutatorColInfo(SoQLFixedTimestamp, updatedAt)
   )
 
   val allSystemColumnIds = schemaFragment.keySet
 
   def isSystemColumnId(name: UserColumnId): Boolean =
     name.underlying.startsWith(":") && !name.underlying.startsWith(":@")
+
+  case class MutatorColInfo(typ: SoQLType, id: UserColumnId) extends MutatorColumnInfo[SoQLType] {
+    def fieldName = Some(ColumnName(id.underlying))
+    def computationStrategy = None
+  }
 }
 
 class SoQLCommon(dataSource: DataSource,

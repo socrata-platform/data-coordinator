@@ -3,10 +3,12 @@ package truth.loader
 
 import java.io.{ByteArrayInputStream, OutputStream, Closeable}
 
+import com.socrata.datacoordinator.secondary.ComputationStrategyInfo
 import com.socrata.datacoordinator.util.CloseableIterator
 import com.socrata.datacoordinator.truth.metadata.{UnanchoredRollupInfo, UnanchoredDatasetInfo, UnanchoredColumnInfo, UnanchoredCopyInfo}
-import com.socrata.datacoordinator.id.RowId
+import com.socrata.datacoordinator.id.{ColumnId, RowId}
 import com.socrata.datacoordinator.truth.RowLogCodec
+import com.socrata.soql.environment.ColumnName
 import scala.collection.immutable.VectorBuilder
 import java.util.zip.InflaterInputStream
 import org.joda.time.DateTime
@@ -43,6 +45,9 @@ object Delogger {
 
   case class ColumnRemoved(info: UnanchoredColumnInfo) extends LogEvent[Nothing]
   object ColumnRemoved extends LogEventCompanion
+
+  case class FieldNameUpdated(info: UnanchoredColumnInfo) extends LogEvent[Nothing]
+  object FieldNameUpdated extends LogEventCompanion
 
   case class RowIdentifierSet(info: UnanchoredColumnInfo) extends LogEvent[Nothing]
   object RowIdentifierSet extends LogEventCompanion
@@ -120,7 +125,7 @@ object Delogger {
 
   // Note: the Delogger test checks that this is exhaustive
   val allLogEventCompanions: Set[LogEventCompanion] =
-    Set(Truncated, ColumnCreated, ColumnRemoved, RowIdentifierSet, RowIdentifierCleared,
+    Set(Truncated, ColumnCreated, ColumnRemoved, FieldNameUpdated, RowIdentifierSet, RowIdentifierCleared,
       SystemRowIdentifierChanged, VersionColumnChanged, LastModifiedChanged, WorkingCopyCreated, DataCopied,
       WorkingCopyPublished, WorkingCopyDropped, SnapshotDropped, RowDataUpdated, CounterUpdated,
       RollupCreatedOrUpdated, RollupDropped, EndTransaction)
@@ -133,6 +138,7 @@ object Delogger {
         case Truncated => "Truncated"
         case ColumnCreated => "ColumnCreated"
         case ColumnRemoved => "ColumnRemoved"
+        case FieldNameUpdated => "FieldNameUpdated"
         case RowIdentifierSet => "RowIdentifierSet"
         case RowIdentifierCleared => "RowIdentifierCleared"
         case SystemRowIdentifierChanged => "SystemRowIdentifierChanged"

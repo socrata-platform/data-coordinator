@@ -3,17 +3,13 @@ package com.socrata.datacoordinator.service
 import com.rojoma.json.v3.ast._
 import com.rojoma.json.v3.codec.JsonEncode
 import com.rojoma.json.v3.io._
-import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.resources._
-import com.socrata.datacoordinator.truth._
 import com.socrata.datacoordinator.truth.loader._
-import com.socrata.http.server.implicits._
 import com.socrata.http.server.responses._
 import com.socrata.http.server.util.handlers.{ThreadRenamingHandler, NewLoggingHandler}
 import com.socrata.http.server.util.ErrorAdapter
 import com.socrata.http.server.util.RequestId.ReqIdHeader
-import com.socrata.http.server._
 import com.socrata.thirdparty.metrics.{SocrataHttpSupport, MetricsOptions, MetricsReporter}
 import java.util.concurrent.atomic.AtomicInteger
 import com.socrata.datacoordinator.service.ServiceUtil._
@@ -120,6 +116,10 @@ class Service(serviceConfig: ServiceConfig,
             case Mutator.MismatchedSchemaHash(name, schema) =>
               mismatchedSchema(ScriptHeaderRequestError.MISMATCHED_SCHEMA, name, schema,
                 "commandIndex" -> JNumber(em.index))
+            case Mutator.NoSuchColumnLabel(name, label) =>
+              noSuchColumnLabel(ScriptCommandRequestError.UNKNOWN_LABEL, name,
+                "commandIndex" -> JNumber(em.index),
+                "label" -> JString(label))
             case Mutator.InvalidCommandFieldValue(obj, field, value) =>
               datasetBadRequest(ScriptCommandRequestError.INVALID_FIELD,
                 "commandIndex" -> JNumber(em.index),
@@ -128,6 +128,11 @@ class Service(serviceConfig: ServiceConfig,
                 "value" -> value)
             case Mutator.NoSuchDataset(name) =>
               notFoundError(name, "commandIndex" -> JNumber(em.index))
+            case Mutator.SecondaryStoresNotUpToDate(name, stores) =>
+              datasetErrorResponse(Conflict, DatasetUpdateError.SECONDARIES_OUT_OF_DATE,
+                "commandIndex" -> JNumber(em.index),
+                "dataset" -> JString(formatDatasetId(name)),
+                "stores" -> JsonEncode.toJValue(stores))
             case Mutator.NoSuchRollup(name) =>
               datasetErrorResponse(NotFound, RollupDeleteError.DOES_NOT_EXIST,
                 "commandIndex" -> JNumber(em.index),
@@ -157,6 +162,8 @@ class Service(serviceConfig: ServiceConfig,
                 "dataset" -> JString(formatDatasetId(name)))
             case Mutator.ColumnAlreadyExists(dataset, name) =>
               columnErrorResponse(ColumnUpdateError.EXISTS, em.index, dataset, name, Conflict)
+            case Mutator.FieldNameAlreadyExists(dataset, name) =>
+              fieldNameErrorResponse(ColumnUpdateError.EXISTS, em.index, dataset, name, Conflict)  // TODO : something different?
             case Mutator.IllegalColumnId(id) =>
               datasetBadRequest(ColumnUpdateError.ILLEGAL_ID,
                 "commandIndex" -> JNumber(em.index),
@@ -214,9 +221,14 @@ class Service(serviceConfig: ServiceConfig,
               datasetBadRequest(UpdateError.VERSION_ON_NEW_ROW,
                 "commandIndex" -> JNumber(em.index),
                 "dataset" -> JString(formatDatasetId(datasetName)))
+            case Mutator.UpsertError(datasetName, InsertInUpdateOnly(id), _) =>
+              datasetBadRequest(UpdateError.INSERT_IN_UPDATE_ONLY,
+                "commandIndex" -> JNumber(em.index),
+                "dataset" -> JString(formatDatasetId(datasetName)),
+                "id" -> id)
             case _ => // if we're not handling something, don't just eat it
               datasetBadRequest(RequestError.UNHANDLED_ERROR,
-                "error" -> JString(em.getMessage))
+                "error" -> JString(Option(em.getMessage).getOrElse(em.getClass.getName)))
           }
       } finally {
         // Decrease the thread count

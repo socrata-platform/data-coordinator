@@ -1,8 +1,10 @@
 package com.socrata.datacoordinator.truth.loader.sql.messages
 
+import com.rojoma.json.v3.ast.JObject
+import com.rojoma.json.v3.util.JsonUtil
 import com.socrata.datacoordinator.truth.metadata
-import com.google.protobuf.ByteString
-import com.socrata.datacoordinator.id.{RollupName, UserColumnId, DatasetId, CopyId, ColumnId}
+import com.socrata.datacoordinator.id._
+import com.socrata.soql.environment.ColumnName
 import org.joda.time.DateTime
 
 object FromProtobuf {
@@ -10,12 +12,21 @@ object FromProtobuf {
      metadata.UnanchoredColumnInfo(
        systemId = new ColumnId(ci.systemId),
        userColumnId = new UserColumnId(ci.userColumnId),
+       fieldName = ci.fieldName.map(new ColumnName(_)),
        typeName = ci.typeName,
        physicalColumnBaseBase = ci.physicalColumnBaseBase,
        isSystemPrimaryKey = ci.isSystemPrimaryKey,
        isUserPrimaryKey = ci.isUserPrimaryKey,
-       isVersion = ci.isVersion
+       isVersion = ci.isVersion,
+       computationStrategyInfo = ci.computationStrategyInfo.map(convert(_))
      )
+
+  def convert(ci: com.socrata.datacoordinator.truth.loader.sql.messages.UnanchoredColumnInfo.ComputationStrategyInfo): metadata.ComputationStrategyInfo =
+    metadata.ComputationStrategyInfo(
+      strategyType = new StrategyType(ci.strategyType),
+      sourceColumnIds = ci.sourceColumnIds.map(new UserColumnId(_)),
+      parameters = JsonUtil.parseJson[JObject](ci.parameters).fold(err => sys.error(err.english), identity)
+    )
 
    def convert(ci: UnanchoredCopyInfo): metadata.UnanchoredCopyInfo =
      metadata.UnanchoredCopyInfo(

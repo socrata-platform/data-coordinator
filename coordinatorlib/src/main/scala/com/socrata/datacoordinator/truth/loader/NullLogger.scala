@@ -47,6 +47,8 @@ class NullLogger[CT, CV] extends Logger[CT, CV] {
   def truncated(): Unit = {}
 
   def versionColumnSet(info: ColumnInfo[CT]): Unit = {}
+
+  def fieldNameUpdated(info: ColumnInfo[CT]): Unit = {}
 }
 
 object NullLogger extends NullLogger[Any, Any] {

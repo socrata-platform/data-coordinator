@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
+    <changeSet author="Alexa Rust" id="20160107-create-computation-strategy-map">
+        <sql>
+            CREATE TABLE computation_strategy_map (
+                column_system_id      BIGINT          NOT NULL,
+                copy_system_id        BIGINT          NOT NULL,
+                strategy_type         TEXT            NOT NULL,
+                source_column_ids     TEXT[]          NOT NULL,
+                parameters            TEXT            NOT NULL,
+
+                PRIMARY KEY (column_system_id, copy_system_id),
+                FOREIGN KEY (column_system_id, copy_system_id) REFERENCES column_map (system_id, copy_system_id)
+            )
+        </sql>
+        <rollback>
+            <sql>
+                DROP TABLE computation_strategy_map
+            </sql>
+        </rollback>
+    </changeSet>
+</databaseChangeLog>
