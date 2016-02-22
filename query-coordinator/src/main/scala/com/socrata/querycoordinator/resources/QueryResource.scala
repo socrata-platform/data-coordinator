@@ -15,7 +15,7 @@ import com.socrata.querycoordinator.caching.SharedHandle
 import com.socrata.soql.SoQLAnalysis
 import com.socrata.soql.environment.ColumnName
 import com.socrata.soql.exceptions.{TypecheckException, NoSuchColumn, DuplicateAlias}
-import com.socrata.soql.types.SoQLAnalysisType
+import com.socrata.soql.types.SoQLType
 import org.apache.http.HttpStatus
 import org.joda.time.format.ISODateTimeFormat
 import org.joda.time.{Interval, DateTime}
@@ -125,7 +125,7 @@ class QueryResource(secondary: Secondary,
       log.info("Base URI: " + base.url)
 
       @annotation.tailrec
-      def analyzeRequest(schema: Versioned[Schema], isFresh: Boolean): Versioned[(Schema, SoQLAnalysis[String, SoQLAnalysisType])] = {
+      def analyzeRequest(schema: Versioned[Schema], isFresh: Boolean): Versioned[(Schema, SoQLAnalysis[String, SoQLType])] = {
         val parsedQuery = query match {
           case Left(q) =>
             queryParser(q, columnIdMap, schema.payload.schema)
@@ -160,7 +160,7 @@ class QueryResource(secondary: Secondary,
 
       @annotation.tailrec
       def executeQuery(schema: Versioned[Schema],
-                       analyzedQuery: SoQLAnalysis[String, SoQLAnalysisType],
+                       analyzedQuery: SoQLAnalysis[String, SoQLType],
                        rollupName: Option[String],
                        requestId: String,
                        resourceName: Option[String],
@@ -214,8 +214,8 @@ class QueryResource(secondary: Secondary,
         }
       }
 
-      def possiblyRewriteQuery(schema: Schema, analyzedQuery: SoQLAnalysis[String, SoQLAnalysisType]):
-      (SoQLAnalysis[String, SoQLAnalysisType], Option[String]) = {
+      def possiblyRewriteQuery(schema: Schema, analyzedQuery: SoQLAnalysis[String, SoQLType]):
+      (SoQLAnalysis[String, SoQLType], Option[String]) = {
         if (noRollup) {
           (analyzedQuery, None)
         } else {

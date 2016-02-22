@@ -24,7 +24,7 @@ import com.socrata.querycoordinator.util.TeeToTempInputStream
 import com.socrata.querycoordinator.caching.cache.{CacheSession, ValueRef, CacheSessionProvider}
 import com.socrata.querycoordinator.caching.SharedHandle
 import com.socrata.util.io.SplitStream
-import com.socrata.soql.types.SoQLAnalysisType
+import com.socrata.soql.types.SoQLType
 import com.socrata.soql.{AnalysisSerializer, SoQLAnalysis}
 import org.joda.time.DateTime
 
@@ -32,7 +32,7 @@ import scala.annotation.tailrec
 import scala.util.control.ControlThrowable
 
 class QueryExecutor(httpClient: HttpClient,
-                    analysisSerializer: AnalysisSerializer[String, SoQLAnalysisType],
+                    analysisSerializer: AnalysisSerializer[String, SoQLType],
                     teeStreamProvider: InputStream => TeeToTempInputStream,
                     cacheSessionProvider: CacheSessionProvider,
                     windower: Windower,
@@ -51,7 +51,7 @@ class QueryExecutor(httpClient: HttpClient,
   private implicit val hCodec = AutomaticJsonCodecBuilder[Headers]
 
   private def makeCacheKeyBase(dsId: String,
-                               query: SoQLAnalysis[String, SoQLAnalysisType],
+                               query: SoQLAnalysis[String, SoQLType],
                                schemaHash: String,
                                lastModified: DateTime,
                                copyNum: Long,
@@ -71,7 +71,7 @@ class QueryExecutor(httpClient: HttpClient,
    */
   def apply(base: RequestBuilder, // scalastyle:ignore parameter.number method.length cyclomatic.complexity
             dataset: String,
-            analysis: SoQLAnalysis[String, SoQLAnalysisType],
+            analysis: SoQLAnalysis[String, SoQLType],
             schema: Schema,
             precondition: Precondition,
             ifModifiedSince: Option[DateTime],
@@ -85,7 +85,7 @@ class QueryExecutor(httpClient: HttpClient,
             currentLastModified: DateTime,
             resourceScopeHandle: SharedHandle[ResourceScope]): Result = {
     val rs = resourceScopeHandle.get
-    def go(theAnalysis: SoQLAnalysis[String, SoQLAnalysisType] = analysis): Result =
+    def go(theAnalysis: SoQLAnalysis[String, SoQLType] = analysis): Result =
       reallyApply(base, dataset, theAnalysis, schema, precondition, ifModifiedSince, rowCount, copy, rollupName, obfuscateId, extraHeaders, rs)
 
     if(cacheSessionProvider == NoopCacheSessionProvider && !forceCacheEvenWhenNoop) return go()
@@ -100,7 +100,7 @@ class QueryExecutor(httpClient: HttpClient,
     val totalWindows = endWindow.window - startWindow.window + 1
     if(totalWindows > maxWindowsToCache) return go()
 
-    val unlimitedAnalysis = analysis.copy[String, SoQLAnalysisType](limit = None, offset = None)
+    val unlimitedAnalysis = analysis.copy[String, SoQLType](limit = None, offset = None)
     val readCacheKeyBase = makeCacheKeyBase(dataset, unlimitedAnalysis, schema.hash, currentLastModified, currentCopyNumber, currentDataVersion, rollupName, obfuscateId, rowCount)
 
     using(new ResourceScope()) { tmpScope =>
@@ -176,7 +176,7 @@ class QueryExecutor(httpClient: HttpClient,
           result
         case None =>
           log.info("Not in cache!")
-          val relimitedAnalysis = analysis.copy[String, SoQLAnalysisType](limit = Some(newLimit), offset = Some(newOffset))
+          val relimitedAnalysis = analysis.copy[String, SoQLType](limit = Some(newLimit), offset = Some(newOffset))
           go(theAnalysis = relimitedAnalysis) match {
             case ToForward(200, headers0, body) =>
               val headers = headers0 - "content-length" // we'll be manipulating the values, so remove that if it's set
@@ -225,7 +225,7 @@ class QueryExecutor(httpClient: HttpClient,
   }
 
   private def doCache(dataset: String,
-                      unlimitedAnalysis: SoQLAnalysis[String, SoQLAnalysisType],
+                      unlimitedAnalysis: SoQLAnalysis[String, SoQLType],
                       schema: Schema,
                       rollupName: Option[String],
                       obfuscateId: Boolean,
@@ -303,7 +303,7 @@ class QueryExecutor(httpClient: HttpClient,
 
   private def reallyApply(base: RequestBuilder, // scalastyle:ignore parameter.number method.length cyclomatic.complexity
                           dataset: String,
-                          analysis: SoQLAnalysis[String, SoQLAnalysisType],
+                          analysis: SoQLAnalysis[String, SoQLType],
                           schema: Schema,
                           precondition: Precondition,
                           ifModifiedSince: Option[DateTime],
@@ -388,7 +388,7 @@ class QueryExecutor(httpClient: HttpClient,
     }
   }
 
-  private def serializeAnalysis(analysis: SoQLAnalysis[String, SoQLAnalysisType]): String = {
+  private def serializeAnalysis(analysis: SoQLAnalysis[String, SoQLType]): String = {
     val baos = new java.io.ByteArrayOutputStream
     analysisSerializer(baos, Seq(analysis))
     new String(baos.toByteArray, StandardCharsets.ISO_8859_1)

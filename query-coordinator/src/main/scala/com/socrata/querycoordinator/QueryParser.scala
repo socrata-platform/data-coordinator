@@ -3,15 +3,15 @@ package com.socrata.querycoordinator
 import com.socrata.soql.collection.OrderedMap
 import com.socrata.soql.environment.{ColumnName, DatasetContext}
 import com.socrata.soql.exceptions.SoQLException
-import com.socrata.soql.types.{SoQLAnalysisType, SoQLType}
+import com.socrata.soql.types.SoQLType
 import com.socrata.soql.{SoQLAnalysis, SoQLAnalyzer}
 import com.typesafe.scalalogging.slf4j.Logging
 
-class QueryParser(analyzer: SoQLAnalyzer[SoQLAnalysisType], maxRows: Option[Int], defaultRowsLimit: Int) {
+class QueryParser(analyzer: SoQLAnalyzer[SoQLType], maxRows: Option[Int], defaultRowsLimit: Int) {
   import QueryParser._ // scalastyle:ignore import.grouping
 
   private def go(columnIdMapping: Map[ColumnName, String], schema: Map[String, SoQLType])
-                (f: DatasetContext[SoQLAnalysisType] => SoQLAnalysis[ColumnName, SoQLAnalysisType])
+                (f: DatasetContext[SoQLType] => SoQLAnalysis[ColumnName, SoQLType])
   : Result = {
     val ds = dsContext(columnIdMapping, schema)
     try {
@@ -25,8 +25,8 @@ class QueryParser(analyzer: SoQLAnalyzer[SoQLAnalysisType], maxRows: Option[Int]
     }
   }
 
-  private def limitRows(analysis: SoQLAnalysis[ColumnName, SoQLAnalysisType])
-  : Either[Result, SoQLAnalysis[ColumnName, SoQLAnalysisType]] = {
+  private def limitRows(analysis: SoQLAnalysis[ColumnName, SoQLType])
+  : Either[Result, SoQLAnalysis[ColumnName, SoQLType]] = {
     analysis.limit match {
       case Some(lim) =>
         val actualMax = BigInt(maxRows.map(_.toLong).getOrElse(Long.MaxValue))
@@ -57,7 +57,7 @@ object QueryParser extends Logging {
 
   sealed abstract class Result
 
-  case class SuccessfulParse(analysis: SoQLAnalysis[String, SoQLAnalysisType]) extends Result
+  case class SuccessfulParse(analysis: SoQLAnalysis[String, SoQLType]) extends Result
 
   case class AnalysisError(problem: SoQLException) extends Result
 
@@ -74,14 +74,14 @@ object QueryParser extends Logging {
    * @return column name to datatype map like ( field_name -> text, ... )
    */
   def dsContext(columnIdMapping: Map[ColumnName, String],
-                rawSchema: Map[String, SoQLType]): DatasetContext[SoQLAnalysisType] =
+                rawSchema: Map[String, SoQLType]): DatasetContext[SoQLType] =
     try {
       val knownColumnIdMapping = columnIdMapping.filter { case (k, v) => rawSchema.contains(v) }
       if (columnIdMapping.size != knownColumnIdMapping.size) {
         logger.info(s"truth has columns unknown to secondary ${columnIdMapping.size} ${knownColumnIdMapping.size}")
       }
-      new DatasetContext[SoQLAnalysisType] {
-        val schema: OrderedMap[ColumnName, SoQLAnalysisType] =
+      new DatasetContext[SoQLType] {
+        val schema: OrderedMap[ColumnName, SoQLType] =
           OrderedMap(knownColumnIdMapping.mapValues(rawSchema).toSeq.sortBy(_._1): _*)
       }
     }
