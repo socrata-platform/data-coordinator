@@ -15,7 +15,7 @@ import com.socrata.querycoordinator.caching.SharedHandle
 import com.socrata.soql.SoQLAnalysis
 import com.socrata.soql.environment.ColumnName
 import com.socrata.soql.exceptions.{TypecheckException, NoSuchColumn, DuplicateAlias}
-import com.socrata.soql.types.SoQLAnalysisType
+import com.socrata.soql.types.SoQLType
 import org.apache.http.HttpStatus
 import org.joda.time.format.ISODateTimeFormat
 import org.joda.time.{Interval, DateTime}
@@ -125,7 +125,7 @@ class QueryResource(secondary: Secondary,
       log.info("Base URI: " + base.url)
 
       @annotation.tailrec
-      def analyzeRequest(schema: Versioned[Schema], isFresh: Boolean): Versioned[(Schema, Seq[SoQLAnalysis[String, SoQLAnalysisType]])] = {
+      def analyzeRequest(schema: Versioned[Schema], isFresh: Boolean): Versioned[(Schema, Seq[SoQLAnalysis[String, SoQLType]])] = {
         val parsedQuery = query match {
           case Left(q) =>
             queryParser(q, columnIdMap, schema.payload.schema)
@@ -164,8 +164,8 @@ class QueryResource(secondary: Secondary,
        */
       @annotation.tailrec
       def executeQuery(schema: Versioned[Schema],
-                       analyzedQuery: Seq[SoQLAnalysis[String, SoQLAnalysisType]],
-                       analyzedQueryNoRollup: Seq[SoQLAnalysis[String, SoQLAnalysisType]],
+                       analyzedQuery: Seq[SoQLAnalysis[String, SoQLType]],
+                       analyzedQueryNoRollup: Seq[SoQLAnalysis[String, SoQLType]],
                        rollupName: Option[String],
                        requestId: String,
                        resourceName: Option[String],
@@ -234,9 +234,9 @@ class QueryResource(secondary: Secondary,
        * Scan from left to right (inner to outer), rewrite the first possible one.
        * TODO: Find a better way to apply rollup?
        */
-      def possiblyRewriteOneAnalysisInQuery(schema: Schema, analyzedQuery: Seq[SoQLAnalysis[String, SoQLAnalysisType]])
-        : (Seq[SoQLAnalysis[String, SoQLAnalysisType]], Option[String]) = {
-        analyzedQuery.foldLeft((Seq.empty[SoQLAnalysis[String, SoQLAnalysisType]], None: Option[String])) {
+      def possiblyRewriteOneAnalysisInQuery(schema: Schema, analyzedQuery: Seq[SoQLAnalysis[String, SoQLType]])
+        : (Seq[SoQLAnalysis[String, SoQLType]], Option[String]) = {
+        analyzedQuery.foldLeft((Seq.empty[SoQLAnalysis[String, SoQLType]], None: Option[String])) {
           (acc, anal) =>
             val existingRollupName = acc._2
             existingRollupName match {
@@ -251,8 +251,8 @@ class QueryResource(secondary: Secondary,
         }
       }
 
-      def possiblyRewriteQuery(schema: Schema, analyzedQuery: SoQLAnalysis[String, SoQLAnalysisType])
-        : (SoQLAnalysis[String, SoQLAnalysisType], Option[String]) = {
+      def possiblyRewriteQuery(schema: Schema, analyzedQuery: SoQLAnalysis[String, SoQLType])
+        : (SoQLAnalysis[String, SoQLType], Option[String]) = {
         if (noRollup) {
           (analyzedQuery, None)
         } else {

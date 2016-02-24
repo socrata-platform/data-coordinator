@@ -69,39 +69,39 @@ class QueryParserTest extends TestBase {
     val neq = MonomorphicFunction(SoQLFunctions.Neq, neqBindings)
 
     val select0 = OrderedMap(ColumnName("x") -> FunctionCall(concat, Seq(
-      ColumnRef("ai", SoQLText)(NoPosition),
-      StringLiteral("one", SoQLText)(NoPosition)
+      ColumnRef("ai", SoQLText.t)(NoPosition),
+      StringLiteral("one", SoQLText.t)(NoPosition)
     ))(NoPosition, NoPosition))
 
     val where0 = FunctionCall(neq, Seq(
-      ColumnRef("ai", SoQLText)(NoPosition),
-      StringLiteral("x", SoQLText)(NoPosition)
+      ColumnRef("ai", SoQLText.t)(NoPosition),
+      StringLiteral("x", SoQLText.t)(NoPosition)
     ))(NoPosition, NoPosition)
 
     depositionedAnalyses(0).selection should be(select0)
     depositionedAnalyses(0).where should be(Some(where0))
 
     val select1 = OrderedMap(ColumnName("y") -> FunctionCall(concat, Seq(
-      ColumnRef("x", SoQLText)(NoPosition),
-      StringLiteral("y", SoQLText)(NoPosition)
+      ColumnRef("x", SoQLText.t)(NoPosition),
+      StringLiteral("y", SoQLText.t)(NoPosition)
     ))(NoPosition, NoPosition))
 
     val where1 = FunctionCall(neq, Seq(
-      ColumnRef("x", SoQLText)(NoPosition),
-      StringLiteral("y", SoQLText)(NoPosition)
+      ColumnRef("x", SoQLText.t)(NoPosition),
+      StringLiteral("y", SoQLText.t)(NoPosition)
     ))(NoPosition, NoPosition)
 
     depositionedAnalyses(1).selection should be(select1)
     depositionedAnalyses(1).where should be(Some(where1))
 
     val select2 = OrderedMap(ColumnName("z") -> FunctionCall(concat, Seq(
-      ColumnRef("y", SoQLText)(NoPosition),
-      StringLiteral("z", SoQLText)(NoPosition)
+      ColumnRef("y", SoQLText.t)(NoPosition),
+      StringLiteral("z", SoQLText.t)(NoPosition)
     ))(NoPosition, NoPosition))
 
     val where2 = FunctionCall(neq, Seq(
-      ColumnRef("y", SoQLText)(NoPosition),
-      StringLiteral("z", SoQLText)(NoPosition)
+      ColumnRef("y", SoQLText.t)(NoPosition),
+      StringLiteral("z", SoQLText.t)(NoPosition)
     ))(NoPosition, NoPosition)
 
     depositionedAnalyses(2).selection should be(select2)

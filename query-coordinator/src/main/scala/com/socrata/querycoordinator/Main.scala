@@ -19,7 +19,7 @@ import com.socrata.querycoordinator.caching.Windower
 import com.socrata.querycoordinator.resources.{VersionResource, QueryResource}
 import com.socrata.querycoordinator.util.TeeToTempInputStream
 import com.socrata.soql.functions.{SoQLFunctionInfo, SoQLTypeInfo}
-import com.socrata.soql.types.SoQLAnalysisType
+import com.socrata.soql.types.SoQLType
 import com.socrata.soql.{AnalysisSerializer, SoQLAnalyzer}
 import com.socrata.curator.{CuratorFromConfig, DiscoveryFromConfig}
 import com.socrata.thirdparty.metrics.{MetricsReporter, SocrataHttpSupport}
@@ -57,8 +57,8 @@ object Main extends App {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Main])
 
   val analyzer = new SoQLAnalyzer(SoQLTypeInfo, SoQLFunctionInfo)
-  def typeSerializer(typ: SoQLAnalysisType): String = typ.canonical.name.name
-  val analysisSerializer = new AnalysisSerializer[String, SoQLAnalysisType](identity, typeSerializer)
+  def typeSerializer(typ: SoQLType): String = typ.name.name
+  val analysisSerializer = new AnalysisSerializer[String, SoQLType](identity, typeSerializer)
 
   implicit val execResource = Resource.executorShutdownNoTimeout
 

@@ -5,15 +5,15 @@ import com.socrata.soql.collection.OrderedMap
 import com.socrata.soql.environment.{DatasetContext, ColumnName}
 import com.socrata.soql.exceptions.SoQLException
 import com.socrata.soql.functions.{MonomorphicFunction, VariableType, SoQLFunctions}
-import com.socrata.soql.types.{SoQLBoolean, SoQLAnalysisType, SoQLType}
+import com.socrata.soql.types.{SoQLBoolean, SoQLType}
 import com.socrata.soql.{SoQLAnalysis, SoQLAnalyzer}
 import com.typesafe.scalalogging.slf4j.Logging
 
-class QueryParser(analyzer: SoQLAnalyzer[SoQLAnalysisType], maxRows: Option[Int], defaultRowsLimit: Int) {
+class QueryParser(analyzer: SoQLAnalyzer[SoQLType], maxRows: Option[Int], defaultRowsLimit: Int) {
   import QueryParser._ // scalastyle:ignore import.grouping
 
   private def go(columnIdMapping: Map[ColumnName, String], schema: Map[String, SoQLType])
-                (f: DatasetContext[SoQLAnalysisType] => Seq[SoQLAnalysis[ColumnName, SoQLAnalysisType]]): Result = {
+                (f: DatasetContext[SoQLType] => Seq[SoQLAnalysis[ColumnName, SoQLType]]): Result = {
     val ds = dsContext(columnIdMapping, schema)
     try {
       limitRows(f(ds)) match {
@@ -33,9 +33,9 @@ class QueryParser(analyzer: SoQLAnalyzer[SoQLAnalysisType], maxRows: Option[Int]
    * Add new columns and remap "column ids" as it walks the soql chain.
    */
   private def remapAnalyses(columnIdMapping: Map[ColumnName, String], //schema: Map[String, SoQLType],
-                            analyses: Seq[SoQLAnalysis[ColumnName, SoQLAnalysisType]])
-    : Seq[SoQLAnalysis[String, SoQLAnalysisType]] = {
-    val initialAcc = (columnIdMapping, Seq.empty[SoQLAnalysis[String, SoQLAnalysisType]])
+                            analyses: Seq[SoQLAnalysis[ColumnName, SoQLType]])
+    : Seq[SoQLAnalysis[String, SoQLType]] = {
+    val initialAcc = (columnIdMapping, Seq.empty[SoQLAnalysis[String, SoQLType]])
     val (_, analysesInColIds) = analyses.foldLeft(initialAcc) { (acc, analysis) =>
       val (mapping, convertedAnalyses) = acc
       // Newly introduced columns will be used as column id as is.
@@ -57,14 +57,14 @@ class QueryParser(analyzer: SoQLAnalyzer[SoQLAnalysisType], maxRows: Option[Int]
           mappingWithNewColumns
         }
 
-      val a: SoQLAnalysis[String, SoQLAnalysisType] = analysis.mapColumnIds(newMapping)
+      val a: SoQLAnalysis[String, SoQLType] = analysis.mapColumnIds(newMapping)
       (mappingWithNewColumns, convertedAnalyses :+ a)
     }
     analysesInColIds
   }
 
-  private def limitRows(analyses: Seq[SoQLAnalysis[ColumnName, SoQLAnalysisType]])
-    : Either[Result, Seq[SoQLAnalysis[ColumnName, SoQLAnalysisType]]] = {
+  private def limitRows(analyses: Seq[SoQLAnalysis[ColumnName, SoQLType]])
+    : Either[Result, Seq[SoQLAnalysis[ColumnName, SoQLType]]] = {
     val lastAnalysis = analyses.last
     lastAnalysis.limit match {
       case Some(lim) =>
@@ -79,14 +79,14 @@ class QueryParser(analyzer: SoQLAnalyzer[SoQLAnalysisType], maxRows: Option[Int]
   def apply(query: String,
             columnIdMapping: Map[ColumnName, String], schema: Map[String, SoQLType],
             merged: Boolean = true): Result = {
-    val analyze: DatasetContext[SoQLAnalysisType] => Seq[SoQLAnalysis[ColumnName, SoQLAnalysisType]] =
+    val analyze: DatasetContext[SoQLType] => Seq[SoQLAnalysis[ColumnName, SoQLType]] =
       analyzer.analyzeFullQuery(query)(_)
     val analyzeMaybeMerge = if (merged) { analyze andThen soqlMerge } else { analyze }
     go(columnIdMapping, schema)(analyzeMaybeMerge)
   }
 
-  private def soqlMerge(analyses: Seq[SoQLAnalysis[ColumnName, SoQLAnalysisType]])
-    : Seq[SoQLAnalysis[ColumnName, SoQLAnalysisType]] = {
+  private def soqlMerge(analyses: Seq[SoQLAnalysis[ColumnName, SoQLType]])
+    : Seq[SoQLAnalysis[ColumnName, SoQLType]] = {
     SoQLAnalysis.merge(andFn, analyses)
   }
 
@@ -109,7 +109,7 @@ object QueryParser extends Logging {
 
   sealed abstract class Result
 
-  case class SuccessfulParse(analyses: Seq[SoQLAnalysis[String, SoQLAnalysisType]]) extends Result
+  case class SuccessfulParse(analyses: Seq[SoQLAnalysis[String, SoQLType]]) extends Result
 
   case class AnalysisError(problem: SoQLException) extends Result
 
@@ -126,14 +126,14 @@ object QueryParser extends Logging {
    * @return column name to datatype map like ( field_name -> text, ... )
    */
   def dsContext(columnIdMapping: Map[ColumnName, String],
-                rawSchema: Map[String, SoQLType]): DatasetContext[SoQLAnalysisType] =
+                rawSchema: Map[String, SoQLType]): DatasetContext[SoQLType] =
     try {
       val knownColumnIdMapping = columnIdMapping.filter { case (k, v) => rawSchema.contains(v) }
       if (columnIdMapping.size != knownColumnIdMapping.size) {
         logger.warn(s"truth has columns unknown to secondary ${columnIdMapping.size} ${knownColumnIdMapping.size}")
       }
-      new DatasetContext[SoQLAnalysisType] {
-        val schema: OrderedMap[ColumnName, SoQLAnalysisType] =
+      new DatasetContext[SoQLType] {
+        val schema: OrderedMap[ColumnName, SoQLType] =
           OrderedMap(knownColumnIdMapping.mapValues(rawSchema).toSeq.sortBy(_._1): _*)
       }
     }

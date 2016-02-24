@@ -3,7 +3,7 @@ package com.socrata.querycoordinator
 import com.socrata.querycoordinator.QueryRewriter.{RollupName, Anal}
 import com.socrata.soql.SoQLAnalysis
 import com.socrata.soql.environment.ColumnName
-import com.socrata.soql.types.SoQLAnalysisType
+import com.socrata.soql.types.SoQLType
 
 class TestQueryRewriterDateTruncBase extends TestQueryRewriterBase {
   /** Each rollup here is defined by:
@@ -25,14 +25,14 @@ class TestQueryRewriterDateTruncBase extends TestQueryRewriterBase {
 
   val rollupRawSchemas = rollupAnalysis.mapValues { case analysis: Anal =>
     analysis.selection.values.toSeq.zipWithIndex.map { case (expr, idx) =>
-      rewriter.rollupColumnId(idx) -> expr.typ.canonical
+      rewriter.rollupColumnId(idx) -> expr.typ
     }.toMap
   }
 
   /** Analyze a "fake" query that has the rollup table column names in, so we
     * can use it to compare  with the rewritten one in assertions.
     */
-  def analyzeRewrittenQuery(rollupName: String, q: String): SoQLAnalysis[String, SoQLAnalysisType] = {
+  def analyzeRewrittenQuery(rollupName: String, q: String): SoQLAnalysis[String, SoQLType] = {
     val rewrittenRawSchema = rollupRawSchemas(rollupName)
 
     val rollupNoopColumnNameMap = rewrittenRawSchema.map { case (k, v) => ColumnName(k) -> k }
