@@ -233,7 +233,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
       case Delogger.WorkingCopyCreated(datasetInfo, copyInfo) =>
         Some(WorkingCopyCreated(makeSecondaryCopyInfo(copyInfo)))
       case Delogger.SnapshotDropped(info) =>
-        None
+        Some(SnapshotDropped(makeSecondaryCopyInfo(info)))
       case Delogger.CounterUpdated(nextCounter) =>
         None
       case Delogger.RollupCreatedOrUpdated(info) =>

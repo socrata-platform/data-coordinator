@@ -237,7 +237,6 @@ class SqlDelogger[CV](connection: Connection,
     }
 
     def decodeSnapshotDropped(aux: Array[Byte]) = {
-      implicit val tag: com.socrata.datacoordinator.truth.metadata.`-impl`.Tag = null
       val msg = messages.SnapshotDropped.defaultInstance.mergeFrom(aux)
       Delogger.SnapshotDropped(convert(msg.copyInfo))
     }

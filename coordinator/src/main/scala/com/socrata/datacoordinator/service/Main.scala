@@ -8,6 +8,7 @@ import com.socrata.datacoordinator.id.{UserColumnId, ColumnId, DatasetId}
 import com.socrata.datacoordinator.resources._
 import com.socrata.datacoordinator.secondary.{DatasetAlreadyInSecondary}
 import com.socrata.datacoordinator.truth.CopySelector
+import com.socrata.datacoordinator.truth.loader.NullLogger
 import com.socrata.datacoordinator.truth.universe.sql.PostgresUniverse
 import com.socrata.datacoordinator.truth.metadata.{CompStratSchemaField, SchemaField, Schema, DatasetCopyContext}
 import com.socrata.datacoordinator.util.collection.UserColumnIdSet

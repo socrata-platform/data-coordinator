@@ -3,7 +3,6 @@ package truth.loader
 
 import java.io.{ByteArrayInputStream, OutputStream, Closeable}
 
-import com.socrata.datacoordinator.truth.metadata.`-impl`.Tag
 import com.socrata.datacoordinator.secondary.ComputationStrategyInfo
 import com.socrata.datacoordinator.util.CloseableIterator
 import com.socrata.datacoordinator.truth.metadata.{UnanchoredRollupInfo, UnanchoredDatasetInfo, UnanchoredColumnInfo, UnanchoredCopyInfo}
@@ -72,10 +71,10 @@ object Delogger {
 
   case object DataCopied extends LogEvent[Nothing] with LogEventCompanion
 
-  // This should never be created except by the SqlDelogger.  Snapshots are now a
-  // data-coordinator internal thing and are not referenced in the logs.  The implicit
-  // "tag" parameter exists to force anyone who wants to create one to see this comment.
-  case class SnapshotDropped(info: UnanchoredCopyInfo)(implicit tag: Tag) extends LogEvent[Nothing]
+  // Snapshots are now a data-coordinator internal thing; for now, SnapshotDropped
+  // will continue to be logged on publish and sent to the secondaries, but they
+  // should start to not depend on it.  Eventually, this will vanish.
+  case class SnapshotDropped(info: UnanchoredCopyInfo) extends LogEvent[Nothing]
   object SnapshotDropped extends LogEventCompanion
 
   case object WorkingCopyPublished extends LogEvent[Nothing] with LogEventCompanion

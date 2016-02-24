@@ -814,22 +814,23 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
   }
 
   def publishQuery = "UPDATE copy_map SET lifecycle_stage = CAST(? AS dataset_lifecycle_stage) WHERE system_id = ?"
-  def publish(unpublishedCopy: CopyInfo): CopyInfo = {
+  def publish(unpublishedCopy: CopyInfo): (CopyInfo, Option[CopyInfo]) = {
     if(unpublishedCopy.lifecycleStage != LifecycleStage.Unpublished) {
       throw new IllegalArgumentException("Input does not name an unpublished copy")
     }
     using(conn.prepareStatement(publishQuery)) { stmt =>
-      for(published <- lookup(unpublishedCopy.datasetInfo, LifecycleStage.Published)) {
+      val publishedCI = for(published <- lookup(unpublishedCopy.datasetInfo, LifecycleStage.Published)) yield {
         stmt.setString(1, LifecycleStage.Snapshotted.name)
         stmt.setLong(2, published.systemId.underlying)
         val count = t("snapshotify-published-copy", "dataset_id" -> published.datasetInfo.systemId, "copy_num" -> published.copyNumber)(stmt.executeUpdate())
         assert(count == 1, "Snapshotting a published copy didn't change a row?")
+        published.copy(lifecycleStage = LifecycleStage.Snapshotted)
       }
       stmt.setString(1, LifecycleStage.Published.name)
       stmt.setLong(2, unpublishedCopy.systemId.underlying)
       val count = t("publish-unpublished-copy", "dataset_id" -> unpublishedCopy.datasetInfo.systemId, "copy_num" -> unpublishedCopy.copyNumber)(stmt.executeUpdate())
       assert(count == 1, "Publishing an unpublished copy didn't change a row?")
-      unpublishedCopy.copy(lifecycleStage = LifecycleStage.Published)
+      (unpublishedCopy.copy(lifecycleStage = LifecycleStage.Published), publishedCI)
     }
   }
 

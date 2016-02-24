@@ -348,8 +348,11 @@ object DatasetMutator {
 
       def publish(): Either[CopyContextError, CopyInfo] = {
         checkFeedbackSecondaries().toLeft {
-          val newCi = datasetMap.publish(copyInfo)
+          val (newCi, snapshotCI) = datasetMap.publish(copyInfo)
           logger.workingCopyPublished()
+          snapshotCI.foreach { sci =>
+            logger.snapshotDropped(sci)
+          }
           copyCtx = new DatasetCopyContext(newCi, datasetMap.schema(newCi)).thaw()
           copyInfo
         }
