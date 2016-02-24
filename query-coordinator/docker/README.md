@@ -18,3 +18,4 @@ See the Dockerfile for defaults.
 * `ENABLE_GRAPHITE` - Should various metrics information be reported to graphite
 * `GRAPHITE_HOST` - The hostname or IP of the graphite server, if enabled
 * `GRAPHITE_PORT` - The port number for the graphite server, if enabled
+* `QUERY_TIMEOUT` - How long to wait for a response from the secondary after issuing a query
