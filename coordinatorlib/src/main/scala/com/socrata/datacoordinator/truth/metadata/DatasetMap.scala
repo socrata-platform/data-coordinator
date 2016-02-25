@@ -10,6 +10,9 @@ trait DatasetMapBase[CT] extends `-impl`.BaseDatasetMapReader[CT] {
 trait DatasetMapReader[CT] extends DatasetMapBase[CT] {
   /** Looks up a dataset record by its system ID. */
   def datasetInfo(datasetId: DatasetId, repeatableRead: Boolean = false): Option[DatasetInfo]
+
+  /** Find all datasets with snapshots */
+  def snapshottedDatasets(): Seq[DatasetInfo]
 }
 
 class CopyInWrongStateForDropException(val copyInfo: CopyInfo, val acceptableStates: Set[LifecycleStage]) extends Exception

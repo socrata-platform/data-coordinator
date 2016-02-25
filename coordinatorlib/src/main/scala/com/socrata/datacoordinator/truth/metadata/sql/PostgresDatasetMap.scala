@@ -299,6 +299,19 @@ class PostgresDatasetMapReader[CT](val conn: Connection, tns: TypeNamespace[CT],
       }
     }
   }
+
+  def snapshottedDatasetsQuery = "SELECT distinct ds.system_id, ds.next_counter_value, ds.locale_name, ds.obfuscation_key FROM dataset_map ds JOIN copy_map c ON c.dataset_system_id = ds.system_id WHERE c.lifecycle_stage = 'Snapshotted'"
+  def snapshottedDatasets() = {
+    using(conn.prepareStatement(snapshottedDatasetsQuery)) { stmt =>
+      using(t("snapshotted-datasets")(stmt.executeQuery())) { rs =>
+        val result = Seq.newBuilder[DatasetInfo]
+        while(rs.next()) {
+          result += DatasetInfo(rs.getDatasetId("system_id"), rs.getLong("next_counter_value"), rs.getString("locale_name"), rs.getBytes("obfuscation_key"))
+        }
+        result.result()
+      }
+    }
+  }
 }
 
 trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] with `-impl`.BaseDatasetMapWriter[CT] {

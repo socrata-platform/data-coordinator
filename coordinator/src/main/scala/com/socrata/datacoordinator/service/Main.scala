@@ -335,6 +335,13 @@ object Main {
           }
         }
 
+        def getSnapshottedDatasets() = {
+          for {
+            u <- common.universe
+            dsInfos <- u.datasetMapReader.snapshottedDatasets()
+          } yield dsInfos
+        }
+
 
         val notFoundDatasetResource = NotFoundDatasetResource(_: Option[String], common.internalNameFromDatasetId,
           operations.makeReportTemporaryFile, operations.processCreation,
@@ -347,6 +354,7 @@ object Main {
         val datasetSnapshotResource = DatasetSnapshotResource(_: DatasetId, _: Long, deleteSnapshot, common.internalNameFromDatasetId)
         val datasetLogResource = DatasetLogResource[common.CV](_: DatasetId, _: Long, getLog, common.internalNameFromDatasetId)
         val datasetRollupResource = DatasetRollupResource(_: DatasetId, getRollups, common.internalNameFromDatasetId)
+        val snapshottedResource = SnapshottedResource(getSnapshottedDatasets, common.internalNameFromDatasetId)
         val secondaryManifestsResource = SecondaryManifestsResource(_: Option[String], secondaries,
           operations.datasetsInStore, common.internalNameFromDatasetId)
         val datasetSecondaryStatusResource = DatasetSecondaryStatusResource(_: Option[String], _:DatasetId, secondaries,
@@ -366,6 +374,7 @@ object Main {
           datasetSnapshotResource = datasetSnapshotResource,
           datasetLogResource = datasetLogResource,
           datasetRollupResource = datasetRollupResource,
+          snapshottedResource = snapshottedResource,
           secondaryManifestsResource = secondaryManifestsResource,
           datasetSecondaryStatusResource = datasetSecondaryStatusResource,
           secondariesOfDatasetResource = secondariesOfDatasetResource)
