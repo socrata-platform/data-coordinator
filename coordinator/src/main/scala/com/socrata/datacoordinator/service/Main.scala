@@ -8,7 +8,7 @@ import com.socrata.datacoordinator.id.{UserColumnId, ColumnId, DatasetId}
 import com.socrata.datacoordinator.resources._
 import com.socrata.datacoordinator.secondary.{DatasetAlreadyInSecondary}
 import com.socrata.datacoordinator.truth.CopySelector
-import com.socrata.datacoordinator.truth.loader.NullLogger
+import com.socrata.datacoordinator.truth.loader.{Delogger, NullLogger}
 import com.socrata.datacoordinator.truth.universe.sql.PostgresUniverse
 import com.socrata.datacoordinator.truth.metadata.{CompStratSchemaField, SchemaField, Schema, DatasetCopyContext}
 import com.socrata.datacoordinator.util.collection.UserColumnIdSet
@@ -314,6 +314,17 @@ object Main {
           }
         }
 
+        def getLog(datasetId: DatasetId, version: Long)(f: Iterator[Delogger.LogEvent[common.CV]] => Unit) = {
+          for {
+            u <- common.universe
+            dsInfo <- u.datasetMapReader.datasetInfo(datasetId)
+          } yield {
+            using(u.delogger(dsInfo).delog(version)) { it =>
+              f(it)
+            }
+          }
+        }
+
         def getRollups(datasetId: DatasetId) = {
           for {
             u <- common.universe
@@ -334,6 +345,7 @@ object Main {
         val datasetSchemaResource = DatasetSchemaResource(_: DatasetId, getSchema, common.internalNameFromDatasetId)
         val datasetSnapshotsResource = DatasetSnapshotsResource(_: DatasetId, getSnapshots, common.internalNameFromDatasetId)
         val datasetSnapshotResource = DatasetSnapshotResource(_: DatasetId, _: Long, deleteSnapshot, common.internalNameFromDatasetId)
+        val datasetLogResource = DatasetLogResource[common.CV](_: DatasetId, _: Long, getLog, common.internalNameFromDatasetId)
         val datasetRollupResource = DatasetRollupResource(_: DatasetId, getRollups, common.internalNameFromDatasetId)
         val secondaryManifestsResource = SecondaryManifestsResource(_: Option[String], secondaries,
           operations.datasetsInStore, common.internalNameFromDatasetId)
@@ -352,6 +364,7 @@ object Main {
           datasetSchemaResource = datasetSchemaResource,
           datasetSnapshotsResource = datasetSnapshotsResource,
           datasetSnapshotResource = datasetSnapshotResource,
+          datasetLogResource = datasetLogResource,
           datasetRollupResource = datasetRollupResource,
           secondaryManifestsResource = secondaryManifestsResource,
           datasetSecondaryStatusResource = datasetSecondaryStatusResource,

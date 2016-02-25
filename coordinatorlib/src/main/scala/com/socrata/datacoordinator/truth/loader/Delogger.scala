@@ -91,6 +91,7 @@ object Delogger {
   case object EndTransaction extends LogEvent[Nothing] with LogEventCompanion
 
   case class RowDataUpdated[CV](bytes: Array[Byte])(codec: RowLogCodec[CV]) extends LogEvent[CV] {
+    override def toString = "RowDataUpdated(" + operations + ")"
     lazy val operations: Vector[Operation[CV]] = { // TODO: A standard decode exception
       val bais = new ByteArrayInputStream(bytes)
       val underlyingInputStream = bais.read() match {
