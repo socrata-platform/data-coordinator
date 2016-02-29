@@ -41,6 +41,7 @@ object Mutator {
                                        schemaHash: Option[String]) extends StreamType
   case class PublishWorkingCopyMutation(index: Long,
                                         datasetId: DatasetId,
+                                        keepSnapshot: Boolean,
                                         schemaHash: Option[String]) extends StreamType
   case class DropWorkingCopyMutation(index: Long,
                                      datasetId: DatasetId,
@@ -314,7 +315,8 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
           CreateWorkingCopyMutation(index, datasetId, copyData, schemaHash)
         case "publish" =>
           val schemaHash = getOption[String]("schema")
-          PublishWorkingCopyMutation(index, datasetId, schemaHash)
+          val keepSnapshot = getWithStrictDefault("keep_snapshot", true)
+          PublishWorkingCopyMutation(index, datasetId, keepSnapshot, schemaHash)
         case "drop" =>
           val schemaHash = getOption[String]("schema")
           DropWorkingCopyMutation(index, datasetId, schemaHash)
@@ -538,8 +540,8 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
         case CreateWorkingCopyMutation(idx, datasetId, copyData, schemaHash) =>
           mutator.createCopy(user)(datasetId, copyData = copyData,
                                    checkHash(idx, schemaHash, _)).map(process(idx, datasetId, mutator))
-        case PublishWorkingCopyMutation(idx, datasetId, schemaHash) =>
-          mutator.publishCopy(user)(datasetId, checkHash(idx, schemaHash, _)).map(process(idx, datasetId, mutator))
+        case PublishWorkingCopyMutation(idx, datasetId, keepSnapshot, schemaHash) =>
+          mutator.publishCopy(user)(datasetId, keepSnapshot, checkHash(idx, schemaHash, _)).map(process(idx, datasetId, mutator))
         case DropWorkingCopyMutation(idx, datasetId, schemaHash) =>
           mutator.dropCopy(user)(datasetId, checkHash(idx, schemaHash, _)).map {
             case cc: mutator.CopyContextError =>
