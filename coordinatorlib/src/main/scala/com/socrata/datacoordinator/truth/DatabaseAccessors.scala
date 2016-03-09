@@ -1,6 +1,9 @@
 package com.socrata.datacoordinator
 package truth
 
+import com.rojoma.json.v3.ast.{JNumber, JString, JValue}
+import com.rojoma.json.v3.codec.JsonEncode
+import com.socrata.datacoordinator.util.CopyContextResult
 import com.socrata.soql.environment.ColumnName
 import org.joda.time.DateTime
 import com.rojoma.simplearm.{SimpleArm, Managed}
@@ -19,7 +22,7 @@ trait LowLevelDatabaseReader[CT, CV] {
   trait ReadContext {
     def datasetMap: DatasetMapReader[CT]
 
-    def loadDataset(datasetId: DatasetId, latest: CopySelector): Option[DatasetCopyContext[CT]]
+    def loadDataset(datasetId: DatasetId, latest: CopySelector): CopyContextResult[DatasetCopyContext[CT]]
     def loadDataset(latest: CopyInfo): DatasetCopyContext[CT]
 
     def approximateRowCount(copyCtx: DatasetCopyContext[CT]): Long
@@ -55,6 +58,16 @@ trait LowLevelDatabaseMutator[CT, CV] {
 }
 
 sealed abstract class CopySelector
+object CopySelector {
+  implicit val enc = new JsonEncode[CopySelector] {
+    override def encode(x: CopySelector): JValue = x match {
+      case LatestCopy => JString("latest")
+      case PublishedCopy => JString("published")
+      case WorkingCopy => JString("working")
+      case Snapshot(n) => JNumber(n)
+    }
+  }
+}
 case object LatestCopy extends CopySelector
 case object PublishedCopy extends CopySelector
 case object WorkingCopy extends CopySelector
@@ -75,7 +88,7 @@ trait DatasetReader[CT, CV] {
              rowId: Option[CV] = None): Managed[Iterator[ColumnIdMap[CV]]]
   }
 
-  def openDataset(datasetId: DatasetId, copy: CopySelector): Managed[Option[ReadContext]]
+  def openDataset(datasetId: DatasetId, copy: CopySelector): Managed[CopyContextResult[ReadContext]]
   def openDataset(copy: CopyInfo): Managed[ReadContext]
 }
 
@@ -97,9 +110,9 @@ object DatasetReader {
                    rowId = rowId)
     }
 
-    def openDataset(datasetId: DatasetId, copySelector: CopySelector): Managed[Option[ReadContext]] =
-      new SimpleArm[Option[ReadContext]] {
-        def flatMap[A](f: Option[ReadContext] => A): A = for {
+    def openDataset(datasetId: DatasetId, copySelector: CopySelector): Managed[CopyContextResult[ReadContext]] =
+      new SimpleArm[CopyContextResult[ReadContext]] {
+        def flatMap[A](f: CopyContextResult[ReadContext] => A): A = for {
           llCtx <- databaseReader.openDatabase
         } yield {
           val ctxOpt = llCtx.loadDataset(datasetId, copySelector).map(new S(_, llCtx))

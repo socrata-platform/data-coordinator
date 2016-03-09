@@ -5,6 +5,7 @@ import com.rojoma.simplearm.Managed
 import com.rojoma.simplearm.util._
 
 import com.socrata.datacoordinator.truth.metadata._
+import com.socrata.datacoordinator.util.CopyContextResult
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.id.{DatasetId, ColumnId}
 import java.sql.Connection
@@ -22,17 +23,19 @@ class PostgresDatabaseReader[CT, CV](conn: Connection,
   private class S(conn: Connection) extends ReadContext {
     val datasetMap = PostgresDatabaseReader.this.datasetMap
 
-    def loadDataset(datasetId: DatasetId, copySelector: CopySelector): Option[DatasetCopyContext[CT]] = {
+    def loadDataset(datasetId: DatasetId, copySelector: CopySelector): CopyContextResult[DatasetCopyContext[CT]] = {
       val map = datasetMap
-      for {
-        datasetInfo <- map.datasetInfo(datasetId)
-        copyInfo <- copySelector match {
-          case LatestCopy => Some(map.latest(datasetInfo))
-          case PublishedCopy => map.published(datasetInfo)
-          case WorkingCopy => map.unpublished(datasetInfo)
-          case Snapshot(n) => map.snapshot(datasetInfo, n)
-        }
-      } yield loadDataset(copyInfo)
+      val datasetInfo = map.datasetInfo(datasetId).getOrElse { return CopyContextResult.NoSuchDataset }
+      val copyInfo = copySelector match {
+        case LatestCopy => Some(map.latest(datasetInfo))
+        case PublishedCopy => map.published(datasetInfo)
+        case WorkingCopy => map.unpublished(datasetInfo)
+        case Snapshot(n) => map.snapshot(datasetInfo, n)
+      }
+      copyInfo match {
+        case Some(copyInfo) => CopyContextResult.CopyInfo(loadDataset(copyInfo))
+        case None => CopyContextResult.NoSuchCopy
+      }
     }
 
     def loadDataset(copyInfo: CopyInfo) =

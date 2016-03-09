@@ -10,9 +10,9 @@ import com.socrata.datacoordinator.secondary.{DatasetAlreadyInSecondary}
 import com.socrata.datacoordinator.truth.CopySelector
 import com.socrata.datacoordinator.truth.loader.{Delogger, NullLogger}
 import com.socrata.datacoordinator.truth.universe.sql.PostgresUniverse
-import com.socrata.datacoordinator.truth.metadata.{CompStratSchemaField, SchemaField, Schema, DatasetCopyContext}
+import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.util.collection.UserColumnIdSet
-import com.socrata.datacoordinator.util.{NullCache, IndexedTempFile, StackedTimingReport, LoggedTimingReport}
+import com.socrata.datacoordinator.util._
 import com.socrata.http.common.AuxiliaryData
 import com.socrata.http.server._
 import com.socrata.http.server.curator.CuratorBroker
@@ -189,7 +189,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
         rid <- rowId
         // Missing dataset copy is not handled as error here.  It is handled further downstream.
         ctxOpt <- u.datasetReader.openDataset(id, copy)
-        ctx <- ctxOpt
+        ctx <- ctxOpt.toOption
       } yield {
         ctx.copyCtx.userIdCol match {
           case Some(_) => // dataset has custom row identifier
@@ -302,15 +302,19 @@ object Main {
           }
         }
 
-        def deleteSnapshot(datasetId: DatasetId, copyNum: Long) = {
+        def deleteSnapshot(datasetId: DatasetId, copyNum: Long): CopyContextResult[UnanchoredCopyInfo] = {
           for {
             u <- common.universe
-            dsInfo <- u.datasetMapReader.datasetInfo(datasetId)
-            snapshot <- u.datasetMapReader.snapshots(dsInfo).find(_.copyNumber == copyNum)
           } yield {
-            u.schemaLoader(NullLogger[u.CT, u.CV]).drop(snapshot) // NullLogger because DropSnapshot is no longer a visible thing
-            u.datasetMapWriter.dropCopy(snapshot)
-            snapshot.unanchored
+            val dsInfo = u.datasetMapReader.datasetInfo(datasetId).getOrElse { return CopyContextResult.NoSuchDataset }
+            u.datasetMapReader.snapshots(dsInfo).find(_.copyNumber == copyNum) match {
+              case None =>
+                CopyContextResult.NoSuchCopy
+              case Some(snapshot) =>
+                u.schemaLoader(NullLogger[u.CT, u.CV]).drop(snapshot) // NullLogger because DropSnapshot is no longer a visible thing
+                u.datasetMapWriter.dropCopy(snapshot)
+                CopyContextResult.CopyInfo(snapshot.unanchored)
+            }
           }
         }
 

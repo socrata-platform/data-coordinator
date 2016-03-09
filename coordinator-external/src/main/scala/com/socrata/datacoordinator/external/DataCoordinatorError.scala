@@ -70,6 +70,7 @@ object ColumnUpdateError{
 
 object DatasetUpdateError{
   val DOES_NOT_EXIST = "update.dataset.does-not-exist"
+  val SNAPSHOT_DOES_NOT_EXIST = "update.snapshot.does-not-exist"
   val SECONDARIES_OUT_OF_DATE = "update.dataset.feedback-in-progress"
   val TEMP_NOT_WRITABLE = "update.dataset.temporarily-not-writable"
   val INVALID_STATE = "update.dataset.invalid-state"
