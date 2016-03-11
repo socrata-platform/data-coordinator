@@ -39,7 +39,7 @@ abstract class FeedbackSecondaryInstance[RCI <: RowComputeInfo[SoQLValue]](confi
 
   protected val discovery = res(ServiceDiscoveryBuilder.builder(classOf[Void]).
     client(curator).
-    basePath(config.curator.namespace).
+    basePath(config.curator.serviceBasePath).
     build())
   guarded(discovery.start())
 

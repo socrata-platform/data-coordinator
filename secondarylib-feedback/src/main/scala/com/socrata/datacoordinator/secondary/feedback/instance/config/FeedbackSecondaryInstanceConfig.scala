@@ -31,6 +31,7 @@ class CuratorConfig(config: Config, root: String) extends ConfigClass(config, ro
   val baseRetryWait = getDuration("base-retry-wait")
   val maxRetryWait = getDuration("max-retry-wait")
   val maxRetries = getInt("max-retries")
+  val serviceBasePath = getString("service-base-path")
 }
 
 object CuratorFromConfig {
