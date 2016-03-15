@@ -57,7 +57,7 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
   val log = org.slf4j.LoggerFactory.getLogger(classOf[FeedbackSecondary[CT,CV,RCI]])
 
   val httpClient: HttpClient
-  def hostAndPort(): Option[(String, Int)]
+  def hostAndPort(instanceName: String): Option[(String, Int)]
   val baseBatchSize: Int
   val internalMutationScriptRetries: Int
   val mutationScriptRetries: Int
@@ -570,17 +570,23 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
     implicit val neCodec = AutomaticJsonCodecBuilder[NonfatalError]
     implicit val reCodec = SimpleHierarchyCodecBuilder[Response](NoTag).branch[Upsert].branch[NonfatalError].build
 
-    def datasetEndpoint: Option[String] = {
-      hostAndPort() match {
-        case Some((host, port)) => Some(s"http://$host:$port/dataset/")
-        case None => None
+    def datasetEndpoint(datasetInternalName: String): Option[String] = {
+      datasetInternalName.lastIndexOf('.') match {
+        case -1 =>
+          log.error("Could not extract data-coordinator instance name from dataset: {}", datasetInternalName)
+          throw new Exception(s"Could not extract data-coordinator instance name from dataset: $datasetInternalName")
+        case n =>
+          hostAndPort(datasetInternalName.substring(0, n)) match {
+            case Some((host, port)) => Some(s"http://$host:$port/dataset/$datasetInternalName")
+            case None => None
+          }
       }
     }
 
     // this may throw a FeedbackFailure exception
     private def postMutationScript(datasetInternalName: String, script: JArray): MutationScriptResult = {
-      val endpoint = datasetEndpoint.getOrElse(return FailedToDiscoverDataCoordinator)
-      val builder = RequestBuilder(new java.net.URI(endpoint + datasetInternalName))
+      val endpoint = datasetEndpoint(datasetInternalName).getOrElse(return FailedToDiscoverDataCoordinator)
+      val builder = RequestBuilder(new java.net.URI(endpoint))
 
       def body = JValueEventIterator(script)
 
