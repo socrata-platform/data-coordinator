@@ -607,7 +607,7 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
             case 200 =>
               // success! ... well maybe...
               val end = System.nanoTime()
-              log.info("Posted mutation script with {} row updates in {}ms", script.length, (end - start) / 1000000)
+              log.info("Posted mutation script with {} row updates in {}ms", script.length - 2, (end - start) / 1000000)
               JsonDecode.fromJValue[JArray](logContentTypeFailure(resp.jValue())) match {
                 case Right(response) =>
                   assert(response.elems.length == 1, "Response contains more than one element")
