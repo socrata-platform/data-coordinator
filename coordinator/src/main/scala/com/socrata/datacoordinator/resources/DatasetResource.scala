@@ -149,7 +149,7 @@ case class DatasetResource(datasetId: DatasetId,
       case COPY_WORKING => WorkingCopy
       case other =>
         try {
-          Snapshot(other.toInt)
+          Snapshot(other.toLong)
         } catch {
           case _: NumberFormatException => return contentTypeBadRequest("Bad copy selector")
         }
@@ -211,6 +211,7 @@ case class DatasetResource(datasetId: DatasetId,
           found match {
             case Exporter.Success(_) => // ok good
             case Exporter.NotFound => notFoundError(datasetId)(resp)
+            case Exporter.CopyNotFound => snapshotNotFoundError(datasetId, copy)(resp)
             case Exporter.NotModified(etags) => notModified(etags.map(_.append(suffix)))(resp)
             case Exporter.PreconditionFailedBecauseNoMatch => preconditionFailed(resp)
             case Exporter.InvalidRowId => datasetBadRequest(ExportRequestError.INVALID_ROW_ID)(resp)

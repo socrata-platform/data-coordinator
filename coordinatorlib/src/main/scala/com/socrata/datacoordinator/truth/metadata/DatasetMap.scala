@@ -10,6 +10,9 @@ trait DatasetMapBase[CT] extends `-impl`.BaseDatasetMapReader[CT] {
 trait DatasetMapReader[CT] extends DatasetMapBase[CT] {
   /** Looks up a dataset record by its system ID. */
   def datasetInfo(datasetId: DatasetId, repeatableRead: Boolean = false): Option[DatasetInfo]
+
+  /** Find all datasets with snapshots */
+  def snapshottedDatasets(): Seq[DatasetInfo]
 }
 
 class CopyInWrongStateForDropException(val copyInfo: CopyInfo, val acceptableStates: Set[LifecycleStage]) extends Exception
@@ -42,8 +45,9 @@ trait DatasetMapWriter[CT] extends DatasetMapBase[CT] with `-impl`.BaseDatasetMa
   /** Promotes the current "published" table record (if it exists) to a "snapshot" one, and promotes the
     * current "unpublished" table record to "published".
     * @throws IllegalArgumentException if `copyInfo` does not name an unpublished copy.
-    * @return The copy info for the newly-published dataset. */
-  def publish(copyInfo: CopyInfo): CopyInfo
+    * @return The copy info for the newly-published dataset, and the copy info for the new snapshot if
+    *         there was one. */
+  def publish(copyInfo: CopyInfo): (CopyInfo, Option[CopyInfo])
 
   /** Adds a column to this table-copy.
     * @note Does not change the actual table; this just updates the bookkeeping.
@@ -70,7 +74,7 @@ trait BackupDatasetMap[CT] extends DatasetMapWriter[CT] with `-impl`.BaseDataset
     * current "unpublished" table record to "published".
     * @throws IllegalArgumentException if `copyInfo` does not name an unpublished copy.
     * @return The copy info for the newly-published dataset. */
-  def publish(copyInfo: CopyInfo): CopyInfo
+  def publish(copyInfo: CopyInfo): (CopyInfo, Option[CopyInfo])
 
   /** Adds a column to this table-copy.
     * @note Does not change the actual table; this just updates the bookkeeping.
