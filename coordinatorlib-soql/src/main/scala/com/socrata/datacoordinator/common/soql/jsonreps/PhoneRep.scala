@@ -10,7 +10,10 @@ object PhoneRep extends JsonColumnRep[SoQLType, SoQLValue] {
   val representedType = SoQLPhone
 
   def fromJValue(input: JValue): Option[SoQLValue] = {
-    JsonDecode[SoQLPhone].decode(input).right.toOption
+    input match {
+      case JNull => Some(SoQLNull)
+      case _ => JsonDecode[SoQLPhone].decode(input).right.toOption
+    }
   }
 
   def toJValue(input: SoQLValue): JValue = {

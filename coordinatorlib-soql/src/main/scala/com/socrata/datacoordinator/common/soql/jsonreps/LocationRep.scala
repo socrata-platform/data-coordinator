@@ -10,7 +10,10 @@ object LocationRep extends JsonColumnRep[SoQLType, SoQLValue] {
   val representedType = SoQLLocation
 
   def fromJValue(input: JValue): Option[SoQLValue] = {
-    JsonDecode[SoQLLocation].decode(input).right.toOption
+    input match {
+      case JNull => Some(SoQLNull)
+      case _ => JsonDecode[SoQLLocation].decode(input).right.toOption
+    }
   }
 
   def toJValue(input: SoQLValue): JValue = {
