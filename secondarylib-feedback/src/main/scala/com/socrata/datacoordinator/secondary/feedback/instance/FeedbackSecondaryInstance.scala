@@ -3,10 +3,12 @@ package com.socrata.datacoordinator.secondary.feedback.instance
 import java.util.concurrent.Executors
 
 import com.rojoma.simplearm.v2.{Resource, ResourceScope}
+import com.socrata.curator.ProviderCache
 import com.socrata.datacoordinator.secondary.feedback.instance.config.{CuratorFromConfig, FeedbackSecondaryInstanceConfig}
 import com.socrata.datacoordinator.secondary.feedback.monitor.{DummyStatusMonitor, StatusMonitor}
 import com.socrata.datacoordinator.secondary.feedback.{RowComputeInfo, FeedbackSecondary}
 import com.socrata.http.client.{HttpClientHttpClient, HttpClient}
+import com.socrata.http.common.AuxiliaryData
 import com.socrata.soql.types.{SoQLType, SoQLValue}
 import org.apache.curator.x.discovery.{strategies, ServiceDiscoveryBuilder}
 
@@ -37,22 +39,22 @@ abstract class FeedbackSecondaryInstance[RCI <: RowComputeInfo[SoQLValue]](confi
   protected val curator = res(CuratorFromConfig(config.curator))
   guarded(curator.start())
 
-  protected val discovery = res(ServiceDiscoveryBuilder.builder(classOf[Void]).
+  protected val discovery = res(ServiceDiscoveryBuilder.builder(classOf[AuxiliaryData]).
     client(curator).
-    basePath(config.curator.namespace).
+    basePath(config.curator.serviceBasePath).
     build())
   guarded(discovery.start())
 
-  protected val provider = res(discovery.serviceProviderBuilder().
-    providerStrategy(new strategies.RoundRobinStrategy).
-    serviceName(config.dataCoordinatorService).
-    build())
-  guarded(provider.start())
+  protected val provider = res(new ProviderCache(
+    discovery,
+    new strategies.RoundRobinStrategy,
+    config.dataCoordinatorService
+  ))
 
   override val httpClient: HttpClient = res(new HttpClientHttpClient(executor))
 
-  override def hostAndPort(): Option[(String, Int)] = {
-    Option(provider.getInstance()).map[(String, Int)](instance => (instance.getAddress, instance.getPort))
+  override def hostAndPort(instanceName: String): Option[(String, Int)] = {
+    Option(provider(instanceName).getInstance()).map[(String, Int)](instance => (instance.getAddress, instance.getPort))
   }
 
   override val baseBatchSize: Int = config.baseBatchSize

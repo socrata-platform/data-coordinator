@@ -53,7 +53,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
         throw new Exception(s"Can't find secondary group $secondaryGroupStr")
       )
 
-      val currentDatasetSecondaries = secondariesOfDataset(datasetId).keySet
+      val currentDatasetSecondaries = secondariesOfDataset(datasetId).map(_.secondaries.keySet).getOrElse(Set.empty)
 
       val newSecondaries = Main.secondariesToAdd(secondaryGroup,
         currentDatasetSecondaries,
@@ -78,10 +78,16 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
     }
   }
 
-  def secondariesOfDataset(datasetId: DatasetId): Map[String, Long] = {
+  def secondariesOfDataset(datasetId: DatasetId): Option[SecondariesOfDatasetResult] = {
     for (u <- common.universe) yield {
-      val secondaryManifest = u.secondaryManifest
-      secondaryManifest.stores(datasetId)
+      val datasetMapReader = u.datasetMapReader
+      datasetMapReader.datasetInfo(datasetId).map { datasetInfo =>
+        val secondaryManifest = u.secondaryManifest
+        val truthVersion = datasetMapReader.latest(datasetInfo).dataVersion
+        val secondaries = secondaryManifest.stores(datasetId)
+        val feedbackSecondaries = secondaryManifest.feedbackSecondaries(datasetId)
+        SecondariesOfDatasetResult(truthVersion, secondaries, feedbackSecondaries)
+      }
     }
   }
 
