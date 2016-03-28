@@ -226,7 +226,7 @@ object SecondaryWatcher extends App { self =>
   PropertyConfigurator.configure(Propertizer("log4j", config.log4j))
 
   val log = LoggerFactory.getLogger(classOf[SecondaryWatcher[_,_]])
-  log.info("Starting secondary watcher...")
+  log.info(s"Starting secondary watcher with watcher claim uuid of ${config.watcherId}")
   log.info(com.socrata.datacoordinator.BuildInfo.toJson)
 
   val metricsOptions = MetricsOptions(config.metrics)
