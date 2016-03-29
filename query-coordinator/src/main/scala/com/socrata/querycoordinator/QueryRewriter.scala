@@ -3,6 +3,7 @@ package com.socrata.querycoordinator
 import com.socrata.querycoordinator.QueryRewriter._
 import com.socrata.soql.collection.OrderedMap
 import com.socrata.soql.environment.ColumnName
+import com.socrata.soql.exceptions.SoQLException
 import com.socrata.soql.functions.SoQLFunctions._
 import com.socrata.soql.functions._
 import com.socrata.soql.types._
@@ -424,7 +425,8 @@ class QueryRewriter(analyzer: SoQLAnalyzer[SoQLType]) {
     }
 
     analysisMap.foreach {
-      case (k, Failure(e)) => log.warn(s"Couldn't parse rollup '${rollupMap.get(k).get}'", e)
+      case (rollupName, Failure(e: SoQLException)) => log.info(s"Couldn't parse rollup $rollupName, ignoring: ${e.toString}")
+      case (rollupName, Failure(e)) => log.warn(s"Couldn't parse rollup $rollupName due to unexpected failure, ignoring", e)
       case _ =>
     }
 
