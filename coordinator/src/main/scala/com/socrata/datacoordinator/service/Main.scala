@@ -127,7 +127,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
     ifModifiedSince: Option[DateTime],
     sorted: Boolean,
     rowId: Option[String]
-   )(f: Either[Schema, (EntityTag, Seq[SchemaField], Option[UserColumnId],
+   )(f: Either[Schema, (EntityTag, DateTime, Seq[SchemaField], Option[UserColumnId],
      String,
      Long,
      Iterator[Array[JValue]])] => Unit): Exporter.Result[Unit] = {
@@ -157,6 +157,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
               }
               f(Right((
                 entityTag,
+                copyCtx.copyInfo.lastModified,
                 orderedSchema,
                 pkColName,
                 copyCtx.datasetInfo.localeName,

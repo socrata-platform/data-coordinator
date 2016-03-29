@@ -183,14 +183,17 @@ case class DatasetResource(datasetId: DatasetId,
             upstreamPrecondition, ifModifiedSince, sorted, rowId) {
             case Left(newSchema) =>
               mismatchedSchema(ExportRequestError.MISMATCHED_SCHEMA, datasetId, newSchema)(resp)
-            case Right((etag, schema, rowIdCol, locale, approxRowCount, rows)) =>
+            case Right((etag, lastModified, schema, rowIdCol, locale, approxRowCount, rows)) =>
               resp.setContentType("application/json")
               resp.setCharacterEncoding("utf-8")
+              resp.setDateHeader("Last-Modified", lastModified.getMillis)
               ETag(etag.append(suffix))(resp)
               val out = new BufferedWriter(resp.getWriter)
               val jsonWriter = new CompactJsonWriter(out)
               out.write("[{\"approximate_row_count\":")
               out.write(JNumber(approxRowCount).toString)
+              out.write("\n ,\"last_modified\":")
+              jsonWriter.write(JString(ISODateTimeFormat.dateTime.print(lastModified)))
               out.write("\n ,\"locale\":")
               jsonWriter.write(JString(locale))
               rowIdCol.foreach { rid =>
@@ -223,6 +226,6 @@ case class DatasetResource(datasetId: DatasetId,
 }
 
 object DatasetResource{
-  type datasetContentsFunc = Either[Schema, (EntityTag, Seq[SchemaField], Option[UserColumnId], String, Long,
+  type datasetContentsFunc = Either[Schema, (EntityTag, DateTime, Seq[SchemaField], Option[UserColumnId], String, Long,
     Iterator[Array[JValue]])] => Unit
 }
