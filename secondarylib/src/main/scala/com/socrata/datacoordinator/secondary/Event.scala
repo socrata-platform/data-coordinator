@@ -16,7 +16,7 @@ case class LastModifiedChanged[CT](lastModified: DateTime) extends Event[CT, Not
 case class WorkingCopyCreated(copyInfo: CopyInfo) extends Event[Nothing, Nothing]
 case object WorkingCopyDropped extends Event[Nothing, Nothing]
 case object DataCopied extends Event[Nothing, Nothing]
-case class SnapshotDropped(info: CopyInfo) extends Event[Nothing, Nothing] // This will never occur!  Remove me the next time you break binary compat!
+case class SnapshotDropped(info: CopyInfo) extends Event[Nothing, Nothing]
 case class RollupCreatedOrUpdated(info: RollupInfo) extends Event[Nothing, Nothing]
 case class RollupDropped(info: RollupInfo) extends Event[Nothing, Nothing]
 case object WorkingCopyPublished extends Event[Nothing, Nothing]

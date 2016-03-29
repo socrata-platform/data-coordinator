@@ -42,7 +42,7 @@ class BoundedReader(underlying: Reader, bound: Long) extends Reader {
 
 object ServiceUtil {
   val JsonContentType = "application/json; charset=utf-8"
-  val TextContentType = "text/plain; charset=utf-8"
+  val TextContentType = "Content-type: text/plain; charset=utf-8"
 
 
   def jsonifySchema(schemaObj: Schema): JValue = {

@@ -29,8 +29,9 @@ trait BaseDatasetMapReader[CT] {
     *       copy.*/
   def published(datasetInfo: DatasetInfo): Option[CopyInfo]
 
-  /** Finds information for this dataset's snapshotted copy with copy number `copy`, if it has one. */
-  def snapshot(datasetInfo: DatasetInfo, copy: Long): Option[CopyInfo]
+  /** Finds information for this dataset's `age`th-oldest snapshotted copy, if it has one.
+    * @param age 0 gets the newest snapshot, 1 the next newest, etc... */
+  def snapshot(datasetInfo: DatasetInfo, age: Int): Option[CopyInfo]
 
   /** Finds information for all this dataset's snapshots.  The results are guaranteed
     * to be ordered by copy number. */
