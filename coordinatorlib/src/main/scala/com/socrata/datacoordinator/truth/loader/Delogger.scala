@@ -71,9 +71,6 @@ object Delogger {
 
   case object DataCopied extends LogEvent[Nothing] with LogEventCompanion
 
-  // Snapshots are now a data-coordinator internal thing; for now, SnapshotDropped
-  // will continue to be logged on publish and sent to the secondaries, but they
-  // should start to not depend on it.  Eventually, this will vanish.
   case class SnapshotDropped(info: UnanchoredCopyInfo) extends LogEvent[Nothing]
   object SnapshotDropped extends LogEventCompanion
 
@@ -91,7 +88,6 @@ object Delogger {
   case object EndTransaction extends LogEvent[Nothing] with LogEventCompanion
 
   case class RowDataUpdated[CV](bytes: Array[Byte])(codec: RowLogCodec[CV]) extends LogEvent[CV] {
-    override def toString = "RowDataUpdated(" + operations + ")"
     lazy val operations: Vector[Operation[CV]] = { // TODO: A standard decode exception
       val bais = new ByteArrayInputStream(bytes)
       val underlyingInputStream = bais.read() match {
