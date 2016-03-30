@@ -19,6 +19,7 @@ import com.socrata.datacoordinator.truth.loader.sql._
 import com.socrata.datacoordinator.secondary.sql.{SqlSecondaryConfig, SqlSecondaryManifest}
 import com.socrata.datacoordinator.util._
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
+import org.slf4j.LoggerFactory
 import scala.concurrent.duration.{FiniteDuration, Duration}
 import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.truth.metadata.DatasetInfo
@@ -94,6 +95,8 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
 {
   import commonSupport._
 
+  private val log = LoggerFactory.getLogger(classOf[PostgresUniverse[ColumnType, ColumnValue]])
+
   private var loggerCache = Map.empty[String, Logger[CT, CV]]
   private var txnStart = DateTime.now()
 
@@ -101,6 +104,11 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
     loggerCache.values.foreach(_.close())
     loggerCache = Map.empty
     op(conn)
+    // set transaction back to default isolation level
+    if (conn.getTransactionIsolation != Connection.TRANSACTION_READ_COMMITTED) {
+      log.info("Changing transaction isolation level back to READ COMMITTED")
+      conn.setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED)
+    }
     txnStart = DateTime.now()
   }
 
