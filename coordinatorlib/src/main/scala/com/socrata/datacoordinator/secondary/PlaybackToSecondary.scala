@@ -317,9 +317,8 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
       } catch {
         case e: Throwable =>
           logger.info("Rolling back to end transaction due to thrown exception: {}", e.getMessage)
-          // we want to roll back our transaction to end it to avoid serialization errors
-          // when we try to update the secondary_manifest table
           u.rollback()
+          // transaction isolation level is now reset to READ COMMITTED
           filter(e)
       }
       retrying[T](actions, filter)
@@ -328,9 +327,10 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
     def resync(): Unit = {
       val latestCopyInfo = retrying[Option[metadata.CopyInfo]]({
         timingReport("resync", "dataset" -> datasetId) {
-          u.commit()
+          u.commit() // all updates must be committed before we can change the transaction isolation level
           val r = u.datasetMapReader
           r.datasetInfo(datasetId, repeatableRead = true) match {
+            // transaction isolation level is not set to REPEATABLE READ
             case Some(datasetInfo) =>
               val allCopies = r.allCopies(datasetInfo) // guarantied to be ordered by copy number
             val latest = r.latest(datasetInfo) // this is the newest _living_ copy
@@ -353,6 +353,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
               }
               // end transaction to not provoke a serialization error from touching the secondary_manifest table
               u.commit()
+              // transaction isolation level is now reset to READ COMMITTED
               Some(latest)
             case None =>
               drop()
