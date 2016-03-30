@@ -4,11 +4,14 @@ import com.typesafe.config.Config
 import javax.sql.DataSource
 import java.sql.Connection
 import java.io.OutputStream
+import org.postgresql.core.ProtocolConnection
 import org.postgresql.ds.PGSimpleDataSource
 import com.socrata.datacoordinator.truth.universe.sql.{PostgresCopyIn, C3P0WrappedPostgresCopyIn}
 import com.socrata.thirdparty.typesafeconfig.{C3P0Propertizer, ConfigClass}
-import com.mchange.v2.c3p0.DataSources
+import com.mchange.v2.c3p0.{AbstractConnectionCustomizer, DataSources}
 import com.rojoma.simplearm.{SimpleArm, Managed}
+import org.postgresql.jdbc2.AbstractJdbc2Connection
+import org.slf4j.LoggerFactory
 
 class DataSourceConfig(config: Config, root: String) extends ConfigClass(config, root) {
   val host = getString("host")
@@ -48,4 +51,28 @@ object DataSourceFromConfig {
         }
       }
     }
+}
+
+// ConnectionCustomizer for resetting transactions back to the default transaction isolation level
+class ConnectionResetter extends AbstractConnectionCustomizer {
+  val logger = LoggerFactory.getLogger(classOf[ConnectionResetter])
+
+  override def onCheckIn(c: Connection, parentDataSourceIdentityToken: String): Unit = {
+    c match {
+      case conn: AbstractJdbc2Connection =>
+        if (conn.getTransactionState != ProtocolConnection.TRANSACTION_IDLE) {
+          try {
+            throw new Exception
+          } catch {
+            case e: Exception =>
+              logger.warn("Connection was not idle check-in", e)
+          }
+          c.rollback()
+        }
+      case other =>
+        logger.warn("Did not get a postgres Jdbc connection on check-in; unconditionally rolling back.")
+        c.rollback()
+    }
+    c.setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED) // default isolation level for PostgreSQL
+  }
 }
