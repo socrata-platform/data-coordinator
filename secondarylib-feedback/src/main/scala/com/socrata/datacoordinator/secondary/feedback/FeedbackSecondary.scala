@@ -83,8 +83,6 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
     }
   }
 
-  override def wantsWorkingCopies: Boolean = true
-
   /** The dataset has been deleted. */
   override def dropDataset(datasetInternalName: String, cookie: Cookie): Unit = {} // nothing to do here
 
@@ -109,11 +107,6 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
       case None => log.debug("No existing cookie for dataset {}", datasetInternalName); 0
     }
   }
-
-  /**
-   * @return The `copyNumber`s of all snapshot copies in this secondary.
-   */
-  override def snapshots(datasetInternalName: String, cookie: Cookie): Set[Long] = Set.empty // no need for snapshots
 
   /**
    * In order for this secondary to drop a snapshot.  This should ignore the request

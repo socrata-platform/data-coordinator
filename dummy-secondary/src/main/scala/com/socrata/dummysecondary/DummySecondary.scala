@@ -10,8 +10,6 @@ import com.socrata.datacoordinator.secondary.DatasetInfo
 class DummySecondary(config: Config) extends Secondary[Any, Any] {
   def shutdown(): Unit = {}
 
-  val wantsWorkingCopies: Boolean = config.getBoolean("wants-working-copies")
-
   /** The dataset has been deleted. */
   def dropDataset(datasetInternalName: String, cookie: Secondary.Cookie): Unit = {
     println("Deleted dataset " + datasetInternalName)
@@ -30,15 +28,6 @@ class DummySecondary(config: Config) extends Secondary[Any, Any] {
    */
   def currentCopyNumber(datasetInternalName: String, cookie: Secondary.Cookie): Long =
     readLine("What copy of " + datasetInternalName + "? (" + cookie + ") ").toLong
-
-  /**
-   * @return The `copyNumber`s of all snapshot copies in this secondary.
-   */
-  def snapshots(datasetInternalName: String, cookie: Secondary.Cookie): Set[Long] =
-    readLine("Copy numbers of all snapshot for " + datasetInternalName + "? (" + cookie + ") ")
-      .split(',')
-      .map(_.toLong)
-      .toSet
 
   /**
    * Order this secondary to drop a snapshot.  This should ignore the request
