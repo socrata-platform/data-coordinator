@@ -10,7 +10,7 @@ object Dependencies {
     val socrataCuratorUtils = "1.0.1"
     val socrataThirdpartyUtils = "4.0.1"
     val socrataUtils = "0.10.0"
-    val soqlStdlib = "2.0.5"
+    val soqlStdlib = "2.0.7"
     val sprayCaching = "1.2.2"
     val typesafeConfig = "1.0.0"
     val metricsJetty = "3.1.0"
