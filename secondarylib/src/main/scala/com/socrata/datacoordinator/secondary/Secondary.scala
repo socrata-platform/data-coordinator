@@ -9,8 +9,6 @@ trait Secondary[CT, CV] {
 
   def shutdown(): Unit
 
-  def wantsWorkingCopies: Boolean
-
   /** The dataset has been deleted. */
   def dropDataset(datasetInternalName: String, cookie: Cookie)
 
@@ -26,26 +24,24 @@ trait Secondary[CT, CV] {
    */
   def currentCopyNumber(datasetInternalName: String, cookie: Cookie): Long
 
-  /**
-   * @return The `copyNumber`s of all snapshot copies in this secondary.
-   */
-  def snapshots(datasetInternalName: String, cookie: Cookie): Set[Long]
-
-  /**
-   * Order this secondary to drop a snapshot.  This should ignore the request
-   * if the snapshot is already gone (but it should signal an error if the
-   * copyNumber does not name a snapshot).
-   */
-  def dropCopy(datasetInternalName: String, copyNumber: Long, cookie: Cookie): Cookie
-
   /** Provide the current copy an update.  The secondary should ignore it if it
     * already has this dataVersion.
     * @return a new cookie to store in the secondary map
     */
   def version(datasetInfo: DatasetInfo, dataVersion: Long, cookie: Cookie, events: Iterator[Event[CT, CV]]): Cookie
 
+  /**
+   * Resyncs a copy of a dataset as part of the resync path.
+   * This will only be called on copies that are published or unpublished.
+   */
   def resync(datasetInfo: DatasetInfo, copyInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo[CT]], cookie: Cookie,
-             rows: Managed[Iterator[ColumnIdMap[CV]]], rollups: Seq[RollupInfo], isLatestCopy: Boolean): Cookie
+             rows: Managed[Iterator[ColumnIdMap[CV]]], rollups: Seq[RollupInfo], isLatestLivingCopy: Boolean): Cookie
+
+  /**
+   * Drops a copy of a dataset as part of the resync path.
+   * This will only be called on copies that are discarded or snapshotted.
+   */
+  def dropCopy(datasetInfo: DatasetInfo, copyInfo: CopyInfo, cookie: Cookie, isLatestCopy: Boolean): Cookie
 
 }
 
