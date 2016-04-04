@@ -9,8 +9,6 @@ trait Secondary[CT, CV] {
 
   def shutdown(): Unit
 
-  def wantsWorkingCopies: Boolean
-
   /** The dataset has been deleted. */
   def dropDataset(datasetInternalName: String, cookie: Cookie)
 
@@ -27,11 +25,6 @@ trait Secondary[CT, CV] {
   def currentCopyNumber(datasetInternalName: String, cookie: Cookie): Long
 
   /**
-   * @return The `copyNumber`s of all snapshot copies in this secondary.
-   */
-  def snapshots(datasetInternalName: String, cookie: Cookie): Set[Long]
-
-  /**
    * Order this secondary to drop a snapshot.  This should ignore the request
    * if the snapshot is already gone (but it should signal an error if the
    * copyNumber does not name a snapshot).
@@ -45,7 +38,7 @@ trait Secondary[CT, CV] {
   def version(datasetInfo: DatasetInfo, dataVersion: Long, cookie: Cookie, events: Iterator[Event[CT, CV]]): Cookie
 
   def resync(datasetInfo: DatasetInfo, copyInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo[CT]], cookie: Cookie,
-             rows: Managed[Iterator[ColumnIdMap[CV]]], rollups: Seq[RollupInfo], isLatestCopy: Boolean): Cookie
+             rows: Managed[Iterator[ColumnIdMap[CV]]], rollups: Seq[RollupInfo], isLatestLivingCopy: Boolean): Cookie
 
 }
 
