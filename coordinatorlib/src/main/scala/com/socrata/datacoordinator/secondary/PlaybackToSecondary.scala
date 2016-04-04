@@ -297,9 +297,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
             case Some(datasetInfo) =>
               val allCopies = r.allCopies(datasetInfo) // guarantied to be ordered by copy number
               val latestLiving = r.latest(datasetInfo).copyNumber // this is the newest _living_ copy
-              var latest: Option[metadata.CopyInfo] = None
               for (copy <- allCopies) {
-                latest = Some(copy)
                 val secondaryDatasetInfo = makeSecondaryDatasetInfo(copy.datasetInfo)
                 timingReport("copy", "number" -> copy.copyNumber) {
                   // secondary.store.resync(.) will be called
@@ -315,6 +313,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
               // end transaction to not provoke a serialization error from touching the secondary_manifest table
               u.commit()
               // transaction isolation level is now reset to READ COMMITTED
+              val latest = allCopies.lastOption
               if (!latest.isDefined) // should always be a Some(.)...
                 logger.error("Have dataset info for dataset {}, but it has no copies?", datasetInfo.toString)
               latest
