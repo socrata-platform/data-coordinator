@@ -8,10 +8,11 @@ import com.socrata.datacoordinator.id.{UserColumnId, ColumnId, DatasetId}
 import com.socrata.datacoordinator.resources._
 import com.socrata.datacoordinator.secondary.{DatasetAlreadyInSecondary}
 import com.socrata.datacoordinator.truth.CopySelector
+import com.socrata.datacoordinator.truth.loader.{Delogger, NullLogger}
 import com.socrata.datacoordinator.truth.universe.sql.PostgresUniverse
-import com.socrata.datacoordinator.truth.metadata.{CompStratSchemaField, SchemaField, Schema, DatasetCopyContext}
+import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.util.collection.UserColumnIdSet
-import com.socrata.datacoordinator.util.{NullCache, IndexedTempFile, StackedTimingReport, LoggedTimingReport}
+import com.socrata.datacoordinator.util._
 import com.socrata.http.common.AuxiliaryData
 import com.socrata.http.server._
 import com.socrata.http.server.curator.CuratorBroker
@@ -195,7 +196,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
         rid <- rowId
         // Missing dataset copy is not handled as error here.  It is handled further downstream.
         ctxOpt <- u.datasetReader.openDataset(id, copy)
-        ctx <- ctxOpt
+        ctx <- ctxOpt.toOption
       } yield {
         ctx.copyCtx.userIdCol match {
           case Some(_) => // dataset has custom row identifier
@@ -299,6 +300,42 @@ object Main {
           }
         }
 
+        def getSnapshots(datasetId: DatasetId) = {
+          for {
+            u <- common.universe
+            dsInfo <- u.datasetMapReader.datasetInfo(datasetId)
+          } yield {
+            u.datasetMapReader.snapshots(dsInfo).map(_.unanchored).toVector
+          }
+        }
+
+        def deleteSnapshot(datasetId: DatasetId, copyNum: Long): CopyContextResult[UnanchoredCopyInfo] = {
+          for {
+            u <- common.universe
+          } yield {
+            val dsInfo = u.datasetMapReader.datasetInfo(datasetId).getOrElse { return CopyContextResult.NoSuchDataset }
+            u.datasetMapReader.snapshots(dsInfo).find(_.copyNumber == copyNum) match {
+              case None =>
+                CopyContextResult.NoSuchCopy
+              case Some(snapshot) =>
+                u.schemaLoader(NullLogger[u.CT, u.CV]).drop(snapshot) // NullLogger because DropSnapshot is no longer a visible thing
+                u.datasetMapWriter.dropCopy(snapshot)
+                CopyContextResult.CopyInfo(snapshot.unanchored)
+            }
+          }
+        }
+
+        def getLog(datasetId: DatasetId, version: Long)(f: Iterator[Delogger.LogEvent[common.CV]] => Unit) = {
+          for {
+            u <- common.universe
+            dsInfo <- u.datasetMapReader.datasetInfo(datasetId)
+          } yield {
+            using(u.delogger(dsInfo).delog(version)) { it =>
+              f(it)
+            }
+          }
+        }
+
         def getRollups(datasetId: DatasetId) = {
           for {
             u <- common.universe
@@ -309,6 +346,13 @@ object Main {
           }
         }
 
+        def getSnapshottedDatasets() = {
+          for {
+            u <- common.universe
+            dsInfos <- u.datasetMapReader.snapshottedDatasets()
+          } yield dsInfos
+        }
+
 
         val notFoundDatasetResource = NotFoundDatasetResource(_: Option[String], common.internalNameFromDatasetId,
           operations.makeReportTemporaryFile, operations.processCreation,
@@ -317,7 +361,11 @@ object Main {
           serviceConfig.commandReadLimit, operations.processMutation, operations.deleteDataset,
           operations.exporter, _: (=> HttpResponse) => HttpResponse, common.internalNameFromDatasetId)
         val datasetSchemaResource = DatasetSchemaResource(_: DatasetId, getSchema, common.internalNameFromDatasetId)
+        val datasetSnapshotsResource = DatasetSnapshotsResource(_: DatasetId, getSnapshots, common.internalNameFromDatasetId)
+        val datasetSnapshotResource = DatasetSnapshotResource(_: DatasetId, _: Long, deleteSnapshot, common.internalNameFromDatasetId)
+        val datasetLogResource = DatasetLogResource[common.CV](_: DatasetId, _: Long, getLog, common.internalNameFromDatasetId)
         val datasetRollupResource = DatasetRollupResource(_: DatasetId, getRollups, common.internalNameFromDatasetId)
+        val snapshottedResource = SnapshottedResource(getSnapshottedDatasets, common.internalNameFromDatasetId)
         val secondaryManifestsResource = SecondaryManifestsResource(_: Option[String], secondaries,
           operations.datasetsInStore, common.internalNameFromDatasetId)
         val datasetSecondaryStatusResource = DatasetSecondaryStatusResource(_: Option[String], _:DatasetId, secondaries,
@@ -327,14 +375,17 @@ object Main {
           common.internalNameFromDatasetId)
 
 
-
         val serv = new Service(serviceConfig = serviceConfig,
           formatDatasetId = common.internalNameFromDatasetId,
           parseDatasetId = common.datasetIdFromInternalName,
           notFoundDatasetResource = notFoundDatasetResource,
           datasetResource = datasetResource,
           datasetSchemaResource = datasetSchemaResource,
+          datasetSnapshotsResource = datasetSnapshotsResource,
+          datasetSnapshotResource = datasetSnapshotResource,
+          datasetLogResource = datasetLogResource,
           datasetRollupResource = datasetRollupResource,
+          snapshottedResource = snapshottedResource,
           secondaryManifestsResource = secondaryManifestsResource,
           datasetSecondaryStatusResource = datasetSecondaryStatusResource,
           secondariesOfDatasetResource = secondariesOfDatasetResource)
@@ -414,7 +465,7 @@ object Main {
                        datasetId: DatasetId, secondaryGroupStr: String): Set[String] = {
 
     /*
-     * The dataset may be in secondaries defined in other groups, but here we need to reason 
+     * The dataset may be in secondaries defined in other groups, but here we need to reason
      * only about secondaries in this group since selection is done group by group.  For example,
      * if we need two replicas in this group then secondaries outside this group don't count.
      */

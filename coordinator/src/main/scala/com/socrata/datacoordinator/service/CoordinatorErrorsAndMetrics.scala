@@ -9,6 +9,7 @@ import com.rojoma.json.v3.codec.JsonEncode
 import com.rojoma.json.v3.io.{FusedBlockJsonEventIterator, JsonEvent}
 import com.rojoma.json.v3.util.JsonUtil
 import com.socrata.datacoordinator.id.{UserColumnId, DatasetId}
+import com.socrata.datacoordinator.truth.CopySelector
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.metadata.Schema
 import com.socrata.http.server._
@@ -94,6 +95,13 @@ class CoordinatorErrorsAndMetrics(formatDatasetId: DatasetId => String) extends 
   def notFoundError(datasetIdString: String, data: (String, JValue)*): HttpResponse = {
     datasetErrorResponse(NotFound, DatasetUpdateError.DOES_NOT_EXIST,
       "dataset" -> JString(datasetIdString),
+      "data" -> JObject(data.toMap))
+  }
+
+  def snapshotNotFoundError(datasetId: DatasetId, copy: CopySelector, data: (String, JValue)*): HttpResponse = {
+    datasetErrorResponse(NotFound, DatasetUpdateError.SNAPSHOT_DOES_NOT_EXIST,
+      "dataset" -> JString(formatDatasetId(datasetId)),
+      "copy" -> JsonEncode.toJValue(copy),
       "data" -> JObject(data.toMap))
   }
 
