@@ -74,6 +74,10 @@ class QueryResource(secondary: Secondary,
 
       forcedSecondaryName.foreach(ds => log.info("Forcing use of the secondary store instance: " + ds))
 
+      val fuseMap: Map[String, String] = req.header("X-Socrata-Fuse-Columns")
+                                            .map(parseFuseColumnMap(_))
+                                            .getOrElse(Map.empty)
+
       val query = Option(servReq.getParameter("q")).map(Left(_)).getOrElse {
         Right(FragmentedQuery(
           select = Option(servReq.getParameter("select")),
@@ -128,7 +132,7 @@ class QueryResource(secondary: Secondary,
       def analyzeRequest(schema: Versioned[Schema], isFresh: Boolean): Versioned[(Schema, Seq[SoQLAnalysis[String, SoQLType]])] = {
         val parsedQuery = query match {
           case Left(q) =>
-            queryParser(q, columnIdMap, schema.payload.schema)
+            queryParser(q, columnIdMap, schema.payload.schema, fuseMap)
           case Right(fq) =>
             queryParser(
               selection = fq.select,
@@ -140,7 +144,8 @@ class QueryResource(secondary: Secondary,
               offset = fq.offset,
               search = fq.search,
               columnIdMapping = columnIdMap,
-              schema = schema.payload.schema
+              schema = schema.payload.schema,
+              fuseMap = fuseMap
             )
         }
 
@@ -371,6 +376,15 @@ class QueryResource(secondary: Secondary,
     }
   }
 
+  /**
+   * Parse "loc_column,location;phone_column,phone" into a map
+   */
+  private def parseFuseColumnMap(s: String): Map[String, String] = {
+    s.split(';')
+     .map { item => item.split(',') }
+     .map { case Array(a, b) => (a, b) }
+     .toMap
+  }
 }
 
 object QueryResource {

@@ -1,11 +1,14 @@
 package com.socrata.querycoordinator
 
-import com.socrata.soql.ast.Expression
-import com.socrata.soql.collection.OrderedMap
-import com.socrata.soql.environment.{DatasetContext, ColumnName}
+import com.socrata.querycoordinator.fusion.CompoundTypeFuser
+import com.socrata.soql.aliases.AliasAnalysis
+import com.socrata.soql.ast.{Selection, Expression}
+import com.socrata.soql.collection.{OrderedSet, OrderedMap}
+import com.socrata.soql.environment.{UntypedDatasetContext, DatasetContext, ColumnName}
 import com.socrata.soql.exceptions.SoQLException
-import com.socrata.soql.functions.{MonomorphicFunction, VariableType, SoQLFunctions}
-import com.socrata.soql.types.{SoQLBoolean, SoQLType}
+import com.socrata.soql.functions.SoQLFunctions
+import com.socrata.soql.parsing.Parser
+import com.socrata.soql.types.SoQLType
 import com.socrata.soql.{SoQLAnalysis, SoQLAnalyzer}
 import com.typesafe.scalalogging.slf4j.Logging
 
@@ -78,10 +81,30 @@ class QueryParser(analyzer: SoQLAnalyzer[SoQLType], maxRows: Option[Int], defaul
 
   def apply(query: String,
             columnIdMapping: Map[ColumnName, String], schema: Map[String, SoQLType],
+            fuseMap: Map[String, String] = Map.empty,
             merged: Boolean = true): Result = {
-    val analyze: DatasetContext[SoQLType] => Seq[SoQLAnalysis[ColumnName, SoQLType]] =
-      analyzer.analyzeFullQuery(query)(_)
-    val analyzeMaybeMerge = if (merged) { analyze andThen soqlMerge } else { analyze }
+
+    val fuser = CompoundTypeFuser(fuseMap)
+    val analyze: DatasetContext[SoQLType] => Seq[SoQLAnalysis[ColumnName, SoQLType]] = {
+      val utDsCtx = new UntypedDatasetContext {
+        override val columns: OrderedSet[ColumnName] = {
+          // exclude non-existing columns in the schema
+          val existedColumns = columnIdMapping.filter { case (k, v) => schema.contains(v) }
+          OrderedSet(existedColumns.keysIterator.toSeq: _*)
+        }
+      }
+      val parsedStmts = new Parser().selectStatement(query)
+      val expandedStmts = parsedStmts.map { parsed =>
+        val expanded = AliasAnalysis.expandSelection(parsed.selection)(utDsCtx)
+        parsed.copy(selection = Selection(None, None, expanded))
+      }
+
+      val fusedStmts = expandedStmts.map(s => fuser.rewrite(s))
+      analyzer.analyze(fusedStmts)(_)
+    }
+
+    val postAnalyze = analyze andThen fuser.postAnalyze
+    val analyzeMaybeMerge = if (merged) { postAnalyze andThen soqlMerge } else { postAnalyze }
     go(columnIdMapping, schema)(analyzeMaybeMerge)
   }
 
@@ -99,9 +122,10 @@ class QueryParser(analyzer: SoQLAnalyzer[SoQLType], maxRows: Option[Int], defaul
             offset: Option[String],
             search: Option[String],
             columnIdMapping: Map[ColumnName, String],
-            schema: Map[String, SoQLType]): Result = {
+            schema: Map[String, SoQLType],
+            fuseMap: Map[String, String]): Result = {
     val query = fullQuery(selection, where, groupBy, having, orderBy, limit, offset, search)
-    go(columnIdMapping, schema)(analyzer.analyzeFullQuery(query)(_))
+    apply(query, columnIdMapping, schema, fuseMap)
   }
 }
 
