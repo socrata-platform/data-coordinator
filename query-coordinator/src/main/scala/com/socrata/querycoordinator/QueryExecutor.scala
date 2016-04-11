@@ -203,7 +203,8 @@ class QueryExecutor(httpClient: HttpClient,
               cache.start()
               ready.acquire()
 
-              val jvalues = JsonArrayIterator[JValue](new FusedBlockJsonEventIterator(new InputStreamReader(forForward, StandardCharsets.UTF_8)))
+              val jvalues = JsonArrayIterator.fromEvents[JValue](new FusedBlockJsonEventIterator(
+                new InputStreamReader(forForward, StandardCharsets.UTF_8)))
               val cjsonHeader = jvalues.next()
 
               val interestingSubset = takeBigInt(dropBigInt(jvalues, origOffset - newOffset), origLimit)
@@ -218,7 +219,7 @@ class QueryExecutor(httpClient: HttpClient,
 
   private def parseWindowInScope(window: ValueRef, rs: ResourceScope): Iterator[JValue] = new Iterator[JValue] {
     val stream = window.openText(rs)
-    val underlying = JsonArrayIterator[JValue](new FusedBlockJsonEventIterator(stream))
+    val underlying = JsonArrayIterator.fromEvents[JValue](new FusedBlockJsonEventIterator(stream))
     var seenEOF = false
     def hasNext = {
       if(!seenEOF && !underlying.hasNext) { seenEOF = true; rs.close(stream); rs.close(window) }
@@ -243,7 +244,8 @@ class QueryExecutor(httpClient: HttpClient,
                       startWindow: BigInt,
                       endWindow: BigInt): Unit = {
     val abort = { (why: String) => log.warn(why); return } // this "return" needs to return from doCache, not abort.  Thus val not def
-    val jvalues = JsonArrayIterator[JValue](new FusedBlockJsonEventIterator(new InputStreamReader(body, StandardCharsets.UTF_8)))
+    val jvalues = JsonArrayIterator.fromEvents[JValue](new FusedBlockJsonEventIterator(
+        new InputStreamReader(body, StandardCharsets.UTF_8)))
     val cjsonHeader = jvalues.next()
     // ok, we'll need to make a new cache key based on the headers
     val headers = Headers(httpHeaders, cjsonHeader)

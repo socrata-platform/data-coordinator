@@ -72,7 +72,12 @@ class CompoundTypeFuser(fuseBase: Map[String, String]) extends SoQLRewrite with 
       case SelectedExpression(expr: Expression, namePos) =>
         rewrite(expr) match {
           case Some(rwExpr) =>
-            val alias = namePos.orElse(Some((ColumnName(ColumnPrefix + expr.toSyntheticIdentifierBase), NoPosition)))
+            val alias =
+              if (expr.eq(rwExpr)) { // Do not change the original name if the expression is not rewritten.
+                namePos
+              } else {
+                namePos.orElse(Some((ColumnName(ColumnPrefix + expr.toSyntheticIdentifierBase), NoPosition)))
+              }
             Seq(SelectedExpression(rwExpr, alias))
           case None =>
             Seq.empty
