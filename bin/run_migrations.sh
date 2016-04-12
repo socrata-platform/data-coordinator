@@ -1,21 +1,18 @@
 #!/bin/bash
 # Run data coordinator migrations
 # run_migrations.sh [migrate/undo/redo] [numchanges]
-BASEDIR=$(dirname "$0")/..
-CONFIG=${SODA_CONFIG:-$BASEDIR/../docs/onramp/services/soda2.conf}
+REALPATH=$(python -c "import os; print(os.path.realpath('$0'))")
+BASEDIR="$(dirname "${REALPATH}")/.."
 
-JARS=( $BASEDIR/coordinator/target/scala-2.10/coordinator-assembly-*.jar )
-# shellcheck disable=SC2012
-JARFILE=$(ls -t "${JARS[@]}" | head -n 1)
+CONFIG=${SODA_CONFIG:-$BASEDIR/../docs/onramp/services/soda2.conf} # TODO: Don't depend on soda2.conf.
 
-if [ ! -e "$JARFILE" ]; then
-    cd "$BASEDIR" && sbt assembly
-    JARS=( $BASEDIR/coordinator/target/scala-2.10/coordinator-assembly-*.jar )
-    # shellcheck disable=SC2012
-    JARFILE=$(ls -t "${JARS[@]}" | head -n 1)
+JARFILE="$(ls -rt coordinator/target/scala-*/coordinator-assembly-*.jar 2>/dev/null | tail -n 1)"
+if [ -z "$JARFILE" ] || find ./* -newer "$JARFILE" | egrep -q -v '(/target/)|(/bin/)'; then
+    cd "$BASEDIR" || { echo 'Failed to change directories'; exit; }
+    nice -n 19 sbt assembly
 fi
 
 COMMAND=${1:-migrate}
 echo Running datacoordinator.primary.MigrateSchema "$COMMAND" "$2"...
 ARGS=( $COMMAND $2 )
-java -Dconfig.file="$CONFIG" -jar "$JARFILE" com.socrata.datacoordinator.primary.MigrateSchema "${ARGS[@]}"
+java -Djava.net.preferIPv4Stack=true -Dconfig.file="$CONFIG" -jar "$JARFILE" com.socrata.datacoordinator.primary.MigrateSchema "${ARGS[@]}"

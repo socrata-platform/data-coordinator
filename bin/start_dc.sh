@@ -1,9 +1,14 @@
 #!/bin/bash
 # Start data coordinator locally and build it if necessary
-BASEDIR=$(dirname $0)/..
-CONFIG=${SODA_CONFIG:-$BASEDIR/../docs/onramp/services/soda2.conf}
-JARFILE=$BASEDIR/coordinator/target/scala-2.10/coordinator-assembly-*.jar
-if [ ! -e $JARFILE ]; then
-  cd $BASEDIR && sbt assembly
+REALPATH=$(python -c "import os; print(os.path.realpath('$0'))")
+BASEDIR="$(dirname "${REALPATH}")/.."
+
+CONFIG=${SODA_CONFIG:-$BASEDIR/../docs/onramp/services/soda2.conf} # TODO: Don't depend on soda2.conf.
+
+JARFILE="$(ls -rt coordinator/target/scala-*/coordinator-assembly-*.jar 2>/dev/null | tail -n 1)"
+if [ -z "$JARFILE" ] || find ./* -newer "$JARFILE" | egrep -q -v '(/target/)|(/bin/)'; then
+    cd "$BASEDIR" || { echo 'Failed to change directories'; exit; }
+    nice -n 19 sbt assembly
 fi
-java -Dconfig.file=$CONFIG -jar $JARFILE com.socrata.datacoordinator.service.Main &
+
+java -Djava.net.preferIPv4Stack=true -Dconfig.file="$CONFIG" -jar "$JARFILE" com.socrata.datacoordinator.service.Main
