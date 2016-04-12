@@ -7,7 +7,7 @@ object Dependencies {
     val metricsScala    = "3.3.0"
     val jodaConvert     = "1.2"
     val jodaTime        = "2.1"
-    val rojomaJson      = "3.2.2"
+    val rojomaJson      = "3.5.0"
     val rojomaSimpleArm = "1.1.10"
     val scalaCheck      = "1.11.0"
     val scalaMock       = "3.2"
