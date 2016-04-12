@@ -6,7 +6,7 @@ set -e
 REALPATH=$(python -c "import os; print(os.path.realpath('$0'))")
 BASEDIR="$(dirname "${REALPATH}")/.."
 
-CONFIG=${SODA_CONFIG:-/etc/soda2.conf} # TODO: Don't depend on soda2.conf.
+CONFIG="${SODA_CONFIG:-/etc/soda2.conf}" # TODO: Don't depend on soda2.conf.
 
 cd "$BASEDIR"
 JARFILE="$(ls -rt coordinator/target/scala-*/coordinator-assembly-*.jar 2>/dev/null | tail -n 1)"
