@@ -59,7 +59,7 @@ case class NotFoundDatasetResource(datasetIdRaw: Option[String],
         jsonStream(req.servletRequest, commandReadLimit) match {
           case Right((events, boundResetter)) =>
             val iteratorOrError = try {
-              Right(JsonArrayIterator[JValue](events))
+              Right(JsonArrayIterator.fromEvents[JValue](events))
             } catch { case _: JsonBadParse =>
               Left(datasetErrorResponse(BadRequest, BodyRequestError.NOT_JSON_ARRAY))
             }
@@ -110,4 +110,3 @@ case class NotFoundDatasetResource(datasetIdRaw: Option[String],
     }
   }
 }
-
