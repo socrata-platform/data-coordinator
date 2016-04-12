@@ -64,7 +64,7 @@ case class DatasetResource(datasetId: DatasetId,
         jsonStream(req.servletRequest, commandReadLimit) match {
           case Right((events, boundResetter)) =>
             val iteratorOrError = try {
-              Right(JsonArrayIterator[JValue](events))
+              Right(JsonArrayIterator.fromEvents[JValue](events))
             } catch { case _: JsonBadParse =>
               Left(datasetBadRequest(BodyRequestError.NOT_JSON_ARRAY))
             }
