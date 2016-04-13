@@ -10,6 +10,7 @@ JARFILE="$(ls -rt coordinator/target/scala-*/coordinator-assembly-*.jar 2>/dev/n
 if [ -z "$JARFILE" ] || find ./* -newer "$JARFILE" | egrep -q -v '(/target/)|(/bin/)'; then
     nice -n 19 sbt assembly >&2
     JARFILE="$(ls -rt coordinator/target/scala-*/coordinator-assembly-*.jar 2>/dev/null | tail -n 1)"
+    touch "$JARFILE"
 fi
 
 echo "$JARFILE"
