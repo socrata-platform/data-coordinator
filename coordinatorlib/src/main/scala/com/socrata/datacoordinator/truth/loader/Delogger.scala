@@ -88,6 +88,9 @@ object Delogger {
   case class RollupDropped(info: UnanchoredRollupInfo) extends LogEvent[Nothing]
   object RollupDropped extends LogEventCompanion
 
+  case class RowsChangedPreview(rowsInserted: Long, rowsUpdated: Long, rowsDeleted: Long) extends LogEvent[Nothing]
+  object RowsChangedPreview extends LogEventCompanion
+
   case object EndTransaction extends LogEvent[Nothing] with LogEventCompanion
 
   case class RowDataUpdated[CV](bytes: Array[Byte])(codec: RowLogCodec[CV]) extends LogEvent[CV] {
@@ -132,7 +135,7 @@ object Delogger {
     Set(Truncated, ColumnCreated, ColumnRemoved, FieldNameUpdated, RowIdentifierSet, RowIdentifierCleared,
       SystemRowIdentifierChanged, VersionColumnChanged, LastModifiedChanged, WorkingCopyCreated, DataCopied,
       WorkingCopyPublished, WorkingCopyDropped, SnapshotDropped, RowDataUpdated, CounterUpdated,
-      RollupCreatedOrUpdated, RollupDropped, EndTransaction)
+      RollupCreatedOrUpdated, RollupDropped, RowsChangedPreview, EndTransaction)
 
   // Note: the Delogger test checks that this is exhaustive.  It is not intended
   // to be used outside of this object and that test.
@@ -157,6 +160,7 @@ object Delogger {
         case CounterUpdated => "CounterUpdated"
         case RollupCreatedOrUpdated => "RollupCreatedOrUpdated"
         case RollupDropped => "RollupDropped"
+        case RowsChangedPreview => "RowsChangedPreview"
         case EndTransaction => "EndTransaction"
       }
       acc + (n -> obj)

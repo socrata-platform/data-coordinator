@@ -25,6 +25,8 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
   import messages.ToProtobuf._
 
   protected def logLine(what: String, aux: Array[Byte])
+  protected val rowsChangedPreviewSubversion = 1
+  protected def logRowsChangePreview(what: String, aux: Array[Byte])
   protected def flushBatch()
 
   protected lazy val versionNum = timingReport("version-num", "audit-table" -> auditTableName) {
@@ -41,7 +43,7 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
   }
 
   private[this] var transactionEnded = false
-  protected[this] val nextSubVersionNum = new Counter(init = 1)
+  protected[this] val nextSubVersionNum = new Counter(init = 2)
 
   private[this] def checkTxn() {
     assert(!transactionEnded, "Operation logged after saying the transaction was over")
@@ -57,6 +59,10 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
 
   private def logLine(what: String, aux: MessageLite) {
     logLine(what, aux.toByteArray)
+  }
+
+  private def logRowsChangePreview(what: String, aux: MessageLite) {
+    logRowsChangePreview(what, aux.toByteArray)
   }
 
   def truncated() {
@@ -166,7 +172,8 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
 
     flushRowData()
 
-    if(nextSubVersionNum.peek != 1) {
+    if(nextSubVersionNum.peek != nextSubVersionNum.init) {
+      logRowsChangePreview(RowsChangedPreview, messages.RowsChangedPreview(rowsInserted, rowsUpdated, rowsDeleted))
       logLine(TransactionEnded, messages.EndTransaction.defaultInstance)
       flushBatch()
       Some(versionNum)
@@ -183,6 +190,9 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
 
   // DataLogger facet starts here
 
+  private[this] var rowsInserted: Long = 0
+  private[this] var rowsUpdated: Long = 0
+  private[this] var rowsDeleted: Long = 0
   private[this] var baos: java.io.ByteArrayOutputStream = _
   private[this] var underlyingOutputStream: java.io.OutputStream = _
   private[this] var out: com.google.protobuf.CodedOutputStream = _
@@ -237,18 +247,21 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
 
   def insert(sid: RowId, row: Row[CV]) {
     checkTxn()
+    rowsInserted += 1
     rowCodec.insert(out, sid, row)
     maybeFlushRowData()
   }
 
   def update(sid: RowId, oldRow: Option[Row[CV]], newRow: Row[CV]) {
     checkTxn()
+    rowsUpdated += 1
     rowCodec.update(out, sid, oldRow, newRow)
     maybeFlushRowData()
   }
 
   def delete(systemID: RowId, oldRow: Option[Row[CV]]) {
     checkTxn()
+    rowsDeleted += 1
     rowCodec.delete(out, systemID, oldRow)
     maybeFlushRowData()
   }

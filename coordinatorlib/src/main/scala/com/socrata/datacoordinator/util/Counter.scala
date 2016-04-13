@@ -1,6 +1,6 @@
 package com.socrata.datacoordinator.util
 
-class Counter(init: Int = 0) {
+class Counter(val init: Int = 0) {
   private var next = init
 
   def apply() = {
