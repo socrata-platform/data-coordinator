@@ -34,8 +34,8 @@ class DummySecondary(config: Config) extends Secondary[Any, Any] {
    * if the snapshot is already gone (but it should signal an error if the
    * copyNumber does not name a snapshot).
    */
-  def dropCopy(datasetInternalName: String, copyNumber: Long, cookie: Secondary.Cookie): Secondary.Cookie =
-    readLine("Dropping copy " + datasetInternalName + "; new cookie? (" + cookie + ") ") match {
+  def dropCopy(datasetInfo: DatasetInfo, copyInfo: CopyInfo, cookie: Secondary.Cookie, isLatestCopy: Boolean): Secondary.Cookie =
+    readLine("Dropping copy " + datasetInfo.internalName + "; new cookie? (" + cookie + ") ") match {
       case "" => cookie
       case other => Some(other)
     }

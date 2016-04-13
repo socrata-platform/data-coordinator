@@ -297,25 +297,31 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
             case Some(datasetInfo) =>
               val allCopies = r.allCopies(datasetInfo) // guarantied to be ordered by copy number
               val latestLiving = r.latest(datasetInfo).copyNumber // this is the newest _living_ copy
-              for (copy <- allCopies) {
-                val secondaryDatasetInfo = makeSecondaryDatasetInfo(copy.datasetInfo)
-                timingReport("copy", "number" -> copy.copyNumber) {
-                  // secondary.store.resync(.) will be called
-                  // on all _living_ copies in order by their copy number
-                  def isDiscardedLike(stage: metadata.LifecycleStage) =
-                    Set(metadata.LifecycleStage.Discarded, metadata.LifecycleStage.Snapshotted).contains(stage)
-                  if (isDiscardedLike(copy.lifecycleStage))
-                    secondary.store.dropCopy(secondaryDatasetInfo.internalName, copy.copyNumber, currentCookie)
-                  else
-                    syncCopy(copy, isLatestLivingCopy = copy.copyNumber == latestLiving)
-                }
+              val latest = allCopies.lastOption match {
+                case Some(latestCopy) =>
+                  for (copy <- allCopies) {
+                    timingReport("copy", "number" -> copy.copyNumber) {
+                      // secondary.store.resync(.) will be called
+                      // on all _living_ copies in order by their copy number
+                      def isDiscardedLike(stage: metadata.LifecycleStage) =
+                        Set(metadata.LifecycleStage.Discarded, metadata.LifecycleStage.Snapshotted).contains(stage)
+                      if (isDiscardedLike(copy.lifecycleStage)) {
+                        val secondaryDatasetInfo = makeSecondaryDatasetInfo(copy.datasetInfo)
+                        val secondaryCopyInfo = makeSecondaryCopyInfo(copy)
+                        secondary.store.dropCopy(secondaryDatasetInfo, secondaryCopyInfo, currentCookie,
+                          isLatestCopy = copy.copyNumber == latestCopy.copyNumber)
+                      } else
+                        syncCopy(copy, isLatestLivingCopy = copy.copyNumber == latestLiving)
+                    }
+                  }
+                  Some(latestCopy)
+                case None => // should always be a Some(.)...
+                  logger.error("Have dataset info for dataset {}, but it has no copies?", datasetInfo.toString)
+                  None
               }
               // end transaction to not provoke a serialization error from touching the secondary_manifest table
               u.commit()
               // transaction isolation level is now reset to READ COMMITTED
-              val latest = allCopies.lastOption
-              if (!latest.isDefined) // should always be a Some(.)...
-                logger.error("Have dataset info for dataset {}, but it has no copies?", datasetInfo.toString)
               latest
             case None =>
               drop()
