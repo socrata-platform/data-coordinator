@@ -14,4 +14,4 @@ if [ -z "$JARFILE" ] || find "${SRC_PATHS[@]}" -newer "$JARFILE" | egrep -q -v '
     touch "$JARFILE"
 fi
 
-echo "$JARFILE"
+python -c "import os; print(os.path.realpath('$JARFILE'))"
