@@ -7,7 +7,7 @@ REALPATH=$(python -c "import os; print(os.path.realpath('$0'))")
 BINDIR=$(dirname "$REALPATH")
 
 CONFIG="${SODA_CONFIG:-/etc/soda2.conf}" # TODO: Don't depend on soda2.conf.
-JARFILE=$("$BINDIR"/build.sh)
+JARFILE=$("$BINDIR"/build.sh "$@")
 
 COMMAND=${1:-migrate}
 echo Running datacoordinator.primary.MigrateSchema "$COMMAND" "$2"...
