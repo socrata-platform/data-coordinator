@@ -14,6 +14,7 @@ sealed trait FuseType
 
 case object FTLocation extends FuseType
 case object FTPhone extends FuseType
+case object FTUrl extends FuseType
 case object FTRemove extends FuseType
 
 trait SoQLRewrite {
@@ -61,6 +62,9 @@ class CompoundTypeFuser(fuseBase: Map[String, String]) extends SoQLRewrite with 
       case (name, "phone") =>
         acc ++ Map(name -> FTPhone,
                    s"${name}_type" -> FTRemove)
+      case (name, "url") =>
+        acc ++ Map(name -> FTUrl,
+                   s"${name}_description" -> FTRemove)
       case (name, typ) =>
         logger.warn(s"unrecognize fuse type {} for {}", typ, name)
         acc
@@ -126,6 +130,11 @@ class CompoundTypeFuser(fuseBase: Map[String, String]) extends SoQLRewrite with 
             var args = Seq(baseColumn, phoneType)
             val fc = FunctionCall(SoQLFunctions.Phone.name, args)(NoPosition, NoPosition)
             Some(fc)
+          case Some(FTUrl) =>
+            val urlDescription = ColumnOrAliasRef(ColumnName(s"${name.name}_description"))(NoPosition)
+            var args = Seq(baseColumn, urlDescription)
+            val fc = FunctionCall(SoQLFunctions.Url.name, args)(NoPosition, NoPosition)
+            Some(fc)
           case Some(FTRemove) =>
             None
           case None =>
@@ -155,6 +164,15 @@ class CompoundTypeFuser(fuseBase: Map[String, String]) extends SoQLRewrite with 
                 Some(ColumnOrAliasRef(ColumnName(name.name))(NoPosition))
               case "phone_type" =>
                 Some(ColumnOrAliasRef(ColumnName(s"${name.name}_type"))(NoPosition))
+              case _ =>
+                throw BadParse("unknown phone property", fc.position)
+            }
+          case Some(FTUrl) =>
+            prop match {
+              case "url" =>
+                Some(ColumnOrAliasRef(ColumnName(name.name))(NoPosition))
+              case "description" =>
+                Some(ColumnOrAliasRef(ColumnName(s"${name.name}_description"))(NoPosition))
               case _ =>
                 throw BadParse("unknown phone property", fc.position)
             }
