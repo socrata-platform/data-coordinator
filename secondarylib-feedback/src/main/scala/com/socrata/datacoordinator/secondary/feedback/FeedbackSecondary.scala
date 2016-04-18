@@ -83,8 +83,6 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
     }
   }
 
-  override def wantsWorkingCopies: Boolean = true
-
   /** The dataset has been deleted. */
   override def dropDataset(datasetInternalName: String, cookie: Cookie): Unit = {} // nothing to do here
 
@@ -109,18 +107,6 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
       case None => log.debug("No existing cookie for dataset {}", datasetInternalName); 0
     }
   }
-
-  /**
-   * @return The `copyNumber`s of all snapshot copies in this secondary.
-   */
-  override def snapshots(datasetInternalName: String, cookie: Cookie): Set[Long] = Set.empty // no need for snapshots
-
-  /**
-   * In order for this secondary to drop a snapshot.  This should ignore the request
-   * if the snapshot is already gone (but it should signal an error if the
-   * copyNumber does not name a snapshot).
-   */
-  override def dropCopy(datasetInternalName: String, copyNumber: Long, cookie: Cookie): Cookie = cookie // no-op: don't have snapshots
 
   /** Provide the current copy an update.  The secondary should ignore it if it
     * already has this dataVersion.
@@ -252,8 +238,11 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
     }
   }
 
+  /**
+   * Part of the resync path for (un)published copies.
+   */
   override def resync(datasetInfo: DatasetInfo, copyInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo[CT]], cookie: Cookie,
-                      rows: Managed[Iterator[ColumnIdMap[CV]]], rollups: Seq[RollupInfo], isLatestCopy: Boolean): Cookie = {
+                      rows: Managed[Iterator[ColumnIdMap[CV]]], rollups: Seq[RollupInfo], isLatestLivingCopy: Boolean): Cookie = {
     try {
       // decode the old cookie
       val oldCookie = FeedbackCookie.decode(cookie)
@@ -290,7 +279,7 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
 
       var newCookie = FeedbackCookie(cookieSchema, previous)
 
-      if (isLatestCopy && newCookie.current.strategyMap.nonEmpty) {
+      if (isLatestLivingCopy && newCookie.current.strategyMap.nonEmpty) {
         for {
           rws <- rows
         } {
@@ -312,6 +301,12 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
         throw error
     }
   }
+
+  /**
+   * Part of the resync path for discarded/snapshotted copies.
+   */
+  // no-op: feedback secondaries don't need to feedback values for discarded/snapshotted copies
+  override def dropCopy(datasetInfo: DatasetInfo, copyInfo: CopyInfo, cookie: Cookie, isLatestCopy: Boolean): Cookie = cookie
 
   case class Row(data: secondary.Row[CV], oldData: Option[secondary.Row[CV]])
 
