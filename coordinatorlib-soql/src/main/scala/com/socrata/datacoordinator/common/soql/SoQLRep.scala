@@ -1,13 +1,13 @@
 package com.socrata.datacoordinator.common.soql
 
-import com.socrata.datacoordinator.common.soql.sqlreps.{PhoneRep, LocationRep, GeometryLikeRep}
+import com.socrata.datacoordinator.common.soql.sqlreps.{GeometryLikeRep, LocationRep, PhoneRep, UrlRep}
 import com.socrata.soql.types._
 import com.socrata.datacoordinator.truth.sql.SqlColumnRep
 import com.socrata.datacoordinator.truth.csv.CsvColumnRep
 import com.socrata.datacoordinator.truth.json.JsonColumnRep
-import com.socrata.datacoordinator.id.{RowVersion, RowId}
+import com.socrata.datacoordinator.id.{RowId, RowVersion}
 import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, DatasetInfo}
-import com.vividsolutions.jts.geom.{LineString, MultiLineString, Polygon, MultiPolygon, Point, MultiPoint}
+import com.vividsolutions.jts.geom.{LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon}
 
 object SoQLRep {
   private val sqlRepFactories = Map[SoQLType, ColumnInfo[SoQLType] => SqlColumnRep[SoQLType, SoQLValue]](
@@ -39,6 +39,7 @@ object SoQLRep {
                                                                          SoQLMultiPolygon(_), ci.physicalColumnBase)),
     SoQLLocation -> (ci => new LocationRep(ci.physicalColumnBase)),
     SoQLPhone -> (ci => new PhoneRep(ci.physicalColumnBase)),
+    SoQLUrl -> (ci => new UrlRep(ci.physicalColumnBase)),
     SoQLBlob -> (ci => new sqlreps.BlobRep(ci.physicalColumnBase))
   )
 
@@ -65,6 +66,7 @@ object SoQLRep {
     SoQLMultiPolygon -> new csvreps.GeometryLikeRep[MultiPolygon](SoQLMultiPolygon, SoQLMultiPolygon(_)),
     SoQLLocation -> csvreps.LocationRep,
     SoQLPhone -> csvreps.PhoneRep,
+    SoQLUrl -> csvreps.UrlRep,
     SoQLBlob -> csvreps.BlobRep
   )
   def csvRep(columnInfo: ColumnInfo[SoQLType]): CsvColumnRep[SoQLType, SoQLValue] =
@@ -92,6 +94,7 @@ object SoQLRep {
     SoQLMultiPolygon -> new jsonreps.GeometryLikeRep[MultiPolygon](SoQLMultiPolygon, _.asInstanceOf[SoQLMultiPolygon].value, SoQLMultiPolygon(_)),
     SoQLLocation -> jsonreps.LocationRep,
     SoQLPhone -> jsonreps.PhoneRep,
+    SoQLUrl -> jsonreps.UrlRep,
     SoQLBlob -> jsonreps.BlobRep
   )
 

@@ -100,6 +100,16 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[SoQLValue] {
         if (phoneType.isDefined) {
           target.writeStringNoTag(phoneType.get)
         }
+      case SoQLUrl(url, description) =>
+        target.writeRawByte(24)
+        target.writeBoolNoTag(url.isDefined)
+        if (url.isDefined) {
+          target.writeStringNoTag(url.get)
+        }
+        target.writeBoolNoTag(description.isDefined)
+        if (description.isDefined) {
+          target.writeStringNoTag(description.get)
+        }
       case SoQLNull =>
         target.writeRawByte(-1)
     }
@@ -200,6 +210,14 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[SoQLValue] {
           if (source.readBool()) { Option(source.readString()) }
           else { None }
         SoQLPhone(phoneNumber, phoneType)
+      case 24 =>
+        val url =
+          if (source.readBool()) { Option(source.readString()) }
+          else { None }
+        val description =
+          if (source.readBool()) { Option(source.readString()) }
+          else { None }
+        SoQLUrl(url, description)
       case -1 =>
         SoQLNull
     }
