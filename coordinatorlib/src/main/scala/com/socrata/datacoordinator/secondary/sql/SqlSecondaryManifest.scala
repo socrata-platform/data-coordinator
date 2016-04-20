@@ -34,12 +34,11 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
         """INSERT INTO secondary_manifest (store_id, dataset_system_id, latest_data_version)
           | SELECT ?, dataset_system_id, data_version
           |   FROM copy_map
-          |   WHERE dataset_system_id = ? AND lifecycle_stage <> CAST(? AS dataset_lifecycle_stage)
+          |   WHERE dataset_system_id = ?
           |   ORDER BY copy_number DESC
           |   LIMIT 1""".stripMargin)) { stmt =>
         stmt.setString(1, storeId)
         stmt.setDatasetId(2, datasetId)
-        stmt.setLifecycleStage(3, metadata.LifecycleStage.Discarded)
         stmt.execute()
         (0L, None)
       }
@@ -101,16 +100,17 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
     val job = using(conn.prepareStatement(
       """SELECT dataset_system_id
         |  ,latest_secondary_data_version
-        |  ,latest_secondary_lifecycle_stage
         |  ,latest_data_version
         |  ,retry_num
         |  ,replay_num
         |  ,cookie
+        |  ,pending_drop
         |FROM secondary_manifest
         |WHERE store_id = ?
         |  AND broken_at IS NULL
         |  AND next_retry <= now()
-        |  AND latest_data_version > latest_secondary_data_version
+        |  AND (latest_data_version > latest_secondary_data_version
+        |    OR pending_drop = TRUE)
         |  AND (claimant_id is NULL
         |    OR claimed_at < (CURRENT_TIMESTAMP - CAST (? AS INTERVAL)))
         |ORDER BY went_out_of_sync_at
@@ -125,11 +125,11 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
             claimantId,
             rs.getDatasetId("dataset_system_id"),
             startingDataVersion = rs.getLong("latest_secondary_data_version") + 1,
-            startingLifecycleStage = rs.getLifecycleStage("latest_secondary_lifecycle_stage"),
             endingDataVersion = rs.getLong("latest_data_version"),
             retryNum = rs.getInt("retry_num"),
             replayNum = rs.getInt("replay_num"),
-            initialCookie = Option(rs.getString("cookie")))
+            initialCookie = Option(rs.getString("cookie")),
+            pendingDrop = rs.getBoolean("pending_drop"))
           markDatasetClaimedForReplication(j)
           Some(j)
         }
@@ -144,11 +144,11 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
     using(conn.prepareStatement(
       """SELECT  dataset_system_id
         |  ,latest_secondary_data_version
-        |  ,latest_secondary_lifecycle_stage
         |  ,latest_data_version
         |  ,retry_num
         |  ,replay_num
         |  ,cookie
+        |  ,pending_drop
         |FROM secondary_manifest
         |WHERE claimant_id = ?
         |  AND store_id = ?""".stripMargin)) {stmt =>
@@ -161,11 +161,11 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
             claimantId,
             rs.getDatasetId("dataset_system_id"),
             startingDataVersion = rs.getLong("latest_secondary_data_version") + 1,
-            startingLifecycleStage = rs.getLifecycleStage("latest_secondary_lifecycle_stage"),
             endingDataVersion = rs.getLong("latest_data_version"),
             retryNum = rs.getInt("retry_num"),
             replayNum = rs.getInt("replay_num"),
-            initialCookie = Option(rs.getString("cookie")))
+            initialCookie = Option(rs.getString("cookie")),
+            pendingDrop = rs.getBoolean("pending_drop"))
           releaseClaimedDataset(j)
         }
       }
@@ -220,26 +220,23 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
                              claimantId: UUID,
                              datasetId: DatasetId,
                              dataVersion: Long,
-                             lifecycleStage: metadata.LifecycleStage,
                              cookie: Option[String]): Unit = {
     using(conn.prepareStatement(
       """UPDATE secondary_manifest
         |SET latest_secondary_data_version = ?
-        |  ,latest_secondary_lifecycle_stage = CAST(? AS dataset_lifecycle_stage)
         |  ,cookie = ?
         |  ,went_out_of_sync_at = CURRENT_TIMESTAMP
         |WHERE claimant_id = ?
         |  AND store_id = ?
         |  AND dataset_system_id = ?""".stripMargin)) { stmt =>
       stmt.setLong(1, dataVersion)
-      stmt.setLifecycleStage(2, lifecycleStage)
       cookie match {
-        case Some(c) => stmt.setString(3, c)
-        case None => stmt.setNull(3, Types.VARCHAR)
+        case Some(c) => stmt.setString(2, c)
+        case None => stmt.setNull(2, Types.VARCHAR)
       }
-      stmt.setObject(4, claimantId)
-      stmt.setString(5, storeId)
-      stmt.setDatasetId(6, datasetId)
+      stmt.setObject(3, claimantId)
+      stmt.setString(4, storeId)
+      stmt.setDatasetId(5, datasetId)
       stmt.executeUpdate()
     }
   }
@@ -278,6 +275,18 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
       stmt.setString(5, storeId)
       stmt.setDatasetId(6, datasetId)
       stmt.executeUpdate()
+    }
+  }
+
+  def markDatasetForDrop(storeId: String, datasetId: DatasetId): Boolean = {
+    using(conn.prepareStatement(
+    """UPDATE secondary_manifest
+      |SET pending_drop = TRUE
+      |WHERE store_id = ?
+      |  AND dataset_system_id = ?""".stripMargin)) { stmt =>
+      stmt.setString(1, storeId)
+      stmt.setDatasetId(2, datasetId)
+      stmt.executeUpdate() != 0
     }
   }
 
