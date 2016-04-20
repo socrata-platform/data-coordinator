@@ -49,7 +49,7 @@ case class DatasetSecondaryStatusResource(storeIdOpt: Option[String],
     val defaultSecondaryGroups: Set[String] = serviceConfig.secondary.defaultGroups
     val groupRe = "_(.*)_".r
     val found = storeId match {
-      case "_DEFAULT_" => defaultSecondaryGroups.forall(ensureInSecondaryGroup(_, datasetId))
+      case "_DEFAULT_" => defaultSecondaryGroups.toVector.map(ensureInSecondaryGroup(_, datasetId)).forall(identity) // no side effects in forall
       case groupRe(g) if serviceConfig.secondary.groups.contains(g) => ensureInSecondaryGroup(g, datasetId)
       case secondary if secondaries(storeId) => ensureInSecondary(secondary, datasetId)
       case _ => false

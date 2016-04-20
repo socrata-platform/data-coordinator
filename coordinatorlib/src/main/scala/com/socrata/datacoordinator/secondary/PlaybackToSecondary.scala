@@ -287,7 +287,6 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
                       def isDiscardedLike(stage: metadata.LifecycleStage) =
                         Set(metadata.LifecycleStage.Discarded, metadata.LifecycleStage.Snapshotted).contains(stage)
                       if (isDiscardedLike(copy.lifecycleStage)) {
-                        println(s"Drop copy ${copy.copyNumber}")
                         val secondaryDatasetInfo = makeSecondaryDatasetInfo(copy.datasetInfo)
                         val secondaryCopyInfo = makeSecondaryCopyInfo(copy)
                         secondary.store.dropCopy(secondaryDatasetInfo, secondaryCopyInfo, currentCookie,

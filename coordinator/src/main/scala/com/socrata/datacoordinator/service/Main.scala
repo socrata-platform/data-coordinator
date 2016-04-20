@@ -63,7 +63,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
         datasetId,
         secondaryGroupStr)
 
-      newSecondaries.forall(ensureInSecondary(_, datasetId))
+      newSecondaries.toVector.map(ensureInSecondary(_, datasetId)).forall(identity) // no side effects in forall
     }
   }
 
