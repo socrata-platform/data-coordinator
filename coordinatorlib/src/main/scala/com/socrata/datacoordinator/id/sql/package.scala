@@ -32,5 +32,11 @@ package object sql {
       lifecycleStageify(__underlying.getString(col))
     def getLifecycleStage(idx: Int): LifecycleStage =
       lifecycleStageify(__underlying.getString(idx))
+
+    def getNullableLong(col: String): Option[Long] = {
+      val v = __underlying.getLong(col)
+      if(v == 0 && __underlying.wasNull) None
+      else Some(v)
+    }
   }
 }

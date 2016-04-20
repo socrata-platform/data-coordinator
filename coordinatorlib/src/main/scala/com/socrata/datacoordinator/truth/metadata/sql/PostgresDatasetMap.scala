@@ -53,7 +53,18 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
       }
     }
 
-  def latestQuery = "SELECT system_id, copy_number, lifecycle_stage :: TEXT, data_version, last_modified FROM copy_map WHERE dataset_system_id = ? AND lifecycle_stage <> 'Discarded' ORDER BY copy_number DESC LIMIT 1"
+  def latestQuery =
+    """SELECT
+      |  system_id, copy_number, lifecycle_stage :: TEXT, data_version, last_modified, table_modifier
+      |FROM
+      |  copy_map
+      |  LEFT OUTER JOIN copy_map_table_modifiers ON copy_map.system_id = copy_map_table_modifiers.copy_system_id
+      |WHERE
+      |  dataset_system_id = ?
+      |  AND lifecycle_stage <> 'Discarded'
+      |ORDER BY
+      |  copy_number DESC
+      |LIMIT 1""".stripMargin
   def latest(datasetInfo: DatasetInfo) =
     using(conn.prepareStatement(latestQuery)) { stmt =>
       stmt.setDatasetId(1, datasetInfo.systemId)
@@ -65,12 +76,22 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
           rs.getLong("copy_number"),
           LifecycleStage.valueOf(rs.getString("lifecycle_stage")),
           rs.getLong("data_version"),
-          toDateTime(rs.getTimestamp("last_modified"))
+          toDateTime(rs.getTimestamp("last_modified")),
+          rs.getNullableLong("table_modifier")
         )
       }
     }
 
-  def allCopiesQuery = "SELECT system_id, copy_number, lifecycle_stage :: TEXT, data_version, last_modified FROM copy_map WHERE dataset_system_id = ? ORDER BY copy_number"
+  def allCopiesQuery =
+    """SELECT
+      |  system_id, copy_number, lifecycle_stage :: TEXT, data_version, last_modified, table_modifier
+      |FROM
+      |  copy_map
+      |  LEFT OUTER JOIN copy_map_table_modifiers ON copy_map.system_id = copy_map_table_modifiers.copy_system_id
+      |WHERE
+      |  dataset_system_id = ?
+      |ORDER BY
+      |  copy_number""".stripMargin
   def allCopies(datasetInfo: DatasetInfo): Vector[CopyInfo] =
     using(conn.prepareStatement(allCopiesQuery)) { stmt =>
       stmt.setDatasetId(1, datasetInfo.systemId)
@@ -86,20 +107,29 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
         rs.getLong("copy_number"),
         LifecycleStage.valueOf(rs.getString("lifecycle_stage")),
         rs.getLong("data_version"),
-        toDateTime(rs.getTimestamp("last_modified"))
+        toDateTime(rs.getTimestamp("last_modified")),
+        rs.getNullableLong("table_modifier")
       )
     }
     result.result()
   }
 
-  def lookupQuery = "SELECT system_id, copy_number, data_version, last_modified FROM copy_map WHERE dataset_system_id = ? AND lifecycle_stage = CAST(? AS dataset_lifecycle_stage)"
+  def lookupQuery =
+    """SELECT
+      |  system_id, copy_number, data_version, last_modified, table_modifier
+      |FROM
+      |  copy_map
+      |  LEFT OUTER JOIN copy_map_table_modifiers ON copy_map.system_id = copy_map_table_modifiers.copy_system_id
+      |WHERE
+      |  dataset_system_id = ?
+      |  AND lifecycle_stage = CAST(? AS dataset_lifecycle_stage)""".stripMargin
   def lookup(datasetInfo: DatasetInfo, stage: LifecycleStage): Option[CopyInfo] = {
     using(conn.prepareStatement(lookupQuery)) { stmt =>
       stmt.setDatasetId(1, datasetInfo.systemId)
       stmt.setString(2, stage.name)
       using(t("lookup-copy","dataset_id" -> datasetInfo.systemId,"lifecycle-stage"->stage)(stmt.executeQuery())) { rs =>
         if(rs.next()) {
-          Some(CopyInfo(datasetInfo, new CopyId(rs.getLong("system_id")), rs.getLong("copy_number"), stage, rs.getLong("data_version"), toDateTime(rs.getTimestamp("last_modified"))))
+          Some(CopyInfo(datasetInfo, new CopyId(rs.getLong("system_id")), rs.getLong("copy_number"), stage, rs.getLong("data_version"), toDateTime(rs.getTimestamp("last_modified")), rs.getNullableLong("table_modifier")))
         } else {
           None
         }
@@ -107,14 +137,24 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
     }
   }
 
-  def lookupCopyQuery = "SELECT system_id, copy_number, lifecycle_stage, data_version, last_modified FROM copy_map WHERE dataset_system_id = ? AND copy_number = ? ORDER BY copy_number"
+  def lookupCopyQuery =
+    """SELECT
+      |  system_id, copy_number, lifecycle_stage, data_version, last_modified, table_modifier
+      |FROM
+      |  copy_map
+      |  LEFT OUTER JOIN copy_map_table_modifiers ON copy_map.system_id = copy_map_table_modifiers.copy_system_id
+      |WHERE
+      |  dataset_system_id = ?
+      |  AND copy_number = ?
+      |ORDER BY
+      |  copy_number""".stripMargin
   def lookupCopy(datasetInfo: DatasetInfo, copyNumber: Long): Option[CopyInfo] = {
     using(conn.prepareStatement(lookupCopyQuery)) { stmt =>
       stmt.setDatasetId(1, datasetInfo.systemId)
       stmt.setLong(2, copyNumber)
       using(t("lookup-copy","dataset_id" -> datasetInfo.systemId,"copy_number"->copyNumber)(stmt.executeQuery())) { rs =>
         if(rs.next()) {
-          Some(CopyInfo(datasetInfo, new CopyId(rs.getLong("system_id")), rs.getLong("copy_number"), rs.getLifecycleStage("lifecycle_stage"), rs.getLong("data_version"), toDateTime(rs.getTimestamp("last_modified"))))
+          Some(CopyInfo(datasetInfo, new CopyId(rs.getLong("system_id")), rs.getLong("copy_number"), rs.getLifecycleStage("lifecycle_stage"), rs.getLong("data_version"), toDateTime(rs.getTimestamp("last_modified")), rs.getNullableLong("table_modifier")))
         } else {
           None
         }
@@ -122,7 +162,19 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
     }
   }
 
-  def previousVersionQuery = "SELECT system_id, copy_number, lifecycle_stage :: TEXT, data_version, last_modified FROM copy_map WHERE dataset_system_id = ? AND copy_number < ? AND lifecycle_stage <> 'Discarded' ORDER BY copy_number DESC LIMIT 1"
+  def previousVersionQuery =
+    """SELECT
+      |  system_id, copy_number, lifecycle_stage :: TEXT, data_version, last_modified, table_modifier
+      |FROM
+      |  copy_map
+      |  LEFT OUTER JOIN copy_map_table_modifiers ON copy_map.system_id = copy_map_table_modifiers.copy_system_id
+      |WHERE
+      |  dataset_system_id = ?
+      |  AND copy_number < ?
+      |  AND lifecycle_stage <> 'Discarded'
+      |ORDER BY
+      |  copy_number DESC
+      |LIMIT 1""".stripMargin
   def previousVersion(copyInfo: CopyInfo): Option[CopyInfo] = {
     using(conn.prepareStatement(previousVersionQuery)) { stmt =>
       stmt.setDatasetId(1, copyInfo.datasetInfo.systemId)
@@ -135,7 +187,8 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
             rs.getLong("copy_number"),
             LifecycleStage.valueOf(rs.getString("lifecycle_stage")),
             rs.getLong("data_version"),
-            toDateTime(rs.getTimestamp("last_modified"))
+            toDateTime(rs.getTimestamp("last_modified")),
+            rs.getNullableLong("table_modifier")
           ))
         } else {
           None
@@ -144,7 +197,15 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
     }
   }
 
-  def copyNumberQuery = "SELECT system_id, lifecycle_stage, data_version, last_modified FROM copy_map WHERE dataset_system_id = ? AND copy_number = ?"
+  def copyNumberQuery =
+    """SELECT
+      |  system_id, lifecycle_stage, data_version, last_modified, table_modifier
+      |FROM
+      |  copy_map
+      |  LEFT OUTER JOIN copy_map_table_modifiers ON copy_map.system_id = copy_map_table_modifiers.copy_system_id
+      |WHERE
+      |  dataset_system_id = ?
+      |  AND copy_number = ?""".stripMargin
   def copyNumber(datasetInfo: DatasetInfo, copyNumber: Long): Option[CopyInfo] =
     using(conn.prepareStatement(copyNumberQuery)) { stmt =>
       stmt.setDatasetId(1, datasetInfo.systemId)
@@ -157,7 +218,8 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
             copyNumber,
             LifecycleStage.valueOf(rs.getString("lifecycle_stage")),
             rs.getLong("data_version"),
-            toDateTime(rs.getTimestamp("last_modified"))
+            toDateTime(rs.getTimestamp("last_modified")),
+            rs.getNullableLong("table_modifier")
           ))
         } else {
           None
@@ -266,7 +328,17 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
   def snapshot(datasetInfo: DatasetInfo, copyNumber: Long) =
     lookupCopy(datasetInfo, copyNumber).filter(_.lifecycleStage == LifecycleStage.Snapshotted)
 
-  def snapshotsQuery = "SELECT system_id, copy_number, lifecycle_stage :: TEXT, data_version, last_modified FROM copy_map WHERE dataset_system_id = ? AND lifecycle_stage = CAST(? AS dataset_lifecycle_stage) ORDER BY copy_number"
+  def snapshotsQuery =
+    """SELECT
+      |  system_id, copy_number, lifecycle_stage :: TEXT, data_version, last_modified, table_modifier
+      |FROM
+      |  copy_map
+      |  LEFT OUTER JON copy_map_table_modifiers ON copy_map.system_id = copy_map_table_modifiers.copy_system_id
+      |WHERE
+      |  dataset_system_id = ?
+      |  AND lifecycle_stage = CAST(? AS dataset_lifecycle_stage)
+      |ORDER BY
+      |  copy_number""".stripMargin
   def snapshots(datasetInfo: DatasetInfo): Vector[CopyInfo] =
     using(conn.prepareStatement(snapshotsQuery)) { stmt =>
       stmt.setDatasetId(1, datasetInfo.systemId)
@@ -342,7 +414,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
     }
 
     using(conn.prepareStatement(createQuery_copyMap)) { stmt =>
-      val copyInfoNoSystemId = CopyInfo(datasetInfo, new CopyId(-1), 1, LifecycleStage.Unpublished, 0, DateTime.now)
+      val copyInfoNoSystemId = CopyInfo(datasetInfo, new CopyId(-1), 1, LifecycleStage.Unpublished, 0, DateTime.now, None)
 
       stmt.setDatasetId(1, copyInfoNoSystemId.datasetInfo.systemId)
       stmt.setLong(2, copyInfoNoSystemId.copyNumber)
@@ -362,7 +434,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
     val datasetInfo = unsafeCreateDataset(systemId, initialCounterValue, localeName, obfuscationKey)
 
     using(conn.prepareStatement(createQuery_copyMapWithSystemId)) { stmt =>
-      val copyInfo = CopyInfo(datasetInfo, initialCopyId, 1, LifecycleStage.Unpublished, 0, DateTime.now)
+      val copyInfo = CopyInfo(datasetInfo, initialCopyId, 1, LifecycleStage.Unpublished, 0, DateTime.now, None)
 
       stmt.setLong(1, copyInfo.systemId.underlying)
       stmt.setDatasetId(2, copyInfo.datasetInfo.systemId)
@@ -386,6 +458,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
   def deleteQuery_columnMap = "DELETE FROM column_map WHERE copy_system_id IN (SELECT system_id FROM copy_map WHERE dataset_system_id = ?)"
   def deleteQuery_rollupMap = "DELETE FROM rollup_map WHERE copy_system_id IN (SELECT system_id FROM copy_map WHERE dataset_system_id = ?)"
   def deleteQuery_copyMap = "DELETE FROM copy_map WHERE dataset_system_id = ?"
+  def deleteQuery_copyMapTableModifiers = "DELETE FROM copy_map_table_modifiers WHERE copy_system_id in (SELECT system_id FROM copy_map WHERE dataset_system_id = ?)"
   def deleteQuery_tableMap = "DELETE FROM dataset_map WHERE system_id = ?"
   def delete(tableInfo: DatasetInfo) {
     deleteCopiesOf(tableInfo)
@@ -408,6 +481,10 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
     using(conn.prepareStatement(deleteQuery_rollupMap)) { stmt =>
       stmt.setDatasetId(1, datasetInfo.systemId)
       t("delete-dataset-rollups", "dataset_id" -> datasetInfo.systemId)(stmt.executeUpdate())
+    }
+    using(conn.prepareStatement(deleteQuery_copyMapTableModifiers)) { stmt =>
+      stmt.setDatasetId(1, datasetInfo.systemId)
+      t("delete-dataset-copies", "dataset_id" -> datasetInfo.systemId)(stmt.executeUpdate())
     }
     using(conn.prepareStatement(deleteQuery_copyMap)) { stmt =>
       stmt.setDatasetId(1, datasetInfo.systemId)
@@ -573,7 +650,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
                        copyNumber: Long,
                        lifecycleStage: LifecycleStage,
                        dataVersion: Long): CopyInfo = {
-    val newCopy = CopyInfo(datasetInfo, systemId, copyNumber, lifecycleStage, dataVersion, DateTime.now)
+    val newCopy = CopyInfo(datasetInfo, systemId, copyNumber, lifecycleStage, dataVersion, DateTime.now, None)
 
     using(conn.prepareStatement(unsafeCreateCopyQuery)) { stmt =>
       stmt.setLong(1, newCopy.systemId.underlying)
@@ -716,6 +793,38 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
     copyInfo.copy(lastModified = newLastModified)
   }
 
+  // would prefer to use postgres upsert for this, but we're not on a new enough pg everywhere yet
+  val findTableModifierQuery = "SELECT table_modifier FROM copy_map_table_modifiers WHERE copy_system_id = ? FOR UPDATE"
+  val updateTableModifierQuery = "UPDATE copy_map_table_modifiers SET table_modifier = ? WHERE copy_system_id = ?"
+  val createTableModifierQuery = "INSERT INTO copy_map_table_modifiers (copy_system_id, table_modifier) VALUES (?, ?)"
+  def newTableModifier(copyInfo: CopyInfo): CopyInfo = {
+    val oldTableModifier =
+      using(conn.prepareStatement(findTableModifierQuery)) { stmt =>
+        stmt.setLong(1, copyInfo.systemId.underlying)
+        using(stmt.executeQuery()) { rs =>
+          if(rs.next()) Some(rs.getLong("table_modifier"))
+          else None
+        }
+      }
+    oldTableModifier match {
+      case Some(oldTM) =>
+        val newTM = oldTM + 1
+        using(conn.prepareStatement(updateTableModifierQuery)) { stmt =>
+          stmt.setLong(1, newTM)
+          stmt.setLong(2, copyInfo.systemId.underlying)
+          stmt.executeUpdate()
+        }
+        copyInfo.copy(tableModifier = Some(newTM))
+      case None =>
+        using(conn.prepareStatement(createTableModifierQuery)) { stmt =>
+          stmt.setLong(1, copyInfo.systemId.underlying)
+          stmt.setLong(2, 1)
+          stmt.executeUpdate()
+        }
+        copyInfo.copy(tableModifier = Some(1))
+    }
+  }
+
   def dropCopyQuery = "UPDATE copy_map SET lifecycle_stage = 'Discarded' WHERE system_id = ? AND lifecycle_stage = CAST(? AS dataset_lifecycle_stage)"
   def dropCopy(copyInfo: CopyInfo) {
     val validStages = Set(LifecycleStage.Snapshotted, LifecycleStage.Unpublished)
@@ -765,7 +874,8 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
                 val newCopyWithoutSystemId = publishedCopy.copy(
                   systemId = new CopyId(-1),
                   copyNumber = newCopyNumber,
-                  lifecycleStage = LifecycleStage.Unpublished)
+                  lifecycleStage = LifecycleStage.Unpublished,
+                  tableModifier = None)
 
                 val newCopy = using(conn.prepareStatement(ensureUnpublishedCopyQuery_copyMap)) { stmt =>
                   stmt.setDatasetId(1, newCopyWithoutSystemId.datasetInfo.systemId)
