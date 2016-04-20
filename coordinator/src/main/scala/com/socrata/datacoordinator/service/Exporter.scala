@@ -6,6 +6,7 @@ import com.socrata.datacoordinator.truth.CopySelector
 import com.socrata.datacoordinator.truth.metadata.{DatasetCopyContext, CopyInfo, ColumnInfo}
 import com.socrata.datacoordinator.truth.universe.{SchemaFinderProvider, CacheProvider}
 import com.socrata.datacoordinator.truth.universe.{DatasetReaderProvider, Universe}
+import com.socrata.datacoordinator.util.CopyContextResult
 import com.socrata.datacoordinator.util.collection.{UserColumnIdSet, MutableColumnIdMap, ColumnIdMap}
 import com.socrata.http.server.util.{NoPrecondition, StrongEntityTag, EntityTag, Precondition}
 import com.socrata.soql.environment.ColumnName
@@ -15,6 +16,7 @@ import org.joda.time.DateTime
 object Exporter {
   sealed abstract class Result[+T]
   case object NotFound extends Result[Nothing]
+  case object CopyNotFound extends Result[Nothing]
   case object PreconditionFailedBecauseNoMatch extends Result[Nothing]
   case class NotModified(etags: Seq[EntityTag]) extends Result[Nothing]
   case object InvalidRowId extends Result[Nothing]
@@ -75,6 +77,10 @@ object Exporter {
       }
     }
 
-    subResult.getOrElse(NotFound)
+    subResult match {
+      case CopyContextResult.NoSuchDataset => NotFound
+      case CopyContextResult.NoSuchCopy => CopyNotFound
+      case CopyContextResult.CopyInfo(r) => r
+    }
   }
 }
