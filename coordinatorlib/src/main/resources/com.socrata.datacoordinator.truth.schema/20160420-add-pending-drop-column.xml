@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
+    <changeSet author="Alexa Rust" id="20160420-add-pending-drop-column">
+        <sql>
+            ALTER TABLE secondary_manifest ADD COLUMN pending_drop BOOLEAN NOT NULL DEFAULT FALSE
+        </sql>
+        <rollback>
+            ALTER TABLE secondary_manifest DROP COLUMN pending_drop
+        </rollback>
+    </changeSet>
+</databaseChangeLog>
