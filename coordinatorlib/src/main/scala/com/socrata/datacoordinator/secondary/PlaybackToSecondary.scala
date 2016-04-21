@@ -179,6 +179,9 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
             case ResyncSecondaryException(reason) =>
               logger.info("Incremental update requested full resync: {}", reason)
               resync()
+            case _: InternalResyncForPickySecondary =>
+              logger.info("Resyncing because secondary only wants published copies and we just got a publish event")
+              resync()
           }
         case None =>
           drop()
@@ -277,28 +280,23 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
             // transaction isolation level is not set to REPEATABLE READ
             case Some(datasetInfo) =>
               val allCopies = r.allCopies(datasetInfo) // guarantied to be ordered by copy number
-              val latestLiving = r.latest(datasetInfo).copyNumber // this is the newest _living_ copy
-              val latest = allCopies.lastOption match {
-                case Some(latestCopy) =>
-                  for (copy <- allCopies) {
-                    timingReport("copy", "number" -> copy.copyNumber) {
-                      // secondary.store.resync(.) will be called
-                      // on all _living_ copies in order by their copy number
-                      def isDiscardedLike(stage: metadata.LifecycleStage) =
-                        Set(metadata.LifecycleStage.Discarded, metadata.LifecycleStage.Snapshotted).contains(stage)
-                      if (isDiscardedLike(copy.lifecycleStage)) {
-                        val secondaryDatasetInfo = makeSecondaryDatasetInfo(copy.datasetInfo)
-                        val secondaryCopyInfo = makeSecondaryCopyInfo(copy)
-                        secondary.store.dropCopy(secondaryDatasetInfo, secondaryCopyInfo, currentCookie,
-                          isLatestCopy = copy.copyNumber == latestCopy.copyNumber)
-                      } else
-                        syncCopy(copy, isLatestLivingCopy = copy.copyNumber == latestLiving)
-                    }
-                  }
-                  Some(latestCopy)
-                case None => // should always be a Some(.)...
-                  logger.error("Have dataset info for dataset {}, but it has no copies?", datasetInfo.toString)
-                  None
+            val latest = r.latest(datasetInfo) // this is the newest _living_ copy
+              for (copy <- allCopies) {
+                val secondaryDatasetInfo = makeSecondaryDatasetInfo(copy.datasetInfo)
+                timingReport("copy", "number" -> copy.copyNumber) {
+                  // secondary.store.resync(.) will be called
+                  // on copies in order by their copy number
+                  val isLatestCopy = copy.copyNumber == latest.copyNumber
+                  if (copy.lifecycleStage == metadata.LifecycleStage.Discarded) {
+                    currentCookie = secondary.store.dropCopy(secondaryDatasetInfo.internalName,
+                      copy.copyNumber,
+                      currentCookie)
+                  } else if (copy.lifecycleStage != metadata.LifecycleStage.Unpublished) {
+                    syncCopy(copy, isLatestCopy)
+                  } else if (secondary.store.wantsWorkingCopies) {
+                    syncCopy(copy, isLatestCopy)
+                  } else {  /* ok */ }
+                }
               }
               // end transaction to not provoke a serialization error from touching the secondary_manifest table
               u.commit()
@@ -346,7 +344,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
       None
     }
 
-    def syncCopy(copyInfo: metadata.CopyInfo, isLatestLivingCopy: Boolean): Unit = {
+    def syncCopy(copyInfo: metadata.CopyInfo, isLatestCopy: Boolean): Unit = {
       timingReport("sync-copy",
                    "secondary" -> secondary.storeId,
                    "dataset" -> copyInfo.datasetInfo.systemId,
@@ -376,7 +374,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
                                                  currentCookie,
                                                  wrappedRows,
                                                  rollups,
-                                                 isLatestLivingCopy)
+                                                 isLatestCopy)
         }
       }
     }

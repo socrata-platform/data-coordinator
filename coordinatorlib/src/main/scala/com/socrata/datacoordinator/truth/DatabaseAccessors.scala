@@ -1,6 +1,9 @@
 package com.socrata.datacoordinator
 package truth
 
+import com.rojoma.json.v3.ast.{JNumber, JString, JValue}
+import com.rojoma.json.v3.codec.JsonEncode
+import com.socrata.datacoordinator.util.CopyContextResult
 import com.socrata.soql.environment.ColumnName
 import org.joda.time.DateTime
 import com.rojoma.simplearm.{SimpleArm, Managed}
@@ -19,7 +22,7 @@ trait LowLevelDatabaseReader[CT, CV] {
   trait ReadContext {
     def datasetMap: DatasetMapReader[CT]
 
-    def loadDataset(datasetId: DatasetId, latest: CopySelector): Option[DatasetCopyContext[CT]]
+    def loadDataset(datasetId: DatasetId, latest: CopySelector): CopyContextResult[DatasetCopyContext[CT]]
     def loadDataset(latest: CopyInfo): DatasetCopyContext[CT]
 
     def approximateRowCount(copyCtx: DatasetCopyContext[CT]): Long
@@ -55,10 +58,20 @@ trait LowLevelDatabaseMutator[CT, CV] {
 }
 
 sealed abstract class CopySelector
+object CopySelector {
+  implicit val enc = new JsonEncode[CopySelector] {
+    override def encode(x: CopySelector): JValue = x match {
+      case LatestCopy => JString("latest")
+      case PublishedCopy => JString("published")
+      case WorkingCopy => JString("working")
+      case Snapshot(n) => JNumber(n)
+    }
+  }
+}
 case object LatestCopy extends CopySelector
 case object PublishedCopy extends CopySelector
 case object WorkingCopy extends CopySelector
-case class Snapshot(nth: Int) extends CopySelector
+case class Snapshot(copyNumber: Long) extends CopySelector
 
 trait DatasetReader[CT, CV] {
   val databaseReader: LowLevelDatabaseReader[CT, CV]
@@ -75,7 +88,7 @@ trait DatasetReader[CT, CV] {
              rowId: Option[CV] = None): Managed[Iterator[ColumnIdMap[CV]]]
   }
 
-  def openDataset(datasetId: DatasetId, copy: CopySelector): Managed[Option[ReadContext]]
+  def openDataset(datasetId: DatasetId, copy: CopySelector): Managed[CopyContextResult[ReadContext]]
   def openDataset(copy: CopyInfo): Managed[ReadContext]
 }
 
@@ -97,9 +110,9 @@ object DatasetReader {
                    rowId = rowId)
     }
 
-    def openDataset(datasetId: DatasetId, copySelector: CopySelector): Managed[Option[ReadContext]] =
-      new SimpleArm[Option[ReadContext]] {
-        def flatMap[A](f: Option[ReadContext] => A): A = for {
+    def openDataset(datasetId: DatasetId, copySelector: CopySelector): Managed[CopyContextResult[ReadContext]] =
+      new SimpleArm[CopyContextResult[ReadContext]] {
+        def flatMap[A](f: CopyContextResult[ReadContext] => A): A = for {
           llCtx <- databaseReader.openDatabase
         } yield {
           val ctxOpt = llCtx.loadDataset(datasetId, copySelector).map(new S(_, llCtx))
@@ -182,7 +195,7 @@ trait DatasetMutator[CT, CV] {
   case object DropComplete extends DropCopyContext
 
   def createCopy(as: String)(datasetId: DatasetId, copyData: Boolean, check: DatasetCopyContext[CT] => Unit): Managed[CopyContext]
-  def publishCopy(as: String)(datasetId: DatasetId, snapshotsToKeep: Option[Int], check: DatasetCopyContext[CT] => Unit): Managed[CopyContext]
+  def publishCopy(as: String)(datasetId: DatasetId, keepSnapshot: Boolean, check: DatasetCopyContext[CT] => Unit): Managed[CopyContext]
   def dropCopy(as: String)(datasetId: DatasetId, check: DatasetCopyContext[CT] => Unit): Managed[DropCopyContext]
 }
 
@@ -346,10 +359,18 @@ object DatasetMutator {
         }
       }
 
-      def publish(): Either[CopyContextError, CopyInfo] = {
+      def publish(keepSnapshot: Boolean): Either[CopyContextError, CopyInfo] = {
         checkFeedbackSecondaries().toLeft {
-          val newCi = datasetMap.publish(copyInfo)
+          val (newCi, snapshotCI) = datasetMap.publish(copyInfo)
           logger.workingCopyPublished()
+          snapshotCI.foreach { sci =>
+            if(keepSnapshot) {
+              logger.snapshotDropped(sci) // no matter what, tell the secondaries the snapshot was dropped
+            } else {
+              datasetMap.dropCopy(sci)
+              schemaLoader.drop(sci)
+            }
+          }
           copyCtx = new DatasetCopyContext(newCi, datasetMap.schema(newCi)).thaw()
           copyInfo
         }
@@ -473,19 +494,11 @@ object DatasetMutator {
                                check: DatasetCopyContext[CT] => Unit): Managed[CopyContext] =
       firstOp(as, datasetId, LifecycleStage.Published, _.makeWorkingCopy(copyData), check)
 
-    def publishCopy(as: String)(datasetId: DatasetId, snapshotsToKeep: Option[Int],
-                                check: DatasetCopyContext[CT] => Unit): Managed[CopyContext] =
+    def publishCopy(as: String)(datasetId: DatasetId, keepSnapshot: Boolean, check: DatasetCopyContext[CT] => Unit): Managed[CopyContext] =
       new SimpleArm[CopyContext] {
         def flatMap[B](f: CopyContext => B): B = {
-          firstOp(as, datasetId, LifecycleStage.Unpublished, _.publish(), check).map {
+          firstOp(as, datasetId, LifecycleStage.Unpublished, _.publish(keepSnapshot), check).map {
             case good@CopyOperationComplete(ctx) =>
-              for(count <- snapshotsToKeep) {
-                val toDrop = ctx.datasetMap.snapshots(ctx.copyInfo.datasetInfo).dropRight(count)
-                for(snapshot <- toDrop) {
-                  ctx.datasetMap.dropCopy(snapshot)
-                  ctx.schemaLoader.drop(snapshot)
-                }
-              }
               f(good)
             case noGood =>
               f(noGood)

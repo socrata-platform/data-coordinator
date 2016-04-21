@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
+    <changeSet author="robertm" id="20160225-add-snapshot-index">
+        <sql>
+            CREATE INDEX copy_map_snapshots_idx ON copy_map (lifecycle_stage) WHERE lifecycle_stage = 'Snapshotted'
+        </sql>
+        <rollback>
+            DROP INDEX copy_map_snapshots_idx
+        </rollback>
+    </changeSet>
+</databaseChangeLog>
