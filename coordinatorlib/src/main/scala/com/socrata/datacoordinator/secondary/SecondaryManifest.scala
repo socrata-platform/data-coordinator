@@ -10,11 +10,11 @@ case class SecondaryRecord(storeId: String,
                            claimantId: UUID,
                            datasetId: DatasetId,
                            startingDataVersion: Long,
-                           startingLifecycleStage: metadata.LifecycleStage,
                            endingDataVersion: Long,
                            retryNum: Int,
                            replayNum: Int,
-                           initialCookie: Option[String])
+                           initialCookie: Option[String],
+                           pendingDrop: Boolean)
 
 class DatasetAlreadyInSecondary(val storeId: String, val DatasetId: DatasetId) extends Exception
 
@@ -40,11 +40,12 @@ trait SecondaryManifest {
                              claimantId: UUID,
                              datasetId: DatasetId,
                              dataVersion: Long,
-                             lifecycleStage: metadata.LifecycleStage,
                              newCookie: Option[String])
   def updateRetryInfo(storeId: String, datasetId: DatasetId, retryNum: Int, nextRetryDelaySecs: Int): Unit
 
   def updateReplayInfo(storeId: String, datasetId: DatasetId, cookie: Secondary.Cookie, replayNum: Int, nextReplayDelaySecs: Int): Unit
+
+  def markDatasetForDrop(storeId: String, datasetId: DatasetId): Boolean
 
   def feedbackSecondaries(datasetId: DatasetId): Set[String] // store IDs
   def outOfDateFeedbackSecondaries(datasetId: DatasetId): Set[String] // store IDs
