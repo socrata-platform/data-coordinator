@@ -142,7 +142,7 @@ class PostgresLogger[CT, CV](connection: Connection,
     maybeFlushBatch()
   }
 
-  protected def logRowsChangePreview(what: String, aux: Array[Byte]) {
+  protected def logRowsChangePreview(rowsChangedPreviewSubversion: Long, what: String, aux: Array[Byte]) {
     writeEntry(versionNum, rowsChangedPreviewSubversion, bytesOf(what), aux)
     maybeFlushBatch()
   }

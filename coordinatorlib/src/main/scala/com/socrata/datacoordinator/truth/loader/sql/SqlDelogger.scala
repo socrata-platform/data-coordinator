@@ -255,7 +255,7 @@ class SqlDelogger[CV](connection: Connection,
 
     def decodeRowsChangedPreview(aux: Array[Byte]) = {
       val msg = messages.RowsChangedPreview.defaultInstance.mergeFrom(aux)
-      Delogger.RowsChangedPreview(msg.rowsInserted, msg.rowsUpdated, msg.rowsDeleted)
+      Delogger.RowsChangedPreview(msg.rowsInserted, msg.rowsUpdated, msg.rowsDeleted, msg.truncated)
     }
   }
 

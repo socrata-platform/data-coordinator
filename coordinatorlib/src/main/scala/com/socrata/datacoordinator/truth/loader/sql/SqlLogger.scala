@@ -50,7 +50,7 @@ class SqlLogger[CT, CV](connection: Connection,
     if(totalSize > batchFlushSize) flushBatch()
   }
 
-  protected def logRowsChangePreview(what: String, data: Array[Byte]) {
+  protected def logRowsChangePreview(rowsChangedPreviewSubversion: Long, what: String, data: Array[Byte]) {
     doLog(what, data, rowsChangedPreviewSubversion)
   }
 

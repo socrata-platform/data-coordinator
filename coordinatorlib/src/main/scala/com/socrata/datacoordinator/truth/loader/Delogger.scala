@@ -88,7 +88,7 @@ object Delogger {
   case class RollupDropped(info: UnanchoredRollupInfo) extends LogEvent[Nothing]
   object RollupDropped extends LogEventCompanion
 
-  case class RowsChangedPreview(rowsInserted: Long, rowsUpdated: Long, rowsDeleted: Long) extends LogEvent[Nothing]
+  case class RowsChangedPreview(rowsInserted: Long, rowsUpdated: Long, rowsDeleted: Long, truncated: Boolean) extends LogEvent[Nothing]
   object RowsChangedPreview extends LogEventCompanion
 
   case object EndTransaction extends LogEvent[Nothing] with LogEventCompanion
