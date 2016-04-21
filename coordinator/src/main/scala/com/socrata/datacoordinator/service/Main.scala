@@ -6,7 +6,7 @@ import com.socrata.datacoordinator.common.soql.SoQLRep
 import com.socrata.datacoordinator.common.{SoQLCommon, DataSourceFromConfig}
 import com.socrata.datacoordinator.id.{UserColumnId, ColumnId, DatasetId}
 import com.socrata.datacoordinator.resources._
-import com.socrata.datacoordinator.secondary.{DatasetAlreadyInSecondary}
+import com.socrata.datacoordinator.secondary.DatasetAlreadyInSecondary
 import com.socrata.datacoordinator.truth.CopySelector
 import com.socrata.datacoordinator.truth.loader.{Delogger, NullLogger}
 import com.socrata.datacoordinator.truth.universe.sql.PostgresUniverse
@@ -31,26 +31,30 @@ import scala.util.Random
 class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Main])
 
-  def ensureInSecondary(storeId: String, datasetId: DatasetId): Unit =
-    for(u <- common.universe) {
+  def ensureInSecondary(storeId: String, datasetId: DatasetId): Boolean =
+    for(u <- common.universe) yield{
       try {
         u.datasetMapWriter.datasetInfo(datasetId, serviceConfig.writeLockTimeout) match {
           case Some(_) =>
             u.secondaryManifest.addDataset(storeId, datasetId)
+            true
           case None =>
-            ??? // TODO: proper error
+            log.info("No dataset found with id: {}", datasetId)
+            false
         }
       } catch {
         case _: DatasetAlreadyInSecondary =>
         // ok, it's there
+        true
       }
     }
 
-  def ensureInSecondaryGroup(secondaryGroupStr: String, datasetId: DatasetId): Unit = {
-    for(u <- common.universe) {
-      val secondaryGroup = serviceConfig.secondary.groups.getOrElse(secondaryGroupStr,
-        // TODO: proper error
-        throw new Exception(s"Can't find secondary group $secondaryGroupStr")
+  def ensureInSecondaryGroup(secondaryGroupStr: String, datasetId: DatasetId): Boolean = {
+    for(u <- common.universe) yield {
+      val secondaryGroup = serviceConfig.secondary.groups.getOrElse(secondaryGroupStr, {
+        log.info("Can't find secondary group {}", secondaryGroupStr)
+        return false
+      }
       )
 
       val currentDatasetSecondaries = secondariesOfDataset(datasetId).map(_.secondaries.keySet).getOrElse(Set.empty)
@@ -60,9 +64,24 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
         datasetId,
         secondaryGroupStr)
 
-      newSecondaries.foreach(ensureInSecondary(_, datasetId))
+      newSecondaries.toVector.map(ensureInSecondary(_, datasetId)).forall(identity) // no side effects in forall
     }
   }
+
+  def deleteFromSecondary(storeId: String, datasetId: DatasetId): Boolean =
+    for(u <- common.universe) yield {
+      u.datasetMapWriter.datasetInfo(datasetId, serviceConfig.writeLockTimeout) match {
+        case Some(_) =>
+          log.info("Marking dataset {} for pending drop from store {}", datasetId, storeId)
+          val found = u.secondaryManifest.markDatasetForDrop(storeId, datasetId)
+          if (!found) log.info("No secondary manifest entry for dataset {} and store {}", datasetId, storeId)
+          u.commit()
+          found
+        case None =>
+          log.info("No dataset found with id: {}", datasetId)
+          false
+      }
+    }
 
   def datasetsInStore(storeId: String): Map[DatasetId, Long] = {
     for (u <- common.universe) yield {
@@ -370,7 +389,7 @@ object Main {
           operations.datasetsInStore, common.internalNameFromDatasetId)
         val datasetSecondaryStatusResource = DatasetSecondaryStatusResource(_: Option[String], _:DatasetId, secondaries,
           operations.versionInStore, serviceConfig, operations.ensureInSecondary,
-          operations.ensureInSecondaryGroup, common.internalNameFromDatasetId)
+          operations.ensureInSecondaryGroup, operations.deleteFromSecondary, common.internalNameFromDatasetId)
         val secondariesOfDatasetResource = SecondariesOfDatasetResource(_: DatasetId, operations.secondariesOfDataset,
           common.internalNameFromDatasetId)
 
