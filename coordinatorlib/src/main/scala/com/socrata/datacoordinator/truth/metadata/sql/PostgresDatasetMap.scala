@@ -333,7 +333,7 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
       |  system_id, copy_number, lifecycle_stage :: TEXT, data_version, last_modified, table_modifier
       |FROM
       |  copy_map
-      |  LEFT OUTER JON copy_map_table_modifiers ON copy_map.system_id = copy_map_table_modifiers.copy_system_id
+      |  LEFT OUTER JOIN copy_map_table_modifiers ON copy_map.system_id = copy_map_table_modifiers.copy_system_id
       |WHERE
       |  dataset_system_id = ?
       |  AND lifecycle_stage = CAST(? AS dataset_lifecycle_stage)
