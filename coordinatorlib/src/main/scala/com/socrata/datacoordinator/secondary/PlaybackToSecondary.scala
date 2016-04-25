@@ -276,10 +276,11 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
           r.datasetInfo(datasetId, repeatableRead = true) match {
             // transaction isolation level is not set to REPEATABLE READ
             case Some(datasetInfo) =>
-              val allCopies = r.allCopies(datasetInfo) // guarantied to be ordered by copy number
-              val latestLiving = r.latest(datasetInfo) // this is the newest _living_ copy
-              val mostRecentCopy = allCopies.lastOption match {
-                case Some(latestCopy) =>
+              val allCopies = r.allCopies(datasetInfo).toSeq.sortBy(_.dataVersion)
+              val mostRecentCopy =
+                if(allCopies.nonEmpty) {
+                  val latestLiving = r.latest(datasetInfo) // this is the newest _living_ copy
+                  val latestCopy = allCopies.maxBy(_.copyNumber)
                   for (copy <- allCopies) {
                     timingReport("copy", "number" -> copy.copyNumber) {
                       // secondary.store.resync(.) will be called
@@ -295,11 +296,11 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
                         syncCopy(copy, isLatestLivingCopy = copy.copyNumber == latestLiving.copyNumber)
                     }
                   }
-                  Some(allCopies.maxBy(_.dataVersion))
-                case None => // should always be a Some(.)...
+                  Some(allCopies.last)
+                } else {
                   logger.error("Have dataset info for dataset {}, but it has no copies?", datasetInfo.toString)
                   None
-              }
+                }
               // end transaction to not provoke a serialization error from touching the secondary_manifest table
               u.commit()
               // transaction isolation level is now reset to READ COMMITTED
