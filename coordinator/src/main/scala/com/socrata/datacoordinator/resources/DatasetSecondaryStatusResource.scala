@@ -12,8 +12,9 @@ case class DatasetSecondaryStatusResource(storeIdOpt: Option[String],
                                           secondaries: Set[String],
                                           versionInStore: (String, DatasetId) => Option[Long],
                                           serviceConfig: ServiceConfig,
-                                          ensureInSecondary: (String, DatasetId) => Unit,
-                                          ensureInSecondaryGroup: (String, DatasetId) => Unit,
+                                          ensureInSecondary: (String, DatasetId) => Boolean,
+                                          ensureInSecondaryGroup: (String, DatasetId) => Boolean,
+                                          deleteFromSecondary: (String, DatasetId) => Boolean,
                                           formatDatasetId: DatasetId => String) extends ErrorHandlingSodaResource(formatDatasetId) {
 
   override val log = org.slf4j.LoggerFactory.getLogger(classOf[DatasetSecondaryStatusResource])
@@ -24,9 +25,14 @@ case class DatasetSecondaryStatusResource(storeIdOpt: Option[String],
     }
 
   override def post = storeIdOpt match {
-    case Some(storeId: String) => r:HttpRequest => doUpdateVersionInSecondary(r,storeId)
+    case Some(storeId: String) => r:HttpRequest => doUpdateVersionInSecondary(r, storeId)
     case None => _: HttpRequest => NotFound
 
+  }
+
+  override def delete = storeIdOpt match {
+    case Some(storeId: String) => r:HttpRequest => doDeleteInSecondary(r, storeId)
+    case None => _: HttpRequest => NotFound
   }
 
   private def doGetDataVersionInSecondary(req: HttpRequest)(storeId: String): HttpResponse = {
@@ -42,12 +48,19 @@ case class DatasetSecondaryStatusResource(storeIdOpt: Option[String],
   private def doUpdateVersionInSecondary(req: HttpRequest, storeId: String): HttpResponse = {
     val defaultSecondaryGroups: Set[String] = serviceConfig.secondary.defaultGroups
     val groupRe = "_(.*)_".r
-    storeId match {
-      case "_DEFAULT_" => defaultSecondaryGroups.foreach(ensureInSecondaryGroup(_, datasetId))
+    val found = storeId match {
+      case "_DEFAULT_" => defaultSecondaryGroups.toVector.map(ensureInSecondaryGroup(_, datasetId)).forall(identity) // no side effects in forall
       case groupRe(g) if serviceConfig.secondary.groups.contains(g) => ensureInSecondaryGroup(g, datasetId)
       case secondary if secondaries(storeId) => ensureInSecondary(secondary, datasetId)
-      case _ => return NotFound
+      case _ => false
     }
-    OK
+    if (found) OK else NotFound
   }
+
+  private def doDeleteInSecondary(req: HttpRequest, storeId: String): HttpResponse =
+    storeId match {
+      case secondary if secondaries(storeId) =>
+        if (deleteFromSecondary(secondary, datasetId)) OK else NotFound
+      case _ => NotFound
+    }
 }

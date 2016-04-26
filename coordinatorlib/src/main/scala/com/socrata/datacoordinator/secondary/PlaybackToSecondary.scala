@@ -117,20 +117,12 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
   }
 
   def apply(secondary: NamedSecondary[CT, CV], job: SecondaryRecord): Unit = {
-    // Normally, UpdateOp will drop the dataset if it is not in truth.
-    // This check allows us to just drop a dataset in a specific secondary by
-    // running a SQL like:
-    //   UPDATE secondary_manifest set latest_secondary_lifecycle_stage = 'Discarded', latest_secondary_data_version = -1
-    //    WHERE dataset_system_id = $ID
-    // TODO: Add an endpoint to SODA Fountain.  Plumb it through Data Coordinator to do that.
-    if(job.startingLifecycleStage == metadata.LifecycleStage.Discarded && job.startingDataVersion <= 0)
+    if (job.pendingDrop) {
+      logger.info("Executing pending drop of dataset {} from store {}.", job.datasetId.toString, job.storeId)
       new UpdateOp(secondary, job).drop()
-    else
+    } else {
       new UpdateOp(secondary, job).go()
-  }
-
-  def drop(secondary: NamedSecondary[CT, CV], job: SecondaryRecord): Unit = {
-    new UpdateOp(secondary, job).drop()
+    }
   }
 
   def makeSecondaryDatasetInfo(dsInfo: metadata.DatasetInfoLike) =
@@ -170,7 +162,6 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
     private val datasetId = job.datasetId
     private val claimantId = job.claimantId
     private var currentCookie = job.initialCookie
-    private var currentLifecycleStage = job.startingLifecycleStage
     private val datasetMapReader = u.datasetMapReader
 
     def go(): Unit = {
@@ -187,9 +178,6 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
               resync()
             case ResyncSecondaryException(reason) =>
               logger.info("Incremental update requested full resync: {}", reason)
-              resync()
-            case _: InternalResyncForPickySecondary =>
-              logger.info("Resyncing because secondary only wants published copies and we just got a publish event")
               resync()
           }
         case None =>
@@ -246,64 +234,20 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
         None
     }
 
-    private def setLifecycleStage(newStage: metadata.LifecycleStage, info: metadata.DatasetInfo): Unit = {
-      logger.info("{}: New lifecycle stage: {}", info.systemId.toString, newStage)
-      currentLifecycleStage = newStage
-    }
-
     def playbackLog(datasetInfo: metadata.DatasetInfo, dataVersion: Long): Unit = {
       logger.trace("Playing back version {}", dataVersion.toString)
-      val finalLifecycleStage = for {
+      for {
         delogger <- managed(u.delogger(datasetInfo))
-        rawIt <- managed(delogger.delog(dataVersion))
-      } yield {
+        it <- managed(delogger.delog(dataVersion))
+      } {
         val secondaryDatasetInfo = makeSecondaryDatasetInfo(datasetInfo)
         val instrumentedIt = new InstrumentedIterator("playback-log-throughput",
                                                       datasetInfo.systemId.toString,
-                                                      rawIt)
-        val it = new LifecycleStageTrackingIterator(instrumentedIt, currentLifecycleStage)
-        if(secondary.store.wantsWorkingCopies) {
-          logger.trace("Secondary store wants working copies; just blindly sending everything")
-          currentCookie = secondary.store.version(secondaryDatasetInfo, dataVersion,
-                                                  currentCookie, it.flatMap(convertEvent))
-        } else {
-          while(it.hasNext) {
-            if(currentLifecycleStage != metadata.LifecycleStage.Published) {
-              logger.trace("Current lifecycle stage in the secondary is {}; " +
-                        "skipping data until I find a publish event", currentLifecycleStage)
-              // skip until it IS published, then resync
-              while(it.hasNext && it.stageAfterNextEvent != metadata.LifecycleStage.Published) it.next()
-              if(it.hasNext) {
-                logger.trace("There is more.  Resyncing")
-                throw new InternalResyncForPickySecondary
-              } else {
-                logger.trace("There is no more.")
-              }
-              setLifecycleStage(it.stageBeforeNextEvent, datasetInfo)
-            } else {
-              logger.trace("Sending events for a published copy")
-              val publishedIt = new StageLimitedIterator(it)
-              if(publishedIt.hasNext) {
-                logger.trace("Sendsendsendsend")
-                currentCookie = secondary.store.version(secondaryDatasetInfo,
-                                                        dataVersion,
-                                                        currentCookie,
-                                                        publishedIt.flatMap(convertEvent))
-                publishedIt.finish()
-                setLifecycleStage(it.stageBeforeNextEvent, datasetInfo)
-              } else {
-                logger.trace("First item must've been a copy-event")
-                setLifecycleStage(it.stageAfterNextEvent, datasetInfo)
-              }
-            }
-          }
-        }
-        val res = it.finalLifecycleStage()
-        logger.trace("Final lifecycle stage is {}", res)
-        res
+                                                      it)
+        currentCookie = secondary.store.version(secondaryDatasetInfo, dataVersion,
+                                                currentCookie, instrumentedIt.flatMap(convertEvent))
       }
-      updateSecondaryMap(dataVersion, finalLifecycleStage)
-      setLifecycleStage(finalLifecycleStage, datasetInfo)
+      updateSecondaryMap(dataVersion)
     }
 
     def drop(): Unit = {
@@ -335,28 +279,33 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
             // transaction isolation level is not set to REPEATABLE READ
             case Some(datasetInfo) =>
               val allCopies = r.allCopies(datasetInfo) // guarantied to be ordered by copy number
-            val latest = r.latest(datasetInfo) // this is the newest _living_ copy
-              for (copy <- allCopies) {
-                val secondaryDatasetInfo = makeSecondaryDatasetInfo(copy.datasetInfo)
-                timingReport("copy", "number" -> copy.copyNumber) {
-                  // secondary.store.resync(.) will be called
-                  // on copies in order by their copy number
-                  val isLatestCopy = copy.copyNumber == latest.copyNumber
-                  if (copy.lifecycleStage == metadata.LifecycleStage.Discarded) {
-                    currentCookie = secondary.store.dropCopy(secondaryDatasetInfo.internalName,
-                      copy.copyNumber,
-                      currentCookie)
-                  } else if (copy.lifecycleStage != metadata.LifecycleStage.Unpublished) {
-                    syncCopy(copy, isLatestCopy)
-                  } else if (secondary.store.wantsWorkingCopies) {
-                    syncCopy(copy, isLatestCopy)
-                  } else {  /* ok */ }
-                }
+              val latestLiving = r.latest(datasetInfo).copyNumber // this is the newest _living_ copy
+              val latest = allCopies.lastOption match {
+                case Some(latestCopy) =>
+                  for (copy <- allCopies) {
+                    timingReport("copy", "number" -> copy.copyNumber) {
+                      // secondary.store.resync(.) will be called
+                      // on all _living_ copies in order by their copy number
+                      def isDiscardedLike(stage: metadata.LifecycleStage) =
+                        Set(metadata.LifecycleStage.Discarded, metadata.LifecycleStage.Snapshotted).contains(stage)
+                      if (isDiscardedLike(copy.lifecycleStage)) {
+                        val secondaryDatasetInfo = makeSecondaryDatasetInfo(copy.datasetInfo)
+                        val secondaryCopyInfo = makeSecondaryCopyInfo(copy)
+                        secondary.store.dropCopy(secondaryDatasetInfo, secondaryCopyInfo, currentCookie,
+                          isLatestCopy = copy.copyNumber == latestCopy.copyNumber)
+                      } else
+                        syncCopy(copy, isLatestLivingCopy = copy.copyNumber == latestLiving)
+                    }
+                  }
+                  Some(latestCopy)
+                case None => // should always be a Some(.)...
+                  logger.error("Have dataset info for dataset {}, but it has no copies?", datasetInfo.toString)
+                  None
               }
               // end transaction to not provoke a serialization error from touching the secondary_manifest table
               u.commit()
               // transaction isolation level is now reset to READ COMMITTED
-              Some(latest)
+              latest
             case None =>
               drop()
               None
@@ -372,7 +321,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
       retrying[Unit]({
         latestCopyInfo.foreach { latest =>
             timingReport("resync-update-secondary-map", "dataset" -> datasetId) {
-              updateSecondaryMap(latest.dataVersion, latest.lifecycleStage)
+              updateSecondaryMap(latest.dataVersion)
             }
           }
       }, ignoreSerializationFailure)
@@ -399,7 +348,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
       None
     }
 
-    def syncCopy(copyInfo: metadata.CopyInfo, isLatestCopy: Boolean): Unit = {
+    def syncCopy(copyInfo: metadata.CopyInfo, isLatestLivingCopy: Boolean): Unit = {
       timingReport("sync-copy",
                    "secondary" -> secondary.storeId,
                    "dataset" -> copyInfo.datasetInfo.systemId,
@@ -429,17 +378,16 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
                                                  currentCookie,
                                                  wrappedRows,
                                                  rollups,
-                                                 isLatestCopy)
+                                                 isLatestLivingCopy)
         }
       }
     }
 
-    def updateSecondaryMap(newLastDataVersion: Long, newLifecycleStage: metadata.LifecycleStage): Unit = {
+    def updateSecondaryMap(newLastDataVersion: Long): Unit = {
       u.secondaryManifest.completedReplicationTo(secondary.storeId,
                                                  claimantId,
                                                  datasetId,
                                                  newLastDataVersion,
-                                                 newLifecycleStage,
                                                  currentCookie)
       u.commit()
     }
