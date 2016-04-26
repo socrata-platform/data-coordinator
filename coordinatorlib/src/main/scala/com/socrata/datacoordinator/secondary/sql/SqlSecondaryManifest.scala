@@ -35,7 +35,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
           | SELECT ?, dataset_system_id, data_version
           |   FROM copy_map
           |   WHERE dataset_system_id = ?
-          |   ORDER BY copy_number DESC
+          |   ORDER BY data_version DESC
           |   LIMIT 1""".stripMargin)) { stmt =>
         stmt.setString(1, storeId)
         stmt.setDatasetId(2, datasetId)
