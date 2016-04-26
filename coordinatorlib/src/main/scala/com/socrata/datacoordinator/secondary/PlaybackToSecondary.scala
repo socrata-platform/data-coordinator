@@ -68,11 +68,6 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
       ev
     }
 
-    def finalLifecycleStage(): metadata.LifecycleStage = {
-      while(hasNext) next()
-      currentStage
-    }
-
     private def computeNextStage(ev: Delogger.LogEvent[CV]) =
       ev match {
         case Delogger.WorkingCopyCreated(_, _) =>
