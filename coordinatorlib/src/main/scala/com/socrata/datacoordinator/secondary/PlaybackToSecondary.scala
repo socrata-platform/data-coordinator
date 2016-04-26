@@ -68,11 +68,6 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
       ev
     }
 
-    def finalLifecycleStage(): metadata.LifecycleStage = {
-      while(hasNext) next()
-      currentStage
-    }
-
     private def computeNextStage(ev: Delogger.LogEvent[CV]) =
       ev match {
         case Delogger.WorkingCopyCreated(_, _) =>
@@ -271,17 +266,18 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
     }
 
     def resync(): Unit = {
-      val latestCopyInfo = retrying[Option[metadata.CopyInfo]]({
+      val mostRecentlyUpdatedCopyInfo = retrying[Option[metadata.CopyInfo]]({
         timingReport("resync", "dataset" -> datasetId) {
           u.commit() // all updates must be committed before we can change the transaction isolation level
           val r = u.datasetMapReader
           r.datasetInfo(datasetId, repeatableRead = true) match {
-            // transaction isolation level is not set to REPEATABLE READ
+            // transaction isolation level is now set to REPEATABLE READ
             case Some(datasetInfo) =>
-              val allCopies = r.allCopies(datasetInfo) // guarantied to be ordered by copy number
-              val latestLiving = r.latest(datasetInfo).copyNumber // this is the newest _living_ copy
-              val latest = allCopies.lastOption match {
-                case Some(latestCopy) =>
+              val allCopies = r.allCopies(datasetInfo).toSeq.sortBy(_.dataVersion)
+              val mostRecentCopy =
+                if(allCopies.nonEmpty) {
+                  val latestLiving = r.latest(datasetInfo) // this is the newest _living_ copy
+                  val latestCopy = allCopies.maxBy(_.copyNumber)
                   for (copy <- allCopies) {
                     timingReport("copy", "number" -> copy.copyNumber) {
                       // secondary.store.resync(.) will be called
@@ -294,18 +290,18 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
                         secondary.store.dropCopy(secondaryDatasetInfo, secondaryCopyInfo, currentCookie,
                           isLatestCopy = copy.copyNumber == latestCopy.copyNumber)
                       } else
-                        syncCopy(copy, isLatestLivingCopy = copy.copyNumber == latestLiving)
+                        syncCopy(copy, isLatestLivingCopy = copy.copyNumber == latestLiving.copyNumber)
                     }
                   }
-                  Some(latestCopy)
-                case None => // should always be a Some(.)...
+                  Some(allCopies.last)
+                } else {
                   logger.error("Have dataset info for dataset {}, but it has no copies?", datasetInfo.toString)
                   None
-              }
+                }
               // end transaction to not provoke a serialization error from touching the secondary_manifest table
               u.commit()
               // transaction isolation level is now reset to READ COMMITTED
-              latest
+              mostRecentCopy
             case None =>
               drop()
               None
@@ -319,9 +315,9 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
         case e: Throwable => ignoreSerializationFailure(e)
       })
       retrying[Unit]({
-        latestCopyInfo.foreach { latest =>
+        mostRecentlyUpdatedCopyInfo.foreach { case mostRecent =>
             timingReport("resync-update-secondary-map", "dataset" -> datasetId) {
-              updateSecondaryMap(latest.dataVersion)
+              updateSecondaryMap(mostRecent.dataVersion)
             }
           }
       }, ignoreSerializationFailure)
