@@ -42,7 +42,7 @@ class SqlDatasetDropper[CT](conn: Connection, writeLockTimeout: Duration, datase
   protected def updateSecondaryAndBackupInfo(datasetId: DatasetId, fakeVersion: Long) {
     using(conn.createStatement()) { stmt =>
       stmt.executeUpdate("UPDATE secondary_manifest SET latest_data_version = " + fakeVersion +
-        ", latest_secondary_lifecycle_stage = 'Discarded'::dataset_lifecycle_stage WHERE dataset_system_id = " + datasetId.underlying)
+        " WHERE dataset_system_id = " + datasetId.underlying)
       stmt.executeUpdate("UPDATE backup_log SET latest_data_version = " + fakeVersion + " WHERE dataset_system_id = " + datasetId.underlying)
     }
   }
