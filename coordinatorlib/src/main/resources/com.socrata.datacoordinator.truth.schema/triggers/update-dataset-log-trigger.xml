@@ -17,19 +17,27 @@
                   SET went_out_of_sync_at = CURRENT_TIMESTAMP
                   WHERE dataset_system_id = NEW.dataset_system_id AND latest_data_version = latest_backup_data_version;
                 -- Then unconditionally bump the latest data version.
-                UPDATE backup_log SET latest_data_version = NEW.data_version WHERE dataset_system_id = NEW.dataset_system_id;
+                UPDATE backup_log
+                  SET latest_data_version = (
+                    SELECT MAX(copy_map.data_version) FROM copy_map WHERE copy_map.dataset_system_id = NEW.dataset_system_id
+                  )
+                  WHERE dataset_system_id = NEW.dataset_system_id;
 
                 -- Same thing for all secondaries to which this is attached.
                 UPDATE secondary_manifest
                   SET went_out_of_sync_at = CURRENT_TIMESTAMP
                   WHERE dataset_system_id = NEW.dataset_system_id AND latest_data_version = latest_secondary_data_version;
                 UPDATE secondary_manifest
-                  SET latest_data_version = NEW.data_version
+                  SET latest_data_version = (
+                    SELECT MAX(copy_map.data_version) FROM copy_map WHERE copy_map.dataset_system_id = NEW.dataset_system_id
+                  )
                   WHERE secondary_manifest.dataset_system_id = NEW.dataset_system_id;
 
                 -- and finally dataset_map
                 UPDATE dataset_map
-                  SET latest_data_version = NEW.data_version
+                  SET latest_data_version = (
+                    SELECT MAX(copy_map.data_version) FROM copy_map WHERE copy_map.dataset_system_id = NEW.dataset_system_id
+                  )
                   WHERE dataset_map.system_id = NEW.dataset_system_id;
 
                 RETURN NEW;
