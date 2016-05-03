@@ -122,7 +122,9 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
       |  LEFT OUTER JOIN copy_map_table_modifiers ON copy_map.system_id = copy_map_table_modifiers.copy_system_id
       |WHERE
       |  dataset_system_id = ?
-      |  AND lifecycle_stage = CAST(? AS dataset_lifecycle_stage)""".stripMargin
+      |  AND lifecycle_stage = CAST(? AS dataset_lifecycle_stage)
+      |ORDER BY
+      |  data_version DESC limit 1""".stripMargin
   def lookup(datasetInfo: DatasetInfo, stage: LifecycleStage): Option[CopyInfo] = {
     using(conn.prepareStatement(lookupQuery)) { stmt =>
       stmt.setDatasetId(1, datasetInfo.systemId)
