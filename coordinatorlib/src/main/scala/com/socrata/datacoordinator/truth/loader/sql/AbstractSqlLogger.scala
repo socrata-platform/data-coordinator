@@ -25,6 +25,7 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
   import messages.ToProtobuf._
 
   protected def logLine(what: String, aux: Array[Byte])
+  protected def logRowsChangePreview(subVersion: Long, what: String, aux: Array[Byte])
   protected def flushBatch()
 
   protected lazy val versionNum = timingReport("version-num", "audit-table" -> auditTableName) {
@@ -57,12 +58,6 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
 
   private def logLine(what: String, aux: MessageLite) {
     logLine(what, aux.toByteArray)
-  }
-
-  def truncated() {
-    checkTxn()
-    flushRowData()
-    logLine(Truncated, messages.Truncated.defaultInstance)
   }
 
   def columnCreated(info: ColumnInfo[CT]) {
@@ -166,7 +161,7 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
 
     flushRowData()
 
-    if(nextSubVersionNum.peek != 1) {
+    if(nextSubVersionNum.peek != nextSubVersionNum.init) {
       logLine(TransactionEnded, messages.EndTransaction.defaultInstance)
       flushBatch()
       Some(versionNum)
@@ -183,14 +178,25 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
 
   // DataLogger facet starts here
 
+  private[this] var rowsInserted: Long = 0
+  private[this] var rowsUpdated: Long = 0
+  private[this] var rowsDeleted: Long = 0
   private[this] var baos: java.io.ByteArrayOutputStream = _
   private[this] var underlyingOutputStream: java.io.OutputStream = _
   private[this] var out: com.google.protobuf.CodedOutputStream = _
   private[this] var rowCodec: RowLogCodec[CV] = _
-  private[this] var didOne: Boolean = _
-  reset()
+  private[this] var dataStart: Option[Long] = None
+  private[this] var dataTruncated = false
 
-  def reset() {
+  private sealed abstract class RowDataState
+  private case object NotDoingRowData extends RowDataState
+  private case object WroteTruncated extends RowDataState
+  private case object WroteRows extends RowDataState
+
+  private[this] var rowDataState: RowDataState = NotDoingRowData
+  resetRowBuffer()
+
+  private def resetRowBuffer() {
     baos = new java.io.ByteArrayOutputStream
 
     /*
@@ -213,42 +219,82 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
 
     out = com.google.protobuf.CodedOutputStream.newInstance(underlyingOutputStream)
 
-    didOne = false
     rowCodec = rowCodecFactory()
     rowCodec.writeVersion(out)
   }
 
   private def maybeFlushRowData() {
-    didOne=true
+    rowDataState=WroteRows
     if(baos.size > rowFlushSize) {
-      flushRowData()
+      flushRowData(atEnd = false)
     }
   }
 
-  private def flushRowData() {
-    if(didOne) {
-      out.flush()
-      underlyingOutputStream.close()
-      val bytes = baos.toByteArray
-      reset()
-      logLine(RowDataUpdated, bytes)
+  private def noteDataStart(): Unit = {
+    dataStart match {
+      case None =>
+        dataStart = Some(nextSubVersionNum()) // reserve a slot for the row preview
+      case Some(_) =>
+        // we're already startd
     }
+  }
+
+  private def noteDataEnd(): Unit = {
+    dataStart.foreach { subVersion =>
+      val aux = messages.RowsChangedPreview(rowsInserted, rowsUpdated, rowsDeleted, dataTruncated)
+      logRowsChangePreview(subVersion, RowsChangedPreview, aux.toByteArray)
+    }
+    dataStart = None
+    dataTruncated = false
+  }
+
+  private def flushRowData(atEnd: Boolean = true) {
+    if(rowDataState != NotDoingRowData) {
+      if(rowDataState == WroteRows) {
+        out.flush()
+        underlyingOutputStream.close()
+        val bytes = baos.toByteArray
+
+        resetRowBuffer()
+        logLine(RowDataUpdated, bytes)
+      }
+
+      if(atEnd) {
+        noteDataEnd()
+        rowDataState = NotDoingRowData
+      }
+    }
+  }
+
+  def truncated() {
+    checkTxn()
+    flushRowData()
+    noteDataStart()
+    logLine(Truncated, messages.Truncated.defaultInstance)
+    dataTruncated = true
+    rowDataState = WroteTruncated
   }
 
   def insert(sid: RowId, row: Row[CV]) {
     checkTxn()
+    noteDataStart()
+    rowsInserted += 1
     rowCodec.insert(out, sid, row)
     maybeFlushRowData()
   }
 
   def update(sid: RowId, oldRow: Option[Row[CV]], newRow: Row[CV]) {
     checkTxn()
+    noteDataStart()
+    rowsUpdated += 1
     rowCodec.update(out, sid, oldRow, newRow)
     maybeFlushRowData()
   }
 
   def delete(systemID: RowId, oldRow: Option[Row[CV]]) {
     checkTxn()
+    noteDataStart()
+    rowsDeleted += 1
     rowCodec.delete(out, systemID, oldRow)
     maybeFlushRowData()
   }

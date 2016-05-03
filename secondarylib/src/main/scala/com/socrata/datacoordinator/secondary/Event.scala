@@ -19,5 +19,6 @@ case object DataCopied extends Event[Nothing, Nothing]
 case class SnapshotDropped(info: CopyInfo) extends Event[Nothing, Nothing] // This will never occur!  Remove me the next time you break binary compat!
 case class RollupCreatedOrUpdated(info: RollupInfo) extends Event[Nothing, Nothing]
 case class RollupDropped(info: RollupInfo) extends Event[Nothing, Nothing]
+case class RowsChangedPreview(rowsInserted: Long, rowsUpdated: Long, rowsDeleted: Long, truncated: Boolean) extends Event[Nothing, Nothing]
 case object WorkingCopyPublished extends Event[Nothing, Nothing]
 case class RowDataUpdated[CV](operations: Seq[Operation[CV]]) extends Event[Nothing, CV]

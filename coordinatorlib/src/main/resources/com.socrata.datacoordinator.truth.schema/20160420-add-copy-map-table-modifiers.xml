@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
+    <changeSet author="robertm" id="20160420-add-copy-map-table-modifiers">
+        <sql>
+            CREATE TABLE copy_map_table_modifiers (
+              copy_system_id BIGINT NOT NULL PRIMARY KEY REFERENCES copy_map(system_id),
+              table_modifier BIGINT NOT NULL
+            )
+        </sql>
+        <rollback>
+            DROP TABLE copy_map_table_modifiers;
+        </rollback>
+    </changeSet>
+</databaseChangeLog>

@@ -172,6 +172,8 @@ class SqlDelogger[CV](connection: Connection,
           decodeRollupCreatedOrUpdated(aux)
         case SqlLogger.RollupDropped =>
           decodeRollupDropped(aux)
+        case SqlLogger.RowsChangedPreview =>
+          decodeRowsChangedPreview(aux)
         case SqlLogger.TransactionEnded =>
           assert(!rs.next(), "there was data after TransactionEnded?")
           null
@@ -249,6 +251,11 @@ class SqlDelogger[CV](connection: Connection,
     def decodeRollupDropped(aux: Array[Byte]) = {
       val msg = messages.RollupDropped.defaultInstance.mergeFrom(aux)
       Delogger.RollupDropped(convert(msg.rollupInfo))
+    }
+
+    def decodeRowsChangedPreview(aux: Array[Byte]) = {
+      val msg = messages.RowsChangedPreview.defaultInstance.mergeFrom(aux)
+      Delogger.RowsChangedPreview(msg.rowsInserted, msg.rowsUpdated, msg.rowsDeleted, msg.truncated)
     }
   }
 

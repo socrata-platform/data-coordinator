@@ -114,6 +114,11 @@ trait BaseDatasetMapWriter[CT] extends BaseDatasetMapReader[CT] {
     */
   def updateLastModified(copyInfo: CopyInfo, newLastModified: DateTime = currentTime()): CopyInfo
 
+  /** Update the table modifier, producing a `CopyInfo` which refers to a new physical
+    * database table.
+    */
+  def newTableModifier(copyInfo: CopyInfo): CopyInfo
+
   /** Creates or updates the metadata about the given rollup based on name and
     * given soql query.
     */

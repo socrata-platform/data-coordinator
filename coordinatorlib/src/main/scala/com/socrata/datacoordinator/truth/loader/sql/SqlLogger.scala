@@ -34,8 +34,12 @@ class SqlLogger[CT, CV](connection: Connection,
   }
 
   protected def logLine(what: String, data: Array[Byte]) {
+    doLog(what, data, nextSubVersionNum())
+  }
+
+  private def doLog(what: String, data: Array[Byte], subVersionNum: Long) {
     val i = insertStmt
-    i.setLong(1, nextSubVersionNum())
+    i.setLong(1, subVersionNum)
     i.setString(2, what)
     i.setBytes(3, data)
     i.addBatch()
@@ -44,6 +48,10 @@ class SqlLogger[CT, CV](connection: Connection,
     batched += 1
 
     if(totalSize > batchFlushSize) flushBatch()
+  }
+
+  protected def logRowsChangePreview(rowsChangedPreviewSubversion: Long, what: String, data: Array[Byte]) {
+    doLog(what, data, rowsChangedPreviewSubversion)
   }
 
   protected def flushBatch() {
@@ -95,6 +103,7 @@ object SqlLogger {
   val RollupCreatedOrUpdated = "rollupcr"
   val RollupDropped = "rollupdr"
   val TransactionEnded = "endtxn"
+  val RowsChangedPreview = "rowcount"
 
   val allEvents = for {
     method <- getClass.getDeclaredMethods

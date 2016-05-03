@@ -142,6 +142,10 @@ class PostgresLogger[CT, CV](connection: Connection,
     maybeFlushBatch()
   }
 
+  protected def logRowsChangePreview(rowsChangedPreviewSubversion: Long, what: String, aux: Array[Byte]) {
+    writeEntry(versionNum, rowsChangedPreviewSubversion, bytesOf(what), aux)
+    maybeFlushBatch()
+  }
 
   def findRows(tableName: String): Long = {
     using(connection.prepareStatement("SELECT reltuples FROM pg_class WHERE relname=?")) { stmt =>

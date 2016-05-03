@@ -48,7 +48,7 @@ object UnanchoredCopyInfo extends ((CopyId, Long, LifecycleStage, Long, DateTime
   * or [[com.socrata.datacoordinator.truth.metadata.DatasetMapWriter]].
   * @param tag Guard against a non-map accidentially instantiating this.
   */
-case class CopyInfo(datasetInfo: DatasetInfo, systemId: CopyId, copyNumber: Long, lifecycleStage: LifecycleStage, dataVersion: Long, lastModified: DateTime)(implicit tag: com.socrata.datacoordinator.truth.metadata.`-impl`.Tag) extends CopyInfoLike {
-  lazy val dataTableName = datasetInfo.tableBase + "_" + copyNumber
+case class CopyInfo(datasetInfo: DatasetInfo, systemId: CopyId, copyNumber: Long, lifecycleStage: LifecycleStage, dataVersion: Long, lastModified: DateTime, tableModifier: Option[Long])(implicit tag: com.socrata.datacoordinator.truth.metadata.`-impl`.Tag) extends CopyInfoLike {
+  lazy val dataTableName = datasetInfo.tableBase + "_" + copyNumber + tableModifier.fold("")("_" + _)
   def unanchored: UnanchoredCopyInfo = UnanchoredCopyInfo(systemId, copyNumber,lifecycleStage, dataVersion, lastModified)
 }

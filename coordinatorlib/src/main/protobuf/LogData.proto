@@ -110,5 +110,12 @@ message FieldNameUpdated {
   required UnanchoredColumnInfo columnInfo = 1;
 }
 
+message RowsChangedPreview {
+  required int64 rowsInserted = 1;
+  required int64 rowsUpdated = 2;
+  required int64 rowsDeleted = 3;
+  required bool truncated = 4;
+}
+
 message EndTransaction {
 }
