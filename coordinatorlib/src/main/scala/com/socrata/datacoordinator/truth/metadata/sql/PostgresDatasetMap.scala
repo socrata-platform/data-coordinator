@@ -92,7 +92,7 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
     result.result()
   }
 
-  def lookupQuery = "SELECT system_id, copy_number, data_version, last_modified FROM copy_map WHERE dataset_system_id = ? AND lifecycle_stage = CAST(? AS dataset_lifecycle_stage)"
+  def lookupQuery = "SELECT system_id, copy_number, data_version, last_modified FROM copy_map WHERE dataset_system_id = ? AND lifecycle_stage = CAST(? AS dataset_lifecycle_stage) ORDER BY data_version DESC LIMIT 1"
   def lookup(datasetInfo: DatasetInfo, stage: LifecycleStage): Option[CopyInfo] = {
     using(conn.prepareStatement(lookupQuery)) { stmt =>
       stmt.setDatasetId(1, datasetInfo.systemId)
