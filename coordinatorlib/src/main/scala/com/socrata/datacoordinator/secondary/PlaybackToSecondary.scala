@@ -269,7 +269,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
           u.commit() // all updates must be committed before we can change the transaction isolation level
           val r = u.datasetMapReader
           r.datasetInfo(datasetId, repeatableRead = true) match {
-            // transaction isolation level is not set to REPEATABLE READ
+            // transaction isolation level is now set to REPEATABLE READ
             case Some(datasetInfo) =>
               val allCopies = r.allCopies(datasetInfo).toSeq.sortBy(_.dataVersion)
               val mostRecentCopy =
