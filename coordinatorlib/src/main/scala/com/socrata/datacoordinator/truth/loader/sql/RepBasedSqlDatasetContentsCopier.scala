@@ -18,7 +18,8 @@ class RepBasedSqlDatasetContentsCopier[CT, CV](conn: Connection, logger: Logger[
         timingReport("copy-dataset-contents", "from-copy" -> from.systemId, "to-copy" -> to.copyInfo.systemId) {
           stmt.execute(s"INSERT INTO ${to.copyInfo.dataTableName} ($physCols) SELECT $physCols FROM ${from.dataTableName}")
         }
-        // TODO: schedule target table for a VACUUM ANALYZE (since it can't happen in a transaction)
+        timingReport("analyze-post-copy", "to-copy" -> to.copyInfo.systemId)
+        stmt.execute(s"ANALYZE ${to.copyInfo.dataTableName}")
       }
       logger.dataCopied()
     }
