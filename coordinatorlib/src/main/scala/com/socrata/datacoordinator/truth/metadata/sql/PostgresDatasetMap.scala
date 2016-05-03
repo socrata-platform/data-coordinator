@@ -63,7 +63,7 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
       |  dataset_system_id = ?
       |  AND lifecycle_stage <> 'Discarded'
       |ORDER BY
-      |  data_version DESC
+      |  data_version DESC, copy_number DESC
       |LIMIT 1""".stripMargin
   def latest(datasetInfo: DatasetInfo) =
     using(conn.prepareStatement(latestQuery)) { stmt =>
@@ -124,7 +124,7 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
       |  dataset_system_id = ?
       |  AND lifecycle_stage = CAST(? AS dataset_lifecycle_stage)
       |ORDER BY
-      |  data_version DESC limit 1""".stripMargin
+      |  data_version DESC, copy_number DESC limit 1""".stripMargin
   def lookup(datasetInfo: DatasetInfo, stage: LifecycleStage): Option[CopyInfo] = {
     using(conn.prepareStatement(lookupQuery)) { stmt =>
       stmt.setDatasetId(1, datasetInfo.systemId)
