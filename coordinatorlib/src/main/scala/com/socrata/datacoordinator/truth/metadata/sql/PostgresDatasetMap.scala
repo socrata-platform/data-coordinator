@@ -63,7 +63,7 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
       |  dataset_system_id = ?
       |  AND lifecycle_stage <> 'Discarded'
       |ORDER BY
-      |  copy_number DESC
+      |  data_version DESC
       |LIMIT 1""".stripMargin
   def latest(datasetInfo: DatasetInfo) =
     using(conn.prepareStatement(latestQuery)) { stmt =>
