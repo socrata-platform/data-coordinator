@@ -336,7 +336,7 @@ class QueryResource(secondary: Secondary,
       loop(new QueryRetryState(0, false))
     } catch {
       case FinishRequest(response) =>
-        response ~> resetResponse _
+        response
     } finally {
       Thread.currentThread.setName(originalThreadName)
     }
