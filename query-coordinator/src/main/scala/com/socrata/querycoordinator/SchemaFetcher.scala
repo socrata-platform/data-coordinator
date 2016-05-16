@@ -3,7 +3,7 @@ package com.socrata.querycoordinator
 import java.io.IOException
 import javax.servlet.http.HttpServletResponse
 
-import com.socrata.http.client.exceptions.{HttpClientException, HttpClientTimeoutException, LivenessCheckFailed}
+import com.socrata.http.client.exceptions._
 import com.socrata.http.client.{HttpClient, RequestBuilder, Response}
 import com.socrata.http.common.util.HttpUtils
 import com.socrata.querycoordinator.SchemaFetcher._
@@ -38,6 +38,10 @@ class SchemaFetcher(httpClient: HttpClient) {
     try {
       httpClient.execute(request).run(processResponse)
     } catch {
+      case e: ConnectTimeout =>
+        SecondaryConnectFailed
+      case e: ConnectFailed =>
+        SecondaryConnectFailed
       case e: HttpClientTimeoutException =>
         TimeoutFromSecondary
       case e: LivenessCheckFailed =>
@@ -64,4 +68,5 @@ object SchemaFetcher {
 
   case object TimeoutFromSecondary extends Result
 
+  case object SecondaryConnectFailed extends Result
 }

@@ -6,6 +6,7 @@ import javax.servlet.http.HttpServletResponse
 import com.rojoma.json.v3.io.JsonReaderException
 import com.rojoma.json.v3.util.JsonUtil
 import com.rojoma.simplearm.v2.ResourceScope
+import com.socrata.http.common.AuxiliaryData
 import com.socrata.http.common.util.HttpUtils
 import com.socrata.http.server._
 import com.socrata.http.server.responses._
@@ -22,6 +23,7 @@ import org.joda.time.{Interval, DateTime}
 import com.socrata.http.server.implicits._
 
 
+import scala.annotation.tailrec
 import scala.concurrent.duration.FiniteDuration
 
 
@@ -29,6 +31,7 @@ class QueryResource(secondary: Secondary,
                     schemaFetcher: SchemaFetcher,
                     queryParser: QueryParser,
                     queryExecutor: QueryExecutor,
+                    connectTimeout: FiniteDuration,
                     schemaTimeout: FiniteDuration,
                     queryTimeout: FiniteDuration,
                     schemaCache: (String, Option[String], Schema) => Unit,
@@ -110,7 +113,6 @@ class QueryResource(secondary: Secondary,
       }
       val precondition = req.precondition
       val ifModifiedSince = req.dateTimeHeader("If-Modified-Since")
-      val chosenSecondaryName = secondary.chosenSecondaryName(forcedSecondaryName, dataset, copy)
 
 
       // A little spaghetti never hurt anybody!
@@ -124,189 +126,214 @@ class QueryResource(secondary: Secondary,
       // That last step is the most complex, because it is a
       // potentially long-running thing, and can cause a retry
       // if the upstream says "the schema just changed".
-      val second = secondary.serviceInstance(dataset, chosenSecondaryName)
-      val base = secondary.reqBuilder(second)
-      log.info("Base URI: " + base.url)
 
-      @annotation.tailrec
-      def analyzeRequest(schema: Versioned[Schema], isFresh: Boolean): Versioned[(Schema, Seq[SoQLAnalysis[String, SoQLType]])] = {
-        val parsedQuery = query match {
-          case Left(q) =>
-            queryParser(q, columnIdMap, schema.payload.schema, fuseMap)
-          case Right(fq) =>
-            queryParser(
-              selection = fq.select,
-              where = fq.where,
-              groupBy = fq.group,
-              having = fq.having,
-              orderBy = fq.order,
-              limit = fq.limit,
-              offset = fq.offset,
-              search = fq.search,
-              columnIdMapping = columnIdMap,
-              schema = schema.payload.schema,
-              fuseMap = fuseMap
-            )
+      final class QueryRetryState(retriesSoFar: Int, causedByMismatch: Boolean) {
+        val chosenSecondaryName = secondary.chosenSecondaryName(forcedSecondaryName, dataset, copy)
+        val second = secondary.serviceInstance(dataset, chosenSecondaryName)
+        val base = secondary.reqBuilder(second)
+        log.info("Base URI: " + base.url)
+
+        def analyzeRequest(schema: Versioned[Schema]): Either[QueryRetryState, Versioned[(Schema, Seq[SoQLAnalysis[String, SoQLType]])]] = {
+          val parsedQuery = query match {
+            case Left(q) =>
+              queryParser(q, columnIdMap, schema.payload.schema, fuseMap)
+            case Right(fq) =>
+              queryParser(
+                selection = fq.select,
+                where = fq.where,
+                groupBy = fq.group,
+                having = fq.having,
+                orderBy = fq.order,
+                limit = fq.limit,
+                offset = fq.offset,
+                search = fq.search,
+                columnIdMapping = columnIdMap,
+                schema = schema.payload.schema,
+                fuseMap = fuseMap
+              )
+          }
+
+          parsedQuery match {
+            case QueryParser.SuccessfulParse(analysis) =>
+              Right(schema.copy(payload = (schema.payload, analysis)))
+            case QueryParser.AnalysisError(_: DuplicateAlias | _: NoSuchColumn | _: TypecheckException) if !causedByMismatch =>
+              Left(nextRetry(true))
+            case QueryParser.AnalysisError(e) =>
+              finishRequest(soqlErrorResponse(dataset, e))
+            case QueryParser.UnknownColumnIds(cids) =>
+              finishRequest(unknownColumnIds(cids))
+            case QueryParser.RowLimitExceeded(max) =>
+              finishRequest(rowLimitExceeded(max))
+          }
         }
 
-        parsedQuery match {
-          case QueryParser.SuccessfulParse(analysis) =>
-            schema.copy(payload = (schema.payload, analysis))
-          case QueryParser.AnalysisError(_: DuplicateAlias | _: NoSuchColumn | _: TypecheckException) if !isFresh =>
-            analyzeRequest(getSchema(dataset, copy), true)
-          case QueryParser.AnalysisError(e) =>
-            finishRequest(soqlErrorResponse(dataset, e))
-          case QueryParser.UnknownColumnIds(cids) =>
-            finishRequest(unknownColumnIds(cids))
-          case QueryParser.RowLimitExceeded(max) =>
-            finishRequest(rowLimitExceeded(max))
-        }
-      }
-
-      /**
-       * @param analyzedQuery analysis which may have a rollup applied
-       * @param analyzedQueryNoRollup original analysis without rollup
-       */
-      @annotation.tailrec
-      def executeQuery(schema: Versioned[Schema],
-                       analyzedQuery: Seq[SoQLAnalysis[String, SoQLType]],
-                       analyzedQueryNoRollup: Seq[SoQLAnalysis[String, SoQLType]],
-                       rollupName: Option[String],
-                       requestId: String,
-                       resourceName: Option[String],
-                       resourceScope: ResourceScope): HttpResponse = {
-        val extendedScope = resourceScope.open(SharedHandle(new ResourceScope))
-        val extraHeaders = Map(RequestId.ReqIdHeader -> requestId) ++
-          resourceName.map(fbf => Map(headerSocrataResource -> fbf)).getOrElse(Nil)
-        queryExecutor(
-          base.receiveTimeoutMS(queryTimeout.toMillis.toInt),
-          dataset,
-          analyzedQuery,
-          schema.payload,
-          precondition,
-          ifModifiedSince,
-          rowCount,
-          copy,
-          rollupName,
-          obfuscateId,
-          extraHeaders,
-          schema.copyNumber,
-          schema.dataVersion,
-          schema.lastModified,
-          extendedScope
-        ) match {
-          case QueryExecutor.NotFound =>
-            chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
-            finishRequest(notFoundResponse(dataset))
-          case QueryExecutor.Timeout =>
-            // don't flag an error in this case because the timeout may be based on the particular query.
-            finishRequest(upstreamTimeoutResponse)
-          case QueryExecutor.SchemaHashMismatch(newSchema) =>
-            storeInCache(Some(newSchema), dataset, copy)
-            val versionedInfo = analyzeRequest(getSchema(dataset, copy), true)
-            val (finalSchema, analyses) = versionedInfo.payload
-            val (rewrittenAnalyses, rollupName) = possiblyRewriteOneAnalysisInQuery(finalSchema, analyses)
-            executeQuery(versionedInfo.copy(payload = finalSchema),
-                         rewrittenAnalyses, analyses, rollupName, requestId, resourceName, resourceScope)
-          case QueryExecutor.ToForward(responseCode, headers, body) =>
-            // Log data version difference if response is OK.  Ignore not modified response and others.
-            responseCode match {
-              case HttpStatus.SC_OK =>
-                (headers("x-soda2-dataversion").headOption, headers("last-modified").headOption) match {
-                  case (Some(qsDataVersion), Some(qsLastModified)) =>
-                    val qsdv = qsDataVersion.toLong
-                    val qslm = HttpUtils.parseHttpDate(qsLastModified)
-                    logSchemaFreshness(second.getAddress, sfDataVersion, sfLastModified, qsdv, qslm)
-                  case _ =>
-                    log.warn("version related data not available from secondary")
-                }
-                transferHeaders(Status(responseCode), headers) ~> Stream(out => transferResponse(out, body))
-              case HttpStatus.SC_INTERNAL_SERVER_ERROR if
-                (analyzedQuery.ne(analyzedQueryNoRollup) && rollupName.isDefined) =>
-                // Rollup soql analysis passed but the sql asset behind in the secondary
-                // to support the rollup may be bad like missing rollup table.
-                // Retry w/o rollup to make queries more resilient.
-                log.warn(s"error in query with rollup ${rollupName.get}.  retry w/o rollup - $body")
-                executeQuery(schema, analyzedQueryNoRollup, analyzedQueryNoRollup,
-                             None, requestId, resourceName, resourceScope)
-              case _ =>
-                transferHeaders(Status(responseCode), headers) ~> Stream(out => transferResponse(out, body))
-            }
-        }
-      }
-
-      /**
-       * Scan from left to right (inner to outer), rewrite the first possible one.
-       * TODO: Find a better way to apply rollup?
-       */
-      def possiblyRewriteOneAnalysisInQuery(schema: Schema, analyzedQuery: Seq[SoQLAnalysis[String, SoQLType]])
-        : (Seq[SoQLAnalysis[String, SoQLType]], Option[String]) = {
-        analyzedQuery.foldLeft((Seq.empty[SoQLAnalysis[String, SoQLType]], None: Option[String])) {
-          (acc, anal) =>
-            val existingRollupName = acc._2
-            existingRollupName match {
-              case Some(_) => (acc._1 :+ anal, existingRollupName)
-              case None =>
-                val (rewrittenAnal, rollupName) = possiblyRewriteQuery(schema, anal)
-                rollupName match {
-                  case Some(_) => (acc._1 :+ rewrittenAnal, rollupName)
-                  case None => (acc._1 :+ anal, None)
-                }
-            }
-        }
-      }
-
-      def possiblyRewriteQuery(schema: Schema, analyzedQuery: SoQLAnalysis[String, SoQLType])
-        : (SoQLAnalysis[String, SoQLType], Option[String]) = {
-        if (noRollup) {
-          (analyzedQuery, None)
-        } else {
-          rollupInfoFetcher(base.receiveTimeoutMS(schemaTimeout.toMillis.toInt), dataset, copy) match {
-            case RollupInfoFetcher.Successful(rollups) =>
-              val rewritten = RollupScorer.bestRollup(
-                queryRewriter.possibleRewrites(schema, analyzedQuery, rollups).toSeq)
-              val (rollupName, analysis) = rewritten map { x => (Some(x._1), x._2) } getOrElse ((None, analyzedQuery))
-              log.info(s"Rewrote query on dataset $dataset to rollup $rollupName with analysis $analysis")
-              (analysis, rollupName)
-            case RollupInfoFetcher.NoSuchDatasetInSecondary =>
+        /**
+         * @param analyzedQuery analysis which may have a rollup applied
+         * @param analyzedQueryNoRollup original analysis without rollup
+         */
+        def executeQuery(schema: Versioned[Schema],
+                         analyzedQuery: Seq[SoQLAnalysis[String, SoQLType]],
+                         analyzedQueryNoRollup: Seq[SoQLAnalysis[String, SoQLType]],
+                         rollupName: Option[String],
+                         requestId: String,
+                         resourceName: Option[String],
+                         resourceScope: ResourceScope): Either[QueryRetryState, HttpResponse] = {
+          val extendedScope = resourceScope.open(SharedHandle(new ResourceScope))
+          val extraHeaders = Map(RequestId.ReqIdHeader -> requestId) ++
+            resourceName.map(fbf => Map(headerSocrataResource -> fbf)).getOrElse(Nil)
+          queryExecutor(
+            base.receiveTimeoutMS(queryTimeout.toMillis.toInt).connectTimeoutMS(connectTimeout.toMillis.toInt),
+            dataset,
+            analyzedQuery,
+            schema.payload,
+            precondition,
+            ifModifiedSince,
+            rowCount,
+            copy,
+            rollupName,
+            obfuscateId,
+            extraHeaders,
+            schema.copyNumber,
+            schema.dataVersion,
+            schema.lastModified,
+            extendedScope
+          ) match {
+            case QueryExecutor.Retry =>
+              Left(nextRetry(false))
+            case QueryExecutor.NotFound =>
               chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
               finishRequest(notFoundResponse(dataset))
-            case RollupInfoFetcher.TimeoutFromSecondary =>
+            case QueryExecutor.Timeout =>
+              // don't flag an error in this case because the timeout may be based on the particular query.
+              finishRequest(upstreamTimeoutResponse)
+            case QueryExecutor.SchemaHashMismatch(newSchema) =>
+              storeInCache(Some(newSchema), dataset, copy)
+              Left(nextRetry(false))
+            case QueryExecutor.ToForward(responseCode, headers, body) =>
+              // Log data version difference if response is OK.  Ignore not modified response and others.
+              responseCode match {
+                case HttpStatus.SC_OK =>
+                  (headers("x-soda2-dataversion").headOption, headers("last-modified").headOption) match {
+                    case (Some(qsDataVersion), Some(qsLastModified)) =>
+                      val qsdv = qsDataVersion.toLong
+                      val qslm = HttpUtils.parseHttpDate(qsLastModified)
+                      logSchemaFreshness(second.getAddress, sfDataVersion, sfLastModified, qsdv, qslm)
+                    case _ =>
+                      log.warn("version related data not available from secondary")
+                  }
+                  Right(transferHeaders(Status(responseCode), headers) ~> Stream(out => transferResponse(out, body)))
+                case HttpStatus.SC_INTERNAL_SERVER_ERROR if
+                  (analyzedQuery.ne(analyzedQueryNoRollup) && rollupName.isDefined) =>
+                  // Rollup soql analysis passed but the sql asset behind in the secondary
+                  // to support the rollup may be bad like missing rollup table.
+                  // Retry w/o rollup to make queries more resilient.
+                  log.warn(s"error in query with rollup ${rollupName.get}.  retry w/o rollup - $body")
+                  executeQuery(schema, analyzedQueryNoRollup, analyzedQueryNoRollup,
+                               None, requestId, resourceName, resourceScope)
+                case _ =>
+                  Right(transferHeaders(Status(responseCode), headers) ~> Stream(out => transferResponse(out, body)))
+              }
+          }
+        }
+
+        /**
+         * Scan from left to right (inner to outer), rewrite the first possible one.
+         * TODO: Find a better way to apply rollup?
+         */
+        def possiblyRewriteOneAnalysisInQuery(schema: Schema, analyzedQuery: Seq[SoQLAnalysis[String, SoQLType]])
+          : (Seq[SoQLAnalysis[String, SoQLType]], Option[String]) = {
+          analyzedQuery.foldLeft((Seq.empty[SoQLAnalysis[String, SoQLType]], None: Option[String])) {
+            (acc, anal) =>
+              val existingRollupName = acc._2
+              existingRollupName match {
+                case Some(_) => (acc._1 :+ anal, existingRollupName)
+                case None =>
+                  val (rewrittenAnal, rollupName) = possiblyRewriteQuery(schema, anal)
+                  rollupName match {
+                    case Some(_) => (acc._1 :+ rewrittenAnal, rollupName)
+                    case None => (acc._1 :+ anal, None)
+                  }
+              }
+          }
+        }
+
+        def possiblyRewriteQuery(schema: Schema, analyzedQuery: SoQLAnalysis[String, SoQLType])
+          : (SoQLAnalysis[String, SoQLType], Option[String]) = {
+          if (noRollup) {
+            (analyzedQuery, None)
+          } else {
+            rollupInfoFetcher(base.receiveTimeoutMS(schemaTimeout.toMillis.toInt), dataset, copy) match {
+              case RollupInfoFetcher.Successful(rollups) =>
+                val rewritten = RollupScorer.bestRollup(
+                  queryRewriter.possibleRewrites(schema, analyzedQuery, rollups).toSeq)
+                val (rollupName, analysis) = rewritten map { x => (Some(x._1), x._2) } getOrElse ((None, analyzedQuery))
+                log.info(s"Rewrote query on dataset $dataset to rollup $rollupName with analysis $analysis")
+                (analysis, rollupName)
+              case RollupInfoFetcher.NoSuchDatasetInSecondary =>
+                chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
+                finishRequest(notFoundResponse(dataset))
+              case RollupInfoFetcher.TimeoutFromSecondary =>
+                chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
+                finishRequest(upstreamTimeoutResponse)
+              case other: RollupInfoFetcher.Result =>
+                log.error(unexpectedError, other)
+                chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
+                finishRequest(internalServerError)
+            }
+          }
+        }
+
+        case class Versioned[T](payload: T, copyNumber: Long, dataVersion: Long, lastModified: DateTime)
+
+        def nextRetry(causedByAnalysisFailure: Boolean): QueryRetryState =
+          if(retriesSoFar < 3) {
+            new QueryRetryState(retriesSoFar + 1, causedByAnalysisFailure)
+          } else {
+            log.error("Too many retries")
+            finishRequest(ranOutOfRetriesResponse)
+          }
+
+        def getSchema(dataset: String, copy: Option[String]): Either[QueryRetryState, Versioned[Schema]] = {
+          schemaFetcher(
+            base.receiveTimeoutMS(schemaTimeout.toMillis.toInt).connectTimeoutMS(connectTimeout.toMillis.toInt),
+            dataset,
+            copy) match {
+            case SchemaFetcher.SecondaryConnectFailed =>
+              Left(nextRetry(false))
+            case SchemaFetcher.Successful(s, c, d, l) =>
+              Right(Versioned(s, c, d, l))
+            case SchemaFetcher.NoSuchDatasetInSecondary =>
+              chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
+              finishRequest(notFoundResponse(dataset))
+            case SchemaFetcher.TimeoutFromSecondary =>
               chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
               finishRequest(upstreamTimeoutResponse)
-            case other: RollupInfoFetcher.Result =>
+            case other: SchemaFetcher.Result =>
               log.error(unexpectedError, other)
               chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
               finishRequest(internalServerError)
           }
         }
-      }
 
-      case class Versioned[T](payload: T, copyNumber: Long, dataVersion: Long, lastModified: DateTime)
-
-      def getSchema(dataset: String, copy: Option[String]): Versioned[Schema] = {
-        schemaFetcher(base.receiveTimeoutMS(schemaTimeout.toMillis.toInt), dataset, copy) match {
-          case SchemaFetcher.Successful(s, c, d, l) =>
-            Versioned(s, c, d, l)
-          case SchemaFetcher.NoSuchDatasetInSecondary =>
-            chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
-            finishRequest(notFoundResponse(dataset))
-          case SchemaFetcher.TimeoutFromSecondary =>
-            chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
-            finishRequest(upstreamTimeoutResponse)
-          case other: SchemaFetcher.Result =>
-            log.error(unexpectedError, other)
-            chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
-            finishRequest(internalServerError)
+        def go(): Either[QueryRetryState, HttpResponse] = {
+          getSchema(dataset, copy).right.flatMap(analyzeRequest).right.flatMap { versionInfo =>
+            val (finalSchema, analyses) = versionInfo.payload
+            val (rewrittenAnalyses, rollupName) = possiblyRewriteOneAnalysisInQuery(finalSchema, analyses)
+            executeQuery(versionInfo.copy(payload = finalSchema),
+              rewrittenAnalyses, analyses, rollupName,
+              requestId, req.header(headerSocrataResource), req.resourceScope)
+          }
         }
       }
 
-      val versionInfo = analyzeRequest(getSchema(dataset, copy), true)
-      val (finalSchema, analyses) = versionInfo.payload
-      val (rewrittenAnalyses, rollupName) = possiblyRewriteOneAnalysisInQuery(finalSchema, analyses)
-      executeQuery(versionInfo.copy(payload = finalSchema),
-                   rewrittenAnalyses, analyses, rollupName,
-                   requestId, req.header(headerSocrataResource), req.resourceScope)
+      @tailrec
+      def loop(qs: QueryRetryState): HttpResponse = {
+        qs.go() match {
+          case Left(qs2) => loop(qs2)
+          case Right(r) => r
+        }
+      }
+      loop(new QueryRetryState(0, false))
     } catch {
       case FinishRequest(response) =>
         response ~> resetResponse _
@@ -392,6 +419,7 @@ object QueryResource {
             schemaFetcher: SchemaFetcher,
             queryParser: QueryParser,
             queryExecutor: QueryExecutor,
+            connectTimeout: FiniteDuration,
             schemaTimeout: FiniteDuration,
             queryTimeout: FiniteDuration,
             schemaCache: (String, Option[String], Schema) => Unit,
@@ -403,6 +431,7 @@ object QueryResource {
       schemaFetcher,
       queryParser,
       queryExecutor,
+      connectTimeout,
       schemaTimeout,
       queryTimeout,
       schemaCache,

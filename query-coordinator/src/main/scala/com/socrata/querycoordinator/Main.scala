@@ -97,6 +97,7 @@ object Main extends App {
       schemaFetcher = new SchemaFetcher(httpClient),
       queryParser = new QueryParser(analyzer, config.maxRows, config.defaultRowsLimit),
       queryExecutor = new QueryExecutor(httpClient, analysisSerializer, teeStream, cacheSessionProvider, windower, maxWindowCount),
+      connectTimeout = config.connectTimeout,
       schemaTimeout = config.schemaTimeout,
       queryTimeout = config.queryTimeout,
       schemaCache = (_, _, _) => (),
