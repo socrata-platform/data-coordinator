@@ -127,13 +127,13 @@ class QueryResource(secondary: Secondary,
       // potentially long-running thing, and can cause a retry
       // if the upstream says "the schema just changed".
 
-      final class QueryRetryState(retriesSoFar: Int, causedByMismatch: Boolean) {
+      final class QueryRetryState(retriesSoFar: Int) {
         val chosenSecondaryName = secondary.chosenSecondaryName(forcedSecondaryName, dataset, copy)
         val second = secondary.serviceInstance(dataset, chosenSecondaryName)
         val base = secondary.reqBuilder(second)
         log.info("Base URI: " + base.url)
 
-        def analyzeRequest(schema: Versioned[Schema]): Either[QueryRetryState, Versioned[(Schema, Seq[SoQLAnalysis[String, SoQLType]])]] = {
+        def analyzeRequest(schema: Versioned[Schema], isFresh: Boolean): Either[QueryRetryState, Versioned[(Schema, Seq[SoQLAnalysis[String, SoQLType]])]] = {
           val parsedQuery = query match {
             case Left(q) =>
               queryParser(q, columnIdMap, schema.payload.schema, fuseMap)
@@ -156,8 +156,8 @@ class QueryResource(secondary: Secondary,
           parsedQuery match {
             case QueryParser.SuccessfulParse(analysis) =>
               Right(schema.copy(payload = (schema.payload, analysis)))
-            case QueryParser.AnalysisError(_: DuplicateAlias | _: NoSuchColumn | _: TypecheckException) if !causedByMismatch =>
-              Left(nextRetry(true))
+            case QueryParser.AnalysisError(_: DuplicateAlias | _: NoSuchColumn | _: TypecheckException) if !isFresh =>
+              getSchema(dataset, copy).right.flatMap(analyzeRequest(_, true))
             case QueryParser.AnalysisError(e) =>
               finishRequest(soqlErrorResponse(dataset, e))
             case QueryParser.UnknownColumnIds(cids) =>
@@ -199,7 +199,7 @@ class QueryResource(secondary: Secondary,
             extendedScope
           ) match {
             case QueryExecutor.Retry =>
-              Left(nextRetry(false))
+              Left(nextRetry)
             case QueryExecutor.NotFound =>
               chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
               finishRequest(notFoundResponse(dataset))
@@ -208,7 +208,14 @@ class QueryResource(secondary: Secondary,
               finishRequest(upstreamTimeoutResponse)
             case QueryExecutor.SchemaHashMismatch(newSchema) =>
               storeInCache(Some(newSchema), dataset, copy)
-              Left(nextRetry(false))
+              getSchema(dataset, copy).right.flatMap { schema =>
+                analyzeRequest(schema, true).right.flatMap { versionedInfo =>
+                  val (finalSchema, analyses) = versionedInfo.payload
+                  val (rewrittenAnalyses, rollupName) = possiblyRewriteOneAnalysisInQuery(finalSchema, analyses)
+                  executeQuery(versionedInfo.copy(payload = finalSchema),
+                    rewrittenAnalyses, analyses, rollupName, requestId, resourceName, resourceScope)
+                }
+              }
             case QueryExecutor.ToForward(responseCode, headers, body) =>
               // Log data version difference if response is OK.  Ignore not modified response and others.
               responseCode match {
@@ -285,9 +292,9 @@ class QueryResource(secondary: Secondary,
 
         case class Versioned[T](payload: T, copyNumber: Long, dataVersion: Long, lastModified: DateTime)
 
-        def nextRetry(causedByAnalysisFailure: Boolean): QueryRetryState =
+        def nextRetry: QueryRetryState =
           if(retriesSoFar < 3) {
-            new QueryRetryState(retriesSoFar + 1, causedByAnalysisFailure)
+            new QueryRetryState(retriesSoFar + 1)
           } else {
             log.error("Too many retries")
             finishRequest(ranOutOfRetriesResponse)
@@ -299,7 +306,7 @@ class QueryResource(secondary: Secondary,
             dataset,
             copy) match {
             case SchemaFetcher.SecondaryConnectFailed =>
-              Left(nextRetry(false))
+              Left(nextRetry)
             case SchemaFetcher.Successful(s, c, d, l) =>
               Right(Versioned(s, c, d, l))
             case SchemaFetcher.NoSuchDatasetInSecondary =>
@@ -316,7 +323,7 @@ class QueryResource(secondary: Secondary,
         }
 
         def go(): Either[QueryRetryState, HttpResponse] = {
-          getSchema(dataset, copy).right.flatMap(analyzeRequest).right.flatMap { versionInfo =>
+          getSchema(dataset, copy).right.flatMap(analyzeRequest(_, true)).right.flatMap { versionInfo =>
             val (finalSchema, analyses) = versionInfo.payload
             val (rewrittenAnalyses, rollupName) = possiblyRewriteOneAnalysisInQuery(finalSchema, analyses)
             executeQuery(versionInfo.copy(payload = finalSchema),
@@ -333,7 +340,7 @@ class QueryResource(secondary: Secondary,
           case Right(r) => r
         }
       }
-      loop(new QueryRetryState(0, false))
+      loop(new QueryRetryState(0))
     } catch {
       case FinishRequest(response) =>
         response
