@@ -1,4 +1,4 @@
-FROM socrata/java
+FROM socrata/java8
 
 EXPOSE 6020 6021
 ENV JMX_PORT 6029
