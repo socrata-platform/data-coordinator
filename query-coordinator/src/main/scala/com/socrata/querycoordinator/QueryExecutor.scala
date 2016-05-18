@@ -15,7 +15,7 @@ import com.rojoma.json.v3.codec.JsonDecode
 import com.rojoma.json.v3.io.{CompactJsonWriter, FusedBlockJsonEventIterator, JsonReader}
 import com.rojoma.json.v3.util.{JsonArrayIterator, AutomaticJsonCodecBuilder, ArrayIteratorEncode, JsonUtil}
 import com.rojoma.simplearm.v2._
-import com.socrata.http.client.exceptions.{HttpClientTimeoutException, LivenessCheckFailed}
+import com.socrata.http.client.exceptions.{ConnectTimeout, ConnectFailed, HttpClientTimeoutException, LivenessCheckFailed}
 import com.socrata.http.client.{HttpClient, RequestBuilder, Response}
 import com.socrata.http.server.implicits._
 import com.socrata.http.server.util._
@@ -356,6 +356,8 @@ class QueryExecutor(httpClient: HttpClient,
           forward(result, resourceScope.openUnmanaged(result.inputStream(), transitiveClose = List(result)))
       }
     } catch {
+      case e: ConnectTimeout => Retry
+      case e: ConnectFailed => Retry
       case e: HttpClientTimeoutException => Timeout
       case e: LivenessCheckFailed => Timeout
     }
@@ -415,6 +417,8 @@ object QueryExecutor {
   case object NotFound extends Result
 
   case object Timeout extends Result
+
+  case object Retry extends Result
 
   case class SchemaHashMismatch(newSchema: Schema) extends Result
 

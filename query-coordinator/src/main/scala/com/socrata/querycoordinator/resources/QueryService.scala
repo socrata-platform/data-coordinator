@@ -183,6 +183,10 @@ trait QueryService {
     GatewayTimeout
   }
 
+  def ranOutOfRetriesResponse: HttpResponse = {
+    GatewayTimeout
+  }
+
   def resetResponse(response: HttpServletResponse): Unit = {
     if (response.isCommitted) ??? else response.reset()
   }
