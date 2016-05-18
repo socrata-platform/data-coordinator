@@ -184,7 +184,7 @@ trait QueryService {
   }
 
   def ranOutOfRetriesResponse: HttpResponse = {
-    internalServerError
+    GatewayTimeout
   }
 
   def resetResponse(response: HttpServletResponse): Unit = {
