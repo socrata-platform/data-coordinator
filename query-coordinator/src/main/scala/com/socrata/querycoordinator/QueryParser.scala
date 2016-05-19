@@ -1,10 +1,10 @@
 package com.socrata.querycoordinator
 
-import com.socrata.querycoordinator.fusion.CompoundTypeFuser
+import com.socrata.querycoordinator.fusion.{CompoundTypeFuser, NoopFuser, SoQLRewrite}
 import com.socrata.soql.aliases.AliasAnalysis
-import com.socrata.soql.ast.{Selection, Expression}
-import com.socrata.soql.collection.{OrderedSet, OrderedMap}
-import com.socrata.soql.environment.{UntypedDatasetContext, DatasetContext, ColumnName}
+import com.socrata.soql.ast.{Expression, Selection}
+import com.socrata.soql.collection.{OrderedMap, OrderedSet}
+import com.socrata.soql.environment.{ColumnName, DatasetContext, UntypedDatasetContext}
 import com.socrata.soql.exceptions.SoQLException
 import com.socrata.soql.functions.SoQLFunctions
 import com.socrata.soql.parsing.Parser
@@ -79,31 +79,54 @@ class QueryParser(analyzer: SoQLAnalyzer[SoQLType], maxRows: Option[Int], defaul
     }
   }
 
+  private def analyzeQuery(query: String): DatasetContext[SoQLType] => Seq[SoQLAnalysis[ColumnName, SoQLType]] = {
+      analyzer.analyzeFullQuery(query)(_)
+  }
+
+  private def analyzeQueryWithCompoundTypeFusion(query: String,
+                                                 fuser: SoQLRewrite,
+                                                 columnIdMapping: Map[ColumnName, String],
+                                                 schema: Map[String, SoQLType]):
+    DatasetContext[SoQLType] => Seq[SoQLAnalysis[ColumnName, SoQLType]] = {
+
+    val parsedStmts = new Parser().selectStatement(query)
+
+    // expand "select *" if it appears in the first statement only
+    val firstStmt = parsedStmts.head
+    val utDsCtx = new UntypedDatasetContext {
+      override val columns: OrderedSet[ColumnName] = {
+        // exclude non-existing columns in the schema
+        val existedColumns = columnIdMapping.filter { case (k, v) => schema.contains(v) }
+        OrderedSet(existedColumns.keysIterator.toSeq: _*)
+      }
+    }
+    val expandedSelection = AliasAnalysis.expandSelection(firstStmt.selection)(utDsCtx)
+    val expandedFirstStmt = firstStmt.copy(selection = Selection(None, None, expandedSelection))
+    val expandedStmts = parsedStmts.updated(0, expandedFirstStmt)
+
+    // rewrite only the last statement without "select *".
+    val lastExpandedStmt = expandedStmts.reverse.find(s => s.selection.allUserExcept.isEmpty)
+      .getOrElse(throw new Exception("there should be at least one expanded statement"))
+
+    val fusedStmts = expandedStmts.updated(expandedStmts.indexOf(lastExpandedStmt), fuser.rewrite(lastExpandedStmt))
+
+    analyzer.analyze(fusedStmts)(_)
+  }
+
   def apply(query: String,
-            columnIdMapping: Map[ColumnName, String], schema: Map[String, SoQLType],
+            columnIdMapping: Map[ColumnName, String],
+            schema: Map[String, SoQLType],
             fuseMap: Map[String, String] = Map.empty,
             merged: Boolean = true): Result = {
 
-    val fuser = CompoundTypeFuser(fuseMap)
-    val analyze: DatasetContext[SoQLType] => Seq[SoQLAnalysis[ColumnName, SoQLType]] = {
-      val utDsCtx = new UntypedDatasetContext {
-        override val columns: OrderedSet[ColumnName] = {
-          // exclude non-existing columns in the schema
-          val existedColumns = columnIdMapping.filter { case (k, v) => schema.contains(v) }
-          OrderedSet(existedColumns.keysIterator.toSeq: _*)
-        }
-      }
-      val parsedStmts = new Parser().selectStatement(query)
-      val expandedStmts = parsedStmts.map { parsed =>
-        val expanded = AliasAnalysis.expandSelection(parsed.selection)(utDsCtx)
-        parsed.copy(selection = Selection(None, None, expanded))
-      }
-
-      val fusedStmts = expandedStmts.map(s => fuser.rewrite(s))
-      analyzer.analyze(fusedStmts)(_)
+    val postAnalyze = CompoundTypeFuser(fuseMap) match {
+      case x if x.eq(NoopFuser) =>
+        analyzeQuery(query)
+      case fuser: SoQLRewrite =>
+        val analyze = analyzeQueryWithCompoundTypeFusion(query, fuser, columnIdMapping, schema)
+        analyze andThen fuser.postAnalyze
     }
 
-    val postAnalyze = analyze andThen fuser.postAnalyze
     val analyzeMaybeMerge = if (merged) { postAnalyze andThen soqlMerge } else { postAnalyze }
     go(columnIdMapping, schema)(analyzeMaybeMerge)
   }
