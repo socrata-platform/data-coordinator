@@ -105,12 +105,13 @@ class CompoundTypeFuser(fuseBase: Map[String, String]) extends SoQLRewrite with 
    * Columns involved are prefixed during ast rewrite and removed after analysis to avoid column name conflicts.
    */
   def postAnalyze(analyses: Seq[SoQLAnalysis[ColumnName, SoQLType]]): Seq[SoQLAnalysis[ColumnName, SoQLType]] = {
-    analyses.map { a =>
-      val selection = a.selection map { case (cn, expr) =>
+    val last = analyses.last
+    val newSelect = last.selection map {
+      case (cn, expr) =>
         (ColumnName(cn.name.replaceFirst(ColumnPrefix, "")) -> expr)
-      }
-      a.copy(selection = selection)
     }
+
+    analyses.updated(analyses.size - 1, last.copy(selection = newSelect))
   }
 
   private def rewrite(expr: Expression): Option[Expression] = {
