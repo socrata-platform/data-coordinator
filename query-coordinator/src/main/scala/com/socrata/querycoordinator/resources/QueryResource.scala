@@ -274,7 +274,8 @@ class QueryResource(secondary: Secondary,
                 val rewritten = RollupScorer.bestRollup(
                   queryRewriter.possibleRewrites(schema, analyzedQuery, rollups).toSeq)
                 val (rollupName, analysis) = rewritten map { x => (Some(x._1), x._2) } getOrElse ((None, analyzedQuery))
-                log.info(s"Rewrote query on dataset $dataset to rollup $rollupName with analysis $analysis")
+                log.info(s"Rewrote query on dataset $dataset to rollup $rollupName")
+                log.debug(s"Rewritten analysis: $analysis")
                 (analysis, rollupName)
               case RollupInfoFetcher.NoSuchDatasetInSecondary =>
                 chosenSecondaryName.foreach { n => secondaryInstance.flagError(dataset, n) }
