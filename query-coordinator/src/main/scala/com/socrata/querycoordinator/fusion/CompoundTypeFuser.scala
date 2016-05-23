@@ -141,6 +141,8 @@ class CompoundTypeFuser(fuseBase: Map[String, String]) extends SoQLRewrite with 
           case None =>
             Some(expr)
         }
+      case fc@FunctionCall(fnName, Seq(ColumnOrAliasRef(name: ColumnName)))
+        if (Set(SoQLFunctions.PointToLatitude.name, SoQLFunctions.PointToLongitude.name).contains(fnName)) => Some(fc)
       case fc@FunctionCall(fnName, Seq(ColumnOrAliasRef(name: ColumnName), StringLiteral(prop)))
         if fnName.name == SpecialFunctions.Subscript.name =>
         fuse.get(name.name) match {
