@@ -1,6 +1,12 @@
 #!/bin/sh
 set -ev
 
+CREDSFILE=/dev/shm/query-coordinator-cache-creds
+
+if [ -e $CREDSFILE ]; then
+    . $CREDSFILE
+fi
+
 /bin/env_parse ${SERVER_CONFIG}.j2
 
 exec su socrata -c '/usr/bin/java \

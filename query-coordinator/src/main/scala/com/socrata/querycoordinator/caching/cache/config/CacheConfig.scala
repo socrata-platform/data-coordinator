@@ -10,6 +10,7 @@ class CacheConfig(config: Config, root: String) extends ConfigClass(config, root
     optionally(getString("type")) match {
       case Some("filesystem") => new FilesystemCacheConfig(config, root)
       case Some("postgresql") => new PostgresqlCacheConfig(config, root)
+      case Some("noop") => NoopCacheConfig
       case Some(other) => sys.error("Unknown cache configuration type " + other)
       case None => NoopCacheConfig
     }
