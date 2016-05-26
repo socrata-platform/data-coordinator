@@ -11,7 +11,7 @@ com.socrata.query-coordinator {
 
   query-timeout = {{ QUERY_TIMEOUT }}
 
-  {% if CACHE_DATABASE_HOST is defined AND CACHE_DATABASE_PORT is defined and CACHE_DATABASE_PASSWORD is defined and CACHE_DATABASE_USERNAME is defined -%}
+  {% if CACHE_DATABASE_HOST is defined and CACHE_DATABASE_PORT is defined and CACHE_DATABASE_PASSWORD is defined and CACHE_DATABASE_USERNAME is defined -%}
   cache {
     type = "postgresql"
     database {
