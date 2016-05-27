@@ -2,7 +2,7 @@ package com.socrata.querycoordinator
 
 import com.socrata.querycoordinator.fusion.{CompoundTypeFuser, NoopFuser, SoQLRewrite}
 import com.socrata.soql.aliases.AliasAnalysis
-import com.socrata.soql.ast.{Expression, Selection}
+import com.socrata.soql.ast.{Expression, Select, Selection}
 import com.socrata.soql.collection.{OrderedMap, OrderedSet}
 import com.socrata.soql.environment.{ColumnName, DatasetContext, UntypedDatasetContext}
 import com.socrata.soql.exceptions.SoQLException
@@ -91,23 +91,31 @@ class QueryParser(analyzer: SoQLAnalyzer[SoQLType], maxRows: Option[Int], defaul
 
     val parsedStmts = new Parser().selectStatement(query)
 
-    // expand "select *" if it appears in the first statement only
+    // expand "select *"
     val firstStmt = parsedStmts.head
-    val utDsCtx = new UntypedDatasetContext {
+    val baseCtx = new UntypedDatasetContext {
       override val columns: OrderedSet[ColumnName] = {
         // exclude non-existing columns in the schema
         val existedColumns = columnIdMapping.filter { case (k, v) => schema.contains(v) }
         OrderedSet(existedColumns.keysIterator.toSeq: _*)
       }
     }
-    val expandedSelection = AliasAnalysis.expandSelection(firstStmt.selection)(utDsCtx)
-    val expandedFirstStmt = firstStmt.copy(selection = Selection(None, None, expandedSelection))
-    val expandedStmts = parsedStmts.updated(0, expandedFirstStmt)
 
-    // rewrite only the last statement without "select *".
-    val lastExpandedStmt = expandedStmts.reverse.find(s => s.selection.allUserExcept.isEmpty)
-      .getOrElse(throw new Exception("there should be at least one expanded statement"))
+    val expandedStmts = parsedStmts.foldLeft((Seq.empty[Select], baseCtx)) { (acc, select) =>
+      val (selects, ctx) = acc
+      val expandedSelection = AliasAnalysis.expandSelection(select.selection)(ctx)
+      val expandedStmt = select.copy(selection = Selection(None, None, expandedSelection))
+      val columnNames = expandedStmt.selection.expressions.map { se =>
+        se.name.map(_._1).getOrElse(ColumnName(se.expression.toString.replaceAllLiterally("`", "")))
+      }
+      val nextCtx = new UntypedDatasetContext {
+        override val columns: OrderedSet[ColumnName] = OrderedSet(columnNames: _*)
+      }
+      (selects :+ expandedStmt, nextCtx)
+    }._1
 
+    // rewrite only the last statement.
+    val lastExpandedStmt = expandedStmts.last
     val fusedStmts = expandedStmts.updated(expandedStmts.indexOf(lastExpandedStmt), fuser.rewrite(lastExpandedStmt))
 
     analyzer.analyze(fusedStmts)(_)
