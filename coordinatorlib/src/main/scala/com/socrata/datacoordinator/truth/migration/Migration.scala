@@ -27,7 +27,8 @@ object Migration {
                 operation: MigrationOperation = MigrationOperation.Migrate,
                 numChanges: Int = 1,
                 changeLogPath: String = MigrationScriptPath) {
-    val liquibase = new Liquibase(changeLogPath, new ClassLoaderResourceAccessor, new JdbcConnection(conn))
+    val jdbc = new NonCommmittingJdbcConnenction(conn)
+    val liquibase = new Liquibase(changeLogPath, new ClassLoaderResourceAccessor, jdbc)
     val database = conn.getCatalog
 
     operation match {
@@ -35,6 +36,7 @@ object Migration {
       case Undo => liquibase.rollback(numChanges, database)
       case Redo => { liquibase.rollback(numChanges, database); liquibase.update(database) }
     }
+    jdbc.realCommit()
   }
 
   private val MigrationScriptPath = "com.socrata.datacoordinator.truth.schema/migrate.xml"

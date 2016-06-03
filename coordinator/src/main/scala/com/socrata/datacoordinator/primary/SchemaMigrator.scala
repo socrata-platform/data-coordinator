@@ -16,7 +16,9 @@ object SchemaMigrator {
     for {
       dataSourceInfo <- DataSourceFromConfig(new DataSourceConfig(config, databaseTree))
       conn <- managed(dataSourceInfo.dataSource.getConnection)
+      stmt <- managed(conn.createStatement())
     } {
+      stmt.execute("SET lock_timeout = '30s'")
       Migration.migrateDb(conn, operation, numChanges)
     }
   }
