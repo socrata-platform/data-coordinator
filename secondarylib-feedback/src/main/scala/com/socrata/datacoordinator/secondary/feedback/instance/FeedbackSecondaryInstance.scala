@@ -12,7 +12,7 @@ import com.socrata.http.common.AuxiliaryData
 import com.socrata.soql.types.{SoQLType, SoQLValue}
 import org.apache.curator.x.discovery.{strategies, ServiceDiscoveryBuilder}
 
-abstract class FeedbackSecondaryInstance[RCI <: RowComputeInfo[SoQLValue]](config: FeedbackSecondaryInstanceConfig) extends FeedbackSecondary[SoQLType, SoQLValue, RCI] {
+abstract class FeedbackSecondaryInstance(config: FeedbackSecondaryInstanceConfig) extends FeedbackSecondary[SoQLType, SoQLValue] {
 
   log.info("Configuration:\n" + config.debugString)
 

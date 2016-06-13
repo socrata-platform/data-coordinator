@@ -3,7 +3,7 @@ package com.socrata.datacoordinator.secondary.feedback
 import com.rojoma.json.v3.ast.JValue
 import com.rojoma.json.v3.io.CompactJsonWriter
 import com.rojoma.json.v3.util.{JsonUtil, AutomaticJsonCodecBuilder, WrapperFieldCodec}
-import com.socrata.datacoordinator.id.UserColumnId
+import com.socrata.datacoordinator.id.{ColumnId, UserColumnId}
 import com.socrata.datacoordinator.secondary.ComputationStrategyInfo
 import com.socrata.datacoordinator.secondary.Secondary.Cookie
 
@@ -37,7 +37,7 @@ object FeedbackCookie {
 case class CookieSchema(dataVersion: DataVersion,
                         copyNumber: CopyNumber,
                         primaryKey: UserColumnId,
-                        columnIdMap: Map[UserColumnId, Long],
+                        columnIdMap: Map[UserColumnId, ColumnId],
                         strategyMap: Map[UserColumnId, ComputationStrategyInfo],
                         obfuscationKey: Array[Byte],
                         computationRetriesLeft: Int,
