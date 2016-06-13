@@ -263,8 +263,6 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
         case (_, colInfo) => colInfo.computationStrategyInfo.exists(cs => computationHandlers.exists(_.matchesStrategyType(cs.strategyType)))
       }.map { case (_, colInfo) => (colInfo.id, colInfo.computationStrategyInfo.get)} .toMap
 
-      val extra = oldCookie.map(_.current.extra).getOrElse(JNull)
-
       val previous = oldCookie.map(_.current)
 
       val cookieSchema = CookieSchema(
@@ -276,8 +274,7 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
         computationRetriesLeft = computationHandlers.map(_.computationRetries).max,
         mutationScriptRetriesLeft = mutationScriptRetries,
         obfuscationKey = datasetInfo.obfuscationKey,
-        resync = false,
-        extra = extra
+        resync = false
       )
 
       var newCookie = FeedbackCookie(cookieSchema, previous)
