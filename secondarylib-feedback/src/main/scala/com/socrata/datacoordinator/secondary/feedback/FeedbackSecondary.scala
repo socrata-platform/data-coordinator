@@ -434,10 +434,12 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
 
     // this may throw a ComputationFailure exception
     private def computeUpdates(computationHandler: ComputationHandler[CT,CV], rows: IndexedSeq[Row]): Map[Int,Map[UserColumnId, CV]] = {
-      val strategies = cookie.strategyMap.toSeq
+      val effectiveStrategies = cookie.strategyMap.toSeq.filter { case (_, strat) =>
+        computationHandler.matchesStrategyType(strat.strategyType)
+      }
       val toCompute = rows.iterator.zipWithIndex.flatMap { case (row, index) =>
         val rcis =
-          strategies.flatMap { case (targetColId: UserColumnId, strategy) =>
+          effectiveStrategies.flatMap { case (targetColId: UserColumnId, strategy) =>
             // don't compute if there has been to change to the source columns
             if (noChange(row, strategy.sourceColumnIds))
               None
