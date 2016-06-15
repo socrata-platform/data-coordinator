@@ -22,16 +22,6 @@ trait ComputationHandler[CT,CV] {
   type RCI <: RowComputeInfo[CV]
 
   /**
-   * @return The `user` to specify in mutation scripts
-   */
-  def user: String
-
-  /**
-   * @return The number of times to retry the computation step via replaying later.
-   */
-  def computationRetries: Int
-
-  /**
    * A FeedbackSecondary operates on computed columns of certain strategy types.
    * @return Returns true if `typ` matches a strategy type of this
    */
@@ -65,6 +55,15 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
   val internalMutationScriptRetries: Int
   val mutationScriptRetries: Int
   val computationHandlers: Seq[ComputationHandler[CT, CV]]
+  /**
+   * @return The `user` to specify in mutation scripts
+   */
+  val user: String
+
+  /**
+   * @return The number of times to retry the computation step via replaying later.
+   */
+  val retryLimit: Int
   val repFor: Array[Byte] => CT => CV => JValue
   val typeFor : CV => Option[CT]
   val statusMonitor: StatusMonitor
@@ -271,7 +270,7 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
         primaryKey = primaryKey,
         columnIdMap = columnIdMap,
         strategyMap = strategyMap,
-        computationRetriesLeft = computationHandlers.map(_.computationRetries).max,
+        computationRetriesLeft = retryLimit,
         mutationScriptRetriesLeft = mutationScriptRetries,
         obfuscationKey = datasetInfo.obfuscationKey,
         resync = false
@@ -411,7 +410,7 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
           val gaveUp = "Gave up replaying updates after too many failed mutation script attempts"
           val newCookie = feedbackCookie.copy(
             current = cookie.copy(
-              computationRetriesLeft = computationHandlers.map(_.computationRetries).max, // reset computation retries
+              computationRetriesLeft = retryLimit, // reset computation retries
               mutationScriptRetriesLeft = b(cookie.mutationScriptRetriesLeft - 1, gaveUp), // decrement retries
               resync = resync
             )
@@ -490,7 +489,7 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
     val commands = Seq(
       JObject(Map(
         "c" -> JString("normal"),
-        "user" -> JString(computationHandlers.map(_.user).to[SortedSet].mkString(","))
+        "user" -> JString(user)
       )),
       JObject(Map(
         "c" -> JString("row data"),
