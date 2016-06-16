@@ -3,7 +3,7 @@ package com.socrata.datacoordinator.secondary.feedback
 import java.io.IOException
 
 import com.rojoma.json.v3.ast._
-import com.rojoma.json.v3.codec.JsonDecode
+import com.rojoma.json.v3.codec.{JsonEncode, JsonDecode}
 import com.rojoma.json.v3.io.{JValueEventIterator, JsonReaderException}
 import com.rojoma.json.v3.util.{NoTag, SimpleHierarchyCodecBuilder, JsonUtil, AutomaticJsonCodecBuilder}
 import com.rojoma.simplearm.Managed
@@ -12,21 +12,14 @@ import com.socrata.datacoordinator.secondary
 import com.socrata.datacoordinator.secondary._
 import com.socrata.datacoordinator.secondary.Secondary.Cookie
 import com.socrata.datacoordinator.secondary.feedback.monitor.StatusMonitor
-import com.socrata.datacoordinator.util.collection.ColumnIdMap
+import com.socrata.datacoordinator.util.collection.{MutableColumnIdMap, ColumnIdMap}
 import com.socrata.http.client.{RequestBuilder, HttpClient}
 import com.socrata.http.client.exceptions.{ContentTypeException, HttpClientException}
 
-trait ComputationHandler[CT,CV, RCI <: RowComputeInfo[CV]] {
+import scala.collection.SortedSet
 
-  /**
-   * @return The `user` to specify in mutation scripts
-   */
-  def user: String
-
-  /**
-   * @return The number of times to retry the computation step via replaying later.
-   */
-  def computationRetries: Int
+trait ComputationHandler[CT,CV] {
+  type RCI <: RowComputeInfo[CV]
 
   /**
    * A FeedbackSecondary operates on computed columns of certain strategy types.
@@ -41,10 +34,10 @@ trait ComputationHandler[CT,CV, RCI <: RowComputeInfo[CV]] {
 
   /**
    * Perform the computation of the target column for each RowComputeInfo
-   * @return The RowComputeInfo's and resulting JValue's zipped with indexes of the rows
+   * @return The RowComputeInfo's and resulting values zipped with indexes of the rows
    * @note This should not throw any exception other than a [[ComputationFailure]] exception
    */
-  def compute(sources: Iterator[(RCI, Int)]): Iterator[((RCI, JValue), Int)]
+  def compute[RowHandle](sources: Map[RowHandle, Seq[RCI]]): Map[RowHandle, Map[UserColumnId, CV]]
 
 }
 
@@ -52,16 +45,25 @@ trait ComputationHandler[CT,CV, RCI <: RowComputeInfo[CV]] {
  * A FeedbackSecondary is a secondary that processes updates to source columns of computed columns
  * and "feeds back" those updates to data-coordinator via posting mutation scripts.
  */
-abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secondary[CT,CV] {
+abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
 
-  val log = org.slf4j.LoggerFactory.getLogger(classOf[FeedbackSecondary[CT,CV,RCI]])
+  val log = org.slf4j.LoggerFactory.getLogger(classOf[FeedbackSecondary[CT,CV]])
 
   val httpClient: HttpClient
   def hostAndPort(instanceName: String): Option[(String, Int)]
   val baseBatchSize: Int
   val internalMutationScriptRetries: Int
   val mutationScriptRetries: Int
-  val computationHandler: ComputationHandler[CT, CV, RCI]
+  val computationHandlers: Seq[ComputationHandler[CT, CV]]
+  /**
+   * @return The `user` to specify in mutation scripts
+   */
+  val user: String
+
+  /**
+   * @return The number of times to retry the computation step via replaying later.
+   */
+  val retryLimit: Int
   val repFor: Array[Byte] => CT => CV => JValue
   val typeFor : CV => Option[CT]
   val statusMonitor: StatusMonitor
@@ -139,12 +141,12 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
               val old = newCookie.current.strategyMap
               val updated = columnInfo.computationStrategyInfo match {
                 case Some(strategy) =>
-                  if (computationHandler.matchesStrategyType(strategy.strategyType)) old + (columnInfo.id -> strategy) else old
+                  if (computationHandlers.exists(_.matchesStrategyType(strategy.strategyType))) old + (columnInfo.id -> strategy) else old
                 case None => old
               }
               newCookie = newCookie.copy(
                 current = newCookie.current.copy(
-                  columnIdMap = newCookie.current.columnIdMap + (columnInfo.id -> columnInfo.systemId.underlying),
+                  columnIdMap = newCookie.current.columnIdMap + (columnInfo.id -> columnInfo.systemId),
                   strategyMap = updated
                 )
               )
@@ -153,7 +155,7 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
               val old = newCookie.current.strategyMap
               val updated = columnInfo.computationStrategyInfo match {
                 case Some(strategy) =>
-                  if (computationHandler.matchesStrategyType(strategy.strategyType)) old - columnInfo.id else old
+                  if (computationHandlers.exists(_.matchesStrategyType(strategy.strategyType))) old - columnInfo.id else old
                 case None => old
               }
               newCookie = newCookie.copy(
@@ -254,13 +256,11 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
         case (colId, colInfo) => colInfo.isUserPrimaryKey
       }.toSeq.map({ case (_, colInfo) => colInfo.id}).headOption.getOrElse(systemId)
 
-      val columnIdMap = schema.toSeq.map({ case (colId, colInfo) => (colInfo.id, colId.underlying)}).toMap
+      val columnIdMap = schema.toSeq.map { case (colId, colInfo) => (colInfo.id, colId) }.toMap
 
       val strategyMap = schema.toSeq.filter {
-        case (_, colInfo) => colInfo.computationStrategyInfo.exists(cs => computationHandler.matchesStrategyType(cs.strategyType))
-      }.map({ case (_, colInfo) => (colInfo.id, colInfo.computationStrategyInfo.get)}).toMap
-
-      val extra = oldCookie.map(_.current.extra).getOrElse(JNull)
+        case (_, colInfo) => colInfo.computationStrategyInfo.exists(cs => computationHandlers.exists(_.matchesStrategyType(cs.strategyType)))
+      }.map { case (_, colInfo) => (colInfo.id, colInfo.computationStrategyInfo.get)} .toMap
 
       val previous = oldCookie.map(_.current)
 
@@ -270,20 +270,19 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
         primaryKey = primaryKey,
         columnIdMap = columnIdMap,
         strategyMap = strategyMap,
-        computationRetriesLeft = computationHandler.computationRetries,
+        computationRetriesLeft = retryLimit,
         mutationScriptRetriesLeft = mutationScriptRetries,
         obfuscationKey = datasetInfo.obfuscationKey,
-        resync = false,
-        extra = extra
+        resync = false
       )
 
       var newCookie = FeedbackCookie(cookieSchema, previous)
 
+      val toJValueFunc = toJValue(datasetInfo.obfuscationKey)
       if (isLatestLivingCopy && newCookie.current.strategyMap.nonEmpty) {
         for {
           rws <- rows
         } {
-          val toJValueFunc = toJValue(datasetInfo.obfuscationKey)
           val context = new LocalContext(newCookie, toJValueFunc)
           newCookie = context.feedback(datasetInfo.internalName, rws.map(row => Row(row, None)), resync = true)
         }
@@ -314,6 +313,17 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
 
     val cookie = feedbackCookie.current
 
+    def mergeWith[A, B](xs: Map[A, B], ys: Map[A, B])(f: (B, B) => B): Map[A, B] = {
+      ys.foldLeft(xs) { (combined, yab) =>
+        val (a,yb) = yab
+        val newB = combined.get(a) match {
+          case None => yb
+          case Some(xb) => f(xb, yb)
+        }
+        combined.updated(a, newB)
+      }
+    }
+
     // this may throw a ResyncSecondaryException, a ReplayLaterSecondaryException, or a BrokenDatasetSecondaryException
     def feedback(datasetInternalName: String, rows: Iterator[Row], resync: Boolean = false): FeedbackCookie = {
       val width = cookie.columnIdMap.size
@@ -329,10 +339,25 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
 
       var count = 0
       try {
-        rows.grouped(size).foreach { batch =>
+        rows.grouped(size).foreach { batchSeq =>
+          val batch: Seq[Row] = batchSeq.toIndexedSeq
           count += 1
-          val updates = computeUpdates(batch.toIterator)
-          writeMutationScript(updates) match {
+          val updates = computationHandlers.foldLeft(Map.empty[Int, Map[UserColumnId, CV]]) { (currentUpdates, computationHandler) =>
+            val currentRows = batch.toArray
+            for((idx, upds) <- currentUpdates) {
+              val currentRow = MutableColumnIdMap(currentRows(idx).data)
+              for((cid, cv) <- upds) {
+                currentRow(cookie.columnIdMap(cid)) = cv
+              }
+              currentRows(idx) = currentRows(idx).copy(data = currentRow.freeze())
+            }
+            val newUpdates = computeUpdates(computationHandler, currentRows)
+            mergeWith(currentUpdates, newUpdates)(_ ++ _)
+          }
+          val jsonUpdates = updates.valuesIterator.map { updates =>
+            JsonEncode.toJValue(updates.mapValues(toJValueFunc))
+          }
+          writeMutationScript(jsonUpdates) match {
             case Some(script) =>
               val result = postMutationScript(datasetInternalName, script)
               result match {
@@ -385,7 +410,7 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
           val gaveUp = "Gave up replaying updates after too many failed mutation script attempts"
           val newCookie = feedbackCookie.copy(
             current = cookie.copy(
-              computationRetriesLeft = computationHandler.computationRetries, // reset computation retries
+              computationRetriesLeft = retryLimit, // reset computation retries
               mutationScriptRetriesLeft = b(cookie.mutationScriptRetriesLeft - 1, gaveUp), // decrement retries
               resync = resync
             )
@@ -407,77 +432,64 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
     }
 
     // this may throw a ComputationFailure exception
-    private def computeUpdates(rows: Iterator[Row]): Iterator[JObject] = {
-      val indexedRows = rows.zipWithIndex
-      val strategies = cookie.strategyMap.toSeq
-      val toCompute = indexedRows.flatMap { case (row, index) =>
-        strategies.map { case (targetColId: UserColumnId, strategy) =>
-          // don't compute if there has been to change to the source columns
-          if (noChange(row, strategy.sourceColumnIds))
-            None
-          else
-            Some((computationHandler.transform(row.data, targetColId, strategy, cookie), index))
-        }.filter(x => x.isDefined).map(x => x.get)
+    private def computeUpdates(computationHandler: ComputationHandler[CT,CV], rows: IndexedSeq[Row]): Map[Int,Map[UserColumnId, CV]] = {
+      val effectiveStrategies = cookie.strategyMap.toSeq.filter { case (_, strat) =>
+        computationHandler.matchesStrategyType(strat.strategyType)
       }
+      val toCompute = rows.iterator.zipWithIndex.flatMap { case (row, index) =>
+        val rcis =
+          effectiveStrategies.flatMap { case (targetColId: UserColumnId, strategy) =>
+            // don't compute if there has been to change to the source columns
+            if (noChange(row, strategy.sourceColumnIds))
+              None
+            else
+              Some(computationHandler.transform(row.data, targetColId, strategy, cookie))
+          }
+        if(rcis.isEmpty) Iterator.empty
+        else Iterator.single(index -> rcis)
+      }.toMap
 
-      val results = unflatten(computationHandler.compute(toCompute))
+      val results = computationHandler.compute(toCompute)
 
-      results.map { case (row, updates) =>
+      results.flatMap { case (rowIdx, updates) =>
+        val row = rows(rowIdx)
         val filtered = updates.filter { case (colId: UserColumnId, value) =>
-          extractJValue(row, colId) != value // don't update to current value
+          extractCV(row.data, colId) != Some(value) // don't update to current value
         }
-        val rowId = extractJValue(row, cookie.primaryKey) match {
-          case JNull => throw new Exception(s"Cannot find value for primary key ${cookie.primaryKey} in row: $row!")
-          case other => other
+        val rowId = extractCV(row.data, cookie.primaryKey) match {
+          case None => throw new Exception(s"Cannot find value for primary key ${cookie.primaryKey} in row: $row!")
+          case Some(other) => other
         }
         if (filtered.nonEmpty) {
-          Some(JObject(Map(
-            cookie.primaryKey.underlying -> rowId
-          ) ++ filtered.map { case (id, value) => (id.underlying, value)}.toMap
-          ))
+          val newRow = Map(
+            cookie.primaryKey -> rowId
+          ) ++ filtered.map { case (id, value) => (id, value)}.toMap
+          Some(rowIdx -> newRow)
         } else {
           None
         }
-      }.filter(x => x.isDefined).map(x => x.get)
+      }
     }
 
     private def noChange(row: Row, columns: Seq[UserColumnId]): Boolean = row.oldData match {
       case Some(old) =>
         columns.forall { id =>
-          val internal = new ColumnId(cookie.columnIdMap(id))
+          val internal = cookie.columnIdMap(id)
           row.data(internal) == old(internal) // safe because updates contain _all_ row values (and this must be one)
         }
       case None => false
     }
 
-    private def unflatten(values: Iterator[((RCI, JValue), Int)]): Iterator[(secondary.Row[CV], Seq[(UserColumnId, JValue)])] = {
-      val results = scala.collection.mutable.ListBuffer[(secondary.Row[CV], Seq[(UserColumnId, JValue)])]()
-      val buffered = values.buffered
-      var seq = Seq[(UserColumnId, JValue)]()
-      for (((rci, v), i) <- buffered) {
-        seq = seq :+ ((rci.targetColId, v))
-        if (!buffered.hasNext || buffered.head._2 > i) {
-          results += ((rci.data, seq))
-          seq = Seq[(UserColumnId, JValue)]()
-        }
-      }
-
-      results.toIterator
-    }
-
-    private def extractJValue(row: secondary.Row[CV], userId: UserColumnId): JValue = {
-      val internal = new ColumnId(cookie.columnIdMap(userId))
-      row.get(internal) match {
-        case Some(value) => toJValueFunc(value)
-        case None => JNull // inserts don't include column values where no value was given (must be null)
-      }
+    private def extractCV(row: secondary.Row[CV], userId: UserColumnId): Option[CV] = {
+      val internal = cookie.columnIdMap(userId)
+      row.get(internal)
     }
 
     // commands for mutation scripts
     val commands = Seq(
       JObject(Map(
         "c" -> JString("normal"),
-        "user" -> JString(computationHandler.user)
+        "user" -> JString(user)
       )),
       JObject(Map(
         "c" -> JString("row data"),
@@ -486,7 +498,7 @@ abstract class FeedbackSecondary[CT,CV, RCI <: RowComputeInfo[CV]] extends Secon
       ))
     )
 
-    private def writeMutationScript(rowUpdates: Iterator[JObject]): Option[JArray] = {
+    private def writeMutationScript(rowUpdates: Iterator[JValue]): Option[JArray] = {
       if (!rowUpdates.hasNext) None
       else Some(JArray(commands ++ rowUpdates))
     }
