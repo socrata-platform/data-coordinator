@@ -6,7 +6,7 @@ import com.rojoma.simplearm.v2.{Resource, ResourceScope}
 import com.socrata.curator.ProviderCache
 import com.socrata.datacoordinator.secondary.feedback.instance.config.{CuratorFromConfig, FeedbackSecondaryInstanceConfig}
 import com.socrata.datacoordinator.secondary.feedback.monitor.{DummyStatusMonitor, StatusMonitor}
-import com.socrata.datacoordinator.secondary.feedback.{RowComputeInfo, FeedbackSecondary}
+import com.socrata.datacoordinator.secondary.feedback.FeedbackSecondary
 import com.socrata.http.client.{HttpClientHttpClient, HttpClient}
 import com.socrata.http.common.AuxiliaryData
 import com.socrata.soql.types.{SoQLType, SoQLValue}

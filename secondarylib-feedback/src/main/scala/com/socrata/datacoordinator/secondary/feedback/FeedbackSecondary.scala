@@ -18,8 +18,14 @@ import com.socrata.http.client.exceptions.{ContentTypeException, HttpClientExcep
 
 import scala.collection.SortedSet
 
+trait HasStrategy {
+  def strategy: ComputationStrategyInfo
+}
+
 trait ComputationHandler[CT,CV] {
-  type RCI <: RowComputeInfo[CV]
+  type PerDatasetData
+  type PerColumnData <: HasStrategy
+  type PerCellData
 
   /**
    * A FeedbackSecondary operates on computed columns of certain strategy types.
@@ -27,18 +33,25 @@ trait ComputationHandler[CT,CV] {
    */
   def matchesStrategyType(typ: StrategyType): Boolean
 
+  /** Extract from the `strategy` and `cookie` any dataset-global information required
+    * for further processing.
+    */
+  def setupDataset(cookie: CookieSchema): PerDatasetData
+
+  /** Set up information required on a per-column basis. */
+  def setupColumn(dataset: PerDatasetData, strategy: ComputationStrategyInfo, targetColId: UserColumnId): PerColumnData
+
   /**
-   * @return The RowComputeInfo for performing the computation of the target column
+   * @return The PerCellData for performing the computation of the target column
    */
-  def transform(row: secondary.Row[CV], targetColId: UserColumnId, strategy: ComputationStrategyInfo, cookie: CookieSchema): RCI
+  def setupCell(column: PerColumnData, row: secondary.Row[CV]): PerCellData
 
   /**
    * Perform the computation of the target column for each RowComputeInfo
    * @return The RowComputeInfo's and resulting values zipped with indexes of the rows
    * @note This should not throw any exception other than a [[ComputationFailure]] exception
    */
-  def compute[RowHandle](sources: Map[RowHandle, Seq[RCI]]): Map[RowHandle, Map[UserColumnId, CV]]
-
+  def compute[RowHandle](sources: Map[RowHandle, Seq[PerCellData]]): Map[RowHandle, Map[UserColumnId, CV]]
 }
 
 /**
@@ -433,17 +446,19 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
 
     // this may throw a ComputationFailure exception
     private def computeUpdates(computationHandler: ComputationHandler[CT,CV], rows: IndexedSeq[Row]): Map[Int,Map[UserColumnId, CV]] = {
-      val effectiveStrategies = cookie.strategyMap.toSeq.filter { case (_, strat) =>
-        computationHandler.matchesStrategyType(strat.strategyType)
+      val perDatasetData = computationHandler.setupDataset(cookie)
+      val perColumnData = cookie.strategyMap.toSeq.collect {
+        case (targetCol, strat) if computationHandler.matchesStrategyType(strat.strategyType) =>
+          computationHandler.setupColumn(perDatasetData, strat, targetCol)
       }
       val toCompute = rows.iterator.zipWithIndex.flatMap { case (row, index) =>
         val rcis =
-          effectiveStrategies.flatMap { case (targetColId: UserColumnId, strategy) =>
+          perColumnData.flatMap { columnData =>
             // don't compute if there has been to change to the source columns
-            if (noChange(row, strategy.sourceColumnIds))
+            if (noChange(row, columnData.strategy.sourceColumnIds))
               None
             else
-              Some(computationHandler.transform(row.data, targetColId, strategy, cookie))
+              Some(computationHandler.setupCell(columnData, row.data))
           }
         if(rcis.isEmpty) Iterator.empty
         else Iterator.single(index -> rcis)
