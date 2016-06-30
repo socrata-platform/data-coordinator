@@ -165,11 +165,22 @@ class QueryExecutor(httpClient: HttpClient,
             case Some(Nil) =>
               Iterator.empty
             case Some(singleWindow :: Nil) =>
-              parseWindow(singleWindow).take(endWindow.index).drop(startWindow.index)
-            case Some(firstWindow :: moreWindows) =>
+              if(endWindow.window == startWindow.window) {
+                parseWindow(singleWindow).take(endWindow.index).drop(startWindow.index)
+              } else {
+                // We asked for more rows than were present and fell off the end, so we can't just
+                // drop the last rows, since what we'd want to drop are in a window we don't have.
+                parseWindow(singleWindow).drop(startWindow.index)
+              }
+            case Some(windows@(firstWindow :: moreWindows)) =>
               val middleWindows = moreWindows.dropRight(1)
               val lastWindow = moreWindows.last
-              parseWindow(firstWindow).drop(startWindow.index) ++ middleWindows.flatMap(parseWindow) ++ parseWindow(lastWindow).take(endWindow.index)
+              // Again, if we fall off the end and our limit cuts off in a window we did not retrieve,
+              // then we cannot apply the limit or we'll short-read.
+              lazy val parsedLastWindow =
+                if(totalWindows == BigInt(windows.length)) parseWindow(lastWindow).take(endWindow.index)
+                else parseWindow(lastWindow)
+              parseWindow(firstWindow).drop(startWindow.index) ++ middleWindows.flatMap(parseWindow) ++ parsedLastWindow
           }
 
         log.info("Serving response from cache!")
