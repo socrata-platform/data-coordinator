@@ -145,10 +145,10 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
         // either we are not up to date on the data version or we still have retries left on the current version
         // note: we set the retries left to 0 once we have succeeded for the current version
         val toJValueFunc = toJValue(datasetInfo.obfuscationKey)
-        var newCookie = oldCookie.copy(oldCookie.current.copy(DataVersion(dataVersion)), oldCookie.previous)
+        val cookieSeed = oldCookie.copy(oldCookie.current.copy(DataVersion(dataVersion)), oldCookie.previous)
 
-        val emptyIter = Iterator[Row]()
-        val toCompute = events.collect { case event =>
+        // WARNING: this .foldLeft(.) has side effects!
+        val resultCookie = events.foldLeft(cookieSeed) { (newCookie, event) =>
           event match {
             case ColumnCreated(columnInfo) =>
               val old = newCookie.current.strategyMap
@@ -157,13 +157,12 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
                   if (computationHandlers.exists(_.matchesStrategyType(strategy.strategyType))) old + (columnInfo.id -> strategy) else old
                 case None => old
               }
-              newCookie = newCookie.copy(
+              newCookie.copy(
                 current = newCookie.current.copy(
                   columnIdMap = newCookie.current.columnIdMap + (columnInfo.id -> columnInfo.systemId),
                   strategyMap = updated
                 )
               )
-              emptyIter
             case ColumnRemoved(columnInfo) =>
               val old = newCookie.current.strategyMap
               val updated = columnInfo.computationStrategyInfo match {
@@ -171,55 +170,48 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
                   if (computationHandlers.exists(_.matchesStrategyType(strategy.strategyType))) old - columnInfo.id else old
                 case None => old
               }
-              newCookie = newCookie.copy(
+              newCookie.copy(
                 current = newCookie.current.copy(
                   columnIdMap = newCookie.current.columnIdMap - columnInfo.id,
                   strategyMap = updated
                 )
               )
-              emptyIter
             case RowIdentifierSet(columnInfo) =>
-              newCookie = newCookie.copy(
+              newCookie.copy(
                 current = newCookie.current.copy(
                   primaryKey = columnInfo.id
                 )
               )
-              emptyIter
             case RowIdentifierCleared(columnInfo) =>
-              newCookie = newCookie.copy(
+              newCookie.copy(
                 current = newCookie.current.copy(
                   primaryKey = systemId
                 )
               )
-              emptyIter
             case SystemRowIdentifierChanged(columnInfo) =>
-              newCookie = newCookie.copy(
+              newCookie.copy(
                 current = newCookie.current.copy(
                   primaryKey = columnInfo.id
                 )
               )
-              emptyIter
             case WorkingCopyCreated(copyInfo) =>
-              newCookie = newCookie.copy(
+              newCookie.copy(
                 current = newCookie.current.copy(
                   copyNumber = CopyNumber(copyInfo.copyNumber)
                 ),
                 previous = Some(newCookie.current)
               )
-              emptyIter
             case WorkingCopyDropped =>
-              newCookie = newCookie.copy(
+              newCookie.copy(
                 current = newCookie.previous.getOrElse {
                   log.warn("No previous value in cookie for dataset {}. Going to resync.", datasetInfo.internalName)
                   throw ResyncSecondaryException(s"No previous value in cookie for dataset ${datasetInfo.internalName}")
                 },
                 previous = None
               )
-              emptyIter
             case RowDataUpdated(operations) =>
-              // no cookie update needed here
-
-              operations.toIterator.map { case op =>
+              // in practice this should only happen once per data version
+              val toCompute = operations.toIterator.map { case op =>
                 op match {
                   case insert: Insert[CV] =>
                     Some(Row(insert.data, None))
@@ -230,14 +222,13 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
                 }
               }.filter(x => x.isDefined).map(x => x.get)
 
+              val context = new LocalContext(newCookie, toJValueFunc)
+              context.feedback(datasetInfo.internalName, toCompute)
             case _ => // no-ops for us
-              emptyIter
+              newCookie
           }
-        }.flatten
-
-        val context = new LocalContext(newCookie, toJValueFunc)
-        newCookie = context.feedback(datasetInfo.internalName, toCompute)
-        result = FeedbackCookie.encode(newCookie)
+        }
+        result = FeedbackCookie.encode(resultCookie)
       }
       result
     } catch {
@@ -342,7 +333,7 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
       val width = cookie.columnIdMap.size
       val size = batchSize(width)
 
-      log.info("Processing update of dataset {} to version {} with batch_size = {}",
+      log.info("Processing row update of dataset {} in version {} with batch_size = {}",
         datasetInternalName, cookie.dataVersion.underlying.toString, size.toString)
 
       def b(retriesLeft: Int, message: String): Int = {
@@ -430,7 +421,7 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
           )
           throw ReplayLaterSecondaryException(reason, FeedbackCookie.encode(newCookie))
       }
-      log.info("Completed updating dataset {} to version {} after batch: {}",
+      log.info("Completed row update of dataset {} in version {} after batch: {}",
         datasetInternalName, cookie.dataVersion.underlying.toString, count.toString)
       statusMonitor.remove(datasetInternalName, cookie.dataVersion, count)
 
