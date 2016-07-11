@@ -3,6 +3,8 @@ package com.socrata.datacoordinator.secondary
 import java.util.UUID
 import java.util.concurrent.{CountDownLatch, Executors, TimeUnit}
 
+import com.socrata.datacoordinator.secondary.config.SecondaryConfig
+
 import scala.concurrent.duration._
 import scala.util.Random
 
@@ -127,7 +129,7 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
    * Cleanup any orphaned jobs created by this watcher exiting uncleanly.  Needs to be run
    * without any workers running (ie. at startup).
    */
-  private def cleanOrphanedJobs(secondaryConfigInfo: SecondaryConfigInfo): Unit = {
+  def cleanOrphanedJobs(secondaryConfigInfo: SecondaryConfigInfo): Unit = {
     // At lean up any orphaned jobs which may have been created by this watcher
     for { u <- universe } yield {
       u.secondaryManifest.cleanOrphanedClaimedDatasets(secondaryConfigInfo.storeId, claimantId)
@@ -215,10 +217,14 @@ class SecondaryWatcherClaimManager(dsInfo: DSInfo, claimantId: UUID, claimTimeou
   }
 }
 
-object SecondaryWatcher extends App { self =>
+object SecondaryWatcher {
   type UniverseType[CT, CV] = Universe[CT, CV] with SecondaryManifestProvider with
-                                                    PlaybackToSecondaryProvider with
-                                                    SecondaryStoresConfigProvider
+    PlaybackToSecondaryProvider with
+    SecondaryStoresConfigProvider
+}
+
+class SecondaryWatcherApp(secondaryName: String, secondaryProvider: SecondaryConfig => Secondary[SoQLType, SoQLValue]) { self =>
+  import SecondaryWatcher._
 
   val rootConfig = ConfigFactory.load()
   val config = new SecondaryWatcherConfig(rootConfig, "com.socrata.coordinator.secondary-watcher")
@@ -238,8 +244,7 @@ object SecondaryWatcher extends App { self =>
 
   for { dsInfo <- DataSourceFromConfig(config.database)
         reporter <- MetricsReporter.managed(metricsOptions) } {
-    val secondaries = SecondaryLoader.load(config.secondaryConfig).
-                        asInstanceOf[Map[String, Secondary[SoQLType, SoQLValue]]]
+    val secondaries = Map(secondaryName -> secondaryProvider(config.secondaryConfig))
 
     val executor = Executors.newCachedThreadPool()
 
