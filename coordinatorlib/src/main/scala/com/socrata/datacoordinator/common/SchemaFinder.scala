@@ -1,4 +1,4 @@
-package com.socrata.datacoordinator.service
+package com.socrata.datacoordinator.common
 
 import scala.concurrent.duration._
 

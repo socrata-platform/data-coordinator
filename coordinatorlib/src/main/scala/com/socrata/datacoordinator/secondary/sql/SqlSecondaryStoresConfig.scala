@@ -7,7 +7,7 @@ import org.joda.time.DateTime
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.util.TimingReport
 
-class SqlSecondaryConfig(conn: Connection, timingReport: TimingReport) extends SecondaryConfig {
+class SqlSecondaryStoresConfig(conn: Connection, timingReport: TimingReport) extends SecondaryStoresConfig {
   private def t = timingReport
 
   def lookup(storeId: String): Option[SecondaryConfigInfo] = {

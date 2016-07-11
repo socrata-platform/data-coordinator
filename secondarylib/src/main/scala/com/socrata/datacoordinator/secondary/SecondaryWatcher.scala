@@ -10,10 +10,9 @@ import com.rojoma.simplearm.Managed
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.common.{DataSourceFromConfig, SoQLCommon}
 import com.socrata.datacoordinator.common.DataSourceFromConfig.DSInfo
-import com.socrata.datacoordinator.secondary.sql.SqlSecondaryConfig
+import com.socrata.datacoordinator.secondary.sql.SqlSecondaryStoresConfig
 import com.socrata.datacoordinator.truth.universe._
 import com.socrata.datacoordinator.util._
-import com.socrata.http.server.util.RequestId
 import com.socrata.soql.types.{SoQLType, SoQLValue}
 import com.socrata.thirdparty.metrics.{MetricsOptions, MetricsReporter}
 import com.socrata.thirdparty.typesafeconfig.Propertizer
@@ -49,7 +48,7 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
                                       secondary.storeId, claimantId, claimTimeout)) yield {
       timingReport(
         "playback-to-secondary",
-        "tag:job-id" -> RequestId.generate(), // add job id tag to enclosing logs
+        "tag:job-id" -> UUID.randomUUID(), // add job id tag to enclosing logs
         "tag:dataset-id" -> job.datasetId, // add dataset id tag to enclosing logs
         "truthDatasetId" -> job.datasetId.underlying,
         "secondary" -> secondary.storeId,
@@ -159,7 +158,7 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
           val now = DateTime.now()
           if(now.getMillis - lastWrote.getMillis >= 15 * 60 * 1000) {
             log.info("Writing new next-runtime: {}", nextRunTime)
-            secondaryConfig.updateNextRunTime(secondaryConfigInfo.storeId, nextRunTime)
+            secondaryStoresConfig.updateNextRunTime(secondaryConfigInfo.storeId, nextRunTime)
           }
           lastWrote = now
         }
@@ -219,7 +218,7 @@ class SecondaryWatcherClaimManager(dsInfo: DSInfo, claimantId: UUID, claimTimeou
 object SecondaryWatcher extends App { self =>
   type UniverseType[CT, CV] = Universe[CT, CV] with SecondaryManifestProvider with
                                                     PlaybackToSecondaryProvider with
-                                                    SecondaryConfigProvider
+                                                    SecondaryStoresConfigProvider
 
   val rootConfig = ConfigFactory.load()
   val config = new SecondaryWatcherConfig(rootConfig, "com.socrata.coordinator.secondary-watcher")
@@ -227,7 +226,6 @@ object SecondaryWatcher extends App { self =>
 
   val log = LoggerFactory.getLogger(classOf[SecondaryWatcher[_,_]])
   log.info(s"Starting secondary watcher with watcher claim uuid of ${config.watcherId}")
-  log.info(com.socrata.datacoordinator.BuildInfo.toJson)
 
   val metricsOptions = MetricsOptions(config.metrics)
 
@@ -299,7 +297,7 @@ object SecondaryWatcher extends App { self =>
 
       val workerThreads =
         using(dsInfo.dataSource.getConnection()) { conn =>
-          val cfg = new SqlSecondaryConfig(conn, common.timingReport)
+          val cfg = new SqlSecondaryStoresConfig(conn, common.timingReport)
 
           secondaries.iterator.flatMap { case (name, secondary) =>
             cfg.lookup(name).map { info =>

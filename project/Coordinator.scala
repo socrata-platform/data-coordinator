@@ -8,10 +8,8 @@ object Coordinator {
       Seq(
         c3po,
         metricsScala,
-        slf4jLog4j12,
         socrataCuratorUtils,
         socrataThirdPartyUtils,
-        typesafeConfig,
         "com.socrata"    %% "socrata-http-curator-broker" % "3.3.3",
         "com.sun.jna"     % "jna"           % "3.0.9",
         "io.dropwizard.metrics" % "metrics-jetty9"   % "3.1.0",
@@ -19,13 +17,10 @@ object Coordinator {
         // See CORE-3635: use lower version of graphite to work around Graphite reconnect issues
         "com.codahale.metrics" % "metrics-graphite" % "3.0.2" exclude(
                                  "com.codahale.metrics", "metrics-core"),
-        "net.ceedubs"    %% "ficus"         % "1.0.0",
         "net.sf.opencsv"  % "opencsv"       % "2.3",
         "org.clojure"     % "clojure"       % "1.5.1",
 
-        TestDeps.scalaCheck % "test",
-        TestDeps.scalaMock  % "test",
-        TestDeps.h2         % "test"
+        TestDeps.scalaCheck % "test"
       )
     },
     mainClass in sbtassembly.AssemblyKeys.assembly := Some("com.socrata.datacoordinator.Launch")

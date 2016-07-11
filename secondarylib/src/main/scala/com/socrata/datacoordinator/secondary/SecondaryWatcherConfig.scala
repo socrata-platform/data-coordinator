@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator.secondary
 
 import com.socrata.datacoordinator.common.DataSourceConfig
-import com.socrata.datacoordinator.service.{SecondaryConfig => ServiceSecondaryConfig}
+import com.socrata.datacoordinator.secondary.config.{SecondaryConfig => ServiceSecondaryConfig}
 import com.typesafe.config.{ConfigException, Config}
 import java.util.UUID
 import scala.concurrent.duration._

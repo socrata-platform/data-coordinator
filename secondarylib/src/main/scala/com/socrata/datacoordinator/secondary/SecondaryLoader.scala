@@ -2,6 +2,7 @@ package com.socrata.datacoordinator.secondary
 
 import scala.language.existentials
 
+import com.socrata.datacoordinator.secondary.config.SecondaryConfig
 import java.nio.charset.StandardCharsets.UTF_8
 import java.io.{Reader, InputStreamReader, FilenameFilter, File}
 import java.net.URLClassLoader
@@ -19,7 +20,7 @@ object SecondaryDescription {
 }
 
 class SecondaryLoader(parentClassLoader: ClassLoader,
-                      secondaryConfig: com.socrata.datacoordinator.service.SecondaryConfig) {
+                      secondaryConfig: SecondaryConfig) {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[SecondaryLoader])
 
   def loadSecondaries(): Map[String, Secondary[_, _]] = {
@@ -153,7 +154,7 @@ class SecondaryLoader(parentClassLoader: ClassLoader,
 }
 
 object SecondaryLoader {
-  def load(secondaryConfig: com.socrata.datacoordinator.service.SecondaryConfig): Map[String, Secondary[_,_]] =
+  def load(secondaryConfig: SecondaryConfig): Map[String, Secondary[_,_]] =
     new SecondaryLoader(Thread.currentThread.getContextClassLoader, secondaryConfig).loadSecondaries()
 }
 

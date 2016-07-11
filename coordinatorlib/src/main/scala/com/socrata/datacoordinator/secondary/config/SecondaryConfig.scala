@@ -1,8 +1,12 @@
-package com.socrata.datacoordinator.service
+package com.socrata.datacoordinator.secondary.config
 
 import com.typesafe.config.Config
 import java.io.File
 import net.ceedubs.ficus.FicusConfig._
+
+// TODO: rewrite this to use our config classes instead of this
+// reflection-based horror that doesn't even provide full paths to
+// errors.
 
 case class SecondaryGroupConfig(
      numReplicas: Int,

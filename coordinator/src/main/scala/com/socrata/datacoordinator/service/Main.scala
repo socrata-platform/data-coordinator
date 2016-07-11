@@ -7,6 +7,7 @@ import com.socrata.datacoordinator.common.{SoQLCommon, DataSourceFromConfig}
 import com.socrata.datacoordinator.id.{UserColumnId, ColumnId, DatasetId}
 import com.socrata.datacoordinator.resources._
 import com.socrata.datacoordinator.secondary.DatasetAlreadyInSecondary
+import com.socrata.datacoordinator.secondary.config.SecondaryGroupConfig
 import com.socrata.datacoordinator.truth.CopySelector
 import com.socrata.datacoordinator.truth.loader.{Delogger, NullLogger}
 import com.socrata.datacoordinator.truth.universe.sql.PostgresUniverse

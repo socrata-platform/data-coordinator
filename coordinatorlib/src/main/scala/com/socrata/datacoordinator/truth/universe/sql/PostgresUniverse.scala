@@ -16,7 +16,7 @@ import com.socrata.datacoordinator.truth.metadata.sql._
 import com.socrata.datacoordinator.secondary.{SecondaryManifest, PlaybackToSecondary}
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.loader.sql._
-import com.socrata.datacoordinator.secondary.sql.{SqlSecondaryConfig, SqlSecondaryManifest}
+import com.socrata.datacoordinator.secondary.sql.{SqlSecondaryStoresConfig, SqlSecondaryManifest}
 import com.socrata.datacoordinator.util._
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import org.slf4j.LoggerFactory
@@ -81,7 +81,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
     with PlaybackToSecondaryProvider
     with DeloggerProvider
     with LoggerProvider
-    with SecondaryConfigProvider
+    with SecondaryStoresConfigProvider
     with PrevettedLoaderProvider
     with LoaderProvider
     with TruncatorProvider
@@ -152,8 +152,8 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
   lazy val datasetMapWriter: DatasetMapWriter[CT] =
     new PostgresDatasetMapWriter(conn, typeContext.typeNamespace, timingReport, obfuscationKeyGenerator, initialCounterValue)
 
-  lazy val secondaryConfig =
-    new SqlSecondaryConfig(conn, timingReport)
+  lazy val secondaryStoresConfig =
+    new SqlSecondaryStoresConfig(conn, timingReport)
 
   def datasetContextFactory(schema: ColumnIdMap[ColumnInfo[CT]]): RepBasedSqlDatasetContext[CT, CV] = {
     RepBasedSqlDatasetContext(

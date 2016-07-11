@@ -6,7 +6,7 @@ import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth._
 import com.socrata.datacoordinator.util._
-import com.socrata.datacoordinator.secondary.{SecondaryConfig, PlaybackToSecondary, SecondaryManifest}
+import com.socrata.datacoordinator.secondary.{SecondaryStoresConfig, PlaybackToSecondary, SecondaryManifest}
 import org.joda.time.DateTime
 import com.socrata.datacoordinator.truth.metadata.{DatasetInfo, SchemaFinder}
 
@@ -107,8 +107,8 @@ trait PlaybackToSecondaryProvider { this: TypeUniverse =>
   val playbackToSecondary: PlaybackToSecondary[CT, CV]
 }
 
-trait SecondaryConfigProvider {
-  val secondaryConfig: SecondaryConfig
+trait SecondaryStoresConfigProvider {
+  val secondaryStoresConfig: SecondaryStoresConfig
 }
 
 trait DatasetContentsCopierProvider { this: TypeUniverse =>
