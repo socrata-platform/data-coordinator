@@ -5,7 +5,7 @@ import sbt._
 object CoordinatorLib {
   lazy val settings: Seq[Setting[_]] = BuildSettings.projectSettings(protobuf=true) ++ Seq(
     libraryDependencies ++= Seq(
-      c3po % "optional",
+      c3po,
       jodaConvert,
       jodaTime,
       metricsScala,
