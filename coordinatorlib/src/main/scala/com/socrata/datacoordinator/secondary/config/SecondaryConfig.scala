@@ -20,7 +20,6 @@ case class SecondaryInstanceConfig(
 )
 
 class SecondaryConfig(config: Config) {
-  val path = new File(config.as[String]("path"))
   val defaultGroups = config.as[Set[String]]("defaultGroups")
   val groups = config.as[Map[String, SecondaryGroupConfig]]("groups")
   val instances = config.as[Map[String, SecondaryInstanceConfig]]("instances")
