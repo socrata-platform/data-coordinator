@@ -153,9 +153,10 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
             case ColumnCreated(columnInfo) =>
               val old = newCookie.current.strategyMap
               val updated = columnInfo.computationStrategyInfo match {
-                case Some(strategy) =>
-                  if (computationHandlers.exists(_.matchesStrategyType(strategy.strategyType))) old + (columnInfo.id -> strategy) else old
-                case None => old
+                case Some(strategy) if computationHandlers.exists(_.matchesStrategyType(strategy.strategyType)) =>
+                  log.info("Computed column with strategy type {} added to dataset {}. Going to resync.", strategy.strategyType, datasetInfo.internalName)
+                  throw ResyncSecondaryException(s"New computed column for dataset ${datasetInfo.internalName}")
+                case _ => old
               }
               newCookie.copy(
                 current = newCookie.current.copy(
@@ -166,9 +167,9 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
             case ColumnRemoved(columnInfo) =>
               val old = newCookie.current.strategyMap
               val updated = columnInfo.computationStrategyInfo match {
-                case Some(strategy) =>
-                  if (computationHandlers.exists(_.matchesStrategyType(strategy.strategyType))) old - columnInfo.id else old
-                case None => old
+                case Some(strategy) if computationHandlers.exists(_.matchesStrategyType(strategy.strategyType)) =>
+                  old - columnInfo.id
+                case _ => old
               }
               newCookie.copy(
                 current = newCookie.current.copy(
@@ -204,7 +205,7 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
             case WorkingCopyDropped =>
               newCookie.copy(
                 current = newCookie.previous.getOrElse {
-                  log.warn("No previous value in cookie for dataset {}. Going to resync.", datasetInfo.internalName)
+                  log.info("No previous value in cookie for dataset {}. Going to resync.", datasetInfo.internalName)
                   throw ResyncSecondaryException(s"No previous value in cookie for dataset ${datasetInfo.internalName}")
                 },
                 previous = None
@@ -250,9 +251,6 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
   override def resync(datasetInfo: DatasetInfo, copyInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo[CT]], cookie: Cookie,
                       rows: Managed[Iterator[ColumnIdMap[CV]]], rollups: Seq[RollupInfo], isLatestLivingCopy: Boolean): Cookie = {
     try {
-      // decode the old cookie
-      val oldCookie = FeedbackCookie.decode(cookie)
-
       // update cookie
       val copyNumber = CopyNumber(copyInfo.copyNumber)
 
@@ -266,8 +264,6 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
         case (_, colInfo) => colInfo.computationStrategyInfo.exists(cs => computationHandlers.exists(_.matchesStrategyType(cs.strategyType)))
       }.map { case (_, colInfo) => (colInfo.id, colInfo.computationStrategyInfo.get)} .toMap
 
-      val previous = oldCookie.map(_.current)
-
       val cookieSchema = CookieSchema(
         dataVersion = DataVersion(copyInfo.dataVersion),
         copyNumber = copyNumber,
@@ -280,7 +276,7 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
         resync = false
       )
 
-      var newCookie = FeedbackCookie(cookieSchema, previous)
+      var newCookie = FeedbackCookie(cookieSchema, None)
 
       val toJValueFunc = toJValue(datasetInfo.obfuscationKey)
       if (isLatestLivingCopy && newCookie.current.strategyMap.nonEmpty) {
