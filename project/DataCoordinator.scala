@@ -11,7 +11,6 @@ object DataCoordinator extends Build {
   private def allOtherProjects =
     for {
       proj <- Seq(coordinatorLib,
-        coordinatorLibSoql,
         coordinator,
         secondaryLib,
         dummySecondary,
@@ -27,22 +26,19 @@ object DataCoordinator extends Build {
 
   lazy val coordinatorExternal = p("coordinator-external", CoordinatorExternal)
 
-  lazy val coordinatorLib = p("coordinatorlib", CoordinatorLib,
-    secondaryLib)
-
-  lazy val coordinatorLibSoql = p("coordinatorlib-soql", CoordinatorLibSoql,
-    coordinatorLib)
+  lazy val coordinatorLib = p("coordinatorlib", CoordinatorLib)
 
   lazy val coordinator = p("coordinator", Coordinator,
-    coordinatorLib, coordinatorLibSoql, coordinatorExternal)
+    coordinatorLib, coordinatorExternal).
+    enablePlugins(sbtbuildinfo.BuildInfoPlugin)
 
-  lazy val secondaryLib = p("secondarylib", SecondaryLib)
-    .enablePlugins(sbtbuildinfo.BuildInfoPlugin)
+  lazy val secondaryLib = p("secondarylib", SecondaryLib,
+    coordinatorLib)
+    // .enablePlugins(sbtbuildinfo.BuildInfoPlugin)
 
   lazy val dummySecondary = p("dummy-secondary", DummySecondary,
     secondaryLib % "provided")
 
   lazy val secondaryLibFeedback = p("secondarylib-feedback", SecondaryLibFeedback,
-    secondaryLib, coordinatorLibSoql)
-
+    secondaryLib)
 }

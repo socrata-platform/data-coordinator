@@ -3,6 +3,8 @@ package com.socrata.datacoordinator.secondary
 import java.util.UUID
 import java.util.concurrent.{CountDownLatch, Executors, TimeUnit}
 
+import com.socrata.datacoordinator.secondary.config.SecondaryConfig
+
 import scala.concurrent.duration._
 import scala.util.Random
 
@@ -10,14 +12,13 @@ import com.rojoma.simplearm.Managed
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.common.{DataSourceFromConfig, SoQLCommon}
 import com.socrata.datacoordinator.common.DataSourceFromConfig.DSInfo
-import com.socrata.datacoordinator.secondary.sql.SqlSecondaryConfig
+import com.socrata.datacoordinator.secondary.sql.SqlSecondaryStoresConfig
 import com.socrata.datacoordinator.truth.universe._
 import com.socrata.datacoordinator.util._
-import com.socrata.http.server.util.RequestId
 import com.socrata.soql.types.{SoQLType, SoQLValue}
 import com.socrata.thirdparty.metrics.{MetricsOptions, MetricsReporter}
 import com.socrata.thirdparty.typesafeconfig.Propertizer
-import com.typesafe.config.ConfigFactory
+import com.typesafe.config.{Config, ConfigFactory}
 import org.apache.log4j.PropertyConfigurator
 import org.joda.time.{DateTime, Seconds}
 import org.slf4j.LoggerFactory
@@ -49,7 +50,7 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
                                       secondary.storeId, claimantId, claimTimeout)) yield {
       timingReport(
         "playback-to-secondary",
-        "tag:job-id" -> RequestId.generate(), // add job id tag to enclosing logs
+        "tag:job-id" -> UUID.randomUUID(), // add job id tag to enclosing logs
         "tag:dataset-id" -> job.datasetId, // add dataset id tag to enclosing logs
         "truthDatasetId" -> job.datasetId.underlying,
         "secondary" -> secondary.storeId,
@@ -128,7 +129,7 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
    * Cleanup any orphaned jobs created by this watcher exiting uncleanly.  Needs to be run
    * without any workers running (ie. at startup).
    */
-  private def cleanOrphanedJobs(secondaryConfigInfo: SecondaryConfigInfo): Unit = {
+  def cleanOrphanedJobs(secondaryConfigInfo: SecondaryConfigInfo): Unit = {
     // At lean up any orphaned jobs which may have been created by this watcher
     for { u <- universe } yield {
       u.secondaryManifest.cleanOrphanedClaimedDatasets(secondaryConfigInfo.storeId, claimantId)
@@ -159,7 +160,7 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
           val now = DateTime.now()
           if(now.getMillis - lastWrote.getMillis >= 15 * 60 * 1000) {
             log.info("Writing new next-runtime: {}", nextRunTime)
-            secondaryConfig.updateNextRunTime(secondaryConfigInfo.storeId, nextRunTime)
+            secondaryStoresConfig.updateNextRunTime(secondaryConfigInfo.storeId, nextRunTime)
           }
           lastWrote = now
         }
@@ -216,131 +217,133 @@ class SecondaryWatcherClaimManager(dsInfo: DSInfo, claimantId: UUID, claimTimeou
   }
 }
 
-object SecondaryWatcher extends App { self =>
+object SecondaryWatcher {
   type UniverseType[CT, CV] = Universe[CT, CV] with SecondaryManifestProvider with
-                                                    PlaybackToSecondaryProvider with
-                                                    SecondaryConfigProvider
+    PlaybackToSecondaryProvider with
+    SecondaryStoresConfigProvider
+}
 
-  val rootConfig = ConfigFactory.load()
-  val config = new SecondaryWatcherConfig(rootConfig, "com.socrata.coordinator.secondary-watcher")
-  PropertyConfigurator.configure(Propertizer("log4j", config.log4j))
+object SecondaryWatcherApp {
+  def apply(instanceName: String, secondaryProvider: Config => Secondary[SoQLType, SoQLValue]) {
+    val rootConfig = ConfigFactory.load()
+    val config = new SecondaryWatcherConfig(rootConfig, "com.socrata.coordinator.secondary-watcher")
+    PropertyConfigurator.configure(Propertizer("log4j", config.log4j))
 
-  val log = LoggerFactory.getLogger(classOf[SecondaryWatcher[_,_]])
-  log.info(s"Starting secondary watcher with watcher claim uuid of ${config.watcherId}")
-  log.info(com.socrata.datacoordinator.BuildInfo.toJson)
+    val log = LoggerFactory.getLogger(classOf[SecondaryWatcher[_,_]])
+    log.info(s"Starting secondary watcher with watcher claim uuid of ${config.watcherId}")
 
-  val metricsOptions = MetricsOptions(config.metrics)
+    val metricsOptions = MetricsOptions(config.metrics)
 
-  Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
-    def uncaughtException(t: Thread, e: Throwable): Unit = {
-      log.error(s"Uncaught exception in thread ${t.getName}, exiting", e)
-      sys.exit(1)
-    }
-  })
-
-  for { dsInfo <- DataSourceFromConfig(config.database)
-        reporter <- MetricsReporter.managed(metricsOptions) } {
-    val secondaries = SecondaryLoader.load(config.secondaryConfig).
-                        asInstanceOf[Map[String, Secondary[SoQLType, SoQLValue]]]
-
-    val executor = Executors.newCachedThreadPool()
-
-    val common = new SoQLCommon(
-      dsInfo.dataSource,
-      dsInfo.copyIn,
-      executor,
-      _ => None,
-      new LoggedTimingReport(log) with StackedTimingReport with MetricsTimingReport with TaggableTimingReport,
-      allowDdlOnPublishedCopies = false, // don't care,
-      Duration.fromNanos(1L), // don't care
-      config.instance,
-      config.tmpdir,
-      Duration.fromNanos(1L), // don't care
-      Duration.fromNanos(1L), // don't care
-      //Duration.fromNanos(1L),
-      NullCache
-    )
-
-    val w = new SecondaryWatcher(common.universe, config.watcherId, config.claimTimeout, config.backoffInterval,
-                                 config.replayWait, config.maxReplayWait, config.maxRetries,
-                                 config.maxReplays.getOrElse(Integer.MAX_VALUE), common.timingReport)
-    val cm = new SecondaryWatcherClaimManager(dsInfo, config.watcherId, config.claimTimeout)
-
-    val SIGTERM = new Signal("TERM")
-    val SIGINT = new Signal("INT")
-
-    /** Flags when we want to start shutting down, don't process new work */
-    val initiateShutdown = new CountDownLatch(1)
-    /** Flags when we have stopped processing work and are ready to actually shutdown */
-    val completeShutdown = new CountDownLatch(1)
-
-    val signalHandler = new SignalHandler {
-      val firstSignal = new java.util.concurrent.atomic.AtomicBoolean(true)
-      def handle(signal: Signal): Unit = {
-        log.info("Signalling shutdown")
-        initiateShutdown.countDown()
+    Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
+      def uncaughtException(t: Thread, e: Throwable): Unit = {
+        log.error(s"Uncaught exception in thread ${t.getName}, exiting", e)
+        sys.exit(1)
       }
-    }
+    })
 
-    var oldSIGTERM: SignalHandler = null
-    var oldSIGINT: SignalHandler = null
-    try {
-      log.info("Hooking SIGTERM and SIGINT")
-      oldSIGTERM = Signal.handle(SIGTERM, signalHandler)
-      oldSIGINT = Signal.handle(SIGINT, signalHandler)
+    for { dsInfo <- DataSourceFromConfig(config.database)
+          reporter <- MetricsReporter.managed(metricsOptions) } {
+      val secondaries = Map(instanceName -> secondaryProvider(config.secondaryConfig.instances(instanceName).config))
 
-      val claimTimeManagerThread = new Thread {
-        setName("SecondaryWatcher claim time manager")
+      val executor = Executors.newCachedThreadPool()
 
-        override def run(): Unit = {
-          cm.mainloop(completeShutdown)
+      val common = new SoQLCommon(
+        dsInfo.dataSource,
+        dsInfo.copyIn,
+        executor,
+        _ => None,
+        new LoggedTimingReport(log) with StackedTimingReport with MetricsTimingReport with TaggableTimingReport,
+        allowDdlOnPublishedCopies = false, // don't care,
+        Duration.fromNanos(1L), // don't care
+        config.instance,
+        config.tmpdir,
+        Duration.fromNanos(1L), // don't care
+        Duration.fromNanos(1L), // don't care
+        //Duration.fromNanos(1L),
+        NullCache
+      )
+
+      val w = new SecondaryWatcher(common.universe, config.watcherId, config.claimTimeout, config.backoffInterval,
+                                   config.replayWait, config.maxReplayWait, config.maxRetries,
+                                   config.maxReplays.getOrElse(Integer.MAX_VALUE), common.timingReport)
+      val cm = new SecondaryWatcherClaimManager(dsInfo, config.watcherId, config.claimTimeout)
+
+      val SIGTERM = new Signal("TERM")
+      val SIGINT = new Signal("INT")
+
+      /** Flags when we want to start shutting down, don't process new work */
+      val initiateShutdown = new CountDownLatch(1)
+      /** Flags when we have stopped processing work and are ready to actually shutdown */
+      val completeShutdown = new CountDownLatch(1)
+
+      val signalHandler = new SignalHandler {
+        val firstSignal = new java.util.concurrent.atomic.AtomicBoolean(true)
+        def handle(signal: Signal): Unit = {
+          log.info("Signalling shutdown")
+          initiateShutdown.countDown()
         }
       }
 
-      val workerThreads =
-        using(dsInfo.dataSource.getConnection()) { conn =>
-          val cfg = new SqlSecondaryConfig(conn, common.timingReport)
+      var oldSIGTERM: SignalHandler = null
+      var oldSIGINT: SignalHandler = null
+      try {
+        log.info("Hooking SIGTERM and SIGINT")
+        oldSIGTERM = Signal.handle(SIGTERM, signalHandler)
+        oldSIGINT = Signal.handle(SIGINT, signalHandler)
 
-          secondaries.iterator.flatMap { case (name, secondary) =>
-            cfg.lookup(name).map { info =>
-              w.cleanOrphanedJobs(info)
+        val claimTimeManagerThread = new Thread {
+          setName("SecondaryWatcher claim time manager")
 
-              1 to config.secondaryConfig.instances(name).numWorkers map { n =>
-                new Thread {
-                  setName(s"Worker $n for secondary $name")
+          override def run(): Unit = {
+            cm.mainloop(completeShutdown)
+          }
+        }
 
-                  override def run(): Unit = {
-                    w.mainloop(info, secondary, initiateShutdown)
+        val workerThreads =
+          using(dsInfo.dataSource.getConnection()) { conn =>
+            val cfg = new SqlSecondaryStoresConfig(conn, common.timingReport)
+
+            secondaries.iterator.flatMap { case (name, secondary) =>
+              cfg.lookup(name).map { info =>
+                w.cleanOrphanedJobs(info)
+
+                1 to config.secondaryConfig.instances(name).numWorkers map { n =>
+                  new Thread {
+                    setName(s"Worker $n for secondary $name")
+
+                    override def run(): Unit = {
+                      w.mainloop(info, secondary, initiateShutdown)
+                    }
                   }
                 }
+              }.orElse {
+                log.warn("Secondary {} is defined, but there is no record in the secondary config table", name)
+                None
               }
-            }.orElse {
-              log.warn("Secondary {} is defined, but there is no record in the secondary config table", name)
-              None
-            }
-          }.toList.flatten
-        }
+            }.toList.flatten
+          }
 
-      claimTimeManagerThread.start()
-      workerThreads.foreach(_.start())
+        claimTimeManagerThread.start()
+        workerThreads.foreach(_.start())
 
-      log.info("Going to sleep...")
-      initiateShutdown.await()
+        log.info("Going to sleep...")
+        initiateShutdown.await()
 
-      log.info("Waiting for worker threads to stop...")
-      workerThreads.foreach(_.join())
+        log.info("Waiting for worker threads to stop...")
+        workerThreads.foreach(_.join())
 
-      // Can't shutdown claim time manager until workers stop or their jobs might be stolen
-      log.info("Shutting down claim time manager...")
-      completeShutdown.countDown()
-      claimTimeManagerThread.join()
-    } finally {
-      log.info("Un-hooking SIGTERM and SIGINT")
-      if(oldSIGTERM != null) Signal.handle(SIGTERM, oldSIGTERM)
-      if(oldSIGTERM != null) Signal.handle(SIGINT, oldSIGINT)
+        // Can't shutdown claim time manager until workers stop or their jobs might be stolen
+        log.info("Shutting down claim time manager...")
+        completeShutdown.countDown()
+        claimTimeManagerThread.join()
+      } finally {
+        log.info("Un-hooking SIGTERM and SIGINT")
+        if(oldSIGTERM != null) Signal.handle(SIGTERM, oldSIGTERM)
+        if(oldSIGTERM != null) Signal.handle(SIGINT, oldSIGINT)
+      }
+
+      secondaries.values.foreach(_.shutdown())
+      executor.shutdown()
     }
-
-    secondaries.values.foreach(_.shutdown())
-    executor.shutdown()
   }
 }

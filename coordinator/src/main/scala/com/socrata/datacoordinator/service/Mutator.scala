@@ -6,6 +6,7 @@ import com.rojoma.json.v3.ast._
 import com.rojoma.json.v3.codec.{DecodeError, JsonDecode, JsonEncode}
 import com.rojoma.json.v3.io._
 import com.rojoma.json.v3.util.{Strategy, JsonKeyStrategy, AutomaticJsonDecodeBuilder}
+import com.socrata.datacoordinator.common.MutatorCommon
 import com.socrata.datacoordinator.id._
 import com.socrata.datacoordinator.truth.json.JsonColumnRep
 import com.socrata.datacoordinator.truth.loader._
@@ -194,24 +195,6 @@ object Mutator {
   val RowDataOp = "row data"
   val CreateOrUpdateRollupOp = "create or update rollup"
   val DropRollupOp = "drop rollup"
-}
-
-trait MutatorCommon[CT, CV] {
-  def physicalColumnBaseBase(nameHint: String, systemColumn: Boolean = false): String
-  def isSystemColumnId(identifier: UserColumnId): Boolean
-  def systemSchema: UserColumnIdMap[MutatorColumnInfo[CT]]
-  def systemIdColumnId: UserColumnId
-  def versionColumnId: UserColumnId
-  def jsonReps(di: DatasetInfo): CT => JsonColumnRep[CT, CV]
-  def allowDdlOnPublishedCopies: Boolean
-  def typeContext: TypeContext[CT, CV]
-  def genUserColumnId(): UserColumnId
-}
-
-trait MutatorColumnInfo[CT] {
-  def typ: CT
-  def fieldName: Option[ColumnName]
-  def computationStrategy: Option[ComputationStrategyInfo]
 }
 
 class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT, CV]) {

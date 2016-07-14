@@ -1,4 +1,4 @@
-package com.socrata.datacoordinator.service
+package com.socrata.datacoordinator.common
 
 import com.socrata.datacoordinator.id.UserColumnId
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo

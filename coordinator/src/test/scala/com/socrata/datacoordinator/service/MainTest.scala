@@ -1,5 +1,6 @@
 package com.socrata.datacoordinator.service
 
+import com.socrata.datacoordinator.secondary.config.SecondaryGroupConfig
 import com.socrata.datacoordinator.id.DatasetId
 import org.scalatest.{MustMatchers, FunSuite}
 

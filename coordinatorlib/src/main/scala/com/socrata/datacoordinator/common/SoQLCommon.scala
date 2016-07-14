@@ -3,7 +3,6 @@ package com.socrata.datacoordinator.common
 import com.rojoma.simplearm.{SimpleArm, Managed}
 import com.socrata.datacoordinator.common.soql.{SoQLRowLogCodec, SoQLRep, SoQLTypeContext}
 import com.socrata.datacoordinator.id._
-import com.socrata.datacoordinator.service.{MutatorColumnInfo, SchemaFinder, MutatorCommon}
 import com.socrata.datacoordinator.truth.json.{JsonColumnWriteRep, JsonColumnRep, JsonColumnReadRep}
 import com.socrata.datacoordinator.truth.loader.RowPreparer
 import com.socrata.datacoordinator.truth.metadata.{DatasetCopyContext, DatasetInfo, AbstractColumnInfoLike, ColumnInfo}
