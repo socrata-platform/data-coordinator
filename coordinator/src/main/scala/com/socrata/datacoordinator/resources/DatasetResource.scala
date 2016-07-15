@@ -218,6 +218,8 @@ case class DatasetResource(datasetId: DatasetId,
             case Exporter.NotModified(etags) => notModified(etags.map(_.append(suffix)))(resp)
             case Exporter.PreconditionFailedBecauseNoMatch => preconditionFailed(resp)
             case Exporter.InvalidRowId => datasetBadRequest(ExportRequestError.INVALID_ROW_ID)(resp)
+            case Exporter.UnknownColumns(columns) =>
+              datasetBadRequest(ExportRequestError.UNKNOWN_COLUMNS, ("columns", JsonEncode.toJValue(columns)))(resp)
           }
         }
       case Left(Precondition.FailedBecauseNoMatch) =>
