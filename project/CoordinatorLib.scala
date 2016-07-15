@@ -16,7 +16,7 @@ object CoordinatorLib {
       soqlTypes,
       typesafeConfig,
       "net.ceedubs" %% "ficus" % "1.0.0",
-      "com.google.protobuf" % "protobuf-java" % "2.4.1",
+      "com.google.protobuf" % "protobuf-java" % "2.6.1",
       "com.socrata" %% "soql-brita" % "1.3.0",
       "com.socrata" %% "socrata-http-client" % "3.6.2",
       "com.typesafe" %% "scalalogging-slf4j" % "1.1.0",
