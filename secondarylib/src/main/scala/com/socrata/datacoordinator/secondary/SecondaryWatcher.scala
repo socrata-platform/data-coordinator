@@ -224,7 +224,7 @@ object SecondaryWatcher {
 }
 
 object SecondaryWatcherApp {
-  def apply(instanceName: String, secondaryProvider: Config => Secondary[SoQLType, SoQLValue]) {
+  def apply(secondaryProvider: Config => Secondary[SoQLType, SoQLValue]) {
     val rootConfig = ConfigFactory.load()
     val config = new SecondaryWatcherConfig(rootConfig, "com.socrata.coordinator.secondary-watcher")
     PropertyConfigurator.configure(Propertizer("log4j", config.log4j))
@@ -243,7 +243,9 @@ object SecondaryWatcherApp {
 
     for { dsInfo <- DataSourceFromConfig(config.database)
           reporter <- MetricsReporter.managed(metricsOptions) } {
-      val secondaries = Map(instanceName -> secondaryProvider(config.secondaryConfig.instances(instanceName).config))
+      val secondaries = config.secondaryConfig.instances.keysIterator.map { instanceName =>
+        instanceName -> secondaryProvider(config.secondaryConfig.instances(instanceName).config)
+      }.toMap
 
       val executor = Executors.newCachedThreadPool()
 
