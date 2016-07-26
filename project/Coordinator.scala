@@ -7,6 +7,7 @@ object Coordinator {
     libraryDependencies <++= (scalaVersion) { (scalaVersion) =>
       Seq(
         c3po,
+        slf4jLog4j12,
         metricsScala,
         socrataCuratorUtils,
         socrataThirdPartyUtils,
