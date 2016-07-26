@@ -43,7 +43,6 @@ class SqlDatasetDropper[CT](conn: Connection, writeLockTimeout: Duration, datase
     using(conn.createStatement()) { stmt =>
       stmt.executeUpdate("UPDATE secondary_manifest SET latest_data_version = " + fakeVersion +
         " WHERE dataset_system_id = " + datasetId.underlying)
-      stmt.executeUpdate("UPDATE backup_log SET latest_data_version = " + fakeVersion + " WHERE dataset_system_id = " + datasetId.underlying)
     }
   }
 

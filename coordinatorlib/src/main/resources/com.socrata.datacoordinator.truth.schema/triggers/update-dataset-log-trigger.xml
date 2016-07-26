@@ -6,24 +6,15 @@
 
     <changeSet author="Marc Slemko" id="update-dataset-log-trigger" runOnChange="true">
         <createProcedure>
+            -- This is a bit of a misnomer now that the backup log is
+            -- gone.  What this function does is perform post-update
+            -- bookeeping in the secondary-manifest and dataset-map
+            -- tables when the copy_map changes; the former needs to
+            -- be updated so the secondary watchers can get to work
+            -- replicating; the latter needs to be updated to keep
+            -- its latest_data_version column in sync.
             CREATE OR REPLACE FUNCTION update_backup_log() RETURNS trigger as $update_backup_log$
-              DECLARE
-                last_data_version BIGINT;
               BEGIN
-                -- First, we update the timestamp only if this is the first change since the last time
-                -- the backup was run.  This is to keep things fair, otherwise a fast-changing dataset
-                -- could keep knocking itself down the queue.
-                UPDATE backup_log
-                  SET went_out_of_sync_at = CURRENT_TIMESTAMP
-                  WHERE dataset_system_id = NEW.dataset_system_id AND latest_data_version = latest_backup_data_version;
-                -- Then unconditionally bump the latest data version.
-                UPDATE backup_log
-                  SET latest_data_version = (
-                    SELECT MAX(copy_map.data_version) FROM copy_map WHERE copy_map.dataset_system_id = NEW.dataset_system_id
-                  )
-                  WHERE dataset_system_id = NEW.dataset_system_id;
-
-                -- Same thing for all secondaries to which this is attached.
                 UPDATE secondary_manifest
                   SET went_out_of_sync_at = CURRENT_TIMESTAMP
                   WHERE dataset_system_id = NEW.dataset_system_id AND latest_data_version = latest_secondary_data_version;
