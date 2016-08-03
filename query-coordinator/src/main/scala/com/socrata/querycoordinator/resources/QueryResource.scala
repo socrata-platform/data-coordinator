@@ -131,7 +131,7 @@ class QueryResource(secondary: Secondary,
         val chosenSecondaryName = secondary.chosenSecondaryName(forcedSecondaryName, dataset, copy)
         val second = secondary.serviceInstance(dataset, chosenSecondaryName)
         val base = secondary.reqBuilder(second)
-        log.info("Base URI: " + base.url)
+        log.debug("Base URI: " + base.url)
 
         def analyzeRequest(schema: Versioned[Schema], isFresh: Boolean): Either[QueryRetryState, Versioned[(Schema, Seq[SoQLAnalysis[String, SoQLType]])]] = {
           val parsedQuery = query match {
@@ -274,7 +274,9 @@ class QueryResource(secondary: Secondary,
                 val rewritten = RollupScorer.bestRollup(
                   queryRewriter.possibleRewrites(schema, analyzedQuery, rollups).toSeq)
                 val (rollupName, analysis) = rewritten map { x => (Some(x._1), x._2) } getOrElse ((None, analyzedQuery))
-                log.info(s"Rewrote query on dataset $dataset to rollup $rollupName")
+                if (rollupName.isDefined) {
+                  log.info(s"Rewrote query on dataset $dataset to rollup $rollupName")
+                }
                 log.debug(s"Rewritten analysis: $analysis")
                 (analysis, rollupName)
               case RollupInfoFetcher.NoSuchDatasetInSecondary =>

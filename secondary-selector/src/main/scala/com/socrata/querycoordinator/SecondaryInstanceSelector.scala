@@ -151,7 +151,7 @@ class SecondaryInstanceSelector(config: SecondarySelectorConfig) extends Logging
 
     syncDSS(dataset, dss)
     val instanceName = getInstanceName0
-    logger.info("Decided to access dataset {} in secondary instance {}", dataset, instanceName)
+    logger.info("Accessing dataset {} in {}", dataset, instanceName)
     instanceName
   }
 
