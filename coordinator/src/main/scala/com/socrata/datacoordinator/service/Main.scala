@@ -294,7 +294,7 @@ object Main {
             dsInfo.copyIn,
             executorService,
             { t => iFn.invoke(t).asInstanceOf[Option[String]] },
-            new LoggedTimingReport(org.slf4j.LoggerFactory.getLogger("timing-report")) with StackedTimingReport,
+            new DebugLoggedTimingReport(org.slf4j.LoggerFactory.getLogger("timing-report")) with StackedTimingReport,
             allowDdlOnPublishedCopies = serviceConfig.allowDdlOnPublishedCopies,
             serviceConfig.writeLockTimeout,
             serviceConfig.instance,

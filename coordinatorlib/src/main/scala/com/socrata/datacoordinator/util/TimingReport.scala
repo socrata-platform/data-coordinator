@@ -69,6 +69,22 @@ class LoggedTimingReport(log: Logger) extends TimingReport {
   }
 }
 
+class DebugLoggedTimingReport(log: Logger) extends TimingReport {
+  def apply[T](name: String, kv: (String, Any)*)(f: => T): T = {
+    val start = System.nanoTime()
+    try {
+      f
+    } finally {
+      val end = System.nanoTime()
+      val timeInMs = (end - start) / 1000000
+      if(log.isDebugEnabled) {
+        log.debug("{}: {}ms; {}", name, timeInMs.asInstanceOf[AnyRef],
+          JsonUtil.renderJson(kv.map { case (k,v) => (k, String.valueOf(v)) }))
+      }
+    }
+  }
+}
+
 /**
  * Put keys with prefix - tag: in MDC so that enclosing log statements can be tagged using %X{name} in log config.
  * Example:
