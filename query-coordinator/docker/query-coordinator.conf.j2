@@ -4,9 +4,6 @@ com.socrata.query-coordinator {
   network.port = 6030
   liveness-check.port = 6031
 
-  log4j.logger.com.socrata.http.client.LivenessCheckerImpl = TRACE
-  log4j.logger.com.socrata.http.server.livenesscheck = TRACE
- 
   all-secondary-instance-names = [{{ SECONDARY_INSTANCES }}]
 
   query-timeout = {{ QUERY_TIMEOUT }}
