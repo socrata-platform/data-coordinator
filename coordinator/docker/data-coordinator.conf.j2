@@ -22,10 +22,6 @@ com.socrata.coordinator.service {
     }
   }
 
-  log4j.logger.com.socrata.http.client.LivenessCheckerImpl = TRACE
-
-  log4j.logger.com.socrata.http.server.livenesscheck = TRACE
-
   metrics {
     enable-graphite = {{ ENABLE_GRAPHITE }}
     graphite-host = "{{ GRAPHITE_HOST }}"
