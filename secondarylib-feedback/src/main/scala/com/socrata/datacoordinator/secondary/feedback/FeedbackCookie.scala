@@ -41,7 +41,7 @@ case class CookieSchema(dataVersion: DataVersion,
                         strategyMap: Map[UserColumnId, ComputationStrategyInfo],
                         obfuscationKey: Array[Byte],
                         computationRetriesLeft: Int,
-                        mutationScriptRetriesLeft: Int,
+                        dataCoordinatorRetriesLeft: Int,
                         resync: Boolean) {
 
   override def equals(any: Any): Boolean = {
@@ -54,7 +54,7 @@ case class CookieSchema(dataVersion: DataVersion,
           this.strategyMap == other.strategyMap &&
           java.util.Arrays.equals(this.obfuscationKey, other.obfuscationKey) && // stupid arrays
           this.computationRetriesLeft == other.computationRetriesLeft &&
-          this.mutationScriptRetriesLeft == other.mutationScriptRetriesLeft &&
+          this.dataCoordinatorRetriesLeft == other.dataCoordinatorRetriesLeft &&
           this.resync == other.resync
       case _ => false
     }
@@ -69,7 +69,7 @@ case class CookieSchema(dataVersion: DataVersion,
     code = code * 41 + (if (strategyMap == null) 0 else strategyMap.hashCode)
     code = code * 41 + java.util.Arrays.hashCode(obfuscationKey)
     code = code * 41 + computationRetriesLeft.hashCode
-    code = code * 41 + mutationScriptRetriesLeft.hashCode
+    code = code * 41 + dataCoordinatorRetriesLeft.hashCode
     code = code * 41 + resync.hashCode
     code
   }

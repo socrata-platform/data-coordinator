@@ -20,6 +20,7 @@ object Exporter {
   case object PreconditionFailedBecauseNoMatch extends Result[Nothing]
   case class NotModified(etags: Seq[EntityTag]) extends Result[Nothing]
   case object InvalidRowId extends Result[Nothing]
+  case class UnknownColumns(columns: Set[UserColumnId]) extends Result[Nothing]
   case class Success[T](x: T) extends Result[T]
 
   def export[CT, CV, T](u: Universe[CT, CV] with DatasetReaderProvider,
@@ -48,7 +49,10 @@ object Exporter {
               NotModified(Seq(entityTag))
             case _ =>
               val selectedSchema = columns match {
-                case Some(set) => schema.filter { case (_, ci) => set(ci.userColumnId) }
+                case Some(set) =>
+                  val unknown = set.toSet -- schema.values.map(_.userColumnId)
+                  if (unknown.nonEmpty) return UnknownColumns(unknown)
+                  schema.filter { case (_, ci) => set(ci.userColumnId) || copyCtx.pkCol_!.systemId == ci.systemId }
                 case None => schema
               }
               val properSchema = (copyCtx.userIdCol ++

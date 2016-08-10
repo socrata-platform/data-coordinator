@@ -36,6 +36,7 @@ object Dependencies {
 
   val soqlEnvironment = "com.socrata" %% "soql-environment" % versions.soqlReference
   val soqlTypes       = "com.socrata" %% "soql-types"       % versions.soqlReference
+  val soqlStdlib      = "com.socrata" %% "soql-stdlib"      % versions.soqlReference
 
   val typesafeConfig = "com.typesafe" % "config" % versions.typesafeConfig
 
