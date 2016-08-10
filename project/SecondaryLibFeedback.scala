@@ -9,6 +9,7 @@ object SecondaryLibFeedback {
       rojomaJson,
       rojomaSimpleArm,
       soqlEnvironment,
+      soqlStdlib,
       socrataCuratorUtils,
       "org.apache.curator" % "curator-x-discovery" % "2.8.0",
       "com.socrata" %% "socrata-http-client" % "3.6.2",

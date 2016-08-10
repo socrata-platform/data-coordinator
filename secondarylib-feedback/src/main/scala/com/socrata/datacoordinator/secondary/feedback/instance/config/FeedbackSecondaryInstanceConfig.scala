@@ -15,10 +15,10 @@ class FeedbackSecondaryInstanceConfig(config: Config, root: String) extends Conf
 
   val baseBatchSize = getInt("base-batch-size")
   val computationRetries = getInt("computation-retries")
-  val internalMutationScriptRetries = getInt("internal-mutation-script-retries")
-  val mutationScriptRetries = getInt("mutation-script-retries")
   val curator = getConfig("curator", new CuratorConfig(_, _))
   val dataCoordinatorService = getString("data-coordinator-service")
+  val dataCoordinatorRetries = getInt("data-coordinator-retries")
+  val internalDataCoordinatorRetries = getInt("internal-data-coordinator-retries")
 
   val debugString = config.root.render()
 }

@@ -30,6 +30,7 @@ object ContentTypeRequestError{
 object ExportRequestError{
   val MISMATCHED_SCHEMA = "req.export.mismatched-schema"
   val INVALID_ROW_ID = "req.export.invalid-row-id"
+  val UNKNOWN_COLUMNS = "req.export.unknown-columns"
 }
 
 object BodyRequestError{

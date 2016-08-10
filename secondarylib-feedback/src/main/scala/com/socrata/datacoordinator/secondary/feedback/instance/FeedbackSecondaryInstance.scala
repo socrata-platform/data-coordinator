@@ -14,7 +14,7 @@ import org.apache.curator.x.discovery.{strategies, ServiceDiscoveryBuilder}
 
 abstract class FeedbackSecondaryInstance(config: FeedbackSecondaryInstanceConfig) extends FeedbackSecondary[SoQLType, SoQLValue] {
 
-  log.info("Configuration:\n" + config.debugString)
+  log.debug("Configuration:\n" + config.debugString)
 
   private val resourceScope = new ResourceScope("feedback secondary")
 
@@ -59,12 +59,14 @@ abstract class FeedbackSecondaryInstance(config: FeedbackSecondaryInstanceConfig
 
   override val baseBatchSize: Int = config.baseBatchSize
 
-  override val internalMutationScriptRetries: Int = config.mutationScriptRetries
+  override val dataCoordinatorRetryLimit: Int = config.dataCoordinatorRetries
+  override val internalDataCoordinatorRetryLimit: Int = config.internalDataCoordinatorRetries
 
-  override val mutationScriptRetries: Int = config.mutationScriptRetries
+  override val repFor = SoQLValueRepFor
+  override val repFrom = SoQLValueRepFrom
 
-  override val repFor = SoQLValueRep
   override val typeFor = SoQLTypeFor
+  override val typeFromJValue = SoQLTypeFromJValue
 
   override val statusMonitor: StatusMonitor = new DummyStatusMonitor // TODO: replace with status monitor connected to ISS
 
