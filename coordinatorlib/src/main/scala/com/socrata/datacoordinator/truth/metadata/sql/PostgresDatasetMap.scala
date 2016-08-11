@@ -626,6 +626,26 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
     datasetInfo
   }
 
+  def unsafeCreateDatasetAllocatingSystemId(localeName: String, obfuscationKey: Array[Byte]): DatasetInfo = {
+    using(conn.prepareStatement(createQuery_tableMap)) { stmt =>
+      val datasetInfoNoSystemId = DatasetInfo(DatasetId.Invalid, initialCounterValue, localeName, obfuscationKey)
+      stmt.setLong(1, datasetInfoNoSystemId.nextCounterValue)
+      stmt.setString(2, datasetInfoNoSystemId.localeName)
+      stmt.setBytes(3, datasetInfoNoSystemId.obfuscationKey)
+      try {
+        using(t("unsafe-create-dataset-allocating-system-id") { stmt.executeQuery() }) { rs =>
+          val returnedSomething = rs.next()
+          assert(returnedSomething, "INSERT didn't return a system ID?")
+          datasetInfoNoSystemId.copy(systemId = rs.getDatasetId(1))
+        }
+      } catch {
+        case e: PSQLException if isReadOnlyTransaction(e) =>
+          BasePostgresDatasetMapWriter.log.trace("Create dataset failed due to read-only txn; abandoning")
+          throw new DatabaseInReadOnlyMode(e)
+      }
+    }
+  }
+
   val unsafeReloadDatasetQuery = "UPDATE dataset_map SET next_counter_value = ?, locale_name = ?, obfuscation_key = ? WHERE system_id = ?"
   def unsafeReloadDataset(datasetInfo: DatasetInfo,
                           nextCounterValue: Long,

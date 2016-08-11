@@ -91,6 +91,12 @@ trait BackupDatasetMap[CT] extends DatasetMapWriter[CT] with `-impl`.BaseDataset
                           localeName: String,
                           obfuscationKey: Array[Byte]): DatasetInfo
 
+  /** Creates a dataset with the specified attributes
+    * @note Using this carelessly can get you into trouble.  In particular, this
+    *       newly created dataset will have NO copies attached. */
+  def unsafeCreateDatasetAllocatingSystemId(localeName: String,
+                                            obfuscationKey: Array[Byte]): DatasetInfo
+
   /** Reloads a dataset with the specified attributes, including CLEARING ALL COPIES.
     * @note Using this carelessly can get you into trouble.  It is intended to be used
     *       for resyncing only.  The resulting dataset object will have NO copies. */
