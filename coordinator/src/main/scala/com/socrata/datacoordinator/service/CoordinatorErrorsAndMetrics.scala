@@ -141,7 +141,7 @@ class CoordinatorErrorsAndMetrics(formatDatasetId: DatasetId => String) extends 
 
   def notModified(etags: Seq[EntityTag]): HttpResponse = {
     log.info("not modified error: %s  ".format(etags.mkString(",")))
-    etags.foldLeft(NotModified) { (resp, etag) => resp ~> ETag(etag) }
+    etags.foldLeft[HttpResponse](NotModified) { (resp, etag) => resp ~> ETag(etag) }
   }
 
 }

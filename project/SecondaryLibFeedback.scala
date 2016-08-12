@@ -11,7 +11,7 @@ object SecondaryLibFeedback {
       soqlEnvironment,
       socrataCuratorUtils,
       "org.apache.curator" % "curator-x-discovery" % "2.8.0",
-      "com.socrata" %% "socrata-http-client" % "3.6.2",
+      "com.socrata" %% "socrata-http-client" % "3.10.1",
       "com.typesafe" % "config" % "1.0.2"
     )
   )
