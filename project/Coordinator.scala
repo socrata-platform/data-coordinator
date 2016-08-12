@@ -11,7 +11,7 @@ object Coordinator {
         metricsScala,
         socrataCuratorUtils,
         socrataThirdPartyUtils,
-        "com.socrata"    %% "socrata-http-curator-broker" % "3.3.3",
+        "com.socrata"    %% "socrata-http-curator-broker" % "3.10.1",
         "com.sun.jna"     % "jna"           % "3.0.9",
         "io.dropwizard.metrics" % "metrics-jetty9"   % "3.1.0",
         // "io.dropwizard.metrics" % "metrics-graphite"   % "3.1.0",
