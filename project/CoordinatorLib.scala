@@ -18,7 +18,7 @@ object CoordinatorLib {
       "net.ceedubs" %% "ficus" % "1.0.0",
       "com.google.protobuf" % "protobuf-java" % "2.6.1",
       "com.socrata" %% "soql-brita" % "1.3.0",
-      "com.socrata" %% "socrata-http-client" % "3.6.2",
+      "com.socrata" %% "socrata-http-client" % "3.10.1",
       "com.typesafe" %% "scalalogging-slf4j" % "1.1.0",
       "commons-codec" % "commons-codec" % "1.8",
       "net.sf.trove4j" % "trove4j" % "3.0.3",
