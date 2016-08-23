@@ -1,4 +1,4 @@
-**data-coordinator** is a set of related services and scripts that takes SoQL upserts, inserts them to the truth store, watches truth store logs and writes the data to the secondary stores.
+**data-coordinator** is a set of related services, libraries, and scripts that takes SoQL upserts, inserts them to the truth store, watches truth store logs and writes the data to the secondary stores.
 
 ## Projects
 
@@ -20,10 +20,6 @@ To run the tests, from the SBT shell:
 To run the data coordinator, from the regular Linux/OSX shell prompt:
 
     bin/start_dc.sh
-
-To run the secondary watcher:
-
-    bin/start_watcher.sh
 
 The above scripts builds the assembly if its not present and runs the fat jar on the command line, which is much more memory efficient than running it from sbt.  If you need to force a rebuild, simply run `sbt clean` beforehand.
 
