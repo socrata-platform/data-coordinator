@@ -13,6 +13,7 @@ object CoordinatorLib {
       rojomaSimpleArm,
       socrataThirdPartyUtils,
       soqlEnvironment,
+      soqlStdlib,
       soqlTypes,
       typesafeConfig,
       "net.ceedubs" %% "ficus" % "1.0.0",

@@ -3,30 +3,35 @@ package sql
 
 import java.util.concurrent.ExecutorService
 import java.sql.Connection
-import java.io.{File, Reader, OutputStream}
+import java.io.{File, OutputStream, Reader}
 
 import org.joda.time.DateTime
 import com.rojoma.simplearm.SimpleArm
 import com.rojoma.simplearm.util._
-
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth.sql.{PostgresDatabaseMutator, PostgresDatabaseReader, RepBasedSqlDatasetContext, SqlColumnRep}
 import com.socrata.datacoordinator.truth._
 import com.socrata.datacoordinator.truth.metadata.sql._
-import com.socrata.datacoordinator.secondary.{SecondaryManifest, PlaybackToSecondary}
+import com.socrata.datacoordinator.secondary.{PlaybackToSecondary, SecondaryManifest}
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.loader.sql._
-import com.socrata.datacoordinator.secondary.sql.{SqlSecondaryStoresConfig, SqlSecondaryManifest}
+import com.socrata.datacoordinator.secondary.sql.{SqlSecondaryManifest, SqlSecondaryStoresConfig}
 import com.socrata.datacoordinator.util._
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import org.slf4j.LoggerFactory
-import scala.concurrent.duration.{FiniteDuration, Duration}
+
+import scala.concurrent.duration.{Duration, FiniteDuration}
 import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
+import com.socrata.soql.SoQLAnalyzer
+import com.socrata.soql.functions.{SoQLFunctionInfo, SoQLTypeInfo}
+import com.socrata.soql.typechecker.FunctionInfo
 
 trait PostgresCommonSupport[CT, CV] {
+
+  def soqlAnalyzer: SoQLAnalyzer[CT]
   val executor: ExecutorService
   val typeContext: TypeContext[CT, CV]
   def repFor: ColumnInfo[CT] => SqlColumnRep[CT, CV]
@@ -92,6 +97,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
     with DatasetDropperProvider
     with TableCleanupProvider
     with LogTableCleanupProvider
+    with SoQLAnalyzerProvider
 {
   import commonSupport._
 
@@ -186,7 +192,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
   )
 
   lazy val datasetMutator: DatasetMutator[CT, CV] =
-    DatasetMutator(lowLevelDatabaseMutator, writeLockTimeout)
+    DatasetMutator(lowLevelDatabaseMutator, writeLockTimeout, soqlAnalyzer)
 
   def schemaLoader(logger: Logger[CT, CV]) =
     new RepBasedPostgresSchemaLoader(conn, logger, repFor, tablespace)
@@ -202,4 +208,6 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
 
   lazy val logTableCleanup: LogTableCleanup =
     new SqlLogTableCleanup(conn, logTableCleanupDeleteOlderThan, logTableCleanupDeleteEvery)
+
+  def soqlAnalyzer: SoQLAnalyzer[CT] = commonSupport.soqlAnalyzer
 }
