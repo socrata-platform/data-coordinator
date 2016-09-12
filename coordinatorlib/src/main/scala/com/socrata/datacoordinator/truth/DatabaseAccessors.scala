@@ -391,14 +391,17 @@ object DatasetMutator {
         val prefixedDsContext = new com.socrata.soql.environment.DatasetContext[CT] {
             val schema: OrderedMap[ColumnName, CT] = OrderedMap(prefixedSchema: _*)
         }
-
-        datasetMap.rollups(copyInfo).foreach { (ru: RollupInfo) =>
-          try {
-            soqlAnalyzer.analyzeFullQuery(ru.soql)(prefixedDsContext)
-          } catch {
-            case ex: NoSuchColumn =>
-              log.info(s"drop rollup ${ru.name.underlying} because ${ex.getMessage}")
-              datasetMap.dropRollup(copyInfo, Some(ru.name))
+        val rollups = datasetMap.rollups(copyInfo)
+        if (rollups.nonEmpty) {
+          val analyzer = soqlAnalyzer
+          rollups.foreach { (ru: RollupInfo) =>
+            try {
+              analyzer.analyzeFullQuery(ru.soql)(prefixedDsContext)
+            } catch {
+              case ex: NoSuchColumn =>
+                log.info(s"drop rollup ${ru.name.underlying} because ${ex.getMessage}")
+                datasetMap.dropRollup(copyInfo, Some(ru.name))
+            }
           }
         }
       }
