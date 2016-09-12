@@ -6,16 +6,19 @@ import com.rojoma.json.v3.codec.JsonEncode
 import com.socrata.datacoordinator.util.CopyContextResult
 import com.socrata.soql.environment.ColumnName
 import org.joda.time.DateTime
-import com.rojoma.simplearm.{SimpleArm, Managed}
-
+import com.rojoma.simplearm.{Managed, SimpleArm}
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth.loader._
-import com.socrata.datacoordinator.util.collection.{ColumnIdSet, ColumnIdMap}
+import com.socrata.datacoordinator.util.collection.{ColumnIdMap, ColumnIdSet}
 import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.metadata.CopyPair
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
 import com.socrata.datacoordinator.id._
+import com.socrata.soql.SoQLAnalyzer
+import com.socrata.soql.collection.OrderedMap
+import com.socrata.soql.exceptions.NoSuchColumn
+
 import scala.concurrent.duration.Duration
 
 trait LowLevelDatabaseReader[CT, CV] {
@@ -200,8 +203,11 @@ trait DatasetMutator[CT, CV] {
 }
 
 object DatasetMutator {
-  private class Impl[CT, CV](val databaseMutator: LowLevelDatabaseMutator[CT, CV], lockTimeout: Duration) extends DatasetMutator[CT, CV] {
+  private class Impl[CT, CV](val databaseMutator: LowLevelDatabaseMutator[CT, CV], lockTimeout: Duration, soqlAnalyzer: => SoQLAnalyzer[CT]) extends DatasetMutator[CT, CV] {
     type TrueMutationContext = S
+
+    private val log = org.slf4j.LoggerFactory.getLogger(classOf[Impl[_, _]])
+
     class S(var copyCtx: MutableDatasetCopyContext[CT], llCtx: databaseMutator.MutationContext,
             logger: Logger[CT, CV], val schemaLoader: SchemaLoader[CT]) extends MutationContext {
       def copyInfo: CopyInfo = copyCtx.copyInfo
@@ -372,7 +378,31 @@ object DatasetMutator {
             }
           }
           copyCtx = new DatasetCopyContext(newCi, datasetMap.schema(newCi)).thaw()
+          dropInvalidRollups(newCi)
           copyInfo
+        }
+      }
+
+      private def dropInvalidRollups(copyInfo: CopyInfo): Unit = {
+        val prefixedSchema: Seq[(ColumnName, CT)] =
+          datasetMap.schema(copyInfo).values.map { colInfo =>
+            (new ColumnName("_" + colInfo.userColumnId.underlying), colInfo.typ)
+          }(collection.breakOut)
+        val prefixedDsContext = new com.socrata.soql.environment.DatasetContext[CT] {
+            val schema: OrderedMap[ColumnName, CT] = OrderedMap(prefixedSchema: _*)
+        }
+        val rollups = datasetMap.rollups(copyInfo)
+        if (rollups.nonEmpty) {
+          val analyzer = soqlAnalyzer
+          rollups.foreach { (ru: RollupInfo) =>
+            try {
+              analyzer.analyzeFullQuery(ru.soql)(prefixedDsContext)
+            } catch {
+              case ex: NoSuchColumn =>
+                log.info(s"drop rollup ${ru.name.underlying} because ${ex.getMessage}")
+                datasetMap.dropRollup(copyInfo, Some(ru.name))
+            }
+          }
         }
       }
 
@@ -532,6 +562,6 @@ object DatasetMutator {
     }
   }
 
-  def apply[CT, CV](lowLevelMutator: LowLevelDatabaseMutator[CT, CV], lockTimeout: Duration): DatasetMutator[CT, CV] =
-    new Impl(lowLevelMutator, lockTimeout)
+  def apply[CT, CV](lowLevelMutator: LowLevelDatabaseMutator[CT, CV], lockTimeout: Duration, soqlAnalyzer: => SoQLAnalyzer[CT]): DatasetMutator[CT, CV] =
+    new Impl(lowLevelMutator, lockTimeout, soqlAnalyzer)
 }

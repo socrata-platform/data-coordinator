@@ -1,27 +1,31 @@
 package com.socrata.datacoordinator.common
 
-import com.rojoma.simplearm.{SimpleArm, Managed}
-import com.socrata.datacoordinator.common.soql.{SoQLRowLogCodec, SoQLRep, SoQLTypeContext}
+import com.rojoma.simplearm.{Managed, SimpleArm}
+import com.socrata.datacoordinator.common.soql.{SoQLRep, SoQLRowLogCodec, SoQLTypeContext}
 import com.socrata.datacoordinator.id._
-import com.socrata.datacoordinator.truth.json.{JsonColumnWriteRep, JsonColumnRep, JsonColumnReadRep}
+import com.socrata.datacoordinator.truth.json.{JsonColumnReadRep, JsonColumnRep, JsonColumnWriteRep}
 import com.socrata.datacoordinator.truth.loader.RowPreparer
-import com.socrata.datacoordinator.truth.metadata.{DatasetCopyContext, DatasetInfo, AbstractColumnInfoLike, ColumnInfo}
-import com.socrata.datacoordinator.truth.universe.sql.{PostgresUniverse, PostgresCommonSupport}
-import com.socrata.datacoordinator.truth.universe.{SchemaFinderProvider, CacheProvider}
-import com.socrata.datacoordinator.util.collection.{MutableColumnIdSet, UserColumnIdMap, ColumnIdSet, ColumnIdMap}
-import com.socrata.datacoordinator.util.{NullCache, Cache, TransferrableContextTimingReport}
-import com.socrata.datacoordinator.{Row, MutableRow}
+import com.socrata.datacoordinator.truth.metadata.{AbstractColumnInfoLike, ColumnInfo, DatasetCopyContext, DatasetInfo}
+import com.socrata.datacoordinator.truth.universe.sql.{PostgresCommonSupport, PostgresUniverse}
+import com.socrata.datacoordinator.truth.universe.{CacheProvider, SchemaFinderProvider}
+import com.socrata.datacoordinator.util.collection.{ColumnIdMap, ColumnIdSet, MutableColumnIdSet, UserColumnIdMap}
+import com.socrata.datacoordinator.util.{Cache, NullCache, TransferrableContextTimingReport}
+import com.socrata.datacoordinator.{MutableRow, Row}
 import com.socrata.soql.brita.{AsciiIdentifierFilter, IdentifierFilter}
 import com.socrata.soql.environment.{ColumnName, TypeName}
 import com.socrata.soql.types._
-import com.socrata.soql.types.obfuscation.{Quadifier, CryptProvider}
+import com.socrata.soql.types.obfuscation.{CryptProvider, Quadifier}
 import java.io.{File, OutputStream, Reader}
 import java.security.SecureRandom
 import java.sql.Connection
 import java.util.concurrent.ExecutorService
 import javax.sql.DataSource
+
+import com.socrata.soql.SoQLAnalyzer
+import com.socrata.soql.functions.{SoQLFunctionInfo, SoQLTypeInfo}
 import org.joda.time.DateTime
-import scala.concurrent.duration.{FiniteDuration, Duration}
+
+import scala.concurrent.duration.{Duration, FiniteDuration}
 
 object SoQLSystemColumns { sc =>
   val id = new UserColumnId(":id")
@@ -135,7 +139,7 @@ class SoQLCommon(dataSource: DataSource,
     val repFor = sqlRepFor
 
     val tmpDir = common.tmpDir
-    
+
     //val tableCleanupDelay = common.tableCleanupDelay
     val logTableCleanupDeleteOlderThan = common.logTableCleanupDeleteOlderThan
     val logTableCleanupDeleteEvery = common.logTableCleanupDeleteEvery
@@ -214,6 +218,8 @@ class SoQLCommon(dataSource: DataSource,
     val tablespace: (String) => Option[String] = common.tableSpace
     val copyInProvider: (Connection, String, OutputStream => Unit) => Long = common.copyInProvider
     val timingReport = common.timingReport
+
+    def soqlAnalyzer: SoQLAnalyzer[SoQLType] = new SoQLAnalyzer(SoQLTypeInfo, SoQLFunctionInfo)
   }
 
   object Mutator extends MutatorCommon[CT, CV] {

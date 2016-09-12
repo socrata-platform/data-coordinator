@@ -1,14 +1,14 @@
 package com.socrata.datacoordinator.truth.universe
 
 import com.rojoma.simplearm.Managed
-
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth._
 import com.socrata.datacoordinator.util._
-import com.socrata.datacoordinator.secondary.{SecondaryStoresConfig, PlaybackToSecondary, SecondaryManifest}
+import com.socrata.datacoordinator.secondary.{PlaybackToSecondary, SecondaryManifest, SecondaryStoresConfig}
 import org.joda.time.DateTime
 import com.socrata.datacoordinator.truth.metadata.{DatasetInfo, SchemaFinder}
+import com.socrata.soql.{SoQLAnalysis, SoQLAnalyzer}
 
 // Not sure I'll need all of these!  Certainly not all of them are implemented.
 // The idea behind these traits is that they encapsulate "things which need a Connection".
@@ -129,4 +129,8 @@ trait LogTableCleanupProvider {
 
 trait SchemaFinderProvider { this: TypeUniverse =>
   def schemaFinder: SchemaFinder[CT]
+}
+
+trait SoQLAnalyzerProvider { this: TypeUniverse =>
+  def soqlAnalyzer: SoQLAnalyzer[CT]
 }
