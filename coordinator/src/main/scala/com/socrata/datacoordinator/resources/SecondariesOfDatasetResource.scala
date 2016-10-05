@@ -8,9 +8,14 @@ import com.socrata.http.server.responses._
 import com.socrata.http.server.implicits._
 
 @JsonKeyStrategy(Strategy.Underscore)
-case class SecondariesOfDatasetResult(truthVersion: Long,
+case class SecondariesOfDatasetResult(truthVersion: Long, // TODO: remove this field once soda-fountain no-longer uses it
+                                      latestVersion: Long,
+                                      publishedVersion: Option[Long],
+                                      unpublishedVersion: Option[Long],
                                       secondaries: Map[String, Long],
-                                      feedbackSecondaries: Set[String])
+                                      feedbackSecondaries: Set[String],
+                                      groups: Map[String, Set[String]]
+                                      )
 
 object SecondariesOfDatasetResult {
 

@@ -55,4 +55,23 @@ class SqlSecondaryStoresConfig(conn: Connection, timingReport: TimingReport) ext
       t("update-next-runtime", "store-id" -> storeId)(stmt.execute())
     }
   }
+
+  def group(storeId: String): Option[String] = {
+    val sql = """
+      SELECT group_name
+        FROM secondary_stores_config
+       WHERE store_id = ?""".stripMargin
+
+    for {
+      stmt <- managed(conn.prepareStatement(sql))
+      _ <- unmanaged(stmt.setString(1, storeId))
+      rs <- managed(stmt.executeQuery())
+    } yield {
+      if(rs.next()) {
+        Option(rs.getString("group_name"))
+      } else {
+        None
+      }
+    }
+  }
 }

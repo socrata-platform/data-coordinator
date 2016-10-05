@@ -24,6 +24,7 @@
     <include file="com.socrata.datacoordinator.truth.schema/20160420-add-copy-map-table-modifiers.xml"/>
     <include file="com.socrata.datacoordinator.truth.schema/20160420-add-pending-drop-column.xml"/>
     <include file="com.socrata.datacoordinator.truth.schema/20160422-drop-latest-secondary-lifecycle-stage-column.xml"/>
+    <include file="com.socrata.datacoordinator.truth.schema/20161006-add-column-group-name.xml"/>
 
     <!-- run-on-change migrations: recreation of triggers typically comes after other changes that they may depend on -->
     <include file="com.socrata.datacoordinator.truth.schema/triggers/update-dataset-log-trigger.xml"/>

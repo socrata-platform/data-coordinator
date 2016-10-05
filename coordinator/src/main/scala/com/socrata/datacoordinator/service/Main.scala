@@ -103,10 +103,32 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
       val datasetMapReader = u.datasetMapReader
       datasetMapReader.datasetInfo(datasetId).map { datasetInfo =>
         val secondaryManifest = u.secondaryManifest
-        val truthVersion = datasetMapReader.latest(datasetInfo).dataVersion
+        val secondaryStoresConfig = u.secondaryStoresConfig
+        val latestVersion = datasetMapReader.latest(datasetInfo).dataVersion
+
+        val copies = datasetMapReader.allCopies(datasetInfo)
+        val publishedVersion = copies.find { _.lifecycleStage == LifecycleStage.Published }.map { _.dataVersion }
+        val unpublishedVersion = copies.find { _.lifecycleStage == LifecycleStage.Unpublished }.map { _.dataVersion }
+
         val secondaries = secondaryManifest.stores(datasetId)
         val feedbackSecondaries = secondaryManifest.feedbackSecondaries(datasetId)
-        SecondariesOfDatasetResult(truthVersion, secondaries, feedbackSecondaries)
+
+        val groups = scala.collection.mutable.HashMap[String, Set[String]]()
+        secondaries.keys.foreach { storeId =>
+          secondaryStoresConfig.group(storeId).foreach { group =>
+            groups += ((group, groups.getOrElse(group, Set.empty) ++ Set(storeId)))
+          }
+        }
+
+        SecondariesOfDatasetResult(
+          latestVersion,
+          latestVersion,
+          publishedVersion,
+          unpublishedVersion,
+          secondaries,
+          feedbackSecondaries,
+          groups.toMap
+        )
       }
     }
   }
