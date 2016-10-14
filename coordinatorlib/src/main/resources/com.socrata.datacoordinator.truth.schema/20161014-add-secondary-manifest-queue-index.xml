@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
+    <changeSet author="marcs" id="20161014-add-secondary-manifest-queue-index">
+        <preConditions onFail="MARK_RAN">
+            <sqlCheck expectedResult="0">
+                select count(*) from pg_indexes where tablename='secondary_manifest' and indexname='secondary_manifest_is_a_queue'
+            </sqlCheck>
+        </preConditions>
+        <sql>
+            CREATE INDEX secondary_manifest_is_a_queue ON secondary_manifest (
+                store_id, (broken_at IS NULL), next_retry, (latest_data_version > latest_secondary_data_version OR pending_drop = true), claimed_at, went_out_of_sync_at
+            ) WHERE
+                broken_at IS NULL
+                AND (latest_data_version > latest_secondary_data_version
+                OR pending_drop = true                                                        )
+        </sql>
+        <rollback>
+            DROP INDEX secondary_manifest_is_a_queue
+        </rollback>
+    </changeSet>
+</databaseChangeLog>
