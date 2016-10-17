@@ -3,6 +3,7 @@ package com.socrata.datacoordinator.secondary
 import java.util.UUID
 import java.util.concurrent.{CountDownLatch, Executors, TimeUnit}
 
+import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.secondary.config.SecondaryConfig
 
 import scala.concurrent.duration._
@@ -56,6 +57,8 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
         "secondary" -> secondary.storeId,
         "endingDataVersion" -> job.endingDataVersion
       ) {
+        SecondaryWatcherClaimManager.unblacklistFromUpdate(job.datasetId)
+
         log.info(">> Syncing {} into {}", job.datasetId, secondary.storeId)
         if(job.replayNum > 0) log.info("Replay #{} of {}", job.replayNum, maxReplays)
         if(job.retryNum > 0) log.info("Retry #{} of {}", job.retryNum, maxRetries)
@@ -98,6 +101,8 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
             case e: Exception =>
               log.error("Unexpected exception while releasing claim on dataset {} in secondary {}",
                         job.datasetId.asInstanceOf[AnyRef], secondary.storeId, e)
+
+              SecondaryWatcherClaimManager.blacklistFromUpdate(job.datasetId)
           }
         }
       }
@@ -175,6 +180,25 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
   }
 }
 
+object SecondaryWatcherClaimManager {
+  // blacklist of datasets to stop updating
+  private val blacklist =  scala.collection.mutable.Set.empty[Long]
+
+  def blacklistFromUpdate(datasetId: DatasetId): Unit = {
+    blacklist + datasetId.underlying
+  }
+
+  def unblacklistFromUpdate(datasetId: DatasetId): Unit = {
+    blacklist - datasetId.underlying
+  }
+
+  def blacklistSQL: String = blacklist.headOption match {
+    case Some(id) =>
+      s"AND dataset_system_id NOT IN ($id${blacklist.tail.foldLeft(" ,") { case (str, tid) => str + tid } })"
+    case None => ""
+  }
+}
+
 class SecondaryWatcherClaimManager(dsInfo: DSInfo, claimantId: UUID, claimTimeout: FiniteDuration) {
   val log = LoggerFactory.getLogger(classOf[SecondaryWatcherClaimManager])
   val updateInterval = claimTimeout / 2
@@ -209,8 +233,9 @@ class SecondaryWatcherClaimManager(dsInfo: DSInfo, claimantId: UUID, claimTimeou
       using(conn.prepareStatement(
         """UPDATE secondary_manifest
         |SET claimed_at = CURRENT_TIMESTAMP
-        |WHERE claimant_id = ?""".stripMargin)) { stmt =>
+        |WHERE claimant_id = ? ?""".stripMargin)) { stmt =>
         stmt.setObject(1, claimantId)
+        stmt.setObject(2, SecondaryWatcherClaimManager.blacklistSQL)
         stmt.executeUpdate()
       }
     }
