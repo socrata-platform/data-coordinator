@@ -241,7 +241,7 @@ class DataCoordinatorClient[CT,CV](httpClient: HttpClient,
           results.elems.zip(rows).foreach { case (result, row) =>
             JsonDecode.fromJValue[Response](result) match {
               case Right(Upsert("update", _, _)) => // yay!
-              case Right(NonfatalError("error", "insert_in_update_only", Some(id))) =>
+              case Right(NonfatalError("error", nonfatalError, Some(id))) if nonfatalError == "insert_in_update_only" ||  nonfatalError == "no_such_row_to_update" =>
                 val JObject(fields) = JsonDecode.fromJValue[JObject](row).right.get // I just encoded this from a JObject
                 val rowId = JsonDecode.fromJValue[JString](fields(cookie.primaryKey.underlying)).right.get.string
                 if (rowId != id) return Some(PrimaryKeyColumnHasChanged) // else the row has been deleted
