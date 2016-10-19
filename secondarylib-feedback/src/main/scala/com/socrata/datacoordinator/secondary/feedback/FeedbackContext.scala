@@ -126,7 +126,7 @@ class FeedbackContext[CT,CV](user: String,
   // commands for mutation scripts
   private val commands: Seq[JValue] =
     j"""[ { "c" : "normal", "user" : $user }
-        , { "c" : "row data", "update_only" : true, "nonfatal_row_errors" : [ "insert_in_update_only" ] }
+        , { "c" : "row data", "update_only" : true, "nonfatal_row_errors" : [ "insert_in_update_only", "no_such_row_to_update" ] }
         ]""".toSeq
 
   private def writeMutationScript(rowUpdates: Iterator[JValue]): Option[JArray] = {
