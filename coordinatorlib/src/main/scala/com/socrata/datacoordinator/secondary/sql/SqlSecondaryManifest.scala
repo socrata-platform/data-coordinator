@@ -210,12 +210,11 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
   }
 
   def releaseClaimedDataset(job: SecondaryRecord): Unit = {
-    // set savepoint
     val savepoint = conn.setSavepoint()
 
     // retrying with rollback to savepoint
-    def retrying(backoff: Int = 5): Unit = {
-      if (backoff > 300000) { // > 5 minutes
+    def retrying(backoffMillis: Int = 5): Unit = {
+      if (backoffMillis > 300000) { // > 5 minutes
         log.error("Ran out of retries; failed to release claim on dataset {} in secondary {}!",
           job.datasetId, job.storeId)
         throw new Exception("Ran out of retries; Failed to release claim on dataset!")
@@ -229,8 +228,8 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
           log.warn("Unexpected sql exception while releasing claim on dataset {} in secondary {}",
             job.datasetId.asInstanceOf[AnyRef], job.storeId, e)
           conn.rollback(savepoint)
-          Thread.sleep(backoff)
-          retrying(2 * backoff)
+          Thread.sleep(backoffMillis)
+          retrying(2 * backoffMillis)
       } finally {
         try {
           conn.releaseSavepoint(savepoint)
