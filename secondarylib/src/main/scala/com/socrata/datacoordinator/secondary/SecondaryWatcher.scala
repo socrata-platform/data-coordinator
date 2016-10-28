@@ -220,7 +220,7 @@ class SecondaryWatcherClaimManager(dsInfo: DSInfo, claimantId: UUID, claimTimeou
 
   // A claim on a dataset on the secondary manifest expires after claimTimeout.
   //
-  // To maintain our claims on a dataset we will update the claimed_at timestamp every
+  // To maintain our claim on a dataset we will update the claimed_at timestamp every
   // updateInterval = claimTimeout / 4 < claimTimeout, therefore as we update our claims on a shorter interval
   // than that they timeout, as long as our instance is running we will not lose our claims.
   //
@@ -269,11 +269,11 @@ class SecondaryWatcherClaimManager(dsInfo: DSInfo, claimantId: UUID, claimTimeou
           log.warn("Failed to update claimed_at time before timing-out.")
         }
       }
-      val failureTimeout = System.currentTimeMillis() + updateInterval.toMillis
-      retryingUpdate(failureTimeout) // initial timeout is .5 second with a backoff of 2 * timeout
-      val remainingTime = math.max(failureTimeout - System.currentTimeMillis(), 0.toLong)
+      val failureTimeoutMillis = System.currentTimeMillis() + updateInterval.toMillis
+      retryingUpdate(failureTimeoutMillis) // initial timeout is .5 second with a backoff of 2 * timeout
+      val remainingTimeMillis = math.max(failureTimeoutMillis - System.currentTimeMillis(), 0.toLong)
 
-      done = awaitEither(finished, remainingTime) // await for the rest of the updateInterval
+      done = awaitEither(finished, remainingTimeMillis) // await for the rest of the updateInterval
     }
   }
 
