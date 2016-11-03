@@ -5,6 +5,7 @@ import java.util.concurrent.ExecutorService
 import java.sql.Connection
 import java.io.{File, OutputStream, Reader}
 
+import com.socrata.datacoordinator.secondary.messaging.Producer
 import org.joda.time.DateTime
 import com.rojoma.simplearm.SimpleArm
 import com.rojoma.simplearm.util._
@@ -12,7 +13,7 @@ import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth.sql.{PostgresDatabaseMutator, PostgresDatabaseReader, RepBasedSqlDatasetContext, SqlColumnRep}
 import com.socrata.datacoordinator.truth._
 import com.socrata.datacoordinator.truth.metadata.sql._
-import com.socrata.datacoordinator.secondary.{PlaybackToSecondary, SecondaryManifest}
+import com.socrata.datacoordinator.secondary.{SecondaryReplicationMessages, PlaybackToSecondary, SecondaryManifest}
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.loader.sql._
 import com.socrata.datacoordinator.secondary.sql.{SqlSecondaryManifest, SqlSecondaryStoresConfig}
@@ -84,6 +85,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
     with DatasetMapWriterProvider
     with SecondaryManifestProvider
     with PlaybackToSecondaryProvider
+    with SecondaryReplicationMessagesProvider
     with DeloggerProvider
     with LoggerProvider
     with SecondaryStoresConfigProvider
@@ -130,6 +132,9 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
 
   lazy val playbackToSecondary: PlaybackToSecondary[CT, CV] =
     new PlaybackToSecondary(this, repFor, typeContext.typeNamespace.typeForUserType, datasetIdFormatter, timingReport)
+
+  def secondaryReplicationMessages(producer: Producer): SecondaryReplicationMessages[CT, CV] =
+    new SecondaryReplicationMessages(this, producer)
 
   def logger(datasetInfo: DatasetInfo, user: String): Logger[CT, CV] = {
     val logName = datasetInfo.logTableName

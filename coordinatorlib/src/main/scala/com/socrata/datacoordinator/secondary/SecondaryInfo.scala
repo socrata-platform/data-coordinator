@@ -8,4 +8,5 @@ trait SecondaryStoresConfig {
   def lookup(storeId: String): Option[SecondaryConfigInfo]
   def create(secondaryInfo: SecondaryConfigInfo): SecondaryConfigInfo
   def updateNextRunTime(storeId: String, newNextRunTime: DateTime): Unit
+  def group(storeId: String): Option[String]
 }

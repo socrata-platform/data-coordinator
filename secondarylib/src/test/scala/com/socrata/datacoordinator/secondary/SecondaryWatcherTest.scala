@@ -5,6 +5,7 @@ import java.io.OutputStream
 import java.sql.Connection
 import java.util.concurrent.{Executors, TimeUnit}
 import java.util.UUID
+import com.socrata.datacoordinator.secondary.messaging.NoOpProducer
 import org.h2.jdbcx.JdbcDataSource
 import org.scalamock.scalatest.MockFactory
 import org.scalatest.{MustMatchers, FunSuite}
@@ -51,9 +52,9 @@ class SecondaryWatcherTest extends FunSuite with MustMatchers with MockFactory {
     val testManifest = mock[SecondaryManifest]
 
     val w = new SecondaryWatcher(common.universe, watcherId, claimTimeout,
-                                 10.seconds, 60.seconds, 10.minutes, 2, 10, common.timingReport) {
+                                 10.seconds, 60.seconds, 10.minutes, 2, 10, common.timingReport, NoOpProducer) {
       override protected def manifest(u: Universe[common.CT, common.CV] with
-                                         SecondaryManifestProvider with PlaybackToSecondaryProvider):
+                                         SecondaryManifestProvider with PlaybackToSecondaryProvider with SecondaryStoresConfigProvider):
         SecondaryManifest = testManifest
     }
 
@@ -82,9 +83,9 @@ class SecondaryWatcherTest extends FunSuite with MustMatchers with MockFactory {
     val testManifest = mock[SecondaryManifest]
 
     val w = new SecondaryWatcher(common.universe, watcherId, claimTimeout,
-                                 10.seconds, 60.seconds, 10.minutes, 2, 10, common.timingReport) {
+                                 10.seconds, 60.seconds, 10.minutes, 2, 10, common.timingReport, NoOpProducer) {
       override protected def manifest(u: Universe[common.CT, common.CV] with
-                                         SecondaryManifestProvider with PlaybackToSecondaryProvider):
+                                         SecondaryManifestProvider with PlaybackToSecondaryProvider with SecondaryStoresConfigProvider):
         SecondaryManifest = testManifest
     }
 

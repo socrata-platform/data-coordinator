@@ -1,11 +1,12 @@
 package com.socrata.datacoordinator.truth.universe
 
 import com.rojoma.simplearm.Managed
+import com.socrata.datacoordinator.secondary.messaging.Producer
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth._
 import com.socrata.datacoordinator.util._
-import com.socrata.datacoordinator.secondary.{PlaybackToSecondary, SecondaryManifest, SecondaryStoresConfig}
+import com.socrata.datacoordinator.secondary.{SecondaryReplicationMessages, PlaybackToSecondary, SecondaryManifest, SecondaryStoresConfig}
 import org.joda.time.DateTime
 import com.socrata.datacoordinator.truth.metadata.{DatasetInfo, SchemaFinder}
 import com.socrata.soql.{SoQLAnalysis, SoQLAnalyzer}
@@ -109,6 +110,10 @@ trait PlaybackToSecondaryProvider { this: TypeUniverse =>
 
 trait SecondaryStoresConfigProvider {
   val secondaryStoresConfig: SecondaryStoresConfig
+}
+
+trait SecondaryReplicationMessagesProvider { this: TypeUniverse =>
+  def secondaryReplicationMessages(producer: Producer): SecondaryReplicationMessages[CT, CV]
 }
 
 trait DatasetContentsCopierProvider { this: TypeUniverse =>

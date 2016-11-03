@@ -6,6 +6,9 @@ import java.util.concurrent.{CountDownLatch, Executors, TimeUnit, ScheduledExecu
 
 import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.secondary.config.SecondaryConfig
+import com.socrata.datacoordinator.secondary.messaging._
+import com.socrata.datacoordinator.secondary.messaging.eurybates.ProducerFromConfig
+import com.socrata.datacoordinator.truth.metadata.DatasetMapReader
 
 import scala.collection.mutable
 import scala.concurrent.duration._
@@ -35,7 +38,8 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
                                maxReplayWait: FiniteDuration,
                                maxRetries: Int,
                                maxReplays: Int,
-                               timingReport: TimingReport) {
+                               timingReport: TimingReport,
+                               producer: Producer) {
   val log = LoggerFactory.getLogger(classOf[SecondaryWatcher[_,_]])
   private val rand = new Random()
   // splay the sleep time +/- 5s to prevent watchers from getting in lock step
@@ -45,7 +49,11 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
   protected def manifest(u: Universe[CT, CV] with SecondaryManifestProvider with PlaybackToSecondaryProvider):
       SecondaryManifest = u.secondaryManifest
 
-  def run(u: Universe[CT, CV] with SecondaryManifestProvider with PlaybackToSecondaryProvider,
+  protected def replicationMessages(u: Universe[CT, CV] with SecondaryReplicationMessagesProvider): SecondaryReplicationMessages[CT, CV] = u.secondaryReplicationMessages(producer)
+
+  protected def datasetMapReader(u: Universe[CT, CV ] with DatasetMapReaderProvider): DatasetMapReader[CT] = u.datasetMapReader
+
+  def run(u: Universe[CT, CV] with Commitable  with SecondaryManifestProvider with PlaybackToSecondaryProvider with SecondaryReplicationMessagesProvider,
           secondary: NamedSecondary[CT, CV]): Boolean = {
     import u._
 
@@ -65,9 +73,12 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
         log.info(">> Syncing {} into {}", job.datasetId, secondary.storeId)
         if(job.replayNum > 0) log.info("Replay #{} of {}", job.replayNum, maxReplays)
         if(job.retryNum > 0) log.info("Retry #{} of {}", job.retryNum, maxRetries)
+        var noCatch = false
+        val startingMillis = System.currentTimeMillis()
         try {
           playbackToSecondary(secondary, job)
           log.info("<< Sync done for {} into {}", job.datasetId, secondary.storeId)
+          noCatch = true
         } catch {
           case bdse@BrokenDatasetSecondaryException(reason) =>
             log.error("Dataset version declared to be broken while updating dataset {} in secondary {}; marking it as broken",
@@ -103,6 +114,25 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
         } finally {
           try {
             manifest(u).releaseClaimedDataset(job)
+            u.commit()
+
+            log.info("finished version: {}", job.endingDataVersion)
+
+            // logic for sending messages to amq
+            if (noCatch) {
+              try {
+                replicationMessages(u).send(
+                  datasetId = job.datasetId,
+                  storeId = job.storeId,
+                  endingDataVersion = job.endingDataVersion,
+                  startingMillis = startingMillis,
+                  endingMillis = System.currentTimeMillis()
+                )
+              } catch {
+                case e: Exception =>
+                  log.error("Unexpected exception sending message! Continuing regardless...", e)
+              }
+            }
           } catch {
             case e: Exception =>
               log.error("Unexpected exception while releasing claim on dataset {} in secondary {}",
@@ -141,7 +171,7 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
    * without any workers running (ie. at startup).
    */
   def cleanOrphanedJobs(secondaryConfigInfo: SecondaryConfigInfo): Unit = {
-    // At lean up any orphaned jobs which may have been created by this watcher
+    // At startup clean up any orphaned jobs which may have been created by this watcher
     for { u <- universe } yield {
       u.secondaryManifest.cleanOrphanedClaimedDatasets(secondaryConfigInfo.storeId, claimantId)
     }
@@ -339,9 +369,11 @@ object SecondaryWatcherScheduledExecutor {
 }
 
 object SecondaryWatcher {
-  type UniverseType[CT, CV] = Universe[CT, CV] with SecondaryManifestProvider with
-    PlaybackToSecondaryProvider with
-    SecondaryStoresConfigProvider
+  type UniverseType[CT, CV] = Universe[CT, CV] with Commitable with
+                                                    PlaybackToSecondaryProvider with
+                                                    SecondaryManifestProvider with
+                                                    SecondaryReplicationMessagesProvider with
+                                                    SecondaryStoresConfigProvider
 }
 
 object SecondaryWatcherApp {
@@ -385,10 +417,13 @@ object SecondaryWatcherApp {
         //Duration.fromNanos(1L),
         NullCache
       )
+      val producerExecutor = Executors.newCachedThreadPool()
+      val producer = ProducerFromConfig(config.watcherId, producerExecutor, config.producerConfig)
+      producer.start()
 
       val w = new SecondaryWatcher(common.universe, config.watcherId, config.claimTimeout, config.backoffInterval,
                                    config.replayWait, config.maxReplayWait, config.maxRetries,
-                                   config.maxReplays.getOrElse(Integer.MAX_VALUE), common.timingReport)
+                                   config.maxReplays.getOrElse(Integer.MAX_VALUE), common.timingReport, producer)
       val cm = new SecondaryWatcherClaimManager(dsInfo, config.watcherId, config.claimTimeout)
 
       val SIGTERM = new Signal("TERM")
@@ -464,6 +499,10 @@ object SecondaryWatcherApp {
         log.info("Shutting down scheduled health checker...")
         SecondaryWatcherScheduledExecutor.shutdown()
       } finally {
+        log.info("Shutting down message producer...")
+        producer.shutdown()
+        producerExecutor.shutdown()
+
         log.info("Un-hooking SIGTERM and SIGINT")
         if(oldSIGTERM != null) Signal.handle(SIGTERM, oldSIGTERM)
         if(oldSIGTERM != null) Signal.handle(SIGINT, oldSIGINT)
