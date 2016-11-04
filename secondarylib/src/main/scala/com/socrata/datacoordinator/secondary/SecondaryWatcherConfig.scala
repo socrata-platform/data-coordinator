@@ -21,5 +21,5 @@ class SecondaryWatcherConfig(config: Config, root: String) {
   val maxReplayWait = config.getDuration(k("max-replay-wait"), MILLISECONDS).longValue.millis
   val replayWait = config.getDuration(k("replay-wait"), MILLISECONDS).longValue.millis
   val tmpdir = new java.io.File(config.getString(k("tmpdir"))).getAbsoluteFile
-  val producerConfig = new ProducerConfig(config, k("producer"))
+  val producerConfig = try { Some(new ProducerConfig(config, k("producer"))) } catch { case _: ConfigException.Missing => None }
 }

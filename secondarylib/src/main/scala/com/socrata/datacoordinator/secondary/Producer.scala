@@ -13,7 +13,25 @@ import com.socrata.zookeeper.ZooKeeperProvider
 import com.typesafe.config.Config
 import org.slf4j.LoggerFactory
 
-class Producer(sourceId: String, instance: String, zkp: ZooKeeperProvider, executor: Executor, properties: Properties) {
+trait Producer {
+  def start(): Unit
+  def setServiceNames(serviceNames: Set[ServiceName]): Unit
+  def shutdown(): Unit
+  def send(message: String => ProducerMessage): Unit
+}
+
+object NoOpProducer extends Producer {
+  def start(): Unit = {}
+  def setServiceNames(serviceNames: Set[ServiceName]): Unit = {}
+  def shutdown(): Unit = {}
+  def send(message: String => ProducerMessage): Unit = {}
+}
+
+class EurybatesProducer(sourceId: String,
+                        instance: String,
+                        zkp: ZooKeeperProvider,
+                        executor: Executor,
+                        properties: Properties) extends Producer {
   val log = LoggerFactory.getLogger(classOf[Producer])
 
   private val producer = eurybates.Producer(sourceId, properties)
@@ -60,11 +78,13 @@ class ZookeeperConfig(config: Config, root: String) extends ConfigClass(config, 
 }
 
 object ProducerFromConfig {
-  def apply(watcherId: UUID, instance: String, executor: Executor, config: ProducerConfig): Producer = {
-    val properties = new Properties()
-    properties.setProperty("eurybates.producers", config.eurybates.producers)
-    properties.setProperty("eurybates.activemq.connection_string", config.eurybates.activemqConnStr)
-    val zkp = new ZooKeeperProvider(config.zookeeper.connSpec, config.zookeeper.sessionTimeout, executor)
-    new Producer(watcherId.toString, instance, zkp, executor, properties)
+  def apply(watcherId: UUID, instance: String, executor: Executor, config: Option[ProducerConfig]): Producer = config match {
+    case Some(conf) =>
+      val properties = new Properties()
+      properties.setProperty("eurybates.producers", conf.eurybates.producers)
+      properties.setProperty("eurybates.activemq.connection_string", conf.eurybates.activemqConnStr)
+      val zkp = new ZooKeeperProvider(conf.zookeeper.connSpec, conf.zookeeper.sessionTimeout, executor)
+      new EurybatesProducer(watcherId.toString, instance, zkp, executor, properties)
+    case None => NoOpProducer
   }
 }
