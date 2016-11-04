@@ -29,17 +29,19 @@ object NoOpProducer extends Producer {
 
 class EurybatesProducer(sourceId: String,
                         instance: String,
+                        queues: Set[ServiceName],
                         zkp: ZooKeeperProvider,
                         executor: Executor,
                         properties: Properties) extends Producer {
   val log = LoggerFactory.getLogger(classOf[Producer])
 
   private val producer = eurybates.Producer(sourceId, properties)
-  private val serviceConfiguration = new ServiceConfiguration(zkp, executor, setServiceNames)
+  //private val serviceConfiguration = new ServiceConfiguration(zkp, executor, setServiceNames)
 
   def start(): Unit = {
     producer.start()
-    serviceConfiguration.start()
+    //serviceConfiguration.start()
+    setServiceNames(queues)
   }
 
   def setServiceNames(serviceNames: Set[ServiceName]): Unit = {
@@ -63,6 +65,7 @@ class EurybatesProducer(sourceId: String,
 
 class ProducerConfig(config: Config, root: String) extends ConfigClass(config, root) {
   def p(path: String) = root + "." + path
+  val queues = getStringList("queues").toSet
   val eurybates = new EurybatesConfig(config, p("eurybates"))
   val zookeeper = new ZookeeperConfig(config, p("zookeeper"))
 }
@@ -84,7 +87,7 @@ object ProducerFromConfig {
       properties.setProperty("eurybates.producers", conf.eurybates.producers)
       properties.setProperty("eurybates.activemq.connection_string", conf.eurybates.activemqConnStr)
       val zkp = new ZooKeeperProvider(conf.zookeeper.connSpec, conf.zookeeper.sessionTimeout, executor)
-      new EurybatesProducer(watcherId.toString, instance, zkp, executor, properties)
+      new EurybatesProducer(watcherId.toString, instance, conf.queues, zkp, executor, properties)
     case None => NoOpProducer
   }
 }
