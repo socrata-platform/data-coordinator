@@ -1,10 +1,13 @@
 package com.socrata.datacoordinator.secondary
 
+import java.lang.Runnable
 import java.util.UUID
-import java.util.concurrent.{CountDownLatch, Executors, TimeUnit}
+import java.util.concurrent.{CountDownLatch, Executors, TimeUnit, ScheduledExecutorService}
 
+import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.secondary.config.SecondaryConfig
 
+import scala.collection.mutable
 import scala.concurrent.duration._
 import scala.util.Random
 
@@ -56,6 +59,9 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
         "secondary" -> secondary.storeId,
         "endingDataVersion" -> job.endingDataVersion
       ) {
+        // This dataset _should_ not already be in the working set... if it is, this exits.
+        SecondaryWatcherClaimManager.workingOn(secondary.storeId, job.datasetId)
+
         log.info(">> Syncing {} into {}", job.datasetId, secondary.storeId)
         if(job.replayNum > 0) log.info("Replay #{} of {}", job.replayNum, maxReplays)
         if(job.retryNum > 0) log.info("Retry #{} of {}", job.retryNum, maxRetries)
@@ -98,6 +104,8 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
             case e: Exception =>
               log.error("Unexpected exception while releasing claim on dataset {} in secondary {}",
                         job.datasetId.asInstanceOf[AnyRef], secondary.storeId, e)
+          } finally {
+            SecondaryWatcherClaimManager.doneWorkingOn(secondary.storeId, job.datasetId)
           }
         }
       }
@@ -175,24 +183,91 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
   }
 }
 
+object SecondaryWatcherClaimManager {
+  private val log = LoggerFactory.getLogger(classOf[SecondaryWatcherClaimManager])
+
+  // in-memory list of datasets that are actively being worked on by _this_ instance
+  private val workingSet = new mutable.HashSet[(String, Long)] with mutable.SynchronizedSet[(String, Long)]
+
+  def workingOn(storeId: String, datasetId: DatasetId): Unit = {
+    if (workingSet.contains((storeId, datasetId.underlying))) {
+      log.error("We have already claimed dataset {} for store {} in our working set." +
+        s" An unexpected error has occurred; exiting.", datasetId, storeId)
+      sys.exit(1)
+    }
+
+    workingSet += ((storeId, datasetId.underlying))
+    log.debug(s"Added dataset {} for store $storeId to our working set which is now {}.", datasetId, workingSet)
+  }
+
+  def doneWorkingOn(storeId: String, datasetId: DatasetId): Unit = {
+    workingSet -= ((storeId, datasetId.underlying))
+    log.debug(s"Removed dataset {} for store $storeId from our working set which is now {}.", datasetId, workingSet)
+  }
+
+  def andInWorkingSetSQL: String = workingSet.headOption.map { _ =>
+    workingSet.map(_._2).mkString(" AND dataset_system_id IN (", ",", ")") }.getOrElse("")
+}
+
 class SecondaryWatcherClaimManager(dsInfo: DSInfo, claimantId: UUID, claimTimeout: FiniteDuration) {
   val log = LoggerFactory.getLogger(classOf[SecondaryWatcherClaimManager])
-  val updateInterval = claimTimeout / 2
+
+  // A claim on a dataset on the secondary manifest expires after claimTimeout.
+  //
+  // To maintain our claim on a dataset we will update the claimed_at timestamp every
+  // updateInterval = claimTimeout / 4 < claimTimeout, therefore as we update our claims on a shorter interval
+  // than that they timeout, as long as our instance is running we will not lose our claims.
+  //
+  // To ensure that we are actually updating the claimed_at timestamp on the interval we intend to, with another thread
+  // we audit when we last updated the claimed_at timestamp every checkUpdateInterval = claimedTimeout / 2.
+  // Since checkUpdateInterval < claimTimeout and > updateInterval, we will catch a failure to update our claims
+  // frequently enough before we lose our claims, and then shutdown and abort work on claims that will be lost.
+  //
+  // This way we can protect ourselves from having multiple threads / processes mistakenly claiming the same
+  // store-dataset pairs.
+  val updateInterval = claimTimeout / 4
+  val checkUpdateInterval = claimTimeout / 2
+
+  // We update this value after each time we successfully update the claimed_at time.
+  // A separate ScheduledExecutor thread checks that this var gets updated frequently enough.
+  var lastUpdate = Long.MinValue
+
+  // Note: the finished CountDownLatch that gets passed signals that all job processing is (should be) done
+
+  def scheduleHealthCheck(finished: CountDownLatch): Unit = {
+    SecondaryWatcherScheduledExecutor.schedule(
+      checkFailed = finished.getCount() > 0 && lastUpdate + checkUpdateInterval.toMillis < System.currentTimeMillis(),
+      name = "update claimed_at time",
+      interval = checkUpdateInterval
+    )
+  }
 
   def mainloop(finished: CountDownLatch): Unit = {
-    var lastUpdate = DateTime.now()
-
     var done = awaitEither(finished, updateInterval.toMillis)
     while(!done) {
-      try {
-        updateDatasetClaimedAtTime()
-        lastUpdate = DateTime.now()
-      } catch {
-        case e: Exception =>
-          log.error("Unexpected exception while updating claimedAt time for secondary sync jobs " +
-                    "claimed by watcherId " + claimantId.toString(), e)
+      def retryingUpdate(failureTimeoutMillis: Long, timeoutMillis: Long = 100): Unit = {
+        if (System.currentTimeMillis() < failureTimeoutMillis) {
+          try {
+            updateDatasetClaimedAtTime()
+            lastUpdate = System.currentTimeMillis()
+            log.debug("Updated claimed_at time successfully")
+          } catch {
+            case e: Exception =>
+              log.warn("Unexpected exception while updating claimedAt time for secondary sync jobs " +
+                "claimed by watcherId " + claimantId.toString() + ". Going to retry...", e)
+              // if we have been told to terminate we can just do that; otherwise retry
+              if (!awaitEither(finished, timeoutMillis)) retryingUpdate(failureTimeoutMillis, 2 * timeoutMillis)
+          }
+        } else {
+          // else: the scheduled executor will deal with this
+          log.warn("Failed to update claimed_at time before timing-out.")
+        }
       }
-      done = awaitEither(finished, updateInterval.toMillis)
+      val failureTimeoutMillis = System.currentTimeMillis() + updateInterval.toMillis
+      retryingUpdate(failureTimeoutMillis) // initial timeout is .5 second with a backoff of 2 * timeout
+      val remainingTimeMillis = math.max(failureTimeoutMillis - System.currentTimeMillis(), 0.toLong)
+
+      done = awaitEither(finished, remainingTimeMillis) // await for the rest of the updateInterval
     }
   }
 
@@ -207,12 +282,49 @@ class SecondaryWatcherClaimManager(dsInfo: DSInfo, claimantId: UUID, claimTimeou
     // concurrency.  We could potentially have a separate pool for the claim manager.
     using(dsInfo.dataSource.getConnection()) { conn =>
       using(conn.prepareStatement(
-        """UPDATE secondary_manifest
-        |SET claimed_at = CURRENT_TIMESTAMP
-        |WHERE claimant_id = ?""".stripMargin)) { stmt =>
+        s"""UPDATE secondary_manifest
+          |SET claimed_at = CURRENT_TIMESTAMP
+          |WHERE claimant_id = ?${SecondaryWatcherClaimManager.andInWorkingSetSQL}""".stripMargin)) { stmt =>
         stmt.setObject(1, claimantId)
         stmt.executeUpdate()
       }
+    }
+  }
+}
+
+object SecondaryWatcherScheduledExecutor {
+  val log = LoggerFactory.getLogger(classOf[SecondaryWatcher[_,_]])
+
+  private val scheduler: ScheduledExecutorService = Executors.newScheduledThreadPool(1)
+
+  def shutdown() = SecondaryWatcherScheduledExecutor.scheduler.shutdownNow()
+
+  def schedule(checkFailed: => Boolean, name: String, interval: FiniteDuration): Unit = {
+    val runnable = new Runnable() {
+      def run(): Unit = {
+        try {
+          Thread.currentThread().setName("SecondaryWatcher scheduled health checker")
+          log.debug("Running scheduled health check of: {}", name)
+          if (checkFailed) {
+            log.error("Failed scheduled health check of: {}; exiting.", name)
+            sys.exit(1)
+          }
+        } catch {
+          case e: Exception =>
+            log.error(s"Unexpected exception while attempting to run scheduled health check for: $name; exiting.", e)
+            sys.exit(1)
+        }
+      }
+    }
+
+    try {
+      // If any execution of the task encounters an exception, subsequent executions are suppressed.
+      // Hopefully the try-catch we have in run() will catch this and exit.
+      scheduler.scheduleAtFixedRate(runnable, interval.toMillis, interval.toMillis, TimeUnit.MILLISECONDS)
+    } catch {
+      case e: Exception =>
+        log.error(s"Unexpected exception while attempting to schedule health check for: $name; exiting.", e)
+        sys.exit(1)
     }
   }
 }
@@ -297,6 +409,7 @@ object SecondaryWatcherApp {
           setName("SecondaryWatcher claim time manager")
 
           override def run(): Unit = {
+            cm.scheduleHealthCheck(completeShutdown)
             cm.mainloop(completeShutdown)
           }
         }
@@ -338,6 +451,9 @@ object SecondaryWatcherApp {
         log.info("Shutting down claim time manager...")
         completeShutdown.countDown()
         claimTimeManagerThread.join()
+
+        log.info("Shutting down scheduled health checker...")
+        SecondaryWatcherScheduledExecutor.shutdown()
       } finally {
         log.info("Un-hooking SIGTERM and SIGINT")
         if(oldSIGTERM != null) Signal.handle(SIGTERM, oldSIGTERM)

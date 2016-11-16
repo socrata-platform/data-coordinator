@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator.secondary
 package sql
 
-import java.sql.{Types, Connection}
+import java.sql.{Types, Connection, SQLException}
 import java.util.UUID
 
 import com.rojoma.simplearm.util._
@@ -15,6 +15,8 @@ import com.socrata.datacoordinator.util.PostgresUniqueViolation
 import scala.concurrent.duration.FiniteDuration
 
 class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
+  private val log = org.slf4j.LoggerFactory.getLogger(classOf[SqlSecondaryManifest])
+
   def readLastDatasetInfo(storeId: String, datasetId: DatasetId): Option[(Long, Option[String])] =
     using(conn.prepareStatement("SELECT latest_secondary_data_version, cookie FROM secondary_manifest WHERE store_id = ? AND dataset_system_id = ?")) { stmt =>
       stmt.setString(1, storeId)
@@ -208,6 +210,49 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
   }
 
   def releaseClaimedDataset(job: SecondaryRecord): Unit = {
+    val savepoint = conn.setSavepoint()
+
+    // retrying with rollback to savepoint
+    def retrying(backoffMillis: Int = 5): Unit = {
+      if (backoffMillis > 300000) { // > 5 minutes
+        log.error("Ran out of retries; failed to release claim on dataset {} in secondary {}!",
+          job.datasetId, job.storeId)
+        throw new Exception("Ran out of retries; Failed to release claim on dataset!")
+      }
+
+      try {
+        log.trace("Attempting to release claim on dataset for job: {}.", job)
+        releaseClaimedDatasetUnsafe(job)
+      } catch {
+        case e: SQLException =>
+          log.warn("Unexpected sql exception while releasing claim on dataset {} in secondary {}",
+            job.datasetId.asInstanceOf[AnyRef], job.storeId, e)
+          conn.rollback(savepoint)
+          Thread.sleep(backoffMillis)
+          retrying(2 * backoffMillis)
+      } finally {
+        try {
+          conn.releaseSavepoint(savepoint)
+        } catch {
+          case e: SQLException =>
+            // Ignore; this means one of two things:
+            // * the server is in an unexpected "transaction aborted" state, so all we
+            //    can do is roll back (either to another, earlier savepoint or completely)
+            //    and either way this savepoint will be dropped implicitly
+            // * things have completely exploded and nothing can be done except
+            //    dropping the connection altogether.
+            // The latter could happen if this finally block is being run because
+            // this method is exiting normally, but in that case whatever we do next
+            // will fail so meh.  Just log it and continue.
+            log.warn("Unexpected exception releasing savepoint", e)
+        }
+      }
+    }
+
+    retrying()
+  }
+
+  private def releaseClaimedDatasetUnsafe(job: SecondaryRecord): Unit = {
     using(conn.prepareStatement(
       """UPDATE secondary_manifest
         |SET claimed_at = NULL
@@ -221,7 +266,6 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
       stmt.executeUpdate()
     }
   }
-
 
   def markSecondaryDatasetBroken(job: SecondaryRecord): Unit = {
     using(conn.prepareStatement(
