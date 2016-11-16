@@ -205,13 +205,8 @@ object SecondaryWatcherClaimManager {
     log.debug(s"Removed dataset {} for store $storeId from our working set which is now {}.", datasetId, workingSet)
   }
 
-  private def workingSetStr: Option[String] =
-    if (workingSet.nonEmpty) Some(workingSet.map(_._2).mkString(",")) else None // get the dataset ids
-
-  def andInWorkingSetSQL: String = workingSetStr match {
-    case Some(ids) => s" AND dataset_system_id IN ($ids)"
-    case None => ""
-  }
+  def andInWorkingSetSQL: String = workingSet.headOption.map { _ =>
+    workingSet.map(_._2).mkString(" AND dataset_system_id IN (", ",", ")") }.getOrElse("")
 }
 
 class SecondaryWatcherClaimManager(dsInfo: DSInfo, claimantId: UUID, claimTimeout: FiniteDuration) {
