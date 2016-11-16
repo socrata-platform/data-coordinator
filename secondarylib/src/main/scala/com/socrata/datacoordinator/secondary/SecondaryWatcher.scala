@@ -205,9 +205,8 @@ object SecondaryWatcherClaimManager {
     log.debug(s"Removed dataset {} for store $storeId from our working set which is now {}.", datasetId, workingSet)
   }
 
-  private def workingSetStr: Option[String] = workingSet.headOption.map { case (_, id: Long) =>
-    workingSet.tail.foldLeft(id.toString) { case (str, (_, tid)) => s"$str, $tid" }
-  }
+  private def workingSetStr: Option[String] =
+    if (workingSet.nonEmpty) Some(workingSet.map(_._2).mkString(",")) else None // get the dataset ids
 
   def andInWorkingSetSQL: String = workingSetStr match {
     case Some(ids) => s" AND dataset_system_id IN ($ids)"
@@ -242,7 +241,7 @@ class SecondaryWatcherClaimManager(dsInfo: DSInfo, claimantId: UUID, claimTimeou
 
   def scheduleHealthCheck(finished: CountDownLatch): Unit = {
     SecondaryWatcherScheduledExecutor.schedule(
-      shouldExit = finished.getCount() > 0 && lastUpdate + checkUpdateInterval.toMillis < System.currentTimeMillis(),
+      checkFailed = finished.getCount() > 0 && lastUpdate + checkUpdateInterval.toMillis < System.currentTimeMillis(),
       name = "update claimed_at time",
       interval = checkUpdateInterval
     )
@@ -305,13 +304,13 @@ object SecondaryWatcherScheduledExecutor {
 
   def shutdown() = SecondaryWatcherScheduledExecutor.scheduler.shutdownNow()
 
-  def schedule(shouldExit: => Boolean, name: String, interval: FiniteDuration): Unit = {
+  def schedule(checkFailed: => Boolean, name: String, interval: FiniteDuration): Unit = {
     val runnable = new Runnable() {
       def run(): Unit = {
         try {
           Thread.currentThread().setName("SecondaryWatcher scheduled health checker")
           log.debug("Running scheduled health check of: {}", name)
-          if (shouldExit) {
+          if (checkFailed) {
             log.error("Failed scheduled health check of: {}; exiting.", name)
             sys.exit(1)
           }
