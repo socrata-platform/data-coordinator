@@ -52,7 +52,7 @@ class SqlLogTableCleanup(conn: Connection, deleteOlderThan: FiniteDuration, dele
             deletableVersion.foreach {
               version =>
                 val rowsDeleted = stmt.executeUpdate( s"""
-                  |DELETE FROM ${logTableName}
+                  |DELETE FROM "${logTableName}"
                   |WHERE version <= ${version}
                   """.stripMargin)
                 log.info(s"Removed ${rowsDeleted} rows up to version ${version} from ${logTableName}")
