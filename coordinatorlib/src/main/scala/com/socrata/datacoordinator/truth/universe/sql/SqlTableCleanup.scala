@@ -16,7 +16,7 @@ class SqlTableCleanup(conn: Connection, daysDelay: Int = 1) extends TableCleanup
           val id = rs.getLong("id")
           val tableName = rs.getString("table_name")
           log.info("Physically dropping table " + tableName)
-          stmt.execute("DROP TABLE IF EXISTS " + tableName)
+          stmt.execute("DROP TABLE IF EXISTS \"" + tableName + "\"")
           using(conn.prepareStatement("DELETE FROM pending_table_drops WHERE id = ?")) { delStmt =>
             delStmt.setLong(1, id)
             delStmt.execute()
