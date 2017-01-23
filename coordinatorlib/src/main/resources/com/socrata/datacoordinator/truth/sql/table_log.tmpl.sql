@@ -5,19 +5,15 @@ CREATE TABLE IF NOT EXISTS %AUDIT_TABLE_NAME% (
   PRIMARY KEY (version)
 ) %TABLESPACE%;
 
-ALTER TABLE %AUDIT_TABLE_NAME% OWNER TO %USER%;
-
 DO $$
 BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_tables WHERE tablename = '%AUDIT_TABLE_NAME%' AND schemaname = 'public' AND tableowner = '%USER%') THEN
+    ALTER TABLE %AUDIT_TABLE_NAME% OWNER TO %USER%;
+  END IF;
 
-IF NOT EXISTS (
-  SELECT 1
-  FROM pg_indexes
-  WHERE schemaname = 'public' and indexname = '%AUDIT_TABLE_NAME%_at_time'
-) THEN
+  IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE schemaname = 'public' and indexname = '%AUDIT_TABLE_NAME%_at_time') THEN
     CREATE INDEX %AUDIT_TABLE_NAME%_at_time ON %AUDIT_TABLE_NAME% (at_time) %TABLESPACE%;
-END IF;
-
+  END IF;
 END$$;
 
 CREATE TABLE IF NOT EXISTS %TABLE_NAME% (
@@ -28,4 +24,9 @@ CREATE TABLE IF NOT EXISTS %TABLE_NAME% (
   PRIMARY KEY (version, subversion)
 ) %TABLESPACE%;
 
-ALTER TABLE %TABLE_NAME% OWNER TO %USER%;
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_tables WHERE tablename = '%TABLE_NAME%' AND schemaname = 'public' AND tableowner = '%USER%') THEN
+    ALTER TABLE %TABLE_NAME% OWNER TO %USER%;
+  END IF;
+END$$;
