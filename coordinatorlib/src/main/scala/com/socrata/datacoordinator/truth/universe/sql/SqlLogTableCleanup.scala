@@ -13,11 +13,12 @@ class SqlLogTableCleanup(conn: Connection, deleteOlderThan: FiniteDuration, dele
     using(conn.createStatement()) {
       stmt =>
         val datasetSystemId = using(stmt.executeQuery( s"""
-            |SELECT system_id
-            |FROM dataset_map
-            |WHERE latest_data_version <> log_last_cleaned_data_version AND log_last_cleaned < NOW() - ('${deleteEvery.toSeconds} second' :: INTERVAL)
-            |ORDER BY log_last_cleaned
-            |LIMIT 1 FOR UPDATE
+            |SELECT system_id FROM dataset_map WHERE system_id IN (
+            |  SELECT system_id
+            |    FROM dataset_map
+            |   WHERE latest_data_version <> log_last_cleaned_data_version AND log_last_cleaned < NOW() - ('${deleteEvery.toSeconds} second' :: INTERVAL)
+            |   ORDER BY log_last_cleaned
+            |   LIMIT 1) FOR UPDATE
             """.stripMargin)) {
           rs =>
             if(rs.next()) {
