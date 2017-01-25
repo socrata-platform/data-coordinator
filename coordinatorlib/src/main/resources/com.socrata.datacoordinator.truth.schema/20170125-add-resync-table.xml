@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
+
+    <changeSet author="chi" id="20170125-add-resync-table">
+        <preConditions onFail="MARK_RAN">
+            <not><tableExists tableName="resync" /></not>
+        </preConditions>
+        <createTable tableName="resync">
+            <column name="dataset_system_id" type="BIGINT"><constraints nullable="false"/></column>
+            <column name="group_name" type="TEXT"><constraints nullable="false" /></column>
+            <column name="store_id" type="TEXT"><constraints nullable="false" /></column>
+            <column name="created_at" type="TIMESTAMP WITH TIME ZONE" defaultValue="now()"><constraints nullable="false" /></column>
+        </createTable>
+        <addUniqueConstraint constraintName="dataset_system_id_group_name_unique"
+                             tableName="resync"
+                             columnNames="dataset_system_id, group_name" />
+    </changeSet>
+</databaseChangeLog>

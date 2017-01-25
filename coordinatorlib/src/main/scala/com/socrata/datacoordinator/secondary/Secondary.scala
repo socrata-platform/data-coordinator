@@ -53,6 +53,8 @@ trait Secondary[CT, CV] {
   */
 case class ResyncSecondaryException(reason: String = "No reason") extends Exception(reason)
 
+case class ResyncLaterSecondaryException(reason: String = "No reason") extends Exception(reason)
+
 /**
  * Thrown when a secondary decides that it cannot do an update _right now_ .
  * The process propagating data to the secondary should try again later.

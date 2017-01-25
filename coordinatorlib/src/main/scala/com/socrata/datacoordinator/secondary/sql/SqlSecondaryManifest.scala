@@ -1,17 +1,19 @@
 package com.socrata.datacoordinator.secondary
 package sql
 
-import java.sql.{Types, Connection, SQLException}
+import java.sql.{Connection, SQLException, Types}
 import java.util.UUID
 
 import com.rojoma.simplearm.util._
-
 import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.id.sql._
 import com.socrata.datacoordinator.secondary.Secondary.Cookie
+
 import scala.collection.immutable.VectorBuilder
 import com.socrata.datacoordinator.truth.metadata
+import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 import com.socrata.datacoordinator.util.PostgresUniqueViolation
+
 import scala.concurrent.duration.FiniteDuration
 
 class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
@@ -381,6 +383,32 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
         while(rs.next()) result += rs.getString(1)
         result.result()
       }
+    }
+  }
+
+  def lockResync(datasetId: DatasetId, storeId: String, groupName: String): Int = {
+    using(conn.prepareStatement("INSERT INTO resync(dataset_system_id, store_id, group_name) values(?, ?, ?)")) { stmt =>
+      val savepoint = conn.setSavepoint()
+      stmt.setQueryTimeout(3)
+      stmt.setLong(1, datasetId.underlying)
+      stmt.setString(2, storeId)
+      stmt.setString(3, groupName)
+      try {
+        stmt.executeUpdate()
+      } catch {
+        case ex: SQLException =>
+          conn.rollback(savepoint)
+          throw ex
+      }
+    }
+  }
+
+  def unlockResync(datasetId: DatasetId, storeId: String, groupName: String): Int = {
+    using(conn.prepareStatement("DELETE FROM resync WHERE dataset_system_id = ? AND store_id = ? AND group_name = ?")) { stmt =>
+      stmt.setLong(1, datasetId.underlying)
+      stmt.setString(2, storeId)
+      stmt.setString(3, groupName)
+      stmt.executeUpdate()
     }
   }
 }

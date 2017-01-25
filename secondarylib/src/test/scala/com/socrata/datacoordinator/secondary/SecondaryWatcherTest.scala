@@ -74,7 +74,7 @@ class SecondaryWatcherTest extends FunSuite with MustMatchers with MockFactory {
       (testManifest.markSecondaryDatasetBroken _).expects(job)
 
       // Run the watcher run() method
-      w.run(u, new NamedSecondary(testStoreId, testSecondary))
+      w.run(u, new NamedSecondary(testStoreId, testSecondary, testSecondary.getClass.getName))
     }
   }
 
@@ -103,7 +103,7 @@ class SecondaryWatcherTest extends FunSuite with MustMatchers with MockFactory {
       (testManifest.updateRetryInfo _).expects(testStoreId, datasetId, 1, 10)
 
       // Run the watcher run() method
-      w.run(u, new NamedSecondary(testStoreId, testSecondary))
+      w.run(u, new NamedSecondary(testStoreId, testSecondary, testSecondary.getClass.getName))
     }
   }
 }
