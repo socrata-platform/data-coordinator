@@ -18,4 +18,9 @@
                              tableName="resync"
                              columnNames="dataset_system_id, group_name" />
     </changeSet>
+
+    <changeSet author="chi" id="20170125-add-resync-table-2">
+        <dropDefaultValue columnName="created_at" tableName="resync"/>
+        <addDefaultValue columnName="created_at" tableName="resync" defaultValueComputed="CURRENT_TIMESTAMP"/>
+    </changeSet>
 </databaseChangeLog>
