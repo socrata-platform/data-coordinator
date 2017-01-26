@@ -274,9 +274,8 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
       try {
         // resync immediately calls commit before actual work is done.
         // That allows us to see resync in progress from the resync table.
-        if (sm.lockResync(datasetId, secondary.storeId, secondary.groupName) > 0) {
-          resync()
-        }
+        sm.lockResync(datasetId, secondary.storeId, secondary.groupName)
+        resync()
       } catch {
         case ex: SQLException =>
           throw ResyncLaterSecondaryException(ex.getMessage)

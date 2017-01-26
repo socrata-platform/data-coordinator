@@ -50,8 +50,8 @@ trait SecondaryManifest {
   def feedbackSecondaries(datasetId: DatasetId): Set[String] // store IDs
   def outOfDateFeedbackSecondaries(datasetId: DatasetId): Set[String] // store IDs
 
-  def lockResync(datasetId: DatasetId, storeId: String, groupName: String): Int
-  def unlockResync(datasetId: DatasetId, storeId: String, groupName: String): Int
+  def lockResync(datasetId: DatasetId, storeId: String, groupName: String): Unit
+  def unlockResync(datasetId: DatasetId, storeId: String, groupName: String): Unit
 }
 
 case class NamedSecondary[CT, CV](storeId: String, store: Secondary[CT, CV], groupName: String)

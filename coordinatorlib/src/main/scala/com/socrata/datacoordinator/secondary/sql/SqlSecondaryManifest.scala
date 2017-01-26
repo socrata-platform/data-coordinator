@@ -386,7 +386,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
     }
   }
 
-  def lockResync(datasetId: DatasetId, storeId: String, groupName: String): Int = {
+  def lockResync(datasetId: DatasetId, storeId: String, groupName: String): Unit = {
     using(conn.prepareStatement("INSERT INTO resync(dataset_system_id, store_id, group_name) values(?, ?, ?)")) { stmt =>
       val savepoint = conn.setSavepoint()
       stmt.setQueryTimeout(3)
@@ -403,7 +403,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
     }
   }
 
-  def unlockResync(datasetId: DatasetId, storeId: String, groupName: String): Int = {
+  def unlockResync(datasetId: DatasetId, storeId: String, groupName: String): Unit = {
     using(conn.prepareStatement("DELETE FROM resync WHERE dataset_system_id = ? AND store_id = ? AND group_name = ?")) { stmt =>
       stmt.setLong(1, datasetId.underlying)
       stmt.setString(2, storeId)
