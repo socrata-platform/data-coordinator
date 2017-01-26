@@ -285,11 +285,15 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
                              claimantId: UUID,
                              datasetId: DatasetId,
                              dataVersion: Long,
-                             cookie: Option[String]): Unit = {
+                             cookie: Option[String],
+                             rowsChanged: Long): Unit = {
     using(conn.prepareStatement(
       """UPDATE secondary_manifest
         |SET latest_secondary_data_version = ?
         |  ,cookie = ?
+        |  ,rows_changed = case when rows_changed < 0 then rows_changed
+        |                       when rows_changed > 4294967296 then rows_changed
+        |                       else rows_changed + ? end
         |  ,went_out_of_sync_at = CURRENT_TIMESTAMP
         |WHERE claimant_id = ?
         |  AND store_id = ?
@@ -299,9 +303,10 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
         case Some(c) => stmt.setString(2, c)
         case None => stmt.setNull(2, Types.VARCHAR)
       }
-      stmt.setObject(3, claimantId)
-      stmt.setString(4, storeId)
-      stmt.setDatasetId(5, datasetId)
+      stmt.setLong(3, rowsChanged)
+      stmt.setObject(4, claimantId)
+      stmt.setString(5, storeId)
+      stmt.setDatasetId(6, datasetId)
       stmt.executeUpdate()
     }
   }

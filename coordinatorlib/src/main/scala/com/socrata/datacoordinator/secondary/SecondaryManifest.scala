@@ -40,7 +40,8 @@ trait SecondaryManifest {
                              claimantId: UUID,
                              datasetId: DatasetId,
                              dataVersion: Long,
-                             newCookie: Option[String])
+                             newCookie: Option[String],
+                             rowsChanged: Long)
   def updateRetryInfo(storeId: String, datasetId: DatasetId, retryNum: Int, nextRetryDelaySecs: Int): Unit
 
   def updateReplayInfo(storeId: String, datasetId: DatasetId, cookie: Secondary.Cookie, replayNum: Int, nextReplayDelaySecs: Int): Unit

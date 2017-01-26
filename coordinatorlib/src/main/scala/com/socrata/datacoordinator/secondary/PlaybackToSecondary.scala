@@ -231,18 +231,21 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
 
     def playbackLog(datasetInfo: metadata.DatasetInfo, dataVersion: Long): Unit = {
       logger.trace("Playing back version {}", dataVersion.toString)
-      for {
-        delogger <- managed(u.delogger(datasetInfo))
-        it <- managed(delogger.delog(dataVersion))
-      } {
-        val secondaryDatasetInfo = makeSecondaryDatasetInfo(datasetInfo)
-        val instrumentedIt = new InstrumentedIterator("playback-log-throughput",
-                                                      datasetInfo.systemId.toString,
-                                                      it)
-        currentCookie = secondary.store.version(secondaryDatasetInfo, dataVersion,
-                                                currentCookie, instrumentedIt.flatMap(convertEvent))
-      }
-      updateSecondaryMap(dataVersion)
+      val rcIt =
+        for {
+          delogger <- managed(u.delogger(datasetInfo))
+          it <- managed(delogger.delog(dataVersion))
+        } yield {
+          val secondaryDatasetInfo = makeSecondaryDatasetInfo(datasetInfo)
+          val instrumentedIt = new InstrumentedIterator("playback-log-throughput",
+                                                        datasetInfo.systemId.toString,
+                                                        it)
+          val rowsCountingIt = new RowsCountingIterator(instrumentedIt)
+          currentCookie = secondary.store.version(secondaryDatasetInfo, dataVersion,
+                                                  currentCookie, rowsCountingIt.flatMap(convertEvent))
+          rowsCountingIt
+        }
+      updateSecondaryMap(dataVersion, rcIt.rowsChanged)
     }
 
     def drop(): Unit = {
@@ -336,7 +339,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
       retrying[Unit]({
         mostRecentlyUpdatedCopyInfo.foreach { case mostRecent =>
             timingReport("resync-update-secondary-map", "dataset" -> datasetId) {
-              updateSecondaryMap(mostRecent.dataVersion)
+              updateSecondaryMap(mostRecent.dataVersion, -1)
             }
           }
       }, ignoreSerializationFailure)
@@ -398,7 +401,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
       }
     }
 
-    def updateSecondaryMap(newLastDataVersion: Long): Unit = {
+    def updateSecondaryMap(newLastDataVersion: Long, rowsChanged: Long): Unit = {
       // We want to end the current transaction here. We don't want to be holding share locks on data-tables like log
       // tables while updating a row on the secondary_manifest. This is o avoid deadlocks when data-coordinator also has
       // locks out on the data-tables and is also updating the same row on the secondary_manifest.
@@ -410,7 +413,8 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
                                                  claimantId,
                                                  datasetId,
                                                  newLastDataVersion,
-                                                 currentCookie)
+                                                 currentCookie,
+                                                 rowsChanged)
       u.commit()
     }
 
