@@ -85,6 +85,9 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
                 job.datasetId.asInstanceOf[AnyRef], secondary.storeId, rlse)
               manifest(u).markSecondaryDatasetBroken(job)
             }
+          case ResyncLaterSecondaryException(reason) =>
+            log.info("resync later {} {} {} {}", secondary.groupName, secondary.storeId, job.datasetId.toString, reason)
+            manifest(u).updateRetryInfo(job.storeId, job.datasetId, job.retryNum, backoffInterval.toSeconds.toInt)
           case e: Exception =>
             if(job.retryNum < maxRetries) {
               val retryBackoff = backoffInterval.toSeconds * Math.pow(2, job.retryNum)
@@ -156,7 +159,8 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
         for {u <- universe} yield {
           import u._
 
-          while(run(u, new NamedSecondary(secondaryConfigInfo.storeId, secondary)) && finished.getCount != 0) {
+          while(run(u, new NamedSecondary(secondaryConfigInfo.storeId, secondary, secondaryConfigInfo.groupName)) &&
+                finished.getCount != 0) {
             // loop until we either have no more work or we are told to exit
           }
 

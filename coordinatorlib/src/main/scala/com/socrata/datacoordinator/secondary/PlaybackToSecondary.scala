@@ -170,10 +170,10 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
           } catch {
             case e: MissingVersion =>
               logger.info("Couldn't find version {} in log; resyncing", e.version.toString)
-              resync()
+              resyncSerially()
             case ResyncSecondaryException(reason) =>
               logger.info("Incremental update requested full resync: {}", reason)
-              resync()
+              resyncSerially()
           }
         case None =>
           drop()
@@ -263,6 +263,25 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
           filter(e)
       }
       retrying[T](actions, filter)
+    }
+
+    /**
+      * Serialize resync in the same store group
+      * because resync will cause reads to be unavailable (at least in pg)
+      */
+    def resyncSerially(): Unit = {
+      val sm = u.secondaryManifest
+      try {
+        // resync immediately calls commit before actual work is done.
+        // That allows us to see resync in progress from the resync table.
+        sm.lockResync(datasetId, secondary.storeId, secondary.groupName)
+        resync()
+      } catch {
+        case ex: SQLException =>
+          throw ResyncLaterSecondaryException(ex.getMessage)
+      } finally {
+        sm.unlockResync(datasetId, secondary.storeId, secondary.groupName)
+      }
     }
 
     def resync(): Unit = {

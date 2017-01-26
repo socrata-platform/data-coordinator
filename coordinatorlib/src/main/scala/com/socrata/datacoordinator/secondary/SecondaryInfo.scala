@@ -2,7 +2,7 @@ package com.socrata.datacoordinator.secondary
 
 import org.joda.time.DateTime
 
-case class SecondaryConfigInfo(storeId: String, nextRunTime: DateTime, runIntervalSeconds: Int)
+case class SecondaryConfigInfo(storeId: String, nextRunTime: DateTime, runIntervalSeconds: Int, groupName: String)
 
 trait SecondaryStoresConfig {
   def lookup(storeId: String): Option[SecondaryConfigInfo]
