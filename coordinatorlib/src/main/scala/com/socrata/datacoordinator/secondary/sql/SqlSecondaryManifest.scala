@@ -13,6 +13,7 @@ import scala.collection.immutable.VectorBuilder
 import com.socrata.datacoordinator.truth.metadata
 import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 import com.socrata.datacoordinator.util.PostgresUniqueViolation
+import org.postgresql.util.PSQLException
 
 import scala.concurrent.duration.FiniteDuration
 
@@ -396,9 +397,12 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
       try {
         stmt.executeUpdate()
       } catch {
+        case PostgresUniqueViolation(_*) =>
+          conn.rollback(savepoint)
+          throw ResyncLaterSecondaryException("wait for another resync")
         case ex: SQLException =>
           conn.rollback(savepoint)
-          throw ex
+          throw ResyncLaterSecondaryException(ex.getMessage)
       }
     }
   }
