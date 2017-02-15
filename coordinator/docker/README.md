@@ -32,3 +32,4 @@ See the Dockerfile for defaults.
 * `DATA_COORDINATOR_DB_NAME` - Data Coordinator DB database name
 * `DATA_COORDINATOR_DB_PORT` - Data Coordinator DB port number
 * `DATA_COORDINATOR_DB_USER` - Data Coordinator DB user name
+* `DATA_COORDINATOR_INSTANCE` - Data Coordinator instance name

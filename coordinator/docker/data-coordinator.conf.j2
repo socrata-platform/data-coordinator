@@ -4,7 +4,7 @@ com.socrata.coordinator.service {
   network.port = 6020
   liveness-check.port = 6021
 
-  instance = alpha
+  instance = "{{ DATA_COORDINATOR_INSTANCE }}"
 
   database {
     host = "{{ DATA_COORDINATOR_DB_HOST }}"
