@@ -3,8 +3,8 @@ package com.socrata.datacoordinator.service
 import com.rojoma.json.v3.ast.{JString, JValue}
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.common.soql.SoQLRep
-import com.socrata.datacoordinator.common.{SoQLCommon, DataSourceFromConfig}
-import com.socrata.datacoordinator.id.{UserColumnId, ColumnId, DatasetId}
+import com.socrata.datacoordinator.common.{DataSourceFromConfig, SoQLCommon}
+import com.socrata.datacoordinator.id.{ColumnId, DatasetId, UserColumnId}
 import com.socrata.datacoordinator.resources._
 import com.socrata.datacoordinator.secondary.DatasetAlreadyInSecondary
 import com.socrata.datacoordinator.secondary.config.SecondaryGroupConfig
@@ -23,10 +23,13 @@ import com.socrata.curator.{CuratorFromConfig, DiscoveryFromConfig}
 import com.socrata.soql.types.{SoQLType, SoQLValue}
 import com.socrata.thirdparty.typesafeconfig.Propertizer
 import com.typesafe.config.{Config, ConfigFactory}
-import java.util.concurrent.{CountDownLatch, TimeUnit, Executors}
-import org.apache.curator.x.discovery.{ServiceInstanceBuilder}
+import java.util.concurrent.{CountDownLatch, Executors, TimeUnit}
+
+import com.typesafe.scalalogging.slf4j.Logging
+import org.apache.curator.x.discovery.ServiceInstanceBuilder
 import org.apache.log4j.PropertyConfigurator
 import org.joda.time.DateTime
+
 import scala.util.Random
 
 class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
@@ -262,8 +265,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
       tmpDir = serviceConfig.reports.directory)
 }
 
-object Main {
-  lazy val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
+object Main extends DynamicPortMap with Logging {
 
   val configRoot = "com.socrata.coordinator.service"
 
@@ -445,7 +447,7 @@ object Main {
                 }
               } catch {
                 case e: Exception =>
-                  log.error("Unexpected error while dropping tables", e)
+                  logger.error("Unexpected error while dropping tables", e)
               }
             } while(!finished.await(30, TimeUnit.SECONDS))
           }
@@ -466,7 +468,7 @@ object Main {
                 }
               } catch {
                 case e: Exception =>
-                  log.error("Unexpected error while cleaning log tables", e)
+                  logger.error("Unexpected error while cleaning log tables", e)
               }
             } while(!finished.await(30, TimeUnit.SECONDS))
           }
@@ -487,13 +489,18 @@ object Main {
                      new CuratorBroker(discovery,
                                        address,
                                        serviceConfig.discovery.name + "." + serviceConfig.instance,
-                                       Some(auxData)))
+                                       Some(auxData)) {
+                       override def register(port: Int): Cookie = {
+                         super.register(hostPort(port))
+                       }
+                     }
+                    )
           }
         } finally {
           finished.countDown()
         }
 
-        log.info("Waiting for table dropper to terminate")
+        logger.info("Waiting for table dropper to terminate")
         tableDropper.join()
       } finally {
         executorService.shutdown()
@@ -516,7 +523,7 @@ object Main {
     val newCopiesRequired = Math.max(desiredCopies - currentDatasetSecondariesForGroup.size, 0)
     val secondariesInGroup = secondaryGroup.instances
 
-    log.info(s"Dataset ${datasetId} exists on ${currentDatasetSecondariesForGroup.size} secondaries in group, " +
+    logger.info(s"Dataset ${datasetId} exists on ${currentDatasetSecondariesForGroup.size} secondaries in group, " +
       s"want it on ${desiredCopies} so need to find ${newCopiesRequired} new secondaries")
 
     val newSecondaries = Random.shuffle((secondariesInGroup -- currentDatasetSecondariesForGroup).toList)
@@ -528,7 +535,7 @@ object Main {
       throw new Exception(s"Can't find ${desiredCopies} servers in secondary group ${secondaryGroupStr} to publish to")
     }
 
-    log.info(s"Dataset ${datasetId} should also be on ${newSecondaries}")
+    logger.info(s"Dataset ${datasetId} should also be on ${newSecondaries}")
 
     newSecondaries
   }
