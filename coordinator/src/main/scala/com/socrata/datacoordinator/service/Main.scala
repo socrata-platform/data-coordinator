@@ -25,7 +25,6 @@ import com.socrata.thirdparty.typesafeconfig.Propertizer
 import com.typesafe.config.{Config, ConfigFactory}
 import java.util.concurrent.{CountDownLatch, Executors, TimeUnit}
 
-import com.typesafe.scalalogging.slf4j.Logging
 import org.apache.curator.x.discovery.ServiceInstanceBuilder
 import org.apache.log4j.PropertyConfigurator
 import org.joda.time.DateTime
@@ -282,7 +281,7 @@ object Main extends DynamicPortMap {
 
   def main(args: Array[String]) {
     val serviceConfig = try {
-      new ServiceConfig(withDefaultAddress(ConfigFactory.load()), configRoot)
+      new ServiceConfig(withDefaultAddress(ConfigFactory.load()), configRoot, hostPort)
     } catch {
       case e: Exception =>
         Console.err.println(e)

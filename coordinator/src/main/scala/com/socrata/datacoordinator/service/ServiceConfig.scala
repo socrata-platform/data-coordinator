@@ -8,13 +8,15 @@ import com.typesafe.config.Config
 import java.util.concurrent.TimeUnit
 import scala.concurrent.duration.{MILLISECONDS, FiniteDuration, Duration}
 
-class ServiceConfig(val config: Config, root: String) {
+class ServiceConfig(val config: Config, root: String, hostPort: Int => Int) {
   private def k(field: String) = root + "." + field
   val secondary = new SecondaryConfig(config.getConfig(k("secondary")))
   val network = new NetworkConfig(config, k("network"))
   val curator = new CuratorConfig(config, k("curator"))
   val discovery = new DiscoveryConfig(config, k("service-advertisement"))
-  val livenessCheck = new LivenessCheckConfig(config, k("liveness-check"))
+  val livenessCheck = new LivenessCheckConfig(config, k("liveness-check")) {
+    override val port = optionally(getInt("port")).map(hostPort)
+  }
   val dataSource = new DataSourceConfig(config, k("database"))
   val logProperties = config.getConfig(k("log4j"))
   val commandReadLimit = config.getBytes(k("command-read-limit")).longValue
