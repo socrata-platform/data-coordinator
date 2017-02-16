@@ -3,8 +3,8 @@ package com.socrata.datacoordinator.service
 import com.rojoma.json.v3.ast.{JString, JValue}
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.common.soql.SoQLRep
-import com.socrata.datacoordinator.common.{SoQLCommon, DataSourceFromConfig}
-import com.socrata.datacoordinator.id.{UserColumnId, ColumnId, DatasetId}
+import com.socrata.datacoordinator.common.{DataSourceFromConfig, SoQLCommon}
+import com.socrata.datacoordinator.id.{ColumnId, DatasetId, UserColumnId}
 import com.socrata.datacoordinator.resources._
 import com.socrata.datacoordinator.secondary.DatasetAlreadyInSecondary
 import com.socrata.datacoordinator.secondary.config.SecondaryGroupConfig
@@ -23,10 +23,13 @@ import com.socrata.curator.{CuratorFromConfig, DiscoveryFromConfig}
 import com.socrata.soql.types.{SoQLType, SoQLValue}
 import com.socrata.thirdparty.typesafeconfig.Propertizer
 import com.typesafe.config.{Config, ConfigFactory}
-import java.util.concurrent.{CountDownLatch, TimeUnit, Executors}
-import org.apache.curator.x.discovery.{ServiceInstanceBuilder}
+import java.util.concurrent.{CountDownLatch, Executors, TimeUnit}
+
+import com.typesafe.scalalogging.slf4j.Logging
+import org.apache.curator.x.discovery.ServiceInstanceBuilder
 import org.apache.log4j.PropertyConfigurator
 import org.joda.time.DateTime
+
 import scala.util.Random
 
 class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
@@ -262,7 +265,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
       tmpDir = serviceConfig.reports.directory)
 }
 
-object Main {
+object Main extends DynamicPortMap {
   lazy val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
 
   val configRoot = "com.socrata.coordinator.service"
@@ -487,7 +490,12 @@ object Main {
                      new CuratorBroker(discovery,
                                        address,
                                        serviceConfig.discovery.name + "." + serviceConfig.instance,
-                                       Some(auxData)))
+                                       Some(auxData)) {
+                       override def register(port: Int): Cookie = {
+                         super.register(hostPort(port))
+                       }
+                     }
+                    )
           }
         } finally {
           finished.countDown()
