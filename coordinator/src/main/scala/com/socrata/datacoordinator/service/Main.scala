@@ -265,7 +265,8 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
       tmpDir = serviceConfig.reports.directory)
 }
 
-object Main extends DynamicPortMap with Logging {
+object Main extends DynamicPortMap {
+  lazy val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
 
   val configRoot = "com.socrata.coordinator.service"
 
@@ -447,7 +448,7 @@ object Main extends DynamicPortMap with Logging {
                 }
               } catch {
                 case e: Exception =>
-                  logger.error("Unexpected error while dropping tables", e)
+                  log.error("Unexpected error while dropping tables", e)
               }
             } while(!finished.await(30, TimeUnit.SECONDS))
           }
@@ -468,7 +469,7 @@ object Main extends DynamicPortMap with Logging {
                 }
               } catch {
                 case e: Exception =>
-                  logger.error("Unexpected error while cleaning log tables", e)
+                  log.error("Unexpected error while cleaning log tables", e)
               }
             } while(!finished.await(30, TimeUnit.SECONDS))
           }
@@ -500,7 +501,7 @@ object Main extends DynamicPortMap with Logging {
           finished.countDown()
         }
 
-        logger.info("Waiting for table dropper to terminate")
+        log.info("Waiting for table dropper to terminate")
         tableDropper.join()
       } finally {
         executorService.shutdown()
@@ -523,7 +524,7 @@ object Main extends DynamicPortMap with Logging {
     val newCopiesRequired = Math.max(desiredCopies - currentDatasetSecondariesForGroup.size, 0)
     val secondariesInGroup = secondaryGroup.instances
 
-    logger.info(s"Dataset ${datasetId} exists on ${currentDatasetSecondariesForGroup.size} secondaries in group, " +
+    log.info(s"Dataset ${datasetId} exists on ${currentDatasetSecondariesForGroup.size} secondaries in group, " +
       s"want it on ${desiredCopies} so need to find ${newCopiesRequired} new secondaries")
 
     val newSecondaries = Random.shuffle((secondariesInGroup -- currentDatasetSecondariesForGroup).toList)
@@ -535,7 +536,7 @@ object Main extends DynamicPortMap with Logging {
       throw new Exception(s"Can't find ${desiredCopies} servers in secondary group ${secondaryGroupStr} to publish to")
     }
 
-    logger.info(s"Dataset ${datasetId} should also be on ${newSecondaries}")
+    log.info(s"Dataset ${datasetId} should also be on ${newSecondaries}")
 
     newSecondaries
   }
