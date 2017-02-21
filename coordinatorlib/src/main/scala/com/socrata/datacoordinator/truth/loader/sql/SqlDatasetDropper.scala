@@ -49,8 +49,8 @@ class SqlDatasetDropper[CT](conn: Connection, writeLockTimeout: Duration, datase
          |  SELECT dataset_system_id, store_id FROM secondary_manifest
          |  WHERE dataset_system_id = ? ORDER BY store_id FOR UPDATE
          |)""".stripMargin)) { stmt =>
-      stmt.setObject(1, fakeVersion)
-      stmt.setObject(2, datasetId.underlying)
+      stmt.setLong(1, fakeVersion)
+      stmt.setLong(2, datasetId.underlying)
       stmt.executeUpdate()
     }
   }
