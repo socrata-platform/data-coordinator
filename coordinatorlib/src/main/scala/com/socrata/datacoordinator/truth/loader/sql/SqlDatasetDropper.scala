@@ -40,9 +40,18 @@ class SqlDatasetDropper[CT](conn: Connection, writeLockTimeout: Duration, datase
   }
 
   protected def updateSecondaryAndBackupInfo(datasetId: DatasetId, fakeVersion: Long) {
-    using(conn.createStatement()) { stmt =>
-      stmt.executeUpdate("UPDATE secondary_manifest SET latest_data_version = " + fakeVersion +
-        " WHERE dataset_system_id = " + datasetId.underlying)
+    // EN-12729 Note: Ordering by store_id to avoid deadlocks here should not be necessary,
+    // but we are going to do it just in case and for consistency.
+    using(conn.prepareStatement(
+      s"""UPDATE secondary_manifest
+         |SET latest_data_version = ?
+         |WHERE (dataset_system_id, store_id) IN (
+         |  SELECT dataset_system_id, store_id FROM secondary_manifest
+         |  WHERE dataset_system_id = ? ORDER BY store_id FOR UPDATE
+         |)""".stripMargin)) { stmt =>
+      stmt.setObject(1, fakeVersion)
+      stmt.setObject(2, datasetId.underlying)
+      stmt.executeUpdate()
     }
   }
 

@@ -287,9 +287,14 @@ class SecondaryWatcherClaimManager(dsInfo: DSInfo, claimantId: UUID, claimTimeou
     using(dsInfo.dataSource.getConnection()) { conn =>
       using(conn.prepareStatement(
         s"""UPDATE secondary_manifest
-          |SET claimed_at = CURRENT_TIMESTAMP
-          |WHERE claimant_id = ?${SecondaryWatcherClaimManager.andInWorkingSetSQL}""".stripMargin)) { stmt =>
+           |SET claimed_at = CURRENT_TIMESTAMP
+           |WHERE claimant_id = ? AND (dataset_system_id, store_id) IN (
+           |  SELECT dataset_system_id, store_id FROM secondary_manifest
+           |  WHERE claimant_id = ?${SecondaryWatcherClaimManager.andInWorkingSetSQL}
+           |  ORDER BY dataset_system_id, store_id FOR UPDATE
+           |)""".stripMargin)) { stmt =>
         stmt.setObject(1, claimantId)
+        stmt.setObject(2, claimantId)
         stmt.executeUpdate()
       }
     }

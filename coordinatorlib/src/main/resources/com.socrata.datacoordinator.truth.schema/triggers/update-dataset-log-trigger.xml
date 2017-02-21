@@ -17,12 +17,21 @@
               BEGIN
                 UPDATE secondary_manifest
                   SET went_out_of_sync_at = CURRENT_TIMESTAMP
-                  WHERE dataset_system_id = NEW.dataset_system_id AND latest_data_version = latest_secondary_data_version;
+                  WHERE (secondary_manifest.dataset_system_id, store_id) IN (
+                    SELECT dataset_system_id, store_id FROM secondary_manifest
+                    WHERE secondary_manifest.dataset_system_id = NEW.dataset_system_id
+                    ORDER BY store_id FOR UPDATE
+                  )
+                  AND latest_data_version = latest_secondary_data_version;
                 UPDATE secondary_manifest
                   SET latest_data_version = (
                     SELECT MAX(copy_map.data_version) FROM copy_map WHERE copy_map.dataset_system_id = NEW.dataset_system_id
                   )
-                  WHERE secondary_manifest.dataset_system_id = NEW.dataset_system_id;
+                  WHERE (secondary_manifest.dataset_system_id, store_id) IN (
+                    SELECT dataset_system_id, store_id FROM secondary_manifest
+                    WHERE secondary_manifest.dataset_system_id = NEW.dataset_system_id
+                    ORDER BY store_id FOR UPDATE
+                  );
 
                 -- and finally dataset_map
                 UPDATE dataset_map
