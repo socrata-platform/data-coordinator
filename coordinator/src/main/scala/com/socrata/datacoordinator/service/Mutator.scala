@@ -35,7 +35,7 @@ object Mutator {
   }
 
   case class NormalMutation(index: Long, datasetId: DatasetId, schemaHash: Option[String]) extends StreamType
-  case class CreateDatasetMutation(index: Long, localeName: String) extends StreamType
+  case class CreateDatasetMutation(index: Long, localeName: String, resourceName: Option[String]) extends StreamType
   case class CreateWorkingCopyMutation(index: Long,
                                        datasetId: DatasetId,
                                        copyData: Boolean,
@@ -278,7 +278,7 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
           val rawLocale = getWithStrictDefault("locale", "en_US")
           val locale = ULocale.createCanonical(rawLocale)
           if(locale.getName != "en_US") throw InvalidLocale(rawLocale)(index) // for now, we only allow en_US
-          CreateDatasetMutation(index, locale.getName)
+          CreateDatasetMutation(index, locale.getName, getOption[String]("resource"))
         case other =>
           throw InvalidCommandFieldValue(originalObject, "c", JString(other))(index)
       }
@@ -507,8 +507,8 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
             val ctx = ctxOpt.getOrElse { throw NoSuchDataset(datasetId)(idx) }
             doProcess(ctx)
           }
-        case CreateDatasetMutation(idx, localeName) =>
-          for(ctx <- u.datasetMutator.createDataset(user)(localeName)) yield {
+        case CreateDatasetMutation(idx, localeName, resourceName) =>
+          for(ctx <- u.datasetMutator.createDataset(user)(localeName, resourceName)) yield {
             val cis = ctx.addColumns(systemSchema.toSeq.map { case (col, colInfo) =>
               ctx.ColumnToAdd(col, colInfo.fieldName, colInfo.typ, physicalColumnBaseBase(col.underlying, systemColumn = true), colInfo.computationStrategy)
             })

@@ -183,7 +183,7 @@ trait DatasetMutator[CT, CV] {
 
   type TrueMutationContext <: MutationContext
 
-  def createDataset(as: String)(localeName: String): Managed[TrueMutationContext]
+  def createDataset(as: String)(localeName: String, resourceName: Option[String]): Managed[TrueMutationContext]
 
   def openDataset(as: String)(datasetId: DatasetId, check: DatasetCopyContext[CT] => Unit): Managed[Option[TrueMutationContext]]
 
@@ -484,11 +484,11 @@ object DatasetMutator {
         })
     }
 
-    def createDataset(as: String)(localeName: String) = new SimpleArm[S] {
+    def createDataset(as: String)(localeName: String, resourceName: Option[String]) = new SimpleArm[S] {
       def flatMap[A](f: S => A): A =
         for { llCtx <- databaseMutator.openDatabase } yield {
           val m = llCtx.datasetMap
-          val firstVersion = m.create(localeName)
+          val firstVersion = m.create(localeName, resourceName)
           val logger = llCtx.logger(firstVersion.datasetInfo, as)
           val schemaLoader = llCtx.schemaLoader(logger)
           schemaLoader.create(firstVersion)
