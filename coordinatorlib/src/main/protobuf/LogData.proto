@@ -12,6 +12,7 @@ message UnanchoredDatasetInfo {
   required int64 nextCounterValue = 2;
   required string localeName = 3;
   required bytes obfuscationKey = 4;
+  optional string resourceName = 5;
 }
 
 message UnanchoredCopyInfo {

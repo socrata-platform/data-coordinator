@@ -53,7 +53,8 @@ object FromProtobuf {
        systemId = new DatasetId(di.systemId),
        nextCounterValue = di.nextCounterValue,
        localeName = di.localeName,
-       obfuscationKey = di.obfuscationKey.toByteArray
+       obfuscationKey = di.obfuscationKey.toByteArray,
+       resourceName = di.resourceName
      )
 
   def convert(ri: UnanchoredRollupInfo): metadata.UnanchoredRollupInfo =
