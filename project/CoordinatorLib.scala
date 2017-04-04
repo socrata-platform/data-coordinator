@@ -26,7 +26,7 @@ object CoordinatorLib {
       "org.iq80.snappy" % "snappy" % "0.3",
       "org.liquibase" % "liquibase-core" % "2.0.0",
       "org.liquibase" % "liquibase-plugin" % "1.9.5.0",
-      "org.postgresql" % "postgresql" % "9.3-1102-jdbc41", // we do use postgres-specific features some places
+      "org.postgresql" % "postgresql" % "9.4.1212", // we do use postgres-specific features some places
       "org.xerial.snappy" % "snappy-java" % "1.1.0-M3",
 
       TestDeps.scalaCheck % "test,it",
