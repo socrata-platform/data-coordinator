@@ -18,9 +18,9 @@ class DataSourceConfig(config: Config, root: String) extends ConfigClass(config,
   val password = getString("password")
   val applicationName = getString("app-name")
   val tcpKeepAlive = optionally(getBoolean("tcp-keep-alive")).getOrElse(false)
-  val loginTimeout = optionally(getInt("login-timeout"))
-  val connectTimeout = optionally(getInt("connect-timeout"))
-  val cancelSignalTimeout = optionally(getInt("cancel-signal-timeout"))
+  val loginTimeout = optionally(getDuration("login-timeout"))
+  val connectTimeout = optionally(getDuration("connect-timeout"))
+  val cancelSignalTimeout = optionally(getDuration("cancel-signal-timeout"))
   val poolOptions = optionally(getRawConfig("c3p0")) // these are the c3p0 configuration properties
 }
 
@@ -38,9 +38,9 @@ object DataSourceFromConfig {
         dataSource.setApplicationName(config.applicationName)
         dataSource.setTcpKeepAlive(config.tcpKeepAlive)
         // for these optional configs, we should fall back to the driver's default, if no value is specified
-        config.loginTimeout.foreach(t => dataSource.setLoginTimeout(t))
-        config.connectTimeout.foreach(t => dataSource.setConnectTimeout(t))
-        config.cancelSignalTimeout.foreach(t => dataSource.setCancelSignalTimeout(t))
+        config.loginTimeout.foreach(t => dataSource.setLoginTimeout(t.toSeconds.toInt))
+        config.connectTimeout.foreach(t => dataSource.setConnectTimeout(t.toSeconds.toInt))
+        config.cancelSignalTimeout.foreach(t => dataSource.setCancelSignalTimeout(t.toSeconds.toInt))
         config.poolOptions match {
           case Some(poolOptions) =>
             val overrideProps = C3P0Propertizer("", poolOptions)
