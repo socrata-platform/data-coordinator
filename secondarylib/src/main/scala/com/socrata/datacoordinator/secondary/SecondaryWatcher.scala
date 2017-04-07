@@ -71,77 +71,103 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
         log.info(">> Syncing {} into {}", job.datasetId, secondary.storeId)
         if(job.replayNum > 0) log.info("Replay #{} of {}", job.replayNum, maxReplays)
         if(job.retryNum > 0) log.info("Retry #{} of {}", job.retryNum, maxRetries)
-        var noCatch = false
         val startingMillis = System.currentTimeMillis()
         try {
           playbackToSecondary(secondary, job)
           log.info("<< Sync done for {} into {}", job.datasetId, secondary.storeId)
-          noCatch = true
+          // Essentially, this simulates unclaimDataset in a finally block.  That is, make sure we clean up whether
+          // there is exception or not.  We don't do it the normal way (finally block) because we
+          // want to trigger event message only when there is no error.
+          unclaimDataset(u, secondary, job, sendMessage = true, startingMillis)
         } catch {
-          case bdse@BrokenDatasetSecondaryException(reason) =>
-            log.error("Dataset version declared to be broken while updating dataset {} in secondary {}; marking it as broken",
-              job.datasetId.asInstanceOf[AnyRef], secondary.storeId, bdse)
-            manifest(u).markSecondaryDatasetBroken(job)
-          case rlse@ReplayLaterSecondaryException(reason, cookie) =>
-            if(job.replayNum < maxReplays) {
-              val replayAfter = Math.min(replayWait.toSeconds * Math.log(job.replayNum + 2), maxReplayWait.toSeconds)
-              log.info("Replay later requested while updating dataset {} in secondary {}, replaying in {}...",
-                job.datasetId.asInstanceOf[AnyRef], secondary.storeId, replayAfter.toString, rlse)
-              manifest(u).updateReplayInfo(secondary.storeId, job.datasetId, cookie, job.replayNum + 1,
-                replayAfter.toInt)
-            } else {
-              log.error("Ran out of replay attempts while updating dataset {} in secondary {}; marking it as broken",
-                job.datasetId.asInstanceOf[AnyRef], secondary.storeId, rlse)
-              manifest(u).markSecondaryDatasetBroken(job)
+          case ex: Exception =>
+            try {
+              handlePlaybackErrors(u, secondary, job, ex)
+            } finally {
+              unclaimDataset(u, secondary, job, sendMessage = false, startingMillis)
             }
-          case ResyncLaterSecondaryException(reason) =>
-            log.info("resync later {} {} {} {}", secondary.groupName, secondary.storeId, job.datasetId.toString, reason)
-            manifest(u).updateRetryInfo(job.storeId, job.datasetId, job.retryNum, backoffInterval.toSeconds.toInt)
-          case e: Exception =>
-            if(job.retryNum < maxRetries) {
-              val retryBackoff = backoffInterval.toSeconds * Math.pow(2, job.retryNum)
-              log.warn("Unexpected exception while updating dataset {} in secondary {}, retrying in {}...",
-                       job.datasetId.asInstanceOf[AnyRef], secondary.storeId, retryBackoff.toString, e)
-              manifest(u).updateRetryInfo(secondary.storeId, job.datasetId, job.retryNum + 1,
-                retryBackoff.toInt)
-            } else {
-              log.error("Unexpected exception while updating dataset {} in secondary {}; marking it as broken",
-                        job.datasetId.asInstanceOf[AnyRef], secondary.storeId, e)
-              manifest(u).markSecondaryDatasetBroken(job)
-            }
-        } finally {
-          try {
-            manifest(u).releaseClaimedDataset(job)
-            u.commit()
-
-            log.info("finished version: {}", job.endingDataVersion)
-
-            // logic for sending messages to amq
-            if (noCatch) {
-              try {
-                replicationMessages(u).send(
-                  datasetId = job.datasetId,
-                  storeId = job.storeId,
-                  endingDataVersion = job.endingDataVersion,
-                  startingMillis = startingMillis,
-                  endingMillis = System.currentTimeMillis()
-                )
-              } catch {
-                case e: Exception =>
-                  log.error("Unexpected exception sending message! Continuing regardless...", e)
-              }
-            }
-          } catch {
-            case e: Exception =>
-              log.error("Unexpected exception while releasing claim on dataset {} in secondary {}",
-                        job.datasetId.asInstanceOf[AnyRef], secondary.storeId, e)
-          } finally {
-            SecondaryWatcherClaimManager.doneWorkingOn(secondary.storeId, job.datasetId)
-          }
+          case x: Throwable =>
+            unclaimDataset(u, secondary, job, sendMessage = false, startingMillis)
+            throw x
         }
       }
     }
     foundWorkToDo.isDefined
+  }
+
+  private def handlePlaybackErrors(u: Universe[CT, CV] with Commitable with PlaybackToSecondaryProvider
+                                                       with SecondaryManifestProvider with SecondaryReplicationMessagesProvider,
+                                   secondary: NamedSecondary[CT, CV],
+                                   job: SecondaryRecord,
+                                   error: Exception): Unit = {
+      error match {
+        case bdse@BrokenDatasetSecondaryException(reason) =>
+          log.error("Dataset version declared to be broken while updating dataset {} in secondary {}; marking it as broken",
+            job.datasetId.asInstanceOf[AnyRef], secondary.storeId, bdse)
+          manifest(u).markSecondaryDatasetBroken(job)
+        case rlse@ReplayLaterSecondaryException(reason, cookie) =>
+          if (job.replayNum < maxReplays) {
+            val replayAfter = Math.min(replayWait.toSeconds * Math.log(job.replayNum + 2), maxReplayWait.toSeconds)
+            log.info("Replay later requested while updating dataset {} in secondary {}, replaying in {}...",
+              job.datasetId.asInstanceOf[AnyRef], secondary.storeId, replayAfter.toString, rlse)
+            manifest(u).updateReplayInfo(secondary.storeId, job.datasetId, cookie, job.replayNum + 1,
+              replayAfter.toInt)
+          } else {
+            log.error("Ran out of replay attempts while updating dataset {} in secondary {}; marking it as broken",
+              job.datasetId.asInstanceOf[AnyRef], secondary.storeId, rlse)
+            manifest(u).markSecondaryDatasetBroken(job)
+          }
+        case ResyncLaterSecondaryException(reason) =>
+          log.info("resync later {} {} {} {}", secondary.groupName, secondary.storeId, job.datasetId.toString, reason)
+          manifest(u).updateRetryInfo(job.storeId, job.datasetId, job.retryNum, backoffInterval.toSeconds.toInt)
+        case e: Exception =>
+          if (job.retryNum < maxRetries) {
+            val retryBackoff = backoffInterval.toSeconds * Math.pow(2, job.retryNum)
+            log.warn("Unexpected exception while updating dataset {} in secondary {}, retrying in {}...",
+              job.datasetId.asInstanceOf[AnyRef], secondary.storeId, retryBackoff.toString, e)
+            manifest(u).updateRetryInfo(secondary.storeId, job.datasetId, job.retryNum + 1,
+              retryBackoff.toInt)
+          } else {
+            log.error("Unexpected exception while updating dataset {} in secondary {}; marking it as broken",
+              job.datasetId.asInstanceOf[AnyRef], secondary.storeId, e)
+            manifest(u).markSecondaryDatasetBroken(job)
+          }
+      }
+  }
+
+
+  private def unclaimDataset(u: Universe[CT, CV] with Commitable with PlaybackToSecondaryProvider
+                                                 with SecondaryManifestProvider with SecondaryReplicationMessagesProvider,
+                             secondary: NamedSecondary[CT, CV],
+                             job: SecondaryRecord, sendMessage: Boolean, startingMillis: Long): Unit ={
+    try {
+      manifest(u).releaseClaimedDataset(job)
+      u.commit()
+
+      log.info("finished version: {}", job.endingDataVersion)
+
+      // logic for sending messages to amq
+      if (sendMessage) {
+        try {
+          replicationMessages(u).send(
+            datasetId = job.datasetId,
+            storeId = job.storeId,
+            endingDataVersion = job.endingDataVersion,
+            startingMillis = startingMillis,
+            endingMillis = System.currentTimeMillis()
+          )
+        } catch {
+          case e: Exception =>
+            log.error("Unexpected exception sending message! Continuing regardless...", e)
+        }
+      }
+    } catch {
+      case e: Exception =>
+        log.error("Unexpected exception while releasing claim on dataset {} in secondary {}",
+          job.datasetId.asInstanceOf[AnyRef], secondary.storeId, e)
+    } finally {
+      SecondaryWatcherClaimManager.doneWorkingOn(secondary.storeId, job.datasetId)
+    }
   }
 
   private def maybeSleep(storeId: String, nextRunTime: DateTime, finished: CountDownLatch): Boolean = {
