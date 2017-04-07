@@ -80,7 +80,7 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
           // want to trigger event message only when there is no error.
           unclaimDataset(u, secondary, job, sendMessage = true, startingMillis)
         } catch {
-          case ex: Throwable =>
+          case ex: Exception =>
             try {
               handlePlaybackErrors(u, secondary, job, ex)
             } finally {
@@ -96,7 +96,7 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
                                                        with SecondaryManifestProvider with SecondaryReplicationMessagesProvider,
                                    secondary: NamedSecondary[CT, CV],
                                    job: SecondaryRecord,
-                                   error: Throwable): Unit = {
+                                   error: Exception): Unit = {
       error match {
         case bdse@BrokenDatasetSecondaryException(reason) =>
           log.error("Dataset version declared to be broken while updating dataset {} in secondary {}; marking it as broken",
@@ -129,8 +129,6 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
               job.datasetId.asInstanceOf[AnyRef], secondary.storeId, e)
             manifest(u).markSecondaryDatasetBroken(job)
           }
-        case e: Throwable =>
-          throw e
       }
   }
 
