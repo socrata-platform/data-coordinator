@@ -7,7 +7,6 @@ import java.util.concurrent.{CountDownLatch, Executors, TimeUnit, ScheduledExecu
 import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.secondary.messaging._
 import com.socrata.datacoordinator.secondary.messaging.eurybates.MessageProducerFromConfig
-import com.socrata.datacoordinator.truth.metadata.DatasetMapReader
 
 import scala.collection.mutable
 import scala.concurrent.duration._
