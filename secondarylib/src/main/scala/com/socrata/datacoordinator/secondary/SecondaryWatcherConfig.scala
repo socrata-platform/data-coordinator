@@ -2,7 +2,7 @@ package com.socrata.datacoordinator.secondary
 
 import com.socrata.datacoordinator.common.DataSourceConfig
 import com.socrata.datacoordinator.secondary.config.{SecondaryConfig => ServiceSecondaryConfig}
-import com.socrata.datacoordinator.secondary.messaging.eurybates.ProducerConfig
+import com.socrata.datacoordinator.secondary.messaging.eurybates.MessageProducerConfig
 import com.typesafe.config.{ConfigException, Config}
 import java.util.UUID
 import scala.concurrent.duration._
@@ -22,5 +22,5 @@ class SecondaryWatcherConfig(config: Config, root: String) {
   val maxReplayWait = config.getDuration(k("max-replay-wait"), MILLISECONDS).longValue.millis
   val replayWait = config.getDuration(k("replay-wait"), MILLISECONDS).longValue.millis
   val tmpdir = new java.io.File(config.getString(k("tmpdir"))).getAbsoluteFile
-  val producerConfig = try { Some(new ProducerConfig(config, k("producer"))) } catch { case _: ConfigException.Missing => None }
+  val messageProducerConfig = try { Some(new MessageProducerConfig(config, k("message-producer"))) } catch { case _: ConfigException.Missing => None }
 }

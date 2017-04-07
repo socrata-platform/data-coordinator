@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator.truth.universe
 
 import com.rojoma.simplearm.Managed
-import com.socrata.datacoordinator.secondary.messaging.Producer
+import com.socrata.datacoordinator.secondary.messaging.MessageProducer
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth._
@@ -113,7 +113,7 @@ trait SecondaryStoresConfigProvider {
 }
 
 trait SecondaryReplicationMessagesProvider { this: TypeUniverse =>
-  def secondaryReplicationMessages(producer: Producer): SecondaryReplicationMessages[CT, CV]
+  def secondaryReplicationMessages(producer: MessageProducer): SecondaryReplicationMessages[CT, CV]
 }
 
 trait DatasetContentsCopierProvider { this: TypeUniverse =>

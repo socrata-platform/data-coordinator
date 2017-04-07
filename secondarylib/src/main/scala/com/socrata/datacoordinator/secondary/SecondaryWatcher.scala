@@ -5,9 +5,8 @@ import java.util.UUID
 import java.util.concurrent.{CountDownLatch, Executors, TimeUnit, ScheduledExecutorService}
 
 import com.socrata.datacoordinator.id.DatasetId
-import com.socrata.datacoordinator.secondary.config.SecondaryConfig
 import com.socrata.datacoordinator.secondary.messaging._
-import com.socrata.datacoordinator.secondary.messaging.eurybates.ProducerFromConfig
+import com.socrata.datacoordinator.secondary.messaging.eurybates.MessageProducerFromConfig
 import com.socrata.datacoordinator.truth.metadata.DatasetMapReader
 
 import scala.collection.mutable
@@ -39,7 +38,7 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
                                maxRetries: Int,
                                maxReplays: Int,
                                timingReport: TimingReport,
-                               producer: Producer) {
+                               messageProducer: MessageProducer) {
   val log = LoggerFactory.getLogger(classOf[SecondaryWatcher[_,_]])
   private val rand = new Random()
   // splay the sleep time +/- 5s to prevent watchers from getting in lock step
@@ -49,11 +48,10 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
   protected def manifest(u: Universe[CT, CV] with SecondaryManifestProvider with PlaybackToSecondaryProvider):
       SecondaryManifest = u.secondaryManifest
 
-  protected def replicationMessages(u: Universe[CT, CV] with SecondaryReplicationMessagesProvider): SecondaryReplicationMessages[CT, CV] = u.secondaryReplicationMessages(producer)
+  protected def replicationMessages(u: Universe[CT, CV] with SecondaryReplicationMessagesProvider):
+      SecondaryReplicationMessages[CT, CV] = u.secondaryReplicationMessages(messageProducer)
 
-  protected def datasetMapReader(u: Universe[CT, CV ] with DatasetMapReaderProvider): DatasetMapReader[CT] = u.datasetMapReader
-
-  def run(u: Universe[CT, CV] with Commitable  with SecondaryManifestProvider with PlaybackToSecondaryProvider with SecondaryReplicationMessagesProvider,
+  def run(u: Universe[CT, CV] with Commitable with PlaybackToSecondaryProvider with SecondaryManifestProvider with SecondaryReplicationMessagesProvider,
           secondary: NamedSecondary[CT, CV]): Boolean = {
     import u._
 
@@ -417,13 +415,13 @@ object SecondaryWatcherApp {
         //Duration.fromNanos(1L),
         NullCache
       )
-      val producerExecutor = Executors.newCachedThreadPool()
-      val producer = ProducerFromConfig(config.watcherId, producerExecutor, config.producerConfig)
-      producer.start()
+      val messageProducerExecutor = Executors.newCachedThreadPool()
+      val messageProducer = MessageProducerFromConfig(config.watcherId, messageProducerExecutor, config.messageProducerConfig)
+      messageProducer.start()
 
       val w = new SecondaryWatcher(common.universe, config.watcherId, config.claimTimeout, config.backoffInterval,
                                    config.replayWait, config.maxReplayWait, config.maxRetries,
-                                   config.maxReplays.getOrElse(Integer.MAX_VALUE), common.timingReport, producer)
+                                   config.maxReplays.getOrElse(Integer.MAX_VALUE), common.timingReport, messageProducer)
       val cm = new SecondaryWatcherClaimManager(dsInfo, config.watcherId, config.claimTimeout)
 
       val SIGTERM = new Signal("TERM")
@@ -500,8 +498,8 @@ object SecondaryWatcherApp {
         SecondaryWatcherScheduledExecutor.shutdown()
       } finally {
         log.info("Shutting down message producer...")
-        producer.shutdown()
-        producerExecutor.shutdown()
+        messageProducer.shutdown()
+        messageProducerExecutor.shutdown()
 
         log.info("Un-hooking SIGTERM and SIGINT")
         if(oldSIGTERM != null) Signal.handle(SIGTERM, oldSIGTERM)

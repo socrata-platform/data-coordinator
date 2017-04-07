@@ -1,13 +1,13 @@
 package com.socrata.datacoordinator.secondary.messaging
 
-trait Producer {
+trait MessageProducer {
   def start(): Unit
   def setServiceNames(serviceNames: Set[String]): Unit
   def shutdown(): Unit
   def send(message: Message): Unit
 }
 
-object NoOpProducer extends Producer {
+object NoOpMessageProducer extends MessageProducer {
   def start(): Unit = {}
   def setServiceNames(serviceNames: Set[String]): Unit = {}
   def shutdown(): Unit = {}

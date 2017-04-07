@@ -19,32 +19,35 @@ object ToViewUid {
 
 sealed abstract class Message
 
+// We aren't using this message right now, but I have hopes to use it for
+// webhooks or other things that want to know about when NBE replication
+// is complete. So going to leave this here for now.
 @JsonKeyStrategy(Strategy.Underscore)
-case class StoreVersion(viewUid: ViewUid,
-                        groupName: Option[String],
-                        storeId: String,
-                        newDataVersion: Long,
-                        startingAtMs: Long,
-                        endingAtMs: Long) extends Message
+case class StoreReplicationComplete(viewUid: ViewUid,
+                                    groupName: Option[String],
+                                    storeId: String,
+                                    newDataVersion: Long,
+                                    startingAtMs: Long,
+                                    endingAtMs: Long) extends Message
 
-object StoreVersion {
-  implicit val encode = AutomaticJsonEncodeBuilder[StoreVersion]
+object StoreReplicationComplete {
+  implicit val encode = AutomaticJsonEncodeBuilder[StoreReplicationComplete]
 }
 
 @JsonKeyStrategy(Strategy.Underscore)
-case class GroupVersion(viewUid: ViewUid,
-                        groupName: String,
-                        storeIds: Set[String],
-                        newDataVersion: Long,
-                        endingAtMs: Long) extends Message
+case class GroupReplicationComplete(viewUid: ViewUid,
+                                    groupName: String,
+                                    storeIds: Set[String],
+                                    newDataVersion: Long,
+                                    endingAtMs: Long) extends Message
 
-object GroupVersion {
-  implicit val encode = AutomaticJsonEncodeBuilder[GroupVersion]
+object GroupReplicationComplete {
+  implicit val encode = AutomaticJsonEncodeBuilder[GroupReplicationComplete]
 }
 
 object Message {
   implicit val encode = SimpleHierarchyEncodeBuilder[Message](NoTag)
-    .branch[StoreVersion]
-    .branch[GroupVersion]
+    .branch[StoreReplicationComplete]
+    .branch[GroupReplicationComplete]
     .build
 }

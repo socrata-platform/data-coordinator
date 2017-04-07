@@ -5,7 +5,7 @@ import java.util.concurrent.ExecutorService
 import java.sql.Connection
 import java.io.{File, OutputStream, Reader}
 
-import com.socrata.datacoordinator.secondary.messaging.Producer
+import com.socrata.datacoordinator.secondary.messaging.MessageProducer
 import org.joda.time.DateTime
 import com.rojoma.simplearm.SimpleArm
 import com.rojoma.simplearm.util._
@@ -133,7 +133,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
   lazy val playbackToSecondary: PlaybackToSecondary[CT, CV] =
     new PlaybackToSecondary(this, repFor, typeContext.typeNamespace.typeForUserType, datasetIdFormatter, timingReport)
 
-  def secondaryReplicationMessages(producer: Producer): SecondaryReplicationMessages[CT, CV] =
+  def secondaryReplicationMessages(producer: MessageProducer): SecondaryReplicationMessages[CT, CV] =
     new SecondaryReplicationMessages(this, producer)
 
   def logger(datasetInfo: DatasetInfo, user: String): Logger[CT, CV] = {
