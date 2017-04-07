@@ -28,6 +28,8 @@ object CoordinatorLib {
       "org.liquibase" % "liquibase-plugin" % "1.9.5.0",
       "org.postgresql" % "postgresql" % "9.4.1212", // we do use postgres-specific features some places
       "org.xerial.snappy" % "snappy-java" % "1.1.0-M3",
+      "com.socrata" %% "eurybates" % "2.0.0",
+      "org.apache.activemq" % "activemq-core" % "5.7.0" exclude("org.apache", "commons.logging") exclude("commons-logging", "commons-logging") exclude("org.springframework", "spring-context"),
 
       TestDeps.scalaCheck % "test,it",
       TestDeps.slf4jSimple % "test,it",
