@@ -22,7 +22,6 @@ sealed abstract class Message
 // We aren't using this message right now, but I have hopes to use it for
 // webhooks or other things that want to know about when NBE replication
 // is complete. So going to leave this here for now.
-@JsonKeyStrategy(Strategy.Underscore)
 case class StoreReplicationComplete(viewUid: ViewUid,
                                     groupName: Option[String],
                                     storeId: String,
@@ -34,7 +33,6 @@ object StoreReplicationComplete {
   implicit val encode = AutomaticJsonEncodeBuilder[StoreReplicationComplete]
 }
 
-@JsonKeyStrategy(Strategy.Underscore)
 case class GroupReplicationComplete(viewUid: ViewUid,
                                     groupName: String,
                                     storeIds: Set[String],
