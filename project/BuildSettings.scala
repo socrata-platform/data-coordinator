@@ -25,6 +25,7 @@ object BuildSettings {
         testOptions in ExploratoryTest <<= testOptions in Test,
         testOptions in UnitTest <<= (testOptions in Test) map { _ ++ Seq(Tests.Argument("-l", "Slow")) },
         scalacOptions += "-language:implicitConversions",
+        scalaVersion := "2.10.6",
         libraryDependencies ++=
           Seq(
             slf4jApi
