@@ -4,7 +4,7 @@ package truth
 import com.rojoma.json.v3.ast.{JNumber, JString, JValue}
 import com.rojoma.json.v3.codec.JsonEncode
 import com.socrata.datacoordinator.util.CopyContextResult
-import com.socrata.soql.environment.ColumnName
+import com.socrata.soql.environment.{ColumnName, TableName}
 import org.joda.time.DateTime
 import com.rojoma.simplearm.{Managed, SimpleArm}
 import com.socrata.datacoordinator.truth.metadata._
@@ -396,7 +396,7 @@ object DatasetMutator {
           val analyzer = soqlAnalyzer
           rollups.foreach { (ru: RollupInfo) =>
             try {
-              analyzer.analyzeFullQuery(ru.soql)(prefixedDsContext)
+              analyzer.analyzeFullQuery(ru.soql)(Map(TableName.PrimaryTable.qualifier -> prefixedDsContext))
             } catch {
               case ex: NoSuchColumn =>
                 log.info(s"drop rollup ${ru.name.underlying} because ${ex.getMessage}")
