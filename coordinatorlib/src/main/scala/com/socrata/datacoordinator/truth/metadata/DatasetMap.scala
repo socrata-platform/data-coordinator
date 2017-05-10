@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator.truth.metadata
 
 import com.socrata.datacoordinator.id._
-import com.socrata.soql.environment.ColumnName
+import com.socrata.soql.environment.{ColumnName, ResourceName}
 import scala.concurrent.duration.Duration
 
 trait DatasetMapBase[CT] extends `-impl`.BaseDatasetMapReader[CT] {
@@ -10,6 +10,9 @@ trait DatasetMapBase[CT] extends `-impl`.BaseDatasetMapReader[CT] {
 trait DatasetMapReader[CT] extends DatasetMapBase[CT] {
   /** Looks up a dataset record by its system ID. */
   def datasetInfo(datasetId: DatasetId, repeatableRead: Boolean = false): Option[DatasetInfo]
+
+  /** Looks up a dataset record by its resource name. */
+  def datasetInfoByResourceName(resourceName: ResourceName, repeatableRead: Boolean = false): Option[DatasetInfo]
 
   /** Find all datasets with snapshots */
   def snapshottedDatasets(): Seq[DatasetInfo]
