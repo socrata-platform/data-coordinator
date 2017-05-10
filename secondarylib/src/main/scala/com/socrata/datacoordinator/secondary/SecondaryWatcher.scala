@@ -137,6 +137,14 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
                              secondary: NamedSecondary[CT, CV],
                              job: SecondaryRecord, sendMessage: Boolean, startingMillis: Long): Unit ={
     try {
+      // We need to remove the job from our in memory list before we unclaim it or we have a race condition where
+      // another thread claims it and errors out because it thinks we are still working on it.  The main goal of
+      // tracking what jobs we are working on in memory is to avoid continuing to update our claim on a job
+      // that has experienced an unexpected error.  A secondary purpose is to catch logic errors if we were to end up
+      // claiming a job twice.  Both of those goals are compatible with first removing the job from our in memory
+      // list and then unclaiming it.
+      SecondaryWatcherClaimManager.doneWorkingOn(secondary.storeId, job.datasetId)
+
       manifest(u).releaseClaimedDataset(job)
       u.commit()
 
@@ -161,8 +169,6 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
       case e: Exception =>
         log.error("Unexpected exception while releasing claim on dataset {} in secondary {}",
           job.datasetId.asInstanceOf[AnyRef], secondary.storeId, e)
-    } finally {
-      SecondaryWatcherClaimManager.doneWorkingOn(secondary.storeId, job.datasetId)
     }
   }
 
