@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator.truth.metadata
 
 import com.socrata.datacoordinator.id._
-import com.socrata.soql.environment.ColumnName
+import com.socrata.soql.environment.{ColumnName, ResourceName}
 import scala.concurrent.duration.Duration
 
 trait DatasetMapBase[CT] extends `-impl`.BaseDatasetMapReader[CT] {

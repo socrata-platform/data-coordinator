@@ -6,7 +6,7 @@ import com.rojoma.json.v3.ast.JObject
 import com.rojoma.json.v3.codec.JsonDecode
 import com.rojoma.json.v3.io.{CompactJsonWriter, JsonReaderException}
 import com.rojoma.json.v3.util.JsonUtil
-import com.socrata.soql.environment.ColumnName
+import com.socrata.soql.environment.{ColumnName, ResourceName}
 import scala.collection.immutable.VectorBuilder
 
 import java.sql._
@@ -382,7 +382,7 @@ class PostgresDatasetMapReader[CT](val conn: Connection, tns: TypeNamespace[CT],
       log.info("Changed transaction isolation level to REPEATABLE READ")
     }
     using(conn.prepareStatement(datasetInfoByResourceNameQuery)) { stmt =>
-      stmt.setString(1, resourceName.underlying)
+      stmt.setString(1, resourceName.name)
       using(t("lookup-dataset", "resource_name" -> resourceName)(stmt.executeQuery())) { rs =>
         if (rs.next()) {
           Some(DatasetInfo(rs.getDatasetId("system_id"), rs.getLong("next_counter_value"), rs.getString("locale_name"), rs.getBytes("obfuscation_key"), Option(rs.getString("resource_name"))))
