@@ -374,6 +374,25 @@ class PostgresDatasetMapReader[CT](val conn: Connection, tns: TypeNamespace[CT],
     }
   }
 
+  def datasetInfoByResourceNameQuery = "SELECT system_id, next_counter_value, locale_name, obfuscation_key, resource_name FROM dataset_map WHERE resource_name = ?"
+  def datasetInfoByResourceName(resourceName: ResourceName, repeatableRead: Boolean = false) = {
+    if (repeatableRead) {
+      log.info("Attempting to change transaction isolation level...")
+      conn.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ)
+      log.info("Changed transaction isolation level to REPEATABLE READ")
+    }
+    using(conn.prepareStatement(datasetInfoByResourceNameQuery)) { stmt =>
+      stmt.setString(1, resourceName.underlying)
+      using(t("lookup-dataset", "resource_name" -> resourceName)(stmt.executeQuery())) { rs =>
+        if (rs.next()) {
+          Some(DatasetInfo(rs.getDatasetId("system_id"), rs.getLong("next_counter_value"), rs.getString("locale_name"), rs.getBytes("obfuscation_key"), Option(rs.getString("resource_name"))))
+        } else {
+          None
+        }
+      }
+    }
+  }
+
   def snapshottedDatasetsQuery = "SELECT distinct ds.system_id, ds.next_counter_value, ds.locale_name, ds.obfuscation_key, ds.resource_name FROM dataset_map ds JOIN copy_map c ON c.dataset_system_id = ds.system_id WHERE c.lifecycle_stage = 'Snapshotted'"
   def snapshottedDatasets() = {
     using(conn.prepareStatement(snapshottedDatasetsQuery)) { stmt =>

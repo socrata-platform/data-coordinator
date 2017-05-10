@@ -29,3 +29,5 @@ object SchemaField {
 }
 
 case class Schema(hash: String, schema: UserColumnIdMap[TypeName], pk: UserColumnId, locale: String)
+
+case class SchemaWithFieldName(hash: String, schema: UserColumnIdMap[(TypeName, Option[ColumnName])], pk: UserColumnId, locale: String)
