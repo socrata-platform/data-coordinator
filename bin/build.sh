@@ -5,6 +5,8 @@ set -e
 REALPATH=$(python -c "import os; print(os.path.realpath('$0'))")
 BASEDIR="$(dirname "${REALPATH}")/.."
 
+export SBT_OPTS=(-Xmx1024M ${SBT_OPTS})
+
 cd "$BASEDIR"
 JARFILE="$(ls -rt coordinator/target/scala-*/coordinator-assembly-*.jar 2>/dev/null | tail -n 1)"
 SRC_PATHS=($(find .  -maxdepth 2 -name 'src' -o -name '*.sbt' -o -name '*.scala'))
