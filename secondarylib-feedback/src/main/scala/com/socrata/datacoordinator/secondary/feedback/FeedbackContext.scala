@@ -264,35 +264,14 @@ class FeedbackContext[CT,CV](user: String,
   private def deleteColumns(columns: Set[UserColumnId]): Set[UserColumnId] = {
     log.info("Columns have been deleted in truth: {}; updating the cookie.", columns)
 
-    val reverseStrategyMap = scala.collection.mutable.Map[UserColumnId, Set[UserColumnId]]()
-    cookie.strategyMap.foreach { case (target, strategy) =>
-      strategy.sourceColumnIds.foreach { source =>
-        reverseStrategyMap.put(source, reverseStrategyMap.getOrElse(source, Set.empty) + target)
-      }
+    val (deleted, reliant, newCookie) = CookieOperator.deleteColumns(columns, cookie)
+
+    if (reliant.nonEmpty) {
+      log.info("Reliant computed columns will have also been deleted: {}; updating the cookie.", reliant)
+      log.info("Will attempt to retry with remaining computed columns...")
     }
 
-    def findReliantColumns(column: UserColumnId): Set[UserColumnId] = {
-      val reliant = scala.collection.mutable.Set[UserColumnId]()
-
-      val queue = scala.collection.mutable.Queue[UserColumnId](column)
-      while (queue.nonEmpty) {
-        reverseStrategyMap.getOrElse(queue.dequeue(), Set.empty).foreach { parent =>
-          if (reliant.add(parent)) queue.enqueue(parent)
-        }
-      }
-
-      reliant.toSet
-    }
-
-    val deleted = columns.flatMap(findReliantColumns) // includes starting columns
-    val reliant = deleted.filter(cookie.strategyMap.contains)
-
-    if (reliant.nonEmpty) log.info("Reliant computed columns have also been deleted: {}; updating the cookie.", reliant)
-
-    cookie = cookie.copy(
-      columnIdMap = cookie.columnIdMap -- deleted,
-      strategyMap = cookie.strategyMap -- reliant
-    )
+    cookie = newCookie
 
     deleted // all deleted columns and reliant computed columns that must also be deleted
   }
@@ -314,7 +293,7 @@ class FeedbackContext[CT,CV](user: String,
           resultCookie
         case Right(Left(ColumnsDoNotExist(unknown))) =>
           // since source columns must be deleted after computed columns
-          // just delete those unknown columns and associated compute columns from our cookie
+          // just delete those unknown columns and associated computed columns from our cookie
           // we'll get the event replayed to us later
           val deleted = deleteColumns(unknown)
           computeColumns(targetColumns -- deleted) // try to compute the un-deleted columns again
@@ -341,5 +320,42 @@ class FeedbackContext[CT,CV](user: String,
     } else {
       feedbackCookie
     }
+  }
+}
+
+object CookieOperator {
+
+  // returns all deleted columns, deleted computed columns, and the resulting cookie schema
+  def deleteColumns(columns: Set[UserColumnId], cookie: CookieSchema): (Set[UserColumnId], Set[UserColumnId], CookieSchema) = {
+    val reverseStrategyMap = scala.collection.mutable.Map[UserColumnId, Set[UserColumnId]]()
+    cookie.strategyMap.foreach { case (target, strategy) =>
+      strategy.sourceColumnIds.foreach { source =>
+        reverseStrategyMap.put(source, reverseStrategyMap.getOrElse(source, Set.empty) + target)
+      }
+    }
+
+    // include starting column
+    def findReliantColumns(column: UserColumnId): Set[UserColumnId] = {
+      val reliant = scala.collection.mutable.Set(column)
+
+      val queue = scala.collection.mutable.Queue[UserColumnId](column)
+      while (queue.nonEmpty) {
+        reverseStrategyMap.getOrElse(queue.dequeue(), Set.empty).foreach { parent =>
+          if (reliant.add(parent)) queue.enqueue(parent)
+        }
+      }
+
+      reliant.toSet
+    }
+
+    val deleted = columns.flatMap(findReliantColumns) // includes starting columns
+    val reliant = deleted.filter(cookie.strategyMap.contains)
+
+    val resultCookie = cookie.copy(
+      columnIdMap = cookie.columnIdMap -- deleted,
+      strategyMap = cookie.strategyMap -- reliant
+    )
+
+    (deleted, reliant, resultCookie) // all deleted columns and reliant computed columns that must also be deleted and the resulting cookie
   }
 }
