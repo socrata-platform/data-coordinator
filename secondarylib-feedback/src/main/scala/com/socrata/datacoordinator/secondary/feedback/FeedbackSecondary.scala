@@ -193,9 +193,11 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
         val resultFP = events.foldLeft(FP(cookieSeed, Set.empty)) { case (FP(newCookie, newCompCols), event) =>
           event match {
             case ColumnCreated(columnInfo) =>
+              // note: we will see ColumnCreated events both when new columns are created and after a WorkingCopyCreated event
               val old = newCookie.current.strategyMap
               val (updatedStrategyMap, updatedCompCols) = columnInfo.computationStrategyInfo match {
-                case Some(strategy) if computationHandlers.exists(_.matchesStrategyType(strategy.strategyType)) =>
+                case Some(strategy) if computationHandlers.exists(_.matchesStrategyType(strategy.strategyType)) && !old.contains(columnInfo.id) =>
+                  // only track computed columns as new if we haven't seen them before
                   (old + (columnInfo.id -> strategy), newCompCols + columnInfo.id)
                 case _ => (old, newCompCols)
               }
