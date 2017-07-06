@@ -1,13 +1,10 @@
 package com.socrata.datacoordinator.truth.migration
 
 import liquibase.Liquibase
-import liquibase.database.jvm.JdbcConnection
-import liquibase.logging.LogFactory
+import liquibase.lockservice.LockService
 import liquibase.resource.ClassLoaderResourceAccessor
-
 import java.sql.Connection
 
-import scala.Enumeration
 
 /**
  * Interface with the Liquibase library to perform schema migrations on a given database with a given set of changes.
@@ -29,6 +26,8 @@ object Migration {
                 changeLogPath: String = MigrationScriptPath) {
     val jdbc = new NonCommmittingJdbcConnenction(conn)
     val liquibase = new Liquibase(changeLogPath, new ClassLoaderResourceAccessor, jdbc)
+    val lockService = LockService.getInstance(liquibase.getDatabase)
+    lockService.setChangeLogLockWaitTime(1000 * 3) // 3s where value should be < SQL lock_timeout (30s)
     val database = conn.getCatalog
 
     operation match {
