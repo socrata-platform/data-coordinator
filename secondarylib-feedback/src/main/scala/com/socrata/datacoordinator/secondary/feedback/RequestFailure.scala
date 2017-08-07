@@ -18,6 +18,10 @@ case object DatasetDoesNotExist extends RequestFailure {
   val english = "Dataset does not exist"
 }
 
+case class UnexpectedError(reason: String, cause: Throwable) extends RequestFailure {
+  val english = s"Unexpected error in data-coordinator client: $reason"
+}
+
 sealed abstract class SchemaFailure {
   def english: String
 }

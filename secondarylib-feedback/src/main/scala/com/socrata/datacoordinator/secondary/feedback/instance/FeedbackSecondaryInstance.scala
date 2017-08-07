@@ -2,11 +2,12 @@ package com.socrata.datacoordinator.secondary.feedback.instance
 
 import java.util.concurrent.Executors
 
+import com.rojoma.json.v3.ast.JValue
 import com.rojoma.simplearm.v2.{Resource, ResourceScope}
 import com.socrata.curator.ProviderCache
 import com.socrata.datacoordinator.secondary.feedback.instance.config.{CuratorFromConfig, FeedbackSecondaryInstanceConfig}
 import com.socrata.datacoordinator.secondary.feedback.monitor.{DummyStatusMonitor, StatusMonitor}
-import com.socrata.datacoordinator.secondary.feedback.FeedbackSecondary
+import com.socrata.datacoordinator.secondary.feedback.{HttpDataCoordinatorClient, DataCoordinatorClient, FeedbackSecondary}
 import com.socrata.http.client.{HttpClientHttpClient, HttpClient}
 import com.socrata.http.common.AuxiliaryData
 import com.socrata.soql.types.{SoQLType, SoQLValue}
@@ -51,16 +52,19 @@ abstract class FeedbackSecondaryInstance(config: FeedbackSecondaryInstanceConfig
     config.dataCoordinatorService
   ))
 
-  override val httpClient: HttpClient = res(new HttpClientHttpClient(executor))
+  protected val httpClient: HttpClient = res(new HttpClientHttpClient(executor))
 
-  override def hostAndPort(instanceName: String): Option[(String, Int)] = {
+  protected def hostAndPort(instanceName: String): Option[(String, Int)] = {
     Option(provider(instanceName).getInstance()).map[(String, Int)](instance => (instance.getAddress, instance.getPort))
   }
+
+  protected val internalDataCoordinatorRetryLimit: Int = config.internalDataCoordinatorRetries
+
+  override def dataCoordinator = HttpDataCoordinatorClient(httpClient, hostAndPort, internalDataCoordinatorRetryLimit, typeFromJValue)
 
   override val baseBatchSize: Int = config.baseBatchSize
 
   override val dataCoordinatorRetryLimit: Int = config.dataCoordinatorRetries
-  override val internalDataCoordinatorRetryLimit: Int = config.internalDataCoordinatorRetries
 
   override val repFor = SoQLValueRepFor
   override val repFrom = SoQLValueRepFrom

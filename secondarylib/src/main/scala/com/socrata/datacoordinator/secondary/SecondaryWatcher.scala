@@ -97,10 +97,12 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
                                    job: SecondaryRecord,
                                    error: Exception): Unit = {
       error match {
-        case bdse@BrokenDatasetSecondaryException(reason) =>
+        case bdse@BrokenDatasetSecondaryException(reason, cookie) =>
           log.error("Dataset version declared to be broken while updating dataset {} in secondary {}; marking it as broken",
             job.datasetId.asInstanceOf[AnyRef], secondary.storeId, bdse)
-          manifest(u).markSecondaryDatasetBroken(job)
+          // Prefer cookie handed-back by the exception, but since we write notes in out cookies currently that we don't
+          // want to lose, let's avoid overriding those if we are not given Some other cookie string
+          manifest(u).markSecondaryDatasetBroken(job, cookie.orElse(job.initialCookie))
         case rlse@ReplayLaterSecondaryException(reason, cookie) =>
           if (job.replayNum < maxReplays) {
             val replayAfter = Math.min(replayWait.toSeconds * Math.log(job.replayNum + 2), maxReplayWait.toSeconds)
@@ -111,7 +113,7 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
           } else {
             log.error("Ran out of replay attempts while updating dataset {} in secondary {}; marking it as broken",
               job.datasetId.asInstanceOf[AnyRef], secondary.storeId, rlse)
-            manifest(u).markSecondaryDatasetBroken(job)
+            manifest(u).markSecondaryDatasetBroken(job, job.initialCookie)
           }
         case ResyncLaterSecondaryException(reason) =>
           log.info("resync later {} {} {} {}", secondary.groupName, secondary.storeId, job.datasetId.toString, reason)
@@ -126,7 +128,7 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
           } else {
             log.error("Unexpected exception while updating dataset {} in secondary {}; marking it as broken",
               job.datasetId.asInstanceOf[AnyRef], secondary.storeId, e)
-            manifest(u).markSecondaryDatasetBroken(job)
+            manifest(u).markSecondaryDatasetBroken(job, job.initialCookie)
           }
       }
   }

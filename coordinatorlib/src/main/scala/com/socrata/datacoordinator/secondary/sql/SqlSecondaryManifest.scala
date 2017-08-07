@@ -270,14 +270,16 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
     }
   }
 
-  def markSecondaryDatasetBroken(job: SecondaryRecord): Unit = {
+  def markSecondaryDatasetBroken(job: SecondaryRecord, cookie: Cookie): Unit = {
     using(conn.prepareStatement(
       """UPDATE secondary_manifest
         |SET broken_at = CURRENT_TIMESTAMP
+        |   ,cookie = ?
         |WHERE store_id = ?
         |  AND dataset_system_id = ?""".stripMargin)) { stmt =>
-      stmt.setString(1, job.storeId)
-      stmt.setLong(2, job.datasetId.underlying)
+      stmt.setString(1, cookie.orNull)
+      stmt.setString(2, job.storeId)
+      stmt.setLong(3, job.datasetId.underlying)
       stmt.executeUpdate()
     }
   }

@@ -12,31 +12,44 @@ import com.socrata.datacoordinator.util.collection.MutableColumnIdMap
 import com.socrata.http.client.{HttpClient, RequestBuilder, SimpleHttpRequest}
 import com.socrata.http.client.exceptions.{HttpClientException, ContentTypeException}
 
-case class FeedbackFailure(reason: String, cause: Throwable) extends Exception(reason, cause)
-
-object FeedbackFailure {
-
-  def apply(reason: String): FeedbackFailure = FeedbackFailure(reason, null)
-}
-
 case class RowData[CV](pk: UserColumnId, rows: Iterator[secondary.Row[CV]])
 
-object DataCoordinatorClient {
+abstract class DataCoordinatorClient[CT, CV](typeFromJValue: JValue => Option[CT],
+                                             datasetInternalName: String,
+                                             fromJValueFunc: CT => JValue => Option[CV]) {
+  /**
+   * Export the rows of a dataset for the given columns
+   * @param columnSet must contain at least on column
+   */
+  def exportRows(columnSet: Seq[UserColumnId],
+                 cookie: CookieSchema): Either[RequestFailure, Either[ColumnsDoNotExist, RowData[CV]]]
+
+  /**
+   * Post mutation script to data-coordinator
+   * @return On success return None
+   *         On failure return Some RequestFailure or UpdateSchemaFailure
+   */
+  def postMutationScript(script: JArray, cookie: CookieSchema): Option[Either[RequestFailure, UpdateSchemaFailure]]
+
+}
+
+object HttpDataCoordinatorClient {
   def apply[CT,CV](httpClient: HttpClient,
                    hostAndPort: String => Option[(String, Int)],
                    retries: Int,
-                   typeFromJValue: JValue => Option[CT]): (String, CT => JValue => Option[CV]) => DataCoordinatorClient[CT,CV] =
-      new DataCoordinatorClient[CT,CV](httpClient, hostAndPort, retries, typeFromJValue, _, _)
+                   typeFromJValue: JValue => Option[CT]): (String, CT => JValue => Option[CV]) => HttpDataCoordinatorClient[CT,CV] =
+      new HttpDataCoordinatorClient[CT,CV](httpClient, hostAndPort, retries, typeFromJValue, _, _)
 }
 
-class DataCoordinatorClient[CT,CV](httpClient: HttpClient,
-                                   hostAndPort: String => Option[(String, Int)],
-                                   retries: Int,
-                                   typeFromJValue: JValue => Option[CT],
-                                   datasetInternalName: String,
-                                   fromJValueFunc: CT => JValue => Option[CV]) {
+class HttpDataCoordinatorClient[CT,CV](httpClient: HttpClient,
+                                       hostAndPort: String => Option[(String, Int)],
+                                       retries: Int,
+                                       typeFromJValue: JValue => Option[CT],
+                                       datasetInternalName: String,
+                                       fromJValueFunc: CT => JValue => Option[CV])
+  extends DataCoordinatorClient[CT,CV](typeFromJValue, datasetInternalName, fromJValueFunc) {
 
-  val log = org.slf4j.LoggerFactory.getLogger(classOf[DataCoordinatorClient[CT,CV]])
+  val log = org.slf4j.LoggerFactory.getLogger(classOf[HttpDataCoordinatorClient[CT,CV]])
 
   private def datasetEndpoint: Option[String] = {
     datasetInternalName.lastIndexOf('.') match {
@@ -51,32 +64,27 @@ class DataCoordinatorClient[CT,CV](httpClient: HttpClient,
     }
   }
 
-  private def fail(message: String): Nothing = {
+  private def unexpectedError[T](message: String, cause: Throwable = null): Left[UnexpectedError, T] = {
     log.error(message)
-    throw FeedbackFailure(message)
+    Left(UnexpectedError(message, cause))
   }
 
-  private def fail(message: String, cause: Throwable): Nothing = {
-    log.error(message)
-    throw FeedbackFailure(message, cause)
-  }
-
-  private def failForResponse(message: String, code: Int, info: Any) =
-    fail(s"$message from data-coordinator for status $code: $info")
+  private def unexpectedErrorForResponse(message: String, code: Int, info: Any) =
+    unexpectedError(s"$message from data-coordinator for status $code: $info")
 
   private val unexpected = "Received an unexpected error"
   private val uninterpretable = "Unable to interpret error response"
 
   private def unexpectedResponse(code: Int, response: ErrorResponse) =
-    failForResponse(unexpected, code, response)
+    unexpectedErrorForResponse(unexpected, code, response)
 
   private def uninterpretableResponse(code: Int, response: ErrorResponse) =
-    failForResponse(uninterpretable, code, response)
+    unexpectedErrorForResponse(uninterpretable, code, response)
 
   private def uninterpretableResponse(code: Int, error: DecodeError) =
-    failForResponse(uninterpretable, code, error)
+    unexpectedErrorForResponse(uninterpretable, code, error)
 
-  private def retrying[T](actions: => T, remainingAttempts: Int = retries): T = {
+  private def retrying[T](actions: => Either[RequestFailure, T], remainingAttempts: Int = retries): Either[RequestFailure, T] = {
     val failure = try {
       return actions
     } catch {
@@ -86,8 +94,8 @@ class DataCoordinatorClient[CT,CV](httpClient: HttpClient,
     }
 
     log.info("Failure occurred while posting mutation script: {}", failure.getMessage)
-    if (remainingAttempts > 0) retrying(actions, remainingAttempts - 1)
-    else fail(s"Ran out of retry attempts after failure: ${failure.getMessage}", failure)
+    if (remainingAttempts > 0) retrying[T](actions, remainingAttempts - 1)
+    else unexpectedError(s"Ran out of retry attempts after failure: ${failure.getMessage}", failure)
   }
 
   val UpdateDatasetDoesNotExist = "update.dataset.does-not-exist"
@@ -100,19 +108,19 @@ class DataCoordinatorClient[CT,CV](httpClient: HttpClient,
 
   private def doRequest[T](request: SimpleHttpRequest,
                            message: String,
-                           successHandle: JArray => T,
-                           badRequestHandle: ErrorResponse => T,
+                           successHandle: JArray => Either[UnexpectedError, T],
+                           badRequestHandle: ErrorResponse => Either[UnexpectedError, T],
                            serverErrorMessageExtra: String): Either[RequestFailure, T] = {
-    retrying[Either[RequestFailure, T]] {
+    retrying[T] {
       httpClient.execute(request).run { resp =>
         val start = System.nanoTime()
-        def logContentTypeFailure(v: => JValue): JValue =
+        def logContentTypeFailure(v: => JValue)(f: JValue => Either[RequestFailure, T]): Either[RequestFailure, T] =
           try {
-            v
+            f(v)
           } catch {
             case e: ContentTypeException =>
               log.warn("The response from data-coordinator was not a valid JSON content type! The request we sent was: {}", request.toString)
-              fail("Unable to understand data-coordinator's response", e) // no retry here
+              unexpectedError("Unable to understand data-coordinator's response", e) // no retry here
           }
 
         resp.resultCode match {
@@ -120,24 +128,24 @@ class DataCoordinatorClient[CT,CV](httpClient: HttpClient,
             // success! ... well maybe...
             val end = System.nanoTime()
             log.info("{} in {}ms", message, (end - start) / 1000000)
-            JsonDecode.fromJValue[JArray](logContentTypeFailure(resp.jValue())) match {
-              case Right(response) => Right(successHandle(response))
-              case Left(e) => fail(s"Response from data-coordinator was not an array: ${e.english}")
-            }
+            logContentTypeFailure(resp.jValue()) { JsonDecode.fromJValue[JArray](_) match {
+              case Right(response) => successHandle(response)
+              case Left(e) => unexpectedError(s"Response from data-coordinator was not an array: ${e.english}")
+            }}
           case 400 =>
-            JsonDecode.fromJValue[ErrorResponse](logContentTypeFailure(resp.jValue())) match {
-              case Right(response) => Right(badRequestHandle(response))
+            logContentTypeFailure(resp.jValue()) { JsonDecode.fromJValue[ErrorResponse](_) match {
+              case Right(response) => badRequestHandle(response)
               case Left(e) => uninterpretableResponse(400, e)
-            }
+            }}
           case 404 =>
             // { "errorCode" : "update.dataset.does-not-exist"
             // , "data" : { "dataset" : "XXX.XXX, "data" : { "commandIndex" : 0 }
             // }
-            JsonDecode.fromJValue[ErrorResponse](logContentTypeFailure(resp.jValue())) match {
+            logContentTypeFailure(resp.jValue()) { JsonDecode.fromJValue[ErrorResponse](_) match {
               case Right(ErrorResponse(UpdateDatasetDoesNotExist, _)) => Left(DatasetDoesNotExist)
               case Right(response) => unexpectedResponse(404, response)
               case Left(e) => uninterpretableResponse(404, e)
-            }
+            }}
           case 409 =>
             // come back later!
             Left(DataCoordinatorBusy) // no retry
@@ -169,14 +177,14 @@ class DataCoordinatorClient[CT,CV](httpClient: HttpClient,
     val columns = columnSet.tail.foldLeft(columnSet.head.underlying) { (str, id) => str + "," + id.underlying }
     val builder = RequestBuilder(new java.net.URI(endpoint)).addParameter(("c", columns))
 
-    def successHandle(response: JArray): Either[ColumnsDoNotExist, RowData[CV]] = {
-      if (response.isEmpty) fail("Response from data-coordinator was an empty array.")
+    def successHandle(response: JArray): Either[UnexpectedError, Either[ColumnsDoNotExist, RowData[CV]]] = {
+      if (response.isEmpty) return unexpectedError("Response from data-coordinator was an empty array.")
 
       JsonDecode.fromJValue[Schema](response.head) match {
         case Right(Schema(pk, schema)) =>
           val columns = schema.map { col =>
             (cookie.columnIdMap(col.c), typeFromJValue(col.t).getOrElse {
-              fail(s"Could not derive column type for column ${col.c} from value: ${col.t}")
+              return unexpectedError(s"Could not derive column type for column ${col.c} from value: ${col.t}")
             })
           }.toArray
           val rows = response.tail.iterator.map {
@@ -187,22 +195,22 @@ class DataCoordinatorClient[CT,CV](httpClient: HttpClient,
                 row.iterator.zipWithIndex.foreach { case (jVal, index) =>
                   val (colId, typ) = columns(index)
                   colIdMap += ((colId, fromJValueFunc(typ)(jVal).getOrElse {
-                    fail(s"Could not interpret column value of type $typ from value: $jVal")
+                    return unexpectedError(s"Could not interpret column value of type $typ from value: $jVal")
                   }))
                 }
                 colIdMap.freeze()
-              case Left(e) => failForResponse("Row data was not an array", 200, e.english)
+              case Left(e) => return unexpectedErrorForResponse("Row data was not an array", 200, e.english)
             }
           }
-          Right(RowData(pk, rows))
-        case Left(e) => failForResponse("Response did not start with expected column schema", 200, e.english)
+          Right(Right(RowData(pk, rows)))
+        case Left(e) => unexpectedErrorForResponse("Response did not start with expected column schema", 200, e.english)
       }
     }
 
-    def badRequestHandle(response: ErrorResponse): Either[ColumnsDoNotExist, RowData[CV]] = response match {
+    def badRequestHandle(response: ErrorResponse): Either[UnexpectedError, Either[ColumnsDoNotExist, RowData[CV]]] = response match {
       case ErrorResponse(ReqExportUnknownColumns, data) =>
-        JsonDecode.fromJValue[Set[UserColumnId]](data.getOrElse("columns", uninterpretableResponse(400, response))) match {
-        case Right(unknown) if unknown.nonEmpty => Left(ColumnsDoNotExist(unknown))
+        JsonDecode.fromJValue[Set[UserColumnId]](data.getOrElse("columns", return uninterpretableResponse(400, response))) match {
+        case Right(unknown) if unknown.nonEmpty => Right(Left(ColumnsDoNotExist(unknown)))
         case _ => uninterpretableResponse(400, response)
       }
       case _ => unexpectedResponse(400, response)
@@ -225,14 +233,13 @@ class DataCoordinatorClient[CT,CV](httpClient: HttpClient,
   implicit val neCodec = AutomaticJsonCodecBuilder[NonfatalError]
   implicit val reCodec = SimpleHierarchyCodecBuilder[Response](NoTag).branch[Upsert].branch[NonfatalError].build
 
-  // this may throw a FeedbackFailure exception
-  def postMutationScript(script: JArray, cookie: CookieSchema): Option[Either[RequestFailure, UpdateSchemaFailure]] = {
+  override def postMutationScript(script: JArray, cookie: CookieSchema): Option[Either[RequestFailure, UpdateSchemaFailure]] = {
     val endpoint = datasetEndpoint.getOrElse(return Some(Left(FailedToDiscoverDataCoordinator)))
     val builder = RequestBuilder(new java.net.URI(endpoint))
 
     def body = JValueEventIterator(script)
 
-    def successHandle(response: JArray): Option[UpdateSchemaFailure] = {
+    def successHandle(response: JArray): Either[UnexpectedError, Option[UpdateSchemaFailure]] = {
       assert(response.elems.length == 1, "Response contains more than one element")
       JsonDecode.fromJValue[JArray](response.elems.head) match {
         case Right(results) =>
@@ -244,17 +251,17 @@ class DataCoordinatorClient[CT,CV](httpClient: HttpClient,
               case Right(NonfatalError("error", nonfatalError, Some(id))) if nonfatalError == "insert_in_update_only" ||  nonfatalError == "no_such_row_to_update" =>
                 val JObject(fields) = JsonDecode.fromJValue[JObject](row).right.get // I just encoded this from a JObject
                 val rowId = JsonDecode.fromJValue[JString](fields(cookie.primaryKey.underlying)).right.get.string
-                if (rowId != id) return Some(PrimaryKeyColumnHasChanged) // else the row has been deleted
-              case Right(other) => failForResponse("Unexpected response in array", 200, other)
-              case Left(e) => failForResponse("Unable to interpret result in array", 200, e.english)
+                if (rowId != id) return Right(Some(PrimaryKeyColumnHasChanged)) // else the row has been deleted
+              case Right(other) => unexpectedErrorForResponse("Unexpected response in array", 200, other)
+              case Left(e) => unexpectedErrorForResponse("Unable to interpret result in array", 200, e.english)
             }
           }
-          None
-        case Left(e) => failForResponse("Row data was not an array", 200, e.english)
+          Right(None)
+        case Left(e) => unexpectedErrorForResponse("Row data was not an array", 200, e.english)
       }
     }
 
-    def badRequestHandle(response: ErrorResponse): Option[UpdateSchemaFailure] = {
+    def badRequestHandle(response: ErrorResponse): Either[UnexpectedError, Option[UpdateSchemaFailure]] = {
       response.errorCode match {
         // { "errorCode" : "update.row.unknown-column"
         // , "data" : { "commandIndex" : 1, "commandSubIndex" : XXX, "dataset" : "XXX.XXX", "column" : "XXXX-XXXX"
@@ -262,14 +269,14 @@ class DataCoordinatorClient[CT,CV](httpClient: HttpClient,
         case UpdateRowUnknownColumn => response.data.get("column") match {
           case Some(JString(id)) =>
             val userId = new UserColumnId(id)
-            if (id == cookie.primaryKey.underlying) Some(PrimaryKeyColumnDoesNotExist(userId))
-            else Some(TargetColumnDoesNotExist(userId))
+            if (id == cookie.primaryKey.underlying) Right(Some(PrimaryKeyColumnDoesNotExist(userId)))
+            else Right(Some(TargetColumnDoesNotExist(userId)))
           case _ => uninterpretableResponse(400, response)
         }
         // { "errorCode" : "update.row.primary-key-nonexistent-or-null"
         // , "data" : { "commandIndex" : 1, "dataset" : "XXX.XXX"
         // }
-        case UpdateRowPrimaryKeyNonexistentOrNull => Some(PrimaryKeyColumnHasChanged)
+        case UpdateRowPrimaryKeyNonexistentOrNull => Right(Some(PrimaryKeyColumnHasChanged))
         case _ => unexpectedResponse(400, response)
       }
     }

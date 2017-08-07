@@ -2,6 +2,7 @@ package com.socrata.datacoordinator
 package secondary
 
 import com.socrata.datacoordinator.id.DatasetId
+import com.socrata.datacoordinator.secondary.Secondary.Cookie
 import com.socrata.datacoordinator.truth.metadata
 import scala.concurrent.duration.FiniteDuration
 import java.util.UUID
@@ -35,7 +36,7 @@ trait SecondaryManifest {
                                      claimantId: UUID,
                                      claimTimeout: FiniteDuration): Option[SecondaryRecord]
   def releaseClaimedDataset(job: SecondaryRecord): Unit
-  def markSecondaryDatasetBroken(job: SecondaryRecord): Unit
+  def markSecondaryDatasetBroken(job: SecondaryRecord, cookie: Cookie): Unit
   def completedReplicationTo(storeId: String,
                              claimantId: UUID,
                              datasetId: DatasetId,
