@@ -357,8 +357,10 @@ object Main extends DynamicPortMap {
           for {
             u <- common.universe
           } yield {
-            val dsInfo = u.datasetMapReader.datasetInfo(datasetId).getOrElse { return CopyContextResult.NoSuchDataset }
-            u.datasetMapReader.snapshots(dsInfo).find(_.copyNumber == copyNum) match {
+            val dsInfo = u.datasetMapWriter.datasetInfo(datasetId, common.PostgresUniverseCommon.writeLockTimeout).getOrElse {
+              return CopyContextResult.NoSuchDataset
+            }
+            u.datasetMapWriter.snapshots(dsInfo).find(_.copyNumber == copyNum) match {
               case None =>
                 CopyContextResult.NoSuchCopy
               case Some(snapshot) =>
