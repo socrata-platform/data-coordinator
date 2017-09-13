@@ -36,6 +36,12 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
   val pkRep = repSchema(logicalPKColumnName).asInstanceOf[SqlPKableColumnRep[CT, CV]]
   val versionRep = repSchema(datasetContext.versionColumn)
 
+  private def reanalyzePK(conn: Connection) {
+    using(conn.prepareStatement(s"ANALYZE $dataTableName (" + pkRep.physColumns.mkString(",")+")")) { stmt =>
+      stmt.execute()
+    }
+  }
+
   def sizeofDelete(id: CV) = pkRep.estimateSize(id)
 
   def sizeof(row: Row[CV]) = {
@@ -161,6 +167,20 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
         }
       }
     }
+
+    // WTF postgres WHYYY
+    //
+    // Ok so we're seeing a situation in which row identifier lookups
+    // are getting slower and slower during a big insert.  Doing
+    // EXPLAIN ANALYZE (the query) is very very fast though!  It
+    // says "we're doing index lookups, everything's great guys"
+    // and returns no results as expected (because insert).  But
+    // the ACTUAL select doesn't seem to use the PK index unless
+    // column stats are up to date.  So let's force them to be
+    // so.  PG doesn't look at all the contents of a large column
+    // when analyzing it, so this shouldn't go quadratic on us.
+    reanalyzePK(conn)
+
     new ResultIterator with LeakDetect
   }
 
