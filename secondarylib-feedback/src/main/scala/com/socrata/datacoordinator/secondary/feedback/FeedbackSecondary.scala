@@ -10,7 +10,6 @@ import com.socrata.datacoordinator.secondary._
 import com.socrata.datacoordinator.secondary.Secondary.Cookie
 import com.socrata.datacoordinator.secondary.feedback.monitor.StatusMonitor
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
-import com.socrata.http.client.HttpClient
 
 trait HasStrategy {
   def strategy: ComputationStrategyInfo
@@ -40,12 +39,14 @@ trait ComputationHandler[CT,CV] {
    */
   def setupCell(column: PerColumnData, row: secondary.Row[CV]): PerCellData
 
+  type ComputationResult[RowHandle] = Either[ComputationFailure, Map[RowHandle, Map[UserColumnId, CV]]]
+
   /**
    * Perform the computation of the target column for each RowComputeInfo
    * @return The RowComputeInfo's and resulting values zipped with indexes of the rows
    * @note This should not throw any exception other than a [[ComputationFailure]] exception
    */
-  def compute[RowHandle](sources: Map[RowHandle, Seq[PerCellData]]): Map[RowHandle, Map[UserColumnId, CV]]
+  def compute[RowHandle](sources: Map[RowHandle, Seq[PerCellData]]): ComputationResult[RowHandle]
 }
 
 /**
@@ -74,14 +75,10 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
   val statusMonitor: StatusMonitor
 
   /**
-   * HTTP connection to data-coordinator and corresponding retry limits
+   * Function to construct a DataCoordinatorClient for a given dataset and corresponding retry limit
    */
-  val httpClient: HttpClient
-
-  def hostAndPort(instanceName: String): Option[(String, Int)]
-
+  def dataCoordinator: (String, CT => JValue => Option[CV]) => DataCoordinatorClient[CT,CV]
   val dataCoordinatorRetryLimit: Int
-  val internalDataCoordinatorRetryLimit: Int
 
   /**
    * Computation handlers and corresponding retry limit
@@ -110,12 +107,6 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
   private def fromJValue(obfuscationKey: Array[Byte]): CT => JValue => Option[CV] = {
     val reps = repFrom(obfuscationKey);
     reps
-  }
-
-  // this is a lazy val because we want abstract `httpClient` to be initialized first
-  private lazy val dataCoordinator = {
-    assert(httpClient != null)
-    DataCoordinatorClient[CT,CV](httpClient, hostAndPort, internalDataCoordinatorRetryLimit, typeFromJValue)
   }
 
   private def datasetContext(datasetInternalName: String,
@@ -159,110 +150,186 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
     }
   }
 
+  private def checkRetriesLeft(cookie: FeedbackCookie, retriesLeft: Long, cause: String): Unit = {
+    if (retriesLeft == 0) {
+      val reason = s"Gave up replaying updates after too many failed $cause attempts"
+      throw BrokenDatasetSecondaryException(reason, FeedbackCookie.encode(cookie.copyCurrent(errorMessage = Some(reason))))
+    }
+  }
+
+  private def handleFeedbackResult[T](originalCookie: Option[FeedbackCookie],
+                                      feedbackResult: FeedbackResult)(f: FeedbackCookie => T): T = {
+    def encodeCookie(reason: String, f: FeedbackCookie => FeedbackCookie): Cookie = originalCookie match {
+      case Some(fbCookie) => FeedbackCookie.encode(f(fbCookie))
+      case None => Some(s"{errorMessage:$reason}")
+    }
+
+    feedbackResult match {
+      case Success(updatedCookie) => f(updatedCookie)
+      case ReplayLater(reason, transform) =>
+        throw ReplayLaterSecondaryException(reason, encodeCookie(reason, transform))
+      case BrokenDataset(reason, transform) =>
+        throw BrokenDatasetSecondaryException(reason, encodeCookie(reason, transform))
+      case FeedbackError(reason, cause) =>
+        throw new Exception(reason, cause) // this will by caught by SW retry logic and version will be retried
+    }
+  }
+
   /** Provide the current copy an update.  The secondary should ignore it if it
     * already has this dataVersion.
     * @return a new cookie to store in the secondary map
     */
   override def version(datasetInfo: DatasetInfo, dataVersion: Long, cookie: Cookie, events: Iterator[Event[CT,CV]]): Cookie = {
-    try {
-      val datasetInternalName = datasetInfo.internalName
+    val datasetInternalName = datasetInfo.internalName
 
-      val oldCookie = FeedbackCookie.decode(cookie).getOrElse {
+    val oldCookie = FeedbackCookie.decode(cookie).getOrElse {
+      if (dataVersion == 1) {
+        log.info("No existing cookie for dataset {} since it is version 1; creating cookie.")
+        val schema = CookieSchema(
+          dataVersion = DataVersion(0),
+          copyNumber = CopyNumber(0),
+          primaryKey = new UserColumnId(":id"), // this _should_ be right... but we will override this later
+          columnIdMap = Map.empty,
+          strategyMap = Map.empty,
+          obfuscationKey = datasetInfo.obfuscationKey,
+          computationRetriesLeft = computationRetryLimit,
+          dataCoordinatorRetriesLeft = dataCoordinatorRetryLimit,
+          resync = false
+        )
+        FeedbackCookie(current = schema, previous = None)
+      } else {
         log.info("No existing cookie for dataset {}; going to resync.", datasetInternalName)
         throw ResyncSecondaryException(s"No cookie value for dataset $datasetInternalName")
       }
+    }
 
-      if (oldCookie.current.resync) {
-        log.info("Cookie for dataset {} for version {} specified to resync.", datasetInternalName, dataVersion)
-        throw ResyncSecondaryException("My cookie specified to resync!")
+    if (oldCookie.current.resync) {
+      log.info("Cookie for dataset {} for version {} specified to resync.", datasetInternalName, dataVersion)
+      throw ResyncSecondaryException("My cookie specified to resync!")
+    }
+
+    // mark the dataset as broken if we have run out of retries
+    checkRetriesLeft(oldCookie, oldCookie.current.computationRetriesLeft, "computation")
+    checkRetriesLeft(oldCookie, oldCookie.current.dataCoordinatorRetriesLeft, "data-coordinator")
+
+    val expectedDataVersion = oldCookie.current.dataVersion.underlying + 1
+    if (dataVersion < expectedDataVersion) {
+      // if the data version is less than are equal to the version in our cookie, we have seen this version and are done
+      log.info("Cookie for dataset {} expects data version {}, we have already replicated {}",
+        datasetInternalName, expectedDataVersion.toString, dataVersion.toString)
+      cookie
+    } else if (dataVersion > expectedDataVersion) {
+      // if the data version is more than 1 greater than the version in our cookie, this is unexpected and we should resync
+      log.warn("Cookie for dataset {} expects data version {}, version {} is unexpected; going to resync.",
+        datasetInternalName, expectedDataVersion.toString, dataVersion.toString)
+      val reason = s"Unexpected data version $dataVersion"
+      throw ResyncSecondaryException(reason)
+    } else {
+      // if the data version is 1 greater than the version in our cookie, we should try replaying it
+      // on success we will return a cookie reflecting this version
+      // on failure we will return the old cookie with retries decremented
+
+      def handle[T](feedbackResult: FeedbackResult)(f: FeedbackCookie => T): T = {
+        handleFeedbackResult(Some(oldCookie), feedbackResult)(f)
       }
 
-      var result = cookie
-      if (dataVersion != oldCookie.current.dataVersion.underlying
-        || (oldCookie.current.computationRetriesLeft > 0 && oldCookie.current.dataCoordinatorRetriesLeft > 0)) {
-        // either we are not up to date on the data version or we still have retries left on the current version
-        // note: we set the retries left to 0 once we have succeeded for the current version
-        val toJValueFunc = toJValue(datasetInfo.obfuscationKey)
-        val fromJValueFunc = fromJValue(datasetInfo.obfuscationKey)
-        val currentContext = datasetContext(datasetInternalName, toJValueFunc, fromJValueFunc)
+      def notFirstEvent(event: String) =
+        s"$event not the first event in version $dataVersion for dataset $datasetInternalName? Something is wrong!"
 
-        val cookieSeed = oldCookie.copy(oldCookie.current.copy(DataVersion(dataVersion)), oldCookie.previous)
+      def logErrorAndResync(message: String): Nothing = {
+        log.error(message + " Going to resync.")
+        throw ResyncSecondaryException(message)
+      }
 
-        // WARNING: this .foldLeft(.) has side effects!
-        case class FP(cookie: FeedbackCookie, columns: Set[UserColumnId])
-        val resultFP = events.foldLeft(FP(cookieSeed, Set.empty)) { case (FP(newCookie, newCompCols), event) =>
-          event match {
-            case ColumnCreated(columnInfo) =>
-              // note: we will see ColumnCreated events both when new columns are created and after a WorkingCopyCreated event
-              val old = newCookie.current.strategyMap
-              val (updatedStrategyMap, updatedCompCols) = columnInfo.computationStrategyInfo match {
-                case Some(strategy) if computationHandlers.exists(_.matchesStrategyType(strategy.strategyType)) && !old.contains(columnInfo.id) =>
-                  // only track computed columns as new if we haven't seen them before
-                  (old + (columnInfo.id -> strategy), newCompCols + columnInfo.id)
-                case _ => (old, newCompCols)
-              }
-              FP(newCookie.copy(
-                current = newCookie.current.copy(
-                  columnIdMap = newCookie.current.columnIdMap + (columnInfo.id -> columnInfo.systemId),
-                  strategyMap = updatedStrategyMap
-                )
-              ), updatedCompCols)
-            case ColumnRemoved(columnInfo) =>
-              val old = newCookie.current.strategyMap
-              val (updatedStrategyMap, updatedCompCols) = columnInfo.computationStrategyInfo match {
-                case Some(strategy) if computationHandlers.exists(_.matchesStrategyType(strategy.strategyType)) =>
-                  (old - columnInfo.id, newCompCols - columnInfo.id)
-                case _ => (old, newCompCols)
-              }
-              FP(newCookie.copy(
-                current = newCookie.current.copy(
-                  columnIdMap = newCookie.current.columnIdMap - columnInfo.id,
-                  strategyMap = updatedStrategyMap
-                )
-              ), updatedCompCols)
-            case RowIdentifierSet(columnInfo) =>
-              FP(newCookie.copy(
-                current = newCookie.current.copy(
-                  primaryKey = columnInfo.id
-                )
-              ), newCompCols)
-            case RowIdentifierCleared(columnInfo) =>
-              FP(newCookie.copy(
-                current = newCookie.current.copy(
-                  primaryKey = systemId
-                )
-              ), newCompCols)
-            case SystemRowIdentifierChanged(columnInfo) =>
-              FP(newCookie.copy(
-                current = newCookie.current.copy(
-                  primaryKey = columnInfo.id
-                )
-              ), newCompCols)
-            case WorkingCopyCreated(copyInfo) =>
-              // Should be the first event in this version
-              if (newCompCols.nonEmpty) logErrorAndResync(notFirstEvent("WorkingCopyCreated"))
-              FP(newCookie.copy(
-                current = newCookie.current.copy(
-                  copyNumber = CopyNumber(copyInfo.copyNumber)
-                ),
-                previous = Some(newCookie.current)
-              ), newCompCols)
-            case WorkingCopyDropped =>
-              // Should be the first event in this version
-              if (newCompCols.nonEmpty) logErrorAndResync(notFirstEvent("WorkingCopyCreated"))
-              FP(newCookie.copy(
-                current = newCookie.previous.getOrElse {
-                  log.info("No previous value in cookie for dataset {}. Going to resync.", datasetInternalName)
-                  throw ResyncSecondaryException(s"No previous value in cookie for dataset $datasetInternalName")
-                },
-                previous = None
-              ), newCompCols)
-            case RowDataUpdated(operations) =>
-              // in practice this should only happen once per data version
-              // flush handling of newly created computed columns
-              val updatedCookie =
-                currentContext(newCookie).flushColumnCreations(newCompCols)
+      val toJValueFunc = toJValue(datasetInfo.obfuscationKey)
+      val fromJValueFunc = fromJValue(datasetInfo.obfuscationKey)
+      val currentContext = datasetContext(datasetInternalName, toJValueFunc, fromJValueFunc)
 
+      val cookieSeed = oldCookie.copy(oldCookie.current.copy(DataVersion(dataVersion)), oldCookie.previous)
+
+      // WARNING: this .foldLeft(.) has side effects!
+      case class FP(cookie: FeedbackCookie, columns: Set[UserColumnId])
+      val resultFP = events.foldLeft(FP(cookieSeed, Set.empty)) { case (FP(newCookie, newCompCols), event) =>
+        event match {
+          case ColumnCreated(columnInfo) =>
+            // note: we will see ColumnCreated events both when new columns are created and after a WorkingCopyCreated event
+
+            // so... since we are blindly setting the primary key on version 1 to the expected value of ":id"
+            // let's change that value to the UserColumnId of the column in the version that is said to actually
+            // be the system primary key to not make any assumptions about what we actually name our system fields
+            val newPrimaryKey =
+              if (dataVersion == 1 && columnInfo.isSystemPrimaryKey) columnInfo.id
+              else newCookie.current.primaryKey
+
+            val old = newCookie.current.strategyMap
+            val (updatedStrategyMap, updatedCompCols) = columnInfo.computationStrategyInfo match {
+              case Some(strategy) if computationHandlers.exists(_.matchesStrategyType(strategy.strategyType)) && !old.contains(columnInfo.id) =>
+                // only track computed columns as new if we haven't seen them before
+                (old + (columnInfo.id -> strategy), newCompCols + columnInfo.id)
+              case _ => (old, newCompCols)
+            }
+            FP(newCookie.copy(
+              current = newCookie.current.copy(
+                primaryKey = newPrimaryKey,
+                columnIdMap = newCookie.current.columnIdMap + (columnInfo.id -> columnInfo.systemId),
+                strategyMap = updatedStrategyMap
+              )
+            ), updatedCompCols)
+          case ColumnRemoved(columnInfo) =>
+            val old = newCookie.current.strategyMap
+            val (updatedStrategyMap, updatedCompCols) = columnInfo.computationStrategyInfo match {
+              case Some(strategy) if computationHandlers.exists(_.matchesStrategyType(strategy.strategyType)) =>
+                (old - columnInfo.id, newCompCols - columnInfo.id)
+              case _ => (old, newCompCols)
+            }
+            FP(newCookie.copy(
+              current = newCookie.current.copy(
+                columnIdMap = newCookie.current.columnIdMap - columnInfo.id,
+                strategyMap = updatedStrategyMap
+              )
+            ), updatedCompCols)
+          case RowIdentifierSet(columnInfo) =>
+            FP(newCookie.copy(
+              current = newCookie.current.copy(
+                primaryKey = columnInfo.id
+              )
+            ), newCompCols)
+          case RowIdentifierCleared(columnInfo) =>
+            FP(newCookie.copy(
+              current = newCookie.current.copy(
+                primaryKey = systemId
+              )
+            ), newCompCols)
+          case SystemRowIdentifierChanged(columnInfo) =>
+            FP(newCookie.copy(
+              current = newCookie.current.copy(
+                primaryKey = columnInfo.id
+              )
+            ), newCompCols)
+          case WorkingCopyCreated(copyInfo) =>
+            // Should _always_ be the first event in a version
+            if (newCompCols.nonEmpty) logErrorAndResync(notFirstEvent("WorkingCopyCreated"))
+            val previous = if (dataVersion == 1) None else Some(oldCookie.current) // let's drop our fake version 0 cookie
+            FP(newCookie.copy(
+              current = newCookie.current.copy(
+                copyNumber = CopyNumber(copyInfo.copyNumber)
+              ),
+              previous = previous
+            ), newCompCols)
+          case WorkingCopyDropped =>
+            // Should be the first event in this version
+            if (newCompCols.nonEmpty) logErrorAndResync(notFirstEvent("WorkingCopyDropped"))
+            FP(newCookie.copy(
+              current = newCookie.previous.getOrElse {
+                log.info("No previous value in cookie for dataset {}. Going to resync.", datasetInternalName)
+                throw ResyncSecondaryException(s"No previous value in cookie for dataset $datasetInternalName")
+              }.copy(dataVersion = DataVersion(dataVersion)),
+              previous = None
+            ), newCompCols)
+          case RowDataUpdated(operations) =>
+            // in practice this should only happen once per data version
+            // flush handling of newly created computed columns
+            handle(currentContext(newCookie).flushColumnCreations(newCompCols)) { updatedCookie =>
               val toCompute = operations.toIterator.map { case op =>
                 op match {
                   case insert: Insert[CV] =>
@@ -275,38 +342,14 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
               }.filter(x => x.isDefined).map(x => x.get)
 
               log.info("Processing row update of dataset {} in version {}...", datasetInternalName, dataVersion)
-              FP(currentContext(updatedCookie).feedback(toCompute), Set.empty)
-            case _ => // no-ops for us
-              // flush handling of newly created computed columns
-              val updatedCookie =
-                currentContext(newCookie).flushColumnCreations(newCompCols)
-              FP(updatedCookie, Set.empty)
-          }
+              handle(currentContext(updatedCookie).feedback(toCompute))(FP(_, Set.empty))
+            }
+          case _ => // no-ops for us
+            // flush handling of newly created computed columns
+            handle(currentContext(newCookie).flushColumnCreations(newCompCols))(FP(_, Set.empty))
         }
-        val resultCookie =
-          currentContext(resultFP.cookie).flushColumnCreations(resultFP.columns)
-        result = FeedbackCookie.encode(resultCookie)
       }
-
-      def notFirstEvent(event: String) =
-        s"$event not the first event in version $dataVersion for dataset $datasetInternalName? Something is wrong!"
-
-      def logErrorAndResync(message: String): Nothing = {
-        log.error(message + " Going to resync.")
-        throw ResyncSecondaryException(message)
-      }
-
-      result
-    } catch {
-      case resyncException: ResyncSecondaryException =>
-        throw resyncException
-      case replayLater: ReplayLaterSecondaryException =>
-        throw replayLater
-      case brokenDataset: BrokenDatasetSecondaryException =>
-        throw brokenDataset
-      case error: Throwable =>
-        log.error(s"An unexpected error has occurred: ${error.getMessage}\n{}", error.getStackTrace.toString)
-        throw error
+      handle(currentContext(resultFP.cookie).flushColumnCreations(resultFP.columns))(FeedbackCookie.encode)
     }
   }
 
@@ -349,11 +392,13 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
         for {
           rws <- rows
         } {
-          newCookie = datasetContext(
+          val result = datasetContext(
             datasetInfo.internalName,
             toJValueFunc,
-            fromJValueFunc
-          )(newCookie).feedback(rws.map { row => Row(row, None) }, resync = true)
+            fromJValueFunc)(newCookie).feedback(rws.map { row => Row(row, None) }, resync = true)
+          handleFeedbackResult(originalCookie = None, feedbackResult =  result) { resultCookie =>
+            newCookie = resultCookie
+          }
         }
       }
 
@@ -363,7 +408,7 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
         throw replayLater
       case brokenDataset: BrokenDatasetSecondaryException =>
         throw brokenDataset
-      case error: Throwable =>
+      case error: Exception =>
         // note: shouldn't ever throw a ResyncSecondaryException from inside resync
         log.error(s"An unexpected error has occurred: ${error.getMessage}\n{}", error.getStackTrace.toString)
         throw error
@@ -378,11 +423,12 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
 }
 
 /**
- * Exception type to be thrown by FeedbackSecondary.compute(.)
+ * Failure type to be returned by FeedbackSecondary.compute(.)
  */
-case class ComputationFailure(reason: String, cause: Throwable) extends Exception(reason, cause)
-
-object ComputationFailure {
-
-  def apply(reason: String): ComputationFailure = ComputationFailure(reason, null)
+sealed abstract class ComputationFailure {
+  def reason: String
+  def cause: Option[Exception]
 }
+
+case class ComputationError(reason: String, cause: Option[Exception] = None) extends ComputationFailure
+case class FatalComputationError(reason: String, cause: Option[Exception] = None) extends ComputationFailure

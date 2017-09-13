@@ -72,7 +72,7 @@ class SecondaryWatcherTest extends FunSuite with MustMatchers with MockFactory {
       // (testSecondary.wantsWorkingCopies _).expects().returns(true)
       // (testSecondary.version _).expects(*, *, *, *).returns(None)
 
-      (testManifest.markSecondaryDatasetBroken _).expects(job)
+      (testManifest.markSecondaryDatasetBroken _).expects(job, job.initialCookie)
 
       // Run the watcher run() method
       w.run(u, new NamedSecondary(testStoreId, testSecondary, testSecondary.getClass.getName))

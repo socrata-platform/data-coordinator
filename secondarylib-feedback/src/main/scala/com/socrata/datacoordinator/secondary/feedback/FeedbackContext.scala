@@ -11,6 +11,13 @@ import com.socrata.datacoordinator.util.collection.MutableColumnIdMap
 
 case class Row[CV](data: secondary.Row[CV], oldData: Option[secondary.Row[CV]])
 
+sealed abstract class FeedbackResult
+
+case class Success(feedbackCookie: FeedbackCookie) extends FeedbackResult
+case class ReplayLater(reason: String, feedbackCookie: FeedbackCookie => FeedbackCookie) extends FeedbackResult
+case class BrokenDataset(reason: String, feedbackCookie: FeedbackCookie => FeedbackCookie) extends FeedbackResult
+case class FeedbackError(reason: String, cause: Throwable) extends FeedbackResult
+
 object FeedbackContext {
   def apply[CT,CV](user: String,
                    batchSize: Int => Int,
@@ -47,10 +54,48 @@ class FeedbackContext[CT,CV](user: String,
                              datasetInternalName: String,
                              toJValueFunc: CV => JValue,
                              fromJValueFunc: CT => JValue => Option[CV],
-                             feedbackCookie: FeedbackCookie) {
+                             currentCookie: FeedbackCookie) {
+
+  private def success(current: CookieSchema): Success = {
+    Success(currentCookie.copyCurrent(
+      current = current,
+      computationRetriesLeft = computationRetryLimit,
+      dataCoordinatorRetriesLeft = dataCoordinatorRetryLimit,
+      resync = false,
+      errorMessage = None
+    ))
+  }
+
+  private def replayLater(reason: String, resync: Boolean): ReplayLater = {
+    ReplayLater(reason, _.copyCurrent(resync = resync, errorMessage = Some(reason)))
+  }
+
+  private def replayComputation(reason: String, resync: Boolean): ReplayLater = {
+    ReplayLater(reason, { feedbackCookie =>
+      feedbackCookie.copyCurrent(
+        computationRetriesLeft = feedbackCookie.current.computationRetriesLeft - 1,
+        dataCoordinatorRetriesLeft = dataCoordinatorRetryLimit,
+        resync = resync,
+        errorMessage = Some(reason))
+    })
+  }
+
+  private def replayDataCoordinator(reason: String, resync: Boolean): ReplayLater = {
+    ReplayLater(reason, { feedbackCookie =>
+      feedbackCookie.copyCurrent(
+        computationRetriesLeft = computationRetryLimit,
+        dataCoordinatorRetriesLeft = feedbackCookie.current.dataCoordinatorRetriesLeft - 1,
+        resync = resync,
+        errorMessage = Some(reason))
+    })
+  }
+
+  private def brokenDataset(reason: String, resync: Boolean): BrokenDataset = {
+    BrokenDataset(reason, _.copyCurrent(resync = resync, errorMessage = Some(reason)))
+  }
 
   val log = org.slf4j.LoggerFactory.getLogger(classOf[FeedbackContext[CT,CV]])
-  private var cookie = feedbackCookie.current
+  private var cookie = currentCookie.current
 
   val dataCoordinatorClient = dataCoordinator(datasetInternalName, fromJValueFunc)
 
@@ -65,10 +110,9 @@ class FeedbackContext[CT,CV](user: String,
     }
   }
 
-  // this may throw a ComputationFailure exception
   private def computeUpdates(computationHandler: ComputationHandler[CT,CV],
                              rows: IndexedSeq[Row[CV]],
-                             targetColumns: Set[UserColumnId]): Map[Int, Map[UserColumnId, CV]] = {
+                             targetColumns: Set[UserColumnId]): Either[ComputationFailure, Map[Int, Map[UserColumnId, CV]]] = {
     val perDatasetData = computationHandler.setupDataset(cookie)
     val perColumnData = cookie.strategyMap.toSeq.collect {
       case (targetCol, strat) if targetColumns.contains(targetCol) & computationHandler.matchesStrategyType(strat.strategyType) =>
@@ -87,25 +131,27 @@ class FeedbackContext[CT,CV](user: String,
       else Iterator.single(index -> rcis)
     }.toMap
 
-    val results = computationHandler.compute(toCompute)
-
-    results.flatMap { case (rowIdx, updates) =>
-      val row = rows(rowIdx)
-      val filtered = updates.filter { case (colId: UserColumnId, value) =>
-        extractCV(row.data, colId) != Some(value) // don't update to current value
-      }
-      val rowId = extractCV(row.data, cookie.primaryKey) match {
-        case None => throw new Exception(s"Cannot find value for primary key ${cookie.primaryKey} in row: $row!")
-        case Some(other) => other
-      }
-      if (filtered.nonEmpty) {
-        val newRow = Map(
-          cookie.primaryKey -> rowId
-        ) ++ filtered.map { case (id, value) => (id, value)}.toMap
-        Some(rowIdx -> newRow)
-      } else {
-        None
-      }
+    computationHandler.compute(toCompute) match {
+      case Right(results) =>
+        Right(results.flatMap { case (rowIdx, updates) =>
+          val row = rows(rowIdx)
+          val filtered = updates.filter { case (colId: UserColumnId, value) =>
+            extractCV(row.data, colId) != Some(value) // don't update to current value
+          }
+          val rowId = extractCV(row.data, cookie.primaryKey) match {
+            case None => throw new Exception(s"Cannot find value for primary key ${cookie.primaryKey} in row: $row!") // throwing as exception because this should not happen _ever_
+            case Some(other) => other
+          }
+          if (filtered.nonEmpty) {
+            val newRow = Map(
+              cookie.primaryKey -> rowId
+            ) ++ filtered.map { case (id, value) => (id, value)}.toMap
+            Some(rowIdx -> newRow)
+          } else {
+            None
+          }
+        })
+      case failure => failure
     }
   }
 
@@ -137,126 +183,95 @@ class FeedbackContext[CT,CV](user: String,
   // this may throw a ReplayLaterSecondaryException or a BrokenDatasetSecondaryException
   def feedback(rows: Iterator[Row[CV]],
                targetColumns: Set[UserColumnId] = cookie.strategyMap.keySet,
-               resync: Boolean = false): FeedbackCookie = {
+               resync: Boolean = false): FeedbackResult = {
     val width = cookie.columnIdMap.size
     val size = batchSize(width)
 
     log.info("Feeding back rows with batch_size = {} for target computed columns: {}", size, targetColumns)
 
-    def maybeThrowBroken(retriesLeft: Int, cause: String): Int = {
-      val gaveUp = s"Gave up replaying updates after too many failed $cause attempts"
-      if (retriesLeft == 0) throw new BrokenDatasetSecondaryException(gaveUp)
-      retriesLeft
-    }
-
     var count = 0
-    try {
-      rows.grouped(size).foreach { batchSeq =>
-        val batch: Seq[Row[CV]] = batchSeq.toIndexedSeq
-        count += 1
-        val updates = computationHandlers.foldLeft(Map.empty[Int, Map[UserColumnId, CV]]) { (currentUpdates, computationHandler) =>
-          val currentRows = batch.toArray
-          for ((idx, upds) <- currentUpdates) {
-            val currentRow = MutableColumnIdMap(currentRows(idx).data)
-            for ((cid, cv) <- upds) {
-              currentRow(cookie.columnIdMap(cid)) = cv
-            }
-            currentRows(idx) = currentRows(idx).copy(data = currentRow.freeze())
+    rows.grouped(size).foreach { batchSeq =>
+      val batch: Seq[Row[CV]] = batchSeq.toIndexedSeq
+      count += 1
+      val updates = computationHandlers.foldLeft(Map.empty[Int, Map[UserColumnId, CV]]) { (currentUpdates, computationHandler) =>
+        val currentRows = batch.toArray
+        for ((idx, upds) <- currentUpdates) {
+          val currentRow = MutableColumnIdMap(currentRows(idx).data)
+          for ((cid, cv) <- upds) {
+            currentRow(cookie.columnIdMap(cid)) = cv
           }
-          val newUpdates = computeUpdates(computationHandler, currentRows, targetColumns)
-          mergeWith(currentUpdates, newUpdates)(_ ++ _)
+          currentRows(idx) = currentRows(idx).copy(data = currentRow.freeze())
         }
-        val jsonUpdates = updates.valuesIterator.map { updates =>
-          JsonEncode.toJValue(updates.mapValues(toJValueFunc))
-        }
-        writeMutationScript(jsonUpdates) match {
-          case Some(script) =>
-            dataCoordinatorClient.postMutationScript(script, cookie) match {
-              case None =>
-                log.info("Finished batch {} of approx. {} rows", count, size)
-                statusMonitor.update(datasetInternalName, cookie.dataVersion, size, count)
-              case Some(Right(TargetColumnDoesNotExist(column))) =>
-                // this is pretty lame; but better than doing a full resync
-                val deleted = deleteColumns(Set(column))
-                computeColumns(targetColumns -- deleted)
-              case Some(Right(PrimaryKeyColumnHasChanged)) =>
-                // the primary key column has changed; try again
-                // computeColumns(.) will discover the new primary key
-                computeColumns(targetColumns)
-              case Some(Right(PrimaryKeyColumnDoesNotExist(column))) =>
-                // that's okay, we can try again
-                val deleted = deleteColumns(Set(column))
-                computeColumns(targetColumns -- deleted)
-              case Some(Left(ftddc@FailedToDiscoverDataCoordinator)) =>
-                log.warn("Failed to discover data-coordinator; going to request to have this dataset replayed later")
-                // we will retry this "indefinitely"; do not decrement retries left
-                throw ReplayLaterSecondaryException(ftddc.english, FeedbackCookie.encode(feedbackCookie.copy(current = cookie.copy(resync = resync))))
-              case Some(Left(ddb@DataCoordinatorBusy)) =>
-                log.info("Received a 409 from data-coordinator; going to request to have this dataset replayed later")
-                // we will retry this "indefinitely"; do not decrement retries left
-                throw ReplayLaterSecondaryException(ddb.english, FeedbackCookie.encode(feedbackCookie.copy(current = cookie.copy(resync = resync))))
-              case Some(Left(ddne@DatasetDoesNotExist)) =>
-                log.info("Completed updating dataset {} to version {} early: {}", datasetInternalName, cookie.dataVersion.underlying.toString, ddne.english)
-                statusMonitor.remove(datasetInternalName, cookie.dataVersion, count)
-
-                // nothing more to do here
-                return feedbackCookie.copy(
-                  current = cookie.copy(
-                    computationRetriesLeft = 0,
-                    dataCoordinatorRetriesLeft = 0,
-                    resync = false
-                  )
-                )
-            }
-          case None =>
-            log.info("Batch {} had no rows to update of approx. {} rows; no script posted.", count, size)
-            statusMonitor.update(datasetInternalName, cookie.dataVersion, size, count)
+        computeUpdates(computationHandler, currentRows, targetColumns) match {
+          case Right(newUpdates) =>
+            mergeWith(currentUpdates, newUpdates)(_ ++ _)
+          case Left(ComputationError(reason, cause)) =>
+            // Some failure has occurred in computation; we will only retry these exceptions so many times
+            return replayComputation(reason, resync)
+          case Left(FatalComputationError(reason, cause)) =>
+            // Some fatal failure has occurred in computation; the dataset should be marked broken
+            return brokenDataset(reason, resync)
         }
       }
-    } catch {
-      case ComputationFailure(reason, cause) =>
-        // Some failure has occurred in computation; we will only retry these exceptions so many times
-        val newCookie = feedbackCookie.copy(
-          current = cookie.copy(
-            computationRetriesLeft = maybeThrowBroken(cookie.computationRetriesLeft - 1, "computation"), // decrement retries
-            dataCoordinatorRetriesLeft = dataCoordinatorRetryLimit, // reset mutation script retries
-            resync = resync
-          )
-        )
-        throw ReplayLaterSecondaryException(reason, FeedbackCookie.encode(newCookie))
-      case FeedbackFailure(reason, cause) =>
-        // We failed to post our mutation script to data-coordinator for some reason
-        val newCookie = feedbackCookie.copy(
-          current = cookie.copy(
-            computationRetriesLeft = computationRetryLimit, // reset computation retries
-            dataCoordinatorRetriesLeft = maybeThrowBroken(cookie.dataCoordinatorRetriesLeft - 1, "mutation script"), // decrement retries
-            resync = resync
-          )
-        )
-        throw ReplayLaterSecondaryException(reason, FeedbackCookie.encode(newCookie))
+      val jsonUpdates = updates.valuesIterator.map { updates =>
+        JsonEncode.toJValue(updates.mapValues(toJValueFunc))
+      }
+      writeMutationScript(jsonUpdates) match {
+        case Some(script) =>
+          dataCoordinatorClient.postMutationScript(script, cookie) match {
+            case None =>
+              log.info("Finished batch {} of approx. {} rows", count, size)
+              statusMonitor.update(datasetInternalName, cookie.dataVersion, size, count)
+            case Some(Right(TargetColumnDoesNotExist(column))) =>
+              // this is pretty lame; but better than doing a full resync
+              val deleted = deleteColumns(Set(column))
+              computeColumns(targetColumns -- deleted)
+            case Some(Right(PrimaryKeyColumnHasChanged)) =>
+              // the primary key column has changed; try again
+              // computeColumns(.) will discover the new primary key
+              computeColumns(targetColumns)
+            case Some(Right(PrimaryKeyColumnDoesNotExist(column))) =>
+              // that's okay, we can try again
+              val deleted = deleteColumns(Set(column))
+              computeColumns(targetColumns -- deleted)
+            case Some(Left(ftddc@FailedToDiscoverDataCoordinator)) =>
+              log.warn("Failed to discover data-coordinator; going to request to have this dataset replayed later")
+              // we will retry this "indefinitely"; do not decrement retries left
+              return replayLater(ftddc.english, resync)
+            case Some(Left(ddb@DataCoordinatorBusy)) =>
+              log.info("Received a 409 from data-coordinator; going to request to have this dataset replayed later")
+              // we will retry this "indefinitely"; do not decrement retries left
+              return replayLater(ddb.english, resync)
+            case Some(Left(ddne@DatasetDoesNotExist)) =>
+              log.info("Completed updating dataset {} to version {} early: {}", datasetInternalName, cookie.dataVersion.underlying.toString, ddne.english)
+              statusMonitor.remove(datasetInternalName, cookie.dataVersion, count)
+              // nothing more to do here
+              return success(cookie)
+            case Some(Left(UnexpectedError(reason, cause))) =>
+              // We failed to post our mutation script to data-coordinator for some reason
+              return replayDataCoordinator(reason, resync) // TODO: use cause
+          }
+        case None =>
+          log.info("Batch {} had no rows to update of approx. {} rows; no script posted.", count, size)
+          statusMonitor.update(datasetInternalName, cookie.dataVersion, size, count)
+      }
     }
     log.info("Completed row update of dataset {} in version {} after batch: {}",
       datasetInternalName, cookie.dataVersion.underlying.toString, count.toString)
     statusMonitor.remove(datasetInternalName, cookie.dataVersion, count)
 
     // success!
-    feedbackCookie.copy(
-      current = cookie.copy(
-        computationRetriesLeft = 0,
-        dataCoordinatorRetriesLeft = 0,
-        resync = false
-      )
-    )
+    success(cookie)
   }
 
-  def flushColumnCreations(newColumns: Set[UserColumnId]): FeedbackCookie = {
+  def flushColumnCreations(newColumns: Set[UserColumnId]): FeedbackResult = {
     if (newColumns.nonEmpty) {
       log.info("Flushing newly created columns...")
-      val updatedCookie = computeColumns(newColumns)
+      val result = computeColumns(newColumns)
       log.info("Done flushing columns")
-      updatedCookie
+      result
     } else {
-      feedbackCookie
+      success(cookie)
     }
   }
 
@@ -276,7 +291,7 @@ class FeedbackContext[CT,CV](user: String,
     deleted // all deleted columns and reliant computed columns that must also be deleted
   }
 
-  private def computeColumns(targetColumns: Set[UserColumnId]): FeedbackCookie = {
+  private def computeColumns(targetColumns: Set[UserColumnId]): FeedbackResult = {
     if (targetColumns.nonEmpty) {
       log.info("Computing columns: {}", targetColumns)
       val columns = targetColumns.map(cookie.strategyMap(_)).flatMap(_.sourceColumnIds).toSet.toSeq
@@ -288,9 +303,9 @@ class FeedbackContext[CT,CV](user: String,
             // this is safe because I must be caught up before a publication stage change can be made
             cookie = cookie.copy(primaryKey = pk)
           }
-          val resultCookie = feedback(rows.map { row => Row(row, None) }, targetColumns)
+          val result = feedback(rows.map { row => Row(row, None) }, targetColumns)
           log.info("Done computing columns")
-          resultCookie
+          result
         case Right(Left(ColumnsDoNotExist(unknown))) =>
           // since source columns must be deleted after computed columns
           // just delete those unknown columns and associated computed columns from our cookie
@@ -300,25 +315,23 @@ class FeedbackContext[CT,CV](user: String,
         case Left(ftddc@FailedToDiscoverDataCoordinator) =>
           log.warn("Failed to discover data-coordinator; going to request to have this dataset replayed later")
           // we will retry this "indefinitely"; do not decrement retries left
-          throw ReplayLaterSecondaryException(ftddc.english, FeedbackCookie.encode(feedbackCookie))
+          replayLater(ftddc.english, resync = false)
         case Left(ddb@DataCoordinatorBusy) =>
           log.info("Received a 409 from data-coordinator; going to request to have this dataset replayed later")
           // we will retry this "indefinitely"; do not decrement retries left
-          throw ReplayLaterSecondaryException(ddb.english, FeedbackCookie.encode(feedbackCookie))
+          replayLater(ddb.english, resync = false)
         case Left(ddne@DatasetDoesNotExist) =>
           log.info("Completed updating dataset {} to version {} early: {}", datasetInternalName, cookie.dataVersion.underlying.toString, ddne.english)
 
           // nothing more to do here
-          feedbackCookie.copy(
-            current = cookie.copy(
-              computationRetriesLeft = 0,
-              dataCoordinatorRetriesLeft = 0,
-              resync = false
-            )
-          )
+          success(cookie)
+        case Left(ue@UnexpectedError(_, cause)) =>
+          log.error("Unexpected error from data-coordinator client")
+          // this is unexpected, we will throw an exception and use the SW retry logic
+          FeedbackError(ue.english, cause)
       }
     } else {
-      feedbackCookie
+      success(cookie)
     }
   }
 }

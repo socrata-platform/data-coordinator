@@ -61,7 +61,7 @@ case class ResyncLaterSecondaryException(reason: String = "No reason") extends E
  */
 case class ReplayLaterSecondaryException(reason: String = "No reason", cookie: Secondary.Cookie) extends Exception(reason)
 
-case class BrokenDatasetSecondaryException(reason: String = "No reason") extends Exception(reason)
+case class BrokenDatasetSecondaryException(reason: String = "No reason", cookie: Secondary.Cookie) extends Exception(reason)
 
 object Secondary {
   type Cookie = Option[String]

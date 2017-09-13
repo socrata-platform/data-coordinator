@@ -1,7 +1,6 @@
 package com.socrata.datacoordinator.secondary.feedback
 
-import com.rojoma.json.v3.ast.JValue
-import com.rojoma.json.v3.io.CompactJsonWriter
+import com.rojoma.json.v3.io.{CompactJsonWriter, JsonReaderException}
 import com.rojoma.json.v3.util.{JsonUtil, AutomaticJsonCodecBuilder, WrapperFieldCodec}
 import com.socrata.datacoordinator.id.{ColumnId, UserColumnId}
 import com.socrata.datacoordinator.secondary.ComputationStrategyInfo
@@ -10,7 +9,22 @@ import com.socrata.datacoordinator.secondary.Secondary.Cookie
 case class CopyNumber(underlying: Long)
 case class DataVersion(underlying: Long)
 
-case class FeedbackCookie(current: CookieSchema, previous: Option[CookieSchema])
+case class FeedbackCookie(current: CookieSchema, previous: Option[CookieSchema], errorMessage: Option[String] = None) {
+
+  def copyCurrent(current: CookieSchema = this.current,
+                  computationRetriesLeft: Int = this.current.computationRetriesLeft,
+                  dataCoordinatorRetriesLeft: Int = this.current.dataCoordinatorRetriesLeft,
+                  resync: Boolean = this.current.resync,
+                  errorMessage: Option[String] = this.errorMessage): FeedbackCookie = {
+    this.copy(
+      current = current.copy(
+        computationRetriesLeft = computationRetriesLeft,
+        dataCoordinatorRetriesLeft = dataCoordinatorRetriesLeft,
+        resync = resync),
+      errorMessage = errorMessage
+    )
+  }
+}
 
 object FeedbackCookie {
   implicit val copyNumberCodec = AutomaticJsonCodecBuilder[CopyNumber]
@@ -24,12 +38,10 @@ object FeedbackCookie {
     Some(CompactJsonWriter.toString(feedbackCookieCodec.encode(fbc)))
   }
 
-  def decode(ck: Cookie): Option[FeedbackCookie] = ck match {
-      case Some(str) => JsonUtil.parseJson[FeedbackCookie](str) match {
-        case Right(result) => Some(result)
-        case Left(error) => None // safely handle cookie corruption
-      }
-      case None => None
+  def decode(ck: Cookie): Option[FeedbackCookie] = try {
+    ck.flatMap(JsonUtil.parseJson[FeedbackCookie](_).right.toOption) // safely handle cookie corruption
+  } catch {
+    case _ : JsonReaderException => None // safely handle cookie corruption
   }
 }
 
