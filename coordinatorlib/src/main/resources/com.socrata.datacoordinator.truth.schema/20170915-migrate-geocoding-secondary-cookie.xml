@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
+    <changeSet author="Alexa Rust" id="20170915-migrate-geocoding-secondary-cookie">
+        <sql>
+            UPDATE secondary_manifest
+               SET cookie = replace(replace(cookie,
+                                            '"computationRetriesLeft":0',
+                                            '"computationRetriesLeft":5'),
+                                    '"dataCoordinatorRetriesLeft":0',
+                                    '"dataCoordinatorRetriesLeft":5')
+             WHERE store_id = 'geocoding';
+        </sql>
+        <rollback>
+            UPDATE secondary_manifest
+               SET cookie = replace(replace(cookie,
+                                            '"computationRetriesLeft":5',
+                                            '"computationRetriesLeft":0'),
+                                    '"dataCoordinatorRetriesLeft":5',
+                                    '"dataCoordinatorRetriesLeft":0')
+             WHERE store_id = 'geocoding';
+        </rollback>
+    </changeSet>
+</databaseChangeLog>
