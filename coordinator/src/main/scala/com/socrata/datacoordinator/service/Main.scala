@@ -122,20 +122,12 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
           }
         }
 
-        var hackedSecondaries = secondaries
-        if (feedbackSecondaries.nonEmpty) {
-          // the max version we want to return is the version that the feedback secondary has
-          // this is a hack for now, see EN-18250 for details
-          val maxVersion = secondaries.filterKeys(feedbackSecondaries.contains).values.min
-          hackedSecondaries = secondaries.mapValues(scala.math.min(maxVersion, _))
-        }
-
         SecondariesOfDatasetResult(
           latestVersion,
           latestVersion,
           publishedVersion,
           unpublishedVersion,
-          hackedSecondaries,
+          secondaries,
           feedbackSecondaries,
           groups.toMap
         )
