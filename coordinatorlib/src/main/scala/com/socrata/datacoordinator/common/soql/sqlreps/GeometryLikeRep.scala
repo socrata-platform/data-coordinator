@@ -6,8 +6,12 @@ import com.vividsolutions.jts.geom.Geometry
 import java.lang.StringBuilder
 import java.sql.{ResultSet, Types, PreparedStatement}
 
-class GeometryLikeRep[T<:Geometry](repType: SoQLType, geometry: SoQLValue => T, value: T => SoQLValue, val base: String)
-  extends RepUtils with SqlColumnRep[SoQLType, SoQLValue]  {
+sealed class GeometryLikeRep[T<:Geometry](
+  repType: SoQLType,
+  geometry: SoQLValue => T,
+  value: T => SoQLValue,
+  val base: String)
+    extends RepUtils with SqlColumnRep[SoQLType, SoQLValue]  {
   private val WGS84SRID = 4326
 
   def representedType: SoQLType = repType
@@ -18,6 +22,14 @@ class GeometryLikeRep[T<:Geometry](repType: SoQLType, geometry: SoQLValue => T, 
   def toEWkt(v: SoQLValue): String = v.typ.asInstanceOf[SoQLGeometryLike[T]].EWktRep(geometry(v), WGS84SRID)
 
   val physColumns: Array[String] = Array(base)
+  def forZoom(level: Int): GeometryLikeRep[T] = {
+    val original = this
+    val newBase = s"${base}_zoom_${level}"
+
+    new GeometryLikeRep[T](repType, geometry, value, newBase) {
+      override def forZoom(level: Int) = original.forZoom(level)
+    }
+  }
 
   val sqlTypes: Array[String] = Array("GEOMETRY(Geometry," + WGS84SRID + ")")
 
