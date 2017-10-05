@@ -6,7 +6,7 @@ import com.vividsolutions.jts.geom.Geometry
 import java.lang.StringBuilder
 import java.sql.{ResultSet, Types, PreparedStatement}
 
-sealed class GeometryLikeRep[T<:Geometry](
+class GeometryLikeRep[T<:Geometry](
   repType: SoQLType,
   geometry: SoQLValue => T,
   value: T => SoQLValue,
