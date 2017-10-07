@@ -226,8 +226,8 @@ class HttpDataCoordinatorClient[CT,CV](httpClient: HttpClient,
   }
 
   sealed abstract class Response
-  case class Upsert(typ: String, id: String, ver: String) extends Response
-  case class NonfatalError(typ: String, err: String, id: Option[String]) extends Response
+  case class Upsert(typ: String, id: JValue, ver: String) extends Response
+  case class NonfatalError(typ: String, err: String, id: Option[JValue]) extends Response
 
   implicit val upCodec = AutomaticJsonCodecBuilder[Upsert]
   implicit val neCodec = AutomaticJsonCodecBuilder[NonfatalError]
@@ -248,12 +248,19 @@ class HttpDataCoordinatorClient[CT,CV](httpClient: HttpClient,
           results.elems.zip(rows).foreach { case (result, row) =>
             JsonDecode.fromJValue[Response](result) match {
               case Right(Upsert("update", _, _)) => // yay!
-              case Right(NonfatalError("error", nonfatalError, Some(id))) if nonfatalError == "insert_in_update_only" ||  nonfatalError == "no_such_row_to_update" =>
-                val JObject(fields) = JsonDecode.fromJValue[JObject](row).right.get // I just encoded this from a JObject
-                val rowId = JsonDecode.fromJValue[JString](fields(cookie.primaryKey.underlying)).right.get.string
-                if (rowId != id) return Right(Some(PrimaryKeyColumnHasChanged)) // else the row has been deleted
-              case Right(other) => unexpectedErrorForResponse("Unexpected response in array", 200, other)
-              case Left(e) => unexpectedErrorForResponse("Unable to interpret result in array", 200, e.english)
+              case err@Right(NonfatalError("error", nonfatalError, Some(id))) if nonfatalError == "insert_in_update_only" ||  nonfatalError == "no_such_row_to_update" =>
+                def toCV(jVal: JValue): Option[CV] = typeFromJValue(jVal).map(fromJValueFunc(_)(jVal)).flatten
+
+                val returnedId = toCV(id).getOrElse {
+                  return unexpectedErrorForResponse("Unable to interpret id value in nonfatal error in array", 200, err)
+                }
+
+                val JObject(fields) = JsonDecode.fromJValue[JObject](row).right.get // we just encoded this from a JObject
+                val rowId = toCV(fields(cookie.primaryKey.underlying)).get // again, we just encoded this
+
+                if (rowId != returnedId) return Right(Some(PrimaryKeyColumnHasChanged)) // else the row has been deleted
+              case Right(other) => return unexpectedErrorForResponse("Unexpected response in array", 200, other)
+              case Left(e) => return unexpectedErrorForResponse("Unable to interpret result in array", 200, e.english)
             }
           }
           Right(None)
