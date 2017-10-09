@@ -15,4 +15,6 @@ object CopyId {
       case other      => Left(DecodeError.InvalidType(JNumber, other.jsonType))
     }
   }
+
+  val Invalid = new CopyId(-1)
 }

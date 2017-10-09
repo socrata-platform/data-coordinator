@@ -22,6 +22,7 @@ import com.socrata.datacoordinator.truth.metadata.`-impl`._
 import scala.concurrent.duration.Duration
 import com.socrata.datacoordinator.id.sql._
 import scala.Array
+import scala.collection.mutable
 import org.joda.time.DateTime
 
 trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] {
@@ -33,6 +34,7 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
 
   private def toDateTime(time: Timestamp): DateTime = new DateTime(time.getTime)
 
+  // The time the current transaction was started.
   def currentTime(): DateTime = {
     using(conn.prepareStatement("SELECT CURRENT_TIMESTAMP")) { stmt=>
       using(stmt.executeQuery()) { rs =>
@@ -52,6 +54,26 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
         rs.getInt(1)
       }
     }
+
+  def presimplifiedGeoColumnQuery = "SELECT column_system_id, zoom_level from column_map_geo_modifiers where copy_system_id = ? "
+  def presimplifiedGeoColumns(copy: CopyInfo): Map[ColumnId, Seq[Int]] = {
+    val columns = new mutable.HashMap[ColumnId, List[Int]]
+
+    using(conn.prepareStatement(presimplifiedGeoColumnQuery)) { stmt =>
+      stmt.setCopyId(1, copy.systemId)
+      using(t("presimplified-geo-columns", "copy_system_id" -> copy.systemId)(stmt.executeQuery())) { rs =>
+        while (rs.next()) {
+          val copyId = rs.getColumnId(1)
+          val zoomLevel = rs.getInt(1)
+
+          val levels = columns.getOrElse(copyId, List.empty[Int])
+          columns += copyId -> (zoomLevel :: levels)
+        }
+      }
+    }
+
+    columns.toMap
+  }
 
   def latestQuery =
     """SELECT
