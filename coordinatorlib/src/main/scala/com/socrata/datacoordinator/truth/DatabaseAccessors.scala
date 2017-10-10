@@ -143,6 +143,7 @@ trait DatasetMutator[CT, CV] {
   trait MutationContext {
     def copyInfo: CopyInfo
     def schema: ColumnIdMap[ColumnInfo[CT]]
+    def systemId: ColumnInfo[CT]
     def primaryKey: ColumnInfo[CT]
     def versionColumn: ColumnInfo[CT]
     def columnInfo(id: ColumnId): Option[ColumnInfo[CT]]
@@ -175,7 +176,7 @@ trait DatasetMutator[CT, CV] {
     case class DeleteJob(jobNumber: Int, id: CV, version: Option[Option[RowVersion]]) extends RowDataUpdateJob
     case class UpsertJob(jobNumber: Int, row: Row[CV]) extends RowDataUpdateJob
 
-    def upsert(inputGenerator: Iterator[RowDataUpdateJob], reportWriter: ReportWriter[CV], replaceUpdatedRows: Boolean, updateOnly: Boolean): Unit
+    def upsert(inputGenerator: Iterator[RowDataUpdateJob], reportWriter: ReportWriter[CV], replaceUpdatedRows: Boolean, updateOnly: Boolean, bySystemId: Boolean): Unit
 
     def createOrUpdateRollup(name: RollupName, soql: String): Unit
     def dropRollup(name: RollupName): Option[RollupInfo]
@@ -212,9 +213,10 @@ object DatasetMutator {
             logger: Logger[CT, CV], val schemaLoader: SchemaLoader[CT]) extends MutationContext {
       def copyInfo: CopyInfo = copyCtx.copyInfo
       def schema: ColumnIdMap[ColumnInfo[CT]] = copyCtx.currentSchema
-      def primaryKey: ColumnInfo[CT] = schema.values.find(_.isUserPrimaryKey).orElse(schema.values.find(_.isSystemPrimaryKey)).getOrElse {
-        sys.error("No primary key on this dataset?")
+      def systemId: ColumnInfo[CT] = schema.values.find(_.isSystemPrimaryKey).getOrElse {
+        sys.error("No system id column on this dataset?")
       }
+      def primaryKey: ColumnInfo[CT] = schema.values.find(_.isUserPrimaryKey).getOrElse(systemId)
       def versionColumn: ColumnInfo[CT] = schema.values.find(_.isVersion).getOrElse {
         sys.error("No version column on this dataset?")
       }
@@ -412,14 +414,14 @@ object DatasetMutator {
       }
 
       def upsert(inputGenerator: Iterator[RowDataUpdateJob], reportWriter: ReportWriter[CV],
-                 replaceUpdatedRows: Boolean, updateOnly: Boolean): Unit = {
+                 replaceUpdatedRows: Boolean, updateOnly: Boolean, bySystemId: Boolean): Unit = {
         checkDoingRows()
         try {
           doingRows = true
           val (nextCounterValue, _) = llCtx.withDataLoader(copyCtx.frozenCopy(), logger, reportWriter, replaceUpdatedRows, updateOnly) { loader =>
             inputGenerator.foreach {
-              case UpsertJob(jobNum, row) => loader.upsert(jobNum, row)
-              case DeleteJob(jobNum, id, ver) => loader.delete(jobNum, id, ver)
+              case UpsertJob(jobNum, row) => loader.upsert(jobNum, row, bySystemId)
+              case DeleteJob(jobNum, id, ver) => loader.delete(jobNum, id, ver, bySystemId)
             }
           }
           copyCtx.copyInfo = datasetMap.updateNextCounterValue(copyInfo, nextCounterValue)

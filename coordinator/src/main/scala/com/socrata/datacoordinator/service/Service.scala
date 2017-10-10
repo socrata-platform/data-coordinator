@@ -209,12 +209,12 @@ class Service(serviceConfig: ServiceConfig,
                 "commandIndex" -> JNumber(em.index),
                 "dataset" -> JString(formatDatasetId(datasetName)),
                 "value" -> id)
-            case Mutator.UpsertError(datasetName, NoSuchRowToUpdate(id), _) =>
+            case Mutator.UpsertError(datasetName, NoSuchRowToUpdate(id, _), _) =>
               datasetBadRequest(RowUpdateError.NO_SUCH_ID,
                 "commandIndex" -> JNumber(em.index),
                 "dataset" -> JString(formatDatasetId(datasetName)),
                 "value" -> id)
-            case Mutator.UpsertError(datasetName, VersionMismatch(id, expected, actual), rowVersionToJson) =>
+            case Mutator.UpsertError(datasetName, VersionMismatch(id, expected, actual, _), rowVersionToJson) =>
               datasetBadRequest(UpdateError.ROW_VERSION_MISMATCH,
                 "commandIndex" -> JNumber(em.index),
                 "dataset" -> JString(formatDatasetId(datasetName)),
@@ -225,7 +225,7 @@ class Service(serviceConfig: ServiceConfig,
               datasetBadRequest(UpdateError.VERSION_ON_NEW_ROW,
                 "commandIndex" -> JNumber(em.index),
                 "dataset" -> JString(formatDatasetId(datasetName)))
-            case Mutator.UpsertError(datasetName, InsertInUpdateOnly(id), _) =>
+            case Mutator.UpsertError(datasetName, InsertInUpdateOnly(id, _), _) =>
               datasetBadRequest(UpdateError.INSERT_IN_UPDATE_ONLY,
                 "commandIndex" -> JNumber(em.index),
                 "dataset" -> JString(formatDatasetId(datasetName)),

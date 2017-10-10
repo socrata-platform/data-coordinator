@@ -8,13 +8,11 @@ import com.rojoma.json.v3.io._
 import com.rojoma.json.v3.util.{Strategy, JsonKeyStrategy, AutomaticJsonDecodeBuilder}
 import com.socrata.datacoordinator.common.MutatorCommon
 import com.socrata.datacoordinator.id._
-import com.socrata.datacoordinator.truth.json.JsonColumnRep
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth.universe._
-import com.socrata.datacoordinator.truth.{DatabaseInReadOnlyMode, TypeContext}
+import com.socrata.datacoordinator.truth.DatabaseInReadOnlyMode
 import com.socrata.datacoordinator.truth.{DatasetIdInUseByWriterException, DatasetMutator}
-import com.socrata.datacoordinator.util.collection.UserColumnIdMap
 import com.socrata.datacoordinator.util.{IndexedTempFile, BuiltUpIterator, Counter}
 import com.socrata.soql.environment.{TypeName, ColumnName}
 import java.nio.charset.StandardCharsets.UTF_8
@@ -183,7 +181,8 @@ object Mutator {
   case class DropRowId(index: Long, id: ColumnIdSpec) extends Command
   case class RowData(index: Long, truncate: Boolean, mergeReplace: MergeReplace,
                      nonfatalRowErrors: Set[Class[_ <: Failure[_]]],
-                     updateOnly: Boolean) extends Command
+                     updateOnly: Boolean,
+                     bySystemId: Boolean) extends Command
   case class CreateOrUpdateRollup(index: Long, name: RollupName, soql: String) extends Command
   case class DropRollup(index: Long, name: RollupName) extends Command
 
@@ -253,7 +252,8 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
                                             "nonfatal_row_errors", JString(nfe))(index))
             }.toSet
             val updateOnly = getWithStrictDefault[Boolean]("update_only", false)
-            RowData(index, truncate, mergeReplace, nonFatalRowErrorsClasses, updateOnly)
+            val bySystemId = getWithStrictDefault[Boolean]("by_system_id", false)
+            RowData(index, truncate, mergeReplace, nonFatalRowErrorsClasses, updateOnly = updateOnly, bySystemId = bySystemId)
           case other =>
             throw InvalidCommandFieldValue(originalObject, "c", JString(other))(index)
         }
@@ -369,14 +369,22 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
   class JsonReportWriter(ctx: DatasetMutator[CT, CV]#MutationContext,
                          val firstJob: Long,
                          tmpFile: IndexedTempFile,
-                         ignorableFailureTypes: Set[Class[_ <: Failure[_]]]) extends ReportWriter[CV] {
+                         ignorableFailureTypes: Set[Class[_ <: Failure[_]]],
+                         bySystemId: Boolean) extends ReportWriter[CV] {
+    val primaryKey = ctx.primaryKey
+    val systemId = ctx.systemId
+    // deletes are "forced" by system id only when there is a user primary key column
+    val deletesForcedBySystemId = bySystemId && systemId.systemId != primaryKey.systemId
+
     val jsonRepFor = jsonReps(ctx.copyInfo.datasetInfo)
-    val pkRep = jsonRepFor(ctx.primaryKey.typ)
+    val pkRep = jsonRepFor(primaryKey.typ)
+    val sidRep = jsonRepFor(systemId.typ)
+    def rowIdRep(bySystemIdForced: Boolean) = if (bySystemIdForced) sidRep else pkRep
     val verRep = jsonRepFor(ctx.versionColumn.typ)
     @volatile var firstError: Option[Failure[CV]] = None
     var jobLimit = firstJob - 1
 
-    def jsonifyId(id: CV) = pkRep.toJValue(id)
+    def jsonifyId(id: CV, bySystemIdForced: Boolean) = rowIdRep(bySystemIdForced).toJValue(id)
     def jsonifyVersion(v: RowVersion) =
       verRep.toJValue(typeContext.makeValueFromRowVersion(v))
 
@@ -390,7 +398,7 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
     def jsonifyUpsert(idAndVersion: IdAndVersion[CV], typ: String) = {
       JObject(Map(
         "typ" -> JString(typ),
-        "id" -> jsonifyId(idAndVersion.id),
+        "id" -> jsonifyId(idAndVersion.id, idAndVersion.bySystemIdForced),
         "ver" -> jsonifyVersion(idAndVersion.version)
       ))
     }
@@ -398,7 +406,7 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
     def jsonifyDelete(result: CV) = {
       JObject(Map(
         "typ" -> JString("delete"),
-        "id" -> jsonifyId(result)
+        "id" -> jsonifyId(result, deletesForcedBySystemId)
       ))
     }
 
@@ -412,19 +420,19 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
         JObject(Map(
           "typ" -> JString("error"),
           "err" -> JString("no_such_row_to_delete"),
-          "id" -> jsonifyId(id)
+          "id" -> jsonifyId(id, deletesForcedBySystemId)
         ))
-      case NoSuchRowToUpdate(id) =>
+      case NoSuchRowToUpdate(id, bySystemIdForced) =>
         JObject(Map(
           "typ" -> JString("error"),
           "err" -> JString("no_such_row_to_update"),
-          "id" -> jsonifyId(id)
+          "id" -> jsonifyId(id, bySystemIdForced)
         ))
-      case VersionMismatch(id, expected, actual) =>
+      case VersionMismatch(id, expected, actual, bySystemIdForced) =>
         JObject(Map(
           "typ" -> JString("error"),
           "err" -> JString("version_mismatch"),
-          "id" -> jsonifyId(id),
+          "id" -> jsonifyId(id, bySystemIdForced),
           "expected" -> expected.map(jsonifyVersion).getOrElse(JNull),
           "actual" -> actual.map(jsonifyVersion).getOrElse(JNull)
         ))
@@ -433,11 +441,11 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
           "typ" -> JString("error"),
           "err" -> JString("version_on_new_row")
         ))
-      case InsertInUpdateOnly(id) =>
+      case InsertInUpdateOnly(id, bySystemIdForced) =>
         JObject(Map(
           "typ" -> JString("error"),
           "err" -> JString("insert_in_update_only"),
-          "id" -> jsonifyId(id)
+          "id" -> jsonifyId(id, bySystemIdForced)
         ))
     }
 
@@ -735,9 +743,9 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
             case None => throw NoSuchRollup(name)(idx)
           }
 
-        case RowData(idx, truncate, mergeReplace, nonFatalRowErrors, updateOnly) =>
+        case RowData(idx, truncate, mergeReplace, nonFatalRowErrors, updateOnly, bySystemId) =>
           if(truncate) mutator.truncate()
-          val data = processRowData(idx, commands.rawCommandStream, nonFatalRowErrors, updateOnly, mutator, mergeReplace)
+          val data = processRowData(idx, commands.rawCommandStream, nonFatalRowErrors, updateOnly = updateOnly, bySystemId = bySystemId, mutator, mergeReplace)
           Seq(MutationScriptCommandResult.RowData(data.toJobRange))
       }
 
@@ -750,6 +758,7 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
                        rows: BufferedIterator[JValue],
                        nonFatalRowErrors: Set[Class[_ <: Failure[_]]],
                        updateOnly: Boolean,
+                       bySystemId: Boolean,
                        mutator: DatasetMutator[CT,CV]#MutationContext,
                        mergeReplace: MergeReplace): JsonReportWriter = {
       import mutator._
@@ -761,7 +770,7 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
                    (v: CV) => if(typeContext.isNull(v)) None else Some(typeContext.makeRowVersionFromValue(v)),
                    onUnknownColumn)
       try {
-        val reportWriter = new JsonReportWriter(mutator, jobCounter.peek, indexedTempFile, nonFatalRowErrors)
+        val reportWriter = new JsonReportWriter(mutator, jobCounter.peek, indexedTempFile, nonFatalRowErrors, bySystemId = bySystemId)
         def checkForError() {
           for(error <- reportWriter.firstError) {
             val pk = schema.values.find(_.isUserPrimaryKey).
@@ -785,7 +794,7 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
             }
           }
         }
-        mutator.upsert(it, reportWriter, replaceUpdatedRows = mergeReplace == Replace, updateOnly = updateOnly)
+        mutator.upsert(it, reportWriter, replaceUpdatedRows = mergeReplace == Replace, updateOnly = updateOnly, bySystemId = bySystemId)
         if(rows.hasNext && JNull == rows.head) rows.next()
         checkForError()
         reportWriter
