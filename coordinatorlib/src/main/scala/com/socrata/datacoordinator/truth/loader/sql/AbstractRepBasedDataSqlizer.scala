@@ -36,7 +36,10 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
   val pkRep = repSchema(logicalPKColumnName).asInstanceOf[SqlPKableColumnRep[CT, CV]]
   val versionRep = repSchema(datasetContext.versionColumn)
 
-  protected def reanalyzePK(conn: Connection): Unit = {
+  private def reanalyzePK(conn: Connection) {
+    using(conn.prepareStatement(s"ANALYZE $dataTableName (" + pkRep.physColumns.mkString(",")+")")) { stmt =>
+      stmt.execute()
+    }
   }
 
   def sizeofDelete(id: CV) = pkRep.estimateSize(id)

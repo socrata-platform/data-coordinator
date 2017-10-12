@@ -16,12 +16,6 @@ class PostgresRepBasedDataSqlizer[CT, CV](tableName: String,
                                           copyIn: (Connection, String, OutputStream => Unit) => Long = PostgresRepBasedDataSqlizer.pgCopyManager)
   extends AbstractRepBasedDataSqlizer(tableName, datasetContext)
 {
-  override protected def reanalyzePK(conn: Connection) {
-    using(conn.prepareStatement(s"ANALYZE $dataTableName (" + pkRep.physColumns.mkString(",")+")")) { stmt =>
-      stmt.execute()
-    }
-  }
-
   val bulkInsertStatement =
     "COPY " + dataTableName + " (" + repSchema.values.flatMap(_.physColumns).mkString(",") + ") from stdin with (format csv, encoding 'utf-8')"
 
