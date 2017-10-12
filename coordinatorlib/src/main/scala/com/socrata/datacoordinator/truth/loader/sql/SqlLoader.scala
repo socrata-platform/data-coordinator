@@ -37,8 +37,6 @@ final class SqlLoader[CT, CV](val connection: Connection,
 {
   require(!connection.getAutoCommit, "Connection is in auto-commit mode")
 
-  val preStats = sqlizer.computeStatistics(connection)
-
   val log = org.slf4j.LoggerFactory.getLogger(classOf[SqlLoader[_, _]])
   val typeContext = sqlizer.typeContext
   val datasetContext = sqlizer.datasetContext
@@ -101,6 +99,8 @@ final class SqlLoader[CT, CV](val connection: Connection,
   private var totalDeleteCount = 0L
 
   private var currentBatch = new Queues
+
+  private var stats = sqlizer.computeStatistics(connection)
 
   private var pendingException: Throwable = null
   private val connectionMutex = new Object
@@ -168,7 +168,6 @@ final class SqlLoader[CT, CV](val connection: Connection,
       checkAsyncJob()
     }
 
-    sqlizer.updateStatistics(connection, totalInsertCount, totalDeleteCount, totalUpdateCount, preStats)
     reportWriter.finished = true
   }
 
@@ -233,13 +232,14 @@ final class SqlLoader[CT, CV](val connection: Connection,
   }
 
   private def process(batch: Queues) {
-    processDeletes(batch.deletions)
+    val batchDeleteCount = processDeletes(batch.deletions)
     val (inserts, updates) = prepareInsertsAndUpdates(batch.upserts)
-    doInserts(inserts)
-    doUpdates(updates)
+    val batchInsertCount = doInserts(inserts)
+    val batchUpdateCount = doUpdates(updates)
+    stats = sqlizer.updateStatistics(connection, batchInsertCount, batchDeleteCount, batchUpdateCount, stats)
   }
 
-  private def doInserts(inserts: Seq[SqlLoader.DecoratedRow[CV]]) {
+  private def doInserts(inserts: Seq[SqlLoader.DecoratedRow[CV]]): Long = {
     if(inserts.nonEmpty) {
       sqlizer.insertBatch(connection) { inserter =>
         for(insert <- inserts) {
@@ -251,11 +251,15 @@ final class SqlLoader[CT, CV](val connection: Connection,
       for(insert <- inserts) {
         dataLogger.insert(insert.rowId, insert.newRow)
       }
-      totalInsertCount += inserts.length
+      val insertCount = inserts.length
+      totalInsertCount += insertCount
+      insertCount
+    } else {
+      0L
     }
   }
 
-  private def doUpdates(updates: Seq[SqlLoader.DecoratedRow[CV]]) {
+  private def doUpdates(updates: Seq[SqlLoader.DecoratedRow[CV]]): Long = {
     if(updates.nonEmpty) {
       using(connection.prepareStatement(sqlizer.prepareSystemIdUpdateStatement)) { stmt =>
         for(update <- updates) {
@@ -268,7 +272,11 @@ final class SqlLoader[CT, CV](val connection: Connection,
         assert(results.length == updates.length, "Didn't get the same number of results as jobs in batch?")
         assert(results.forall(_ == 1), "At least one update did not affect exactly one row!")
       }
-      totalUpdateCount += updates.length
+      val updateCount = updates.length
+      totalUpdateCount += updateCount
+      updateCount
+    } else {
+      0
     }
   }
 
@@ -290,7 +298,7 @@ final class SqlLoader[CT, CV](val connection: Connection,
       }
     }
 
-  private def processDeletes(deletes: Seq[DeleteOp]) {
+  private def processDeletes(deletes: Seq[DeleteOp]): Long = {
     if(deletes.nonEmpty) {
       val existingRows = lookupRows(deletes.iterator.map(_.id))
       val completedDeletions = new mutable.ArrayBuffer[(RowId, Int, CV, Row[CV])](deletes.size)
@@ -314,6 +322,9 @@ final class SqlLoader[CT, CV](val connection: Connection,
         dataLogger.delete(sid, Some(oldRow))
         reportWriter.deleted(job, id)
       }
+      deletedCount
+    } else {
+      0
     }
   }
 
