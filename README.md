@@ -15,7 +15,7 @@
 To run the tests, from the SBT shell:
 
     project data-coordinator
-    test:test
+    test:test it:test
 
 To run the data coordinator, from the regular Linux/OSX shell prompt:
 
