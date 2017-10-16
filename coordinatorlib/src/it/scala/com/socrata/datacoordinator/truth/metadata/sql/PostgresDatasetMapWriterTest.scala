@@ -57,16 +57,37 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
   val resourcName = Some("_abcd-1234")
 
+  val dbName = "datacoordinator_test"
+
+  def withPostgresDb(sql: String): Unit = {
+    using(DriverManager.getConnection("jdbc:postgresql://localhost:5432/postgres", "blist", "blist")) { conn =>
+      conn.setAutoCommit(true)
+      using(conn.createStatement()) { stmt =>
+        stmt.execute(sql)
+      }
+    }
+  }
+
   def populateDatabase(conn: Connection) {
     Migration.migrateDb(conn)
   }
 
   def withDb[T]()(f: (Connection) => T): T = {
-    using(DriverManager.getConnection("jdbc:postgresql://localhost:5432/datacoordinator_test", "blist", "blist")) { conn =>
+    using(DriverManager.getConnection(s"jdbc:postgresql://localhost:5432/$dbName", "blist", "blist")) { conn =>
       conn.setAutoCommit(false)
-      populateDatabase(conn)
       f(conn)
     }
+  }
+
+  override def beforeAll(): Unit = {
+    withPostgresDb(s"DROP DATABASE IF EXISTS $dbName; CREATE DATABASE $dbName encoding=UTF8;")
+    withDb() { conn => populateDatabase(conn) }
+    super.beforeAll()
+  }
+
+  override def afterAll(): Unit = {
+    withPostgresDb(s"DROP DATABASE IF EXISTS $dbName;")
+    super.afterAll()
   }
 
   def count(conn: Connection, table: String, where: String = null): Int = {
