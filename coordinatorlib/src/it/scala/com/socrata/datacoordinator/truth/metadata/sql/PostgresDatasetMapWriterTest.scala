@@ -55,7 +55,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
   }
   val ZeroID = 0L
 
-  val resourcName = Some("1234-abcc")
+  val resourcName = Some("_abcd-1234")
 
   def populateDatabase(conn: Connection) {
     Migration.migrateDb(conn)
