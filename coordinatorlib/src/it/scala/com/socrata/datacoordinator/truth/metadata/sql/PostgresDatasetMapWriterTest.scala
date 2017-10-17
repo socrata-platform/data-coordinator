@@ -80,7 +80,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
   }
 
   override def beforeAll(): Unit = {
-    withPostgresDb(s"DROP DATABASE IF EXISTS $dbName; CREATE DATABASE $dbName encoding=UTF8;")
+    withPostgresDb(s"DROP DATABASE IF EXISTS $dbName; CREATE DATABASE $dbName;")
     withDb() { conn => populateDatabase(conn) }
     super.beforeAll()
   }
