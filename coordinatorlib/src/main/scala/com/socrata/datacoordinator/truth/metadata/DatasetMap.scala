@@ -16,9 +16,6 @@ trait DatasetMapReader[CT] extends DatasetMapBase[CT] {
 
   /** Find all datasets with snapshots */
   def snapshottedDatasets(): Seq[DatasetInfo]
-
-  /** Find all pre-simplified columns and their zoom levels. */
-  def presimplifiedGeoColumns(copy: CopyInfo): Map[ColumnId, Seq[Int]]
 }
 
 class CopyInWrongStateForDropException(val copyInfo: CopyInfo, val acceptableStates: Set[LifecycleStage]) extends Exception

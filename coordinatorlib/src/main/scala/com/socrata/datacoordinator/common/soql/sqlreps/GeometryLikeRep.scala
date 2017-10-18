@@ -10,6 +10,7 @@ class GeometryLikeRep[T<:Geometry](
   repType: SoQLType,
   geometry: SoQLValue => T,
   value: T => SoQLValue,
+  presimplifiedZoomLevels: Seq[Int],
   val base: String)
     extends RepUtils with SqlColumnRep[SoQLType, SoQLValue]  {
   private val WGS84SRID = 4326
@@ -24,9 +25,16 @@ class GeometryLikeRep[T<:Geometry](
   val physColumns: Array[String] = Array(base)
   def forZoom(level: Int): GeometryLikeRep[T] = {
     val original = this
-    val newBase = s"${base}_zoom_${level}"
 
-    new GeometryLikeRep[T](repType, geometry, value, newBase) {
+    val levels = presimplifiedZoomLevels.filter(_ >= level)
+
+    val newBase = if (levels.isEmpty) {
+      base
+    } else {
+      s"${base}_zoom_${levels.min}"
+    }
+
+    new GeometryLikeRep[T](repType, geometry, value, presimplifiedZoomLevels, newBase) {
       override def forZoom(level: Int) = original.forZoom(level)
     }
   }
