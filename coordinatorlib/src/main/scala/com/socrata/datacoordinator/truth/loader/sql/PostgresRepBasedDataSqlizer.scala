@@ -16,12 +16,6 @@ class PostgresRepBasedDataSqlizer[CT, CV](tableName: String,
                                           copyIn: (Connection, String, OutputStream => Unit) => Long = PostgresRepBasedDataSqlizer.pgCopyManager)
   extends AbstractRepBasedDataSqlizer(tableName, datasetContext)
 {
-  override protected def reanalyzePK(conn: Connection) {
-    using(conn.prepareStatement(s"ANALYZE $dataTableName (" + pkRep.physColumns.mkString(",")+")")) { stmt =>
-      stmt.execute()
-    }
-  }
-
   val bulkInsertStatement =
     "COPY " + dataTableName + " (" + repSchema.values.flatMap(_.physColumns).mkString(",") + ") from stdin with (format csv, encoding 'utf-8')"
 
@@ -61,26 +55,37 @@ class PostgresRepBasedDataSqlizer[CT, CV](tableName: String,
     }
   }
 
-  type PreloadStatistics = Long
+  case class StatSpec(pgCount: Long, added: Long, deleted: Long)
+  type PreloadStatistics = StatSpec
 
   def computeStatistics(conn: Connection): PreloadStatistics =
     using(conn.prepareStatement("SELECT reltuples FROM pg_class WHERE relname=?")) { stmt =>
       stmt.setString(1, tableName)
       using(stmt.executeQuery()) { rs =>
         if(rs.next()) {
-          rs.getLong("reltuples")
+          StatSpec(rs.getLong("reltuples"), 0, 0)
         } else {
-          0L
+          StatSpec(0, 0, 0)
         }
       }
     }
 
-  def updateStatistics(conn: Connection, rowsAdded: Long, rowsDeleted: Long, rowsChanged: Long, preload: PreloadStatistics) {
-    if(rowsAdded + rowsDeleted + rowsChanged >= preload / 10) {
+  def updateStatistics(conn: Connection, rowsAdded: Long, rowsDeleted: Long, rowsChanged: Long, preload: PreloadStatistics): PreloadStatistics = {
+    // If we have grown and/or shrunk the table by more than about 25%
+    // beyond what PG believed the row count to have been (with a
+    // minimum of 10000 rows to prevent a flurry of ANALYZEs during
+    // the initial growth phase), we should poke the PG statistics for
+    // it.
+    val totalAdded = preload.added + rowsAdded
+    val totalDeleted = preload.deleted + rowsDeleted
+    if(totalAdded + totalDeleted >= Math.max(10000, preload.pgCount / 4)) {
       val cols = (sidRep.physColumns ++ pkRep.physColumns).toSet
       using(conn.prepareStatement("ANALYZE " + tableName + " (" + cols.mkString(",") + ")")) { stmt =>
         stmt.execute()
       }
+      computeStatistics(conn)
+    } else {
+      preload.copy(added = totalAdded, deleted = totalDeleted)
     }
   }
 }

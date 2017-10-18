@@ -31,6 +31,7 @@ object CoordinatorLib {
       "com.socrata" %% "eurybates" % "2.0.0",
       "org.apache.activemq" % "activemq-core" % "5.7.0" exclude("org.apache", "commons.logging") exclude("commons-logging", "commons-logging") exclude("org.springframework", "spring-context"),
 
+      TestDeps.scalaTest % "test,it",
       TestDeps.scalaCheck % "test,it",
       TestDeps.slf4jSimple % "test,it",
       TestDeps.h2 % "test,it"

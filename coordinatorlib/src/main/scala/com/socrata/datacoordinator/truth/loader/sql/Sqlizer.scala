@@ -26,7 +26,7 @@ trait DataSqlizer[CT, CV] extends ReadDataSqlizer[CT, CV] {
   type PreloadStatistics
 
   def computeStatistics(conn: Connection): PreloadStatistics
-  def updateStatistics(conn: Connection, rowsAdded: Long, rowsDeleted: Long, rowsChanged: Long, preload: PreloadStatistics)
+  def updateStatistics(conn: Connection, rowsAdded: Long, rowsDeleted: Long, rowsChanged: Long, preload: PreloadStatistics): PreloadStatistics
 
   def softMaxBatchSize: Int
   def sizeofDelete(id: CV): Int
