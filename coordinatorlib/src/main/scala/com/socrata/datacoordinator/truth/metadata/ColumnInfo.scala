@@ -64,8 +64,9 @@ case class ColumnInfo[CT](copyInfo: CopyInfo,
                           isSystemPrimaryKey: Boolean,
                           isUserPrimaryKey: Boolean,
                           isVersion: Boolean,
-                          computationStrategyInfo: Option[ComputationStrategyInfo])
-                         (implicit val typeNamespace: TypeNamespace[CT], tag: com.socrata.datacoordinator.truth.metadata.`-impl`.Tag)  extends ColumnInfoLike {
+                          computationStrategyInfo: Option[ComputationStrategyInfo],
+                          presimplifiedZoomLevels: Seq[Int])
+                         (implicit val typeNamespace: TypeNamespace[CT], tag: com.socrata.datacoordinator.truth.metadata.`-impl`.Tag) extends ColumnInfoLike {
   lazy val typeName = typeNamespace.nameForType(typ)
   def unanchored: UnanchoredColumnInfo = UnanchoredColumnInfo(systemId, userColumnId, fieldName, typeName,
     physicalColumnBaseBase, isSystemPrimaryKey, isUserPrimaryKey, isVersion, computationStrategyInfo)
