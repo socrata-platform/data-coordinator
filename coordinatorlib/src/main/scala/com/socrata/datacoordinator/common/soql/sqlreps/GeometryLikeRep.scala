@@ -10,7 +10,7 @@ class GeometryLikeRep[T<:Geometry](
   repType: SoQLType,
   geometry: SoQLValue => T,
   value: T => SoQLValue,
-  presimplifiedZoomLevels: Seq[Int],
+  val presimplifiedZoomLevels: Seq[Int],
   val base: String)
     extends RepUtils with SqlColumnRep[SoQLType, SoQLValue]  {
   private val WGS84SRID = 4326
