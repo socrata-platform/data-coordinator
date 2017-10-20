@@ -294,7 +294,8 @@ class FeedbackContext[CT,CV](user: String,
   private def computeColumns(targetColumns: Set[UserColumnId]): FeedbackResult = {
     if (targetColumns.nonEmpty) {
       log.info("Computing columns: {}", targetColumns)
-      val columns = targetColumns.map(cookie.strategyMap(_)).flatMap(_.sourceColumnIds).toSet.toSeq
+      val sourceColumns = targetColumns.map(cookie.strategyMap(_)).flatMap(_.sourceColumnIds).toSet.toSeq // .toSet for uniqueness
+      val columns = if (sourceColumns.nonEmpty) sourceColumns else Seq(cookie.primaryKey) // for when computed columns don't have any source columns
 
       dataCoordinatorClient.exportRows(columns, cookie) match {
         case Right(Right(RowData(pk, rows))) =>
