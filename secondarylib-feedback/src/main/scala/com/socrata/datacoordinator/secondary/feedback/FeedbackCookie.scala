@@ -38,6 +38,9 @@ object FeedbackCookie {
     Some(CompactJsonWriter.toString(feedbackCookieCodec.encode(fbc)))
   }
 
+  def encodeOnError(reason: String, fbc: Option[FeedbackCookie]): Cookie =
+    fbc.map(encode).getOrElse(Some(s"{errorMessage:$reason}"))
+
   def decode(ck: Cookie): Option[FeedbackCookie] = try {
     ck.flatMap(JsonUtil.parseJson[FeedbackCookie](_).right.toOption) // safely handle cookie corruption
   } catch {
@@ -48,7 +51,7 @@ object FeedbackCookie {
 
 case class CookieSchema(dataVersion: DataVersion,
                         copyNumber: CopyNumber,
-                        primaryKey: UserColumnId,
+                        systemId: UserColumnId,
                         columnIdMap: Map[UserColumnId, ColumnId],
                         strategyMap: Map[UserColumnId, ComputationStrategyInfo],
                         obfuscationKey: Array[Byte],
@@ -61,7 +64,7 @@ case class CookieSchema(dataVersion: DataVersion,
       case other: CookieSchema =>
         this.dataVersion == other.dataVersion &&
           this.copyNumber == other.copyNumber &&
-          this.primaryKey == other.primaryKey &&
+          this.systemId == other.systemId &&
           this.columnIdMap == other.columnIdMap &&
           this.strategyMap == other.strategyMap &&
           java.util.Arrays.equals(this.obfuscationKey, other.obfuscationKey) && // stupid arrays
@@ -76,7 +79,7 @@ case class CookieSchema(dataVersion: DataVersion,
     var code = 17
     code = code * 41 + (if (dataVersion == null) 0 else dataVersion.hashCode)
     code = code * 41 + (if (copyNumber == null) 0 else copyNumber.hashCode)
-    code = code * 41 + primaryKey.hashCode
+    code = code * 41 + systemId.hashCode
     code = code * 41 + (if (columnIdMap == null) 0 else columnIdMap.hashCode)
     code = code * 41 + (if (strategyMap == null) 0 else strategyMap.hashCode)
     code = code * 41 + java.util.Arrays.hashCode(obfuscationKey)

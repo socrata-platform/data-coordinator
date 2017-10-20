@@ -28,16 +28,8 @@ sealed abstract class SchemaFailure {
 
 sealed abstract class UpdateSchemaFailure extends SchemaFailure
 
-case class PrimaryKeyColumnDoesNotExist(id: UserColumnId) extends UpdateSchemaFailure {
-  val english = s"Primary key column ${id.underlying} does not exist"
-}
-
 case class TargetColumnDoesNotExist(id: UserColumnId) extends UpdateSchemaFailure {
   val english = s"Target column ${id.underlying} does not exist"
-}
-
-case object PrimaryKeyColumnHasChanged extends UpdateSchemaFailure {
-  val english = "The primary key column has changed"
 }
 
 case class ColumnsDoNotExist(columns: Set[UserColumnId]) extends SchemaFailure {

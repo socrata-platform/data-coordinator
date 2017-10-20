@@ -138,13 +138,13 @@ class FeedbackContext[CT,CV](user: String,
           val filtered = updates.filter { case (colId: UserColumnId, value) =>
             extractCV(row.data, colId) != Some(value) // don't update to current value
           }
-          val rowId = extractCV(row.data, cookie.primaryKey) match {
-            case None => throw new Exception(s"Cannot find value for primary key ${cookie.primaryKey} in row: $row!") // throwing as exception because this should not happen _ever_
+          val rowId = extractCV(row.data, cookie.systemId) match {
+            case None => throw new Exception(s"Cannot find value for system id ${cookie.systemId} in row: $row!") // throwing as exception because this should not happen _ever_
             case Some(other) => other
           }
           if (filtered.nonEmpty) {
             val newRow = Map(
-              cookie.primaryKey -> rowId
+              cookie.systemId -> rowId
             ) ++ filtered.map { case (id, value) => (id, value)}.toMap
             Some(rowIdx -> newRow)
           } else {
@@ -172,7 +172,7 @@ class FeedbackContext[CT,CV](user: String,
   // commands for mutation scripts
   private val commands: Seq[JValue] =
     j"""[ { "c" : "normal", "user" : $user }
-        , { "c" : "row data", "update_only" : true, "nonfatal_row_errors" : [ "insert_in_update_only", "no_such_row_to_update" ] }
+        , { "c" : "row data", "update_only" : true, "by_system_id" : true, "nonfatal_row_errors" : [ "insert_in_update_only", "no_such_row_to_update" ] }
         ]""".toSeq
 
   private def writeMutationScript(rowUpdates: Iterator[JValue]): Option[JArray] = {
@@ -224,14 +224,6 @@ class FeedbackContext[CT,CV](user: String,
               statusMonitor.update(datasetInternalName, cookie.dataVersion, size, count)
             case Some(Right(TargetColumnDoesNotExist(column))) =>
               // this is pretty lame; but better than doing a full resync
-              val deleted = deleteColumns(Set(column))
-              computeColumns(targetColumns -- deleted)
-            case Some(Right(PrimaryKeyColumnHasChanged)) =>
-              // the primary key column has changed; try again
-              // computeColumns(.) will discover the new primary key
-              computeColumns(targetColumns)
-            case Some(Right(PrimaryKeyColumnDoesNotExist(column))) =>
-              // that's okay, we can try again
               val deleted = deleteColumns(Set(column))
               computeColumns(targetColumns -- deleted)
             case Some(Left(ftddc@FailedToDiscoverDataCoordinator)) =>
@@ -295,15 +287,10 @@ class FeedbackContext[CT,CV](user: String,
     if (targetColumns.nonEmpty) {
       log.info("Computing columns: {}", targetColumns)
       val sourceColumns = targetColumns.map(cookie.strategyMap(_)).flatMap(_.sourceColumnIds).toSet.toSeq // .toSet for uniqueness
-      val columns = if (sourceColumns.nonEmpty) sourceColumns else Seq(cookie.primaryKey) // for when computed columns don't have any source columns
+      val columns = if (sourceColumns.nonEmpty) sourceColumns else Seq(cookie.systemId) // for when computed columns don't have any source columns
 
       dataCoordinatorClient.exportRows(columns, cookie) match {
-        case Right(Right(RowData(pk, rows))) =>
-          if (pk != cookie.primaryKey) {
-            log.info(s"The primary key column has changed from ${cookie.primaryKey} to $pk; updating the cookie.")
-            // this is safe because I must be caught up before a publication stage change can be made
-            cookie = cookie.copy(primaryKey = pk)
-          }
+        case Right(Right(RowData(_, rows))) =>
           val result = feedback(rows.map { row => Row(row, None) }, targetColumns)
           log.info("Done computing columns")
           result

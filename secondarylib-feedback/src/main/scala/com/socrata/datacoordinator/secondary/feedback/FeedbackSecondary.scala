@@ -1,7 +1,5 @@
 package com.socrata.datacoordinator.secondary.feedback
 
-import java.io.IOException
-
 import com.rojoma.json.v3.ast._
 import com.rojoma.simplearm.Managed
 import com.socrata.datacoordinator.id.{UserColumnId, StrategyType}
@@ -159,10 +157,8 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
 
   private def handleFeedbackResult[T](originalCookie: Option[FeedbackCookie],
                                       feedbackResult: FeedbackResult)(f: FeedbackCookie => T): T = {
-    def encodeCookie(reason: String, f: FeedbackCookie => FeedbackCookie): Cookie = originalCookie match {
-      case Some(fbCookie) => FeedbackCookie.encode(f(fbCookie))
-      case None => Some(s"{errorMessage:$reason}")
-    }
+    def encodeCookie(reason: String, f: FeedbackCookie => FeedbackCookie): Cookie =
+      FeedbackCookie.encodeOnError(reason, originalCookie.map(f))
 
     feedbackResult match {
       case Success(updatedCookie) => f(updatedCookie)
@@ -188,7 +184,7 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
         val schema = CookieSchema(
           dataVersion = DataVersion(0),
           copyNumber = CopyNumber(0),
-          primaryKey = new UserColumnId(":id"), // this _should_ be right... but we will override this later
+          systemId = new UserColumnId(":id"), // this _should_ be right... but we will override this later
           columnIdMap = Map.empty,
           strategyMap = Map.empty,
           obfuscationKey = datasetInfo.obfuscationKey,
@@ -254,12 +250,12 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
           case ColumnCreated(columnInfo) =>
             // note: we will see ColumnCreated events both when new columns are created and after a WorkingCopyCreated event
 
-            // so... since we are blindly setting the primary key on version 1 to the expected value of ":id"
+            // so... since we are blindly setting the system id on version 1 to the expected value of ":id"
             // let's change that value to the UserColumnId of the column in the version that is said to actually
             // be the system primary key to not make any assumptions about what we actually name our system fields
-            val newPrimaryKey =
+            val newSystemId =
               if (dataVersion == 1 && columnInfo.isSystemPrimaryKey) columnInfo.id
-              else newCookie.current.primaryKey
+              else newCookie.current.systemId
 
             val old = newCookie.current.strategyMap
             val (updatedStrategyMap, updatedCompCols) = columnInfo.computationStrategyInfo match {
@@ -270,7 +266,7 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
             }
             FP(newCookie.copy(
               current = newCookie.current.copy(
-                primaryKey = newPrimaryKey,
+                systemId = newSystemId,
                 columnIdMap = newCookie.current.columnIdMap + (columnInfo.id -> columnInfo.systemId),
                 strategyMap = updatedStrategyMap
               )
@@ -288,22 +284,11 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
                 strategyMap = updatedStrategyMap
               )
             ), updatedCompCols)
-          case RowIdentifierSet(columnInfo) =>
-            FP(newCookie.copy(
-              current = newCookie.current.copy(
-                primaryKey = columnInfo.id
-              )
-            ), newCompCols)
-          case RowIdentifierCleared(columnInfo) =>
-            FP(newCookie.copy(
-              current = newCookie.current.copy(
-                primaryKey = systemId
-              )
-            ), newCompCols)
           case SystemRowIdentifierChanged(columnInfo) =>
+            // this will happen after a copy of the dataset has been created, the columns created, and optionally the data copied.
             FP(newCookie.copy(
               current = newCookie.current.copy(
-                primaryKey = columnInfo.id
+                systemId = columnInfo.id
               )
             ), newCompCols)
           case WorkingCopyCreated(copyInfo) =>
@@ -362,9 +347,16 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
       // update cookie
       val copyNumber = CopyNumber(copyInfo.copyNumber)
 
-      val primaryKey = schema.filter {
-        case (colId, colInfo) => colInfo.isUserPrimaryKey
-      }.toSeq.map({ case (_, colInfo) => colInfo.id}).headOption.getOrElse(systemId)
+      val systemId = schema.filter {
+        case (_, colInfo) => colInfo.isSystemPrimaryKey
+      }.toSeq.map({ case (_, colInfo) => colInfo.id}).headOption.getOrElse {
+        // this shouldn't ever happen
+        val reason = "Resync done on dataset with no system id column!"
+        val cookieWithErrorMessage =
+          FeedbackCookie.encodeOnError(reason, FeedbackCookie.decode(cookie).map(_.copy(errorMessage = Some(reason))))
+        log.error(s"$reason!! Schema: {}", schema)
+        throw BrokenDatasetSecondaryException(reason, cookieWithErrorMessage)
+      }
 
       val columnIdMap = schema.toSeq.map { case (colId, colInfo) => (colInfo.id, colId) }.toMap
 
@@ -375,7 +367,7 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
       val cookieSchema = CookieSchema(
         dataVersion = DataVersion(copyInfo.dataVersion),
         copyNumber = copyNumber,
-        primaryKey = primaryKey,
+        systemId = systemId,
         columnIdMap = columnIdMap,
         strategyMap = strategyMap,
         computationRetriesLeft = computationRetryLimit,
