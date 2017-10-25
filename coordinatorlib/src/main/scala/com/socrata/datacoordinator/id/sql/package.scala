@@ -16,40 +16,6 @@ package object sql {
     }
   }
 
-  implicit class CopyIdSetter(val __underlying: PreparedStatement) extends AnyVal {
-    def setCopyId(idx: Int, value: CopyId): Unit = {
-      val x: Long = value.underlying
-      __underlying.setObject(idx, x, Types.OTHER)
-    }
-  }
-
-  implicit class CopyIdGetter(val __underlying: ResultSet) extends AnyVal {
-    private def copyIdify(x: Long) =
-      if(__underlying.wasNull) CopyId.Invalid
-      else new CopyId(x)
-    def getCopyId(col: String): CopyId =
-      copyIdify(__underlying.getLong(col))
-    def getCopyId(idx: Int): CopyId =
-      copyIdify(__underlying.getLong(idx))
-  }
-
-  implicit class ColumnIdSetter(val __underlying: PreparedStatement) extends AnyVal {
-    def setCopyId(idx: Int, value: ColumnId): Unit = {
-      val x: Long = value.underlying
-      __underlying.setObject(idx, x, Types.OTHER)
-    }
-  }
-
-  implicit class ColumnIdGetter(val __underlying: ResultSet) extends AnyVal {
-    private def columnIdify(x: Long) =
-      if(__underlying.wasNull) ColumnId.Invalid
-      else new ColumnId(x)
-    def getColumnId(col: String): ColumnId =
-      columnIdify(__underlying.getLong(col))
-    def getColumnId(idx: Int): ColumnId =
-      columnIdify(__underlying.getLong(idx))
-  }
-
   implicit class DatasetIdGetter(val __underlying: ResultSet) extends AnyVal {
     private def datasetIdify(x: Long) =
       if(__underlying.wasNull) DatasetId.Invalid

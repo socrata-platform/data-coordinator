@@ -23,6 +23,4 @@ object ColumnId {
   implicit val ordering = new Ordering[ColumnId] {
     def compare(x: ColumnId, y: ColumnId): Int = Ordering.Long.compare(x.underlying, y.underlying)
   }
-
-  val Invalid = new ColumnId(-1)
 }
