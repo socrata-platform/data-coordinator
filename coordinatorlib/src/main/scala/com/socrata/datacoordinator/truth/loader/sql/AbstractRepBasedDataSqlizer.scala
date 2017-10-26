@@ -5,10 +5,10 @@ import java.sql.{ResultSet, Connection, PreparedStatement}
 
 import com.rojoma.simplearm.util._
 
-import com.socrata.datacoordinator.truth.sql.{RepBasedSqlDatasetContext, SqlPKableColumnRep, SqlColumnRep}
+import com.socrata.datacoordinator.truth.sql.{SqlPKableColumnRep, RepBasedSqlDatasetContext, SqlColumnRep}
 import com.socrata.datacoordinator.util.{CloseableIterator, FastGroupedIterator, LeakDetect}
-import com.socrata.datacoordinator.id.{ColumnId, RowId}
-import com.socrata.datacoordinator.util.collection.{ColumnIdSet, RowIdSet, MutableRowIdSet}
+import com.socrata.datacoordinator.id.RowId
+import com.socrata.datacoordinator.util.collection.MutableRowIdSet
 import java.io.Closeable
 
 /**
@@ -33,10 +33,15 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
   val repSchema = datasetContext.schema
 
   val sidRep = repSchema(datasetContext.systemIdColumn).asInstanceOf[SqlPKableColumnRep[CT, CV]]
-  val pkRep = repSchema(logicalPKColumnName).asInstanceOf[SqlPKableColumnRep[CT, CV]]
   val versionRep = repSchema(datasetContext.versionColumn)
 
-  def sizeofDelete(id: CV) = pkRep.estimateSize(id)
+  def pkRep(bySystemIdForced: Boolean): SqlPKableColumnRep[CT, CV] = {
+    val pkRep = repSchema(logicalPKColumnName).asInstanceOf[SqlPKableColumnRep[CT, CV]];
+
+    if (bySystemIdForced) sidRep else pkRep
+  }
+
+  def sizeofDelete(id: CV, bySystemIdForced: Boolean): Int = pkRep(bySystemIdForced).estimateSize(id)
 
   def sizeof(row: Row[CV]) = {
     var total = 0
@@ -114,6 +119,7 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
 
   def blockQueryById[T](
     conn: Connection,
+    bySystemId: Boolean,
     ids: Iterator[CV],
     selectReps: Iterable[SqlColumnRep[CT, CV]],
     dataTableName: String)
@@ -126,7 +132,7 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
       var _fullStmt: PreparedStatement = null
 
       def fullStmt = {
-        if(_fullStmt == null) _fullStmt = conn.prepareStatement(prefix + pkRep.templateForMultiLookup(blockSize))
+        if(_fullStmt == null) _fullStmt = conn.prepareStatement(prefix + pkRep(bySystemId).templateForMultiLookup(blockSize))
         _fullStmt
       }
 
@@ -139,7 +145,7 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
       def next(): Seq[T] = {
         val block = grouped.next()
         if(block.size != blockSize) {
-          using(conn.prepareStatement(prefix + pkRep.templateForMultiLookup(block.size))) { stmt2 =>
+          using(conn.prepareStatement(prefix + pkRep(bySystemId).templateForMultiLookup(block.size))) { stmt2 =>
             fillAndResult(stmt2, block)
           }
         } else {
@@ -150,7 +156,7 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
       def fillAndResult(stmt: PreparedStatement, block: Seq[CV]): Seq[T] = {
         var i = 1
         for(cv <- block) {
-          i = pkRep.prepareMultiLookup(stmt, cv, i)
+          i = pkRep(bySystemId).prepareMultiLookup(stmt, cv, i)
         }
         using(stmt.executeQuery()) { rs =>
           val result = new scala.collection.mutable.ArrayBuffer[T](block.length)
@@ -164,37 +170,17 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
     new ResultIterator with LeakDetect
   }
 
-  def findRows(conn: Connection, ids: Iterator[CV]): CloseableIterator[Seq[InspectedRow[CV]]] =
-    blockQueryById(conn, ids, repSchema.values, dataTableName) { rs =>
+  def findRows(conn: Connection, bySystemId: Boolean, ids: Iterator[CV]): CloseableIterator[Seq[InspectedRow[CV]]] =
+    blockQueryById(conn, bySystemId, ids, repSchema.values, dataTableName) { rs =>
       val row = new MutableRow[CV]
       var i = 1
       repSchema.foreach { (cid, rep) =>
         row(cid) = rep.fromResultSet(rs, i)
         i += rep.physColumns.length
       }
-      val id = row(datasetContext.primaryKeyColumn)
       val sid = row(datasetContext.systemIdColumn)
+      val id = if (bySystemId) sid else row(datasetContext.primaryKeyColumn)
       val version = typeContext.makeRowVersionFromValue(row(datasetContext.versionColumn))
       InspectedRow(id, typeContext.makeSystemIdFromValue(sid), version, row.freeze())
     }
-
-  def findIdsAndVersions(conn: Connection, ids: Iterator[CV]): CloseableIterator[Seq[InspectedRowless[CV]]] = {
-    def processBlockNoUid(rs: ResultSet) = {
-      val uid = pkRep.fromResultSet(rs, 1)
-      val sid = typeContext.makeSystemIdFromValue(uid)
-      val ver = typeContext.makeRowVersionFromValue(versionRep.fromResultSet(rs, 1 + pkRep.physColumns.length))
-      InspectedRowless(uid, sid, ver)
-    }
-    def processBlockWithUid(rs: ResultSet) = {
-      val uid = pkRep.fromResultSet(rs, 1)
-      val sid = typeContext.makeSystemIdFromValue(sidRep.fromResultSet(rs, 1 + pkRep.physColumns.length))
-      val ver = typeContext.makeRowVersionFromValue(versionRep.fromResultSet(rs, 1 + pkRep.physColumns.length + sidRep.physColumns.length))
-      InspectedRowless(uid, sid, ver)
-    }
-    if(pkRep eq sidRep) {
-      blockQueryById(conn, ids, Seq(pkRep, versionRep), dataTableName)(processBlockNoUid)
-    } else {
-      blockQueryById(conn, ids, Seq(pkRep, sidRep, versionRep), dataTableName)(processBlockWithUid)
-    }
-  }
 }

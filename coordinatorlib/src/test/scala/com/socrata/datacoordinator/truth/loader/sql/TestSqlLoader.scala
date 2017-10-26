@@ -2,20 +2,20 @@ package com.socrata.datacoordinator
 package truth.loader
 package sql
 
-import org.scalatest.{Tag, FunSuite, BeforeAndAfterAll}
+import com.socrata.datacoordinator._
+import org.scalatest.{BeforeAndAfterAll, FunSuite, Tag}
 
 import scala.collection.immutable.VectorBuilder
-
-import java.sql.{Connection, DriverManager}
+import java.sql.{Connection, DriverManager, ResultSet}
 
 import org.scalatest.MustMatchers
 import org.scalatest.prop.PropertyChecks
 import com.rojoma.simplearm.util._
-
-import com.socrata.datacoordinator.util.{RowVersionProvider, RowIdProvider, RowDataProvider, NoopTimingReport}
-import com.socrata.datacoordinator.id.{RowVersion, RowId, ColumnId}
-import com.socrata.datacoordinator.util.collection.{MutableColumnIdMap, ColumnIdMap}
-import com.rojoma.json.v3.ast.{JString, JNumber, JValue}
+import com.socrata.datacoordinator.util.{NoopTimingReport, RowDataProvider, RowIdProvider, RowVersionProvider}
+import com.socrata.datacoordinator.id.{ColumnId, RowId, RowVersion}
+import com.socrata.datacoordinator.util.collection.{ColumnIdMap, MutableColumnIdMap}
+import com.rojoma.json.v3.ast.{JNumber, JString, JValue}
+import org.scalacheck.{Arbitrary, Gen}
 
 class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with BeforeAndAfterAll {
 
@@ -125,7 +125,15 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     e.getMessage must include ("report() called without being finished first")
   }
 
-  test("adding a new row with system PK succeeds") {
+  def testOps(name: String, testTags: Tag*)(testWithBySystemId: Boolean => Unit): Unit = {
+    def testOn(bySystemId: Boolean) = test(s"$name when by_system_id is $bySystemId", testTags: _*) {
+      testWithBySystemId(bySystemId)
+    }
+    testOn(bySystemId = false)
+    testOn(bySystemId = true)
+  }
+
+  testOps("adding a new row with system PK succeeds") { bySystemId =>
     val dsContext = new TestDatasetContext(standardSchema, idCol, None, versionCol)
     val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
 
@@ -138,13 +146,13 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(idCol), false, dataSqlizer, dataLogger, idProvider(15), versionProvider(53), executor, reportWriter, NoopTimingReport))
       } {
-        txn.upsert(0, Row[TestColumnValue](num -> LongValue(1), str -> StringValue("a")))
+        txn.upsert(0, Row[TestColumnValue](num -> LongValue(1), str -> StringValue("a")), bySystemId = bySystemId)
         txn.finish()
         dataLogger.finish()
 
         val report = reportWriter.report
 
-        report.inserted must equal (Map(0 -> IdAndVersion(LongValue(15), new RowVersion(53))))
+        report.inserted must equal (Map(0 -> IdAndVersion(LongValue(15), new RowVersion(53), bySystemIdForced = false))) // inserts are never "by_system_id"
         report.updated must be ('empty)
         report.deleted must be ('empty)
         report.errors must be ('empty)
@@ -171,7 +179,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     sb.append('}').toString
   }
 
-  test("inserting and then updating a new row with system PK succeeds") {
+  testOps("inserting and then updating a new row with system PK succeeds") { bySystemId =>
     val ids = idProvider(15)
     val vers = versionProvider(431)
     val dsContext = new TestDatasetContext(standardSchema, idCol, None, versionCol)
@@ -186,14 +194,14 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(idCol), false, dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
-        txn.upsert(0, Row[TestColumnValue](num -> LongValue(1), str -> StringValue("a")))
-        txn.upsert(1, Row[TestColumnValue](idCol -> LongValue(15), num -> LongValue(2), str -> StringValue("b")))
+        txn.upsert(0, Row[TestColumnValue](num -> LongValue(1), str -> StringValue("a")), bySystemId = bySystemId)
+        txn.upsert(1, Row[TestColumnValue](idCol -> LongValue(15), num -> LongValue(2), str -> StringValue("b")), bySystemId = bySystemId)
         txn.finish()
         val report = reportWriter.report
         dataLogger.finish()
 
-        report.inserted must equal (Map(0 -> IdAndVersion(LongValue(15), new RowVersion(431))))
-        report.updated must be (Map(1 -> IdAndVersion(LongValue(15), new RowVersion(432))))
+        report.inserted must equal (Map(0 -> IdAndVersion(LongValue(15), new RowVersion(431), bySystemIdForced = false))) // inserts are never "by_system_id"
+        report.updated must be (Map(1 -> IdAndVersion(LongValue(15), new RowVersion(432), bySystemIdForced = false))) // inserts are never "by_system_id" when the primary key is the system id
         report.deleted must be ('empty)
         report.errors must be ('empty)
       }
@@ -213,7 +221,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     }
   }
 
-  test("trying to add a new row with a NULL system PK does not fail (it adds a row with a generated ID)") {
+  testOps("trying to add a new row with a NULL system PK does not fail (it adds a row with a generated ID)") { bySystemId =>
     val dsContext = new TestDatasetContext(standardSchema, idCol, None, versionCol)
     val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
 
@@ -229,12 +237,12 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(idCol), false, dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
-        txn.upsert(0, Row(idCol -> NullValue, num -> LongValue(1), str -> StringValue("a")))
+        txn.upsert(0, Row(idCol -> NullValue, num -> LongValue(1), str -> StringValue("a")), bySystemId = bySystemId)
         txn.finish()
         val report = reportWriter.report
         dataLogger.finish()
 
-        report.inserted must be (Map(0 -> IdAndVersion(LongValue(22), new RowVersion(111))))
+        report.inserted must be (Map(0 -> IdAndVersion(LongValue(22), new RowVersion(111), bySystemIdForced = false))) // inserts are never "by_system_id"
         report.updated must be ('empty)
         report.deleted must be ('empty)
         report.errors must be ('empty)
@@ -254,7 +262,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     }
   }
 
-  test("trying to add a new row with a nonexistant system PK fails") {
+  testOps("trying to add a new row with a nonexistant system PK fails") { bySystemId =>
     val dsContext = new TestDatasetContext(standardSchema, idCol, None, versionCol)
     val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
 
@@ -270,7 +278,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(idCol), false, dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
-        txn.upsert(0, Row(idCol -> LongValue(77), num -> LongValue(1), str -> StringValue("a")))
+        txn.upsert(0, Row(idCol -> LongValue(77), num -> LongValue(1), str -> StringValue("a")), bySystemId = bySystemId)
         txn.finish()
         val report = reportWriter.report
         dataLogger.finish()
@@ -278,7 +286,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         report.inserted must be ('empty)
         report.updated must be ('empty)
         report.deleted must be ('empty)
-        report.errors must equal (Map(0 -> NoSuchRowToUpdate(LongValue(77))))
+        report.errors must equal (Map(0 -> NoSuchRowToUpdate(LongValue(77), bySystemIdForced = false))) // updates are never "by_system_id" when the primary key is the system id
       }
       conn.commit()
 
@@ -290,7 +298,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     }
   }
 
-  test("updating an existing row by system id succeeds") {
+  testOps("updating an existing row by system id succeeds") { bySystemId =>
     val ids = idProvider(13)
     val vers = versionProvider(5)
     val dsContext = new TestDatasetContext(standardSchema, idCol, None, versionCol)
@@ -307,13 +315,13 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(idCol), false, dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
-        txn.upsert(0, Row(idCol -> LongValue(7), num -> LongValue(44)))
+        txn.upsert(0, Row(idCol -> LongValue(7), num -> LongValue(44)), bySystemId = bySystemId)
         txn.finish()
         val report = reportWriter.report
         dataLogger.finish()
 
         report.inserted must be ('empty)
-        report.updated must equal (Map(0 -> IdAndVersion(LongValue(7), new RowVersion(5))))
+        report.updated must equal (Map(0 -> IdAndVersion(LongValue(7), new RowVersion(5), bySystemIdForced = false))) // inserts are never "by_system_id" when the primary key is the system id
         report.deleted must be ('empty)
         report.errors must be ('empty)
       }
@@ -335,7 +343,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     }
   }
 
-  test("adding a new row with user PK succeeds") {
+  testOps("adding a new row with user PK succeeds") { bySystemId =>
     val ids = idProvider(15)
     val vers = versionProvider(999999)
     val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str), versionCol)
@@ -350,12 +358,12 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(str), false, dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
-        txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("a")))
+        txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("a")), bySystemId = bySystemId)
         txn.finish()
         val report = reportWriter.report
         dataLogger.finish()
 
-        report.inserted must equal (Map(0 -> IdAndVersion(StringValue("a"), new RowVersion(999999))))
+        report.inserted must equal (Map(0 -> IdAndVersion(StringValue("a"), new RowVersion(999999), bySystemIdForced = false))) // inserts are never "by_system_id"
         report.updated must be ('empty)
         report.deleted must be ('empty)
         report.errors must be ('empty)
@@ -377,7 +385,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     }
   }
 
-  test("trying to add a new row with a NULL user PK fails") {
+  testOps("trying to add a new row with a NULL user PK fails") { bySystemId =>
     val ids = idProvider(22)
     val vers = versionProvider(8)
     val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str), versionCol)
@@ -392,7 +400,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(str), false, dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
-        txn.upsert(0, Row(num -> LongValue(1), str -> NullValue))
+        txn.upsert(0, Row(num -> LongValue(1), str -> NullValue), bySystemId = bySystemId)
         txn.finish()
         val report = reportWriter.report
         dataLogger.finish()
@@ -412,7 +420,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     }
   }
 
-  test("trying to add a new row without user PK fails") {
+  testOps("trying to add a new row without user PK fails (and no system id)") { bySystemId =>
     val ids = idProvider(22)
     val vers = versionProvider(16)
     val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str), versionCol)
@@ -427,7 +435,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(str), false, dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
-        txn.upsert(0, Row(num -> LongValue(1)))
+        txn.upsert(0, Row(num -> LongValue(1)), bySystemId = bySystemId)
         txn.finish()
         val report = reportWriter.report
         dataLogger.finish()
@@ -447,7 +455,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     }
   }
 
-  test("updating an existing row by user pk succeeds") {
+  testOps("updating an existing row by user pk succeeds") { bySystemId =>
     val ids = idProvider(13)
     val vers = versionProvider(24)
     val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str), versionCol)
@@ -464,13 +472,13 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(str), false, dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
-        txn.upsert(0, Row(str -> StringValue("q"), num -> LongValue(44)))
+        txn.upsert(0, Row(str -> StringValue("q"), num -> LongValue(44)), bySystemId = bySystemId)
         txn.finish()
         val report = reportWriter.report
         dataLogger.finish()
 
         report.inserted must be ('empty)
-        report.updated must equal (Map(0 -> IdAndVersion(StringValue("q"), new RowVersion(24))))
+        report.updated must equal (Map(0 -> IdAndVersion(StringValue("q"), new RowVersion(24), bySystemIdForced = false)))
         report.deleted must be ('empty)
         report.errors must be ('empty)
       }
@@ -492,7 +500,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     }
   }
 
-  test("inserting and then updating a new row with user PK succeeds") {
+  testOps("inserting and then updating a new row with user PK succeeds") { bySystemId =>
     val ids = idProvider(15)
     val vers = versionProvider(32)
     val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str), versionCol)
@@ -507,14 +515,14 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(str), false, dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
-        txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q")))
-        txn.upsert(1, Row(num -> LongValue(2), str -> StringValue("q")))
+        txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q")), bySystemId = bySystemId)
+        txn.upsert(1, Row(num -> LongValue(2), str -> StringValue("q")), bySystemId = bySystemId)
         txn.finish()
         val report = reportWriter.report
         dataLogger.finish()
 
-        report.inserted must equal (Map(0 -> IdAndVersion(StringValue("q"), new RowVersion(32))))
-        report.updated must be (Map(1 -> IdAndVersion(StringValue("q"), new RowVersion(33))))
+        report.inserted must equal (Map(0 -> IdAndVersion(StringValue("q"), new RowVersion(32), bySystemIdForced = false)))
+        report.updated must be (Map(1 -> IdAndVersion(StringValue("q"), new RowVersion(33), bySystemIdForced = false)))
         report.deleted must be ('empty)
         report.errors must be ('empty)
       }
@@ -536,7 +544,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     }
   }
 
-  test("specifying :id when there's a user PK succeeds (and ignores it)") {
+  testOps("specifying :id when there's a user PK succeeds (and ignores it)") { bySystemId =>
     val ids = idProvider(15)
     val vers = versionProvider(40)
     val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str), versionCol)
@@ -551,12 +559,12 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(str), false, dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
-        txn.upsert(0, Row(idCol -> LongValue(15), num -> LongValue(1), str -> StringValue("q")))
+        txn.upsert(0, Row(idCol -> LongValue(15), num -> LongValue(1), str -> StringValue("q")), bySystemId = bySystemId)
         txn.finish()
         val report = reportWriter.report
         dataLogger.finish()
 
-        report.inserted must be (Map(0 -> IdAndVersion(StringValue("q"), new RowVersion(40))))
+        report.inserted must be (Map(0 -> IdAndVersion(StringValue("q"), new RowVersion(40), bySystemIdForced = false))) // inserts are never "by_system_id"
         report.updated must be ('empty)
         report.deleted must be ('empty)
         report.errors must be ('empty)
@@ -578,7 +586,278 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     }
   }
 
-  test("deleting a row just inserted with a user PK succeeds") {
+  // tests for where by_system_id changes behavior of upsert:
+  test("specifying :id for insert when the user PK is not passed fails when by_system_id is false") {
+    val ids = idProvider(15)
+    val vers = versionProvider(40)
+    val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str), versionCol)
+    val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
+
+    withDB() { conn =>
+      makeTables(conn, dataSqlizer, standardLogTableName)
+      conn.commit()
+
+      val reportWriter = simpleReportWriter()
+      for {
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
+        txn <- managed(SqlLoader(conn, rowPreparer(str), false, dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
+      } {
+        txn.upsert(0, Row(idCol -> LongValue(7), num -> LongValue(2)), bySystemId = false)
+        txn.finish()
+        val report = reportWriter.report
+        dataLogger.finish()
+
+        report.inserted must be ('empty)
+        report.updated must be ('empty)
+        report.deleted must be ('empty)
+        report.errors must be (Map(0 -> NoPrimaryKey))
+      }
+      conn.commit()
+
+      // we did not insert or update any rows
+      ids.underlying.finish() must be (15L)
+      vers.underlying.finish() must be (40L)
+
+      // the preloaded row
+      query(conn, rawSelect) must equal (Seq.empty)
+      query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq.empty)
+    }
+  }
+
+  test("specifying :id for insert when the user PK is not passed fails when by_system_id is true") {
+    val ids = idProvider(15)
+    val vers = versionProvider(40)
+    val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str), versionCol)
+    val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
+
+    withDB() { conn =>
+      makeTables(conn, dataSqlizer, standardLogTableName)
+      conn.commit()
+
+      val reportWriter = simpleReportWriter()
+      for {
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
+        txn <- managed(SqlLoader(conn, rowPreparer(str), false, dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
+      } {
+        txn.upsert(0, Row(idCol -> LongValue(7), num -> LongValue(2)), bySystemId = true)
+        txn.finish()
+        val report = reportWriter.report
+        dataLogger.finish()
+
+        report.inserted must be ('empty)
+        report.updated must be ('empty)
+        report.deleted must be ('empty)
+        report.errors must be (Map(0 -> NoSuchRowToUpdate(LongValue(7), bySystemIdForced = true)))
+      }
+      conn.commit()
+
+      // we did not insert or update any rows
+      ids.underlying.finish() must be (15L)
+      vers.underlying.finish() must be (40L)
+
+      // the preloaded row
+      query(conn, rawSelect) must equal (Seq.empty)
+      query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq.empty)
+    }
+  }
+
+  test("specifying :id when the user PK is not passed fails when by_system_id is false") {
+    val ids = idProvider(15)
+    val vers = versionProvider(40)
+    val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str), versionCol)
+    val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
+
+    withDB() { conn =>
+      makeTables(conn, dataSqlizer, standardLogTableName)
+
+      preload(conn, dataSqlizer, standardLogTableName)(
+        Row(idCol -> LongValue(7), versionCol -> LongValue(33), str -> StringValue("q"), num -> LongValue(1))
+      )
+      conn.commit()
+
+      val reportWriter = simpleReportWriter()
+      for {
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
+        txn <- managed(SqlLoader(conn, rowPreparer(str), false, dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
+      } {
+        txn.upsert(0, Row(idCol -> LongValue(7), num -> LongValue(2)), bySystemId = false)
+        txn.finish()
+        val report = reportWriter.report
+        dataLogger.finish()
+
+        report.inserted must be ('empty)
+        report.updated must be ('empty)
+        report.deleted must be ('empty)
+        report.errors must be (Map(0 -> NoPrimaryKey))
+      }
+      conn.commit()
+
+      // we did not insert or update any rows
+      ids.underlying.finish() must be (15L)
+      vers.underlying.finish() must be (40L)
+
+      // the preloaded row
+      query(conn, rawSelect) must equal (Seq(
+        Map(idColName -> 7L, versionColName -> 33L, numName -> 1L, strName -> "q")
+      ))
+      query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq.empty)
+    }
+  }
+
+  test("specifying :id when the user PK is not passed succeeds when by_system_id is true") {
+    val ids = idProvider(15)
+    val vers = versionProvider(40)
+    val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str), versionCol)
+    val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
+
+    withDB() { conn =>
+      makeTables(conn, dataSqlizer, standardLogTableName)
+
+      preload(conn, dataSqlizer, standardLogTableName)(
+        Row(idCol -> LongValue(7), versionCol -> LongValue(33), str -> StringValue("q"), num -> LongValue(1))
+      )
+      conn.commit()
+
+      val reportWriter = simpleReportWriter()
+      for {
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
+        txn <- managed(SqlLoader(conn, rowPreparer(str), false, dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
+      } {
+        txn.upsert(0, Row(idCol -> LongValue(7), num -> LongValue(2)), bySystemId = true)
+        txn.finish()
+        val report = reportWriter.report
+        dataLogger.finish()
+
+        report.inserted must be ('empty)
+        report.updated must be (Map(0 -> IdAndVersion(LongValue(7), new RowVersion(40), bySystemIdForced = true)))
+        report.deleted must be ('empty)
+        report.errors must be ('empty)
+      }
+      conn.commit()
+
+      // updated 1 row
+      ids.underlying.finish() must be (15L)
+      vers.underlying.finish() must be (41L)
+
+      query(conn, rawSelect) must equal (Seq(
+        Map(idColName -> 7L, versionColName -> 40L, numName -> 2L, strName -> "q")
+      ))
+      query(conn, "SELECT version, subversion, rows, who from test_log") must be(Seq(
+        locally {
+          val oldData = logMap(idCol -> JNumber(7), versionCol -> JNumber(33), num -> JNumber(1), str -> JString("q"))
+          val op = logMap(versionCol -> JNumber(40), num -> JNumber(2))
+          Map("version" -> 1L, "subversion" -> 1L, "rows" -> ("""[{"u":[""" + oldData + "," + op +  """]}]"""), "who" -> "hello")
+        }
+      ))
+    }
+  }
+
+  test("using both :id and the user PK succeeds when by_system_id is true") {
+    val ids = idProvider(15)
+    val vers = versionProvider(40)
+    val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str), versionCol)
+    val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
+
+    withDB() { conn =>
+      makeTables(conn, dataSqlizer, standardLogTableName)
+
+      preload(conn, dataSqlizer, standardLogTableName)(
+        Row(idCol -> LongValue(7), versionCol -> LongValue(33), str -> StringValue("q"), num -> LongValue(1)),
+        Row(idCol -> LongValue(8), versionCol -> LongValue(34), str -> StringValue("r"), num -> LongValue(2)),
+        Row(idCol -> LongValue(9), versionCol -> LongValue(35), str -> StringValue("s"), num -> LongValue(3)),
+        Row(idCol -> LongValue(10), versionCol -> LongValue(36), str -> StringValue("t"), num -> LongValue(4))
+      )
+      conn.commit()
+
+      val reportWriter = simpleReportWriter()
+      for {
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
+        txn <- managed(SqlLoader(conn, rowPreparer(str), false, dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
+      } {
+        txn.upsert(0, Row(str -> StringValue("u"), num -> LongValue(5)), bySystemId = true)
+        txn.upsert(1, Row(idCol -> LongValue(7), num -> LongValue(2)), bySystemId = true)
+        txn.upsert(2, Row(idCol -> LongValue(8), num -> LongValue(4)), bySystemId = true)
+        txn.upsert(3, Row(str -> StringValue("v"), num -> LongValue(6)), bySystemId = true)
+        txn.upsert(4, Row(str -> StringValue("s"), num -> LongValue(6)), bySystemId = true)
+        txn.upsert(5, Row(str -> StringValue("t"), num -> LongValue(8)), bySystemId = true)
+        txn.upsert(6, Row(idCol -> LongValue(9), num -> LongValue(9)), bySystemId = true)
+        txn.upsert(7, Row(idCol -> LongValue(10), num -> LongValue(12)), bySystemId = true)
+        txn.upsert(8, Row(idCol -> LongValue(11), num -> LongValue(0)), bySystemId = true)
+        txn.finish()
+        val report = reportWriter.report
+        dataLogger.finish()
+
+        // inserts are never "by_system_id"
+        report.inserted must be (Map(
+          0 -> IdAndVersion(StringValue("u"), new RowVersion(40), bySystemIdForced = false),
+          3 -> IdAndVersion(StringValue("v"), new RowVersion(43), bySystemIdForced = false)))
+        report.updated must be (Map(
+          1 -> IdAndVersion(LongValue(7), new RowVersion(41), bySystemIdForced = true),
+          2 -> IdAndVersion(LongValue(8), new RowVersion(42), bySystemIdForced = true),
+          4 -> IdAndVersion(StringValue("s"), new RowVersion(44), bySystemIdForced = false),
+          5 -> IdAndVersion(StringValue("t"), new RowVersion(45), bySystemIdForced = false),
+          6 -> IdAndVersion(LongValue(9), new RowVersion(46), bySystemIdForced = true),
+          7 -> IdAndVersion(LongValue(10), new RowVersion(47), bySystemIdForced = true)))
+        report.deleted must be ('empty)
+        report.errors must be (Map(8 -> NoSuchRowToUpdate(LongValue(11), bySystemIdForced = true)))
+      }
+      conn.commit()
+
+      // inserted 2 rows and updated rows 6 times
+      ids.underlying.finish() must be (17L)
+      vers.underlying.finish() must be (48L)
+
+      query(conn, rawSelect) must equal (Seq(
+        Map(idColName -> 7L, versionColName -> 41L, numName -> 2L, strName -> "q"),
+        Map(idColName -> 8L, versionColName -> 42L, numName -> 4L, strName -> "r"),
+        Map(idColName -> 9L, versionColName -> 46L, numName -> 9L, strName -> "s"),
+        Map(idColName -> 10L, versionColName -> 47L, numName -> 12L, strName -> "t"),
+        Map(idColName -> 15L, versionColName -> 40L, numName -> 5L, strName -> "u"),
+        Map(idColName -> 16L, versionColName -> 43L, numName -> 6L, strName -> "v")
+      ))
+      query(conn, "SELECT version, subversion, rows, who from test_log") must be(Seq(
+        locally {
+          val op0 = logMap(idCol -> JNumber(15), versionCol -> JNumber(40), num -> JNumber(5), str -> JString("u"))
+
+          val old1 = logMap(idCol -> JNumber(7), versionCol -> JNumber(33), num -> JNumber(1), str -> JString("q"))
+          val op1 = logMap(versionCol -> JNumber(41), num -> JNumber(2))
+
+          val old2 = logMap(idCol -> JNumber(8), versionCol -> JNumber(34), num -> JNumber(2), str -> JString("r"))
+          val op2 = logMap(versionCol -> JNumber(42), num -> JNumber(4))
+
+          val op3 = logMap(idCol -> JNumber(16), versionCol -> JNumber(43), num -> JNumber(6), str -> JString("v"))
+
+          val old4 = logMap(idCol -> JNumber(9), versionCol -> JNumber(35), num -> JNumber(3), str -> JString("s"))
+          val op4 = logMap(versionCol -> JNumber(44), num -> JNumber(6))
+
+          val old5 = logMap(idCol -> JNumber(10), versionCol -> JNumber(36), num -> JNumber(4), str -> JString("t"))
+          val op5 = logMap(versionCol -> JNumber(45), num -> JNumber(8))
+
+          val old6 = logMap(idCol -> JNumber(9), versionCol -> JNumber(44), num -> JNumber(6), str -> JString("s"))
+          val op6 = logMap(versionCol -> JNumber(46), num -> JNumber(9))
+
+          val old7 = logMap(idCol -> JNumber(10), versionCol -> JNumber(45), num -> JNumber(8), str -> JString("t"))
+          val op7 = logMap(versionCol -> JNumber(47), num -> JNumber(12))
+
+          val rows: String = (
+            """[
+              |{"i":""".stripMargin + op0 + """},
+              |{"u":[""".stripMargin + old1 + "," + op1 + """]},
+              |{"u":[""".stripMargin + old2 + "," + op2 + """]},
+              |{"i":""".stripMargin + op3 + """},
+              |{"u":[""".stripMargin + old4 + "," + op4 + """]},
+              |{"u":[""".stripMargin + old5 + "," + op5 + """]},
+              |{"u":[""".stripMargin + old6 + "," + op6 + """]},
+              |{"u":[""".stripMargin + old7 + "," + op7 + """]}
+              |]""".stripMargin).replaceAllLiterally("\n", "")
+
+          Map("version" -> 1L, "subversion" -> 1L,"rows" -> rows, "who" -> "hello")
+        }
+      ))
+    }
+  }
+
+  test("deleting a row just inserted with a user PK succeeds when by_system_id is false") {
     val ids = idProvider(15)
     val vers = versionProvider(48)
     val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str), versionCol)
@@ -593,13 +872,13 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(str), false, dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
-        txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q")))
-        txn.delete(1, StringValue("q"), None)
+        txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q")), bySystemId = false)
+        txn.delete(1, StringValue("q"), None, bySystemId = false)
         txn.finish()
         val report = reportWriter.report
         dataLogger.finish()
 
-        report.inserted must be (Map(0 -> IdAndVersion(StringValue("q"), new RowVersion(48))))
+        report.inserted must be (Map(0 -> IdAndVersion(StringValue("q"), new RowVersion(48), bySystemIdForced = false)))
         report.updated must be ('empty)
         report.deleted must equal (Map(1 -> StringValue("q")))
         report.errors must be ('empty)
@@ -619,7 +898,32 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     }
   }
 
-  test("deleting a row just inserted with a system PK succeeds") {
+  test("deleting a row just inserted with a user PK fails when by_system_id is true") {
+    val ids = idProvider(15)
+    val vers = versionProvider(48)
+    val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str), versionCol)
+    val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
+
+    withDB() { conn =>
+      makeTables(conn, dataSqlizer, standardLogTableName)
+      conn.commit()
+
+      val reportWriter = simpleReportWriter()
+      for {
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
+        txn <- managed(SqlLoader(conn, rowPreparer(str), false, dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
+      } {
+        val err = intercept[java.lang.ClassCastException] {
+          txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q")), bySystemId = false) // inserts are never "by_system_id"
+          txn.delete(1, StringValue("q"), None, bySystemId = true)
+          txn.finish()
+        }
+        err.getMessage must be("com.socrata.datacoordinator.truth.loader.sql.StringValue cannot be cast to com.socrata.datacoordinator.truth.loader.sql.LongValue")
+      }
+    }
+  }
+
+  testOps("deleting a row just inserted with a system PK succeeds") { bySystemId =>
     // This isn't a useful thing to be able to do, since in the real system
     // IDs won't be user-predictable, but it's a valuable sanity check anyway.
     val ids = idProvider(15)
@@ -636,13 +940,13 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(idCol), false, dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
-        txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q")))
-        txn.delete(1, LongValue(15), None)
+        txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q")), bySystemId = bySystemId)
+        txn.delete(1, LongValue(15), None, bySystemId = bySystemId)
         txn.finish()
         val report = reportWriter.report
         dataLogger.finish()
 
-        report.inserted must be (Map(0 -> IdAndVersion(LongValue(15), new RowVersion(56))))
+        report.inserted must be (Map(0 -> IdAndVersion(LongValue(15), new RowVersion(56), bySystemIdForced = false))) // inserts are never "by_system_id"
         report.updated must be ('empty)
         report.deleted must equal (Map(1 -> LongValue(15)))
         report.errors must be ('empty)
@@ -657,6 +961,78 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         locally {
           val op = logMap(idCol -> JNumber(15), versionCol -> JNumber(56), num -> JNumber(1), str -> JString("q"))
           Map("version" -> 1L, "subversion" -> 1L, "rows" -> s"""[{"i":$op},{"d":$op}]""", "who" -> "hello")
+        }
+      ))
+    }
+  }
+
+  test("deleting a row by :id when there is a user primary key fails when by_system_id is false") {
+    val ids = idProvider(15)
+    val vers = versionProvider(48)
+    val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str), versionCol)
+    val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
+
+    withDB() { conn =>
+      makeTables(conn, dataSqlizer, standardLogTableName)
+
+      preload(conn, dataSqlizer, standardLogTableName)(
+        Row(idCol -> LongValue(7), versionCol -> LongValue(33), str -> StringValue("q"), num -> LongValue(1))
+      )
+      conn.commit()
+
+      val reportWriter = simpleReportWriter()
+      for {
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
+        txn <- managed(SqlLoader(conn, rowPreparer(str), false, dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
+      } {
+        val err = intercept[java.lang.ClassCastException] {
+          txn.delete(0, LongValue(7), None, bySystemId = false)
+          txn.finish()
+        }
+        err.getMessage must be("com.socrata.datacoordinator.truth.loader.sql.LongValue cannot be cast to com.socrata.datacoordinator.truth.loader.sql.StringValue")
+      }
+    }
+  }
+
+  test("deleting a row by :id when there is a user primary key succeeds when by_system_id is true") {
+    val ids = idProvider(15)
+    val vers = versionProvider(48)
+    val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str), versionCol)
+    val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
+
+    withDB() { conn =>
+      makeTables(conn, dataSqlizer, standardLogTableName)
+
+      preload(conn, dataSqlizer, standardLogTableName)(
+        Row(idCol -> LongValue(7), versionCol -> LongValue(33), str -> StringValue("q"), num -> LongValue(1))
+      )
+      conn.commit()
+
+      val reportWriter = simpleReportWriter()
+      for {
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
+        txn <- managed(SqlLoader(conn, rowPreparer(str), false, dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
+      } {
+        txn.delete(0, LongValue(7), None, bySystemId = true)
+        txn.finish()
+        val report = reportWriter.report
+        dataLogger.finish()
+
+        report.inserted must be ('empty)
+        report.updated must be ('empty)
+        report.deleted must equal (Map(0 -> LongValue(7)))
+        report.errors must be ('empty)
+      }
+      conn.commit()
+
+      ids.underlying.finish() must be (15L)
+      vers.underlying.finish() must be (48L)
+
+      query(conn, rawSelect) must equal (Seq.empty)
+      query(conn, "SELECT version, subversion, rows, who from test_log") must equal (Seq(
+        locally {
+          val op = logMap(idCol -> JNumber(7), versionCol -> JNumber(33), num -> JNumber(1), str -> JString("q"))
+          Map("version" -> 1L, "subversion" -> 1L, "rows" -> s"""[{"d":$op}]""", "who" -> "hello")
         }
       ))
     }
@@ -677,12 +1053,12 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(idCol), false, dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
-        txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> NullValue))
+        txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> NullValue), bySystemId = false)
         txn.finish()
         val report = reportWriter.report
         dataLogger.finish()
 
-        report.inserted must equal (Map(0 -> IdAndVersion(LongValue(15), new RowVersion(64))))
+        report.inserted must equal (Map(0 -> IdAndVersion(LongValue(15), new RowVersion(64), bySystemIdForced = false)))
         report.updated must be ('empty)
         report.deleted must be ('empty)
         report.errors must be ('empty)
@@ -719,12 +1095,12 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(idCol), false, dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
-        txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> NullValue))
+        txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> NullValue), bySystemId = false)
         txn.finish()
         val report = reportWriter.report
         dataLogger.finish()
 
-        report.inserted must equal (Map(0 -> IdAndVersion(StringValue("q"), new RowVersion(72))))
+        report.inserted must equal (Map(0 -> IdAndVersion(StringValue("q"), new RowVersion(72), bySystemIdForced = false)))
         report.updated must be ('empty)
         report.deleted must be ('empty)
         report.errors must be ('empty)
@@ -761,7 +1137,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(idCol), false, dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
-        txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> LongValue(0)))
+        txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> LongValue(0)), bySystemId = false)
         txn.finish()
         val report = reportWriter.report
         dataLogger.finish()
@@ -796,7 +1172,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(idCol), false, dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
-        txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> LongValue(0)))
+        txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> LongValue(0)), bySystemId = false)
         txn.finish()
         val report = reportWriter.report
         dataLogger.finish()
@@ -804,7 +1180,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         report.inserted must be ('empty)
         report.updated must be ('empty)
         report.deleted must be ('empty)
-        report.errors must be (Map(0 -> VersionMismatch(StringValue("q"), None, Some(new RowVersion(0)))))
+        report.errors must be (Map(0 -> VersionMismatch(StringValue("q"), None, Some(new RowVersion(0)), bySystemIdForced = false)))
       }
       conn.commit()
 
@@ -833,7 +1209,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(idCol), false, dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
-        txn.upsert(0, Row(idCol -> LongValue(1), num -> LongValue(1), str -> StringValue("q"), versionCol -> NullValue))
+        txn.upsert(0, Row(idCol -> LongValue(1), num -> LongValue(1), str -> StringValue("q"), versionCol -> NullValue), bySystemId = false)
         txn.finish()
         val report = reportWriter.report
         dataLogger.finish()
@@ -841,7 +1217,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         report.inserted must be ('empty)
         report.updated must be ('empty)
         report.deleted must be ('empty)
-        report.errors must be (Map(0 -> VersionMismatch(LongValue(1), Some(new RowVersion(0)), None)))
+        report.errors must be (Map(0 -> VersionMismatch(LongValue(1), Some(new RowVersion(0)), None, bySystemIdForced = false)))
       }
       conn.commit()
 
@@ -872,7 +1248,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(idCol), false, dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
-        txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> NullValue))
+        txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> NullValue), bySystemId = false)
         txn.finish()
         val report = reportWriter.report
         dataLogger.finish()
@@ -880,7 +1256,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         report.inserted must be ('empty)
         report.updated must be ('empty)
         report.deleted must be ('empty)
-        report.errors must be (Map(0 -> VersionMismatch(StringValue("q"), Some(new RowVersion(0)), None)))
+        report.errors must be (Map(0 -> VersionMismatch(StringValue("q"), Some(new RowVersion(0)), None, bySystemIdForced = false)))
       }
       conn.commit()
 
@@ -911,7 +1287,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(idCol), false, dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
-        txn.upsert(0, Row(idCol -> LongValue(1), num -> LongValue(1), str -> StringValue("q"), versionCol -> LongValue(1)))
+        txn.upsert(0, Row(idCol -> LongValue(1), num -> LongValue(1), str -> StringValue("q"), versionCol -> LongValue(1)), bySystemId = false)
         txn.finish()
         val report = reportWriter.report
         dataLogger.finish()
@@ -919,7 +1295,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         report.inserted must be ('empty)
         report.updated must be ('empty)
         report.deleted must be ('empty)
-        report.errors must be (Map(0 -> VersionMismatch(LongValue(1), Some(new RowVersion(0)), Some(new RowVersion(1)))))
+        report.errors must be (Map(0 -> VersionMismatch(LongValue(1), Some(new RowVersion(0)), Some(new RowVersion(1)), bySystemIdForced = false)))
       }
       conn.commit()
 
@@ -950,7 +1326,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(idCol), false, dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
-        txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> LongValue(1)))
+        txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> LongValue(1)), bySystemId = false)
         txn.finish()
         val report = reportWriter.report
         dataLogger.finish()
@@ -958,7 +1334,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         report.inserted must be ('empty)
         report.updated must be ('empty)
         report.deleted must be ('empty)
-        report.errors must be (Map(0 -> VersionMismatch(StringValue("q"), Some(new RowVersion(0)), Some(new RowVersion(1)))))
+        report.errors must be (Map(0 -> VersionMismatch(StringValue("q"), Some(new RowVersion(0)), Some(new RowVersion(1)), bySystemIdForced = false)))
       }
       conn.commit()
 
@@ -989,13 +1365,13 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(idCol), false, dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
-        txn.upsert(0, Row(idCol -> LongValue(1), num -> LongValue(1), str -> StringValue("w"), versionCol -> LongValue(0)))
+        txn.upsert(0, Row(idCol -> LongValue(1), num -> LongValue(1), str -> StringValue("w"), versionCol -> LongValue(0)), bySystemId = false)
         txn.finish()
         val report = reportWriter.report
         dataLogger.finish()
 
         report.inserted must be ('empty)
-        report.updated must equal (Map(0 -> IdAndVersion(LongValue(1), new RowVersion(128))))
+        report.updated must equal (Map(0 -> IdAndVersion(LongValue(1), new RowVersion(128), bySystemIdForced = false)))
         report.deleted must be ('empty)
         report.errors must be ('empty)
       }
@@ -1034,13 +1410,13 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
         txn <- managed(SqlLoader(conn, rowPreparer(idCol), false, dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
       } {
-        txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> LongValue(0)))
+        txn.upsert(0, Row(num -> LongValue(1), str -> StringValue("q"), versionCol -> LongValue(0)), bySystemId = false)
         txn.finish()
         val report = reportWriter.report
         dataLogger.finish()
 
         report.inserted must be ('empty)
-        report.updated must equal (Map(0 -> IdAndVersion(StringValue("q"), new RowVersion(136))))
+        report.updated must equal (Map(0 -> IdAndVersion(StringValue("q"), new RowVersion(136), bySystemIdForced = false)))
         report.deleted must be ('empty)
         report.errors must be ('empty)
       }
@@ -1062,181 +1438,29 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     }
   }
 
-  test("must contain the same data as a table manipulated by a StupidPostgresTransaction when using user IDs", Tag("Slow")) {
-    import org.scalacheck.{Gen, Arbitrary}
+  sealed abstract class Op
+  case class Upsert(id: Option[Long], num: Option[Long], data: Option[String]) extends Op
+  case class Delete(id: Long) extends Op
 
-    sealed abstract class Op
-    case class Upsert(id: Long, num: Option[Long], data: Option[String]) extends Op
-    case class Delete(id: Long) extends Op
+  def testAgainstStupidSqlLoader[T](schema: ColumnIdMap[TestColumnRep],
+                                    userIdCol: Option[ColumnId],
+                                    genUpsert: Gen[Long] => Gen[Upsert],
+                                    applyOps: (Loader[TestColumnValue], List[Op]) => Unit,
+                                    query: String => String, // select query from t-table
+                                    result: ResultSet => Vector[T]): Unit = {
 
     val genId = Gen.choose(0L, 100L)
+    val genDelete = genId.map(Delete)
 
-    val genUpsert = for {
-      id <- genId
-      num <- Gen.frequency(2 -> Arbitrary.arbitrary[Long].map(Some(_)), 1 -> Gen.const(None))
-      data <- Gen.frequency(2 -> Arbitrary.arbitrary[String].map(Some(_)), 1 -> Gen.const(None))
-    } yield Upsert(id, num, data.map(_.filterNot(_ == '\0')))
-
-    val genDelete = genId.map(Delete(_))
-
-    val genOp = Gen.frequency(2 -> genUpsert, 1 -> genDelete)
+    val genOp = Gen.frequency(2 -> genUpsert(genId), 1 -> genDelete)
 
     implicit val arbOp = Arbitrary[Op](genOp)
 
-    val ids = idProvider(1)
-    val vers = versionProvider(1)
-
-    val userIdCol = new ColumnId(3L)
-    val userIdColName = "c_" + userIdCol.underlying
-
-    val schema = ColumnIdMap(
-      idCol -> new LongRep(idCol),
-      versionCol -> new LongRep(versionCol),
-      userIdCol -> new LongRep(userIdCol),
-      num -> new LongRep(num),
-      str -> new StringRep(str)
-    )
-
-    val dsContext = new TestDatasetContext(schema, idCol, Some(userIdCol), versionCol)
+    val dsContext = new TestDatasetContext(schema, idCol, userIdCol, versionCol)
     val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
 
-    val stupidDsContext = new TestDatasetContext(schema, idCol, Some(userIdCol), versionCol)
+    val stupidDsContext = new TestDatasetContext(schema, idCol, userIdCol, versionCol)
     val stupidDataSqlizer = new TestDataSqlizer("stupid_data", stupidDsContext)
-
-    def applyOps(txn: Loader[TestColumnValue], ops: List[Op]) {
-      for((op, job) <- ops.zipWithIndex) op match {
-        case Delete(id) => txn.delete(job, LongValue(id), None)
-        case Upsert(id, numV, data) => txn.upsert(job, Row(
-          userIdCol -> LongValue(id),
-          num -> numV.map(LongValue(_)).getOrElse(NullValue),
-          str -> data.map(StringValue(_)).getOrElse(NullValue)
-        ))
-      }
-    }
-
-    forAll { (opss: List[List[Op]]) =>
-      withDB() { stupidConn =>
-        withDB() { smartConn =>
-          makeTables(smartConn, dataSqlizer, standardLogTableName)
-          makeTables(stupidConn, stupidDataSqlizer, "stupid_log")
-
-          def runCompareTest(ops: List[Op]) {
-            using(SqlLoader(smartConn, rowPreparer(userIdCol), false, dataSqlizer, NullLogger[TestColumnType, TestColumnValue], ids, vers, executor, NoopReportWriter, NoopTimingReport)) { txn =>
-              applyOps(txn, ops)
-              txn.finish()
-            }
-            smartConn.commit()
-
-            using(new StupidSqlLoader(stupidConn, rowPreparer(userIdCol), false, stupidDataSqlizer, NullLogger[TestColumnType, TestColumnValue], ids, vers, NoopReportWriter)) { txn =>
-              applyOps(txn, ops)
-              txn.finish()
-            }
-            stupidConn.commit()
-
-            def q(t: String) = "SELECT " + userIdColName + ", " + numName + ", " + strName + " FROM " + t + " ORDER BY " + userIdColName
-            /* -- "must" is too expensive to call in an inner loop
-              for {
-                smartStmt <- managed(smartConn.createStatement())
-                smartRs <- managed(smartStmt.executeQuery(q))
-                stupidStmt <- managed(stupidConn.createStatement())
-                stupidRs <- managed(stupidStmt.executeQuery(q))
-              } {
-                while(smartRs.next()) {
-                  stupidRs.next() must be (true)
-                  smartRs.getLong("ID") must equal (stupidRs.getLong("ID"))
-                  smartRs.getLong("NUM") must equal (stupidRs.getLong("NUM"))
-                  smartRs.wasNull() must equal (stupidRs.wasNull())
-                  smartRs.getString("STR") must equal (stupidRs.getString("STR"))
-                }
-                stupidRs.next() must be (false)
-              }
- */
-            val smartData = for {
-              smartStmt <- managed(smartConn.createStatement())
-              smartRs <- managed(smartStmt.executeQuery(q(dataSqlizer.dataTableName)))
-            } yield {
-              val fromSmart = new VectorBuilder[(Long, Long, Boolean, String)]
-              while(smartRs.next()) {
-                val id = smartRs.getLong(userIdColName)
-                val num = smartRs.getLong(numName)
-                val numWasNull = smartRs.wasNull()
-                val str = smartRs.getString(strName)
-
-                fromSmart += ((id, num, numWasNull, str))
-              }
-              fromSmart.result
-            }
-
-            val stupidData = for {
-              stupidStmt <- managed(stupidConn.createStatement())
-              stupidRs <- managed(stupidStmt.executeQuery(q(stupidDataSqlizer.dataTableName)))
-            } yield {
-              val fromStupid = new VectorBuilder[(Long, Long, Boolean, String)]
-              while(stupidRs.next()) {
-                val id = stupidRs.getLong(userIdColName)
-                val num = stupidRs.getLong(numName)
-                val numWasNull = stupidRs.wasNull()
-                val str = stupidRs.getString(strName)
-
-                fromStupid += ((id, num, numWasNull, str))
-              }
-              fromStupid.result
-            }
-
-            smartData must equal (stupidData)
-          }
-
-          opss.foreach(runCompareTest)
-        }
-      }
-    }
-  }
-
-  test("must contain the same data as a table manipulated by a StupidPostgresTransaction when using system IDs", Tag("Slow")) {
-    import org.scalacheck.{Gen, Arbitrary}
-
-    sealed abstract class Op
-    case class Upsert(id: Option[Long], num: Option[Long], data: Option[String]) extends Op
-    case class Delete(id: Long) extends Op
-
-    val genId = Gen.choose(0L, 100L)
-
-    val genUpsert = for {
-      id <- Gen.frequency(1 -> genId.map(Some(_)), 2 -> Gen.const(None))
-      num <- Gen.frequency(2 -> Arbitrary.arbitrary[Long].map(Some(_)), 1 -> Gen.const(None))
-      data <- Gen.frequency(2 -> Arbitrary.arbitrary[String].map(Some(_)), 1 -> Gen.const(None))
-    } yield Upsert(id, num, data.map(_.filterNot(_ == '\0')))
-
-    val genDelete = genId.map(Delete(_))
-
-    val genOp = Gen.frequency(2 -> genUpsert, 1 -> genDelete)
-
-    implicit val arbOp = Arbitrary[Op](genOp)
-
-    val dsContext = new TestDatasetContext(standardSchema, idCol, None, versionCol)
-    val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
-
-    val stupidDsContext = new TestDatasetContext(standardSchema, idCol, None, versionCol)
-    val stupidDataSqlizer = new TestDataSqlizer("stupid_data", stupidDsContext)
-
-    def applyOps(txn: Loader[TestColumnValue], ops: List[Op]) {
-      for((op, job) <- ops.zipWithIndex) op match {
-        case Delete(id) => txn.delete(job, LongValue(id), None)
-        case Upsert(id, numV, data) =>
-          val baseRow = Row[TestColumnValue](
-            num -> numV.map(LongValue(_)).getOrElse(NullValue),
-            str -> data.map(StringValue(_)).getOrElse(NullValue)
-          )
-          val row = id match {
-            case Some(sid) =>
-              val newRow = new MutableColumnIdMap(baseRow)
-              newRow(idCol) = LongValue(sid)
-              newRow.freeze()
-            case None => baseRow
-          }
-          txn.upsert(job, row)
-      }
-    }
 
     forAll { (opss: List[List[Op]]) =>
       withDB() { stupidConn =>
@@ -1250,65 +1474,33 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
           val smartVersions = versionProvider(1)
           val stupidVersions = versionProvider(1)
 
+          val primaryKeyCol = userIdCol.getOrElse(idCol)
+
           def runCompareTest(ops: List[Op]) {
-            using(SqlLoader(smartConn, rowPreparer(idCol), false, dataSqlizer, NullLogger[TestColumnType, TestColumnValue], smartIds, smartVersions, executor, NoopReportWriter, NoopTimingReport)) { txn =>
+            using(SqlLoader(smartConn, rowPreparer(primaryKeyCol), false, dataSqlizer, NullLogger[TestColumnType, TestColumnValue], smartIds, smartVersions, executor, NoopReportWriter, NoopTimingReport)) { txn =>
               applyOps(txn, ops)
               txn.finish()
             }
             smartConn.commit()
 
-            using(new StupidSqlLoader(stupidConn, rowPreparer(idCol), false, stupidDataSqlizer, NullLogger[TestColumnType, TestColumnValue], stupidIds, stupidVersions, NoopReportWriter)) { txn =>
+            using(new StupidSqlLoader(stupidConn, rowPreparer(primaryKeyCol), false, stupidDataSqlizer, NullLogger[TestColumnType, TestColumnValue], stupidIds, stupidVersions, NoopReportWriter)) { txn =>
               applyOps(txn, ops)
               txn.finish()
             }
             stupidConn.commit()
 
-            def q(t: String) = "SELECT " + numName + ", " + strName + " FROM " + t + " ORDER BY " + numName + "," + strName
-/* -- "must" is too expensive to call in an inner loop
-            val q = "SELECT u_num AS NUM, u_str AS STR FROM test_data ORDER BY u_num, u_str"
-            for {
-              smartStmt <- managed(smartConn.createStatement())
-              smartRs <- managed(smartStmt.executeQuery(q))
-              stupidStmt <- managed(stupidConn.createStatement())
-              stupidRs <- managed(stupidStmt.executeQuery(q))
-            } {
-              while(smartRs.next()) {
-                stupidRs.next() must be (true)
-                smartRs.getLong("NUM") must equal (stupidRs.getLong("NUM"))
-                smartRs.wasNull() must equal (stupidRs.wasNull())
-                smartRs.getString("STR") must equal (stupidRs.getString("STR"))
-              }
-              stupidRs.next() must be (false)
-            }
-*/
             val smartData = for {
               smartStmt <- managed(smartConn.createStatement())
-              smartRs <- managed(smartStmt.executeQuery(q(dataSqlizer.dataTableName)))
+              smartRs <- managed(smartStmt.executeQuery(query(dataSqlizer.dataTableName)))
             } yield {
-              val fromSmart = new VectorBuilder[(Long, Boolean, String)]
-              while(smartRs.next()) {
-                val num = smartRs.getLong(numName)
-                val numWasNull = smartRs.wasNull()
-                val str = smartRs.getString(strName)
-
-                fromSmart += ((num, numWasNull, str))
-              }
-              fromSmart.result
+              result(smartRs)
             }
 
             val stupidData = for {
               stupidStmt <- managed(stupidConn.createStatement())
-              stupidRs <- managed(stupidStmt.executeQuery(q(stupidDataSqlizer.dataTableName)))
+              stupidRs <- managed(stupidStmt.executeQuery(query(stupidDataSqlizer.dataTableName)))
             } yield {
-              val fromStupid = new VectorBuilder[(Long, Boolean, String)]
-              while(stupidRs.next()) {
-                val num = stupidRs.getLong(numName)
-                val numWasNull = stupidRs.wasNull()
-                val str = stupidRs.getString(strName)
-
-                fromStupid += ((num, numWasNull, str))
-              }
-              fromStupid.result
+              result(stupidRs)
             }
 
             smartData must equal (stupidData)
@@ -1317,5 +1509,94 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
         }
       }
     }
+  }
+
+  testOps("must contain the same data as a table manipulated by a StupidSqlLoader when user primary key exists", Tag("Slow")) { bySystemId =>
+    val userIdCol = new ColumnId(3L)
+    val userIdColName = "c_" + userIdCol.underlying
+
+    val schema = ColumnIdMap(
+      idCol -> new LongRep(idCol),
+      versionCol -> new LongRep(versionCol),
+      userIdCol -> new LongRep(userIdCol),
+      num -> new LongRep(num),
+      str -> new StringRep(str)
+    )
+
+    def genUpsert(genId: Gen[Long]) = for {
+      id <- genId
+      num <- Gen.frequency(2 -> Arbitrary.arbitrary[Long].map(Some(_)), 1 -> Gen.const(None))
+      data <- Gen.frequency(2 -> Arbitrary.arbitrary[String].map(Some(_)), 1 -> Gen.const(None))
+    } yield Upsert(Some(id), num, data.map(_.filterNot(_ == '\0')))
+
+    def applyOps(txn: Loader[TestColumnValue], ops: List[Op]) {
+      for((op, job) <- ops.zipWithIndex) op match {
+        case Delete(id) => txn.delete(job, LongValue(id), None, bySystemIdForced = bySystemId)
+        case Upsert(id, numV, data) => txn.upsert(job, Row(
+          userIdCol -> LongValue(id.get), // always generated Some(id)
+          num -> numV.map(LongValue).getOrElse(NullValue),
+          str -> data.map(StringValue).getOrElse(NullValue)
+        ), bySystemIdForced = bySystemId)
+      }
+    }
+
+    def q(t: String) = "SELECT " + userIdColName + ", " + numName + ", " + strName + " FROM " + t + " ORDER BY " + userIdColName
+    def result(rs: ResultSet): Vector[(Long, Long, Boolean, String)] = {
+      val builder = new VectorBuilder[(Long, Long, Boolean, String)]
+      while(rs.next()) {
+        val id = rs.getLong(userIdColName)
+        val num = rs.getLong(numName)
+        val numWasNull = rs.wasNull()
+        val str = rs.getString(strName)
+
+        builder += ((id, num, numWasNull, str))
+      }
+      builder.result
+    }
+
+    testAgainstStupidSqlLoader[(Long, Long, Boolean, String)](schema, Some(userIdCol), genUpsert, applyOps, q, result)
+  }
+
+
+  testOps("must contain the same data as a table manipulated by a StupidSqlLoader when system id is the primary key", Tag("Slow")) { bySystemId =>
+    def genUpsert(genId: Gen[Long]) = for {
+      id <- Gen.frequency(1 -> genId.map(Some(_)), 2 -> Gen.const(None))
+      num <- Gen.frequency(2 -> Arbitrary.arbitrary[Long].map(Some(_)), 1 -> Gen.const(None))
+      data <- Gen.frequency(2 -> Arbitrary.arbitrary[String].map(Some(_)), 1 -> Gen.const(None))
+    } yield Upsert(id, num, data.map(_.filterNot(_ == '\0')))
+
+    def applyOps(txn: Loader[TestColumnValue], ops: List[Op]) {
+      for ((op, job) <- ops.zipWithIndex) op match {
+        case Delete(id) => txn.delete(job, LongValue(id), None, bySystemIdForced = bySystemId)
+        case Upsert(id, numV, data) =>
+          val baseRow = Row[TestColumnValue](
+            num -> numV.map(LongValue).getOrElse(NullValue),
+            str -> data.map(StringValue).getOrElse(NullValue)
+          )
+          val row = id match {
+            case Some(sid) =>
+              val newRow = new MutableColumnIdMap(baseRow)
+              newRow(idCol) = LongValue(sid)
+              newRow.freeze()
+            case None => baseRow
+          }
+          txn.upsert(job, row, bySystemIdForced = bySystemId)
+      }
+    }
+
+    def q(t: String) = "SELECT " + numName + ", " + strName + " FROM " + t + " ORDER BY " + numName + "," + strName
+    def result(rs: ResultSet): Vector[(Long, Boolean, String)] = {
+      val builder = new VectorBuilder[(Long, Boolean, String)]
+      while (rs.next()) {
+        val num = rs.getLong(numName)
+        val numWasNull = rs.wasNull()
+        val str = rs.getString(strName)
+
+        builder += ((num, numWasNull, str))
+      }
+      builder.result
+    }
+
+    testAgainstStupidSqlLoader[(Long, Boolean, String)](standardSchema, None, genUpsert, applyOps, q, result)
   }
 }

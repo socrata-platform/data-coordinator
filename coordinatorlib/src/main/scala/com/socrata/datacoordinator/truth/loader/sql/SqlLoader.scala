@@ -51,9 +51,15 @@ final class SqlLoader[CT, CV](val connection: Connection,
   }
   private case class KnownToBeInsertOp(job: Int, id: RowId, newVersion: RowVersion, row: Row[CV]) extends UpsertLike
   private case class UpsertOp(job: Int, id: CV, row: Row[CV]) extends UpsertLike
+
+  private case class DeleteOpBySystemIdForced(job: Int, id: CV, version: Option[Option[RowVersion]])
+  private case class UpsertOpBySystemIdForced(job: Int, id: CV, row: Row[CV])
   private class Queues {
     private var empty = true
     private var knownInserts = false
+
+    private var opsByPrimaryKey = false
+    private var opsForcedBySystemId = false
 
     private val deletionBuilder = new VectorBuilder[DeleteOp]
     private var deleteSize = 0L
@@ -64,12 +70,26 @@ final class SqlLoader[CT, CV](val connection: Connection,
 
     def += (op: DeleteOp): Unit = {
       deletionBuilder += op
-      deleteSize += sqlizer.sizeofDelete(op.id)
+      deleteSize += sqlizer.sizeofDelete(op.id, bySystemIdForced = false)
       empty = false
+      opsByPrimaryKey = true
+    }
+
+    def += (op: DeleteOpBySystemIdForced): Unit = {
+      deletionBuilder += DeleteOp(op.job, op.id, op.version)
+      deleteSize += sqlizer.sizeofDelete(op.id, bySystemIdForced = true)
+      empty = false
+      opsForcedBySystemId = true
     }
 
     def += (op: UpsertOp): Unit = {
       addUpsert(op.id, op)
+      opsByPrimaryKey = true
+    }
+
+    def += (op: UpsertOpBySystemIdForced): Unit = {
+      addUpsert(op.id, UpsertOp(op.job, op.id, op.row))
+      opsForcedBySystemId = true
     }
 
     def += (op: KnownToBeInsertOp): Unit = {
@@ -87,6 +107,8 @@ final class SqlLoader[CT, CV](val connection: Connection,
     def isSufficientlyLarge: Boolean = deleteSize + upsertSize > softMaxBatchSizeInBytes
     def isEmpty: Boolean = empty
     def hasKnownInserts: Boolean = knownInserts
+    def hasOpsByPrimaryKey: Boolean = opsByPrimaryKey
+    def hasOpsForcedBySystemId: Boolean = opsForcedBySystemId
 
     def hasUpsertFor(id: CV): Boolean = upsertIds.contains(id)
     def upserts: Vector[UpsertLike] = upsertBuilder.result()
@@ -186,8 +208,13 @@ final class SqlLoader[CT, CV](val connection: Connection,
         None
     }
 
-  def idOf(row: Row[CV]): Option[CV] = // None if null or not present
-    getRejectingNull(row, datasetContext.primaryKeyColumn)
+  // returns value with true if the system id was returned for a dataset with a user primary key
+  def idOf(row: Row[CV], bySystemId: Boolean): Option[(CV, Boolean)] = // None if null or not present
+    getRejectingNull(row, datasetContext.primaryKeyColumn) match {
+      case Some(id) => Some((id, false))
+      case None if !isSystemPK && bySystemId => getRejectingNull(row, datasetContext.systemIdColumn).map((_, true))
+      case None => None
+    }
 
   def versionOf(row: Row[CV]): Option[Option[RowVersion]] =
     row.get(datasetContext.versionColumn) match {
@@ -197,15 +224,38 @@ final class SqlLoader[CT, CV](val connection: Connection,
       case None => None
     }
 
-  def upsert(jobId: Int, row: Row[CV]): Unit = {
+  def upsert(jobId: Int, row: Row[CV], bySystemId: Boolean): Unit = {
     checkJob(jobId)
-    idOf(row) match {
-      case Some(id) =>
-        if(currentBatch.hasUpsertFor(id)) {
+    // okay, there are three cases here:
+    // isSystemPK and bySystemId is true or false:
+    //   - use system id for updates
+    //   - system id not required for insert
+    // isUserPK and bySystemId is false:
+    //   - user user pk for updates and inserts
+    // isUserPK and bySystemId is true:
+    //   - allow for system id to be used on update
+    //     if user pk is not passed (prefer user pk if given)
+
+    // by_system_id only changes the behavior for datasets with user primary keys
+    idOf(row, bySystemId) match {
+      case Some((id, isSystemIdWhenUserPrimaryKeyExists)) =>
+        // we need to flush between regular Upserts and UpsertsBySystemId
+        // since we will not be able to compare the row ids
+        if (isSystemIdWhenUserPrimaryKeyExists && currentBatch.hasOpsByPrimaryKey) {
+          log.debug("Upsert by system id after upserts by primary key forced a flush")
+          flush()
+        } else if (!isSystemIdWhenUserPrimaryKeyExists && currentBatch.hasOpsForcedBySystemId) {
+          log.debug("Upsert by primary key after upserts by system id forced a flush")
+          flush()
+        } else if (currentBatch.hasUpsertFor(id)) {
           log.debug("Upsert forced a flush; potential pipeline stall")
           flush()
         }
-        currentBatch += UpsertOp(jobId, id, row)
+
+        if (isSystemIdWhenUserPrimaryKeyExists)
+          currentBatch += UpsertOpBySystemIdForced(jobId, id, row)
+        else
+          currentBatch += UpsertOp(jobId, id, row)
       case None if isSystemPK =>
         versionOf(row) match {
           case None | Some(None) =>
@@ -221,21 +271,38 @@ final class SqlLoader[CT, CV](val connection: Connection,
     maybeFlush()
   }
 
-  def delete(jobId: Int, id: CV, version: Option[Option[RowVersion]]): Unit = {
+  def delete(jobId: Int, id: CV, version: Option[Option[RowVersion]], bySystemId: Boolean): Unit = {
     checkJob(jobId)
-    if(currentBatch.hasUpsertFor(id)) {
-      log.debug("Delete forced a flush; potential pipeline stall")
+
+    // by_system_id only changes the behavior for datasets with user primary keys
+    val deleteBySystemIdForced = datasetContext.hasUserPrimaryKey && bySystemId
+
+    // if deleteBySystemIdForced is true we will assume all deletes are done by the system id column
+    if (deleteBySystemIdForced && currentBatch.hasOpsByPrimaryKey) {
+      log.debug("Delete by system id after upserts by primary key forced a flush")
+      flush()
+    } else if (!deleteBySystemIdForced && currentBatch.hasOpsForcedBySystemId) {
+      log.debug("Delete by primary key after upserts by system id forced a flush")
+      flush()
+    } else if (currentBatch.hasUpsertFor(id)) {
+      log.debug("Upsert forced a flush; potential pipeline stall")
       flush()
     }
-    currentBatch += DeleteOp(jobId, id, version)
+
+    // we only will treat the bySystemId parameter as true when there is a user primary key column
+    if (deleteBySystemIdForced)
+      currentBatch += DeleteOpBySystemIdForced(jobId, id, version)
+    else
+      currentBatch += DeleteOp(jobId, id, version)
     maybeFlush()
   }
 
   private def process(batch: Queues) {
-    val batchDeleteCount = processDeletes(batch.deletions)
-    val (inserts, updates) = prepareInsertsAndUpdates(batch.upserts)
+    val batchForcedBySystemId = batch.hasOpsForcedBySystemId
+    val batchDeleteCount = processDeletes(batch.deletions, batchForcedBySystemId)
+    val (inserts, updates) = prepareInsertsAndUpdates(batch.upserts, batchForcedBySystemId)
     val batchInsertCount = doInserts(inserts)
-    val batchUpdateCount = doUpdates(updates)
+    val batchUpdateCount = doUpdates(updates, batchForcedBySystemId)
     stats = sqlizer.updateStatistics(connection, batchInsertCount, batchDeleteCount, batchUpdateCount, stats)
   }
 
@@ -244,7 +311,7 @@ final class SqlLoader[CT, CV](val connection: Connection,
       sqlizer.insertBatch(connection) { inserter =>
         for(insert <- inserts) {
           inserter.insert(insert.newRow)
-          reportWriter.inserted(insert.job, IdAndVersion(insert.id, insert.version))
+          reportWriter.inserted(insert.job, IdAndVersion(insert.id, insert.version, bySystemIdForced = false))
         }
       }
       // Can't do this in the loop above because the inserter owns the DB connection for the COPY
@@ -259,12 +326,12 @@ final class SqlLoader[CT, CV](val connection: Connection,
     }
   }
 
-  private def doUpdates(updates: Seq[SqlLoader.DecoratedRow[CV]]): Long = {
+  private def doUpdates(updates: Seq[SqlLoader.DecoratedRow[CV]], bySystemIdForced: Boolean): Long = {
     if(updates.nonEmpty) {
       using(connection.prepareStatement(sqlizer.prepareSystemIdUpdateStatement)) { stmt =>
         for(update <- updates) {
           sqlizer.prepareSystemIdUpdate(stmt, update.rowId, update.newRow)
-          reportWriter.updated(update.job, IdAndVersion(update.id, update.version))
+          reportWriter.updated(update.job, IdAndVersion(update.id, update.version, bySystemIdForced = bySystemIdForced))
           dataLogger.update(update.rowId, Some(update.oldRow), update.newRow) // This CAN be done here because there is no active query
           stmt.addBatch()
         }
@@ -280,33 +347,24 @@ final class SqlLoader[CT, CV](val connection: Connection,
     }
   }
 
-  private def lookupIdsAndVersions(ids: Iterator[CV]): RowUserIdMap[CV, InspectedRowless[CV]] =
-    timingReport("lookup-ids-and-versions") {
-      using(sqlizer.findIdsAndVersions(connection, ids)) { it =>
-        val result = datasetContext.makeIdMap[InspectedRowless[CV]]()
-        for(rowless <- it.flatten) result.put(rowless.id, rowless)
-        result
-      }
-    }
-
-  private def lookupRows(ids: Iterator[CV]): RowUserIdMap[CV, InspectedRow[CV]] =
+  private def lookupRows(bySystemIdForced: Boolean, ids: Iterator[CV]): RowUserIdMap[CV, InspectedRow[CV]] =
     timingReport("lookup-rows") {
-      using(sqlizer.findRows(connection, ids)) { it =>
+      using(sqlizer.findRows(connection, bySystemIdForced, ids)) { it =>
         val result = datasetContext.makeIdMap[InspectedRow[CV]]()
         for(row <- it.flatten) result.put(row.id, row)
         result
       }
     }
 
-  private def processDeletes(deletes: Seq[DeleteOp]): Long = {
+  private def processDeletes(deletes: Seq[DeleteOp], bySystemIdForced: Boolean): Long = {
     if(deletes.nonEmpty) {
-      val existingRows = lookupRows(deletes.iterator.map(_.id))
+      val existingRows = lookupRows(bySystemIdForced = bySystemIdForced, deletes.iterator.map(_.id))
       val completedDeletions = new mutable.ArrayBuffer[(RowId, Int, CV, Row[CV])](deletes.size)
       val (deletedCount, ()) = sqlizer.deleteBatch(connection) { deleter =>
         for(delete <- deletes) {
           existingRows.get(delete.id) match {
             case Some(InspectedRow(_, sid, version, oldRow)) =>
-              checkVersion(delete.job, delete.id, delete.version, Some(version)) {
+              checkVersion(delete.job, delete.id, delete.version, Some(version), bySystemIdForced = bySystemIdForced) {
                 deleter.delete(sid)
                 completedDeletions += ((sid, delete.job, delete.id, oldRow))
                 existingRows.remove(delete.id)
@@ -328,16 +386,21 @@ final class SqlLoader[CT, CV](val connection: Connection,
     }
   }
 
-  def checkVersion[T](job: Int, id: CV, newVersion: Option[Option[RowVersion]], oldVersion: Option[RowVersion])(f: => T): Unit = {
+  def checkVersion[T](job: Int,
+                      id: CV,
+                      newVersion: Option[Option[RowVersion]],
+                      oldVersion: Option[RowVersion],
+                      bySystemIdForced: Boolean)(f: => T): Unit = {
     newVersion match {
       case None => f
       case Some(v) if v == oldVersion => f
       case Some(other) =>
-        reportWriter.error(job, VersionMismatch(id, oldVersion, other))
+        reportWriter.error(job, VersionMismatch(id, oldVersion, other, bySystemIdForced = bySystemIdForced))
     }
   }
 
-  private def prepareInsertsAndUpdates(upserts: Seq[UpsertLike]): (Seq[SqlLoader.DecoratedRow[CV]], Seq[SqlLoader.DecoratedRow[CV]]) = {
+  private def prepareInsertsAndUpdates(upserts: Seq[UpsertLike], bySystemIdForced: Boolean):
+    (Seq[SqlLoader.DecoratedRow[CV]], Seq[SqlLoader.DecoratedRow[CV]]) = {
     // ok, what we want to do here is divide "upserts" into two piles: inserts and updates.
     // The OUTPUT of this will be fully filled-in rows which are ready to go through the
     // validation/population script before actually being sent to the database.
@@ -349,12 +412,12 @@ final class SqlLoader[CT, CV](val connection: Connection,
     //       thin air happened to be one that was generated in the same batch!
     // * Before, upserts could refer to the same ID as a previous operation.  Now this can't;
     //       a flush will have occurred if the user tries it.
-    if(isSystemPK) prepareInsertsAndUpdatesSID(upserts)
+    if (isSystemPK || bySystemIdForced) prepareInsertsAndUpdatesSID(upserts, bySystemIdForced)
     else prepareInsertsAndUpdatesUID(upserts)
   }
 
-  private def prepareInsertsAndUpdatesSID(upserts: Seq[UpsertLike]): (Seq[SqlLoader.DecoratedRow[CV]], Seq[SqlLoader.DecoratedRow[CV]]) = {
-    assert(isSystemPK)
+  private def prepareInsertsAndUpdatesSID(upserts: Seq[UpsertLike], bySystemIdForced: Boolean): (Seq[SqlLoader.DecoratedRow[CV]], Seq[SqlLoader.DecoratedRow[CV]]) = {
+    assert(isSystemPK || bySystemIdForced)
     val inserts = Vector.newBuilder[SqlLoader.DecoratedRow[CV]]
     var unprocessedUpdates = Vector.newBuilder[UpsertOp]
     val seenOps = datasetContext.makeIdMap[UpsertOp]()
@@ -365,7 +428,7 @@ final class SqlLoader[CT, CV](val connection: Connection,
       log.debug("Wow!  I'm killing an update that happened before the insert in a SID dataset!")
       val update = seenOps(sid)
       seenOps.remove(sid)
-      reportWriter.error(update.job, NoSuchRowToUpdate(update.id))
+      reportWriter.error(update.job, NoSuchRowToUpdate(update.id, bySystemIdForced = true))
       val newUnprocessedUpdates = Vector.newBuilder[UpsertOp]
       for(upsertOp <- unprocessedUpdates.result() if upsertOp ne update) {
         newUnprocessedUpdates += upsertOp
@@ -380,8 +443,8 @@ final class SqlLoader[CT, CV](val connection: Connection,
         case KnownToBeInsertOp(job, sid, version, row) =>
           val preparedRow = rowPreparer.prepareForInsert(row, sid, version)
           val sidValue = preparedRow(datasetContext.systemIdColumn)
-          if(seenOps.contains(sidValue)) killPreinsertUpdate(sidValue)
-          if(updateOnly) reportWriter.error(job, InsertInUpdateOnly(sidValue))
+          if (seenOps.contains(sidValue)) killPreinsertUpdate(sidValue)
+          if (updateOnly) reportWriter.error(job, InsertInUpdateOnly(sidValue, bySystemIdForced = bySystemIdForced))
           else inserts += SqlLoader.DecoratedRow(job, sidValue, sid, version, SqlLoader.emptyRow, preparedRow)
         case u: UpsertOp =>
           unprocessedUpdates += u
@@ -390,19 +453,19 @@ final class SqlLoader[CT, CV](val connection: Connection,
     }
 
     val updates = Vector.newBuilder[SqlLoader.DecoratedRow[CV]]
-    val preexistingRows = lookupRows(seenOps.keysIterator)
+    val preexistingRows = lookupRows(bySystemIdForced = bySystemIdForced, seenOps.keysIterator)
     val secondPassIterator = unprocessedUpdates.result().iterator
     while(secondPassIterator.hasNext) {
       val op = secondPassIterator.next()
       preexistingRows.get(op.id) match {
         case Some(oldRow) =>
-          checkVersion(op.job, op.id, versionOf(op.row), Some(oldRow.version)) {
+          checkVersion(op.job, op.id, versionOf(op.row), Some(oldRow.version), bySystemIdForced = bySystemIdForced) {
             val version = versionProvider.allocate()
             val newRow = rowPreparer.prepareForUpdate(op.row, oldRow.row, version)
             updates += SqlLoader.DecoratedRow(op.job, op.id, oldRow.rowId, version, oldRow.row, newRow)
           }
         case None =>
-          reportWriter.error(op.job, NoSuchRowToUpdate(op.id))
+          reportWriter.error(op.job, NoSuchRowToUpdate(op.id, bySystemIdForced = bySystemIdForced))
       }
     }
 
@@ -425,7 +488,7 @@ final class SqlLoader[CT, CV](val connection: Connection,
       processed += 1
     }
 
-    val rows = lookupRows(ops.iterator.map(_.id))
+    val rows = lookupRows(bySystemIdForced = false, ops.iterator.map(_.id))
     val inserts = Vector.newBuilder[SqlLoader.DecoratedRow[CV]]
     val updates = Vector.newBuilder[SqlLoader.DecoratedRow[CV]]
 
@@ -434,15 +497,15 @@ final class SqlLoader[CT, CV](val connection: Connection,
       val op = ops(i)
       rows.get(op.id) match {
         case None =>
-          checkVersion(op.job, op.id, versionOf(op.row), None) {
+          checkVersion(op.job, op.id, versionOf(op.row), None, bySystemIdForced = false) {
             val sid = idProvider.allocate()
             val version = versionProvider.allocate()
             val preparedRow = rowPreparer.prepareForInsert(op.row, sid, version)
-            if(updateOnly) reportWriter.error(op.job, InsertInUpdateOnly(op.id))
+            if(updateOnly) reportWriter.error(op.job, InsertInUpdateOnly(op.id, bySystemIdForced = false))
             else inserts += SqlLoader.DecoratedRow(op.job, op.id, sid, version, SqlLoader.emptyRow, preparedRow)
           }
         case Some(oldRow) =>
-          checkVersion(op.job, op.id, versionOf(op.row), Some(oldRow.version)) {
+          checkVersion(op.job, op.id, versionOf(op.row), Some(oldRow.version), bySystemIdForced = false) {
             val newVersion = versionProvider.allocate()
             val preparedRow = rowPreparer.prepareForUpdate(op.row, oldRow.row, newVersion)
             updates += SqlLoader.DecoratedRow(op.job, op.id, oldRow.rowId, newVersion, oldRow.row, preparedRow)

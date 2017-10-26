@@ -7,8 +7,8 @@ import java.io.Closeable
 import com.socrata.datacoordinator.id.RowVersion
 
 trait Loader[CV] extends Closeable {
-  def upsert(jobId: Int, row: Row[CV]): Unit
-  def delete(jobId: Int, id: CV, version: Option[Option[RowVersion]]): Unit
+  def upsert(jobId: Int, row: Row[CV], bySystemIdForced: Boolean):Unit
+  def delete(jobId: Int, id: CV, version: Option[Option[RowVersion]], bySystemIdForced: Boolean): Unit
 
   /** Flushes any changes which have accumulated in-memory.
     *
@@ -21,7 +21,7 @@ trait Loader[CV] extends Closeable {
   def finish(): Unit
 }
 
-case class IdAndVersion[+CV](id: CV, version: RowVersion)
+case class IdAndVersion[+CV](id: CV, version: RowVersion, bySystemIdForced: Boolean)
 /** A report is a collection of maps that inform the caller what
   * the result of each operation performed on the transaction so far was.
   *
@@ -65,15 +65,15 @@ case object VersionOnNewRow extends Failure[Nothing] {
 case class NoSuchRowToDelete[CV](id: CV) extends Failure[CV] {
   def map[B](f: CV => B) = NoSuchRowToDelete(f(id))
 }
-case class NoSuchRowToUpdate[CV](id: CV) extends Failure[CV] {
-  def map[B](f: CV => B) = NoSuchRowToUpdate(f(id))
+case class NoSuchRowToUpdate[CV](id: CV, bySystemIdForced: Boolean) extends Failure[CV] {
+  def map[B](f: CV => B) = NoSuchRowToUpdate(f(id), bySystemIdForced)
 }
 case object NoPrimaryKey extends Failure[Nothing] {
   def map[B](f: Nothing => B) = this
 }
-case class VersionMismatch[CV](id: CV, expected: Option[RowVersion], actual: Option[RowVersion]) extends Failure[CV] {
-  def map[B](f: CV => B) = VersionMismatch(f(id), expected, actual)
+case class VersionMismatch[CV](id: CV, expected: Option[RowVersion], actual: Option[RowVersion], bySystemIdForced: Boolean) extends Failure[CV] {
+  def map[B](f: CV => B) = VersionMismatch(f(id), expected, actual, bySystemIdForced)
 }
-case class InsertInUpdateOnly[CV](id: CV) extends Failure[CV] {
-  def map[B](f: CV => B) = InsertInUpdateOnly(f(id))
+case class InsertInUpdateOnly[CV](id: CV, bySystemIdForced: Boolean) extends Failure[CV] {
+  def map[B](f: CV => B) = InsertInUpdateOnly(f(id), bySystemIdForced)
 }

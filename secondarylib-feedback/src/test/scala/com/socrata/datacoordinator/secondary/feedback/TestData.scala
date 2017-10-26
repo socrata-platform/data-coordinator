@@ -107,7 +107,7 @@ object TestData {
 
     val commands: Seq[JValue] =
       j"""[ { "c" : "normal", "user" : "addition-secondary" }
-        , { "c" : "row data", "update_only" : true, "nonfatal_row_errors" : [ "insert_in_update_only", "no_such_row_to_update" ] }
+        , { "c" : "row data", "update_only" : true, "by_system_id" : true, "nonfatal_row_errors" : [ "insert_in_update_only", "no_such_row_to_update" ] }
         ]""".toSeq
 
     val batchSize = 5
@@ -164,7 +164,7 @@ object TestData {
                              strategyMap: Map[UserColumnId, ComputationStrategyInfo] = Map.empty) =
       CookieSchema(dataVersion = DataVersion(version),
                    copyNumber = CopyNumber(number),
-                   primaryKey = systemPK.id,
+                   systemId = systemPK.id,
                    columnIdMap = columnIdMap,
                    strategyMap = strategyMap,
                    obfuscationKey = "magicmagic".getBytes,

@@ -100,7 +100,6 @@ class HttpDataCoordinatorClient[CT,CV](httpClient: HttpClient,
 
   val UpdateDatasetDoesNotExist = "update.dataset.does-not-exist"
   val UpdateRowUnknownColumn = "update.row.unknown-column"
-  val UpdateRowPrimaryKeyNonexistentOrNull = "update.row.primary-key-nonexistent-or-null"
   val ReqExportUnknownColumns = "req.export.unknown-columns"
 
   case class ErrorResponse(errorCode: String, data: JObject)
@@ -226,8 +225,8 @@ class HttpDataCoordinatorClient[CT,CV](httpClient: HttpClient,
   }
 
   sealed abstract class Response
-  case class Upsert(typ: String, id: String, ver: String) extends Response
-  case class NonfatalError(typ: String, err: String, id: Option[String]) extends Response
+  case class Upsert(typ: String, id: JValue, ver: String) extends Response
+  case class NonfatalError(typ: String, err: String, id: Option[JValue]) extends Response
 
   implicit val upCodec = AutomaticJsonCodecBuilder[Upsert]
   implicit val neCodec = AutomaticJsonCodecBuilder[NonfatalError]
@@ -248,10 +247,8 @@ class HttpDataCoordinatorClient[CT,CV](httpClient: HttpClient,
           results.elems.zip(rows).foreach { case (result, row) =>
             JsonDecode.fromJValue[Response](result) match {
               case Right(Upsert("update", _, _)) => // yay!
-              case Right(NonfatalError("error", nonfatalError, Some(id))) if nonfatalError == "insert_in_update_only" ||  nonfatalError == "no_such_row_to_update" =>
-                val JObject(fields) = JsonDecode.fromJValue[JObject](row).right.get // I just encoded this from a JObject
-                val rowId = JsonDecode.fromJValue[JString](fields(cookie.primaryKey.underlying)).right.get.string
-                if (rowId != id) return Right(Some(PrimaryKeyColumnHasChanged)) // else the row has been deleted
+              case Right(NonfatalError("error", nonfatalError, Some(_))) if nonfatalError == "insert_in_update_only" ||  nonfatalError == "no_such_row_to_update" =>
+                // the row has been deleted, nothing more to do here
               case Right(other) => unexpectedErrorForResponse("Unexpected response in array", 200, other)
               case Left(e) => unexpectedErrorForResponse("Unable to interpret result in array", 200, e.english)
             }
@@ -267,16 +264,10 @@ class HttpDataCoordinatorClient[CT,CV](httpClient: HttpClient,
         // , "data" : { "commandIndex" : 1, "commandSubIndex" : XXX, "dataset" : "XXX.XXX", "column" : "XXXX-XXXX"
         // }
         case UpdateRowUnknownColumn => response.data.get("column") match {
-          case Some(JString(id)) =>
-            val userId = new UserColumnId(id)
-            if (id == cookie.primaryKey.underlying) Right(Some(PrimaryKeyColumnDoesNotExist(userId)))
-            else Right(Some(TargetColumnDoesNotExist(userId)))
+          case Some(JString(id)) if id != cookie.systemId.underlying =>
+            Right(Some(TargetColumnDoesNotExist(new UserColumnId(id))))
           case _ => uninterpretableResponse(400, response)
         }
-        // { "errorCode" : "update.row.primary-key-nonexistent-or-null"
-        // , "data" : { "commandIndex" : 1, "dataset" : "XXX.XXX"
-        // }
-        case UpdateRowPrimaryKeyNonexistentOrNull => Right(Some(PrimaryKeyColumnHasChanged))
         case _ => unexpectedResponse(400, response)
       }
     }

@@ -40,7 +40,7 @@ class CookieOperatorTest extends FunSuite with ShouldMatchers {
   val cookie = CookieSchema(
     dataVersion = DataVersion(100),
     copyNumber = CopyNumber(5),
-    primaryKey = new UserColumnId(":id"),
+    systemId = new UserColumnId(":id"),
     columnIdMap = columns,
     strategyMap = computedColumns,
     obfuscationKey = Array(),

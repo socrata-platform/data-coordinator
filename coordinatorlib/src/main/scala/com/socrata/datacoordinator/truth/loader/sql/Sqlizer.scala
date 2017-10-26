@@ -6,7 +6,7 @@ import java.sql.{Connection, PreparedStatement}
 
 import com.socrata.datacoordinator.util.CloseableIterator
 import com.socrata.datacoordinator.truth.{DatasetContext, TypeContext}
-import com.socrata.datacoordinator.id.{RowVersion, RowId}
+import com.socrata.datacoordinator.id.{ColumnId, RowVersion, RowId}
 
 trait ReadDataSqlizer[CT, CV] {
   def datasetContext: DatasetContext[CT, CV]
@@ -14,11 +14,8 @@ trait ReadDataSqlizer[CT, CV] {
 
   def dataTableName: String
 
-  // convenience method; like calling findRowsSubset with all column IDs in the
-  // dataset.
-  def findRows(conn: Connection, ids: Iterator[CV]): CloseableIterator[Seq[InspectedRow[CV]]]
-  // Not sure this will survive the row version feature
-  def findIdsAndVersions(conn: Connection, ids: Iterator[CV]): CloseableIterator[Seq[InspectedRowless[CV]]]
+  // convenience method; like calling findRowsSubset with all column IDs in the dataset.
+  def findRows(conn: Connection, bySystemId: Boolean, ids: Iterator[CV]): CloseableIterator[Seq[InspectedRow[CV]]]
 }
 
 /** Generates SQL for execution. */
@@ -29,7 +26,7 @@ trait DataSqlizer[CT, CV] extends ReadDataSqlizer[CT, CV] {
   def updateStatistics(conn: Connection, rowsAdded: Long, rowsDeleted: Long, rowsChanged: Long, preload: PreloadStatistics): PreloadStatistics
 
   def softMaxBatchSize: Int
-  def sizeofDelete(id: CV): Int
+  def sizeofDelete(id: CV, bySystemIdForced: Boolean): Int
   def sizeof(row: Row[CV]): Int
 
   def insertBatch[T](conn: Connection)(t: Inserter => T): (Long, T)

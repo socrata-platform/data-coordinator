@@ -21,11 +21,13 @@ class PostgresRepBasedDataSqlizer[CT, CV](tableName: String,
 
   def insertBatch[T](conn: Connection)(f: (Inserter) => T): (Long, T) = {
     var result: T = null.asInstanceOf[T]
+
     def writeF(w: OutputStream) {
       val inserter = new InserterImpl(w)
       result = f(inserter)
       inserter.close()
     }
+
     val count = copyIn(conn, bulkInsertStatement, writeF)
     (count, result)
   }
@@ -38,9 +40,9 @@ class PostgresRepBasedDataSqlizer[CT, CV](tableName: String,
       sb.setLength(0)
       var didOne = false
       val it = repSchema.iterator
-      while(it.hasNext) {
-        val (k,v) = it.next()
-        if(didOne) sb.append(',')
+      while (it.hasNext) {
+        val (k, v) = it.next()
+        if (didOne) sb.append(',')
         else didOne = true
 
         val value = row.getOrElseStrict(k, nullValue)
@@ -56,13 +58,14 @@ class PostgresRepBasedDataSqlizer[CT, CV](tableName: String,
   }
 
   case class StatSpec(pgCount: Long, added: Long, deleted: Long)
+
   type PreloadStatistics = StatSpec
 
   def computeStatistics(conn: Connection): PreloadStatistics =
     using(conn.prepareStatement("SELECT reltuples FROM pg_class WHERE relname=?")) { stmt =>
       stmt.setString(1, tableName)
       using(stmt.executeQuery()) { rs =>
-        if(rs.next()) {
+        if (rs.next()) {
           StatSpec(rs.getLong("reltuples"), 0, 0)
         } else {
           StatSpec(0, 0, 0)
@@ -78,8 +81,8 @@ class PostgresRepBasedDataSqlizer[CT, CV](tableName: String,
     // it.
     val totalAdded = preload.added + rowsAdded
     val totalDeleted = preload.deleted + rowsDeleted
-    if(totalAdded + totalDeleted >= Math.max(10000, preload.pgCount / 4)) {
-      val cols = (sidRep.physColumns ++ pkRep.physColumns).toSet
+    if (totalAdded + totalDeleted >= Math.max(10000, preload.pgCount / 4)) {
+      val cols = (sidRep.physColumns ++ pkRep(bySystemIdForced = false).physColumns).toSet
       using(conn.prepareStatement("ANALYZE " + tableName + " (" + cols.mkString(",") + ")")) { stmt =>
         stmt.execute()
       }
