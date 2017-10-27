@@ -287,7 +287,10 @@ class FeedbackContext[CT,CV](user: String,
     if (targetColumns.nonEmpty) {
       log.info("Computing columns: {}", targetColumns)
       val sourceColumns = targetColumns.map(cookie.strategyMap(_)).flatMap(_.sourceColumnIds).toSet.toSeq // .toSet for uniqueness
-      val columns = if (sourceColumns.nonEmpty) sourceColumns else Seq(cookie.systemId) // for when computed columns don't have any source columns
+      // always ask for the system id for two reasons:
+      //  - if the dataset has a user primary key, the system id will not be automatically returned
+      //  - if the computed columns don't have any source columns, we still need the system id column
+      val columns = Seq(cookie.systemId) ++ sourceColumns
 
       dataCoordinatorClient.exportRows(columns, cookie) match {
         case Right(Right(RowData(_, rows))) =>
