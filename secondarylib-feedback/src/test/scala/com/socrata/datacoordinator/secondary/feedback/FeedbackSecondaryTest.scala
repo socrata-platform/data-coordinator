@@ -2,12 +2,13 @@ package com.socrata.datacoordinator.secondary.feedback
 
 import com.rojoma.json.v3.ast.JValue
 import com.rojoma.simplearm.Managed
+import com.socrata.datacoordinator.id.UserColumnId
 import com.socrata.datacoordinator.secondary.feedback.TestData._
 import com.socrata.datacoordinator.secondary.Secondary.Cookie
 import com.socrata.datacoordinator.secondary._
-import com.socrata.soql.types.{SoQLValue, SoQLType}
+import com.socrata.soql.types.{SoQLType, SoQLValue}
 import org.scalamock.scalatest.MockFactory
-import org.scalatest.{WordSpec, ShouldMatchers}
+import org.scalatest.{ShouldMatchers, WordSpec}
 
 
 
@@ -40,6 +41,10 @@ class FeedbackSecondaryTest extends WordSpec with ShouldMatchers with MockFactor
 
   def shouldBe(actual: Cookie, expected: Option[FeedbackCookie]): Unit = {
     FeedbackCookie.decode(actual) should be(expected)
+  }
+
+  def columns(sourceColumns: ColumnInfo[SoQLType]*): Seq[UserColumnId] = {
+    Seq(systemId.id) ++ sourceColumns.map(_.id)
   }
 
   "FeedbackSecondary.shutdown()" when {
@@ -135,7 +140,7 @@ class FeedbackSecondaryTest extends WordSpec with ShouldMatchers with MockFactor
     "called for a version with a new computed column exporting no row data" should {
       withMockDC("export no rows and return the expected cookie", TestCookie.v2, { mockDC =>
         // on flushing the new computed column, rows should be exported once
-        (mockDC.exportRows _).expects(Seq(num1.id, num2.id), TestCookie.v3Schema).once.returning(TestRows.systemPKEmpty)
+        (mockDC.exportRows _).expects(columns(num1, num2), TestCookie.v3Schema).once.returning(TestRows.systemPKEmpty)
         (mockDC.postMutationScript _).expects(*, *).never
       }) { case (secondary, cookie) =>
         shouldBe(secondary.version(datasetInfo, 3, cookie, TestEvent.v3Events), TestCookie.v3)
@@ -144,7 +149,7 @@ class FeedbackSecondaryTest extends WordSpec with ShouldMatchers with MockFactor
     "called for a version with a new computed column with unexpected error with DC client" should {
       withMockDC("should throw an Exception", TestCookie.v2, { mockDC =>
         // on flushing the new computed column, rows should be exported once
-        (mockDC.exportRows _).expects(Seq(num1.id, num2.id), TestCookie.v3Schema).once.returning(TestRows.unexpectedError)
+        (mockDC.exportRows _).expects(columns(num1, num2), TestCookie.v3Schema).once.returning(TestRows.unexpectedError)
         (mockDC.postMutationScript _).expects(*, *).never
       }) { case (secondary, cookie) =>
         val caught = intercept[Exception] {
@@ -156,7 +161,7 @@ class FeedbackSecondaryTest extends WordSpec with ShouldMatchers with MockFactor
     "called for a version with a new computed column and failed to discover DC" should {
       withMockDC("throw a ReplayLaterException", TestCookie.v2, { mockDC =>
         // on flushing the new computed column, rows should be exported once
-        (mockDC.exportRows _).expects(Seq(num1.id, num2.id), TestCookie.v3Schema).once.returning(TestRows.failedToDiscoverDC)
+        (mockDC.exportRows _).expects(columns(num1, num2), TestCookie.v3Schema).once.returning(TestRows.failedToDiscoverDC)
         (mockDC.postMutationScript _).expects(*, *).never
       }) { case (secondary, cookie) =>
         val caught = intercept[ReplayLaterSecondaryException] {
@@ -170,7 +175,7 @@ class FeedbackSecondaryTest extends WordSpec with ShouldMatchers with MockFactor
     "called for a version with a new computed column and dataset busy" should {
       withMockDC("throw a ReplayLaterException", TestCookie.v2, { mockDC =>
         // on flushing the new computed column, rows should be exported once
-        (mockDC.exportRows _).expects(Seq(num1.id, num2.id), TestCookie.v3Schema).once.returning(TestRows.dataCoordinatorBusy)
+        (mockDC.exportRows _).expects(columns(num1, num2), TestCookie.v3Schema).once.returning(TestRows.dataCoordinatorBusy)
         (mockDC.postMutationScript _).expects(*, *).never
       }) { case (secondary, cookie) =>
         val caught = intercept[ReplayLaterSecondaryException] {
@@ -184,7 +189,7 @@ class FeedbackSecondaryTest extends WordSpec with ShouldMatchers with MockFactor
     "called for a version with a new computed column and it and the source column have been deleted" should {
       withMockDC("return the expected cookie", TestCookie.v2, { mockDC =>
         // on flushing the new computed column, rows should be exported once
-        (mockDC.exportRows _).expects(Seq(num1.id, num2.id), TestCookie.v3Schema).once.returning(TestRows.num1DoesNotExist)
+        (mockDC.exportRows _).expects(columns(num1, num2), TestCookie.v3Schema).once.returning(TestRows.num1DoesNotExist)
         (mockDC.postMutationScript _).expects(*, *).never
       }) { case (secondary, cookie) =>
         shouldBe(secondary.version(datasetInfo, 3, cookie, TestEvent.v3Events), TestCookie.v3almost5)
@@ -195,7 +200,7 @@ class FeedbackSecondaryTest extends WordSpec with ShouldMatchers with MockFactor
     "called for a version with a new computed column exporting row data" should {
       withMockDC("export rows in batches and return the expected cookie", TestCookie.v2, { mockDC =>
         // on flushing the new computed column, rows should be exported once
-        (mockDC.exportRows _).expects(Seq(num1.id, num2.id), TestCookie.v3Schema).once.returning(TestRows.systemPKNum1Num2)
+        (mockDC.exportRows _).expects(columns(num1, num2), TestCookie.v3Schema).once.returning(TestRows.systemPKNum1Num2)
         // computed values should be posted in batches
         (mockDC.postMutationScript _).expects(TestScripts.sum12Scripts(0), TestCookie.v3Schema).once.returning(TestScripts.success)
         (mockDC.postMutationScript _).expects(TestScripts.sum12Scripts(1), TestCookie.v3Schema).once.returning(TestScripts.success)
@@ -206,7 +211,7 @@ class FeedbackSecondaryTest extends WordSpec with ShouldMatchers with MockFactor
     "called for a version with a new computed column target column deleted before post" should {
       withMockDC("export rows in batches and return the expected cookie", TestCookie.v2, { mockDC =>
         // on flushing the new computed column, rows should be exported once
-        (mockDC.exportRows _).expects(Seq(num1.id, num2.id), TestCookie.v3Schema).once.returning(TestRows.systemPKNum1Num2)
+        (mockDC.exportRows _).expects(columns(num1, num2), TestCookie.v3Schema).once.returning(TestRows.systemPKNum1Num2)
         // computed values should be posted in batches
         (mockDC.postMutationScript _).expects(TestScripts.sum12Scripts(0), TestCookie.v3Schema).once.returning(TestScripts.success)
         (mockDC.postMutationScript _).expects(TestScripts.sum12Scripts(1), TestCookie.v3Schema).once.returning(TestScripts.sum12DoesNotExist)
@@ -217,7 +222,7 @@ class FeedbackSecondaryTest extends WordSpec with ShouldMatchers with MockFactor
     "called and receives an unexpected error when posting a mutation script" should {
       withMockDC("throw a ReplayLaterException", TestCookie.v2, { mockDC =>
         // on flushing the new computed column, rows should be exported once
-        (mockDC.exportRows _).expects(Seq(num1.id, num2.id), TestCookie.v3Schema).once.returning(TestRows.systemPKNum1Num2)
+        (mockDC.exportRows _).expects(columns(num1, num2), TestCookie.v3Schema).once.returning(TestRows.systemPKNum1Num2)
         // computed values should be posted in batches
         (mockDC.postMutationScript _).expects(TestScripts.sum12Scripts(0), TestCookie.v3Schema).once.returning(TestScripts.unexpectedError)
       }) { case (secondary, cookie) =>
@@ -233,7 +238,7 @@ class FeedbackSecondaryTest extends WordSpec with ShouldMatchers with MockFactor
     "called and failed to discover DC when posting a mutation script" should {
       withMockDC("throw a ReplayLaterException", TestCookie.v2, { mockDC =>
         // on flushing the new computed column, rows should be exported once
-        (mockDC.exportRows _).expects(Seq(num1.id, num2.id), TestCookie.v3Schema).once.returning(TestRows.systemPKNum1Num2)
+        (mockDC.exportRows _).expects(columns(num1, num2), TestCookie.v3Schema).once.returning(TestRows.systemPKNum1Num2)
         // computed values should be posted in batches
         (mockDC.postMutationScript _).expects(TestScripts.sum12Scripts(0), TestCookie.v3Schema).once.returning(TestScripts.failedToDiscoverDC)
       }) { case (secondary, cookie) =>
@@ -248,7 +253,7 @@ class FeedbackSecondaryTest extends WordSpec with ShouldMatchers with MockFactor
     "called and data-coordinator busy when posting a mutation script" should {
       withMockDC("throw a ReplayLaterException", TestCookie.v2, { mockDC =>
         // on flushing the new computed column, rows should be exported once
-        (mockDC.exportRows _).expects(Seq(num1.id, num2.id), TestCookie.v3Schema).once.returning(TestRows.systemPKNum1Num2)
+        (mockDC.exportRows _).expects(columns(num1, num2), TestCookie.v3Schema).once.returning(TestRows.systemPKNum1Num2)
         // computed values should be posted in batches
         (mockDC.postMutationScript _).expects(TestScripts.sum12Scripts(0), TestCookie.v3Schema).once.returning(TestScripts.dataCoordinatorBusy)
       }) { case (secondary, cookie) =>
@@ -263,7 +268,7 @@ class FeedbackSecondaryTest extends WordSpec with ShouldMatchers with MockFactor
     "called and the dataset does not exist when posting a mutation script" should {
       withMockDC("succeed and return the expected cookie", TestCookie.v2, { mockDC =>
         // on flushing the new computed column, rows should be exported once
-        (mockDC.exportRows _).expects(Seq(num1.id, num2.id), TestCookie.v3Schema).once.returning(TestRows.systemPKNum1Num2)
+        (mockDC.exportRows _).expects(columns(num1, num2), TestCookie.v3Schema).once.returning(TestRows.systemPKNum1Num2)
         // computed values should be posted in batches
         (mockDC.postMutationScript _).expects(TestScripts.sum12Scripts(0), TestCookie.v3Schema).once.returning(TestScripts.doesNotExist)
       }) { case (secondary, cookie) =>

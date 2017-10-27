@@ -14,7 +14,7 @@ import org.joda.time.DateTime
 object TestData {
   val datasetInfo = DatasetInfo("test", "en_us", "magicmagic".getBytes, Some("test"))
 
-  val systemPK = ColumnInfo[SoQLType](new ColumnId(1), new UserColumnId(":id"), Some(ColumnName(":id")), SoQLID,
+  val systemId = ColumnInfo[SoQLType](new ColumnId(1), new UserColumnId(":id"), Some(ColumnName(":id")), SoQLID,
     isSystemPrimaryKey = true, isUserPrimaryKey = false, isVersion = false, None)
 
   val num1 = ColumnInfo[SoQLType](new ColumnId(2), new UserColumnId("num_1"), Some(ColumnName("num_1")), SoQLNumber,
@@ -35,7 +35,7 @@ object TestData {
     Some(ComputationStrategyInfo(StrategyType("addition"), Seq(num2.id, num3.id), JObject.canonicalEmpty)))
 
   val schema = ColumnIdMap(
-    systemPK.systemId -> systemPK,
+    systemId.systemId -> systemId,
     num2.systemId -> num2,
     num3.systemId -> num3,
     sum23.systemId -> sum23
@@ -79,19 +79,19 @@ object TestData {
       }.toIterator
     }
 
-    def num1Num2Rows = toRows(systemPK, systemPKRows, Map(num1 -> num1Rows, num2 -> num2Rows))
+    def num1Num2Rows = toRows(systemId, systemPKRows, Map(num1 -> num1Rows, num2 -> num2Rows))
 
     def managedRows(rows: Iterator[ColumnIdMap[SoQLValue]]) = new SimpleArm[Iterator[ColumnIdMap[SoQLValue]]] {
       override def flatMap[B](f: (Iterator[ColumnIdMap[SoQLValue]]) => B): B = f(rows)
     }
 
-    def num2Num3Sum23RowsV7 = toRows(systemPK, systemPKRows, Map(num2 -> num2Rows, num3 -> num3RowsV6, sum23 -> sum23RowsV6))
-    def num2Num3Sum23RowsV10 = toRows(systemPK, systemPKRows, Map(num2 -> num2Rows, num3 -> num3RowsV10, sum23 -> sum23RowsV9))
-    def num2Num3Sum23RowsV11 = toRows(systemPK, systemPKRows, Map(num2 -> num2Rows, num3 -> num3RowsV10, sum23 -> toSoQLNumbers(sum23RowsV11)))
+    def num2Num3Sum23RowsV7 = toRows(systemId, systemPKRows, Map(num2 -> num2Rows, num3 -> num3RowsV6, sum23 -> sum23RowsV6))
+    def num2Num3Sum23RowsV10 = toRows(systemId, systemPKRows, Map(num2 -> num2Rows, num3 -> num3RowsV10, sum23 -> sum23RowsV9))
+    def num2Num3Sum23RowsV11 = toRows(systemId, systemPKRows, Map(num2 -> num2Rows, num3 -> num3RowsV10, sum23 -> toSoQLNumbers(sum23RowsV11)))
 
     // successes
-    val systemPKEmpty: ExportRowsResult = Right(Right(RowData(systemPK.id, Iterator.empty)))
-    def systemPKNum1Num2: ExportRowsResult = Right(Right(RowData(systemPK.id, num1Num2Rows)))
+    val systemPKEmpty: ExportRowsResult = Right(Right(RowData(systemId.id, Iterator.empty)))
+    def systemPKNum1Num2: ExportRowsResult = Right(Right(RowData(systemId.id, num1Num2Rows)))
     val num1DoesNotExist: ExportRowsResult = Right(Left(ColumnsDoNotExist(Set(num1.id))))
 
     // failures
@@ -135,8 +135,8 @@ object TestData {
       }.toArray
     }
 
-    val sum12Scripts = toScripts(systemPK, systemPKObsRows, Map(sum12 -> sum12Rows.map(JNumber(_))))
-    val sum23ScriptsV11 = toScripts(systemPK, systemPKObsRows, Map(sum23 -> sum23RowsV11.map(JNumber(_))))
+    val sum12Scripts = toScripts(systemId, systemPKObsRows, Map(sum12 -> sum12Rows.map(JNumber(_))))
+    val sum23ScriptsV11 = toScripts(systemId, systemPKObsRows, Map(sum23 -> sum23RowsV11.map(JNumber(_))))
 
     // DataCoordinatorClient.postMutationScriptResult(.) results
     type PostMutationScriptResult = Option[Either[RequestFailure, UpdateSchemaFailure]]
@@ -164,7 +164,7 @@ object TestData {
                              strategyMap: Map[UserColumnId, ComputationStrategyInfo] = Map.empty) =
       CookieSchema(dataVersion = DataVersion(version),
                    copyNumber = CopyNumber(number),
-                   systemId = systemPK.id,
+                   systemId = systemId.id,
                    columnIdMap = columnIdMap,
                    strategyMap = strategyMap,
                    obfuscationKey = "magicmagic".getBytes,
@@ -174,14 +174,14 @@ object TestData {
 
     // note: we are not always accounting for versions of feedback row data
 
-    val v1Schema = cookieSchema(1, 1, columnIdMap(Seq(systemPK))) // new dataset
-    val v2Schema = cookieSchema(2, 1, columnIdMap(Seq(systemPK, num1, num2))) // create num1 & num2 + row data
+    val v1Schema = cookieSchema(1, 1, columnIdMap(Seq(systemId))) // new dataset
+    val v2Schema = cookieSchema(2, 1, columnIdMap(Seq(systemId, num1, num2))) // create num1 & num2 + row data
 
-    val v3Schema = cookieSchema(3, 1, columnIdMap(Seq(systemPK, num1, num2, sum12)), strategyMap(Seq(sum12))) // create sum12
-    val v3almost4Schema = cookieSchema(3, 1, columnIdMap(Seq(systemPK, num1, num2))) // v4 delete sum12
-    val v3almost5Schema = cookieSchema(3, 1, columnIdMap(Seq(systemPK, num2))) // v5 delete num1
+    val v3Schema = cookieSchema(3, 1, columnIdMap(Seq(systemId, num1, num2, sum12)), strategyMap(Seq(sum12))) // create sum12
+    val v3almost4Schema = cookieSchema(3, 1, columnIdMap(Seq(systemId, num1, num2))) // v4 delete sum12
+    val v3almost5Schema = cookieSchema(3, 1, columnIdMap(Seq(systemId, num2))) // v5 delete num1
 
-    private val sum23Columns = columnIdMap(Seq(systemPK, num2, num3, sum23))
+    private val sum23Columns = columnIdMap(Seq(systemId, num2, num3, sum23))
 
     val v6Schema = cookieSchema(6, 1, sum23Columns, strategyMap(Seq(sum23))) // create num3 & sum23
     val v7Schema = cookieSchema(7, 1, sum23Columns, strategyMap(Seq(sum23))) // publish
@@ -222,7 +222,7 @@ object TestData {
       })
     }
 
-    val systemPKCreated = ColumnCreated(systemPK)
+    val systemPKCreated = ColumnCreated(systemId)
 
     def v1Events = events(workcopy(1, 1), systemPKCreated)
 
@@ -232,12 +232,12 @@ object TestData {
     def v8Events = events(workcopy(2, 8), systemPKCreated, ColumnCreated(num2), ColumnCreated(num3), ColumnCreated(sum23), DataCopied)
     def v9Events = events(WorkingCopyDropped)
 
-    val v9Rows = toRows(systemPK, systemPKRows, Map(num2 -> num2Rows, num3 -> num3RowsV9, sum23 -> sum23RowsV9)).toSeq
-    val v10Rows = toRows(systemPK, systemPKRows, Map(num2 -> num2Rows, num3 -> num3RowsV10, sum23 -> sum23RowsV9)).toSeq
+    val v9Rows = toRows(systemId, systemPKRows, Map(num2 -> num2Rows, num3 -> num3RowsV9, sum23 -> sum23RowsV9)).toSeq
+    val v10Rows = toRows(systemId, systemPKRows, Map(num2 -> num2Rows, num3 -> num3RowsV10, sum23 -> sum23RowsV9)).toSeq
 
     def v10Events = events(rowdata(systemPKRows, v9Rows, v10Rows))
 
-    val v11Rows = toRows(systemPK, systemPKRows, Map(num2 -> num2Rows, num3 -> num3RowsV10, sum23 -> toSoQLNumbers(sum23RowsV11))).toSeq
+    val v11Rows = toRows(systemId, systemPKRows, Map(num2 -> num2Rows, num3 -> num3RowsV10, sum23 -> toSoQLNumbers(sum23RowsV11))).toSeq
 
     def v11Events = events(rowdata(systemPKRows, v10Rows, v9Rows))
   }
