@@ -41,6 +41,7 @@ object SoQLRep {
     SoQLPhone -> (ci => new PhoneRep(ci.physicalColumnBase)),
     SoQLUrl -> (ci => new UrlRep(ci.physicalColumnBase)),
     SoQLDocument -> (ci => new DocumentRep(ci.physicalColumnBase)),
+    SoQLPhoto -> (ci => new PhotoRep(ci.physicalColumnBase)),
     SoQLBlob -> (ci => new sqlreps.BlobRep(ci.physicalColumnBase))
   )
 
@@ -69,6 +70,7 @@ object SoQLRep {
     SoQLPhone -> csvreps.PhoneRep,
     SoQLUrl -> csvreps.UrlRep,
     SoQLDocument -> csvreps.DocumentRep,
+    SoQLPhoto -> csvreps.PhotoRep,
     SoQLBlob -> csvreps.BlobRep
   )
   def csvRep(columnInfo: ColumnInfo[SoQLType]): CsvColumnRep[SoQLType, SoQLValue] =
@@ -98,6 +100,7 @@ object SoQLRep {
     SoQLPhone -> jsonreps.PhoneRep,
     SoQLUrl -> jsonreps.UrlRep,
     SoQLDocument -> jsonreps.DocumentRep,
+    SoQLPhoto -> jsonreps.PhotoRep,
     SoQLBlob -> jsonreps.BlobRep
   )
 
