@@ -17,11 +17,12 @@ import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.truth.{DatabaseInReadOnlyMode, DatasetIdInUseByWriterException}
 import com.socrata.datacoordinator.id._
 import com.socrata.datacoordinator.util.{TimingReport, PostgresUniqueViolation}
-import com.socrata.datacoordinator.util.collection.MutableColumnIdMap
+import com.socrata.datacoordinator.util.collection.{ColumnIdMap, MutableColumnIdMap}
 import com.socrata.datacoordinator.truth.metadata.`-impl`._
 import scala.concurrent.duration.Duration
 import com.socrata.datacoordinator.id.sql._
 import scala.Array
+import scala.collection.mutable
 import org.joda.time.DateTime
 
 trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] {
@@ -33,6 +34,7 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
 
   private def toDateTime(time: Timestamp): DateTime = new DateTime(time.getTime)
 
+  // The time the current transaction was started.
   def currentTime(): DateTime = {
     using(conn.prepareStatement("SELECT CURRENT_TIMESTAMP")) { stmt=>
       using(stmt.executeQuery()) { rs =>
@@ -243,16 +245,20 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
   }
 
   def schemaQuery = "SELECT system_id, user_column_id, field_name, type_name, physical_column_base_base, (is_system_primary_key IS NOT NULL) is_system_primary_key, (is_user_primary_key IS NOT NULL) is_user_primary_key, (is_version IS NOT NULL) is_version FROM column_map WHERE copy_system_id = ?;" +
-    "SELECT column_system_id, strategy_type, source_column_ids, parameters FROM computation_strategy_map WHERE copy_system_id = ?;"
-  def schema(copyInfo: CopyInfo) = {
+    "SELECT column_system_id, strategy_type, source_column_ids, parameters FROM computation_strategy_map WHERE copy_system_id = ?;" +
+    "SELECT column_system_id, zoom_level from column_map_geo_modifiers where copy_system_id = ?;"
+  def schema(copyInfo: CopyInfo): ColumnIdMap[ColumnInfo[CT]] = {
     using(conn.prepareStatement(schemaQuery)) { stmt =>
       stmt.setLong(1, copyInfo.systemId.underlying)
       stmt.setLong(2, copyInfo.systemId.underlying)
+      stmt.setLong(3, copyInfo.systemId.underlying)
+
       val result = new MutableColumnIdMap[ColumnInfo[CT]]
       t("schema-lookup", "dataset_id" -> copyInfo.datasetInfo.systemId, "copy_num" -> copyInfo.copyNumber)(stmt.execute())
       using(stmt.getResultSet) { rs =>
         while (rs.next()) {
-          val systemId = new ColumnId(rs.getLong("system_id"))
+          val systemId = rs.getColumnId("system_id")
+          // TODO: Proper getters!
           val columnName = new UserColumnId(rs.getString("user_column_id"))
           val fieldName = Option(rs.getString("field_name")).map(new ColumnName(_))
           result += systemId -> ColumnInfo(
@@ -265,14 +271,16 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
             rs.getBoolean("is_system_primary_key"),
             rs.getBoolean("is_user_primary_key"),
             rs.getBoolean("is_version"),
-            None)
+            None,
+            List.empty)
         }
       }
 
-      if (!stmt.getMoreResults()) sys.error("I issued two queries, why don't I have two resultSets?")
+      if (!stmt.getMoreResults()) sys.error("I issued three queries, why don't I have two resultSets?")
       using(stmt.getResultSet) { rs =>
         while (rs.next()) {
-          val systemId = new ColumnId(rs.getLong("column_system_id"))
+          val systemId = rs.getColumnId("column_system_id")
+          // TODO: Proper getters!
           val strategyType = new StrategyType(rs.getString("strategy_type"))
           val sourceColumnIds = rs.getArray("source_column_ids").getArray.asInstanceOf[Array[String]].map(new UserColumnId(_))
           val parameters = try {
@@ -287,6 +295,18 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
           result(systemId) = result(systemId).copy(computationStrategyInfo = Some(csi))
         }
       }
+
+      if (!stmt.getMoreResults()) sys.error("I issued three queries, why don't I have three resultSets?")
+      using(stmt.getResultSet) { rs =>
+        while (rs.next()) {
+          val systemId = rs.getColumnId("column_system_id")
+          val zoomLevel = rs.getInt("zoom_level")
+
+          val levels = zoomLevel +: result(systemId).presimplifiedZoomLevels
+          result(systemId) = result(systemId).copy(presimplifiedZoomLevels = levels)
+        }
+      }
+
       result.freeze()
     }
   }
@@ -583,7 +603,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
   def addColumnQuery = "INSERT INTO column_map (system_id, copy_system_id, user_column_id, field_name, field_name_casefolded, type_name, physical_column_base_base) VALUES (?, ?, ?, ?, ?, ?, ?)"
   def addComputationStrategyQuery = "INSERT INTO computation_strategy_map (column_system_id, copy_system_id, strategy_type, source_column_ids, parameters) VALUES (?, ?, ?, ?, ?)"
   def addColumnWithId(systemId: ColumnId, copyInfo: CopyInfo, userColumnId: UserColumnId, fieldName: Option[ColumnName], typ: CT, physicalColumnBaseBase: String, computationStrategyInfo: Option[ComputationStrategyInfo] = None): ColumnInfo[CT] = {
-    val columnInfo = ColumnInfo[CT](copyInfo, systemId, userColumnId, fieldName, typ, physicalColumnBaseBase, isSystemPrimaryKey = false, isUserPrimaryKey = false, isVersion = false, computationStrategyInfo)
+    val columnInfo = ColumnInfo[CT](copyInfo, systemId, userColumnId, fieldName, typ, physicalColumnBaseBase, isSystemPrimaryKey = false, isUserPrimaryKey = false, isVersion = false, computationStrategyInfo, Seq.empty)
 
     val result = using(conn.prepareStatement(addColumnQuery)) { stmt =>
       stmt.setLong(1, columnInfo.systemId.underlying)
