@@ -1,13 +1,13 @@
 package com.socrata.datacoordinator.common.soql
 
-import com.socrata.datacoordinator.common.soql.sqlreps.{GeometryLikeRep, LocationRep, PhoneRep, UrlRep}
+import com.socrata.datacoordinator.common.soql.sqlreps._
 import com.socrata.soql.types._
 import com.socrata.datacoordinator.truth.sql.SqlColumnRep
 import com.socrata.datacoordinator.truth.csv.CsvColumnRep
 import com.socrata.datacoordinator.truth.json.JsonColumnRep
 import com.socrata.datacoordinator.id.{RowId, RowVersion}
 import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, DatasetInfo}
-import com.vividsolutions.jts.geom.{LineString, MultiLineString, MultiPoint, MultiPolygon, Point, Polygon}
+import com.vividsolutions.jts.geom._
 
 object SoQLRep {
   private val sqlRepFactories = Map[SoQLType, ColumnInfo[SoQLType] => SqlColumnRep[SoQLType, SoQLValue]](
@@ -40,6 +40,8 @@ object SoQLRep {
     SoQLLocation -> (ci => new LocationRep(ci.physicalColumnBase)),
     SoQLPhone -> (ci => new PhoneRep(ci.physicalColumnBase)),
     SoQLUrl -> (ci => new UrlRep(ci.physicalColumnBase)),
+    SoQLDocument -> (ci => new DocumentRep(ci.physicalColumnBase)),
+    SoQLPhoto -> (ci => new PhotoRep(ci.physicalColumnBase)),
     SoQLBlob -> (ci => new sqlreps.BlobRep(ci.physicalColumnBase))
   )
 
@@ -67,6 +69,8 @@ object SoQLRep {
     SoQLLocation -> csvreps.LocationRep,
     SoQLPhone -> csvreps.PhoneRep,
     SoQLUrl -> csvreps.UrlRep,
+    SoQLDocument -> csvreps.DocumentRep,
+    SoQLPhoto -> csvreps.PhotoRep,
     SoQLBlob -> csvreps.BlobRep
   )
   def csvRep(columnInfo: ColumnInfo[SoQLType]): CsvColumnRep[SoQLType, SoQLValue] =
@@ -95,6 +99,8 @@ object SoQLRep {
     SoQLLocation -> jsonreps.LocationRep,
     SoQLPhone -> jsonreps.PhoneRep,
     SoQLUrl -> jsonreps.UrlRep,
+    SoQLDocument -> jsonreps.DocumentRep,
+    SoQLPhoto -> jsonreps.PhotoRep,
     SoQLBlob -> jsonreps.BlobRep
   )
 
