@@ -110,6 +110,12 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[SoQLValue] {
         if (description.isDefined) {
           target.writeStringNoTag(description.get)
         }
+      case x@SoQLDocument(_, _, _) =>
+        target.writeRawByte(25)
+        target.writeStringNoTag(JsonUtil.renderJson(x, false))
+      case SoQLPhoto(id) =>
+        target.writeRawByte(26)
+        target.writeStringNoTag(id)
       case SoQLNull =>
         target.writeRawByte(-1)
     }
@@ -218,6 +224,11 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[SoQLValue] {
           if (source.readBool()) { Option(source.readString()) }
           else { None }
         SoQLUrl(url, description)
+      case 25 =>
+        val x = source.readString()
+        JsonUtil.parseJson[SoQLDocument](x).right.getOrElse(sys.error("Unable to parse document from log!"))
+      case 26 =>
+        SoQLPhoto(source.readString())
       case -1 =>
         SoQLNull
     }
