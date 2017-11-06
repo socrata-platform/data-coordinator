@@ -240,6 +240,8 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
         case e: Exception =>
           log.error("Unexpected exception while updating claimedAt time for secondary sync jobs claimed by watcherId " +
                     claimantId.toString(), e)
+          // avoid tight spin loop if we have recurring errors, eg. unable to talk to db
+          Thread.sleep(10L * 1000)
       }
     }
   }
