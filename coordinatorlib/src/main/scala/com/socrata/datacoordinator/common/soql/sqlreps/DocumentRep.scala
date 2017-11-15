@@ -7,19 +7,14 @@ import com.rojoma.json.v3.util.JsonUtil
 import com.socrata.datacoordinator.truth.sql.SqlPKableColumnRep
 import com.socrata.soql.types._
 
-class DocumentRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType, SoQLValue] {
+class DocumentRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType, SoQLValue] with NonLookupableRep {
   def representedType: SoQLType = SoQLDocument
 
   val physColumns: Array[String] = Array(base)
 
-  val sqlTypes: Array[String] = Array("JSONB")
+  val sqlTypes: Array[String] = Array("JSON")
 
   override def templateForUpdate: String = physColumns.map(_ + "=?::JSON").mkString(",")
-
-  def templateForSingleLookup: String = s"($base @> ?)"
-
-  def templateForMultiLookup(n: Int): String =
-    s"($base in (${(1 to n).map(_ => "?").mkString(",")}))"
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue): Unit = {
     v match {
@@ -43,13 +38,6 @@ class DocumentRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQ
     start + 1
   }
 
-  def prepareMultiLookup(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
-    stmt.setString(start, JsonUtil.renderJson(v.asInstanceOf[SoQLDocument]))
-    start + 1
-  }
-
-  def prepareSingleLookup(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = prepareMultiLookup(stmt, v, start)
-
   def estimateSize(v: SoQLValue): Int = {
     if (SoQLNull == v) standardNullInsertSize
     else {
@@ -67,20 +55,6 @@ class DocumentRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQ
         }
     }
   }
-
-  def equalityIndexExpression: String = base
-
-  def sql_==(literal: SoQLValue): String = {
-    val v = sqlescape(JsonUtil.renderJson(literal.asInstanceOf[SoQLDocument]))
-    s"($base @> $v)"
-  }
-
-  def sql_in(literals: Iterable[SoQLValue]): String =
-    literals.iterator.collect {
-      case lit: SoQLDocument =>
-        sqlescape(JsonUtil.renderJson(lit))
-    }.mkString(s"($base in (", ",", "))")
-
 
   def count: String = s"count($base)"
 }
