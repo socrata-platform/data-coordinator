@@ -1,12 +1,14 @@
 package com.socrata.datacoordinator.secondary.feedback
 
+import com.rojoma.json.io.JsonLexException
+import com.rojoma.json.util.JsonArrayIterator.ElementDecodeException
 import com.rojoma.json.v3.ast._
 import com.rojoma.json.v3.codec.JsonEncode
 import com.rojoma.json.v3.interpolation._
+import com.rojoma.simplearm.v2.ResourceScope
 import com.socrata.datacoordinator.id.UserColumnId
 import com.socrata.datacoordinator.secondary
 import com.socrata.datacoordinator.secondary.feedback.monitor.StatusMonitor
-import com.socrata.datacoordinator.secondary.{BrokenDatasetSecondaryException, ReplayLaterSecondaryException}
 import com.socrata.datacoordinator.util.collection.MutableColumnIdMap
 
 case class Row[CV](data: secondary.Row[CV], oldData: Option[secondary.Row[CV]])
@@ -94,7 +96,7 @@ class FeedbackContext[CT,CV](user: String,
     BrokenDataset(reason, _.copyCurrent(resync = resync, errorMessage = Some(reason)))
   }
 
-  val log = org.slf4j.LoggerFactory.getLogger(classOf[FeedbackContext[CT,CV]])
+  val log = org.slf4j.LoggerFactory.getLogger(classOf[FeedbackContext[CT, CV]])
   private var cookie = currentCookie.current
 
   val dataCoordinatorClient = dataCoordinator(datasetInternalName, fromJValueFunc)
@@ -110,7 +112,7 @@ class FeedbackContext[CT,CV](user: String,
     }
   }
 
-  private def computeUpdates(computationHandler: ComputationHandler[CT,CV],
+  private def computeUpdates(computationHandler: ComputationHandler[CT, CV],
                              rows: IndexedSeq[Row[CV]],
                              targetColumns: Set[UserColumnId]): Either[ComputationFailure, Map[Int, Map[UserColumnId, CV]]] = {
     val perDatasetData = computationHandler.setupDataset(cookie)
@@ -145,7 +147,7 @@ class FeedbackContext[CT,CV](user: String,
           if (filtered.nonEmpty) {
             val newRow = Map(
               cookie.systemId -> rowId
-            ) ++ filtered.map { case (id, value) => (id, value)}.toMap
+            ) ++ filtered.map { case (id, value) => (id, value) }.toMap
             Some(rowIdx -> newRow)
           } else {
             None
@@ -285,6 +287,8 @@ class FeedbackContext[CT,CV](user: String,
 
   private def computeColumns(targetColumns: Set[UserColumnId]): FeedbackResult = {
     if (targetColumns.nonEmpty) {
+      val resourceScope = new ResourceScope("compute new columns")
+
       log.info("Computing columns: {}", targetColumns)
       val sourceColumns = targetColumns.map(cookie.strategyMap(_)).flatMap(_.sourceColumnIds).toSet.toSeq // .toSet for uniqueness
       // always ask for the system id for two reasons:
@@ -292,35 +296,49 @@ class FeedbackContext[CT,CV](user: String,
       //  - if the computed columns don't have any source columns, we still need the system id column
       val columns = Seq(cookie.systemId) ++ sourceColumns
 
-      dataCoordinatorClient.exportRows(columns, cookie) match {
-        case Right(Right(RowData(_, rows))) =>
-          val result = feedback(rows.map { row => Row(row, None) }, targetColumns)
-          log.info("Done computing columns")
-          result
-        case Right(Left(ColumnsDoNotExist(unknown))) =>
-          // since source columns must be deleted after computed columns
-          // just delete those unknown columns and associated computed columns from our cookie
-          // we'll get the event replayed to us later
-          val deleted = deleteColumns(unknown)
-          computeColumns(targetColumns -- deleted) // try to compute the un-deleted columns again
-        case Left(ftddc@FailedToDiscoverDataCoordinator) =>
-          log.warn("Failed to discover data-coordinator; going to request to have this dataset replayed later")
-          // we will retry this "indefinitely"; do not decrement retries left
-          replayLater(ftddc.english, resync = false)
-        case Left(ddb@DataCoordinatorBusy) =>
-          log.info("Received a 409 from data-coordinator; going to request to have this dataset replayed later")
-          // we will retry this "indefinitely"; do not decrement retries left
-          replayLater(ddb.english, resync = false)
-        case Left(ddne@DatasetDoesNotExist) =>
-          log.info("Completed updating dataset {} to version {} early: {}", datasetInternalName, cookie.dataVersion.underlying.toString, ddne.english)
+      val feedbackResult = try {
+        dataCoordinatorClient.exportRows(columns, cookie, resourceScope) match {
+          case Right(Right(RowData(_, rows))) =>
+            val result = feedback(rows.map { row => Row(row, None) }, targetColumns)
+            log.info("Done computing columns")
+            result
+          case Right(Left(ColumnsDoNotExist(unknown))) =>
+            // since source columns must be deleted after computed columns
+            // just delete those unknown columns and associated computed columns from our cookie
+            // we'll get the event replayed to us later
+            val deleted = deleteColumns(unknown)
+            computeColumns(targetColumns -- deleted) // try to compute the un-deleted columns again
+          case Left(ftddc@FailedToDiscoverDataCoordinator) =>
+            log.warn("Failed to discover data-coordinator; going to request to have this dataset replayed later")
+            // we will retry this "indefinitely"; do not decrement retries left
+            replayLater(ftddc.english, resync = false)
+          case Left(ddb@DataCoordinatorBusy) =>
+            log.info("Received a 409 from data-coordinator; going to request to have this dataset replayed later")
+            // we will retry this "indefinitely"; do not decrement retries left
+            replayLater(ddb.english, resync = false)
+          case Left(ddne@DatasetDoesNotExist) =>
+            log.info("Completed updating dataset {} to version {} early: {}", datasetInternalName, cookie.dataVersion.underlying.toString, ddne.english)
 
-          // nothing more to do here
-          success(cookie)
-        case Left(ue@UnexpectedError(_, cause)) =>
-          log.error("Unexpected error from data-coordinator client")
-          // this is unexpected, we will throw an exception and use the SW retry logic
-          FeedbackError(ue.english, cause)
+            // nothing more to do here
+            success(cookie)
+          case Left(ue@UnexpectedError(_, cause)) =>
+            log.error("Unexpected error from data-coordinator client")
+            // this is unexpected, we will throw an exception and use the SW retry logic
+            FeedbackError(ue.english, cause)
+        }
+      } catch {
+        case e: JsonLexException =>
+          val message = s"Unable to parse response from data-coordinator as JSON: ${e.message}"
+          log.error(message)
+          FeedbackError(message, e)
+        case e: ElementDecodeException =>
+          val message = s"Unable to parse element in array from data-coordinator as JSON: ${e.position}"
+          log.error(message)
+          FeedbackError(message, e)
       }
+      resourceScope.close()
+
+      feedbackResult
     } else {
       success(cookie)
     }
