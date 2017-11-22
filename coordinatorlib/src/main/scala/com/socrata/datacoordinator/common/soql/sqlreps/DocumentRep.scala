@@ -4,10 +4,10 @@ import java.lang.StringBuilder
 import java.sql.{PreparedStatement, ResultSet, Types}
 
 import com.rojoma.json.v3.util.JsonUtil
-import com.socrata.datacoordinator.truth.sql.SqlPKableColumnRep
+import com.socrata.datacoordinator.truth.sql.SqlColumnRep
 import com.socrata.soql.types._
 
-class DocumentRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType, SoQLValue] with NonLookupableRep {
+class DocumentRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType, SoQLValue] {
   def representedType: SoQLType = SoQLDocument
 
   val physColumns: Array[String] = Array(base)
