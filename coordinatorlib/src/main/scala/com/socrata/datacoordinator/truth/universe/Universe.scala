@@ -6,7 +6,7 @@ import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth._
 import com.socrata.datacoordinator.util._
-import com.socrata.datacoordinator.secondary.{SecondaryReplicationMessages, PlaybackToSecondary, SecondaryManifest, SecondaryStoresConfig}
+import com.socrata.datacoordinator.secondary._
 import org.joda.time.DateTime
 import com.socrata.datacoordinator.truth.metadata.{DatasetInfo, SchemaFinder}
 import com.socrata.soql.{SoQLAnalysis, SoQLAnalyzer}
@@ -102,6 +102,14 @@ trait DatasetReaderProvider { this: TypeUniverse =>
 
 trait SecondaryManifestProvider {
   val secondaryManifest: SecondaryManifest
+}
+
+trait SecondaryAddJobsProvider {
+  val secondaryAddJobs: SecondaryJobs
+}
+
+trait SecondaryDeleteJobsProvider {
+  val secondaryDeleteJobs: SecondaryJobs
 }
 
 trait PlaybackToSecondaryProvider { this: TypeUniverse =>
