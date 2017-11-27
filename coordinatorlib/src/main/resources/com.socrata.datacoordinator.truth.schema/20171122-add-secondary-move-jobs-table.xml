@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
+    <changeSet author="Alexa Rust" id="20171122-add-secondary-move-jobs-table">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="secondary_move_jobs"/>
+            </not>
+        </preConditions>
+        <createTable tableName="secondary_move_jobs">
+            <column name="dataset_system_id" type="BIGINT">
+                <constraints nullable="false"
+                             foreignKeyName="secondary_move_jobs_dataset_system_id_fkey"
+                             references="dataset_map(system_id)"
+                />
+            </column>
+            <column name="from_store_id" type="VARCHAR(64)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="move_from_store_completed_at" type="TIMESTAMP WITH TIME ZONE"/>
+            <column name="to_store_id" type="VARCHAR(64)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="move_to_store_completed_at" type="TIMESTAMP WITH TIME ZONE"/>
+            <column name="job_id" type="UUID">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="TIMESTAMP WITH TIME ZONE" defaultValueComputed="now()">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <createIndex tableName="secondary_move_jobs" indexName="secondary_move_jobs_dataset_system_id_from_store_id">
+            <column name="dataset_system_id"/>
+            <column name="from_store_id"/>
+        </createIndex>
+        <createIndex tableName="secondary_move_jobs" indexName="secondary_move_jobs_dataset_system_id_to_store_id">
+            <column name="dataset_system_id"/>
+            <column name="to_store_id"/>
+        </createIndex>
+        <createIndex tableName="secondary_move_jobs" indexName="secondary_move_jobs_job_id">
+            <column name="job_id"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>
