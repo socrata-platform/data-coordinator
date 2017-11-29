@@ -147,7 +147,7 @@ class FeedbackContext[CT,CV](user: String,
           if (filtered.nonEmpty) {
             val newRow = Map(
               cookie.systemId -> rowId
-            ) ++ filtered.map { case (id, value) => (id, value) }.toMap
+            ) ++ filtered
             Some(rowIdx -> newRow)
           } else {
             None
