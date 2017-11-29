@@ -7,7 +7,7 @@ import com.rojoma.json.v3.ast.{JArray, JObject, JString, JValue}
 import com.rojoma.json.v3.codec.{DecodeError, JsonDecode}
 import com.rojoma.json.v3.io.{JValueEventIterator, JsonLexException, JsonReaderException}
 import com.rojoma.json.v3.util._
-import com.rojoma.simplearm.v2.ResourceScope
+import com.rojoma.simplearm.v2.{ResourceScope, using}
 import com.socrata.datacoordinator.id.UserColumnId
 import com.socrata.datacoordinator.secondary
 import com.socrata.datacoordinator.util.collection.MutableColumnIdMap
@@ -238,8 +238,6 @@ class HttpDataCoordinatorClient[CT,CV](httpClient: HttpClient,
   implicit val reCodec = SimpleHierarchyCodecBuilder[Response](NoTag).branch[Upsert].branch[NonfatalError].build
 
   override def postMutationScript(script: JArray, cookie: CookieSchema): Option[Either[RequestFailure, UpdateSchemaFailure]] = {
-    val resourceScope = new ResourceScope("post mutation script")
-
     val endpoint = datasetEndpoint.getOrElse(return Some(Left(FailedToDiscoverDataCoordinator)))
     val builder = RequestBuilder(new java.net.URI(endpoint))
 
@@ -247,9 +245,10 @@ class HttpDataCoordinatorClient[CT,CV](httpClient: HttpClient,
 
     def successHandle(response: Iterator[JValue]): Either[UnexpectedError, Option[UpdateSchemaFailure]] = {
       try {
-        assert(response.hasNext, "Response contains more than one element")
-        JsonDecode.fromJValue[JArray](response.next) match {
+        assert(response.hasNext, "Response contains no elements")
+        JsonDecode.fromJValue[JArray](response.next()) match {
           case Right(results) =>
+            assert(!response.hasNext, "Response contains more than one element")
             assert(results.elems.length == script.elems.length - 2, "Did not get one result for each upsert command that was sent")
             val rows = script.elems.slice(2, script.elems.length)
             results.elems.zip(rows).foreach { case (result, row) =>
@@ -284,19 +283,20 @@ class HttpDataCoordinatorClient[CT,CV](httpClient: HttpClient,
       }
     }
 
-    val requestResult = doRequest(
-      request = builder.json(body),
-      message = s"Posted mutation script with ${script.length - 2} row updates",
-      successHandle,
-      badRequestHandle,
-      serverErrorMessageExtra = s"my mutation script was: ${JsonUtil.renderJson(script, pretty = false)}",
-      resourceScope
-    ) match {
-      case Left(failure) => Some(Left(failure))
-      case Right(Some(failure)) => Some(Right(failure))
-      case Right(None) => None
+    val requestResult = using(new ResourceScope("post mutation script")) { resourceScope =>
+      doRequest(
+        request = builder.json(body),
+        message = s"Posted mutation script with ${script.length - 2} row updates",
+        successHandle,
+        badRequestHandle,
+        serverErrorMessageExtra = s"my mutation script was: ${JsonUtil.renderJson(script, pretty = false)}",
+        resourceScope
+      ) match {
+        case Left(failure) => Some(Left(failure))
+        case Right(Some(failure)) => Some(Right(failure))
+        case Right(None) => None
+      }
     }
-    resourceScope.close()
 
     requestResult
   }

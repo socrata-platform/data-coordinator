@@ -5,7 +5,7 @@ import com.rojoma.json.util.JsonArrayIterator.ElementDecodeException
 import com.rojoma.json.v3.ast._
 import com.rojoma.json.v3.codec.JsonEncode
 import com.rojoma.json.v3.interpolation._
-import com.rojoma.simplearm.v2.ResourceScope
+import com.rojoma.simplearm.v2.{ResourceScope, using}
 import com.socrata.datacoordinator.id.UserColumnId
 import com.socrata.datacoordinator.secondary
 import com.socrata.datacoordinator.secondary.feedback.monitor.StatusMonitor
@@ -287,8 +287,6 @@ class FeedbackContext[CT,CV](user: String,
 
   private def computeColumns(targetColumns: Set[UserColumnId]): FeedbackResult = {
     if (targetColumns.nonEmpty) {
-      val resourceScope = new ResourceScope("compute new columns")
-
       log.info("Computing columns: {}", targetColumns)
       val sourceColumns = targetColumns.map(cookie.strategyMap(_)).flatMap(_.sourceColumnIds).toSet.toSeq // .toSet for uniqueness
       // always ask for the system id for two reasons:
@@ -296,7 +294,7 @@ class FeedbackContext[CT,CV](user: String,
       //  - if the computed columns don't have any source columns, we still need the system id column
       val columns = Seq(cookie.systemId) ++ sourceColumns
 
-      val feedbackResult = try {
+      val feedbackResult = using(new ResourceScope("compute new columns")) { resourceScope => try {
         dataCoordinatorClient.exportRows(columns, cookie, resourceScope) match {
           case Right(Right(RowData(_, rows))) =>
             val result = feedback(rows.map { row => Row(row, None) }, targetColumns)
@@ -335,8 +333,7 @@ class FeedbackContext[CT,CV](user: String,
           val message = s"Unable to parse element in array from data-coordinator as JSON: ${e.position}"
           log.error(message)
           FeedbackError(message, e)
-      }
-      resourceScope.close()
+      }}
 
       feedbackResult
     } else {
