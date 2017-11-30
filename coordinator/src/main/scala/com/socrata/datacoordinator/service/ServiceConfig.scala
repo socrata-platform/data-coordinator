@@ -1,15 +1,19 @@
 package com.socrata.datacoordinator.service
 
 import com.socrata.datacoordinator.secondary.config.SecondaryConfig
-import com.socrata.datacoordinator.common.DataSourceConfig
+import com.socrata.datacoordinator.common.{CollocationConfig, DataSourceConfig}
 import com.socrata.http.server.livenesscheck.LivenessCheckConfig
 import com.socrata.curator.{CuratorConfig, DiscoveryConfig}
 import com.typesafe.config.Config
 import java.util.concurrent.TimeUnit
-import scala.concurrent.duration.{MILLISECONDS, FiniteDuration, Duration}
+
+import net.ceedubs.ficus.FicusConfig._
+
+import scala.concurrent.duration.{FiniteDuration, MILLISECONDS}
 
 class ServiceConfig(val config: Config, root: String, hostPort: Int => Int) {
   private def k(field: String) = root + "." + field
+  val collocation = new CollocationConfig(config, k("collocation"))
   val secondary = new SecondaryConfig(config.getConfig(k("secondary")))
   val network = new NetworkConfig(config, k("network"))
   val curator = new CuratorConfig(config, k("curator"))

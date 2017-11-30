@@ -104,6 +104,10 @@ trait SecondaryManifestProvider {
   val secondaryManifest: SecondaryManifest
 }
 
+trait CollocationManifestProvider {
+  val collocationManifest: CollocationManifest
+}
+
 trait SecondaryMoveJobsProvider {
   val secondaryMoveJobs: SecondaryMoveJobs
 }

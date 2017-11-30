@@ -1,6 +1,8 @@
 package com.socrata.datacoordinator.service
 
-import com.socrata.datacoordinator.id.{RollupName, DatasetId}
+import java.util.UUID
+
+import com.socrata.datacoordinator.id.{DatasetId, RollupName}
 import com.socrata.datacoordinator.resources.SodaResource
 import com.socrata.http.server._
 import com.socrata.http.server.responses._
@@ -9,18 +11,21 @@ import com.socrata.http.server.routing.SimpleRouteContext._
 import com.socrata.datacoordinator.common.util.DatasetIdNormalizer._
 
 case class Router(parseDatasetId: String => Option[DatasetId],
-              notFoundDatasetResource: Option[String] => SodaResource,
-              datasetResource: DatasetId => SodaResource,
-              datasetSchemaResource: DatasetId => SodaResource,
-              datasetSnapshotsResource: DatasetId => SodaResource,
-              datasetSnapshotResource: (DatasetId, Long) => SodaResource,
-              datasetLogResource: (DatasetId, Long) => SodaResource,
-              datasetRollupResource: DatasetId => SodaResource,
-              snapshottedResource: SodaResource,
-              secondaryManifestsResource: Option[String] => SodaResource,
-              datasetSecondaryStatusResource: (Option[String], DatasetId) => SodaResource,
-              secondariesOfDatasetResource: DatasetId => SodaResource,
-              versionResource: SodaResource) {
+                  notFoundDatasetResource: Option[String] => SodaResource,
+                  datasetResource: DatasetId => SodaResource,
+                  datasetSchemaResource: DatasetId => SodaResource,
+                  datasetSnapshotsResource: DatasetId => SodaResource,
+                  datasetSnapshotResource: (DatasetId, Long) => SodaResource,
+                  datasetLogResource: (DatasetId, Long) => SodaResource,
+                  datasetRollupResource: DatasetId => SodaResource,
+                  snapshottedResource: SodaResource,
+                  secondaryManifestsResource: Option[String] => SodaResource,
+                  secondaryManifestsCollocateResource: String => SodaResource,
+                  secondaryMoveJobsResource: (String, DatasetId) => SodaResource,
+                  datasetSecondaryStatusResource: (Option[String], DatasetId) => SodaResource,
+                  secondariesOfDatasetResource: DatasetId => SodaResource,
+                  collocationManifestsResource: Option[String] => SodaResource,
+                  versionResource: SodaResource) {
 
   type OptString = Option[String]
 
@@ -60,8 +65,13 @@ case class Router(parseDatasetId: String => Option[DatasetId],
       Route("/secondary-manifest", secondaryManifestsResource(None)),
       Route("/secondary-manifest/{OptString}", secondaryManifestsResource),
       Route("/secondary-manifest/{OptString}/{DatasetId}", datasetSecondaryStatusResource),
+      Route("/secondary-manifest/{String}/collocate", secondaryManifestsCollocateResource),
+      Route("/secondary-manifest/{String}/move/{DatasetId}", secondaryMoveJobsResource),
 
       Route("/secondaries-of-dataset/{DatasetId}", secondariesOfDatasetResource),
+
+      Route("/collocation-manifest", collocationManifestsResource(None)),
+      Route("/collocation-manifest/{OptString}", collocationManifestsResource),
 
       Route("/version", versionResource)
     )

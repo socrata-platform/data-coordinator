@@ -13,10 +13,10 @@ import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth.sql.{PostgresDatabaseMutator, PostgresDatabaseReader, RepBasedSqlDatasetContext, SqlColumnRep}
 import com.socrata.datacoordinator.truth._
 import com.socrata.datacoordinator.truth.metadata.sql._
-import com.socrata.datacoordinator.secondary.{PlaybackToSecondary, SecondaryMoveJobs, SecondaryManifest, SecondaryReplicationMessages}
+import com.socrata.datacoordinator.secondary.{CollocationManifest, PlaybackToSecondary, SecondaryMoveJobs, SecondaryManifest, SecondaryReplicationMessages}
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.loader.sql._
-import com.socrata.datacoordinator.secondary.sql.{SqlSecondaryMoveJobs, SqlSecondaryManifest, SqlSecondaryStoresConfig}
+import com.socrata.datacoordinator.secondary.sql.{SqlCollocationManifest, SqlSecondaryMoveJobs, SqlSecondaryManifest, SqlSecondaryStoresConfig}
 import com.socrata.datacoordinator.util._
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import org.slf4j.LoggerFactory
@@ -84,6 +84,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
     with DatasetMapReaderProvider
     with DatasetMapWriterProvider
     with SecondaryManifestProvider
+    with CollocationManifestProvider
     with SecondaryMoveJobsProvider
     with PlaybackToSecondaryProvider
     with SecondaryReplicationMessagesProvider
@@ -154,6 +155,9 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
 
   lazy val secondaryManifest: SecondaryManifest =
     new SqlSecondaryManifest(conn)
+
+  lazy val collocationManifest: CollocationManifest =
+  new SqlCollocationManifest(conn)
 
   lazy val secondaryMoveJobs: SecondaryMoveJobs =
     new SqlSecondaryMoveJobs(conn)
