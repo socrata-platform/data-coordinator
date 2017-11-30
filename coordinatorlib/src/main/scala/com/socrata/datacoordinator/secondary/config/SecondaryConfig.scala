@@ -10,7 +10,8 @@ import net.ceedubs.ficus.FicusConfig._
 
 case class SecondaryGroupConfig(
      numReplicas: Int,
-     instances: Set[String]
+     instances: Set[String],
+     fullInstances: Option[Set[String]]
  )
 
 case class SecondaryInstanceConfig(
