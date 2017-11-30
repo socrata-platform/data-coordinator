@@ -5,7 +5,7 @@ import com.socrata.datacoordinator.id.DatasetId
 import org.scalatest.{MustMatchers, FunSuite}
 
 class MainTest extends FunSuite with MustMatchers {
-  private val sg1 = SecondaryGroupConfig(2, Set("pg1", "pg2", "pg3"))
+  private val sg1 = SecondaryGroupConfig(2, Set("pg1", "pg2", "pg3"), None)
   private val ds = new DatasetId(1234)
 
   test("do nothing if already have sufficient") {
@@ -26,5 +26,17 @@ class MainTest extends FunSuite with MustMatchers {
     newSecondaries.intersect(sg1.instances) must have size 2
   }
 
+  test("add but not to instance not accepting new datasets") {
+    val newSecondaries = Main.secondariesToAdd(sg1.copy(instancesNotAcceptingNewDatasets = Some(Set("pg2"))), Set.empty, ds, "g1")
+    newSecondaries must have size 2
+    newSecondaries.intersect(sg1.instances) must have size 2
+    newSecondaries.intersect(Set("pg2")) must have size 0
+  }
 
+  test("add but not to instance not accepting new datasets fails when there are not enough available instances") {
+    val result = intercept[Exception] {
+      Main.secondariesToAdd(sg1.copy(instancesNotAcceptingNewDatasets = Some(Set("pg2", "pg3"))), Set.empty, ds, "g1")
+    }
+    result.getMessage must be ("Can't find 2 servers in secondary group g1 to publish to")
+  }
 }
