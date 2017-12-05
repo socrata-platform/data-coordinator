@@ -5,7 +5,7 @@ import com.socrata.datacoordinator.id.DatasetId
 import org.scalatest.{MustMatchers, FunSuite}
 
 class MainTest extends FunSuite with MustMatchers {
-  private val sg1 = SecondaryGroupConfig(2, Set("pg1", "pg2", "pg3"))
+  private val sg1 = SecondaryGroupConfig(2, Set("pg1", "pg2", "pg3"), None)
   private val ds = new DatasetId(1234)
 
   test("do nothing if already have sufficient") {
@@ -26,5 +26,11 @@ class MainTest extends FunSuite with MustMatchers {
     newSecondaries.intersect(sg1.instances) must have size 2
   }
 
-
+  test("add but not to full instance") {
+    // ensure it has enough from the specific  group, but not add to a full instance
+    val newSecondaries = Main.secondariesToAdd(sg1.copy(fullInstances = Some(Set("pg2"))), Set.empty, ds, "g1")
+    newSecondaries must have size 2
+    newSecondaries.intersect(sg1.instances) must have size 2
+    newSecondaries.intersect(Set("pg2")) must have size 0
+  }
 }

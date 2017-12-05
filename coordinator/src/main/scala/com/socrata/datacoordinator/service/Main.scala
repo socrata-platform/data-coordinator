@@ -291,6 +291,11 @@ object Main extends DynamicPortMap {
     PropertyConfigurator.configure(Propertizer("log4j", serviceConfig.logProperties))
 
     val secondaries: Set[String] = serviceConfig.secondary.groups.flatMap(_._2.instances).toSet
+    val fullSecondaries: Set[String] = serviceConfig.secondary.groups.flatMap(_._2.fullInstances).flatten.toSet
+    serviceConfig.secondary.groups.foreach { case (name, group) =>
+      if (!group.fullInstances.getOrElse(Set.empty).subsetOf(group.instances))
+        throw new Exception(s"For secondary group $name full instances must be a subset of instances!")
+    }
 
     for(dsInfo <- DataSourceFromConfig(serviceConfig.dataSource)) {
       val executorService = Executors.newCachedThreadPool()
@@ -415,7 +420,7 @@ object Main extends DynamicPortMap {
         val secondaryManifestsResource = SecondaryManifestsResource(_: Option[String], secondaries,
           operations.datasetsInStore, common.internalNameFromDatasetId)
         val datasetSecondaryStatusResource = DatasetSecondaryStatusResource(_: Option[String], _:DatasetId, secondaries,
-          operations.versionInStore, serviceConfig, operations.ensureInSecondary,
+          fullSecondaries, operations.versionInStore, serviceConfig, operations.ensureInSecondary,
           operations.ensureInSecondaryGroup, operations.deleteFromSecondary, common.internalNameFromDatasetId)
         val secondariesOfDatasetResource = SecondariesOfDatasetResource(_: DatasetId, operations.secondariesOfDataset,
           common.internalNameFromDatasetId)
@@ -523,12 +528,12 @@ object Main extends DynamicPortMap {
     val currentDatasetSecondariesForGroup = currentDatasetSecondaries.intersect(secondaryGroup.instances)
     val desiredCopies = secondaryGroup.numReplicas
     val newCopiesRequired = Math.max(desiredCopies - currentDatasetSecondariesForGroup.size, 0)
-    val secondariesInGroup = secondaryGroup.instances
+    val candidateSecondariesInGroup = secondaryGroup.instances -- secondaryGroup.fullInstances.getOrElse(Set.empty)
 
     log.info(s"Dataset ${datasetId} exists on ${currentDatasetSecondariesForGroup.size} secondaries in group, " +
       s"want it on ${desiredCopies} so need to find ${newCopiesRequired} new secondaries")
 
-    val newSecondaries = Random.shuffle((secondariesInGroup -- currentDatasetSecondariesForGroup).toList)
+    val newSecondaries = Random.shuffle((candidateSecondariesInGroup -- currentDatasetSecondariesForGroup).toList)
       .take(newCopiesRequired)
       .toSet
 

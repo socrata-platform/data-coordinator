@@ -13,10 +13,10 @@ import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth.sql.{PostgresDatabaseMutator, PostgresDatabaseReader, RepBasedSqlDatasetContext, SqlColumnRep}
 import com.socrata.datacoordinator.truth._
 import com.socrata.datacoordinator.truth.metadata.sql._
-import com.socrata.datacoordinator.secondary.{SecondaryReplicationMessages, PlaybackToSecondary, SecondaryManifest}
+import com.socrata.datacoordinator.secondary.{PlaybackToSecondary, SecondaryJobs, SecondaryManifest, SecondaryReplicationMessages}
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.loader.sql._
-import com.socrata.datacoordinator.secondary.sql.{SqlSecondaryManifest, SqlSecondaryStoresConfig}
+import com.socrata.datacoordinator.secondary.sql.{SqlSecondaryJobs, SqlSecondaryManifest, SqlSecondaryStoresConfig}
 import com.socrata.datacoordinator.util._
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import org.slf4j.LoggerFactory
@@ -84,6 +84,8 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
     with DatasetMapReaderProvider
     with DatasetMapWriterProvider
     with SecondaryManifestProvider
+    with SecondaryAddJobsProvider
+    with SecondaryDeleteJobsProvider
     with PlaybackToSecondaryProvider
     with SecondaryReplicationMessagesProvider
     with DeloggerProvider
@@ -153,6 +155,12 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
 
   lazy val secondaryManifest: SecondaryManifest =
     new SqlSecondaryManifest(conn)
+
+  lazy val secondaryAddJobs: SecondaryJobs =
+    new SqlSecondaryJobs(conn, "secondary_add_jobs")
+
+  lazy val secondaryDeleteJobs: SecondaryJobs =
+    new SqlSecondaryJobs(conn, "secondary_delete_jobs")
 
   lazy val truncator =
     new SqlTruncator(conn)

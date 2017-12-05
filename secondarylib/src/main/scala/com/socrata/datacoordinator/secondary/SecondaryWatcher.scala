@@ -50,7 +50,7 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
   protected def replicationMessages(u: Universe[CT, CV] with SecondaryReplicationMessagesProvider):
       SecondaryReplicationMessages[CT, CV] = u.secondaryReplicationMessages(messageProducer)
 
-  def run(u: Universe[CT, CV] with Commitable with PlaybackToSecondaryProvider with SecondaryManifestProvider with SecondaryReplicationMessagesProvider,
+  def run(u: Universe[CT, CV] with Commitable with PlaybackToSecondaryProvider with SecondaryManifestProvider with SecondaryReplicationMessagesProvider with SecondaryAddJobsProvider with SecondaryDeleteJobsProvider,
           secondary: NamedSecondary[CT, CV]): Boolean = {
     import u._
 
@@ -74,6 +74,7 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
         try {
           playbackToSecondary(secondary, job)
           log.info("<< Sync done for {} into {}", job.datasetId, secondary.storeId)
+          completeSecondaryJobs(u, job)
           // Essentially, this simulates unclaimDataset in a finally block.  That is, make sure we clean up whether
           // there is exception or not.  We don't do it the normal way (finally block) because we
           // want to trigger event message only when there is no error.
@@ -171,6 +172,39 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
       case e: Exception =>
         log.error("Unexpected exception while releasing claim on dataset {} in secondary {}",
           job.datasetId.asInstanceOf[AnyRef], secondary.storeId, e)
+    }
+  }
+
+  private def completeSecondaryJobs(u: Universe[CT, CV] with SecondaryManifestProvider with PlaybackToSecondaryProvider
+                                                        with SecondaryAddJobsProvider with SecondaryDeleteJobsProvider,
+                                    job: SecondaryRecord): Unit = {
+    val storeId = job.storeId
+    val datasetId = job.datasetId
+    val addJobs = u.secondaryAddJobs.jobs(storeId, datasetId)
+
+    def forLog(jobs: Seq[SecondaryJob]): String = jobs.map { j => (j.id, j.step) }.toString()
+
+    if (job.pendingDrop) {
+      if (addJobs.nonEmpty) {
+        log.warn(s"Upon pending drop of dataset {} from store {} there are unexepected add jobs: {}",
+          datasetId.toString, storeId.toString, forLog(addJobs))
+      }
+
+      val deleteJobs = u.secondaryDeleteJobs.jobs(storeId, datasetId)
+      log.info("Upon pending drop of dataset {} from store {} completed secondary delete jobs: {}",
+        datasetId.toString, storeId.toString, forLog(deleteJobs))
+      u.secondaryDeleteJobs.deleteJobs(storeId, datasetId)
+    } else {
+      log.info("Upon replicating dataset {} to store {} completed secondary add jobs: {}",
+        datasetId.toString, storeId.toString, forLog(addJobs))
+      u.secondaryAddJobs.deleteJobs(storeId, datasetId)
+
+      // initiate drop from secondary stores for corresponding delete jobs
+      addJobs.foreach { addJob =>
+         u.secondaryDeleteJobs.job(addJob.id, addJob.step).foreach { deleteJob =>
+           manifest(u).markDatasetForDrop(deleteJob.storeId, job.datasetId)
+         }
+      }
     }
   }
 
@@ -402,6 +436,8 @@ object SecondaryWatcher {
   type UniverseType[CT, CV] = Universe[CT, CV] with Commitable with
                                                     PlaybackToSecondaryProvider with
                                                     SecondaryManifestProvider with
+                                                    SecondaryAddJobsProvider with
+                                                    SecondaryDeleteJobsProvider with
                                                     SecondaryReplicationMessagesProvider with
                                                     SecondaryStoresConfigProvider
 }
