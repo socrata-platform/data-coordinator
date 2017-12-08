@@ -687,8 +687,8 @@ object Main extends DynamicPortMap {
     val candidateSecondariesInGroup =
       secondaryGroup.instances -- secondaryGroup.instancesNotAcceptingNewDatasets.getOrElse(Set.empty)
 
-    log.info(s"Dataset ${datasetId} exists on ${currentDatasetSecondariesForGroup.size} secondaries in group, " +
-      s"want it on ${desiredCopies} so need to find ${newCopiesRequired} new secondaries")
+    log.info(s"Dataset $datasetId exists on ${currentDatasetSecondariesForGroup.size} secondaries in group, " +
+      s"want it on $desiredCopies so need to find $newCopiesRequired new secondaries")
 
     val newSecondaries = Random.shuffle((candidateSecondariesInGroup -- currentDatasetSecondariesForGroup).toList)
       .take(newCopiesRequired)
@@ -696,10 +696,10 @@ object Main extends DynamicPortMap {
 
     if (newSecondaries.size < newCopiesRequired) {
       // TODO: proper error, this is configuration error though
-      throw new Exception(s"Can't find ${desiredCopies} servers in secondary group ${secondaryGroupStr} to publish to")
+      throw new Exception(s"Can't find $desiredCopies servers in secondary group $secondaryGroupStr to publish to")
     }
 
-    log.info(s"Dataset ${datasetId} should also be on ${newSecondaries}")
+    log.info(s"Dataset $datasetId should also be on $newSecondaries")
 
     newSecondaries
   }
