@@ -5,9 +5,13 @@ set -e
 REALPATH=$(python -c "import os; print(os.path.realpath('$0'))")
 BINDIR=$(dirname "$REALPATH")
 
-CONFIG="${SODA_CONFIG:-/etc/soda2.conf}" # TODO: Don't depend on soda2.conf.
+CONFIG=$1
+if [[ -z $CONFIG ]]; then
+  CONFIG="configs/application.conf"
+fi
+
 JARFILE=$("$BINDIR"/build.sh "$@")
 
-"$BINDIR"/run_migrations.sh
+"$BINDIR"/run_migrations.sh "$CONFIG" migrate
 
 java -Djava.net.preferIPv4Stack=true -Dconfig.file="$CONFIG" -jar "$JARFILE" com.socrata.datacoordinator.service.Main

@@ -3,6 +3,7 @@
 target/
 .idea/
 .idea_modules/
+configs/local*.conf
 local-data-coordinator.conf
 local-secondary-watcher.conf
 .DS_Store
