@@ -5,7 +5,7 @@ REALPATH=$(python -c "import os; print(os.path.realpath('$0'))")
 BINDIR=$(dirname "$REALPATH")
 # Run data coordinator migrations
 # run_migrations.sh [migrate/undo/redo] [numchanges]
-CONFIG="${SODA_CONFIG:-/etc/soda2.conf}" # TODO: Don't depend on soda2.conf.
+CONFIG="${SODA_CONFIG:-"$BINDIR"/../configs/application.conf}" # TODO: Don't depend on soda2.conf.
 
 COMMAND=${1:-migrate}
 echo Running datacoordinator.primary.MigrateSchema "$COMMAND" "$2"...
