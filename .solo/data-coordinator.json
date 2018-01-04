@@ -1,0 +1,6 @@
+{
+  "aliases": [ "dc", "coordinator" ],
+  "ports": [ 6020 ],
+  "start_container": "bin/start_dc_docker.sh",
+  "start_process": "bin/start_dc.sh"
+}
