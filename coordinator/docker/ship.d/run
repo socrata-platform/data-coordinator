@@ -1,7 +1,13 @@
 #!/bin/sh
 set -ev
 
-/bin/env_parse ${SERVER_CONFIG}.j2
+if [ -z "$MARATHON_APP_ID" ]; then
+  echo "Not running in marathon, so I will not compile the config template."
+  echo "To force config template compilation, set \$MARATHON_APP_ID."
+else
+  echo "Compiling config template - ${SERVER_CONFIG}.j2"
+  /bin/env_parse ${SERVER_CONFIG}.j2
+fi
 
 su socrata -c '/usr/bin/java \
     -Dconfig.file=${SERVER_CONFIG} \
