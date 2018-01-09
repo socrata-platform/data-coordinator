@@ -4,9 +4,9 @@ import com.rojoma.json.v3.ast.{JString, JValue}
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.common.soql.SoQLRep
 import com.socrata.datacoordinator.common.{DataSourceFromConfig, SoQLCommon}
-import com.socrata.datacoordinator.id.{ColumnId, DatasetId, UserColumnId}
+import com.socrata.datacoordinator.id.{ColumnId, DatasetId, DatasetInternalName, UserColumnId}
 import com.socrata.datacoordinator.resources._
-import com.socrata.datacoordinator.secondary.DatasetAlreadyInSecondary
+import com.socrata.datacoordinator.secondary.{DatasetAlreadyInSecondary, SecondaryMoveJob}
 import com.socrata.datacoordinator.secondary.config.SecondaryGroupConfig
 import com.socrata.datacoordinator.truth.CopySelector
 import com.socrata.datacoordinator.truth.loader.{Delogger, NullLogger}
@@ -19,13 +19,16 @@ import com.socrata.http.server._
 import com.socrata.http.server.curator.CuratorBroker
 import com.socrata.http.server.livenesscheck.LivenessCheckResponder
 import com.socrata.http.server.util.{EntityTag, Precondition}
-import com.socrata.curator.{CuratorFromConfig, DiscoveryFromConfig}
+import com.socrata.curator.{CuratorFromConfig, DiscoveryFromConfig, ProviderCache}
 import com.socrata.soql.types.{SoQLType, SoQLValue}
 import com.socrata.thirdparty.typesafeconfig.Propertizer
 import com.typesafe.config.{Config, ConfigFactory}
 import java.util.concurrent.{CountDownLatch, Executors, TimeUnit}
 
-import org.apache.curator.x.discovery.ServiceInstanceBuilder
+import com.socrata.datacoordinator.resources.collocation._
+import com.socrata.datacoordinator.service.collocation._
+import com.socrata.http.client.HttpClientHttpClient
+import org.apache.curator.x.discovery.{ServiceInstanceBuilder, strategies}
 import org.apache.log4j.PropertyConfigurator
 import org.joda.time.DateTime
 
@@ -132,6 +135,109 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
           groups.toMap
         )
       }
+    }
+  }
+
+  def secondaryMoveJobs(storeGroup: String, datasetId: DatasetId): Either[ResourceNotFound, SecondaryMoveJobsResult] = {
+    serviceConfig.secondary.groups.get(storeGroup) match {
+      case Some(groupConfig) =>
+        for (u <- common.universe) yield {
+          u.datasetMapReader.datasetInfo(datasetId) match {
+            case Some(_) =>
+              val moves = u.secondaryMoveJobs.jobs(datasetId).filter { move => groupConfig.instances(move.toStoreId) }
+
+              Right(SecondaryMoveJobsResult(moves))
+            case None =>
+              Left(DatasetNotFound(common.datasetInternalNameFromDatasetId(datasetId)))
+          }
+        }
+      case None => Left(StoreGroupNotFound(storeGroup))
+    }
+  }
+
+  
+  def ensureSecondaryMoveJob(storeGroup: String,
+                             datasetId: DatasetId,
+                             request: SecondaryMoveJobRequest): Either[ResourceNotFound, Either[InvalidMoveJob, SecondaryMoveJob]] = {
+    serviceConfig.secondary.groups.get(storeGroup) match {
+      case Some(groupConfig) =>
+        for (u <- common.universe) yield {
+          u.datasetMapReader.datasetInfo(datasetId) match {
+            case Some(_) =>
+              val fromStoreId = request.fromStoreId
+              val toStoreId = request.toStoreId
+
+              if (!groupConfig.instances(fromStoreId)) return Left(StoreNotFound(fromStoreId))
+              if (!groupConfig.instances(toStoreId)) return Left(StoreNotFound(toStoreId))
+
+              if (groupConfig.instancesNotAcceptingNewDatasets.getOrElse(Set.empty)(toStoreId)) {
+                log.warn("Cannot move dataset to store {} not accepting new datasets", toStoreId)
+                return Right(Left(StoreNotAcceptingDatasets))
+              }
+
+              val currentStores =
+                secondariesOfDataset(datasetId).map(_.secondaries.keySet).getOrElse(Set.empty).
+                  filter(groupConfig.instances(_))
+
+              val existingJobs = u.secondaryMoveJobs.jobs(datasetId)
+
+              // apply moves to the current stores in the order they were created in
+              val futureStores = existingJobs.sorted.foldLeft(currentStores) { (stores, move) =>
+                stores - move.fromStoreId + move.toStoreId
+              }
+
+              val result = if (futureStores(fromStoreId) && !currentStores(toStoreId)) {
+                // once existing moves complete the dataset will be "from" this store
+                // and the dataset will not yet be "to" the other store:
+                // so we should add a new move job
+
+                try {
+                  ensureInSecondary(toStoreId, datasetId)
+                } catch {
+                  case _: DatasetAlreadyInSecondary => ???
+                }
+
+                u.secondaryMoveJobs.addJob(request.jobId, datasetId, fromStoreId, toStoreId)
+
+                Right(SecondaryMoveJob(
+                  id = request.jobId,
+                  datasetId = datasetId,
+                  fromStoreId = fromStoreId,
+                  toStoreId = toStoreId,
+                  moveFromStoreComplete = false,
+                  moveToStoreComplete = false,
+                  createdAtMillis = 0L // TODO
+                ))
+              } else if (!futureStores(fromStoreId) && currentStores(toStoreId)) {
+                // there is an existing (not complete) job doing the same thing
+                existingJobs.find { job => job.fromStoreId == fromStoreId && job.toStoreId == toStoreId } match {
+                  case Some(existingJob) => Right(existingJob)
+                  case None => ???
+                }
+              } else {
+                // in this case it does not make sense to move the dataset from
+                // one store to the other
+                Left(DatasetNotInStore)
+              }
+
+              Right(result)
+            case None => Left(DatasetNotFound(common.datasetInternalNameFromDatasetId(datasetId)))
+          }
+        }
+      case None => Left(StoreGroupNotFound(storeGroup))
+    }
+  }
+
+  def collocatedDatasets(datasets: Set[DatasetInternalName]): CollocatedDatasetsResult = {
+    for (u <- common.universe) yield {
+      val collocatedDatasets = u.collocationManifest.collocatedDatasets(datasets.map(_.underlying)).map { dataset =>
+        DatasetInternalName(dataset).getOrElse {
+          // we will validate dataset internal names on the way in so this should never happen... but
+          log.error("collocation-manifest contains an invalid dataset internal name: {}", dataset)
+          throw new Exception(s"collocation-manifest contains an invalid dataset internal name: $dataset")
+        }
+      }
+      CollocatedDatasetsResult(collocatedDatasets)
     }
   }
 
@@ -298,6 +404,11 @@ object Main extends DynamicPortMap {
         throw new Exception(s"For secondary group $name instancesNotAcceptingNewDatasets must be a subset of instances!")
     }
 
+    val collocationGroup: Set[String] = serviceConfig.collocation.group
+    if (collocationGroup.nonEmpty && !collocationGroup.contains(serviceConfig.instance)) {
+      throw new Exception(s"Instance self ${serviceConfig.instance} is required to be in the collocation group when non-empty: $collocationGroup")
+    }
+
     for(dsInfo <- DataSourceFromConfig(serviceConfig.dataSource)) {
       val executorService = Executors.newCachedThreadPool()
       try {
@@ -420,14 +531,47 @@ object Main extends DynamicPortMap {
         val snapshottedResource = SnapshottedResource(getSnapshottedDatasets, common.internalNameFromDatasetId)
         val secondaryManifestsResource = SecondaryManifestsResource(_: Option[String], secondaries,
           operations.datasetsInStore, common.internalNameFromDatasetId)
+
+        def collocationCoordinator(hostAndPort: String => Option[(String, Int)],
+                                   lock: CollocationLock): Coordinator with CollocatorProvider = {
+          new HttpCoordinator(
+            serviceConfig.instance.equals,
+            serviceConfig.secondary.groups,
+            hostAndPort,
+            new HttpClientHttpClient(executorService), // TODO: Does this want its own thread pool?
+            operations.collocatedDatasets,
+            operations.secondariesOfDataset,
+            operations.secondaryMoveJobs,
+            operations.ensureSecondaryMoveJob
+          ) with CollocatorProvider {
+            override val collocator = new CoordinatedCollocator(
+              collocationGroup,
+              serviceConfig.secondary.defaultGroups,
+              this,
+              lock,
+              serviceConfig.collocation.lockTimeout.toMillis
+            )
+          }
+        }
+
+        def secondaryManifestsCollocateResource(lock: CollocationLock)(hostAndPort: String => Option[(String, Int)]) = {
+          SecondaryManifestsCollocateResource(_: String, collocationCoordinator(hostAndPort, lock))
+        }
+
+        def collocationManifestsResource(lock: CollocationLock)(hostAndPort: String => Option[(String, Int)]) = {
+          CollocationManifestsResource(_: Option[String], collocationCoordinator(hostAndPort, lock))
+        }
+
         val datasetSecondaryStatusResource = DatasetSecondaryStatusResource(_: Option[String], _:DatasetId, secondaries,
           secondariesNotAcceptingNewDatasets, operations.versionInStore, serviceConfig, operations.ensureInSecondary,
           operations.ensureInSecondaryGroup, operations.deleteFromSecondary, common.internalNameFromDatasetId)
         val secondariesOfDatasetResource = SecondariesOfDatasetResource(_: DatasetId, operations.secondariesOfDataset,
           common.internalNameFromDatasetId)
+        val secondaryMoveJobsResource = SecondaryMoveJobsResource(_: String, _: DatasetId,
+          operations.secondaryMoveJobs, operations.ensureSecondaryMoveJob, common.datasetInternalNameFromDatasetId)
 
 
-        val serv = new Service(serviceConfig = serviceConfig,
+        val serv = Service(serviceConfig = serviceConfig,
           formatDatasetId = common.internalNameFromDatasetId,
           parseDatasetId = common.datasetIdFromInternalName,
           notFoundDatasetResource = notFoundDatasetResource,
@@ -439,8 +583,11 @@ object Main extends DynamicPortMap {
           datasetRollupResource = datasetRollupResource,
           snapshottedResource = snapshottedResource,
           secondaryManifestsResource = secondaryManifestsResource,
+          secondaryManifestsCollocateResource = secondaryManifestsCollocateResource,
+          secondaryMoveJobsResource = secondaryMoveJobsResource,
+          collocationManifestsResource = collocationManifestsResource,
           datasetSecondaryStatusResource = datasetSecondaryStatusResource,
-          secondariesOfDatasetResource = secondariesOfDatasetResource)
+          secondariesOfDatasetResource = secondariesOfDatasetResource) _
 
         val finished = new CountDownLatch(1)
         val tableDropper = new Thread() {
@@ -490,10 +637,18 @@ object Main extends DynamicPortMap {
             curator <- CuratorFromConfig(serviceConfig.curator)
             discovery <- DiscoveryFromConfig(classOf[AuxiliaryData], curator, serviceConfig.discovery)
             pong <- managed(new LivenessCheckResponder(serviceConfig.livenessCheck))
+            provider <- managed(new ProviderCache(discovery, new strategies.RoundRobinStrategy, serviceConfig.discovery.name))
           } {
             pong.start()
             val auxData = new AuxiliaryData(livenessCheckInfo = Some(pong.livenessCheckInfo))
-            serv.run(serviceConfig.network.port,
+
+            def hostAndPort(instanceName: String): Option[(String, Int)] = {
+              Option(provider(instanceName).getInstance()).map[(String, Int)](instance => (instance.getAddress, instance.getPort))
+            }
+
+            val collocationLockPath =  s"/${serviceConfig.discovery.name}/${serviceConfig.collocation.lockPath}"
+            val collocationLock = new CuratedCollocationLock(curator, collocationLockPath)
+            serv(collocationLock, hostAndPort).run(serviceConfig.network.port,
                      new CuratorBroker(discovery,
                                        address,
                                        serviceConfig.discovery.name + "." + serviceConfig.instance,
@@ -532,8 +687,8 @@ object Main extends DynamicPortMap {
     val candidateSecondariesInGroup =
       secondaryGroup.instances -- secondaryGroup.instancesNotAcceptingNewDatasets.getOrElse(Set.empty)
 
-    log.info(s"Dataset ${datasetId} exists on ${currentDatasetSecondariesForGroup.size} secondaries in group, " +
-      s"want it on ${desiredCopies} so need to find ${newCopiesRequired} new secondaries")
+    log.info(s"Dataset $datasetId exists on ${currentDatasetSecondariesForGroup.size} secondaries in group, " +
+      s"want it on $desiredCopies so need to find $newCopiesRequired new secondaries")
 
     val newSecondaries = Random.shuffle((candidateSecondariesInGroup -- currentDatasetSecondariesForGroup).toList)
       .take(newCopiesRequired)
@@ -541,10 +696,10 @@ object Main extends DynamicPortMap {
 
     if (newSecondaries.size < newCopiesRequired) {
       // TODO: proper error, this is configuration error though
-      throw new Exception(s"Can't find ${desiredCopies} servers in secondary group ${secondaryGroupStr} to publish to")
+      throw new Exception(s"Can't find $desiredCopies servers in secondary group $secondaryGroupStr to publish to")
     }
 
-    log.info(s"Dataset ${datasetId} should also be on ${newSecondaries}")
+    log.info(s"Dataset $datasetId should also be on $newSecondaries")
 
     newSecondaries
   }

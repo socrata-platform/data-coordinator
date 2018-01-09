@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
+    <changeSet author="Alexa Rust" id="20171128-add-collocation-manifest">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="collocation_manifest"/>
+            </not>
+        </preConditions>
+        <createTable tableName="collocation_manifest">
+            <column name="system_id" type="BIGINT" autoIncrement="true">
+                <constraints nullable="false" primaryKey="true"/>
+            </column>
+            <column name="dataset_internal_name_a" type="VARCHAR(40)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="dataset_internal_name_b" type="VARCHAR(40)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="user_column_id_a" type="VARCHAR(40)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="user_column_id_b" type="VARCHAR(40)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="copy_number_a" type="BIGINT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="copy_number_b" type="BIGINT">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_at" type="TIMESTAMP WITH TIME ZONE" defaultValueComputed="now()">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <createIndex tableName="collocation_manifest" indexName="collocation_manifest_dataset_internal_name_a">
+            <column name="dataset_internal_name_a"/>
+        </createIndex>
+        <createIndex tableName="collocation_manifest" indexName="collocation_manifest_dataset_internal_name_b">
+            <column name="dataset_internal_name_b"/>
+        </createIndex>
+        <createIndex tableName="collocation_manifest" indexName="collocation_manifest_din_user_column_id_copy_number_a">
+            <column name="dataset_internal_name_a"/>
+            <column name="user_column_id_a"/>
+            <column name="copy_number_a"/>
+        </createIndex>
+        <createIndex tableName="collocation_manifest" indexName="collocation_manifest_din_user_column_id_copy_number_b">
+            <column name="dataset_internal_name_b"/>
+            <column name="user_column_id_b"/>
+            <column name="copy_number_b"/>
+        </createIndex>
+        <addUniqueConstraint tableName="collocation_manifest"
+                             columnNames="dataset_internal_name_a,dataset_internal_name_b,user_column_id_a,user_column_id_b,copy_number_a,copy_number_b"/>
+    </changeSet>
+</databaseChangeLog>

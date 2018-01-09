@@ -51,6 +51,18 @@ object ScriptCommandRequestError{
   val UNKNOWN_LABEL = "req.script.command.unknown-label"
 }
 
+// Collocation Errors
+
+object CollocationError {
+  val INSTANCE_DOES_NOT_EXIST = "collocation.instance.does-not-exist"
+  val STORE_GROUP_DOES_NOT_EXIST = "collocation.secondary.store-group-does-not-exist"
+  val STORE_DOES_NOT_EXIST = "collocation.secondary.store-does-not-exist"
+  val DATASET_DOES_NOT_EXIST = "collocation.datataset.does-not-exist"
+
+  val STORE_NOT_ACCEPTING_NEW_DATASETS = "collocation.secondary.store-not-accepting-new-datasets"
+  val DATASET_NOT_FOUND_IN_STORE = "collocation.secondary.dataset-not-found-in-store"
+}
+
 // Update Errors
 
 object UpdateError{

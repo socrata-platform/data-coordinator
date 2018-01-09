@@ -7,17 +7,19 @@ import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.resources._
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.http.server.responses._
-import com.socrata.http.server.util.handlers.{ThreadRenamingHandler, NewLoggingHandler}
+import com.socrata.http.server.util.handlers.{NewLoggingHandler, ThreadRenamingHandler}
 import com.socrata.http.server.util.ErrorAdapter
 import com.socrata.http.server.util.RequestId.ReqIdHeader
-import com.socrata.thirdparty.metrics.{SocrataHttpSupport, MetricsOptions, MetricsReporter}
+import com.socrata.thirdparty.metrics.{MetricsOptions, MetricsReporter, SocrataHttpSupport}
 import java.util.concurrent.atomic.AtomicInteger
+
 import com.socrata.datacoordinator.service.ServiceUtil._
 import com.socrata.http.server._
 import com.socrata.http.server.implicits._
 import com.socrata.datacoordinator.external._
-
 import Service._
+import com.socrata.datacoordinator.resources.collocation.{CollocationManifestsResource, SecondaryManifestsCollocateResource, SecondaryMoveJobsResource}
+import com.socrata.datacoordinator.service.collocation.CollocationLock
 
 /**
  * The main HTTP REST resource servicing class for the data coordinator.
@@ -35,9 +37,12 @@ class Service(serviceConfig: ServiceConfig,
               datasetRollupResource: DatasetId => DatasetRollupResource,
               snapshottedResource: SodaResource,
               secondaryManifestsResource: Option[String] => SecondaryManifestsResource,
+              secondaryManifestsCollocateResource: String => SecondaryManifestsCollocateResource,
+              secondaryMoveJobsResource: (String, DatasetId) => SecondaryMoveJobsResource,
               datasetSecondaryStatusResource: (Option[String], DatasetId) => DatasetSecondaryStatusResource,
+              collocationManifestsResource: Option[String] => CollocationManifestsResource,
               secondariesOfDatasetResource: DatasetId => SecondariesOfDatasetResource
-              ) extends CoordinatorErrorsAndMetrics(formatDatasetId)
+             ) extends CoordinatorErrorsAndMetrics(formatDatasetId)
 {
   override val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
 
@@ -253,6 +258,9 @@ class Service(serviceConfig: ServiceConfig,
     datasetRollupResource = datasetRollupResource,
     snapshottedResource = snapshottedResource,
     secondaryManifestsResource = secondaryManifestsResource,
+    secondaryManifestsCollocateResource = secondaryManifestsCollocateResource,
+    secondaryMoveJobsResource = secondaryMoveJobsResource,
+    collocationManifestsResource = collocationManifestsResource,
     datasetSecondaryStatusResource = datasetSecondaryStatusResource,
     secondariesOfDatasetResource = secondariesOfDatasetResource,
     versionResource = VersionResource)
@@ -293,4 +301,43 @@ class Service(serviceConfig: ServiceConfig,
 
 object Service {
   val numThreads = new AtomicInteger
+
+  def apply(serviceConfig: ServiceConfig,
+            formatDatasetId: DatasetId => String,
+            parseDatasetId: String => Option[DatasetId],
+            notFoundDatasetResource: (Option[String], (=> HttpResponse) => HttpResponse) => NotFoundDatasetResource,
+            datasetResource: (DatasetId, (=> HttpResponse) => HttpResponse) => DatasetResource,
+            datasetSchemaResource: DatasetId => DatasetSchemaResource,
+            datasetSnapshotsResource: DatasetId => DatasetSnapshotsResource,
+            datasetSnapshotResource: (DatasetId, Long) => DatasetSnapshotResource,
+            datasetLogResource: (DatasetId, Long) => SodaResource,
+            datasetRollupResource: DatasetId => DatasetRollupResource,
+            snapshottedResource: SodaResource,
+            secondaryManifestsResource: Option[String] => SecondaryManifestsResource,
+            secondaryManifestsCollocateResource: CollocationLock => (String => Option[(String, Int)]) => String => SecondaryManifestsCollocateResource,
+            secondaryMoveJobsResource: (String, DatasetId) => SecondaryMoveJobsResource,
+            datasetSecondaryStatusResource: (Option[String], DatasetId) => DatasetSecondaryStatusResource,
+            collocationManifestsResource: CollocationLock => (String => Option[(String, Int)]) => Option[String] => CollocationManifestsResource,
+            secondariesOfDatasetResource: DatasetId => SecondariesOfDatasetResource
+           )(collocationLock: CollocationLock, hostAndPort: (String => Option[(String, Int)])): Service = {
+    new Service(
+      serviceConfig,
+      formatDatasetId,
+      parseDatasetId,
+      notFoundDatasetResource,
+      datasetResource,
+      datasetSchemaResource,
+      datasetSnapshotsResource,
+      datasetSnapshotResource,
+      datasetLogResource,
+      datasetRollupResource,
+      snapshottedResource,
+      secondaryManifestsResource,
+      secondaryManifestsCollocateResource(collocationLock)(hostAndPort),
+      secondaryMoveJobsResource,
+      datasetSecondaryStatusResource,
+      collocationManifestsResource(collocationLock)(hostAndPort),
+      secondariesOfDatasetResource
+    )
+  }
 }

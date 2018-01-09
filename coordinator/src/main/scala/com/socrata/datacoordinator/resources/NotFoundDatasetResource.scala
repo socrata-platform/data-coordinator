@@ -35,7 +35,7 @@ case class NotFoundDatasetResource(datasetIdRaw: Option[String],
   override def post = {
     datasetIdRaw match {
       case None =>  doCreateDataset
-      case Some(datasetId) => _:HttpRequest => notFoundError("")
+      case Some(datasetId) => _:HttpRequest => notFoundError(datasetId)
     }
   }
   override def delete = {
@@ -48,7 +48,7 @@ case class NotFoundDatasetResource(datasetIdRaw: Option[String],
   override def get = {
     datasetIdRaw match {
       case None => doListDatasets
-      case Some(datasetId) => _:HttpRequest => notFoundError("")
+      case Some(datasetId) => _:HttpRequest => notFoundError(datasetId)
     }
   }
 

@@ -5,7 +5,6 @@ import com.socrata.http.server.{HttpResponse, HttpRequest}
 import com.socrata.http.server.responses._
 import com.socrata.http.server.implicits._
 
-
 case class SecondaryManifestsResource(storeId: Option[String],
                                       secondaries: Set[String],
                                       datasetsInStore: (String) => Map[DatasetId, Long],
@@ -32,10 +31,4 @@ case class SecondaryManifestsResource(storeId: Option[String],
     OK ~> Json(datasetsInStore(id).foldLeft(Map.empty[String, Long]) { (acc, kv) =>
       acc + (formatDatasetId(kv._1) -> kv._2) })
   }
-
-
-
-
-
 }
-

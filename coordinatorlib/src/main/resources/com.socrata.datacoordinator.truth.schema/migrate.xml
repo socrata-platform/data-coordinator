@@ -32,6 +32,8 @@
     <include file="com.socrata.datacoordinator.truth.schema/20170915-migrate-geocoding-secondary-cookie.xml"/>
     <include file="com.socrata.datacoordinator.truth.schema/20171009-add-column-map-geo-modifiers.xml"/>
     <include file="com.socrata.datacoordinator.truth.schema/20171020-migrate-geo-secondary-cookie-pk-to-sid.xml"/>
+    <include file="com.socrata.datacoordinator.truth.schema/20171122-add-secondary-move-jobs-table.xml"/>
+    <include file="com.socrata.datacoordinator.truth.schema/20171128-add-collocation-manifest.xml"/>
     <!-- run-on-change migrations: recreation of triggers typically comes after other changes that they may depend on -->
     <include file="com.socrata.datacoordinator.truth.schema/triggers/update-dataset-log-trigger.xml"/>
 

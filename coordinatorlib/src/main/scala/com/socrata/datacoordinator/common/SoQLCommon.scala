@@ -83,6 +83,9 @@ class SoQLCommon(dataSource: DataSource,
   def internalNameFromDatasetId(datasetId: DatasetId): String =
     internalNamePrefix + datasetId.underlying
 
+  def datasetInternalNameFromDatasetId(datasetId: DatasetId): DatasetInternalName =
+    DatasetInternalName(internalNamePrefix, datasetId)
+
   val datasetMapLimits = StandardDatasetMapLimits
 
   val SystemColumns = SoQLSystemColumns
