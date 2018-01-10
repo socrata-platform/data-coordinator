@@ -1,7 +1,7 @@
-package com.socrata.datacoordinator.common
+package com.socrata.datacoordinator.common.collocation
 
-import com.typesafe.config.Config
 import com.socrata.thirdparty.typesafeconfig.ConfigClass
+import com.typesafe.config.Config
 
 class CollocationConfig(config: Config, root: String) extends ConfigClass(config, root) {
   val group = getStringList("group").toSet

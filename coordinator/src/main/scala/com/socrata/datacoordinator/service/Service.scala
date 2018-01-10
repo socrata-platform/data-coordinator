@@ -18,8 +18,8 @@ import com.socrata.http.server._
 import com.socrata.http.server.implicits._
 import com.socrata.datacoordinator.external._
 import Service._
+import com.socrata.datacoordinator.common.collocation.CollocationLock
 import com.socrata.datacoordinator.resources.collocation.{CollocationManifestsResource, SecondaryManifestsCollocateResource, SecondaryMoveJobsResource}
-import com.socrata.datacoordinator.service.collocation.CollocationLock
 
 /**
  * The main HTTP REST resource servicing class for the data coordinator.

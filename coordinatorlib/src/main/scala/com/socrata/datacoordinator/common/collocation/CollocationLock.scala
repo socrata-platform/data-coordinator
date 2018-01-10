@@ -1,4 +1,4 @@
-package com.socrata.datacoordinator.service.collocation
+package com.socrata.datacoordinator.common.collocation
 
 import java.util.concurrent.TimeUnit
 

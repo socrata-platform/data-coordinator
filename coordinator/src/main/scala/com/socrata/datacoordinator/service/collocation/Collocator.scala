@@ -3,6 +3,7 @@ package com.socrata.datacoordinator.service.collocation
 import java.util.UUID
 
 import com.rojoma.json.v3.util._
+import com.socrata.datacoordinator.common.collocation.{CollocationLock, CollocationLockError, CollocationLockTimeout}
 import com.socrata.datacoordinator.id.DatasetInternalName
 import com.socrata.datacoordinator.resources.collocation.CollocatedDatasetsResult
 import com.socrata.datacoordinator.service.collocation.secondary.stores.SecondaryStoreSelector

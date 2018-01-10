@@ -2,7 +2,7 @@ package com.socrata.datacoordinator.secondary
 
 import java.lang.Runnable
 import java.util.UUID
-import java.util.concurrent.{CountDownLatch, Executors, TimeUnit, ScheduledExecutorService}
+import java.util.concurrent.{CountDownLatch, Executors, ScheduledExecutorService, TimeUnit}
 
 import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.secondary.messaging._
@@ -11,12 +11,13 @@ import com.socrata.datacoordinator.secondary.messaging.eurybates.MessageProducer
 import scala.collection.mutable
 import scala.concurrent.duration._
 import scala.util.Random
-
 import com.rojoma.simplearm.Managed
 import com.rojoma.simplearm.util._
+import com.socrata.curator.CuratorFromConfig
 import com.socrata.datacoordinator.common.{DataSourceFromConfig, SoQLCommon}
 import com.socrata.datacoordinator.common.DataSourceFromConfig.DSInfo
 import com.socrata.datacoordinator.secondary.sql.SqlSecondaryStoresConfig
+import com.socrata.datacoordinator.common.collocation.{CollocationLock, CollocationLockError, CollocationLockTimeout, CuratedCollocationLock}
 import com.socrata.datacoordinator.truth.universe._
 import com.socrata.datacoordinator.util._
 import com.socrata.soql.types.{SoQLType, SoQLValue}
@@ -37,7 +38,9 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
                                maxRetries: Int,
                                maxReplays: Int,
                                timingReport: TimingReport,
-                               messageProducer: MessageProducer) {
+                               messageProducer: MessageProducer,
+                               collocationLock: CollocationLock,
+                               collocationLockTimeoutMillis: Long) {
   val log = LoggerFactory.getLogger(classOf[SecondaryWatcher[_,_]])
   private val rand = new Random()
   // splay the sleep time +/- 5s to prevent watchers from getting in lock step
@@ -175,29 +178,52 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
     }
   }
 
-  private def completeSecondaryMoveJobs(u: Universe[CT, CV] with SecondaryManifestProvider with PlaybackToSecondaryProvider
-                                                        with SecondaryMoveJobsProvider,
-                                    job: SecondaryRecord): Unit = {
+  private def completeSecondaryMoveJobs(u: Universe[CT, CV] with SecondaryManifestProvider
+                                                            with PlaybackToSecondaryProvider
+                                                            with SecondaryMoveJobsProvider,
+                                        job: SecondaryRecord): Unit = {
     val moveJobs = u.secondaryMoveJobs
 
     val storeId = job.storeId
     val datasetId = job.datasetId
-    val movesToStore = moveJobs.jobsToStore(storeId, datasetId)
 
     def forLog(jobs: Seq[SecondaryMoveJob]): String = jobs.map(_.id).toString()
 
     if (job.pendingDrop) {
-      if (movesToStore.nonEmpty) {
-        // TODO: this is actually a race condition....
-        log.warn(s"Upon pending drop of dataset {} from store {} there are unexepected jobs moving to the store: {}",
-          datasetId.toString, storeId.toString, forLog(movesToStore))
-      }
+      // For pending drops when "completing" move jobs we acquire a collocation lock to avoid race conditions
+      // Note: the only currently automated process to mark a dataset for pending drop is here in the secondary
+      // watcher after a dataset has completed replication to a destination store in a move job.
+      try {
+        log.info("Attempting to acquire collocation lock for pending drop of dataset.")
+        if (collocationLock.acquire(collocationLockTimeoutMillis)) {
+          log.info("Acquired collocation lock for pending drop of dataset.")
 
-      val movesFromStore = moveJobs.jobsFromStore(storeId, datasetId)
-      log.info("Upon pending drop of dataset {} from store {} completed moves for jobs: {}",
-        datasetId.toString, storeId.toString, forLog(movesFromStore))
-      moveJobs.markJobsFromStoreComplete(storeId, datasetId)
+          val movesToStore = moveJobs.jobsToStore(storeId, datasetId)
+
+          if (movesToStore.nonEmpty) {
+            log.error("Upon pending drop of dataset {} from store {} there are unexepected jobs moving to the store: {}",
+              datasetId.toString, storeId.toString, forLog(movesToStore))
+            throw new Exception("Unexpected jobs moving dataset to store when it is pending drop!")
+          }
+
+          val movesFromStore = moveJobs.jobsFromStore(storeId, datasetId)
+          log.info("Upon pending drop of dataset {} from store {} completed moves for jobs: {}",
+            datasetId.toString, storeId.toString, forLog(movesFromStore))
+          moveJobs.markJobsFromStoreComplete(storeId, datasetId)
+
+          collocationLock.release()
+        } else {
+          log.error("Failed to acquire collocation lock during pending drop of {}")
+          throw CollocationLockTimeout(collocationLockTimeoutMillis)
+        }
+      } catch {
+        case error: CollocationLockError =>
+          log.error("Unexpected error with collocation lock during pending drop of dataset!", error)
+          throw error
+      }
     } else {
+      val movesToStore = moveJobs.jobsToStore(storeId, datasetId)
+
       log.info("Upon replicating dataset {} to store {} started moves for jobs: {}",
         datasetId.toString, storeId.toString, forLog(movesToStore))
       moveJobs.markJobsToStoreComplete(storeId, datasetId)
@@ -461,12 +487,17 @@ object SecondaryWatcherApp {
     })
 
     for { dsInfo <- DataSourceFromConfig(config.database)
-          reporter <- MetricsReporter.managed(metricsOptions) } {
+          reporter <- MetricsReporter.managed(metricsOptions)
+          curator <- CuratorFromConfig(config.curator)
+    } {
       val secondaries = config.secondaryConfig.instances.keysIterator.map { instanceName =>
         instanceName -> secondaryProvider(config.secondaryConfig.instances(instanceName).config)
       }.toMap
 
       val executor = Executors.newCachedThreadPool()
+
+      val collocationLockPath =  s"/${config.discovery.name}/${config.collocation.lockPath}"
+      val collocationLock = new CuratedCollocationLock(curator, collocationLockPath)
 
       val common = new SoQLCommon(
         dsInfo.dataSource,
@@ -489,7 +520,8 @@ object SecondaryWatcherApp {
 
       val w = new SecondaryWatcher(common.universe, config.watcherId, config.claimTimeout, config.backoffInterval,
                                    config.replayWait, config.maxReplayWait, config.maxRetries,
-                                   config.maxReplays.getOrElse(Integer.MAX_VALUE), common.timingReport, messageProducer)
+                                   config.maxReplays.getOrElse(Integer.MAX_VALUE), common.timingReport,
+                                   messageProducer, collocationLock, config.collocation.lockTimeout.toMillis)
       val cm = new SecondaryWatcherClaimManager(dsInfo, config.watcherId, config.claimTimeout)
 
       val SIGTERM = new Signal("TERM")

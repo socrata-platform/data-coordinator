@@ -3,6 +3,7 @@ package com.socrata.datacoordinator.service
 import com.rojoma.json.v3.ast.{JString, JValue}
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.common.soql.SoQLRep
+import com.socrata.datacoordinator.common.collocation.{CollocationLock, CuratedCollocationLock}
 import com.socrata.datacoordinator.common.{DataSourceFromConfig, SoQLCommon}
 import com.socrata.datacoordinator.id.{ColumnId, DatasetId, DatasetInternalName, UserColumnId}
 import com.socrata.datacoordinator.resources._
