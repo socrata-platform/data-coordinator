@@ -196,36 +196,32 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
       try {
         log.info("Attempting to acquire collocation lock for pending drop of dataset.")
         if (collocationLock.acquire(collocationLockTimeout.toMillis)) {
-          log.info("Acquired collocation lock for pending drop of dataset.")
+          try {
+            log.info("Acquired collocation lock for pending drop of dataset.")
 
-          val movesToStore = moveJobs.jobsToStore(storeId, datasetId)
+            val movesToStore = moveJobs.jobsToStore(storeId, datasetId)
 
-          if (movesToStore.nonEmpty) {
-            log.error("Upon pending drop of dataset {} from store {} there are unexepected jobs moving to the store: {}",
-              datasetId.toString, storeId.toString, forLog(movesToStore))
-            throw new Exception("Unexpected jobs moving dataset to store when it is pending drop!")
+            if (movesToStore.nonEmpty) {
+              log.error("Upon pending drop of dataset {} from store {} there are unexepected jobs moving to the store: {}",
+                datasetId.toString, storeId.toString, forLog(movesToStore))
+              throw new Exception("Unexpected jobs moving dataset to store when it is pending drop!")
+            }
+
+            val movesFromStore = moveJobs.jobsFromStore(storeId, datasetId)
+            log.info("Upon pending drop of dataset {} from store {} completed moves for jobs: {}",
+              datasetId.toString, storeId.toString, forLog(movesFromStore))
+            moveJobs.markJobsFromStoreComplete(storeId, datasetId)
+          } finally {
+            collocationLock.release()
           }
-
-          val movesFromStore = moveJobs.jobsFromStore(storeId, datasetId)
-          log.info("Upon pending drop of dataset {} from store {} completed moves for jobs: {}",
-            datasetId.toString, storeId.toString, forLog(movesFromStore))
-          moveJobs.markJobsFromStoreComplete(storeId, datasetId)
         } else {
-          log.error("Failed to acquire collocation lock during pending drop of {}")
+          log.error("Failed to acquire collocation lock during pending drop of {}", datasetId)
           throw CollocationLockTimeout(collocationLockTimeout.toMillis)
         }
       } catch {
         case error: CollocationLockError =>
-          log.error("Unexpected error with acquiring collocation lock during pending drop of dataset!", error)
+          log.error("Unexpected error with collocation lock during pending drop of dataset!", error)
           throw error
-      } finally {
-        try {
-          collocationLock.release()
-        } catch {
-          case error: CollocationLockError =>
-            log.error("Unexpected error with releasing collocation lock during pending drop of dataset!", error)
-            throw error
-        }
       }
     } else {
       val movesToStore = moveJobs.jobsToStore(storeId, datasetId)
