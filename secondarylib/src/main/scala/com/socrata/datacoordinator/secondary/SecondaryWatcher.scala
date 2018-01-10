@@ -210,16 +210,22 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
           log.info("Upon pending drop of dataset {} from store {} completed moves for jobs: {}",
             datasetId.toString, storeId.toString, forLog(movesFromStore))
           moveJobs.markJobsFromStoreComplete(storeId, datasetId)
-
-          collocationLock.release()
         } else {
           log.error("Failed to acquire collocation lock during pending drop of {}")
           throw CollocationLockTimeout(collocationLockTimeoutMillis)
         }
       } catch {
         case error: CollocationLockError =>
-          log.error("Unexpected error with collocation lock during pending drop of dataset!", error)
+          log.error("Unexpected error with acquiring collocation lock during pending drop of dataset!", error)
           throw error
+      } finally {
+        try {
+          collocationLock.release()
+        } catch {
+          case error: CollocationLockError =>
+            log.error("Unexpected error with releasing collocation lock during pending drop of dataset!", error)
+            throw error
+        }
       }
     } else {
       val movesToStore = moveJobs.jobsToStore(storeId, datasetId)
