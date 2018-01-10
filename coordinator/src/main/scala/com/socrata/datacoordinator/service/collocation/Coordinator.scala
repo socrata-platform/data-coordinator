@@ -1,5 +1,7 @@
 package com.socrata.datacoordinator.service.collocation
 
+import java.util.UUID
+
 import com.rojoma.json.v3.ast.JObject
 import com.rojoma.json.v3.codec.{DecodeError, JsonDecode}
 import com.rojoma.json.v3.util.AutomaticJsonDecodeBuilder
@@ -7,7 +9,6 @@ import com.socrata.datacoordinator.external.CollocationError
 import com.socrata.datacoordinator.id.{DatasetId, DatasetInternalName}
 import com.socrata.datacoordinator.resources.collocation._
 import com.socrata.datacoordinator.resources.SecondariesOfDatasetResult
-import com.socrata.datacoordinator.secondary.SecondaryMoveJob
 import com.socrata.datacoordinator.secondary.config.SecondaryGroupConfig
 import com.socrata.http.client._
 
@@ -37,7 +38,8 @@ trait Coordinator {
   def collocatedDatasetsOnInstance(instance: String, datasets: Set[DatasetInternalName]): Either[RequestError, CollocatedDatasetsResult]
   def secondariesOfDataset(internalName: DatasetInternalName): Either[RequestError, Option[SecondariesOfDatasetResult]]
   def secondaryMoveJobs(storeGroup: String, internalName: DatasetInternalName): Either[ErrorResult, SecondaryMoveJobsResult]
-  def ensureSecondaryMoveJob(storeGroup: String, internalName: DatasetInternalName, request: SecondaryMoveJobRequest): Either[ErrorResult, Either[InvalidMoveJob, SecondaryMoveJob]]
+  def ensureSecondaryMoveJob(storeGroup: String, internalName: DatasetInternalName, request: SecondaryMoveJobRequest): Either[ErrorResult, Either[InvalidMoveJob, Boolean]]
+  def rollbackSecondaryMoveJob(instance: String, jobId: UUID, move: Move, dropFromStore: Boolean): Option[ErrorResult]
 }
 
 class HttpCoordinator(isThisInstance: String => Boolean,
@@ -47,7 +49,8 @@ class HttpCoordinator(isThisInstance: String => Boolean,
                       collocatedDatasets: Set[DatasetInternalName] => CollocatedDatasetsResult,
                       secondariesOfDataset: DatasetId => Option[SecondariesOfDatasetResult],
                       secondaryMoveJobs: (String, DatasetId) => Either[ResourceNotFound, SecondaryMoveJobsResult],
-                      ensureSecondaryMoveJob: (String, DatasetId, SecondaryMoveJobRequest) => Either[ResourceNotFound, Either[InvalidMoveJob, SecondaryMoveJob]]) extends Coordinator {
+                      ensureSecondaryMoveJob: (String, DatasetId, SecondaryMoveJobRequest) => Either[ResourceNotFound, Either[InvalidMoveJob, Boolean]],
+                      rollbackSecondaryMoveJob: (DatasetId, SecondaryMoveJobRequest, Boolean) => Option[DatasetNotFound]) extends Coordinator {
 
   private val log = org.slf4j.LoggerFactory.getLogger(classOf[HttpCoordinator])
 
@@ -107,8 +110,8 @@ class HttpCoordinator(isThisInstance: String => Boolean,
     }
   }
 
-  private def secondaryMoveRoute(storeGroup: String, internalName: DatasetInternalName) =
-  s"/secondary-manifest/$storeGroup/move/${internalName.underlying}"
+  private def secondaryMoveRoute(storeGroup: Option[String], internalName: DatasetInternalName) =
+  s"/secondary-manifest/move/${storeGroup.map(_ + "/").getOrElse("")}${internalName.underlying}"
 
   override def secondaryMoveJobs(storeGroup: String, internalName: DatasetInternalName): Either[ErrorResult, SecondaryMoveJobsResult] = {
     if (isThisInstance(internalName.instance)) {
@@ -117,7 +120,7 @@ class HttpCoordinator(isThisInstance: String => Boolean,
         case Left(resourceNotFound) => Left(resourceNotFound)
       }
     } else {
-      request[SecondaryMoveJobsResult](internalName.instance, secondaryMoveRoute(storeGroup, internalName))(_.get) match {
+      request[SecondaryMoveJobsResult](internalName.instance, secondaryMoveRoute(Some(storeGroup), internalName))(_.get) match {
         case Right(Some(result)) => Right(result)
         case Right(None) => Left(DatasetNotFound(internalName))
         case Left(requestError) => Left(requestError)
@@ -127,15 +130,15 @@ class HttpCoordinator(isThisInstance: String => Boolean,
 
   override def ensureSecondaryMoveJob(storeGroup: String,
                                       internalName: DatasetInternalName,
-                                      request: SecondaryMoveJobRequest): Either[ErrorResult, Either[InvalidMoveJob, SecondaryMoveJob]] = {
+                                      request: SecondaryMoveJobRequest): Either[ErrorResult, Either[InvalidMoveJob, Boolean]] = {
     if (secondaryGroups.contains(storeGroup)) {
       if (isThisInstance(internalName.instance)) {
         ensureSecondaryMoveJob(storeGroup, internalName.datasetId, request)
       } else {
         val instance = internalName.instance
-        doRequest[Either[ResourceNotFound, Either[InvalidMoveJob, SecondaryMoveJob]]](instance, secondaryMoveRoute(storeGroup, internalName), _.jsonBody(request)) { response =>
+        doRequest[Either[ResourceNotFound, Either[InvalidMoveJob, Boolean]]](instance, secondaryMoveRoute(Some(storeGroup), internalName), _.jsonBody(request)) { response =>
           response.resultCode match {
-            case 200 => response.value[SecondaryMoveJob]() match {
+            case 200 => response.value[Boolean]() match {
               case Right(result) => Right(Right(Right(result)))
               case Left(error) => Left(ResponseError(error))
             }
@@ -168,6 +171,33 @@ class HttpCoordinator(isThisInstance: String => Boolean,
       }
     } else {
       Left(StoreGroupNotFound(storeGroup))
+    }
+  }
+
+  override def rollbackSecondaryMoveJob(instance: String, jobId: UUID, move: Move, dropFromStore: Boolean): Option[ErrorResult] = {
+    val request = SecondaryMoveJobRequest(jobId, move.storeIdFrom, move.storeIdTo)
+    if (isThisInstance(instance)) {
+      rollbackSecondaryMoveJob(move.datasetInternalName.datasetId, request, dropFromStore)
+    } else {
+      val parameters = Seq(
+        ("rollback", "true"),
+        ("dropFromStore", dropFromStore.toString)
+      )
+      doRequest[Option[ErrorResult]](instance, secondaryMoveRoute(None, move.datasetInternalName),
+        _.addParameters(parameters).jsonBody(request)) { response =>
+        response.resultCode match {
+          case 200 => Right(None) // success
+          case 404 => Right(Some(DatasetNotFound(move.datasetInternalName)))
+          case resultCode =>
+            val message = s"Received unexpected result code $resultCode from other instance $instance!"
+            log.error(message)
+            Right(Some(UnexpectedError(message)))
+        }
+      }
+    } match {
+      case Right(None) => None
+      case Right(Some(error)) => Some(error)
+      case Left(error) => Some(error)
     }
   }
 }

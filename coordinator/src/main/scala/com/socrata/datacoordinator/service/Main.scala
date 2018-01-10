@@ -1,5 +1,7 @@
 package com.socrata.datacoordinator.service
 
+import java.util.UUID
+
 import com.rojoma.json.v3.ast.{JString, JValue}
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.common.soql.SoQLRep
@@ -159,7 +161,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
   
   def ensureSecondaryMoveJob(storeGroup: String,
                              datasetId: DatasetId,
-                             request: SecondaryMoveJobRequest): Either[ResourceNotFound, Either[InvalidMoveJob, SecondaryMoveJob]] = {
+                             request: SecondaryMoveJobRequest): Either[ResourceNotFound, Either[InvalidMoveJob, Boolean]] = {
     serviceConfig.secondary.groups.get(storeGroup) match {
       case Some(groupConfig) =>
         for (u <- common.universe) yield {
@@ -200,19 +202,11 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
 
                 u.secondaryMoveJobs.addJob(request.jobId, datasetId, fromStoreId, toStoreId)
 
-                Right(SecondaryMoveJob(
-                  id = request.jobId,
-                  datasetId = datasetId,
-                  fromStoreId = fromStoreId,
-                  toStoreId = toStoreId,
-                  moveFromStoreComplete = false,
-                  moveToStoreComplete = false,
-                  createdAtMillis = 0L // TODO
-                ))
+                Right(true)
               } else if (!futureStores(fromStoreId) && currentStores(toStoreId)) {
                 // there is an existing (not complete) job doing the same thing
                 existingJobs.find { job => job.fromStoreId == fromStoreId && job.toStoreId == toStoreId } match {
-                  case Some(existingJob) => Right(existingJob)
+                  case Some(existingJob) => Right(false)
                   case None => ???
                 }
               } else {
@@ -229,6 +223,29 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
     }
   }
 
+  def rollbackSecondaryMoveJob(datasetId: DatasetId,
+                               request: SecondaryMoveJobRequest,
+                               dropFromStore: Boolean): Option[DatasetNotFound] = {
+    for (u <- common.universe) yield {
+      u.datasetMapWriter.datasetInfo(datasetId, serviceConfig.writeLockTimeout) match {
+        case Some(_) =>
+          u.secondaryMoveJobs.deleteJob(request.jobId, datasetId, request.fromStoreId, request.toStoreId)
+
+          try {
+            u.secondaryManifest.addDataset(request.fromStoreId, datasetId)
+          } catch {
+            case _: DatasetAlreadyInSecondary => // that's fine
+          }
+
+          if (dropFromStore) u.secondaryManifest.markDatasetForDrop(request.toStoreId, datasetId)
+
+          None
+        case None =>
+          Some(DatasetNotFound(common.datasetInternalNameFromDatasetId(datasetId)))
+      }
+    }
+  }
+
   def collocatedDatasets(datasets: Set[DatasetInternalName]): CollocatedDatasetsResult = {
     for (u <- common.universe) yield {
       val collocatedDatasets = u.collocationManifest.collocatedDatasets(datasets.map(_.underlying)).map { dataset =>
@@ -239,6 +256,12 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
         }
       }
       CollocatedDatasetsResult(collocatedDatasets)
+    }
+  }
+
+  def addCollocations(collocations: Seq[(DatasetInternalName, DatasetInternalName)]): Unit = {
+    for (u <- common.universe) yield {
+      u.collocationManifest.addCollocations(collocations.map { case (l, r) => (l.underlying, r.underlying) }.toSet)
     }
   }
 
@@ -543,12 +566,14 @@ object Main extends DynamicPortMap {
             operations.collocatedDatasets,
             operations.secondariesOfDataset,
             operations.secondaryMoveJobs,
-            operations.ensureSecondaryMoveJob
+            operations.ensureSecondaryMoveJob,
+            operations.rollbackSecondaryMoveJob
           ) with CollocatorProvider {
             override val collocator = new CoordinatedCollocator(
               collocationGroup,
               serviceConfig.secondary.defaultGroups,
               this,
+              operations.addCollocations,
               lock,
               serviceConfig.collocation.lockTimeout.toMillis
             )
@@ -559,6 +584,15 @@ object Main extends DynamicPortMap {
           SecondaryManifestsCollocateResource(_: String, collocationCoordinator(hostAndPort, lock))
         }
 
+        val secondaryManifestsMoveResource = SecondaryManifestsMoveResource(
+          _: Option[String],
+          _: DatasetId,
+          operations.secondaryMoveJobs,
+          operations.ensureSecondaryMoveJob,
+          operations.rollbackSecondaryMoveJob,
+          common.datasetInternalNameFromDatasetId
+        )
+
         def collocationManifestsResource(lock: CollocationLock)(hostAndPort: String => Option[(String, Int)]) = {
           CollocationManifestsResource(_: Option[String], collocationCoordinator(hostAndPort, lock))
         }
@@ -568,9 +602,6 @@ object Main extends DynamicPortMap {
           operations.ensureInSecondaryGroup, operations.deleteFromSecondary, common.internalNameFromDatasetId)
         val secondariesOfDatasetResource = SecondariesOfDatasetResource(_: DatasetId, operations.secondariesOfDataset,
           common.internalNameFromDatasetId)
-        val secondaryMoveJobsResource = SecondaryMoveJobsResource(_: String, _: DatasetId,
-          operations.secondaryMoveJobs, operations.ensureSecondaryMoveJob, common.datasetInternalNameFromDatasetId)
-
 
         val serv = Service(serviceConfig = serviceConfig,
           formatDatasetId = common.internalNameFromDatasetId,
@@ -585,7 +616,7 @@ object Main extends DynamicPortMap {
           snapshottedResource = snapshottedResource,
           secondaryManifestsResource = secondaryManifestsResource,
           secondaryManifestsCollocateResource = secondaryManifestsCollocateResource,
-          secondaryMoveJobsResource = secondaryMoveJobsResource,
+          secondaryManifestsMoveResource = secondaryManifestsMoveResource,
           collocationManifestsResource = collocationManifestsResource,
           datasetSecondaryStatusResource = datasetSecondaryStatusResource,
           secondariesOfDatasetResource = secondariesOfDatasetResource) _

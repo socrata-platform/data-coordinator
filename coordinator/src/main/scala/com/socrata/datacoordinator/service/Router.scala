@@ -1,7 +1,5 @@
 package com.socrata.datacoordinator.service
 
-import java.util.UUID
-
 import com.socrata.datacoordinator.id.{DatasetId, RollupName}
 import com.socrata.datacoordinator.resources.SodaResource
 import com.socrata.http.server._
@@ -21,7 +19,7 @@ case class Router(parseDatasetId: String => Option[DatasetId],
                   snapshottedResource: SodaResource,
                   secondaryManifestsResource: Option[String] => SodaResource,
                   secondaryManifestsCollocateResource: String => SodaResource,
-                  secondaryMoveJobsResource: (String, DatasetId) => SodaResource,
+                  secondaryManifestsMoveResource: (Option[String], DatasetId) => SodaResource,
                   datasetSecondaryStatusResource: (Option[String], DatasetId) => SodaResource,
                   secondariesOfDatasetResource: DatasetId => SodaResource,
                   collocationManifestsResource: Option[String] => SodaResource,
@@ -66,7 +64,8 @@ case class Router(parseDatasetId: String => Option[DatasetId],
       Route("/secondary-manifest/{OptString}", secondaryManifestsResource),
       Route("/secondary-manifest/{OptString}/{DatasetId}", datasetSecondaryStatusResource),
       Route("/secondary-manifest/{String}/collocate", secondaryManifestsCollocateResource),
-      Route("/secondary-manifest/{String}/move/{DatasetId}", secondaryMoveJobsResource),
+      Route("/secondary-manifest/move/{DatasetId}", secondaryManifestsMoveResource(None, _: DatasetId)),
+      Route("/secondary-manifest/move/{OptString}/{DatasetId}", secondaryManifestsMoveResource),
 
       Route("/secondaries-of-dataset/{DatasetId}", secondariesOfDatasetResource),
 
