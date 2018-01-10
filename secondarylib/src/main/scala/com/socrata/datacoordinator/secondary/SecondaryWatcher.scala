@@ -40,7 +40,7 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
                                timingReport: TimingReport,
                                messageProducer: MessageProducer,
                                collocationLock: CollocationLock,
-                               collocationLockTimeoutMillis: Long) {
+                               collocationLockTimeout: FiniteDuration) {
   val log = LoggerFactory.getLogger(classOf[SecondaryWatcher[_,_]])
   private val rand = new Random()
   // splay the sleep time +/- 5s to prevent watchers from getting in lock step
@@ -195,7 +195,7 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
       // watcher after a dataset has completed replication to a destination store in a move job.
       try {
         log.info("Attempting to acquire collocation lock for pending drop of dataset.")
-        if (collocationLock.acquire(collocationLockTimeoutMillis)) {
+        if (collocationLock.acquire(collocationLockTimeout.toMillis)) {
           log.info("Acquired collocation lock for pending drop of dataset.")
 
           val movesToStore = moveJobs.jobsToStore(storeId, datasetId)
@@ -212,7 +212,7 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
           moveJobs.markJobsFromStoreComplete(storeId, datasetId)
         } else {
           log.error("Failed to acquire collocation lock during pending drop of {}")
-          throw CollocationLockTimeout(collocationLockTimeoutMillis)
+          throw CollocationLockTimeout(collocationLockTimeout.toMillis)
         }
       } catch {
         case error: CollocationLockError =>
@@ -527,7 +527,7 @@ object SecondaryWatcherApp {
       val w = new SecondaryWatcher(common.universe, config.watcherId, config.claimTimeout, config.backoffInterval,
                                    config.replayWait, config.maxReplayWait, config.maxRetries,
                                    config.maxReplays.getOrElse(Integer.MAX_VALUE), common.timingReport,
-                                   messageProducer, collocationLock, config.collocation.lockTimeout.toMillis)
+                                   messageProducer, collocationLock, config.collocation.lockTimeout)
       val cm = new SecondaryWatcherClaimManager(dsInfo, config.watcherId, config.claimTimeout)
 
       val SIGTERM = new Signal("TERM")

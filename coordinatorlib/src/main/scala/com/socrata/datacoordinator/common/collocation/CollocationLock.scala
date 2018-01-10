@@ -17,6 +17,11 @@ trait CollocationLock {
   def release(): Unit
 }
 
+object NoOPCollocationLock extends CollocationLock {
+  override def acquire(timeoutMillis: Long): Boolean = true
+  override def release(): Unit = {}
+}
+
 class CuratedCollocationLock(curator: CuratorFramework, lockPath: String) extends CollocationLock {
   val lock = new InterProcessMutex(curator, s"/${curator.getNamespace}$lockPath")
 
