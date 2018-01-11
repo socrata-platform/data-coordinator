@@ -5,6 +5,7 @@ import java.util.UUID
 
 import com.rojoma.json.io.JsonParseException
 import com.rojoma.json.v3.util.JsonUtil
+import com.socrata.datacoordinator.common.collocation.{CollocationLockError, CollocationLockTimeout}
 import com.socrata.datacoordinator.service.collocation._
 import com.socrata.http.server.responses._
 import com.socrata.http.server.{HttpRequest, HttpResponse}

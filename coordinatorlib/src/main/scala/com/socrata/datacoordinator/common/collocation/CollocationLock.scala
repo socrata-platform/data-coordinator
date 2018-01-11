@@ -1,4 +1,4 @@
-package com.socrata.datacoordinator.service.collocation
+package com.socrata.datacoordinator.common.collocation
 
 import java.util.concurrent.TimeUnit
 
@@ -15,6 +15,11 @@ case class CollocationLockError(action: String, cause: Exception)
 trait CollocationLock {
   def acquire(timeoutMillis: Long): Boolean
   def release(): Unit
+}
+
+object NoOPCollocationLock extends CollocationLock {
+  override def acquire(timeoutMillis: Long): Boolean = true
+  override def release(): Unit = {}
 }
 
 class CuratedCollocationLock(curator: CuratorFramework, lockPath: String) extends CollocationLock {

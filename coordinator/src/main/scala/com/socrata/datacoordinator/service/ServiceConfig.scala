@@ -1,7 +1,8 @@
 package com.socrata.datacoordinator.service
 
 import com.socrata.datacoordinator.secondary.config.SecondaryConfig
-import com.socrata.datacoordinator.common.{CollocationConfig, DataSourceConfig}
+import com.socrata.datacoordinator.common.collocation.CollocationConfig
+import com.socrata.datacoordinator.common.DataSourceConfig
 import com.socrata.http.server.livenesscheck.LivenessCheckConfig
 import com.socrata.curator.{CuratorConfig, DiscoveryConfig}
 import com.typesafe.config.Config

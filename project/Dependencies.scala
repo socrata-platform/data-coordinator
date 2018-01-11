@@ -16,6 +16,7 @@ object Dependencies {
     val soqlReference   = "2.9.0"
     val thirdPartyUtils = "4.0.1"
     val curatorUtils    = "1.0.3"
+    val httpCuratorBroker = "3.10.1"
     val typesafeConfig  = "1.2.1"
   }
 
@@ -33,6 +34,7 @@ object Dependencies {
   val jodaTime    = "joda-time" % "joda-time"    % versions.jodaTime
 
   val socrataCuratorUtils = "com.socrata" %% "socrata-curator-utils" % versions.curatorUtils
+  val socrataHttpCuratorBroker = "com.socrata"    %% "socrata-http-curator-broker" % versions.httpCuratorBroker // brings in org.apache.curator
   val socrataThirdPartyUtils = "com.socrata" %% "socrata-thirdparty-utils" % versions.thirdPartyUtils
 
   val soqlEnvironment = "com.socrata" %% "soql-environment" % versions.soqlReference

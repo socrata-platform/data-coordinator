@@ -5,14 +5,16 @@ import java.io.OutputStream
 import java.sql.Connection
 import java.util.concurrent.{Executors, TimeUnit}
 import java.util.UUID
+
 import com.socrata.datacoordinator.secondary.messaging.NoOpMessageProducer
 import org.h2.jdbcx.JdbcDataSource
 import org.scalamock.scalatest.MockFactory
-import org.scalatest.{MustMatchers, FunSuite}
+import org.scalatest.{FunSuite, MustMatchers}
 import org.slf4j.LoggerFactory
-import scala.concurrent.duration._
 
+import scala.concurrent.duration._
 import com.socrata.datacoordinator.common.SoQLCommon
+import com.socrata.datacoordinator.common.collocation.NoOPCollocationLock
 import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.truth.universe._
 import com.socrata.datacoordinator.truth.metadata.{LifecycleStage => LS}
@@ -52,7 +54,8 @@ class SecondaryWatcherTest extends FunSuite with MustMatchers with MockFactory {
     val testManifest = mock[SecondaryManifest]
 
     val w = new SecondaryWatcher(common.universe, watcherId, claimTimeout,
-                                 10.seconds, 60.seconds, 10.minutes, 2, 10, common.timingReport, NoOpMessageProducer) {
+                                 10.seconds, 60.seconds, 10.minutes, 2, 10, common.timingReport,
+                                 NoOpMessageProducer, NoOPCollocationLock, 100.millis) {
       override protected def manifest(u: Universe[common.CT, common.CV] with
                                          SecondaryManifestProvider with PlaybackToSecondaryProvider):
         SecondaryManifest = testManifest
@@ -83,7 +86,8 @@ class SecondaryWatcherTest extends FunSuite with MustMatchers with MockFactory {
     val testManifest = mock[SecondaryManifest]
 
     val w = new SecondaryWatcher(common.universe, watcherId, claimTimeout,
-                                 10.seconds, 60.seconds, 10.minutes, 2, 10, common.timingReport, NoOpMessageProducer) {
+                                 10.seconds, 60.seconds, 10.minutes, 2, 10, common.timingReport,
+                                 NoOpMessageProducer, NoOPCollocationLock, 100.millis) {
       override protected def manifest(u: Universe[common.CT, common.CV] with
                                          SecondaryManifestProvider with PlaybackToSecondaryProvider):
         SecondaryManifest = testManifest

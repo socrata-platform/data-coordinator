@@ -11,6 +11,8 @@ object CoordinatorLib {
       metricsScala,
       rojomaJson,
       rojomaSimpleArm,
+      socrataCuratorUtils,
+      socrataHttpCuratorBroker,
       socrataThirdPartyUtils,
       soqlEnvironment,
       soqlStdlib,
