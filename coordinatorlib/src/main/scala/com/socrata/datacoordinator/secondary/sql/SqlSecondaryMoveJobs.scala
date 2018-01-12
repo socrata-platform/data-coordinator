@@ -90,4 +90,19 @@ class SqlSecondaryMoveJobs(conn: Connection) extends SecondaryMoveJobs {
       stmt.setString(2, storeId)
     }
   }
+
+  override def deleteJob(jodId: UUID, datasetId: DatasetId, fromStoreId: String, toStoreId: String): Unit = {
+    using(conn.prepareStatement(
+      s"""DELETE FROM $tableName
+         |      WHERE job_id = ?
+         |      AND dataset_system_id = ?
+         |      AND from_store_id = ?
+         |      AND to_store_id = ?""".stripMargin)) { stmt =>
+      stmt.setObject(1, jodId)
+      stmt.setDatasetId(2, datasetId)
+      stmt.setString(3, fromStoreId)
+      stmt.setString(4, toStoreId)
+      stmt.execute()
+    }
+  }
 }

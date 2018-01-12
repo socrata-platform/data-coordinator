@@ -7,7 +7,7 @@ import com.socrata.datacoordinator.external.CollocationError
 import com.socrata.datacoordinator.id.DatasetInternalName
 import com.socrata.datacoordinator.resources.SodaResource
 import com.socrata.datacoordinator.service.ServiceUtil.JsonContentType
-import com.socrata.http.server.HttpResponse
+import com.socrata.http.server.{HttpRequest, HttpResponse}
 import com.socrata.http.server.responses._
 import com.socrata.http.server.implicits._
 import com.socrata.http.server.responses.Write
@@ -16,6 +16,17 @@ import org.slf4j.Logger
 abstract class CollocationSodaResource extends SodaResource {
 
   protected val log: Logger
+
+  def withBooleanParam(name: String, req: HttpRequest)(handleRequest: Boolean => HttpResponse): HttpResponse = {
+    try {
+      val param = Option(req.servletRequest.getParameter(name)).getOrElse("false").toBoolean
+      handleRequest(param)
+    } catch {
+      case e: IllegalArgumentException =>
+        log.warn("Unable to parse parameter dropFromStore as Boolean", e)
+        BadRequest // TODO: some kind of error response body
+    }
+  }
 
   def responseOK[T : JsonEncode](content: T): HttpResponse = {
     OK ~> Json(content, pretty = true)

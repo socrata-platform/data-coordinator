@@ -5,7 +5,7 @@ import java.util.UUID
 import com.rojoma.json.v3.util._
 import com.socrata.datacoordinator.common.collocation.{CollocationLock, CollocationLockError, CollocationLockTimeout}
 import com.socrata.datacoordinator.id.DatasetInternalName
-import com.socrata.datacoordinator.resources.collocation.CollocatedDatasetsResult
+import com.socrata.datacoordinator.resources.collocation.{CollocatedDatasetsResult, DatasetNotInStore, SecondaryMoveJobRequest, StoreNotAcceptingDatasets}
 import com.socrata.datacoordinator.service.collocation.secondary.stores.SecondaryStoreSelector
 
 import scala.annotation.tailrec
@@ -55,10 +55,11 @@ trait Collocator {
   def collocatedDatasets(datasets: Set[DatasetInternalName]): Either[RequestError, CollocatedDatasetsResult]
   def defaultStoreGroups: Set[String]
   def explainCollocation(storeGroup: String, request: CollocationRequest): Either[ErrorResult, CollocationResult]
-  def executeCollocation(jobId: UUID, storeGroup: String, request: CollocationRequest): Either[ErrorResult, CollocationResult]
+  def initiateCollocation(jobId: UUID, storeGroup: String, request: CollocationRequest): (Either[ErrorResult, CollocationResult], Seq[(Move, Boolean)])
+  def saveCollocation(request: CollocationRequest): Unit
   def beginCollocation(): Unit
   def commitCollocation(): Unit
-  def rollbackCollocation(jobId: UUID): Option[ErrorResult]
+  def rollbackCollocation(jobId: UUID, moves: Seq[(Move, Boolean)]): Option[ErrorResult]
 }
 
 trait CollocatorProvider {
@@ -68,6 +69,7 @@ trait CollocatorProvider {
 class CoordinatedCollocator(collocationGroup: Set[String],
                             override val defaultStoreGroups: Set[String],
                             coordinator: Coordinator,
+                            addCollocations: Seq[(DatasetInternalName, DatasetInternalName)] => Unit,
                             lock: CollocationLock,
                             lockTimeoutMillis: Long) extends Collocator {
 
@@ -214,24 +216,62 @@ class CoordinatedCollocator(collocationGroup: Set[String],
     }
   }
 
-  override def executeCollocation(jobId: UUID,
+  override def initiateCollocation(jobId: UUID,
                                   storeGroup: String,
-                                  request: CollocationRequest): Either[ErrorResult, CollocationResult] = {
+                                  request: CollocationRequest): (Either[ErrorResult, CollocationResult], Seq[(Move, Boolean)]) = {
     log.info("Executing collocation on secondary store group {}", storeGroup)
     explainCollocation(storeGroup, request) match {
       case Right(CollocationResult(_, Approved, _, cost, moves)) =>
 
-        // TODO: execute
+        log.info("Ensuring required move jobs exists: {}", moves)
+        val moveResults = moves.map { move =>
+          val request = SecondaryMoveJobRequest(jobId, move.storeIdFrom, move.storeIdTo)
+          val result = try {
+            coordinator.ensureSecondaryMoveJob(storeGroup, move.datasetInternalName, request) match {
+              case Right(Right(datasetNewToStore)) => // successfully added job
+                Right(datasetNewToStore)
+              case Right(Left(StoreNotAcceptingDatasets)) =>
+                log.error(s"Attempted to move dataset ${move.datasetInternalName} to store {} not accepting datasets!",
+                  move.storeIdTo)
+                Left(UnexpectedError("Attempted to move dataset to store not accepting new datasets during collocation!"))
+              case Right(Left(DatasetNotInStore)) =>
+                log.error(s"Attempted to move dataset ${move.datasetInternalName} from store {} that it is not in!",
+                  move.storeIdFrom)
+                Left(UnexpectedError("Attempted to move dataset from store that it is not in during collocation!"))
+              case Left(error) => Left(error)
+            }
+          } catch {
+            case error: Exception =>
+              log.error("Unexpected exception while ensuring secondary move jobs", error)
+              Left(UnexpectedError("")) // TODO something better here
+          }
 
-        Right(CollocationResult(
+          (result, move)
+        }
+
+        val successfulMoves = moveResults.filter(_._1.isRight).map { case (result, move) => (move, result.right.get) }
+
+        moveResults.find(_._1.isLeft) match {
+          case Some(error) => return (Left(error._1.left.get), successfulMoves)
+          case None =>
+        }
+
+        (Right(CollocationResult(
           id = Some(jobId),
           status = InProgress,
           message = InProgress.message,
           cost = cost,
           moves = moves
-        ))
-      case other => other
+        )), successfulMoves)
+      case other => (other, Seq.empty)
     }
+  }
+
+  override def saveCollocation(request: CollocationRequest): Unit = {
+    // save the collocation relationships to the database after ensuring all required moves jobs exists
+    // this way we only need to roll back jobs for our job id back if something goes wrong
+    log.info("Adding collocation relationships to the manifest: {}", request.collocations)
+    addCollocations(request.collocations)
   }
 
   override def beginCollocation(): Unit = {
@@ -261,7 +301,16 @@ class CoordinatedCollocator(collocationGroup: Set[String],
     }
   }
 
-  override def rollbackCollocation(jobId: UUID): Option[ErrorResult] = {
-    ???
+  override def rollbackCollocation(jobId: UUID,
+                                   moves: Seq[(Move, Boolean)]): Option[ErrorResult] = {
+    val errors = moves.flatMap { case (move, dropFromStore) =>
+      coordinator.rollbackSecondaryMoveJob(move.datasetInternalName.instance, jobId, move, dropFromStore)
+    }
+
+    errors.foreach { error =>
+      log.error("Encountered error during rollback of collocation!!!", error)
+    }
+
+    errors.headOption
   }
 }

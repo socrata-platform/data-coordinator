@@ -19,7 +19,7 @@ import com.socrata.http.server.implicits._
 import com.socrata.datacoordinator.external._
 import Service._
 import com.socrata.datacoordinator.common.collocation.CollocationLock
-import com.socrata.datacoordinator.resources.collocation.{CollocationManifestsResource, SecondaryManifestsCollocateResource, SecondaryMoveJobsResource}
+import com.socrata.datacoordinator.resources.collocation._
 
 /**
  * The main HTTP REST resource servicing class for the data coordinator.
@@ -38,7 +38,7 @@ class Service(serviceConfig: ServiceConfig,
               snapshottedResource: SodaResource,
               secondaryManifestsResource: Option[String] => SecondaryManifestsResource,
               secondaryManifestsCollocateResource: String => SecondaryManifestsCollocateResource,
-              secondaryMoveJobsResource: (String, DatasetId) => SecondaryMoveJobsResource,
+              secondaryManifestsMoveResource: (Option[String], DatasetId) => SecondaryManifestsMoveResource,
               datasetSecondaryStatusResource: (Option[String], DatasetId) => DatasetSecondaryStatusResource,
               collocationManifestsResource: Option[String] => CollocationManifestsResource,
               secondariesOfDatasetResource: DatasetId => SecondariesOfDatasetResource
@@ -259,7 +259,7 @@ class Service(serviceConfig: ServiceConfig,
     snapshottedResource = snapshottedResource,
     secondaryManifestsResource = secondaryManifestsResource,
     secondaryManifestsCollocateResource = secondaryManifestsCollocateResource,
-    secondaryMoveJobsResource = secondaryMoveJobsResource,
+    secondaryManifestsMoveResource = secondaryManifestsMoveResource,
     collocationManifestsResource = collocationManifestsResource,
     datasetSecondaryStatusResource = datasetSecondaryStatusResource,
     secondariesOfDatasetResource = secondariesOfDatasetResource,
@@ -315,7 +315,7 @@ object Service {
             snapshottedResource: SodaResource,
             secondaryManifestsResource: Option[String] => SecondaryManifestsResource,
             secondaryManifestsCollocateResource: CollocationLock => (String => Option[(String, Int)]) => String => SecondaryManifestsCollocateResource,
-            secondaryMoveJobsResource: (String, DatasetId) => SecondaryMoveJobsResource,
+            secondaryManifestsMoveResource: (Option[String], DatasetId) => SecondaryManifestsMoveResource,
             datasetSecondaryStatusResource: (Option[String], DatasetId) => DatasetSecondaryStatusResource,
             collocationManifestsResource: CollocationLock => (String => Option[(String, Int)]) => Option[String] => CollocationManifestsResource,
             secondariesOfDatasetResource: DatasetId => SecondariesOfDatasetResource
@@ -334,7 +334,7 @@ object Service {
       snapshottedResource,
       secondaryManifestsResource,
       secondaryManifestsCollocateResource(collocationLock)(hostAndPort),
-      secondaryMoveJobsResource,
+      secondaryManifestsMoveResource,
       datasetSecondaryStatusResource,
       collocationManifestsResource(collocationLock)(hostAndPort),
       secondariesOfDatasetResource

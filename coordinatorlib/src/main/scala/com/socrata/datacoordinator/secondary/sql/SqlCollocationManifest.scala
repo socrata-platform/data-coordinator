@@ -8,23 +8,23 @@ import com.socrata.datacoordinator.secondary.CollocationManifest
 class SqlCollocationManifest(conn: Connection) extends CollocationManifest {
   override def collocatedDatasets(datasets: Set[String]) = {
     using(conn.prepareStatement(
-      """WITH RECURSIVE related_data_sets(dataset_internal_name_a, dataset_internal_name_b, system_id, path, cycle) AS (
-        |    SELECT dataset_internal_name_a, dataset_internal_name_b, system_id, ARRAY[system_id], false
-        |      FROM collocation_manifest WHERE dataset_internal_name_a = ANY(?) OR dataset_internal_name_b = ANY(?)
+      """WITH RECURSIVE related_data_sets(dataset_internal_name_left, dataset_internal_name_right, system_id, path, cycle) AS (
+        |    SELECT dataset_internal_name_left, dataset_internal_name_right, system_id, ARRAY[system_id], false
+        |      FROM collocation_manifest WHERE dataset_internal_name_left = ANY(?) OR dataset_internal_name_right = ANY(?)
         |    UNION ALL
-        |    SELECT src.dataset_internal_name_a, src.dataset_internal_name_b, src.system_id, path || src.system_id, src.system_id = ANY(path)
+        |    SELECT src.dataset_internal_name_left, src.dataset_internal_name_right, src.system_id, path || src.system_id, src.system_id = ANY(path)
         |      FROM collocation_manifest src, related_data_sets rn
         |      WHERE (
-        |          src.dataset_internal_name_a=rn.dataset_internal_name_b OR
-        |          src.dataset_internal_name_b=rn.dataset_internal_name_a OR
-        |          src.dataset_internal_name_a=rn.dataset_internal_name_a OR
-        |          src.dataset_internal_name_b=rn.dataset_internal_name_b
+        |          src.dataset_internal_name_left=rn.dataset_internal_name_right OR
+        |          src.dataset_internal_name_right=rn.dataset_internal_name_left OR
+        |          src.dataset_internal_name_left=rn.dataset_internal_name_left OR
+        |          src.dataset_internal_name_right=rn.dataset_internal_name_right
         |        )
         |        AND NOT cycle
         |      )
-        |SELECT dataset_internal_name_a FROM related_data_sets
+        |SELECT dataset_internal_name_left FROM related_data_sets
         |UNION
-        |SELECT dataset_internal_name_b FROM related_data_sets""".stripMargin))
+        |SELECT dataset_internal_name_right FROM related_data_sets""".stripMargin))
     { stmt =>
       val datasetsArray =  conn.createArrayOf("varchar", datasets.toArray)
       stmt.setArray(1, datasetsArray)
@@ -32,10 +32,35 @@ class SqlCollocationManifest(conn: Connection) extends CollocationManifest {
       using(stmt.executeQuery()) { rs =>
         val result = Set.newBuilder[String]
         while (rs.next()) {
-          result += rs.getString("dataset_internal_name_a")
+          result += rs.getString("dataset_internal_name_left")
         }
         result.result()
       }
+    }
+  }
+
+  override def addCollocations(collocations: Set[(String, String)]): Unit = {
+    val defaultAutoCommit = conn.getAutoCommit
+    try {
+      // I think this is not needed because auto commit is already false... but
+      // set auto commit to false for doing batch inserts
+      conn.setAutoCommit(false)
+
+      using(conn.prepareStatement(
+        """INSERT INTO collocation_manifest (dataset_internal_name_left, dataset_internal_name_right)
+          |     VALUES (? , ?)
+          |ON CONFLICT DO NOTHING""".stripMargin))
+      { stmt =>
+        collocations.foreach { case (left, right) =>
+          stmt.setString(1, left)
+          stmt.setString(2, right)
+          stmt.addBatch()
+        }
+
+        stmt.executeBatch()
+      }
+    } finally {
+      conn.setAutoCommit(defaultAutoCommit)
     }
   }
 }
