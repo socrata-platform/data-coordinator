@@ -5,7 +5,7 @@ import java.sql.Connection
 import com.rojoma.simplearm.util.using
 import com.socrata.datacoordinator.secondary.CollocationManifest
 
-class SqlCollocationManifest(conn: Connection) extends CollocationManifest {
+abstract class SqlCollocationManifest(conn: Connection) extends CollocationManifest {
   override def collocatedDatasets(datasets: Set[String]) = {
     using(conn.prepareStatement(
       """WITH RECURSIVE related_data_sets(dataset_internal_name_left, dataset_internal_name_right, system_id, path, cycle) AS (
@@ -36,61 +36,6 @@ class SqlCollocationManifest(conn: Connection) extends CollocationManifest {
         }
         result.result()
       }
-    }
-  }
-
-  override def addCollocations(collocations: Set[(String, String)]): Unit = {
-    val defaultAutoCommit = conn.getAutoCommit
-    try {
-      // I think this is not needed because auto commit is already false... but
-      // set auto commit to false for doing batch inserts
-      conn.setAutoCommit(false)
-
-      using(conn.prepareStatement("SHOW server_version_num")) { showVersion =>
-        using(showVersion.executeQuery()) { version =>
-          if (version.getInt("server_version_num") < 90500) { // I know I am a terrible human...
-            // TODO: delete this case when we no longer have Postgres 9.4 servers running
-            collocations.foreach { case (left, right) =>
-              using(conn.prepareStatement(
-                """SELECT count(*) FROM collocation_manifest
-                  | WHERE dataset_internal_name_left = ?
-                  |   AND dataset_internal_name_right = ?""".stripMargin)) { selectCount =>
-                selectCount.setString(1, left)
-                selectCount.setString(2, right)
-
-                // only insert a new entry since we have a unique constraint on the table
-                using(selectCount.executeQuery()) { count =>
-                  if (count.getInt("count") == 0) {
-                    using(conn.prepareStatement(
-                      """INSERT INTO collocation_manifest (dataset_internal_name_left, dataset_internal_name_right)
-                        |     VALUES (? , ?)""".stripMargin)) { insert =>
-                      insert.setString(1, left)
-                      insert.setString(2, right)
-                      insert.execute()
-                    }
-                  }
-                }
-              }
-            }
-          } else {
-            // server is running at least Postgres 9.5 and ON CONFLICT is supported
-            using(conn.prepareStatement(
-              """INSERT INTO collocation_manifest (dataset_internal_name_left, dataset_internal_name_right)
-                |     VALUES (? , ?)
-                |ON CONFLICT DO NOTHING""".stripMargin)) { insert =>
-              collocations.foreach { case (left, right) =>
-                insert.setString(1, left)
-                insert.setString(2, right)
-                insert.addBatch()
-              }
-
-              insert.executeBatch()
-            }
-          }
-        }
-      }
-    } finally {
-      conn.setAutoCommit(defaultAutoCommit)
     }
   }
 }
