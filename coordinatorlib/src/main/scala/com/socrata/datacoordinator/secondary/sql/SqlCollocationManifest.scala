@@ -5,7 +5,7 @@ import java.sql.Connection
 import com.rojoma.simplearm.util.using
 import com.socrata.datacoordinator.secondary.CollocationManifest
 
-class SqlCollocationManifest(conn: Connection) extends CollocationManifest {
+abstract class SqlCollocationManifest(conn: Connection) extends CollocationManifest {
   override def collocatedDatasets(datasets: Set[String]) = {
     using(conn.prepareStatement(
       """WITH RECURSIVE related_data_sets(dataset_internal_name_left, dataset_internal_name_right, system_id, path, cycle) AS (
@@ -36,31 +36,6 @@ class SqlCollocationManifest(conn: Connection) extends CollocationManifest {
         }
         result.result()
       }
-    }
-  }
-
-  override def addCollocations(collocations: Set[(String, String)]): Unit = {
-    val defaultAutoCommit = conn.getAutoCommit
-    try {
-      // I think this is not needed because auto commit is already false... but
-      // set auto commit to false for doing batch inserts
-      conn.setAutoCommit(false)
-
-      using(conn.prepareStatement(
-        """INSERT INTO collocation_manifest (dataset_internal_name_left, dataset_internal_name_right)
-          |     VALUES (? , ?)
-          |ON CONFLICT DO NOTHING""".stripMargin))
-      { stmt =>
-        collocations.foreach { case (left, right) =>
-          stmt.setString(1, left)
-          stmt.setString(2, right)
-          stmt.addBatch()
-        }
-
-        stmt.executeBatch()
-      }
-    } finally {
-      conn.setAutoCommit(defaultAutoCommit)
     }
   }
 }
