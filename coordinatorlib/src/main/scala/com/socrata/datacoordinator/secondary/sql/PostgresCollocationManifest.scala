@@ -19,7 +19,7 @@ class PostgresCollocationManifest(conn: Connection) extends SqlCollocationManife
 
       using(conn.prepareStatement("SHOW server_version_num")) { showVersion =>
         using(showVersion.executeQuery()) { version =>
-          if (version.getInt("server_version_num") < 90500) { // I know I am a terrible human...
+          if (version.next() && version.getInt("server_version_num") < 90500) { // I know I am a terrible human...
             // TODO: delete this case when we no longer have Postgres 9.4 servers running
             collocations.foreach { case (left, right) =>
               val savepoint = conn.setSavepoint()
