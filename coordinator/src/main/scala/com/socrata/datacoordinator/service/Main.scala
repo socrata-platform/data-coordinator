@@ -562,7 +562,7 @@ object Main extends DynamicPortMap {
             serviceConfig.instance.equals,
             serviceConfig.secondary.groups,
             hostAndPort,
-            new HttpClientHttpClient(executorService), // TODO: Does this want its own thread pool?
+            new HttpClientHttpClient(executorService), // since executorService is currently unbounded we can share here
             operations.collocatedDatasets,
             operations.secondariesOfDataset,
             operations.secondaryMoveJobs,

@@ -10,8 +10,8 @@ class GraphTest extends FunSuite with ShouldMatchers {
     componentNodes(rootNode = 0, edgesEmpty) should be (Set(0))
   }
 
-  test("For a graph with no edges the connected components are just the singleton nodes") {
-    nodesByComponent(edgesEmpty) should be (edgesEmpty) // TODO: hmm...
+  test("For a graph with no edges the connected components is awkwardly the empty set") {
+    nodesByComponent(edgesEmpty) should be (edgesEmpty) // this is kind of awkward... but doesn't matter to us
   }
 
   val nodesConnected = Set(0, 1, 2, 3)
