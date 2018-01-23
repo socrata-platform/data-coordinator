@@ -34,7 +34,7 @@ case class StoreNotFound(name: String) extends ResourceNotFound(name, "secondary
 case class DatasetNotFound(internalName: DatasetInternalName) extends ResourceNotFound(internalName.underlying, "dataset")
 
 trait Coordinator {
-  val secondaryGroups: Map[String, SecondaryGroupConfig]
+  def secondaryGroups: Map[String, SecondaryGroupConfig]
   def collocatedDatasetsOnInstance(instance: String, datasets: Set[DatasetInternalName]): Either[RequestError, CollocatedDatasetsResult]
   def secondariesOfDataset(internalName: DatasetInternalName): Either[RequestError, Option[SecondariesOfDatasetResult]]
   def secondaryMoveJobs(storeGroup: String, internalName: DatasetInternalName): Either[ErrorResult, SecondaryMoveJobsResult]
