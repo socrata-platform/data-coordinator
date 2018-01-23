@@ -104,7 +104,11 @@ class CoordinatedCollocator(collocationGroup: Set[String],
     }
 
     val storesInGroup = instances.intersect(futureStores)
-    assert(replicationFactor == storesInGroup.size) // TODO: real error here
+    if (replicationFactor != storesInGroup.size) {
+      log.error("Dataset {}'s current replication factor {} is not the expected replication factor {} for the group {}",
+        dataset.toString, replicationFactor.toString, storesInGroup.size.toString)
+      throw new Exception("Dataset replicated to stores in an unexpected state!")
+    }
 
     storesInGroup
   }
@@ -149,7 +153,7 @@ class CoordinatedCollocator(collocationGroup: Set[String],
               }.toMap
 
               val datasetCostMap = inputDatasets.map { dataset =>
-                // TODO: implement useful cost (i.e related to size of replicated dataset)
+                // TODO: implement useful cost (i.e related to size of replicated dataset), work tracked in EN-21686
                 (dataset, Cost(moves = 1))
               }.toMap
 
@@ -248,7 +252,7 @@ class CoordinatedCollocator(collocationGroup: Set[String],
           } catch {
             case error: Exception =>
               log.error("Unexpected exception while ensuring secondary move jobs", error)
-              Left(UnexpectedError("")) // TODO something better here
+              Left(UnexpectedError(error.getMessage))
           }
 
           (result, move)

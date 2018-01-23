@@ -37,6 +37,11 @@ object BodyRequestError{
   val COMMAND_TOO_LARGE = "req.body.command-too-large"
   val MALFORMED_JSON = "req.body.malformed-json"
   val NOT_JSON_ARRAY = "req.body.not-json-array"
+  val UNPARSABLE = "req.body.unparsable"
+}
+
+object ParameterRequestError {
+  val UNPARSABLE_VALUE = "req.parameter.unparsable-value"
 }
 
 object ScriptHeaderRequestError{

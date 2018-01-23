@@ -5,7 +5,6 @@ import java.util.UUID
 
 import com.rojoma.json.io.JsonParseException
 import com.rojoma.json.v3.ast.{JObject, JString}
-import com.rojoma.json.v3.io.JsonParserEOF
 import com.rojoma.json.v3.util.{AutomaticJsonCodecBuilder, JsonKeyStrategy, JsonUtil, Strategy}
 import com.socrata.datacoordinator.external.CollocationError
 import com.socrata.datacoordinator.id.{DatasetId, DatasetInternalName}
@@ -71,44 +70,28 @@ case class SecondaryManifestsMoveResource(storeGroup: Option[String],
   def doMoveDataset(req: HttpRequest): HttpResponse = {
     storeGroup match {
       case Some(group) =>
-        try {
-          JsonUtil.readJson[SecondaryMoveJobRequest](req.servletRequest.getReader) match {
-            case Right(request) => ensureSecondaryMoveJob(group, datasetId, request) match {
-              case Right(Right(datasetNewToStore)) => responseOK(datasetNewToStore)
-              case Right(Left(StoreNotAcceptingDatasets)) =>
-                errorResponse(
-                  BadRequest,
-                  CollocationError.STORE_NOT_ACCEPTING_NEW_DATASETS,
-                  "store" -> JString(request.toStoreId)
-                )
-              case Right(Left(DatasetNotInStore)) =>
-                errorResponse(
-                  BadRequest,
-                  CollocationError.DATASET_NOT_FOUND_IN_STORE,
-                  "store" -> JString(request.fromStoreId)
-                )
-              case Left(StoreGroupNotFound(_)) => storeGroupNotFound(group)
-              case Left(DatasetNotFound(_)) => datasetNotFound(datasetInternalName(datasetId))
-              case Left(StoreNotFound(store)) => storeNotFound(store, BadRequest)
-              case Left(error) =>
-                log.error("Unexpected resource not found while doing move for dataset {}: {}", datasetId, error)
-                InternalServerError
-            }
-            case Left(decodeError) =>
-              log.warn("Unable to decode request: {}", decodeError.english)
-              BadRequest ~> Json(JObject.canonicalEmpty)
+        withPostBody[SecondaryMoveJobRequest](req) { request =>
+          ensureSecondaryMoveJob(group, datasetId, request) match {
+            case Right(Right(datasetNewToStore)) => responseOK(datasetNewToStore)
+            case Right(Left(StoreNotAcceptingDatasets)) =>
+              errorResponse(
+                BadRequest,
+                CollocationError.STORE_NOT_ACCEPTING_NEW_DATASETS,
+                "store" -> JString(request.toStoreId)
+              )
+            case Right(Left(DatasetNotInStore)) =>
+              errorResponse(
+                BadRequest,
+                CollocationError.DATASET_NOT_FOUND_IN_STORE,
+                "store" -> JString(request.fromStoreId)
+              )
+            case Left(StoreGroupNotFound(_)) => storeGroupNotFound(group)
+            case Left(DatasetNotFound(_)) => datasetNotFound(datasetInternalName(datasetId))
+            case Left(StoreNotFound(store)) => storeNotFound(store, BadRequest)
+            case Left(error) =>
+              log.error("Unexpected resource not found while doing move for dataset {}: {}", datasetId, error)
+              InternalServerError
           }
-        } catch {
-          case e: IOException =>
-            log.error("Unexpected error while handling request", e)
-            InternalServerError
-          case e: JsonParseException =>
-            log.warn("Unable to parse request as JSON", e)
-            BadRequest ~> Json(JObject.canonicalEmpty)
-          case e: JsonParserEOF =>
-            log.warn("Unable to parse request as JSON; unexpected EOF", e)
-            BadRequest ~> Json(JObject.canonicalEmpty)
-            // TODO: JsonUnexpectedToken
         }
       case None => storeGroupNotFound("")
     }

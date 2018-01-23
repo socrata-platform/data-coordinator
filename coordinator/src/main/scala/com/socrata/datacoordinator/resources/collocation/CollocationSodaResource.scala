@@ -1,9 +1,12 @@
 package com.socrata.datacoordinator.resources.collocation
 
+import java.io.IOException
+
 import com.rojoma.json.v3.ast.{JObject, JString, JValue}
-import com.rojoma.json.v3.codec.JsonEncode
+import com.rojoma.json.v3.codec.{JsonDecode, JsonEncode}
+import com.rojoma.json.v3.io.JsonParseException
 import com.rojoma.json.v3.util.JsonUtil
-import com.socrata.datacoordinator.external.CollocationError
+import com.socrata.datacoordinator.external.{BodyRequestError, CollocationError, ParameterRequestError}
 import com.socrata.datacoordinator.id.DatasetInternalName
 import com.socrata.datacoordinator.resources.SodaResource
 import com.socrata.datacoordinator.service.ServiceUtil.JsonContentType
@@ -16,17 +19,6 @@ import org.slf4j.Logger
 abstract class CollocationSodaResource extends SodaResource {
 
   protected val log: Logger
-
-  def withBooleanParam(name: String, req: HttpRequest)(handleRequest: Boolean => HttpResponse): HttpResponse = {
-    try {
-      val param = Option(req.servletRequest.getParameter(name)).getOrElse("false").toBoolean
-      handleRequest(param)
-    } catch {
-      case e: IllegalArgumentException =>
-        log.warn("Unable to parse parameter dropFromStore as Boolean", e)
-        BadRequest // TODO: some kind of error response body
-    }
-  }
 
   def responseOK[T : JsonEncode](content: T): HttpResponse = {
     OK ~> Json(content, pretty = true)
@@ -54,4 +46,39 @@ abstract class CollocationSodaResource extends SodaResource {
 
   def datasetNotFound(datasetInternalName: DatasetInternalName, resp: HttpResponse = NotFound): HttpResponse =
     errorResponse(resp, CollocationError.DATASET_DOES_NOT_EXIST, "dataset" -> JString(datasetInternalName.underlying))
+
+  def withBooleanParam(name: String, req: HttpRequest)(handleRequest: Boolean => HttpResponse): HttpResponse = {
+    val param = Option(req.servletRequest.getParameter(name)).getOrElse("false")
+    try {
+      handleRequest(param.toBoolean)
+    } catch {
+      case e: IllegalArgumentException =>
+        log.warn(s"Unable to parse parameter $name as Boolean", e)
+        errorResponse(
+          BadRequest,
+          ParameterRequestError.UNPARSABLE_VALUE,
+          "parameter" -> JString(name),
+          "type" -> JString("Boolean"),
+          "value" -> JString(param)
+        )
+    }
+  }
+
+  def withPostBody[T : JsonDecode](req: HttpRequest)(f: T => HttpResponse): HttpResponse = {
+    try {
+      JsonUtil.readJson[T](req.servletRequest.getReader) match {
+        case Right(body) => f(body)
+        case Left(decodeError) =>
+          log.warn("Unable to decode request: {}", decodeError.english)
+          errorResponse(BadRequest, BodyRequestError.UNPARSABLE, "message" -> JString(decodeError.english))
+      }
+    } catch {
+      case e: IOException =>
+        log.error("Unexpected error while handling request", e)
+        InternalServerError
+      case e: JsonParseException =>
+        log.warn("Unable to parse request as JSON", e)
+        errorResponse(BadRequest, BodyRequestError.MALFORMED_JSON, "message" -> JString(e.message))
+    }
+  }
 }

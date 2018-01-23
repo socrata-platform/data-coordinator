@@ -147,7 +147,7 @@ class HttpCoordinator(isThisInstance: String => Boolean,
                 Right(Right(Left(StoreNotAcceptingDatasets)))
               case Right(CoordinatorError(CollocationError.DATASET_NOT_FOUND_IN_STORE, _)) =>
                 Right(Right(Left(DatasetNotInStore)))
-              case Right(_) => Left(UnexpectedError("")) // TODO
+              case Right(error) => Left(UnexpectedError(s"Unexpected error of type ${error.getClass.getName}"))
               case Left(error) => Left(ResponseError(error))
             }
             case 404 => response.value[CoordinatorError]() match {
@@ -155,7 +155,7 @@ class HttpCoordinator(isThisInstance: String => Boolean,
                 Right(Left(StoreGroupNotFound(storeGroup)))
               case Right(CoordinatorError(CollocationError.DATASET_DOES_NOT_EXIST, _)) =>
                 Right(Left(DatasetNotFound(internalName)))
-              case Right(_) => Left(UnexpectedError("")) // TODO
+              case Right(error) => Left(UnexpectedError(s"Unexpected error of type ${error.getClass.getName}"))
               case Left(error) => Left(ResponseError(error))
             }
             case resultCode =>
