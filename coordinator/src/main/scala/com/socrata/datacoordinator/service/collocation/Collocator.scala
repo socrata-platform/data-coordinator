@@ -140,7 +140,12 @@ class CoordinatedCollocator(collocationGroup: Set[String],
 
               // we will 404 if we get a 404 projected stores for one of the input datasets
               val datasetStoresMap = inputDatasets.map { dataset =>
-                (dataset, stores(storeGroup, dataset, instances, replicationFactor))
+                if (instances(dataset.instance)) {
+                  (dataset, stores(storeGroup, dataset, instances, replicationFactor))
+                } else {
+                  log.warn("Unable to find dataset {} since it has an unrecognized instance name!", dataset)
+                  return Left(DatasetNotFound(dataset))
+                }
               }.toMap
 
               val datasetCostMap = inputDatasets.map { dataset =>
