@@ -98,14 +98,74 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
 
   val collocatedDatasetsEmpty = collocatedDatasets(datasetsEmpty)
 
+  def expectCDOIDatasetsWithNoCollocations(coordinator: Coordinator,
+                                           datasets: Set[DatasetInternalName],
+                                           andNoOtherCalls: Boolean = false): Unit = {
+    expectCollocatedDatasetsOnInstance(coordinator, andNoOtherCalls,
+      (alpha, datasets, datasets),
+      (bravo, datasets, datasets),
+      (charlie, datasets, datasets)
+    )
+  }
+
+  def expectCDOIAlpha1WithCollocationsSimple(coordinator: Coordinator, andNoOtherCalls: Boolean = false): Unit = {
+    // alpha
+    // -----------------
+    // alpha.1 | bravo.1
+    //
+    // bravo
+    // -----------------
+    //
+    // charlie
+    // -----------------
+    //
+    expectCollocatedDatasetsOnInstance(coordinator, andNoOtherCalls,
+      (alpha,   Set(alpha1), Set(alpha1, bravo1)),
+      (bravo,   Set(alpha1), Set(alpha1)),
+      (charlie, Set(alpha1), Set(alpha1)),
+
+      (alpha,   Set(bravo1), Set(alpha1, bravo1)),
+      (bravo,   Set(bravo1), Set(bravo1)),
+      (charlie, Set(bravo1), Set(bravo1))
+    )
+  }
+
+  def expectCDOIAlpha1WithCollocationsComplex(coordinator: Coordinator, andNoOtherCalls: Boolean = false): Unit = {
+    // alpha
+    // -----------------
+    // alpha.1 | bravo.1
+    //
+    // bravo
+    // -----------------
+    // bravo.1 | alpha.2
+    // bravo.1 | charlie.1
+    //
+    // charlie
+    // -----------------
+    // charlie.1 | alpha.2
+    // charlie.2 | alpha.1
+    //
+    expectCollocatedDatasetsOnInstance(coordinator, andNoOtherCalls,
+      (alpha,   Set(alpha1), Set(alpha1, bravo1)),
+      (bravo,   Set(alpha1), Set(alpha1)),
+      (charlie, Set(alpha1), Set(alpha1, charlie2)),
+      // new: bravo1, charlie2
+
+      (alpha,   Set(bravo1, charlie2), Set(alpha1, bravo1, charlie2)),
+      (bravo,   Set(bravo1, charlie2), Set(bravo1, alpha2, charlie1, charlie2)),
+      (charlie, Set(bravo1, charlie2), Set(alpha1, charlie2)),
+      // new: alpha2, charlie1
+
+      (alpha,   Set(alpha2, charlie1), Set(alpha2, charlie1)),
+      (bravo,   Set(alpha2, charlie1), Set(bravo1, alpha2, charlie1)),
+      (charlie, Set(alpha2, charlie1), Set(alpha2, charlie1))
+    )
+  }
+
   // tests for collocatedDatasets(datasets: Set[DatasetInternalName]): Either[RequestError, CollocatedDatasetsResult]
   test("collocatedDatasets should return the empty set when given the empty set") {
     withMocks(defaultStoreGroups, { coordinator =>
-      expectCollocatedDatasetsOnInstance(coordinator, andNoOtherCalls = true,
-        (alpha, datasetsEmpty, datasetsEmpty),
-        (bravo, datasetsEmpty, datasetsEmpty),
-        (charlie, datasetsEmpty, datasetsEmpty)
-      )
+      expectCDOIDatasetsWithNoCollocations(coordinator, datasetsEmpty, andNoOtherCalls = true)
     }) { case (collocator, _) =>
       collocator.collocatedDatasets(datasetsEmpty) should be (collocatedDatasetsEmpty)
     }
@@ -115,11 +175,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
     val datasets = Set(alpha1)
 
     withMocks(defaultStoreGroups, { coordinator =>
-      expectCollocatedDatasetsOnInstance(coordinator, andNoOtherCalls = true,
-        (alpha, datasets, datasets),
-        (bravo, datasets, datasets),
-        (charlie, datasets, datasets)
-      )
+      expectCDOIDatasetsWithNoCollocations(coordinator, datasets, andNoOtherCalls = true)
     }) { case (collocator, _) =>
         collocator.collocatedDatasets(datasets) should be (collocatedDatasets(datasets))
     }
@@ -127,65 +183,15 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
 
   test("collocatedDatasets for a dataset collocated with one other dataset should return the pair") {
     withMocks(defaultStoreGroups, { coordinator =>
-      // alpha
-      // -----------------
-      // alpha.1 | bravo.1
-      //
-      // bravo
-      // -----------------
-      //
-      // charlie
-      // -----------------
-      //
-      expectCollocatedDatasetsOnInstance(coordinator, andNoOtherCalls = true,
-        (alpha,   Set(alpha1), Set(alpha1, bravo1)),
-        (bravo,   Set(alpha1), Set(alpha1)),
-        (charlie, Set(alpha1), Set(alpha1)),
-
-        (alpha,   Set(bravo1), Set(alpha1, bravo1)),
-        (bravo,   Set(bravo1), Set(bravo1)),
-        (charlie, Set(bravo1), Set(bravo1))
-      )
+      expectCDOIAlpha1WithCollocationsSimple(coordinator, andNoOtherCalls = true)
     }) { case (collocator, _) =>
       collocator.collocatedDatasets(Set(alpha1)) should be (collocatedDatasets(Set(alpha1, bravo1)))
     }
   }
 
   test("collocatedDatasets for a dataset should be able to return its full collocated group of datasets") {
-    val collocatedDatasetsApha1 = collocatedDatasets(Set(alpha1))
-    val collocatedDatasetsApha1Bravo1 = collocatedDatasets(Set(alpha1, bravo1))
-    val collocatedDatasetsBravo1 = collocatedDatasets(Set(bravo1))
-
     withMocks(defaultStoreGroups, { coordinator =>
-      // alpha
-      // -----------------
-      // alpha.1 | bravo.1
-      //
-      // bravo
-      // -----------------
-      // bravo.1 | alpha.2
-      // bravo.1 | charlie.1
-      //
-      // charlie
-      // -----------------
-      // charlie.1 | alpha.2
-      // charlie.2 | alpha.1
-      //
-      expectCollocatedDatasetsOnInstance(coordinator, andNoOtherCalls = true,
-        (alpha,   Set(alpha1), Set(alpha1, bravo1)),
-        (bravo,   Set(alpha1), Set(alpha1)),
-        (charlie, Set(alpha1), Set(alpha1, charlie2)),
-        // new: bravo1, charlie2
-
-        (alpha,   Set(bravo1, charlie2), Set(alpha1, bravo1, charlie2)),
-        (bravo,   Set(bravo1, charlie2), Set(bravo1, alpha2, charlie1, charlie2)),
-        (charlie, Set(bravo1, charlie2), Set(alpha1, charlie2)),
-        // new: alpha2, charlie1
-
-        (alpha,   Set(alpha2, charlie1), Set(alpha2, charlie1)),
-        (bravo,   Set(alpha2, charlie1), Set(bravo1, alpha2, charlie1)),
-        (charlie, Set(alpha2, charlie1), Set(alpha2, charlie1))
-      )
+      expectCDOIAlpha1WithCollocationsComplex(coordinator, andNoOtherCalls = true)
     }) { case (collocator, _) =>
       collocator.collocatedDatasets(Set(alpha1)) should be (collocatedDatasets(Set(alpha1, alpha2, bravo1, charlie1, charlie2)))
     }
@@ -198,13 +204,10 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
     }
   }
 
-
   // def explainCollocation(storeGroup: String, request: CollocationRequest): Either[ErrorResult, CollocationResult]
   // def initiateCollocation(jobId: UUID, storeGroup: String, request: CollocationRequest): (Either[ErrorResult, CollocationResult], Seq[(Move, Boolean)])
   // def saveCollocation(request: CollocationRequest): Unit
   // def beginCollocation(): Unit
   // def commitCollocation(): Unit
   // def rollbackCollocation(jobId: UUID, moves: Seq[(Move, Boolean)]): Option[ErrorResult]
-
-
 }
