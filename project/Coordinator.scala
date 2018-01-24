@@ -1,4 +1,4 @@
-import Dependencies._
+import Dependencies.{TestDeps, _}
 import sbt.Keys._
 import sbt._
 
@@ -19,7 +19,8 @@ object Coordinator {
         "net.sf.opencsv"  % "opencsv"       % "2.3",
         "org.clojure"     % "clojure"       % "1.5.1",
 
-        TestDeps.scalaCheck % "test"
+        TestDeps.scalaCheck % "test",
+        TestDeps.scalaMock  % "test"
       )
     },
     mainClass in sbtassembly.AssemblyKeys.assembly := Some("com.socrata.datacoordinator.Launch")
