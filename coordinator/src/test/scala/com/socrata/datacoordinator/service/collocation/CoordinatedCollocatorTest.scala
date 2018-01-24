@@ -4,11 +4,11 @@ import com.socrata.datacoordinator.common.collocation.CollocationLock
 import com.socrata.datacoordinator.id.{DatasetId, DatasetInternalName}
 import com.socrata.datacoordinator.resources.collocation.CollocatedDatasetsResult
 import org.scalamock.scalatest.MockFactory
-import org.scalatest.{FunSuite, ShouldMatchers}
+import org.scalatest.{FunSuite, Matchers}
 
 import scala.concurrent.duration.FiniteDuration
 
-class CoordinatedCollocatorTest extends FunSuite with ShouldMatchers with MockFactory {
+class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory {
   class CollocationManifest {
     private val manifest = collection.mutable.Set.empty[(DatasetInternalName, DatasetInternalName)]
 
