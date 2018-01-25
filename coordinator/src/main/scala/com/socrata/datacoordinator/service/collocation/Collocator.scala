@@ -152,13 +152,14 @@ class CoordinatedCollocator(collocationGroup: Set[String],
                 }
               }.toMap
 
-              val datasetCostMap = inputDatasets.map { dataset =>
-                // TODO: implement useful cost (i.e related to size of replicated dataset), work tracked in EN-21686
-                (dataset, Cost(moves = 1))
-              }.toMap
-
               val datasetGroupMap = inputDatasets.map { dataset =>
                 (dataset, collocatedDatasets(Set(dataset)).fold(throw _, _.datasets))
+              }.toMap
+
+              // cost of _all_ datasets in question, not just the input datasets
+              val datasetCostMap = datasetGroupMap.flatMap(_._2).map { dataset =>
+                // TODO: implement useful cost (i.e related to size of replicated dataset), work tracked in EN-21686
+                (dataset, Cost(moves = 1))
               }.toMap
 
               // represents graph of collocated groups to be collocated

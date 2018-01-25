@@ -299,6 +299,32 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
     }
   }
 
+  test("explainCollocation for one default store group and a collocated dataset and a non-collocated dataset should move the non-collocated dataset twice") {
+    withMocks(Set(storeGroupA), { coordinator =>
+      (coordinator.secondaryGroups _).expects().returns(Map(storeGroupA -> groupConfig(2, storesGroupA)))
+
+      (coordinator.secondaryMoveJobs _).expects(storeGroupA, alpha1).once.returns(moveJobResultEmpty)
+      (coordinator.secondariesOfDataset _).expects(alpha1).once.returns(secondaries(store1A, store3A))
+
+      (coordinator.secondaryMoveJobs _).expects(storeGroupA, bravo2).once.returns(moveJobResultEmpty)
+      (coordinator.secondariesOfDataset _).expects(bravo2).once.returns(secondaries(store5A, store7A))
+
+      expectCDOIAlpha1WithCollocationsComplex(coordinator) // group for alpha.1
+      expectCDOIDatasetsWithNoCollocations(coordinator, Set(bravo2)) // group for bravo.2
+    }) { case (collocator, _) =>
+      val result = collocator.explainCollocation(storeGroupA, request(Seq((alpha1, bravo2)))).right.get
+      result.id should be (None)
+      result.status should be (Approved)
+      result.message should be (Approved.message)
+      result.cost should be (Cost(2))
+
+      result.moves.size should be (2)
+      result.moves.map(_.datasetInternalName).toSet.size should be (1)
+      result.moves.head.datasetInternalName should be (bravo2)
+      result.moves.map(_.storeIdTo).size should be (2)
+    }
+  }
+
   // def initiateCollocation(jobId: UUID, storeGroup: String, request: CollocationRequest): (Either[ErrorResult, CollocationResult], Seq[(Move, Boolean)])
   // def saveCollocation(request: CollocationRequest): Unit
   // def beginCollocation(): Unit
