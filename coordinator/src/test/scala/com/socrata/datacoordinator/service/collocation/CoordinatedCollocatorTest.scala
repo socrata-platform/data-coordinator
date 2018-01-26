@@ -281,7 +281,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
 
   val requestEmpty = request(Seq.empty)
 
-  val resultEmpty = Right(CollocationResult.canonicalEmpty)
+  val resultApprovedEmpty = Right(CollocationResult.canonicalEmpty)
   val resultCompleted = Right(CollocationResult.canonicalEmpty.copy(status = Completed, message = Completed.message))
 
   val moveJobResultEmpty = Right(SecondaryMoveJobsResult(Seq.empty))
@@ -299,16 +299,85 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
   }
 
   // tests for explainCollocation(storeGroup: String, request: CollocationRequest): Either[ErrorResult, CollocationResult]
-  test("explainCollocation should return the canonical empty result for an empty request") {
-    withMocks(Set(storeGroupA), { coordinator =>
-      (coordinator.secondaryGroups _).expects().returns(Map(storeGroupA -> groupConfig(2, storesGroupA)))
-    }) { case (collocator, _) =>
-      collocator.explainCollocation(storeGroupA, requestEmpty) should be (resultEmpty)
+  // and
+  // tests for initiateCollocation(jobId: UUID, storeGroup: String, request: CollocationRequest): (Either[ErrorResult, CollocationResult], Seq[(Move, Boolean)])
+
+  def shouldBeApproved(maybeResult: Either[ErrorResult, CollocationResult]): Unit = {
+    val result = maybeResult.right.get
+
+    result.id should be (None)
+    result.status should be (Approved)
+    result.message should be (Approved.message)
+  }
+
+  def shouldBeInProgress(jobId: UUID,
+                         maybeResult: Either[ErrorResult, CollocationResult],
+                         moves: Seq[(Move, Boolean)]): Unit = {
+    val result = maybeResult.right.get
+
+    result.id should be (Some(jobId))
+    result.status should be (InProgress)
+    result.message should be (InProgress.message)
+
+    moves should be (result.moves.map { move => (move, true) })
+  }
+
+  def testExplainAndInitiateCollocation(message: String,
+                                        commonExpectations: Coordinator => Unit,
+                                        initiateExpectations: Coordinator => Unit = { _ => })
+                                       (request: CollocationRequest,
+                                        commonShould: Either[ErrorResult, CollocationResult] => Unit,
+                                        explainShould: Either[ErrorResult, CollocationResult] => Unit = shouldBeApproved,
+                                        initiateShould: (UUID, Either[ErrorResult, CollocationResult], Seq[(Move, Boolean)]) => Unit = shouldBeInProgress): Unit = {
+    test("explainCollocation " + message) {
+      withMocks(Set(storeGroupA), { coordinator =>
+        commonExpectations(coordinator)
+      }) { case (collocator, _) =>
+        val result = collocator.explainCollocation(storeGroupA, request)
+
+        commonShould(result)
+        explainShould(result)
+      }
+    }
+
+    test("initiateCollocation " + message) {
+      withMocks(Set(storeGroupA), { coordinator =>
+        commonExpectations(coordinator)
+        initiateExpectations(coordinator)
+      }) { case (collocator, _) =>
+        val jobId = UUID.randomUUID()
+        val (result, moves) = collocator.initiateCollocation(jobId, storeGroupA, request)
+
+        commonShould(result)
+        initiateShould(jobId, result, moves)
+      }
     }
   }
 
-  test("explainCollocation for two non-collocated datasets with no overlapping stores should move one dataset twice") {
-    withMocks(Set(storeGroupA), { coordinator =>
+  testExplainAndInitiateCollocation(
+    "should return the canonical empty result for an empty request",
+    { coordinator =>
+      (coordinator.secondaryGroups _).expects().returns(Map(storeGroupA -> groupConfig(2, storesGroupA)))
+    }) (
+
+    requestEmpty,
+
+    { commonResult => },
+
+    { explainResult =>
+
+      explainResult should be (resultApprovedEmpty)
+
+    }, { (_, initiateResult, moves) =>
+
+      initiateResult should be (resultCompleted)
+      moves should be (Seq.empty)
+    }
+  )
+
+  testExplainAndInitiateCollocation(
+    "for two non-collocated datasets with no overlapping stores should move one dataset twice",
+    { coordinator =>
       (coordinator.secondaryGroups _).expects().returns(Map(storeGroupA -> groupConfig(2, storesGroupA)))
 
       (coordinator.secondaryMoveJobs _).expects(storeGroupA, alpha1).once.returns(moveJobResultEmpty)
@@ -319,21 +388,27 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
 
       expectCDOIDatasetsWithNoCollocations(coordinator, Set(alpha1)) // group for alpha.1
       expectCDOIDatasetsWithNoCollocations(coordinator, Set(bravo1)) // group for bravo.1
-    }) { case (collocator, _) =>
-      val result = collocator.explainCollocation(storeGroupA, request(Seq((alpha1, bravo1)))).right.get
-      result.id should be (None)
-      result.status should be (Approved)
-      result.message should be (Approved.message)
-      result.cost should be (Cost(2))
 
-      result.moves.size should be (2)
-      result.moves.map(_.datasetInternalName).toSet.size should be (1)
-      result.moves.map(_.storeIdTo).size should be (2)
+    }, { initiateCoordinator =>
+      (initiateCoordinator.ensureSecondaryMoveJob _).expects(storeGroupA, *, *).twice.returns(Right(Right(true)))
+    }) (
+
+    request(Seq((alpha1, bravo1))),
+
+    { commonResult =>
+      val result = commonResult.right.get
+
+      result.cost should be(Cost(2))
+
+      result.moves.size should be(2)
+      result.moves.map(_.datasetInternalName).toSet.size should be(1)
+      result.moves.map(_.storeIdTo).size should be(2)
     }
-  }
+  )
 
-  test("explainCollocation for two non-collocated datasets with one overlapping store should move one dataset once") {
-    withMocks(Set(storeGroupA), { coordinator =>
+  testExplainAndInitiateCollocation(
+    "for two non-collocated datasets with one overlapping store should move one dataset once",
+    { coordinator =>
       (coordinator.secondaryGroups _).expects().returns(Map(storeGroupA -> groupConfig(2, storesGroupA)))
 
       (coordinator.secondaryMoveJobs _).expects(storeGroupA, alpha1).once.returns(moveJobResultEmpty)
@@ -344,21 +419,27 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
 
       expectCDOIDatasetsWithNoCollocations(coordinator, Set(alpha1)) // group for alpha.1
       expectCDOIDatasetsWithNoCollocations(coordinator, Set(bravo1)) // group for bravo.1
-    }) { case (collocator, _) =>
-      val result = collocator.explainCollocation(storeGroupA, request(Seq((alpha1, bravo1)))).right.get
-      result.id should be (None)
-      result.status should be (Approved)
-      result.message should be (Approved.message)
+
+    }, { initiateCoordinator =>
+      (initiateCoordinator.ensureSecondaryMoveJob _).expects(storeGroupA, *, *).once.returns(Right(Right(true)))
+    }) (
+
+    request(Seq((alpha1, bravo1))),
+
+    { commonResult =>
+      val result = commonResult.right.get
+
       result.cost should be (Cost(1))
 
       result.moves.size should be (1)
       val move = result.moves.head
       Set(move.storeIdFrom, move.storeIdTo) should be (Set(store1A, store5A))
     }
-  }
+  )
 
-  test("explainCollocation for non-collocated datasets on the same stores should generate no moves") {
-    withMocks(Set(storeGroupA), { coordinator =>
+  testExplainAndInitiateCollocation(
+    "explainCollocation for non-collocated datasets on the same stores should generate no moves",
+    { coordinator =>
       (coordinator.secondaryGroups _).expects().returns(Map(storeGroupA -> groupConfig(2, storesGroupA)))
 
       (coordinator.secondaryMoveJobs _).expects(storeGroupA, alpha1).once.returns(moveJobResultEmpty)
@@ -369,13 +450,27 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
 
       expectCDOIDatasetsWithNoCollocations(coordinator, Set(alpha1)) // group for alpha.1
       expectCDOIDatasetsWithNoCollocations(coordinator, Set(bravo1)) // group for bravo.1
-    }) { case (collocator, _) =>
-      collocator.explainCollocation(storeGroupA, request(Seq((alpha1, bravo1)))) should be (resultEmpty)
-    }
-  }
 
-  test("explainCollocation for already collocated datasets should return a result with complted status") {
-    withMocks(Set(storeGroupA), { coordinator =>
+    }) (
+
+    request(Seq((alpha1, bravo1))),
+
+    { commonResult => },
+
+    { explainResult =>
+
+      explainResult should be (resultApprovedEmpty)
+
+    }, { (_, initateResult, moves) =>
+
+      initateResult should be (resultCompleted)
+      moves should be (Seq.empty)
+    }
+  )
+
+  testExplainAndInitiateCollocation(
+    "explainCollocation for already collocated datasets should return a result with completed status",
+    { coordinator =>
       (coordinator.secondaryGroups _).expects().returns(Map(storeGroupA -> groupConfig(2, storesGroupA)))
 
       (coordinator.secondaryMoveJobs _).expects(storeGroupA, alpha1).once.returns(moveJobResultEmpty)
@@ -386,18 +481,29 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
 
       expectCDOIAlpha1WithCollocationsComplex(coordinator) // group for alpha.1
       expectCDOIBravo1WithCollocationsComplex(coordinator) // group for bravo.1
-    }) { case (collocator, _) =>
-      collocator.explainCollocation(storeGroupA, request(Seq((alpha1, bravo1)))) should be (resultCompleted)
+    }) (
+
+    request(Seq((alpha1, bravo1))),
+
+    { commonResult =>
+
+      commonResult should be(resultCompleted)
+
+    }, { explainCompleted => },
+
+    { (_, _, initiatedMoves) =>
+      initiatedMoves should be (Seq.empty)
     }
-  }
+  )
 
   // collocate: alpha.1 (store1A, store3A) with bravo.2 (store5A, store7A)
   //
   // moves:
   //   bravo.2: store5A, store7A -> store1A, store3A
   //
-  test("explainCollocation for a collocated dataset and a non-collocated dataset should move the non-collocated dataset twice") {
-    withMocks(Set(storeGroupA), { coordinator =>
+  testExplainAndInitiateCollocation(
+    "explainCollocation for a collocated dataset and a non-collocated dataset should move the non-collocated dataset twice",
+    { coordinator =>
       (coordinator.secondaryGroups _).expects().returns(Map(storeGroupA -> groupConfig(2, storesGroupA)))
 
       (coordinator.secondaryMoveJobs _).expects(storeGroupA, alpha1).once.returns(moveJobResultEmpty)
@@ -408,11 +514,16 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
 
       expectCDOIAlpha1WithCollocationsComplex(coordinator) // group for alpha.1
       expectCDOIDatasetsWithNoCollocations(coordinator, Set(bravo2)) // group for bravo.2
-    }) { case (collocator, _) =>
-      val result = collocator.explainCollocation(storeGroupA, request(Seq((alpha1, bravo2)))).right.get
-      result.id should be (None)
-      result.status should be (Approved)
-      result.message should be (Approved.message)
+
+    }, { initiateCoordinator =>
+      (initiateCoordinator.ensureSecondaryMoveJob _).expects(storeGroupA, bravo2, *).twice.returns(Right(Right(true)))
+    }) (
+
+    request(Seq((alpha1, bravo2))),
+
+    { commonResult =>
+      val result = commonResult.right.get
+
       result.cost should be (Cost(2))
 
       result.moves.size should be (2)
@@ -420,7 +531,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
       result.moves.map(_.storeIdFrom).toSet should be (Set(store5A, store7A))
       result.moves.map(_.storeIdTo).toSet should be (Set(store1A, store3A))
     }
-  }
+  )
 
   // collocate: alpha.1 (store1A, store3A) with bravo.2 (store5A, store7A)
   //
@@ -428,8 +539,9 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
   //   bravo.2:   store5A, store7A -> store1A, store3A
   //   charlie.3: store5A, store7A -> store1A, store3A
   //
-  test("explainCollocation for two disjointly collocated datasets should move the dataset with the smaller collocated group") {
-    withMocks(Set(storeGroupA), { coordinator =>
+  testExplainAndInitiateCollocation(
+    "explainCollocation for two disjointly collocated datasets should move the dataset with the smaller collocated group",
+    { coordinator =>
       (coordinator.secondaryGroups _).expects().returns(Map(storeGroupA -> groupConfig(2, storesGroupA)))
 
       (coordinator.secondaryMoveJobs _).expects(storeGroupA, alpha1).once.returns(moveJobResultEmpty)
@@ -440,11 +552,17 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
 
       expectCDOIAlpha1WithCollocationsComplex(coordinator) // group for alpha.1
       expectCDOIBravo2WithCollocationsSimple(coordinator) // group for bravo.2
-    }) { case (collocator, _) =>
-      val result = collocator.explainCollocation(storeGroupA, request(Seq((alpha1, bravo2)))).right.get
-      result.id should be (None)
-      result.status should be (Approved)
-      result.message should be (Approved.message)
+
+    }, { initiateCoordinator =>
+      (initiateCoordinator.ensureSecondaryMoveJob _).expects(storeGroupA, bravo2, *).twice.returns(Right(Right(true)))
+      (initiateCoordinator.ensureSecondaryMoveJob _).expects(storeGroupA, charlie3, *).twice.returns(Right(Right(true)))
+    }) (
+
+    request(Seq((alpha1, bravo2))),
+
+    { commonResult =>
+      val result = commonResult.right.get
+
       result.cost should be (Cost(4))
 
       result.moves.size should be (4)
@@ -452,7 +570,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
       result.moves.map(_.storeIdFrom).toSet should be (Set(store5A, store7A))
       result.moves.map(_.storeIdTo).toSet should be (Set(store1A, store3A))
     }
-  }
+  )
 
   // def initiateCollocation(jobId: UUID, storeGroup: String, request: CollocationRequest): (Either[ErrorResult, CollocationResult], Seq[(Move, Boolean)])
   // tests for saveCollocation(request: CollocationRequest): Unit
