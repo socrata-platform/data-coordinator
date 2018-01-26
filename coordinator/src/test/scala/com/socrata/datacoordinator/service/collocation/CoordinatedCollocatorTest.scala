@@ -347,8 +347,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
       result.cost should be (Cost(2))
 
       result.moves.size should be (2)
-      result.moves.map(_.datasetInternalName).toSet.size should be (1)
-      result.moves.head.datasetInternalName should be (bravo2)
+      result.moves.map(_.datasetInternalName).toSet should be (Set(bravo2))
       result.moves.map(_.storeIdTo).size should be (2)
     }
   }
