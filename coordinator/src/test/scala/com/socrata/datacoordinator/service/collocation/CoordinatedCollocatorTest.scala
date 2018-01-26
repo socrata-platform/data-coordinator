@@ -186,7 +186,39 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
     )
   }
 
-  def expectCDOIBravo21WithCollocationsSimple(coordinator: Coordinator, andNoOtherCalls: Boolean = false): Unit = {
+  def expectCDOIBravo1WithCollocationsComplex(coordinator: Coordinator, andNoOtherCalls: Boolean = false): Unit = {
+    // alpha
+    // -----------------
+    // alpha.1 | bravo.1
+    //
+    // bravo
+    // -----------------
+    // bravo.1 | alpha.2
+    // bravo.1 | charlie.1
+    //
+    // charlie
+    // -----------------
+    // charlie.1 | alpha.2
+    // charlie.2 | alpha.1
+    //
+    expectCollocatedDatasetsOnInstance(coordinator, andNoOtherCalls,
+      (alpha,   Set(bravo1), Set(alpha1, bravo1)),
+      (bravo,   Set(bravo1), Set(alpha2, bravo1, charlie1)),
+      (charlie, Set(bravo1), Set(bravo1)),
+      // new: alpha1, alpha2, charlie1
+
+      (alpha,   Set(alpha1, alpha2, charlie1), Set(alpha1, alpha2, bravo1, charlie1)),
+      (bravo,   Set(alpha1, alpha2, charlie1), Set(alpha1, alpha2, bravo1, charlie1)),
+      (charlie, Set(alpha1, alpha2, charlie1), Set(alpha1, alpha2, charlie1, charlie2)),
+      // new: charlie2
+
+      (alpha,   Set(charlie2), Set(charlie2)),
+      (bravo,   Set(charlie2), Set(charlie2)),
+      (charlie, Set(charlie2), Set(alpha1, charlie2))
+    )
+  }
+
+  def expectCDOIBravo2WithCollocationsSimple(coordinator: Coordinator, andNoOtherCalls: Boolean = false): Unit = {
     // alpha
     // -----------------
     //
@@ -248,6 +280,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
   val requestEmpty = request(Seq.empty)
 
   val resultEmpty = Right(CollocationResult.canonicalEmpty)
+  val resultCompleted = Right(CollocationResult.canonicalEmpty.copy(status = Completed, message = Completed.message))
 
   val moveJobResultEmpty = Right(SecondaryMoveJobsResult(Seq.empty))
 
@@ -272,7 +305,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
     }
   }
 
-  test("explainCollocation for one default store group and two non-collocated datasets should move one dataset twice") {
+  test("explainCollocation for two non-collocated datasets with no overlapping stores should move one dataset twice") {
     withMocks(Set(storeGroupA), { coordinator =>
       (coordinator.secondaryGroups _).expects().returns(Map(storeGroupA -> groupConfig(2, storesGroupA)))
 
@@ -297,7 +330,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
     }
   }
 
-  test("explainCollocation for one default store group and two non-collocated datasets with no overlapping stores should move one dataset twice") {
+  test("explainCollocation for two non-collocated datasets with one overlapping store should move one dataset once") {
     withMocks(Set(storeGroupA), { coordinator =>
       (coordinator.secondaryGroups _).expects().returns(Map(storeGroupA -> groupConfig(2, storesGroupA)))
 
@@ -305,7 +338,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
       (coordinator.secondariesOfDataset _).expects(alpha1).once.returns(secondaries(store1A, store3A))
 
       (coordinator.secondaryMoveJobs _).expects(storeGroupA, bravo1).once.returns(moveJobResultEmpty)
-      (coordinator.secondariesOfDataset _).expects(bravo1).once.returns(secondaries(store5A, store7A))
+      (coordinator.secondariesOfDataset _).expects(bravo1).once.returns(secondaries(store3A, store5A))
 
       expectCDOIDatasetsWithNoCollocations(coordinator, Set(alpha1)) // group for alpha.1
       expectCDOIDatasetsWithNoCollocations(coordinator, Set(bravo1)) // group for bravo.1
@@ -314,11 +347,45 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
       result.id should be (None)
       result.status should be (Approved)
       result.message should be (Approved.message)
-      result.cost should be (Cost(2))
+      result.cost should be (Cost(1))
 
-      result.moves.size should be (2)
-      result.moves.map(_.datasetInternalName).toSet.size should be (1)
-      result.moves.map(_.storeIdTo).size should be (2)
+      result.moves.size should be (1)
+      val move = result.moves.head
+      Set(move.storeIdFrom, move.storeIdTo) should be (Set(store1A, store5A))
+    }
+  }
+
+  test("explainCollocation for non-collocated datasets on the same stores should generate no moves") {
+    withMocks(Set(storeGroupA), { coordinator =>
+      (coordinator.secondaryGroups _).expects().returns(Map(storeGroupA -> groupConfig(2, storesGroupA)))
+
+      (coordinator.secondaryMoveJobs _).expects(storeGroupA, alpha1).once.returns(moveJobResultEmpty)
+      (coordinator.secondariesOfDataset _).expects(alpha1).once.returns(secondaries(store1A, store3A))
+
+      (coordinator.secondaryMoveJobs _).expects(storeGroupA, bravo1).once.returns(moveJobResultEmpty)
+      (coordinator.secondariesOfDataset _).expects(bravo1).once.returns(secondaries(store1A, store3A))
+
+      expectCDOIDatasetsWithNoCollocations(coordinator, Set(alpha1)) // group for alpha.1
+      expectCDOIDatasetsWithNoCollocations(coordinator, Set(bravo1)) // group for bravo.1
+    }) { case (collocator, _) =>
+      collocator.explainCollocation(storeGroupA, request(Seq((alpha1, bravo1)))) should be (resultEmpty)
+    }
+  }
+
+  test("explainCollocation for already collocated datasets should return a result with complted status") {
+    withMocks(Set(storeGroupA), { coordinator =>
+      (coordinator.secondaryGroups _).expects().returns(Map(storeGroupA -> groupConfig(2, storesGroupA)))
+
+      (coordinator.secondaryMoveJobs _).expects(storeGroupA, alpha1).once.returns(moveJobResultEmpty)
+      (coordinator.secondariesOfDataset _).expects(alpha1).once.returns(secondaries(store1A, store3A))
+
+      (coordinator.secondaryMoveJobs _).expects(storeGroupA, bravo1).once.returns(moveJobResultEmpty)
+      (coordinator.secondariesOfDataset _).expects(bravo1).once.returns(secondaries(store1A, store3A))
+
+      expectCDOIAlpha1WithCollocationsComplex(coordinator) // group for alpha.1
+      expectCDOIBravo1WithCollocationsComplex(coordinator) // group for bravo.1
+    }) { case (collocator, _) =>
+      collocator.explainCollocation(storeGroupA, request(Seq((alpha1, bravo1)))) should be (resultCompleted)
     }
   }
 
@@ -327,7 +394,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
   // moves:
   //   bravo.2: store5A, store7A -> store1A, store3A
   //
-  test("explainCollocation for one default store group and a collocated dataset and a non-collocated dataset should move the non-collocated dataset twice") {
+  test("explainCollocation for a collocated dataset and a non-collocated dataset should move the non-collocated dataset twice") {
     withMocks(Set(storeGroupA), { coordinator =>
       (coordinator.secondaryGroups _).expects().returns(Map(storeGroupA -> groupConfig(2, storesGroupA)))
 
@@ -359,7 +426,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
   //   bravo.2:   store5A, store7A -> store1A, store3A
   //   charlie.3: store5A, store7A -> store1A, store3A
   //
-  test("explainCollocation for one default store group and two disjointly collocated datasets should move the dataset with the smaller collocated group") {
+  test("explainCollocation for two disjointly collocated datasets should move the dataset with the smaller collocated group") {
     withMocks(Set(storeGroupA), { coordinator =>
       (coordinator.secondaryGroups _).expects().returns(Map(storeGroupA -> groupConfig(2, storesGroupA)))
 
@@ -370,7 +437,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
       (coordinator.secondariesOfDataset _).expects(bravo2).once.returns(secondaries(store5A, store7A))
 
       expectCDOIAlpha1WithCollocationsComplex(coordinator) // group for alpha.1
-      expectCDOIBravo21WithCollocationsSimple(coordinator) // group for bravo.2
+      expectCDOIBravo2WithCollocationsSimple(coordinator) // group for bravo.2
     }) { case (collocator, _) =>
       val result = collocator.explainCollocation(storeGroupA, request(Seq((alpha1, bravo2)))).right.get
       result.id should be (None)
