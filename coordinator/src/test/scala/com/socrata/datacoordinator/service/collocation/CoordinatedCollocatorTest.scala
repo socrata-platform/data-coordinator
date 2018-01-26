@@ -114,6 +114,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
 
   val charlie1 = internalName(charlie, 1L)
   val charlie2 = internalName(charlie, 2L)
+  val charlie3 = internalName(charlie, 3L)
 
   val datasetsEmpty = Set.empty[DatasetInternalName]
 
@@ -182,6 +183,28 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
       (alpha,   Set(alpha2, charlie1), Set(alpha2, charlie1)),
       (bravo,   Set(alpha2, charlie1), Set(bravo1, alpha2, charlie1)),
       (charlie, Set(alpha2, charlie1), Set(alpha2, charlie1))
+    )
+  }
+
+  def expectCDOIBravo21WithCollocationsSimple(coordinator: Coordinator, andNoOtherCalls: Boolean = false): Unit = {
+    // alpha
+    // -----------------
+    //
+    // bravo
+    // -----------------
+    // bravo.2 | charlie.3
+    //
+    // charlie
+    // -----------------
+    //
+    expectCollocatedDatasetsOnInstance(coordinator, andNoOtherCalls,
+      (alpha,   Set(bravo2), Set(bravo2)),
+      (bravo,   Set(bravo2), Set(bravo2, charlie3)),
+      (charlie, Set(bravo2), Set(bravo2)),
+
+      (alpha,   Set(charlie3), Set(charlie3)),
+      (bravo,   Set(charlie3), Set(bravo2, charlie3)),
+      (charlie, Set(charlie3), Set(charlie3))
     )
   }
 
@@ -296,6 +319,69 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
       result.moves.size should be (2)
       result.moves.map(_.datasetInternalName).toSet.size should be (1)
       result.moves.map(_.storeIdTo).size should be (2)
+    }
+  }
+
+  // collocate: alpha.1 (store1A, store3A) with bravo.2 (store5A, store7A)
+  //
+  // moves:
+  //   bravo.2: store5A, store7A -> store1A, store3A
+  //
+  test("explainCollocation for one default store group and a collocated dataset and a non-collocated dataset should move the non-collocated dataset twice") {
+    withMocks(Set(storeGroupA), { coordinator =>
+      (coordinator.secondaryGroups _).expects().returns(Map(storeGroupA -> groupConfig(2, storesGroupA)))
+
+      (coordinator.secondaryMoveJobs _).expects(storeGroupA, alpha1).once.returns(moveJobResultEmpty)
+      (coordinator.secondariesOfDataset _).expects(alpha1).once.returns(secondaries(store1A, store3A))
+
+      (coordinator.secondaryMoveJobs _).expects(storeGroupA, bravo2).once.returns(moveJobResultEmpty)
+      (coordinator.secondariesOfDataset _).expects(bravo2).once.returns(secondaries(store5A, store7A))
+
+      expectCDOIAlpha1WithCollocationsComplex(coordinator) // group for alpha.1
+      expectCDOIDatasetsWithNoCollocations(coordinator, Set(bravo2)) // group for bravo.2
+    }) { case (collocator, _) =>
+      val result = collocator.explainCollocation(storeGroupA, request(Seq((alpha1, bravo2)))).right.get
+      result.id should be (None)
+      result.status should be (Approved)
+      result.message should be (Approved.message)
+      result.cost should be (Cost(2))
+
+      result.moves.size should be (2)
+      result.moves.map(_.datasetInternalName).toSet should be (Set(bravo2))
+      result.moves.map(_.storeIdFrom).toSet should be (Set(store5A, store7A))
+      result.moves.map(_.storeIdTo).toSet should be (Set(store1A, store3A))
+    }
+  }
+
+  // collocate: alpha.1 (store1A, store3A) with bravo.2 (store5A, store7A)
+  //
+  // moves:
+  //   bravo.2:   store5A, store7A -> store1A, store3A
+  //   charlie.3: store5A, store7A -> store1A, store3A
+  //
+  test("explainCollocation for one default store group and two disjointly collocated datasets should move the dataset with the smaller collocated group") {
+    withMocks(Set(storeGroupA), { coordinator =>
+      (coordinator.secondaryGroups _).expects().returns(Map(storeGroupA -> groupConfig(2, storesGroupA)))
+
+      (coordinator.secondaryMoveJobs _).expects(storeGroupA, alpha1).once.returns(moveJobResultEmpty)
+      (coordinator.secondariesOfDataset _).expects(alpha1).once.returns(secondaries(store1A, store3A))
+
+      (coordinator.secondaryMoveJobs _).expects(storeGroupA, bravo2).once.returns(moveJobResultEmpty)
+      (coordinator.secondariesOfDataset _).expects(bravo2).once.returns(secondaries(store5A, store7A))
+
+      expectCDOIAlpha1WithCollocationsComplex(coordinator) // group for alpha.1
+      expectCDOIBravo21WithCollocationsSimple(coordinator) // group for bravo.2
+    }) { case (collocator, _) =>
+      val result = collocator.explainCollocation(storeGroupA, request(Seq((alpha1, bravo2)))).right.get
+      result.id should be (None)
+      result.status should be (Approved)
+      result.message should be (Approved.message)
+      result.cost should be (Cost(4))
+
+      result.moves.size should be (4)
+      result.moves.map(_.datasetInternalName).toSet should be (Set(bravo2, charlie3))
+      result.moves.map(_.storeIdFrom).toSet should be (Set(store5A, store7A))
+      result.moves.map(_.storeIdTo).toSet should be (Set(store1A, store3A))
     }
   }
 
