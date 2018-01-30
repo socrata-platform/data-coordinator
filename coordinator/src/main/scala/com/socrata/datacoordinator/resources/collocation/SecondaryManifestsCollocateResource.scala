@@ -40,12 +40,12 @@ case class SecondaryManifestsCollocateResource(storeGroup: String,
     }
   }
 
-  private def doCollocationJob(jobId: UUID,
-                               storeGroups: Set[String],
-                               request: CollocationRequest,
-                               explain: Boolean): Either[ErrorResult, CollocationResult] = {
+ def doCollocationJob(jobId: UUID,
+                      storeGroups: Set[String],
+                      request: CollocationRequest,
+                      explain: Boolean): Either[ErrorResult, CollocationResult] = {
 
-    def rollbackCollocationJob(moves: Seq[(Move, Boolean)]): Unit = {
+   def rollbackCollocationJob(moves: Seq[(Move, Boolean)]): Unit = {
       if (!explain) {
         log.error("Attempting to roll back collocation moves for job {}", jobId)
         collocator.rollbackCollocation(jobId, moves)
