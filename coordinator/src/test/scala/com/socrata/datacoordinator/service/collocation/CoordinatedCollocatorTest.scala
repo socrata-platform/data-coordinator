@@ -1,6 +1,8 @@
 package com.socrata.datacoordinator.service.collocation
 
-import com.socrata.datacoordinator.common.collocation.CollocationLock
+import java.util.UUID
+
+import com.socrata.datacoordinator.common.collocation.{CollocationLock, CollocationLockTimeout}
 import com.socrata.datacoordinator.id.{DatasetId, DatasetInternalName}
 import com.socrata.datacoordinator.resources.SecondariesOfDatasetResult
 import com.socrata.datacoordinator.resources.collocation.{CollocatedDatasetsResult, SecondaryMoveJobsResult}
@@ -56,9 +58,9 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
   }
 
   def withMocks[T](defaultStoreGroups: Set[String],
-                        coordinatorExpectations: Coordinator => Unit = expectNoMockCoordinatorCalls,
-                        collocationLockExpectations: CollocationLock => Unit = expectNoMockCollocationLockCalls)
-                       (f: (Collocator, CollocationManifest) => T): T = {
+                   coordinatorExpectations: Coordinator => Unit = expectNoMockCoordinatorCalls,
+                   collocationLockExpectations: CollocationLock => Unit = expectNoMockCollocationLockCalls)
+                  (f: (Collocator, CollocationManifest) => T): T = {
     val manifest = new CollocationManifest
 
     val mockCoordinator: Coordinator = mock[Coordinator]
@@ -453,8 +455,115 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
   }
 
   // def initiateCollocation(jobId: UUID, storeGroup: String, request: CollocationRequest): (Either[ErrorResult, CollocationResult], Seq[(Move, Boolean)])
-  // def saveCollocation(request: CollocationRequest): Unit
-  // def beginCollocation(): Unit
-  // def commitCollocation(): Unit
-  // def rollbackCollocation(jobId: UUID, moves: Seq[(Move, Boolean)]): Option[ErrorResult]
+  // tests for saveCollocation(request: CollocationRequest): Unit
+  test("saveCollocation for an empty request should save nothing to the manifest") {
+    withMocks(defaultStoreGroups) { (collocator, manifest) =>
+      collocator.saveCollocation(requestEmpty)
+
+      manifest.get should be (Set.empty)
+    }
+  }
+
+  test("saveCollocation for a single pair should save that pair to the manifest") {
+    withMocks(defaultStoreGroups) { (collocator, manifest) =>
+      collocator.saveCollocation(request(Seq((alpha1, bravo1))))
+
+      manifest.get should be (Set((alpha1, bravo1)))
+    }
+  }
+
+  test("saveCollocation for multiple pairs should save those pairs to the manifest") {
+    withMocks(defaultStoreGroups) { (collocator, manifest) =>
+      val collocations = Seq(
+        (alpha1, bravo1),
+        (bravo1, charlie2),
+        (alpha1, charlie2)
+      )
+      collocator.saveCollocation(request(collocations))
+
+      manifest.get should be (collocations.toSet)
+    }
+  }
+
+  // tests for beginCollocation(): Unit
+  test("beginCollocation should acquire the collocation lock") {
+    withMocks(defaultStoreGroups, expectNoMockCoordinatorCalls, { lock =>
+      (lock.acquire _).expects(10000L).once.returns(true)
+
+    }) { (collocator, _) =>
+      collocator.beginCollocation()
+    }
+  }
+
+  test("beginCollocation should throw a CollocationLockTimeout exception if it cannot acquire the collocation lock") {
+    withMocks(defaultStoreGroups, expectNoMockCoordinatorCalls, { lock =>
+      (lock.acquire _).expects(10000L).once.returns(false)
+
+    }) { (collocator, _) =>
+      val result = intercept[CollocationLockTimeout] {
+        collocator.beginCollocation()
+      }
+
+      result.millis should be (10000L)
+    }
+  }
+
+  // tests for commitCollocation(): Unit
+  test("commitCollocation should release the collocation lock") {
+    withMocks(defaultStoreGroups, expectNoMockCoordinatorCalls, { lock =>
+      (lock.release _).expects().once
+
+    }) { (collocator, _) =>
+      collocator.commitCollocation()
+    }
+  }
+
+  // tests for rollbackCollocation(jobId: UUID, moves: Seq[(Move, Boolean)]): Option[ErrorResult]
+  test("rollbackCollocation for no moves should do nothing") {
+    withMocks(defaultStoreGroups){ (collocator, _) =>
+      val jobId = UUID.randomUUID()
+      collocator.rollbackCollocation(jobId, Seq.empty) should be (None)
+    }
+  }
+
+  val moveBravo2To1A = Move(bravo2, store7A, store1A)
+  val moveBravo2To3A = Move(bravo2, store5A, store3A)
+
+  val moveCharlie3To1A = Move(charlie3, store7A, store1A)
+  val moveCharlie3To3A = Move(charlie3, store5A, store3A)
+
+  val moveBravo2AndCharlie3 = Seq(
+    (moveBravo2To1A, true),
+    (moveBravo2To3A, false),
+    (moveCharlie3To1A, true),
+    (moveCharlie3To3A, true)
+  )
+
+  test("rollbackCollocation for a set of moves should rollback each move job on the correct instance") {
+    val jobId = UUID.randomUUID()
+
+    withMocks(defaultStoreGroups, { coordinator =>
+      (coordinator.rollbackSecondaryMoveJob _).expects(bravo, jobId, moveBravo2To1A, true).returns(None)
+      (coordinator.rollbackSecondaryMoveJob _).expects(bravo, jobId, moveBravo2To3A, false).returns(None)
+      (coordinator.rollbackSecondaryMoveJob _).expects(charlie, jobId, moveCharlie3To1A, true).returns(None)
+      (coordinator.rollbackSecondaryMoveJob _).expects(charlie, jobId, moveCharlie3To3A, true).returns(None)
+
+    }) { (collocator, manifest) =>
+      collocator.rollbackCollocation(jobId, moveBravo2AndCharlie3) should be (None)
+    }
+  }
+
+  test("rollbackCollocation for a set of moves should rollback each move job on the correct instance handling errors") {
+    val jobId = UUID.randomUUID()
+
+    withMocks(defaultStoreGroups, { coordinator =>
+      (coordinator.rollbackSecondaryMoveJob _).expects(bravo, jobId, moveBravo2To1A, true).returns(None)
+      (coordinator.rollbackSecondaryMoveJob _).expects(bravo, jobId, moveBravo2To3A, false).returns(Some(DatasetNotFound(bravo2)))
+      (coordinator.rollbackSecondaryMoveJob _).expects(charlie, jobId, moveCharlie3To1A, true).returns(None)
+      (coordinator.rollbackSecondaryMoveJob _).expects(charlie, jobId, moveCharlie3To3A, true).returns(None)
+
+    }) { (collocator, manifest) =>
+      collocator.rollbackCollocation(jobId, moveBravo2AndCharlie3) should be (Some(DatasetNotFound(bravo2)))
+    }
+  }
 }
