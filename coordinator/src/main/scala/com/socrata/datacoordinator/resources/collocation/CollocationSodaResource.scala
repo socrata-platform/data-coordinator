@@ -48,17 +48,10 @@ abstract class CollocationSodaResource extends SodaResource {
   def datasetNotFound(datasetInternalName: DatasetInternalName, resp: HttpResponse = NotFound): HttpResponse =
     errorResponse(resp, CollocationError.DATASET_DOES_NOT_EXIST, "dataset" -> JString(datasetInternalName.underlying))
 
-  def withTypedParam[T](name: String, req: HttpRequest, defaultValue: T)(handleRequest: T => HttpResponse): HttpResponse = {
+  def withTypedParam[T](name: String, req: HttpRequest, defaultValue: T, transformer: String => T)(handleRequest: T => HttpResponse): HttpResponse = {
     val param = Option(req.servletRequest.getParameter(name)).getOrElse(defaultValue.toString)
     try {
-      val parsedParam = defaultValue match {
-        case _: Boolean => param.toBoolean
-        case _: String => param
-        case _: UUID => UUID.fromString(param)
-        case _ => throw new IllegalArgumentException("Unhandled data conversion")
-      }
-      //This is a little gory, but we know that the type is T already due to the match above. This will always cast to itself.
-      handleRequest(parsedParam.asInstanceOf[T])
+      handleRequest(transformer(param))
     } catch {
       case e: IllegalArgumentException =>
         log.warn(s"Unable to parse parameter $name as ${defaultValue.getClass.toGenericString}", e)
@@ -73,7 +66,11 @@ abstract class CollocationSodaResource extends SodaResource {
   }
 
   def withBooleanParam(name: String, req: HttpRequest)(handleRequest: Boolean => HttpResponse): HttpResponse = {
-    withTypedParam(name, req, false){handleRequest}
+    withTypedParam(name, req, false, _.toBoolean){handleRequest}
+  }
+
+  def withUUIDParam(name: String, req: HttpRequest)(handleRequest: UUID => HttpResponse): HttpResponse = {
+    withTypedParam(name, req, UUID.randomUUID, UUID.fromString){handleRequest}
   }
 
   def withPostBody[T : JsonDecode](req: HttpRequest)(f: T => HttpResponse): HttpResponse = {

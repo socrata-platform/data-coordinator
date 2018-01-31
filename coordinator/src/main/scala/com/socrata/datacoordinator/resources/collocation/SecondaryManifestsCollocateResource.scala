@@ -16,7 +16,7 @@ case class SecondaryManifestsCollocateResource(storeGroup: String,
 
   private def doCollocateDatasets(req: HttpRequest): HttpResponse = {
     withBooleanParam("explain", req) { explain =>
-      withTypedParam("job", req, UUID.randomUUID) { jobId =>
+      withUUIDParam("job", req) { jobId =>
         withPostBody[CollocationRequest](req) { request =>
           try {
             log.info("Beginning collocation request for job {}", jobId)
