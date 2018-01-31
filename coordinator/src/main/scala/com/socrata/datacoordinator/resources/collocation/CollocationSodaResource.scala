@@ -1,6 +1,7 @@
 package com.socrata.datacoordinator.resources.collocation
 
 import java.io.IOException
+import java.util.UUID
 
 import com.rojoma.json.v3.ast.{JObject, JString, JValue}
 import com.rojoma.json.v3.codec.{JsonDecode, JsonEncode}
@@ -47,21 +48,32 @@ abstract class CollocationSodaResource extends SodaResource {
   def datasetNotFound(datasetInternalName: DatasetInternalName, resp: HttpResponse = NotFound): HttpResponse =
     errorResponse(resp, CollocationError.DATASET_DOES_NOT_EXIST, "dataset" -> JString(datasetInternalName.underlying))
 
-  def withBooleanParam(name: String, req: HttpRequest)(handleRequest: Boolean => HttpResponse): HttpResponse = {
-    val param = Option(req.servletRequest.getParameter(name)).getOrElse("false")
+  def withTypedParam[T](name: String, req: HttpRequest, defaultValue: T)(handleRequest: T => HttpResponse): HttpResponse = {
+    val param = Option(req.servletRequest.getParameter(name)).getOrElse(defaultValue.toString)
     try {
-      handleRequest(param.toBoolean)
+      val parsedParam = defaultValue match {
+        case _: Boolean => param.toBoolean
+        case _: String => param
+        case _: UUID => UUID.fromString(param)
+        case _ => throw new IllegalArgumentException("Unhandled data conversion")
+      }
+      //This is a little gory, but we know that the type is T already due to the match above. This will always cast to itself.
+      handleRequest(parsedParam.asInstanceOf[T])
     } catch {
       case e: IllegalArgumentException =>
-        log.warn(s"Unable to parse parameter $name as Boolean", e)
+        log.warn(s"Unable to parse parameter $name as ${defaultValue.getClass.toGenericString}", e)
         errorResponse(
           BadRequest,
           ParameterRequestError.UNPARSABLE_VALUE,
           "parameter" -> JString(name),
-          "type" -> JString("Boolean"),
+          "type" -> JString(defaultValue.getClass.toGenericString),
           "value" -> JString(param)
         )
     }
+  }
+
+  def withBooleanParam(name: String, req: HttpRequest)(handleRequest: Boolean => HttpResponse): HttpResponse = {
+    withTypedParam(name, req, false){handleRequest}
   }
 
   def withPostBody[T : JsonDecode](req: HttpRequest)(f: T => HttpResponse): HttpResponse = {
