@@ -16,27 +16,28 @@ case class SecondaryManifestsCollocateResource(storeGroup: String,
 
   private def doCollocateDatasets(req: HttpRequest): HttpResponse = {
     withBooleanParam("explain", req) { explain =>
-      withPostBody[CollocationRequest](req) { request =>
-        val jobId = UUID.randomUUID()
-        try {
-          log.info("Beginning collocation request for job {}", jobId)
-          coordinator.collocator.beginCollocation()
+      withUUIDParam("job", req) { jobId =>
+        withPostBody[CollocationRequest](req) { request =>
+          try {
+            log.info("Beginning collocation request for job {}", jobId)
+            coordinator.collocator.beginCollocation()
 
-          val storeGroups = storeGroup match {
-            case "_DEFAULT_" => coordinator.collocator.defaultStoreGroups
-            case other => Set(other)
-          }
+            val storeGroups = storeGroup match {
+              case "_DEFAULT_" => coordinator.collocator.defaultStoreGroups
+              case other => Set(other)
+            }
 
-          doCollocationJob(jobId, storeGroups, request, explain) match {
-            case Right(result) => responseOK(result)
-            case Left(StoreGroupNotFound(group)) => storeGroupNotFound(group)
-            case Left(DatasetNotFound(dataset)) => datasetNotFound(dataset, BadRequest)
-            case Left(_) => InternalServerError
+            doCollocationJob(jobId, storeGroups, request, explain) match {
+              case Right(result) => responseOK(result)
+              case Left(StoreGroupNotFound(group)) => storeGroupNotFound(group)
+              case Left(DatasetNotFound(dataset)) => datasetNotFound(dataset, BadRequest)
+              case Left(_) => InternalServerError
+            }
+          } catch {
+            case _: CollocationLockTimeout => Conflict
+          } finally {
+            coordinator.collocator.commitCollocation()
           }
-        } catch {
-          case _: CollocationLockTimeout => Conflict
-        } finally {
-          coordinator.collocator.commitCollocation()
         }
       }
     }

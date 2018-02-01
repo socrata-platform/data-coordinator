@@ -1,6 +1,7 @@
 package com.socrata.datacoordinator.resources.collocation
 
 import java.io.IOException
+import java.util.UUID
 
 import com.rojoma.json.v3.ast.{JObject, JString, JValue}
 import com.rojoma.json.v3.codec.{JsonDecode, JsonEncode}
@@ -47,21 +48,29 @@ abstract class CollocationSodaResource extends SodaResource {
   def datasetNotFound(datasetInternalName: DatasetInternalName, resp: HttpResponse = NotFound): HttpResponse =
     errorResponse(resp, CollocationError.DATASET_DOES_NOT_EXIST, "dataset" -> JString(datasetInternalName.underlying))
 
-  def withBooleanParam(name: String, req: HttpRequest)(handleRequest: Boolean => HttpResponse): HttpResponse = {
-    val param = Option(req.servletRequest.getParameter(name)).getOrElse("false")
+  def withTypedParam[T](name: String, req: HttpRequest, defaultValue: T, transformer: String => T)(handleRequest: T => HttpResponse): HttpResponse = {
+    val param = Option(req.servletRequest.getParameter(name)).getOrElse(defaultValue.toString)
     try {
-      handleRequest(param.toBoolean)
+      handleRequest(transformer(param))
     } catch {
       case e: IllegalArgumentException =>
-        log.warn(s"Unable to parse parameter $name as Boolean", e)
+        log.warn(s"Unable to parse parameter $name as ${defaultValue.getClass.toGenericString}", e)
         errorResponse(
           BadRequest,
           ParameterRequestError.UNPARSABLE_VALUE,
           "parameter" -> JString(name),
-          "type" -> JString("Boolean"),
+          "type" -> JString(defaultValue.getClass.toGenericString),
           "value" -> JString(param)
         )
     }
+  }
+
+  def withBooleanParam(name: String, req: HttpRequest)(handleRequest: Boolean => HttpResponse): HttpResponse = {
+    withTypedParam(name, req, false, _.toBoolean){handleRequest}
+  }
+
+  def withUUIDParam(name: String, req: HttpRequest)(handleRequest: UUID => HttpResponse): HttpResponse = {
+    withTypedParam(name, req, UUID.randomUUID, UUID.fromString){handleRequest}
   }
 
   def withPostBody[T : JsonDecode](req: HttpRequest)(f: T => HttpResponse): HttpResponse = {
