@@ -3,38 +3,20 @@ package com.socrata.datacoordinator.resources.collocation
 import java.io.IOException
 import java.util.UUID
 
-import com.rojoma.json.v3.ast.{JObject, JString, JValue}
-import com.rojoma.json.v3.codec.{JsonDecode, JsonEncode}
+import com.rojoma.json.v3.ast.JString
+import com.rojoma.json.v3.codec.JsonDecode
 import com.rojoma.json.v3.io.JsonParseException
 import com.rojoma.json.v3.util.JsonUtil
 import com.socrata.datacoordinator.external.{BodyRequestError, CollocationError, ParameterRequestError}
 import com.socrata.datacoordinator.id.DatasetInternalName
-import com.socrata.datacoordinator.resources.SodaResource
-import com.socrata.datacoordinator.service.ServiceUtil.JsonContentType
+import com.socrata.datacoordinator.resources.BasicSodaResource
 import com.socrata.http.server.{HttpRequest, HttpResponse}
 import com.socrata.http.server.responses._
-import com.socrata.http.server.implicits._
-import com.socrata.http.server.responses.Write
 import org.slf4j.Logger
 
-abstract class CollocationSodaResource extends SodaResource {
+abstract class CollocationSodaResource extends BasicSodaResource {
 
   protected val log: Logger
-
-  def responseOK[T : JsonEncode](content: T): HttpResponse = {
-    OK ~> Json(content, pretty = true)
-  }
-
-  def errorResponse(codeSetter: HttpResponse, errorCode: String, data: (String, JValue)*): HttpResponse = {
-    val response = JObject(Map(
-      "errorCode" -> JString(errorCode),
-      "data" -> JObject(data.toMap)
-    ))
-
-    log.info(response.toString)
-
-    codeSetter ~> Write(JsonContentType) { w => JsonUtil.writeJson(w, response, pretty = true, buffer = true) }
-  }
 
   def instanceNotFound(instance: String, resp: HttpResponse = NotFound): HttpResponse =
     errorResponse(resp, CollocationError.INSTANCE_DOES_NOT_EXIST, "instance" -> JString(instance))

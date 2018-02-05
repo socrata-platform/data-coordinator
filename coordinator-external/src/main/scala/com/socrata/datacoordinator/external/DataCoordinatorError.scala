@@ -68,6 +68,11 @@ object CollocationError {
   val DATASET_NOT_FOUND_IN_STORE = "collocation.secondary.dataset-not-found-in-store"
 }
 
+object SecondaryMetricsError {
+  val STORE_DOES_NOT_EXIST = "secondary.metrics.store.does-not-exist"
+  val DATASET_DOES_NOT_EXIST = "secondary.metrics.dataset.does-not-exist"
+}
+
 // Update Errors
 
 object UpdateError{

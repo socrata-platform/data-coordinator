@@ -22,10 +22,10 @@ abstract class SqlSecondaryMetrics(conn: Connection) extends SecondaryMetrics {
 
   override def dataset(storeId: String, datasetId: DatasetId): Option[SecondaryMetric] = {
     using(conn.prepareStatement(
-      """"SELECT total_size
-        |   FROM secondary_metrics
-        |  WHERE store_id = ?
-        |    AND dataset_system_id = ?""".stripMargin)) { stmt =>
+      """SELECT total_size
+        |  FROM secondary_metrics
+        | WHERE store_id = ?
+        |   AND dataset_system_id = ?""".stripMargin)) { stmt =>
       stmt.setString(1, storeId)
       stmt.setDatasetId(2, datasetId)
       using(stmt.executeQuery()) { rs =>

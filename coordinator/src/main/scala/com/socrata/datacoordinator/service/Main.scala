@@ -1,7 +1,5 @@
 package com.socrata.datacoordinator.service
 
-import java.util.UUID
-
 import com.rojoma.json.v3.ast.{JString, JValue}
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.common.soql.SoQLRep
@@ -9,7 +7,7 @@ import com.socrata.datacoordinator.common.collocation.{CollocationLock, CuratedC
 import com.socrata.datacoordinator.common.{DataSourceFromConfig, SoQLCommon}
 import com.socrata.datacoordinator.id.{ColumnId, DatasetId, DatasetInternalName, UserColumnId}
 import com.socrata.datacoordinator.resources._
-import com.socrata.datacoordinator.secondary.{DatasetAlreadyInSecondary, SecondaryMoveJob}
+import com.socrata.datacoordinator.secondary.{DatasetAlreadyInSecondary, SecondaryMetric}
 import com.socrata.datacoordinator.secondary.config.SecondaryGroupConfig
 import com.socrata.datacoordinator.truth.CopySelector
 import com.socrata.datacoordinator.truth.loader.{Delogger, NullLogger}
@@ -262,6 +260,23 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
   def addCollocations(collocations: Seq[(DatasetInternalName, DatasetInternalName)]): Unit = {
     for (u <- common.universe) yield {
       u.collocationManifest.addCollocations(collocations.map { case (l, r) => (l.underlying, r.underlying) }.toSet)
+    }
+  }
+
+  def secondaryMetrics(storeId: String, datasetId: Option[DatasetId]): Either[ResourceNotFound, Option[SecondaryMetric]] = {
+    val secondaries = serviceConfig.secondary.groups.flatMap(_._2.instances).toSet
+    if (secondaries(storeId)) {
+      for (u <- common.universe) yield {
+        datasetId match {
+          case Some(id) => u.datasetMapReader.datasetInfo(id) match {
+            case Some(_) => Right(u.secondaryMetrics.dataset(storeId, id))
+            case None => Left(DatasetNotFound(common.datasetInternalNameFromDatasetId(id)))
+          }
+          case None => Right(Some(u.secondaryMetrics.storeTotal(storeId)))
+        }
+      }
+    } else {
+      Left(StoreNotFound(storeId))
     }
   }
 
@@ -584,6 +599,9 @@ object Main extends DynamicPortMap {
           SecondaryManifestsCollocateResource(_: String, collocationCoordinator(hostAndPort, lock))
         }
 
+        val secondaryManifestsMetricsResource = SecondaryManifestsMetricsResource(_: String, _: Option[DatasetId],
+          operations.secondaryMetrics, common.internalNameFromDatasetId)
+
         val secondaryManifestsMoveResource = SecondaryManifestsMoveResource(
           _: Option[String],
           _: DatasetId,
@@ -616,6 +634,7 @@ object Main extends DynamicPortMap {
           snapshottedResource = snapshottedResource,
           secondaryManifestsResource = secondaryManifestsResource,
           secondaryManifestsCollocateResource = secondaryManifestsCollocateResource,
+          secondaryManifestsMetricsResource = secondaryManifestsMetricsResource,
           secondaryManifestsMoveResource = secondaryManifestsMoveResource,
           collocationManifestsResource = collocationManifestsResource,
           datasetSecondaryStatusResource = datasetSecondaryStatusResource,
