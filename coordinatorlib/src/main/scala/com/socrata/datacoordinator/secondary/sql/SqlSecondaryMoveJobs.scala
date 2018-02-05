@@ -41,11 +41,11 @@ class SqlSecondaryMoveJobs(conn: Connection) extends SecondaryMoveJobs {
   }
 
   override def jobs(datasetId: DatasetId, includeCompleted: Boolean = false): Seq[SecondaryMoveJob] = {
-     selectJobs(where = "dataset_system_id = ?", includeCompleted) { stmt => stmt.setDatasetId(1, datasetId) }
-   }
+    selectJobs(where = "dataset_system_id = ?", includeCompleted) { stmt => stmt.setDatasetId(1, datasetId) }
+  }
 
-   override def jobsFromStore(storeId: String, datasetId: DatasetId, includeCompleted: Boolean = false): Seq[SecondaryMoveJob] = {
-     selectJobs(where = "dataset_system_id = ? AND from_store_id = ?", includeCompleted) { stmt =>
+  override def jobsFromStore(storeId: String, datasetId: DatasetId, includeCompleted: Boolean = false): Seq[SecondaryMoveJob] = {
+    selectJobs(where = "dataset_system_id = ? AND from_store_id = ?", includeCompleted) { stmt =>
       stmt.setDatasetId(1, datasetId)
       stmt.setString(2, storeId)
     }

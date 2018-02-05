@@ -23,6 +23,7 @@ import scala.util.control.ControlThrowable
 object PlaybackToSecondary {
   type SuperUniverse[CT, CV] = Universe[CT, CV] with Commitable with
                                                      SecondaryManifestProvider with
+                                                     SecondaryMetricsProvider with
                                                      DatasetMapReaderProvider with
                                                      DatasetMapWriterProvider with
                                                      DatasetReaderProvider with
@@ -175,6 +176,8 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
               logger.info("Incremental update requested full resync: {}", reason)
               resyncSerially()
           }
+
+          saveMetrics(datasetInfo)
         case None =>
           drop()
       }
@@ -243,6 +246,13 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
                                                 currentCookie, instrumentedIt.flatMap(convertEvent))
       }
       updateSecondaryMap(dataVersion)
+    }
+
+    def saveMetrics(datasetInfo: metadata.DatasetInfo): Unit = {
+      val datasetInternalName = makeSecondaryDatasetInfo(datasetInfo).internalName
+      secondary.store.metric(datasetInternalName, currentCookie).foreach { metric =>
+        u.secondaryMetrics.upsertDataset(secondary.storeId, datasetInfo.systemId, metric)
+      }
     }
 
     def drop(): Unit = {
@@ -412,6 +422,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
     }
 
     def dropFromSecondaryMap(): Unit = {
+      u.secondaryMetrics.dropDataset(secondary.storeId, datasetId)
       u.secondaryManifest.dropDataset(secondary.storeId, datasetId)
       u.commit()
     }
