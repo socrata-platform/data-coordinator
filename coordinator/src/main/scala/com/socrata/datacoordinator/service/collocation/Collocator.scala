@@ -6,6 +6,7 @@ import com.rojoma.json.v3.util._
 import com.socrata.datacoordinator.common.collocation.{CollocationLock, CollocationLockError, CollocationLockTimeout}
 import com.socrata.datacoordinator.id.DatasetInternalName
 import com.socrata.datacoordinator.resources.collocation.{CollocatedDatasetsResult, DatasetNotInStore, SecondaryMoveJobRequest, StoreNotAcceptingDatasets}
+import com.socrata.datacoordinator.secondary.SecondaryMetric
 import com.socrata.datacoordinator.service.collocation.secondary.stores.SecondaryStoreSelector
 
 import scala.annotation.tailrec
@@ -39,14 +40,14 @@ object CollocationResult {
   def apply(id: UUID): CollocationResult = CollocationResult(
     id = Some(id),
     status = Completed,
-    cost = Cost(0),
+    cost = Cost.Zero,
     moves = Seq.empty
   )
 
   def canonicalEmpty: CollocationResult = CollocationResult(
     id = None,
     status = Completed,
-    cost = Cost(0),
+    cost = Cost.Zero,
     moves = Seq.empty
   )
 }
@@ -93,6 +94,9 @@ class CoordinatedCollocator(collocationGroup: Set[String],
     }
   }
 
+  private def secondariesOfDataset(dataset: DatasetInternalName): Set[String] =
+    coordinator.secondariesOfDataset(dataset).fold(throw _, _.getOrElse(throw DatasetNotFound(dataset)).secondaries.keySet)
+
   protected def stores(storeGroup: String, dataset: DatasetInternalName, instances: Set[String], replicationFactor: Int): Set[String] = {
     // we want to get jobs _before_ current stores
     val jobs = coordinator.secondaryMoveJobs(storeGroup, dataset).fold(throw _, identity)
@@ -122,6 +126,14 @@ class CoordinatedCollocator(collocationGroup: Set[String],
         val (storeFrom, storeTo) = stores
         group.map(Move(_, storeFrom, storeTo))
       }
+  }
+
+  protected def datasetCost(storeGroup: String, dataset: DatasetInternalName, instances: Set[String]): Cost = {
+    instances.intersect(secondariesOfDataset(dataset)).flatMap { storeId =>
+      coordinator.secondaryMetrics(storeId, dataset).fold(throw _, identity).map { metric =>
+        Cost(moves = 1, totalSizeBytes = metric.totalSizeBytes)
+      }
+    }.reduceOption(Cost.max).getOrElse(Cost.Unknown)
   }
 
   override def explainCollocation(storeGroup: String,
@@ -158,8 +170,7 @@ class CoordinatedCollocator(collocationGroup: Set[String],
 
               // cost of _all_ datasets in question, not just the input datasets
               val datasetCostMap = datasetGroupMap.flatMap(_._2).map { dataset =>
-                // TODO: implement useful cost (i.e related to size of replicated dataset), work tracked in EN-21686
-                (dataset, Cost(moves = 1))
+                (dataset, datasetCost(storeGroup, dataset, instances))
               }.toMap
 
               // represents graph of collocated groups to be collocated
