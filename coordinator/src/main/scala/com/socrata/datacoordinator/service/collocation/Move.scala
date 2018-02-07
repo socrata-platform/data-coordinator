@@ -4,7 +4,11 @@ import com.rojoma.json.v3.util.{AutomaticJsonEncodeBuilder, JsonKeyStrategy, Str
 import com.socrata.datacoordinator.id.DatasetInternalName
 
 @JsonKeyStrategy(Strategy.Underscore)
-case class Move(datasetInternalName: DatasetInternalName, storeIdFrom: String, storeIdTo: String)
+case class Move(datasetInternalName: DatasetInternalName,
+                storeIdFrom: String,
+                storeIdTo: String,
+                cost: Cost,
+                complete: Option[Boolean] = None)
 
 object Move {
   implicit val encode = AutomaticJsonEncodeBuilder[Move]

@@ -35,23 +35,35 @@ case class StoreNotFound(name: String) extends ResourceNotFound(name, "secondary
 case class DatasetNotFound(internalName: DatasetInternalName) extends ResourceNotFound(internalName.underlying, "dataset")
 
 trait Coordinator {
-  def secondaryGroups: Map[String, SecondaryGroupConfig]
+  def defaultSecondaryGroups: Set[String]
+  def secondaryGroupConfigs: Map[String, SecondaryGroupConfig]
+
+  def secondaryGroups(storeGroup: String): Set[String] = storeGroup match {
+    case "_DEFAULT_" => defaultSecondaryGroups
+    case other => Set(other)
+  }
+
   def collocatedDatasetsOnInstance(instance: String, datasets: Set[DatasetInternalName]): Either[RequestError, CollocatedDatasetsResult]
   def secondariesOfDataset(internalName: DatasetInternalName): Either[RequestError, Option[SecondariesOfDatasetResult]]
   def secondaryMetrics(storeId: String, instance: String): Either[ErrorResult, SecondaryMetric]
   def secondaryMetrics(storeId: String, datasetId: DatasetInternalName): Either[ErrorResult, Option[SecondaryMetric]]
+  def secondaryMoveJobs(instance: String, storeId: UUID): Either[RequestError, SecondaryMoveJobsResult]
   def secondaryMoveJobs(storeGroup: String, internalName: DatasetInternalName): Either[ErrorResult, SecondaryMoveJobsResult]
   def ensureSecondaryMoveJob(storeGroup: String, internalName: DatasetInternalName, request: SecondaryMoveJobRequest): Either[ErrorResult, Either[InvalidMoveJob, Boolean]]
   def rollbackSecondaryMoveJob(instance: String, jobId: UUID, move: Move, dropFromStore: Boolean): Option[ErrorResult]
 }
 
+abstract class CoordinatorProvider(val coordinator: Coordinator)
+
 class HttpCoordinator(isThisInstance: String => Boolean,
-                      val secondaryGroups: Map[String, SecondaryGroupConfig],
+                      val defaultSecondaryGroups: Set[String],
+                      val secondaryGroupConfigs: Map[String, SecondaryGroupConfig],
                       hostAndPort: String => Option[(String, Int)],
                       httpClient: HttpClient,
                       collocatedDatasets: Set[DatasetInternalName] => CollocatedDatasetsResult,
                       secondariesOfDataset: DatasetId => Option[SecondariesOfDatasetResult],
                       secondaryMetrics: (String, Option[DatasetId]) => Either[ResourceNotFound, Option[SecondaryMetric]],
+                      secondaryMoveJobsByJob: UUID => SecondaryMoveJobsResult,
                       secondaryMoveJobs: (String, DatasetId) => Either[ResourceNotFound, SecondaryMoveJobsResult],
                       ensureSecondaryMoveJob: (String, DatasetId, SecondaryMoveJobRequest) => Either[ResourceNotFound, Either[InvalidMoveJob, Boolean]],
                       rollbackSecondaryMoveJob: (DatasetId, SecondaryMoveJobRequest, Boolean) => Option[DatasetNotFound]) extends Coordinator {
@@ -165,6 +177,18 @@ class HttpCoordinator(isThisInstance: String => Boolean,
     }
   }
 
+  override def secondaryMoveJobs(instance: String, storeId: UUID): Either[RequestError, SecondaryMoveJobsResult] = {
+    if (isThisInstance(instance)) {
+      Right(secondaryMoveJobsByJob(storeId))
+    } else {
+      val route = s"/secondary-move-jobs/job/$storeId"
+      request[SecondaryMoveJobsResult](instance, route)(_.get) match {
+        case Right(result) => Right(result.get) // endpoint will never 404
+        case Left(error) => Left(error)
+      }
+    }
+  }
+
   private def secondaryMoveRoute(storeGroup: Option[String], internalName: DatasetInternalName) =
     s"/secondary-manifest/move/${storeGroup.map(_ + "/").getOrElse("")}${internalName.underlying}"
 
@@ -186,7 +210,7 @@ class HttpCoordinator(isThisInstance: String => Boolean,
   override def ensureSecondaryMoveJob(storeGroup: String,
                                       internalName: DatasetInternalName,
                                       request: SecondaryMoveJobRequest): Either[ErrorResult, Either[InvalidMoveJob, Boolean]] = {
-    if (secondaryGroups.contains(storeGroup)) {
+    if (secondaryGroupConfigs.contains(storeGroup)) {
       if (isThisInstance(internalName.instance)) {
         ensureSecondaryMoveJob(storeGroup, internalName.datasetId, request)
       } else {

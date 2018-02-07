@@ -1,5 +1,7 @@
 package com.socrata.datacoordinator.service
 
+import java.util.UUID
+
 import com.rojoma.json.v3.ast.{JString, JValue}
 import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.common.soql.SoQLRep
@@ -27,7 +29,7 @@ import com.typesafe.config.{Config, ConfigFactory}
 import java.util.concurrent.{CountDownLatch, Executors, TimeUnit}
 
 import com.socrata.datacoordinator.resources.collocation._
-import com.socrata.datacoordinator.service.collocation._
+import com.socrata.datacoordinator.service.collocation.{MetricProvider, _}
 import com.socrata.http.client.HttpClientHttpClient
 import org.apache.curator.x.discovery.{ServiceInstanceBuilder, strategies}
 import org.apache.log4j.PropertyConfigurator
@@ -136,6 +138,12 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
           groups.toMap
         )
       }
+    }
+  }
+
+  def secondaryMoveJobsByStoreId(storeId: UUID): SecondaryMoveJobsResult = {
+    for (u <- common.universe) yield {
+      SecondaryMoveJobsResult(u.secondaryMoveJobs.jobs(storeId))
     }
   }
 
@@ -571,33 +579,46 @@ object Main extends DynamicPortMap {
         val secondaryManifestsResource = SecondaryManifestsResource(_: Option[String], secondaries,
           operations.datasetsInStore, common.internalNameFromDatasetId)
 
-        def collocationCoordinator(hostAndPort: String => Option[(String, Int)],
-                                   lock: CollocationLock): Coordinator with CollocatorProvider = {
+        def httpCoordinator(hostAndPort: String => Option[(String, Int)]): Coordinator =
           new HttpCoordinator(
             serviceConfig.instance.equals,
+            serviceConfig.secondary.defaultGroups,
             serviceConfig.secondary.groups,
             hostAndPort,
             new HttpClientHttpClient(executorService), // since executorService is currently unbounded we can share here
             operations.collocatedDatasets,
             operations.secondariesOfDataset,
             operations.secondaryMetrics,
+            operations.secondaryMoveJobsByStoreId,
             operations.secondaryMoveJobs,
             operations.ensureSecondaryMoveJob,
             operations.rollbackSecondaryMoveJob
-          ) with CollocatorProvider {
-            override val collocator = new CoordinatedCollocator(
-              collocationGroup,
-              serviceConfig.secondary.defaultGroups,
-              this,
-              operations.addCollocations,
-              lock,
-              serviceConfig.collocation.lockTimeout.toMillis
+          )
+
+        def collocationProvider(hostAndPort: String => Option[(String, Int)],
+                                lock: CollocationLock): CoordinatorProvider with
+                                                        CollocatorProvider with
+                                                        MetricProvider = {
+          new CoordinatorProvider(httpCoordinator(hostAndPort)) with CollocatorProvider with MetricProvider {
+            override val collocator: Collocator = new CoordinatedCollocator(
+              collocationGroup = collocationGroup,
+              coordinator = coordinator,
+              addCollocations = operations.addCollocations,
+              lock = lock,
+              lockTimeoutMillis = serviceConfig.collocation.lockTimeout.toMillis
             )
+            override val metric: Metric = CoordinatedMetric(collocationGroup, coordinator)
+          }
+        }
+
+        def metricProvider(hostAndPort: String => Option[(String, Int)]): CoordinatorProvider with MetricProvider = {
+          new CoordinatorProvider(httpCoordinator(hostAndPort)) with MetricProvider {
+            override val metric: Metric = CoordinatedMetric(collocationGroup, coordinator)
           }
         }
 
         def secondaryManifestsCollocateResource(lock: CollocationLock)(hostAndPort: String => Option[(String, Int)]) = {
-          SecondaryManifestsCollocateResource(_: String, collocationCoordinator(hostAndPort, lock))
+          SecondaryManifestsCollocateResource(_: String, collocationProvider(hostAndPort, lock))
         }
 
         val secondaryManifestsMetricsResource = SecondaryManifestsMetricsResource(_: String, _: Option[DatasetId],
@@ -612,8 +633,16 @@ object Main extends DynamicPortMap {
           common.datasetInternalNameFromDatasetId
         )
 
+        def secondaryManifestsMoveJobResource(hostAndPort: String => Option[(String, Int)]) = SecondaryManifestsMoveJobResource(
+          _: String,
+          _: String,
+          metricProvider(hostAndPort)
+        )
+
+        val secondaryMoveJobsJobResource = SecondaryMoveJobsJobResource(_: String, operations.secondaryMoveJobsByStoreId)
+
         def collocationManifestsResource(lock: CollocationLock)(hostAndPort: String => Option[(String, Int)]) = {
-          CollocationManifestsResource(_: Option[String], collocationCoordinator(hostAndPort, lock))
+          CollocationManifestsResource(_: Option[String], collocationProvider(hostAndPort, lock))
         }
 
         val datasetSecondaryStatusResource = DatasetSecondaryStatusResource(_: Option[String], _:DatasetId, secondaries,
@@ -637,6 +666,8 @@ object Main extends DynamicPortMap {
           secondaryManifestsCollocateResource = secondaryManifestsCollocateResource,
           secondaryManifestsMetricsResource = secondaryManifestsMetricsResource,
           secondaryManifestsMoveResource = secondaryManifestsMoveResource,
+          secondaryManifestsMoveJobResource = secondaryManifestsMoveJobResource,
+          secondaryMoveJobsJobResource = secondaryMoveJobsJobResource,
           collocationManifestsResource = collocationManifestsResource,
           datasetSecondaryStatusResource = datasetSecondaryStatusResource,
           secondariesOfDatasetResource = secondariesOfDatasetResource) _

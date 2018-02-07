@@ -40,9 +40,6 @@ case class SecondaryManifestsMoveResource(storeGroup: Option[String],
                                           datasetInternalName: DatasetId => DatasetInternalName)
   extends CollocationSodaResource {
 
-
-  override protected val log = org.slf4j.LoggerFactory.getLogger(classOf[SecondaryManifestsMoveResource])
-
   override def get = doGetSecondaryMoveJobs
 
   override def post = { req =>

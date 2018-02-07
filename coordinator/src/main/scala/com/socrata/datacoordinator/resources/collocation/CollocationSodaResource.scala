@@ -16,8 +16,6 @@ import org.slf4j.Logger
 
 abstract class CollocationSodaResource extends BasicSodaResource {
 
-  protected val log: Logger
-
   def instanceNotFound(instance: String, resp: HttpResponse = NotFound): HttpResponse =
     errorResponse(resp, CollocationError.INSTANCE_DOES_NOT_EXIST, "instance" -> JString(instance))
 
@@ -70,6 +68,16 @@ abstract class CollocationSodaResource extends BasicSodaResource {
       case e: JsonParseException =>
         log.warn("Unable to parse request as JSON", e)
         errorResponse(BadRequest, BodyRequestError.MALFORMED_JSON, "message" -> JString(e.message))
+    }
+  }
+
+  def withJobId(jobId: String, req: HttpRequest)(handleRequest: UUID => HttpResponse): HttpResponse = {
+    try {
+      val job = UUID.fromString(jobId)
+      handleRequest(job)
+    } catch {
+      case error: IllegalArgumentException =>
+        errorResponse(BadRequest, CollocationError.INVALID_JOB_ID, "job" -> JString(jobId))
     }
   }
 }

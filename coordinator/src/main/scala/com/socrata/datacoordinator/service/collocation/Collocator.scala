@@ -6,7 +6,6 @@ import com.rojoma.json.v3.util._
 import com.socrata.datacoordinator.common.collocation.{CollocationLock, CollocationLockError, CollocationLockTimeout}
 import com.socrata.datacoordinator.id.DatasetInternalName
 import com.socrata.datacoordinator.resources.collocation.{CollocatedDatasetsResult, DatasetNotInStore, SecondaryMoveJobRequest, StoreNotAcceptingDatasets}
-import com.socrata.datacoordinator.secondary.SecondaryMetric
 import com.socrata.datacoordinator.service.collocation.secondary.stores.SecondaryStoreSelector
 
 import scala.annotation.tailrec
@@ -54,7 +53,6 @@ object CollocationResult {
 
 trait Collocator {
   def collocatedDatasets(datasets: Set[DatasetInternalName]): Either[RequestError, CollocatedDatasetsResult]
-  def defaultStoreGroups: Set[String]
   def explainCollocation(storeGroup: String, request: CollocationRequest): Either[ErrorResult, CollocationResult]
   def initiateCollocation(jobId: UUID, storeGroup: String, request: CollocationRequest): (Either[ErrorResult, CollocationResult], Seq[(Move, Boolean)])
   def saveCollocation(request: CollocationRequest): Unit
@@ -68,7 +66,6 @@ trait CollocatorProvider {
 }
 
 class CoordinatedCollocator(collocationGroup: Set[String],
-                            override val defaultStoreGroups: Set[String],
                             coordinator: Coordinator,
                             addCollocations: Seq[(DatasetInternalName, DatasetInternalName)] => Unit,
                             lock: CollocationLock,
@@ -110,7 +107,7 @@ class CoordinatedCollocator(collocationGroup: Set[String],
     val storesInGroup = instances.intersect(futureStores)
     if (replicationFactor != storesInGroup.size) {
       log.error("Dataset {}'s current replication factor {} is not the expected replication factor {} for the group {}",
-        dataset.toString, replicationFactor.toString, storesInGroup.size.toString)
+        dataset.toString, storesInGroup.size.toString, replicationFactor.toString, storeGroup)
       throw new Exception("Dataset replicated to stores in an unexpected state!")
     }
 
@@ -124,12 +121,13 @@ class CoordinatedCollocator(collocationGroup: Set[String],
       zip((storesTo -- storesFrom).toSeq).
       flatMap { stores =>
         val (storeFrom, storeTo) = stores
-        group.map(Move(_, storeFrom, storeTo))
+        group.map(Move(_, storeFrom, storeTo, Cost.Unknown)) // TODO
       }
   }
-
+  
   protected def datasetCost(storeGroup: String, dataset: DatasetInternalName, instances: Set[String]): Cost = {
     instances.intersect(secondariesOfDataset(dataset)).flatMap { storeId =>
+      // TODO: use Metric.datasetMaxCost here instead
       coordinator.secondaryMetrics(storeId, dataset).fold(throw _, identity).map { metric =>
         Cost(moves = 1, totalSizeBytes = metric.totalSizeBytes)
       }
@@ -140,7 +138,7 @@ class CoordinatedCollocator(collocationGroup: Set[String],
                                   request: CollocationRequest): Either[ErrorResult, CollocationResult] = {
     log.info("Explaining collocation on secondary store group {}", storeGroup)
     try {
-      coordinator.secondaryGroups.get(storeGroup) match {
+      coordinator.secondaryGroupConfigs.get(storeGroup) match {
         case Some(groupConfig) =>
           val instances = groupConfig.instances
           val replicationFactor = groupConfig.numReplicas
