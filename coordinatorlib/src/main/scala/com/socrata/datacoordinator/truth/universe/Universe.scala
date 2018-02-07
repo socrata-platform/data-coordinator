@@ -104,6 +104,10 @@ trait SecondaryManifestProvider {
   val secondaryManifest: SecondaryManifest
 }
 
+trait SecondaryMetricsProvider {
+  val secondaryMetrics: SecondaryMetrics
+}
+
 trait CollocationManifestProvider {
   val collocationManifest: CollocationManifest
 }

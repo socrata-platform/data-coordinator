@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
+    <changeSet author="Alexa Rust" id="20180202-add-secondary-metrics-table">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <tableExists tableName="secondary_metrics"/>
+            </not>
+        </preConditions>
+        <createTable tableName="secondary_metrics">
+            <column name="store_id" type="VARCHAR(64)"/>
+            <column name="dataset_system_id" type="BIGINT"/>
+
+            <column name="total_size" type="BIGINT">
+                <constraints nullable="false"/>
+            </column>
+
+            <column name="created_at" type="TIMESTAMP WITH TIME ZONE" defaultValueComputed="now()">
+                <constraints nullable="false"/>
+            </column>
+            <column name="updated_at" type="TIMESTAMP WITH TIME ZONE" defaultValueComputed="now()">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+
+        <addPrimaryKey tableName="secondary_metrics"
+                       constraintName="secondary_metrics_pkey"
+                       columnNames="store_id,dataset_system_id"/>
+
+        <addForeignKeyConstraint baseTableName="secondary_metrics"
+                                 constraintName="secondary_metrics_store_id_dataset_system_id_fkey"
+                                 baseColumnNames="store_id,dataset_system_id"
+                                 referencedTableName="secondary_manifest"
+                                 referencedColumnNames="store_id,dataset_system_id"/>
+
+        <createIndex tableName="secondary_metrics" indexName="secondary_metrics_store_id">
+            <column name="store_id"/>
+        </createIndex>
+
+        <createIndex tableName="secondary_metrics" indexName="secondary_metrics_dataset_system_id">
+            <column name="dataset_system_id"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

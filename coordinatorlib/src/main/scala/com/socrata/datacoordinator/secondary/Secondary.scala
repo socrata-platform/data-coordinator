@@ -38,6 +38,11 @@ trait Secondary[CT, CV] {
              rows: Managed[Iterator[ColumnIdMap[CV]]], rollups: Seq[RollupInfo], isLatestLivingCopy: Boolean): Cookie
 
   /**
+   * @return Optionally metrics, namely size, about the dataset on the secondary store
+   */
+  def metric(datasetInternalName: String, cookie: Cookie): Option[SecondaryMetric] = None
+
+  /**
    * Drops a copy of a dataset as part of the resync path.
    * This will only be called on copies that are discarded or snapshotted.
    */

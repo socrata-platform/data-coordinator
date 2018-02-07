@@ -84,6 +84,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
     with DatasetMapReaderProvider
     with DatasetMapWriterProvider
     with SecondaryManifestProvider
+    with SecondaryMetricsProvider
     with CollocationManifestProvider
     with SecondaryMoveJobsProvider
     with PlaybackToSecondaryProvider
@@ -155,6 +156,9 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
 
   lazy val secondaryManifest: SecondaryManifest =
     new SqlSecondaryManifest(conn)
+
+  lazy val secondaryMetrics: SecondaryMetrics =
+    new PostgresSecondaryMetrics(conn)
 
   lazy val collocationManifest: CollocationManifest =
     new PostgresCollocationManifest(conn)
