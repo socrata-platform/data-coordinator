@@ -29,7 +29,9 @@ class PostgresSecondaryMetrics(conn: Connection) extends SqlSecondaryMetrics(con
     // once we are no longer running 9.4 truth instances
     if (rowsUpdated == 0) {
       try {
-        using(conn.prepareStatement("INSERT INTO secondary_metrics (store_id, dataset_system_id, total_size) (?, ?, ?)")) { stmt =>
+        using(conn.prepareStatement(
+          """INSERT INTO secondary_metrics (store_id, dataset_system_id, total_size)
+            |     VALUES (?, ?, ?)""".stripMargin)) { stmt =>
           stmt.setString(1, storeId)
           stmt.setDatasetId(2, datasetId)
           stmt.setLong(3, metric.totalSizeBytes)
