@@ -26,5 +26,7 @@ object Cost {
 
   val Zero: Cost = Cost(moves = 0, totalSizeBytes = 0L, moveSizeMaxBytes = Some(0L))
 
-  val Unknown: Cost = Cost(moves = 1, totalSizeBytes = Long.MinValue)
+  // since we have not yet backfilled the secondary_metrics table and we don't want to
+  // outright fail, return an obviously not real value for the total size in bytes.
+  val Unknown: Cost = Cost(moves = 1, totalSizeBytes = -1L)
 }
