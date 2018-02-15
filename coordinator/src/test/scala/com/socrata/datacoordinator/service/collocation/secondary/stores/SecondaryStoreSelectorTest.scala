@@ -53,7 +53,7 @@ class SecondaryStoreSelectorTest extends FunSuite with ShouldMatchers {
     stores.intersect(destinations2) should have size 2
   }
 
-  val costMap = Map(0 -> Cost(4), 1 -> Cost(1), 2 -> Cost(1), 3 -> Cost(2))
+  val costMap = Map(0 -> Cost(4, 40), 1 -> Cost(1, 10), 2 -> Cost(1, 10), 3 -> Cost(2, 20))
   val storeMap = Map(0 -> Set(store1), 1 -> Set(store2), 2 -> Set(store3), 3 -> Set(store3))
 
   test("There should be a key for the max cost in a cost map") {

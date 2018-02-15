@@ -5,10 +5,11 @@ import java.util.UUID
 import com.rojoma.json.v3.ast.JObject
 import com.rojoma.json.v3.codec.{DecodeError, JsonDecode}
 import com.rojoma.json.v3.util.AutomaticJsonDecodeBuilder
-import com.socrata.datacoordinator.external.CollocationError
+import com.socrata.datacoordinator.external.{CollocationError, SecondaryMetricsError}
 import com.socrata.datacoordinator.id.{DatasetId, DatasetInternalName}
 import com.socrata.datacoordinator.resources.collocation._
-import com.socrata.datacoordinator.resources.SecondariesOfDatasetResult
+import com.socrata.datacoordinator.resources.{SecondariesOfDatasetResult, SecondaryMetricsResult}
+import com.socrata.datacoordinator.secondary.SecondaryMetric
 import com.socrata.datacoordinator.secondary.config.SecondaryGroupConfig
 import com.socrata.http.client._
 
@@ -37,6 +38,8 @@ trait Coordinator {
   def secondaryGroups: Map[String, SecondaryGroupConfig]
   def collocatedDatasetsOnInstance(instance: String, datasets: Set[DatasetInternalName]): Either[RequestError, CollocatedDatasetsResult]
   def secondariesOfDataset(internalName: DatasetInternalName): Either[RequestError, Option[SecondariesOfDatasetResult]]
+  def secondaryMetrics(storeId: String, instance: String): Either[ErrorResult, SecondaryMetric]
+  def secondaryMetrics(storeId: String, datasetId: DatasetInternalName): Either[ErrorResult, Option[SecondaryMetric]]
   def secondaryMoveJobs(storeGroup: String, internalName: DatasetInternalName): Either[ErrorResult, SecondaryMoveJobsResult]
   def ensureSecondaryMoveJob(storeGroup: String, internalName: DatasetInternalName, request: SecondaryMoveJobRequest): Either[ErrorResult, Either[InvalidMoveJob, Boolean]]
   def rollbackSecondaryMoveJob(instance: String, jobId: UUID, move: Move, dropFromStore: Boolean): Option[ErrorResult]
@@ -48,6 +51,7 @@ class HttpCoordinator(isThisInstance: String => Boolean,
                       httpClient: HttpClient,
                       collocatedDatasets: Set[DatasetInternalName] => CollocatedDatasetsResult,
                       secondariesOfDataset: DatasetId => Option[SecondariesOfDatasetResult],
+                      secondaryMetrics: (String, Option[DatasetId]) => Either[ResourceNotFound, Option[SecondaryMetric]],
                       secondaryMoveJobs: (String, DatasetId) => Either[ResourceNotFound, SecondaryMoveJobsResult],
                       ensureSecondaryMoveJob: (String, DatasetId, SecondaryMoveJobRequest) => Either[ResourceNotFound, Either[InvalidMoveJob, Boolean]],
                       rollbackSecondaryMoveJob: (DatasetId, SecondaryMoveJobRequest, Boolean) => Option[DatasetNotFound]) extends Coordinator {
@@ -110,8 +114,59 @@ class HttpCoordinator(isThisInstance: String => Boolean,
     }
   }
 
+  private def secondaryMetricsRoute(storeId: String, internalName: Option[DatasetInternalName] = None) =
+    s"/secondary-manifest/metrics/$storeId${internalName.map("/" + _.underlying).getOrElse("")}"
+
+  override def secondaryMetrics(storeId: String, instance: String): Either[ErrorResult, SecondaryMetric] = {
+    if (isThisInstance(instance)) {
+      secondaryMetrics(storeId, None) match {
+        case Right(metric) => Right(metric.getOrElse(SecondaryMetric(0L)))
+        case Left(error) => Left(error)
+      }
+    } else {
+      request[SecondaryMetricsResult](instance, secondaryMetricsRoute(storeId))(_.get) match {
+        case Right(Some(result)) => Right(SecondaryMetric(result.totalSizeBytes.getOrElse(0L)))
+        case Right(None) => Left(StoreNotFound(storeId))
+        case Left(requestError) => Left(requestError)
+      }
+    }
+  }
+
+  override def secondaryMetrics(storeId: String, internalName: DatasetInternalName): Either[ErrorResult, Option[SecondaryMetric]] = {
+    if (isThisInstance(internalName.instance)) {
+      secondaryMetrics(storeId, Some(internalName.datasetId))
+    } else {
+      doRequest[Either[ResourceNotFound, Option[SecondaryMetric]]](internalName.instance, secondaryMetricsRoute(storeId, Some(internalName)), _.get) { response =>
+        response.resultCode match {
+          case 200 => response.value[SecondaryMetricsResult]() match {
+            case Right(result) => Right(Right(result.totalSizeBytes.map(SecondaryMetric)))
+            case Left(error) => Left(ResponseError(error))
+          }
+          case 404 => response.value[CoordinatorError]() match {
+            case Right(CoordinatorError(SecondaryMetricsError.STORE_DOES_NOT_EXIST, _)) =>
+              Right(Left(StoreNotFound(storeId)))
+            case Right(CoordinatorError(SecondaryMetricsError.DATASET_DOES_NOT_EXIST, _)) =>
+              Right(Left(DatasetNotFound(internalName)))
+            case Right(error) =>
+              Left(UnexpectedError(s"Unexpected error of type ${error.getClass.getName}"))
+            case Left(error) =>
+              Left(ResponseError(error))
+          }
+          case resultCode =>
+            val message = s"Received unexpected result code $resultCode from other instance ${internalName.instance}!"
+            log.error(message)
+            Left(UnexpectedError(message))
+        }
+      } match {
+        case Right(Right(result)) => Right(result)
+        case Right(Left(error)) => Left(error)
+        case Left(error) => Left(error)
+      }
+    }
+  }
+
   private def secondaryMoveRoute(storeGroup: Option[String], internalName: DatasetInternalName) =
-  s"/secondary-manifest/move/${storeGroup.map(_ + "/").getOrElse("")}${internalName.underlying}"
+    s"/secondary-manifest/move/${storeGroup.map(_ + "/").getOrElse("")}${internalName.underlying}"
 
   override def secondaryMoveJobs(storeGroup: String, internalName: DatasetInternalName): Either[ErrorResult, SecondaryMoveJobsResult] = {
     if (isThisInstance(internalName.instance)) {

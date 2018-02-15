@@ -580,6 +580,7 @@ object Main extends DynamicPortMap {
             new HttpClientHttpClient(executorService), // since executorService is currently unbounded we can share here
             operations.collocatedDatasets,
             operations.secondariesOfDataset,
+            operations.secondaryMetrics,
             operations.secondaryMoveJobs,
             operations.ensureSecondaryMoveJob,
             operations.rollbackSecondaryMoveJob
