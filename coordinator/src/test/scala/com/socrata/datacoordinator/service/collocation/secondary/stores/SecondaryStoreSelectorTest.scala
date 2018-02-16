@@ -1,9 +1,15 @@
 package com.socrata.datacoordinator.service.collocation.secondary.stores
 
-import com.socrata.datacoordinator.service.collocation.Cost
+import com.socrata.datacoordinator.service.collocation.{Cost, WeightedCostOrdering}
 import org.scalatest.{FunSuite, ShouldMatchers}
 
 class SecondaryStoreSelectorTest extends FunSuite with ShouldMatchers {
+
+  implicit val costOrdering: Ordering[Cost] = WeightedCostOrdering(
+    movesWeight = 1.0,
+    totalSizeBytesWeight = 0.0,
+    moveSizeMaxBytesWeight = 0.0
+  )
 
   val store1 = "store_1"
   val store2 = "store_2"

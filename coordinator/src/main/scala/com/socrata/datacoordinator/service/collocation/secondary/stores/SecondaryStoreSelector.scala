@@ -11,7 +11,7 @@ case class NotEnoughInstancesInSecondaryGroup(name: String, count: Int)
 class SecondaryStoreSelector(groupName: String,
                              allStores: Set[String],
                              unavailableStores: Set[String],
-                             replicationFactor: Int) {
+                             replicationFactor: Int)(implicit costOrdering: Ordering[Cost]) {
 
   def maxCostKey[T](costMap: Map[T, Cost]): Option[T] =
     if (costMap.nonEmpty) Some(costMap.maxBy(_._2)._1) // max by Cost and return key
@@ -61,7 +61,8 @@ class SecondaryStoreSelector(groupName: String,
 }
 
 object SecondaryStoreSelector {
-  def apply(groupName: String, groupConfig: SecondaryGroupConfig): SecondaryStoreSelector =
+  def apply(groupName: String,
+            groupConfig: SecondaryGroupConfig)(implicit costOrdering: Ordering[Cost]): SecondaryStoreSelector =
     new SecondaryStoreSelector(
       groupName = groupName,
       allStores = groupConfig.instances,

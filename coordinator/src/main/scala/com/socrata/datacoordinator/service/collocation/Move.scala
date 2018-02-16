@@ -12,4 +12,8 @@ case class Move(datasetInternalName: DatasetInternalName,
 
 object Move {
   implicit val encode = AutomaticJsonEncodeBuilder[Move]
+
+  def totalCost(moves: Iterable[Move]): Cost = {
+    moves.map(_.cost).fold(Cost.Zero)(_ + _)
+  }
 }

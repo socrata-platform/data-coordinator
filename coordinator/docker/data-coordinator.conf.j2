@@ -14,7 +14,15 @@ com.socrata.coordinator.service {
     {{ DATA_COORDINATOR_DB_PASSWORD_LINE }}
   }
 
-  collocation.group = {{ DATA_COORDINATOR_COLLOCATION_GROUP }}
+  collocation {
+    cost {
+      moves-weight = {{ DATA_COORDINATOR_COLLOCATION_COST_MOVES_WEIGHT }}
+      total-size-bytes-weight = {{ DATA_COORDINATOR_COLLOCATION_COST_TOTAL_SIZE_BYTES_WEIGHT }}
+      move-size-max-bytes-weight = {{ DATA_COORDINATOR_COLLOCATION_COST_MOVE_SIZE_MAX_BYTES_WEIGHT }}
+    }
+
+    group = {{ DATA_COORDINATOR_COLLOCATION_GROUP }}
+  }
 
   secondary {
     {{ SECONDARY_CONFIG }}
