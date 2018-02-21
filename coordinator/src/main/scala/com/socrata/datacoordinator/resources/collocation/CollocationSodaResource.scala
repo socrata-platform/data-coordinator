@@ -12,7 +12,6 @@ import com.socrata.datacoordinator.id.DatasetInternalName
 import com.socrata.datacoordinator.resources.BasicSodaResource
 import com.socrata.http.server.{HttpRequest, HttpResponse}
 import com.socrata.http.server.responses._
-import org.slf4j.Logger
 
 abstract class CollocationSodaResource extends BasicSodaResource {
 
@@ -72,12 +71,14 @@ abstract class CollocationSodaResource extends BasicSodaResource {
   }
 
   def withJobId(jobId: String, req: HttpRequest)(handleRequest: UUID => HttpResponse): HttpResponse = {
-    try {
-      val job = UUID.fromString(jobId)
-      handleRequest(job)
+    val id = try {
+      Right(UUID.fromString(jobId))
     } catch {
-      case error: IllegalArgumentException =>
-        errorResponse(BadRequest, CollocationError.INVALID_JOB_ID, "job" -> JString(jobId))
+      case e: IllegalArgumentException =>
+        log.warn("Unable to parse job id as UUID", e)
+        Left(errorResponse(BadRequest, CollocationError.INVALID_JOB_ID, "job" -> JString(jobId)))
     }
+
+    id.fold(identity, handleRequest)
   }
 }

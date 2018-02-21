@@ -44,10 +44,9 @@ case class SecondaryManifestsMoveJobResource(storeGroup: String,
             (dataset, cost)
           }.toMap
 
-            moveJobs.filter { moveJob =>
-              groupConfig.instances.contains(moveJob.fromStoreId)
-            }.map { moveJob =>
-
+          moveJobs.filter { moveJob =>
+            groupConfig.instances.contains(moveJob.fromStoreId)
+          }.map { moveJob =>
             Move(
               datasetInternalName = DatasetInternalName(instance, moveJob.datasetId),
               storeIdFrom = moveJob.fromStoreId,
