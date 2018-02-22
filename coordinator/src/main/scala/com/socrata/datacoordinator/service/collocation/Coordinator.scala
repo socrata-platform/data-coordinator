@@ -44,9 +44,10 @@ trait Coordinator {
   }
 
   def collocatedDatasetsOnInstance(instance: String, datasets: Set[DatasetInternalName]): Either[RequestError, CollocatedDatasetsResult]
+  def dropCollocationsOnInstance(instance: String, internalName: DatasetInternalName): Option[RequestError]
   def secondariesOfDataset(internalName: DatasetInternalName): Either[RequestError, Option[SecondariesOfDatasetResult]]
   def secondaryMetrics(storeId: String, instance: String): Either[ErrorResult, SecondaryMetric]
-  def secondaryMetrics(storeId: String, datasetId: DatasetInternalName): Either[ErrorResult, Option[SecondaryMetric]]
+  def secondaryMetrics(storeId: String, internalName: DatasetInternalName): Either[ErrorResult, Option[SecondaryMetric]]
   def secondaryMoveJobs(instance: String, storeId: UUID): Either[RequestError, SecondaryMoveJobsResult]
   def secondaryMoveJobs(storeGroup: String, internalName: DatasetInternalName): Either[ErrorResult, SecondaryMoveJobsResult]
   def ensureSecondaryMoveJob(storeGroup: String, internalName: DatasetInternalName, request: SecondaryMoveJobRequest): Either[ErrorResult, Either[InvalidMoveJob, Boolean]]
@@ -61,6 +62,7 @@ class HttpCoordinator(isThisInstance: String => Boolean,
                       hostAndPort: String => Option[(String, Int)],
                       httpClient: HttpClient,
                       collocatedDatasets: Set[DatasetInternalName] => CollocatedDatasetsResult,
+                      dropCollocations: DatasetInternalName => Unit,
                       secondariesOfDataset: DatasetId => Option[SecondariesOfDatasetResult],
                       secondaryMetrics: (String, Option[DatasetId]) => Either[ResourceNotFound, Option[SecondaryMetric]],
                       secondaryMoveJobsByJob: UUID => SecondaryMoveJobsResult,
@@ -104,11 +106,20 @@ class HttpCoordinator(isThisInstance: String => Boolean,
     }
   }
 
+  private def routeInternalName(route: String, internalName: DatasetInternalName): String =
+    route + "/" + internalName.underlying
+
+  private def routeInternalName(route: String, internalName: Option[DatasetInternalName]): String =
+    route + internalName.map("/" + _.underlying).getOrElse("")
+
+  private def collocationManifestRoute(instance: String, internalName: Option[DatasetInternalName] = None): String =
+    routeInternalName(s"/collocation-manifest/$instance", internalName)
+
   override def collocatedDatasetsOnInstance(instance: String, datasets: Set[DatasetInternalName]): Either[RequestError, CollocatedDatasetsResult] = {
     if (isThisInstance(instance)) {
       Right(collocatedDatasets(datasets))
     } else {
-      val route = s"/collocation-manifest/$instance"
+      val route = collocationManifestRoute(instance)
       request[CollocatedDatasetsResult](instance, route)(_.jsonBody(datasets)) match {
         case Right(Some(result)) => Right(result)
         case Right(None) => Left(InstanceNotFound(instance))
@@ -117,17 +128,40 @@ class HttpCoordinator(isThisInstance: String => Boolean,
     }
   }
 
+  override def dropCollocationsOnInstance(instance: String, internalName: DatasetInternalName): Option[RequestError] = {
+    if (isThisInstance(instance)) {
+      dropCollocations(internalName)
+      None
+    } else {
+      val route = collocationManifestRoute(instance, Some(internalName))
+      doRequest[Option[RequestError]](instance, route, _.delete) { response =>
+        response.resultCode match {
+          case 200 => Right(None) // success
+          case 404 => Right(Some(InstanceNotFound(instance)))
+          case resultCode =>
+            val message = s"Received unexpected result code $resultCode from other instance $instance!"
+            log.error(message)
+            Right(Some(UnexpectedError(message)))
+        }
+      }
+    } match {
+      case Right(None) => None
+      case Right(Some(error)) => Some(error)
+      case Left(error) => Some(error)
+    }
+  }
+
   override def secondariesOfDataset(internalName: DatasetInternalName): Either[RequestError, Option[SecondariesOfDatasetResult]] = {
     if (isThisInstance(internalName.instance)) {
       Right(secondariesOfDataset(internalName.datasetId))
     } else {
-      val route = s"/secondaries-of-dataset/${internalName.underlying}"
+      val route = routeInternalName("/secondaries-of-dataset", internalName)
       request[SecondariesOfDatasetResult](internalName.instance, route)(_.get)
     }
   }
 
   private def secondaryMetricsRoute(storeId: String, internalName: Option[DatasetInternalName] = None) =
-    s"/secondary-manifest/metrics/$storeId${internalName.map("/" + _.underlying).getOrElse("")}"
+    routeInternalName(s"/secondary-manifest/metrics/$storeId", internalName)
 
   override def secondaryMetrics(storeId: String, instance: String): Either[ErrorResult, SecondaryMetric] = {
     if (isThisInstance(instance)) {
@@ -190,7 +224,7 @@ class HttpCoordinator(isThisInstance: String => Boolean,
   }
 
   private def secondaryMoveRoute(storeGroup: Option[String], internalName: DatasetInternalName) =
-    s"/secondary-manifest/move/${storeGroup.map(_ + "/").getOrElse("")}${internalName.underlying}"
+    routeInternalName("/secondary-manifest/move/" + storeGroup.map(_ + "/").getOrElse(""), internalName)
 
   override def secondaryMoveJobs(storeGroup: String, internalName: DatasetInternalName): Either[ErrorResult, SecondaryMoveJobsResult] = {
     if (isThisInstance(internalName.instance)) {

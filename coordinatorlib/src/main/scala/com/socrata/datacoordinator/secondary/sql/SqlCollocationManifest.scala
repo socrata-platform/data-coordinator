@@ -38,4 +38,16 @@ abstract class SqlCollocationManifest(conn: Connection) extends CollocationManif
       }
     }
   }
+
+  override def dropCollocations(dataset: String): Unit = {
+    using(conn.prepareStatement(
+      """DELETE FROM collocation_manifest
+        | WHERE dataset_internal_name_left = ?
+        |    OR dataset_internal_name_right = ?
+      """.stripMargin)) { stmt =>
+      stmt.setString(1, dataset)
+      stmt.setString(2, dataset)
+      stmt.execute()
+    }
+  }
 }

@@ -292,7 +292,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
 
   // tests for explainCollocation(storeGroup: String, request: CollocationRequest): Either[ErrorResult, CollocationResult]
   // and
-  // tests for initiateCollocation(jobId: UUID, storeGroup: String, request: CollocationRequest): (Either[ErrorResult, CollocationResult], Seq[(Move, Boolean)])
+  // tests for executeCollocation(jobId: UUID, storeGroup: String, request: CollocationRequest): (Either[ErrorResult, CollocationResult], Seq[(Move, Boolean)])
 
   def shouldBeApproved(maybeResult: Either[ErrorResult, CollocationResult]): Unit = {
     val result = maybeResult.right.get
@@ -385,13 +385,13 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
       }
     }
 
-    test("initiateCollocation " + message) {
+    test("executeCollocation " + message) {
       withMocks(Set(storeGroupA), { coordinator =>
         commonExpectations(coordinator)
         initiateExpectations(coordinator)
       }) { case (collocator, _) =>
         val jobId = UUID.randomUUID()
-        val (result, moves) = collocator.initiateCollocation(jobId, storeGroupA, request)
+        val (result, moves) = collocator.executeCollocation(jobId, storeGroupA, request)
 
         commonShould(result)
         initiateShould(jobId, result, moves)
@@ -638,68 +638,67 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
       result.moves.map(_.storeIdTo).toSet should be (Set(store1A, store3A))
     }
   )
-
-  // def initiateCollocation(jobId: UUID, storeGroup: String, request: CollocationRequest): (Either[ErrorResult, CollocationResult], Seq[(Move, Boolean)])
-  // tests for saveCollocation(request: CollocationRequest): Unit
-  test("saveCollocation for an empty request should save nothing to the manifest") {
+  
+  // tests for commitCollocation(request: CollocationRequest): Unit
+  test("commitCollocation for an empty request should save nothing to the manifest") {
     withMocks(defaultStoreGroups) { (collocator, manifest) =>
-      collocator.saveCollocation(requestEmpty)
+      collocator.commitCollocation(requestEmpty)
 
       manifest.get should be (Set.empty)
     }
   }
 
-  test("saveCollocation for a single pair should save that pair to the manifest") {
+  test("commitCollocation for a single pair should save that pair to the manifest") {
     withMocks(defaultStoreGroups) { (collocator, manifest) =>
-      collocator.saveCollocation(request(Seq((alpha1, bravo1))))
+      collocator.commitCollocation(request(Seq((alpha1, bravo1))))
 
       manifest.get should be (Set((alpha1, bravo1)))
     }
   }
 
-  test("saveCollocation for multiple pairs should save those pairs to the manifest") {
+  test("commitCollocation for multiple pairs should save those pairs to the manifest") {
     withMocks(defaultStoreGroups) { (collocator, manifest) =>
       val collocations = Seq(
         (alpha1, bravo1),
         (bravo1, charlie2),
         (alpha1, charlie2)
       )
-      collocator.saveCollocation(request(collocations))
+      collocator.commitCollocation(request(collocations))
 
       manifest.get should be (collocations.toSet)
     }
   }
 
-  // tests for beginCollocation(): Unit
-  test("beginCollocation should acquire the collocation lock") {
+  // tests for lockCollocation(): Unit
+  test("lockCollocation should acquire the collocation lock") {
     withMocks(defaultStoreGroups, expectNoMockCoordinatorCalls, { lock =>
       (lock.acquire _).expects(10000L).once.returns(true)
 
     }) { (collocator, _) =>
-      collocator.beginCollocation()
+      collocator.lockCollocation()
     }
   }
 
-  test("beginCollocation should throw a CollocationLockTimeout exception if it cannot acquire the collocation lock") {
+  test("lockCollocation should throw a CollocationLockTimeout exception if it cannot acquire the collocation lock") {
     withMocks(defaultStoreGroups, expectNoMockCoordinatorCalls, { lock =>
       (lock.acquire _).expects(10000L).once.returns(false)
 
     }) { (collocator, _) =>
       val result = intercept[CollocationLockTimeout] {
-        collocator.beginCollocation()
+        collocator.lockCollocation()
       }
 
       result.millis should be (10000L)
     }
   }
 
-  // tests for commitCollocation(): Unit
-  test("commitCollocation should release the collocation lock") {
+  // tests for unlockCollocation(): Unit
+  test("unlockCollocation should release the collocation lock") {
     withMocks(defaultStoreGroups, expectNoMockCoordinatorCalls, { lock =>
       (lock.release _).expects().once
 
     }) { (collocator, _) =>
-      collocator.commitCollocation()
+      collocator.unlockCollocation()
     }
   }
 

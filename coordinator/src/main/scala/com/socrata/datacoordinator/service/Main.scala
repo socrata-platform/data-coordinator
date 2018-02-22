@@ -271,6 +271,12 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
     }
   }
 
+  def dropCollocations(dataset: DatasetInternalName): Unit = {
+    for (u <- common.universe) yield {
+      u.collocationManifest.dropCollocations(dataset.underlying)
+    }
+  }
+
   def secondaryMetrics(storeId: String, datasetId: Option[DatasetId]): Either[ResourceNotFound, Option[SecondaryMetric]] = {
     val secondaries = serviceConfig.secondary.groups.flatMap(_._2.instances).toSet
     if (secondaries(storeId)) {
@@ -567,9 +573,6 @@ object Main extends DynamicPortMap {
         val notFoundDatasetResource = NotFoundDatasetResource(_: Option[String], common.internalNameFromDatasetId,
           operations.makeReportTemporaryFile, operations.processCreation,
           operations.listDatasets, _: (=> HttpResponse) => HttpResponse, serviceConfig.commandReadLimit)
-        val datasetResource = DatasetResource(_: DatasetId, operations.makeReportTemporaryFile,
-          serviceConfig.commandReadLimit, operations.processMutation, operations.deleteDataset,
-          operations.exporter, _: (=> HttpResponse) => HttpResponse, common.internalNameFromDatasetId)
         val datasetSchemaResource = DatasetSchemaResource(_: DatasetId, getSchema, common.internalNameFromDatasetId)
         val datasetSnapshotsResource = DatasetSnapshotsResource(_: DatasetId, getSnapshots, common.internalNameFromDatasetId)
         val datasetSnapshotResource = DatasetSnapshotResource(_: DatasetId, _: Long, deleteSnapshot, common.internalNameFromDatasetId)
@@ -587,6 +590,7 @@ object Main extends DynamicPortMap {
             hostAndPort,
             new HttpClientHttpClient(executorService), // since executorService is currently unbounded we can share here
             operations.collocatedDatasets,
+            operations.dropCollocations,
             operations.secondariesOfDataset,
             operations.secondaryMetrics,
             operations.secondaryMoveJobsByStoreId,
@@ -617,6 +621,20 @@ object Main extends DynamicPortMap {
           }
         }
 
+        def datasetResource(lock: CollocationLock)(hostAndPort: String => Option[(String, Int)]) = {
+          DatasetResource(
+            _: DatasetId,
+            operations.makeReportTemporaryFile,
+            serviceConfig.commandReadLimit,
+            operations.processMutation,
+            operations.deleteDataset,
+            operations.exporter,
+            collocationProvider(hostAndPort, lock).collocator,
+            _: (=> HttpResponse) => HttpResponse,
+            common.internalNameFromDatasetId
+          )
+        }
+
         def secondaryManifestsCollocateResource(lock: CollocationLock)(hostAndPort: String => Option[(String, Int)]) = {
           SecondaryManifestsCollocateResource(_: String, collocationProvider(hostAndPort, lock))
         }
@@ -642,7 +660,7 @@ object Main extends DynamicPortMap {
         val secondaryMoveJobsJobResource = SecondaryMoveJobsJobResource(_: String, operations.secondaryMoveJobsByStoreId)
 
         def collocationManifestsResource(lock: CollocationLock)(hostAndPort: String => Option[(String, Int)]) = {
-          CollocationManifestsResource(_: Option[String], collocationProvider(hostAndPort, lock))
+          CollocationManifestsResource(_: Option[String], _: Option[String], collocationProvider(hostAndPort, lock))
         }
 
         val datasetSecondaryStatusResource = DatasetSecondaryStatusResource(_: Option[String], _:DatasetId, secondaries,

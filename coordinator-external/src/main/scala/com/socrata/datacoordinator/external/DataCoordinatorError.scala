@@ -68,6 +68,7 @@ object CollocationError {
   val DATASET_NOT_FOUND_IN_STORE = "collocation.secondary.dataset-not-found-in-store"
 
   val INVALID_JOB_ID = "collocation.job.invalid-uuid"
+  val INVALID_DATASET_INTERNAL_NAME = "collocation.dataset.invalid-internal-name"
 }
 
 object SecondaryMetricsError {
