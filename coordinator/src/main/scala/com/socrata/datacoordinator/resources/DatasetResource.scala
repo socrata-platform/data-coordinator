@@ -1,21 +1,21 @@
 package com.socrata.datacoordinator.resources
 
-import java.io.{BufferedWriter, BufferedOutputStream}
+import java.io.{BufferedOutputStream, BufferedWriter}
 import java.nio.charset.StandardCharsets._
 import java.security.MessageDigest
 import javax.servlet.http.HttpServletResponse
 
-import com.rojoma.json.v3.ast.{JArray, JString, JNumber, JValue}
+import com.rojoma.json.v3.ast.{JArray, JNumber, JString, JValue}
 import com.rojoma.json.v3.codec.JsonEncode
 import com.rojoma.json.v3.io.{CompactJsonWriter, JsonBadParse}
 import com.rojoma.json.v3.util.JsonArrayIterator
 import com.rojoma.simplearm.util._
-import com.socrata.datacoordinator.id.{UserColumnId, DatasetId}
+import com.socrata.datacoordinator.id.{DatasetId, DatasetInternalName, UserColumnId}
 import com.socrata.datacoordinator.service.ServiceUtil._
 import com.socrata.datacoordinator.service._
 import com.socrata.datacoordinator.truth._
 import com.socrata.datacoordinator.truth.loader.DatasetDropper
-import com.socrata.datacoordinator.truth.metadata.{SchemaField, Schema}
+import com.socrata.datacoordinator.truth.metadata.{Schema, SchemaField}
 import com.socrata.datacoordinator.util.IndexedTempFile
 import com.socrata.datacoordinator.util.collection.UserColumnIdSet
 import com.socrata.http.server._
@@ -26,6 +26,7 @@ import org.joda.time.format.ISODateTimeFormat
 import com.socrata.http.server.implicits._
 import com.socrata.datacoordinator.common.util.DatasetIdNormalizer._
 import com.socrata.datacoordinator.external._
+import com.socrata.datacoordinator.service.collocation.Collocator
 
 
 
@@ -37,6 +38,7 @@ case class DatasetResource(datasetId: DatasetId,
                            datasetContents: (DatasetId, Option[String], CopySelector, Option[UserColumnIdSet],
                              Option[Long], Option[Long], Precondition, Option[DateTime], Boolean, Option[String]) =>
                              DatasetResource.datasetContentsFunc => Exporter.Result[Unit],
+                           collocator: Collocator,
                            withMutationScriptResults: (=> HttpResponse) => HttpResponse,
                            formatDatasetId: DatasetId => String) extends ErrorHandlingSodaResource(formatDatasetId) {
   override val log = org.slf4j.LoggerFactory.getLogger(classOf[DatasetResource])
@@ -108,6 +110,20 @@ case class DatasetResource(datasetId: DatasetId,
   private def doDeleteDataset(req: HttpRequest): HttpResponse = {
     deleteDataset(datasetId) match {
       case DatasetDropper.Success =>
+        // Attempt to drop entries from the collocation manifest. If this fails it's okay since datasets on the
+        // collocation manifest that don't actually exist will be filtered out / ignored in collocation logic.
+        try {
+          try {
+            collocator.lockCollocation()
+            collocator.dropDataset(DatasetInternalName(formatDatasetId(datasetId)).get)
+          } finally {
+            collocator.unlockCollocation()
+          }
+        } catch {
+          case e: Exception =>
+            log.warn("Ignoring error encountered while attempting to drop dataset from the collocation manifest", e)
+        }
+
         OK ~>
           Header(HEADER_LAST_MODIFIED, dateTimeFormat.print(DateTime.now)) ~>
           Header(HEADER_TRUTH_COPY_NUMBER, 0.toString) ~>

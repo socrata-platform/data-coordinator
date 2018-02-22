@@ -53,11 +53,12 @@ object CollocationResult {
 
 trait Collocator {
   def collocatedDatasets(datasets: Set[DatasetInternalName]): Either[RequestError, CollocatedDatasetsResult]
+  def dropDataset(dataset: DatasetInternalName): Option[ErrorResult]
   def explainCollocation(storeGroup: String, request: CollocationRequest): Either[ErrorResult, CollocationResult]
-  def initiateCollocation(jobId: UUID, storeGroup: String, request: CollocationRequest): (Either[ErrorResult, CollocationResult], Seq[(Move, Boolean)])
-  def saveCollocation(request: CollocationRequest): Unit
-  def beginCollocation(): Unit
-  def commitCollocation(): Unit
+  def executeCollocation(jobId: UUID, storeGroup: String, request: CollocationRequest): (Either[ErrorResult, CollocationResult], Seq[(Move, Boolean)])
+  def commitCollocation(request: CollocationRequest): Unit
+  def lockCollocation(): Unit
+  def unlockCollocation(): Unit
   def rollbackCollocation(jobId: UUID, moves: Seq[(Move, Boolean)]): Option[ErrorResult]
 }
 
@@ -113,6 +114,13 @@ class CoordinatedCollocator(collocationGroup: Set[String],
     }
 
     storesInGroup
+  }
+
+  override def dropDataset(dataset: DatasetInternalName): Option[ErrorResult] = {
+    log.info("Dropping dataset {} from collocation manifests", dataset)
+    collocationGroup.flatMap { instance =>
+      coordinator.dropCollocationsOnInstance(instance, dataset)
+    }.headOption
   }
 
   protected def movesFor(group: Set[DatasetInternalName],
@@ -236,7 +244,7 @@ class CoordinatedCollocator(collocationGroup: Set[String],
     }
   }
 
-  override def initiateCollocation(jobId: UUID,
+  override def executeCollocation(jobId: UUID,
                                   storeGroup: String,
                                   request: CollocationRequest): (Either[ErrorResult, CollocationResult], Seq[(Move, Boolean)]) = {
     log.info("Executing collocation on secondary store group {}", storeGroup)
@@ -287,36 +295,36 @@ class CoordinatedCollocator(collocationGroup: Set[String],
     }
   }
 
-  override def saveCollocation(request: CollocationRequest): Unit = {
+  override def commitCollocation(request: CollocationRequest): Unit = {
     // save the collocation relationships to the database after ensuring all required moves jobs exists
     // this way we only need to roll back jobs for our job id back if something goes wrong
     log.info("Adding collocation relationships to the manifest: {}", request.collocations)
     addCollocations(request.collocations)
   }
 
-  override def beginCollocation(): Unit = {
+  override def lockCollocation(): Unit = {
     try {
-      log.info("Attempting to acquire collocation lock to begin collocation.")
+      log.info("Attempting to acquire collocation lock")
       if (lock.acquire(lockTimeoutMillis)) {
-        log.info("Acquired collocation lock to begin collocation.")
+        log.info("Acquired collocation lock")
       } else {
-        log.warn("Timeout while waiting to acquire collocation lock to begin collocation.")
+        log.warn("Timeout while waiting to acquire collocation lock")
         throw CollocationLockTimeout(lockTimeoutMillis)
       }
     } catch {
       case error: CollocationLockError =>
-        log.error("Unexpected error while acquiring collocation lock for collocation.", error)
+        log.error("Unexpected error while acquiring collocation lock ", error)
         throw error
     }
   }
 
-  override def commitCollocation(): Unit = {
+  override def unlockCollocation(): Unit = {
     try {
-      log.info("Releasing collocation lock to commit collocation.")
+      log.info("Releasing collocation lock")
       lock.release()
     } catch {
       case error: CollocationLockError =>
-        log.error("Unexpected error while releasing collocation lock for collocation.", error)
+        log.error("Unexpected error while releasing collocation lock", error)
         throw error
     }
   }

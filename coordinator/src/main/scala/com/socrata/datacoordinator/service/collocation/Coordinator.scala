@@ -44,9 +44,10 @@ trait Coordinator {
   }
 
   def collocatedDatasetsOnInstance(instance: String, datasets: Set[DatasetInternalName]): Either[RequestError, CollocatedDatasetsResult]
+  def dropCollocationsOnInstance(instance: String, internalName: DatasetInternalName): Option[ErrorResult]
   def secondariesOfDataset(internalName: DatasetInternalName): Either[RequestError, Option[SecondariesOfDatasetResult]]
   def secondaryMetrics(storeId: String, instance: String): Either[ErrorResult, SecondaryMetric]
-  def secondaryMetrics(storeId: String, datasetId: DatasetInternalName): Either[ErrorResult, Option[SecondaryMetric]]
+  def secondaryMetrics(storeId: String, internalName: DatasetInternalName): Either[ErrorResult, Option[SecondaryMetric]]
   def secondaryMoveJobs(instance: String, storeId: UUID): Either[RequestError, SecondaryMoveJobsResult]
   def secondaryMoveJobs(storeGroup: String, internalName: DatasetInternalName): Either[ErrorResult, SecondaryMoveJobsResult]
   def ensureSecondaryMoveJob(storeGroup: String, internalName: DatasetInternalName, request: SecondaryMoveJobRequest): Either[ErrorResult, Either[InvalidMoveJob, Boolean]]
@@ -61,6 +62,7 @@ class HttpCoordinator(isThisInstance: String => Boolean,
                       hostAndPort: String => Option[(String, Int)],
                       httpClient: HttpClient,
                       collocatedDatasets: Set[DatasetInternalName] => CollocatedDatasetsResult,
+                      dropCollocations: DatasetInternalName => Unit,
                       secondariesOfDataset: DatasetId => Option[SecondariesOfDatasetResult],
                       secondaryMetrics: (String, Option[DatasetId]) => Either[ResourceNotFound, Option[SecondaryMetric]],
                       secondaryMoveJobsByJob: UUID => SecondaryMoveJobsResult,
@@ -104,11 +106,38 @@ class HttpCoordinator(isThisInstance: String => Boolean,
     }
   }
 
+  private def noResponseRequest(instance: String, route: String, notFoundResult: ErrorResult)
+                               (request: RequestBuilder => SimpleHttpRequest): Option[ErrorResult] = {
+    doRequest[Option[ErrorResult]](instance, route, request) { response: Response =>
+      response.resultCode match {
+        case 200 => Right(None)
+        case 404 => Right(Some(notFoundResult))
+        case resultCode =>
+          val message = s"Received unexpected result code $resultCode from other instance $instance!"
+          log.error(message)
+          Right(Some(UnexpectedError(message)))
+      }
+    } match {
+      case Right(None) => None
+      case Right(Some(error)) => Some(error)
+      case Left(error) => Some(error)
+    }
+  }
+
+  private def routeInternalName(route: String, internalName: DatasetInternalName): String =
+    route + "/" + internalName.underlying
+
+  private def routeInternalName(route: String, internalName: Option[DatasetInternalName]): String =
+    route + internalName.map("/" + _.underlying).getOrElse("")
+
+  private def collocationManifestRoute(instance: String, internalName: Option[DatasetInternalName] = None): String =
+    routeInternalName(s"/collocation-manifest/$instance", internalName)
+
   override def collocatedDatasetsOnInstance(instance: String, datasets: Set[DatasetInternalName]): Either[RequestError, CollocatedDatasetsResult] = {
     if (isThisInstance(instance)) {
       Right(collocatedDatasets(datasets))
     } else {
-      val route = s"/collocation-manifest/$instance"
+      val route = collocationManifestRoute(instance)
       request[CollocatedDatasetsResult](instance, route)(_.jsonBody(datasets)) match {
         case Right(Some(result)) => Right(result)
         case Right(None) => Left(InstanceNotFound(instance))
@@ -117,17 +146,27 @@ class HttpCoordinator(isThisInstance: String => Boolean,
     }
   }
 
+  override def dropCollocationsOnInstance(instance: String, internalName: DatasetInternalName): Option[ErrorResult] = {
+    if (isThisInstance(instance)) {
+      dropCollocations(internalName)
+      None
+    } else {
+      val route = collocationManifestRoute(instance, Some(internalName))
+      noResponseRequest(instance, route, InstanceNotFound(instance))(_.delete)
+    }
+  }
+
   override def secondariesOfDataset(internalName: DatasetInternalName): Either[RequestError, Option[SecondariesOfDatasetResult]] = {
     if (isThisInstance(internalName.instance)) {
       Right(secondariesOfDataset(internalName.datasetId))
     } else {
-      val route = s"/secondaries-of-dataset/${internalName.underlying}"
+      val route = routeInternalName("/secondaries-of-dataset", internalName)
       request[SecondariesOfDatasetResult](internalName.instance, route)(_.get)
     }
   }
 
   private def secondaryMetricsRoute(storeId: String, internalName: Option[DatasetInternalName] = None) =
-    s"/secondary-manifest/metrics/$storeId${internalName.map("/" + _.underlying).getOrElse("")}"
+    routeInternalName(s"/secondary-manifest/metrics/$storeId", internalName)
 
   override def secondaryMetrics(storeId: String, instance: String): Either[ErrorResult, SecondaryMetric] = {
     if (isThisInstance(instance)) {
@@ -190,7 +229,7 @@ class HttpCoordinator(isThisInstance: String => Boolean,
   }
 
   private def secondaryMoveRoute(storeGroup: Option[String], internalName: DatasetInternalName) =
-    s"/secondary-manifest/move/${storeGroup.map(_ + "/").getOrElse("")}${internalName.underlying}"
+    routeInternalName("/secondary-manifest/move/" + storeGroup.map(_ + "/").getOrElse(""), internalName)
 
   override def secondaryMoveJobs(storeGroup: String, internalName: DatasetInternalName): Either[ErrorResult, SecondaryMoveJobsResult] = {
     if (isThisInstance(internalName.instance)) {
@@ -258,25 +297,14 @@ class HttpCoordinator(isThisInstance: String => Boolean,
     if (isThisInstance(instance)) {
       rollbackSecondaryMoveJob(move.datasetInternalName.datasetId, request, dropFromStore)
     } else {
-      val parameters = Seq(
-        ("rollback", "true"),
-        ("dropFromStore", dropFromStore.toString)
-      )
-      doRequest[Option[ErrorResult]](instance, secondaryMoveRoute(None, move.datasetInternalName),
-        _.addParameters(parameters).jsonBody(request)) { response =>
-        response.resultCode match {
-          case 200 => Right(None) // success
-          case 404 => Right(Some(DatasetNotFound(move.datasetInternalName)))
-          case resultCode =>
-            val message = s"Received unexpected result code $resultCode from other instance $instance!"
-            log.error(message)
-            Right(Some(UnexpectedError(message)))
-        }
+      val route = secondaryMoveRoute(None, move.datasetInternalName)
+      noResponseRequest(instance, route, DatasetNotFound(move.datasetInternalName)) { req =>
+        val parameters = Seq(
+          ("rollback", "true"),
+          ("dropFromStore", dropFromStore.toString)
+        )
+        req.addParameters(parameters).jsonBody(request)
       }
-    } match {
-      case Right(None) => None
-      case Right(Some(error)) => Some(error)
-      case Left(error) => Some(error)
     }
   }
 }
