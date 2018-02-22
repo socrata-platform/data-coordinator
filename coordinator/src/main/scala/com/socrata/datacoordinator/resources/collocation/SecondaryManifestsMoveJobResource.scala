@@ -4,7 +4,6 @@ import java.util.UUID
 
 import com.socrata.datacoordinator.id.{DatasetId, DatasetInternalName}
 import com.socrata.datacoordinator.service.collocation._
-import com.socrata.http.server.responses.InternalServerError
 import com.socrata.http.server.{HttpRequest, HttpResponse}
 
 case class SecondaryManifestsMoveJobResource(storeGroup: String,
@@ -61,7 +60,7 @@ case class SecondaryManifestsMoveJobResource(storeGroup: String,
         CollocationResult(
           id = Some(jobId),
           status = status,
-          cost = moves.map(_.cost).fold(Cost.Zero)(_ + _),
+          cost = Move.totalCost(moves),
           moves = moves.toSeq
         )
       case None => throw StoreGroupNotFound(storeGroup)

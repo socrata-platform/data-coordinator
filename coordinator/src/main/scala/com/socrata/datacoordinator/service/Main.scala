@@ -579,6 +579,12 @@ object Main extends DynamicPortMap {
         val secondaryManifestsResource = SecondaryManifestsResource(_: Option[String], secondaries,
           operations.datasetsInStore, common.internalNameFromDatasetId)
 
+        implicit val weightedCostOrdering: Ordering[Cost] = WeightedCostOrdering(
+          movesWeight = serviceConfig.collocation.cost.movesWeight,
+          totalSizeBytesWeight = serviceConfig.collocation.cost.totalSizeBytesWeight,
+          moveSizeMaxBytesWeight = serviceConfig.collocation.cost.moveSizeMaxBytesWeight
+        )
+
         def httpCoordinator(hostAndPort: String => Option[(String, Int)]): Coordinator =
           new HttpCoordinator(
             serviceConfig.instance.equals,
@@ -600,14 +606,15 @@ object Main extends DynamicPortMap {
                                                         CollocatorProvider with
                                                         MetricProvider = {
           new CoordinatorProvider(httpCoordinator(hostAndPort)) with CollocatorProvider with MetricProvider {
+            override val metric: Metric = CoordinatedMetric(collocationGroup, coordinator)
             override val collocator: Collocator = new CoordinatedCollocator(
               collocationGroup = collocationGroup,
               coordinator = coordinator,
+              metric = metric,
               addCollocations = operations.addCollocations,
               lock = lock,
               lockTimeoutMillis = serviceConfig.collocation.lockTimeout.toMillis
             )
-            override val metric: Metric = CoordinatedMetric(collocationGroup, coordinator)
           }
         }
 

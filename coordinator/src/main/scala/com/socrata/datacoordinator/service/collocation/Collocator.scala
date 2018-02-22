@@ -67,9 +67,10 @@ trait CollocatorProvider {
 
 class CoordinatedCollocator(collocationGroup: Set[String],
                             coordinator: Coordinator,
+                            metric: Metric,
                             addCollocations: Seq[(DatasetInternalName, DatasetInternalName)] => Unit,
                             lock: CollocationLock,
-                            lockTimeoutMillis: Long) extends Collocator {
+                            lockTimeoutMillis: Long)(implicit costOrdering: Ordering[Cost]) extends Collocator {
 
   private val log = org.slf4j.LoggerFactory.getLogger(classOf[Collocator])
 
@@ -114,24 +115,21 @@ class CoordinatedCollocator(collocationGroup: Set[String],
     storesInGroup
   }
 
-  protected def movesFor(group: Set[DatasetInternalName], storesFrom: Set[String], storesTo: Set[String]): Seq[Move] = {
-    assert(storesFrom.size == storesTo.size)
+  protected def movesFor(group: Set[DatasetInternalName],
+                         storesFrom: Set[String],
+                         storesTo: Set[String],
+                         costMap: Map[DatasetInternalName, Cost]): Seq[Move] = {
+    if (storesFrom.size != storesTo.size) {
+      log.error("storesFrom.size != storesTo.size, something is wrong internally!")
+      throw new IllegalArgumentException("storesFrom and storesTo should be the same size!")
+    }
 
-    scala.util.Random.shuffle((storesFrom -- storesTo).toSeq).
-      zip((storesTo -- storesFrom).toSeq).
-      flatMap { stores =>
-        val (storeFrom, storeTo) = stores
-        group.map(Move(_, storeFrom, storeTo, Cost.Unknown)) // TODO
-      }
-  }
-  
-  protected def datasetCost(storeGroup: String, dataset: DatasetInternalName, instances: Set[String]): Cost = {
-    instances.intersect(secondariesOfDataset(dataset)).flatMap { storeId =>
-      // TODO: use Metric.datasetMaxCost here instead
-      coordinator.secondaryMetrics(storeId, dataset).fold(throw _, identity).map { metric =>
-        Cost(moves = 1, totalSizeBytes = metric.totalSizeBytes)
-      }
-    }.reduceOption(Cost.max).getOrElse(Cost.Unknown)
+    for {
+      (storeFrom, storeTo) <- scala.util.Random.shuffle((storesFrom -- storesTo).toSeq).zip((storesTo -- storesFrom).toSeq)
+      dataset <- group
+    } yield {
+      Move(dataset, storeFrom, storeTo, costMap(dataset))
+    }
   }
 
   override def explainCollocation(storeGroup: String,
@@ -168,7 +166,7 @@ class CoordinatedCollocator(collocationGroup: Set[String],
 
               // cost of _all_ datasets in question, not just the input datasets
               val datasetCostMap = datasetGroupMap.flatMap(_._2).map { dataset =>
-                (dataset, datasetCost(storeGroup, dataset, instances))
+                (dataset, metric.datasetMaxCost(storeGroup, dataset).fold(throw _, identity))
               }.toMap
 
               // represents graph of collocated groups to be collocated
@@ -202,10 +200,13 @@ class CoordinatedCollocator(collocationGroup: Set[String],
 
                 // cost and moves to move each other group to the most expensive group
                 indexedGroups.map { case (group, index) =>
-                  val moves = movesFor(group, storesFrom = groupStoreMap(index), storesTo = destinationStores)
-                  val cost = moves.foldLeft(Cost.Zero) { case (groupCost, move) =>
-                    groupCost + datasetCostMap(move.datasetInternalName)
-                  }
+                  val moves = movesFor(
+                    group,
+                    storesFrom = groupStoreMap(index),
+                    storesTo = destinationStores,
+                    datasetCostMap
+                  )
+                  val cost = Move.totalCost(moves)
 
                   (cost, moves)
                 }
@@ -219,7 +220,7 @@ class CoordinatedCollocator(collocationGroup: Set[String],
                 id = None,
                 status = Approved,
                 message = Approved.message,
-                cost = totalCost,
+                cost = totalCost, // here we return the full cost vector, we can obscure this further up the stack
                 moves = totalMoves
               ))
           }
@@ -279,7 +280,7 @@ class CoordinatedCollocator(collocationGroup: Set[String],
           id = Some(jobId),
           status = InProgress,
           message = InProgress.message,
-          cost = cost,
+          cost = cost, // here we return the full cost vector, we can obscure this further up the stack
           moves = moves
         )), successfulMoves)
       case other => (other, Seq.empty)

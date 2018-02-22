@@ -14,6 +14,13 @@ import org.scalatest.{FunSuite, Matchers}
 import scala.concurrent.duration.FiniteDuration
 
 class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory {
+
+  implicit val costOrdering: Ordering[Cost] = WeightedCostOrdering(
+    movesWeight = 1.0,
+    totalSizeBytesWeight = 0.0,
+    moveSizeMaxBytesWeight = 0.0
+  )
+
   class CollocationManifest {
     private val manifest = collection.mutable.Set.empty[(DatasetInternalName, DatasetInternalName)]
 
@@ -39,6 +46,10 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
     (mock.secondaryMetrics _: (String, DatasetInternalName) => Either[ErrorResult, Option[SecondaryMetric]]).expects(*, *).never
   }
 
+  def expectNoMockMetricCalls(mock: Metric): Unit = {
+    (mock.datasetMaxCost _).expects(*, *).never
+  }
+
   def expectCollocatedDatasetsOnInstance(mock: Coordinator,
                                          andNoOtherCalls: Boolean,
                                          params: (String, Set[DatasetInternalName],  Set[DatasetInternalName])*): Unit = {
@@ -58,22 +69,26 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
 
   def withMocks[T](defaultStoreGroups: Set[String],
                    coordinatorExpectations: Coordinator => Unit = expectNoMockCoordinatorCalls,
+                   metricExpectations: Metric => Unit = expectNoMockMetricCalls,
                    collocationLockExpectations: CollocationLock => Unit = expectNoMockCollocationLockCalls)
                   (f: (Collocator, CollocationManifest) => T): T = {
     val manifest = new CollocationManifest
 
     val mockCoordinator: Coordinator = mock[Coordinator]
+    val mockMetric: Metric = mock[Metric]
     val mockCollocationLock: CollocationLock = mock[CollocationLock]
 
     val collocator = new CoordinatedCollocator(
       collocationGroup = Set(alpha, bravo, charlie),
       coordinator = mockCoordinator,
+      metric = mockMetric,
       addCollocations = manifest.add,
       lock = mockCollocationLock,
       lockTimeoutMillis = FiniteDuration(10, "seconds").toMillis
     )
 
     coordinatorExpectations(mockCoordinator)
+    metricExpectations(mockMetric)
     collocationLockExpectations(mockCollocationLock)
 
     f(collocator, manifest)
@@ -320,64 +335,35 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
     (coordinator.secondaryMoveJobs _: (String, DatasetInternalName) => Either[ErrorResult, SecondaryMoveJobsResult]).expects(storeGroup, datasetId).once.returns(result)
   }
 
-  def expectSecondaryMetrics(storeId: String, datasetId: DatasetInternalName, totalSizeBytes: Long)(implicit coordinator: Coordinator): Unit = {
-    (coordinator.secondaryMetrics _: (String, DatasetInternalName) => Either[ErrorResult, Option[SecondaryMetric]]).expects(storeId, datasetId).once.returns(Right(Some(SecondaryMetric(totalSizeBytes))))
+  def expectDatasetMaxCost(storeGroup: String, datasetId: DatasetInternalName, totalSizeBytes: Long)(implicit metric: Metric): Unit = {
+    (metric.datasetMaxCost _).expects(storeGroup, datasetId).once.returns(Right(Cost(1, totalSizeBytes)))
   }
 
-  def expectSecondaryMetrics(datasetId: DatasetInternalName, totalSizeBytes: Long, stores: String*)(implicit coordinator: Coordinator): Unit = {
-    (coordinator.secondariesOfDataset _).expects(datasetId).once.returns(secondariesFromSeq(stores))
-    stores.foreach { storeId =>
-      expectSecondaryMetrics(storeId, datasetId, totalSizeBytes)
-    }
+  def expectDatasetMaxCostAlpha1WithCollocationsComplex(implicit metric: Metric): Unit = {
+    expectDatasetMaxCost(storeGroupA, alpha1, 10)
+    expectDatasetMaxCost(storeGroupA, charlie1, 10)
+    expectDatasetMaxCost(storeGroupA, charlie2, 10)
+    expectDatasetMaxCost(storeGroupA, bravo1, 10)
+    expectDatasetMaxCost(storeGroupA, alpha2, 10)
   }
 
-  def expectSecondaryMetricsAlpha1WithCollocationsComplex(implicit coordinator: Coordinator): Unit = {
-    (coordinator.secondariesOfDataset _).expects(alpha1).once.returns(secondaries(store1A, store3A))
-    expectSecondaryMetrics(store1A, alpha1, 10)
-    expectSecondaryMetrics(store3A, alpha1, 10)
-
-    (coordinator.secondariesOfDataset _).expects(charlie1).once.returns(secondaries(store1A, store3A))
-    expectSecondaryMetrics(store1A, charlie1, 10)
-    expectSecondaryMetrics(store3A, charlie1, 10)
-
-    (coordinator.secondariesOfDataset _).expects(charlie2).once.returns(secondaries(store1A, store3A))
-    expectSecondaryMetrics(store1A, charlie2, 10)
-    expectSecondaryMetrics(store3A, charlie2, 10)
-
-    (coordinator.secondariesOfDataset _).expects(bravo1).once.returns(secondaries(store1A, store3A))
-    expectSecondaryMetrics(store1A, bravo1, 10)
-    expectSecondaryMetrics(store3A, bravo1, 10)
-
-    (coordinator.secondariesOfDataset _).expects(alpha2).once.returns(secondaries(store1A, store3A))
-    expectSecondaryMetrics(store1A, alpha2, 10)
-    expectSecondaryMetrics(store3A, alpha2, 10)
-  }
-
-  def expectSecondaryMetricsBravo1WithCollocationsComplex(implicit coordinator: Coordinator): Unit = {
-    expectCDOIAlpha1WithCollocationsComplex()
-  }
-
-  def expectSecondaryMetricsBravo2WithCollocationsSimple(implicit coordinator: Coordinator): Unit = {
-    (coordinator.secondariesOfDataset _).expects(bravo2).once.returns(secondaries(store5A, store7A))
-    expectSecondaryMetrics(store5A, bravo2, 10)(coordinator)
-    expectSecondaryMetrics(store7A, bravo2, 10)(coordinator)
-
-    (coordinator.secondariesOfDataset _).expects(charlie3).once.returns(secondaries(store5A, store7A))
-    expectSecondaryMetrics(store5A, charlie3, 10)(coordinator)
-    expectSecondaryMetrics(store7A, charlie3, 10)(coordinator)
+  def expectDatasetMaxCostBravo2WithCollocationsSimple(implicit metric: Metric): Unit = {
+    expectDatasetMaxCost(storeGroupA, bravo2, 10)
+    expectDatasetMaxCost(storeGroupA, charlie3, 10)
   }
 
   def testExplainAndInitiateCollocation(message: String,
-                                        commonExpectations: Coordinator => Unit,
-                                        initiateExpectations: Coordinator => Unit = { _ => })
+                                        commonCoordinatorExpectations: Coordinator => Unit,
+                                        commonMetricExpectations: Metric => Unit = { _ => },
+                                        initiateCoordinatorExpectations: Coordinator => Unit = { _ => })
                                        (request: CollocationRequest,
                                         commonShould: Either[ErrorResult, CollocationResult] => Unit,
                                         explainShould: Either[ErrorResult, CollocationResult] => Unit = shouldBeApproved,
                                         initiateShould: (UUID, Either[ErrorResult, CollocationResult], Seq[(Move, Boolean)]) => Unit = shouldBeInProgress): Unit = {
     test("explainCollocation " + message) {
       withMocks(Set(storeGroupA), { coordinator =>
-        commonExpectations(coordinator)
-      }) { case (collocator, _) =>
+        commonCoordinatorExpectations(coordinator)
+      }, commonMetricExpectations) { case (collocator, _) =>
         val result = collocator.explainCollocation(storeGroupA, request)
 
         commonShould(result)
@@ -387,9 +373,9 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
 
     test("initiateCollocation " + message) {
       withMocks(Set(storeGroupA), { coordinator =>
-        commonExpectations(coordinator)
-        initiateExpectations(coordinator)
-      }) { case (collocator, _) =>
+        commonCoordinatorExpectations(coordinator)
+        initiateCoordinatorExpectations(coordinator)
+      }, commonMetricExpectations) { case (collocator, _) =>
         val jobId = UUID.randomUUID()
         val (result, moves) = collocator.initiateCollocation(jobId, storeGroupA, request)
 
@@ -434,8 +420,9 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
       expectCDOIDatasetsWithNoCollocations(Set(alpha1)) // group for alpha.1
       expectCDOIDatasetsWithNoCollocations(Set(bravo1)) // group for bravo.1
 
-      expectSecondaryMetrics(alpha1, 10 , store1A, store3A)
-      expectSecondaryMetrics(bravo1, 10, store5A, store7A)
+    }, { implicit metric =>
+      expectDatasetMaxCost(storeGroupA, alpha1, 10)
+      expectDatasetMaxCost(storeGroupA, bravo1, 10)
 
     }, { initiateCoordinator =>
       (initiateCoordinator.ensureSecondaryMoveJob _).expects(storeGroupA, *, *).twice.returns(Right(Right(true)))
@@ -468,9 +455,10 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
       expectCDOIDatasetsWithNoCollocations(Set(alpha1)) // group for alpha.1
       expectCDOIDatasetsWithNoCollocations(Set(bravo1)) // group for bravo.1
 
-      // for cost
-      expectSecondaryMetrics(alpha1, 10 , store1A, store3A)
-      expectSecondaryMetrics(bravo1, 10, store3A, store5A)
+    }, { implicit metric =>
+      expectDatasetMaxCost(storeGroupA, alpha1, 10)
+      expectDatasetMaxCost(storeGroupA, bravo1, 10)
+
 
     }, { initiateCoordinator =>
       (initiateCoordinator.ensureSecondaryMoveJob _).expects(storeGroupA, *, *).once.returns(Right(Right(true)))
@@ -503,8 +491,9 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
       expectCDOIDatasetsWithNoCollocations(Set(alpha1)) // group for alpha.1
       expectCDOIDatasetsWithNoCollocations(Set(bravo1)) // group for bravo.1
 
-      expectSecondaryMetrics(alpha1, 10 , store1A, store3A)
-      expectSecondaryMetrics(bravo1, 10, store1A, store3A)
+    }, { implicit metric =>
+      expectDatasetMaxCost(storeGroupA, alpha1, 10)
+      expectDatasetMaxCost(storeGroupA, bravo1, 10)
 
     }) (
 
@@ -537,9 +526,10 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
       expectCDOIAlpha1WithCollocationsComplex() // group for alpha.1
       expectCDOIBravo1WithCollocationsComplex() // group for bravo.1
 
-      // for cost
-      expectSecondaryMetricsAlpha1WithCollocationsComplex
-      expectSecondaryMetricsAlpha1WithCollocationsComplex // this confuses me
+    }, { implicit metric =>
+      expectDatasetMaxCostAlpha1WithCollocationsComplex
+      expectDatasetMaxCostAlpha1WithCollocationsComplex // this confuses me
+
     }) (
 
     request(Seq((alpha1, bravo1))),
@@ -574,9 +564,9 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
       expectCDOIAlpha1WithCollocationsComplex() // group for alpha.1
       expectCDOIDatasetsWithNoCollocations(Set(bravo2)) // group for bravo.2
 
-      // for cost
-      expectSecondaryMetricsAlpha1WithCollocationsComplex
-      expectSecondaryMetrics(bravo2, 10, store5A, store7A)
+    }, { implicit metric =>
+      expectDatasetMaxCostAlpha1WithCollocationsComplex
+      expectDatasetMaxCost(storeGroupA, bravo2, 10)
 
     }, { initiateCoordinator =>
       (initiateCoordinator.ensureSecondaryMoveJob _).expects(storeGroupA, bravo2, *).twice.returns(Right(Right(true)))
@@ -603,7 +593,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
   //   charlie.3: store5A, store7A -> store1A, store3A
   //
   testExplainAndInitiateCollocation(
-    "explainCollocation for two disjointly collocated datasets should move the dataset with the smaller collocated group",
+    "for two disjointly collocated datasets should move the dataset with the smaller collocated group",
     { implicit coordinator =>
       (coordinator.secondaryGroupConfigs _).expects().returns(Map(storeGroupA -> groupConfig(2, storesGroupA)))
 
@@ -616,9 +606,9 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
       expectCDOIAlpha1WithCollocationsComplex() // group for alpha.1
       expectCDOIBravo2WithCollocationsSimple() // group for bravo.2
 
-      // for cost
-      expectSecondaryMetricsAlpha1WithCollocationsComplex
-      expectSecondaryMetricsBravo2WithCollocationsSimple
+    }, { implicit metric =>
+      expectDatasetMaxCostAlpha1WithCollocationsComplex
+      expectDatasetMaxCostBravo2WithCollocationsSimple
 
     }, { initiateCoordinator =>
       (initiateCoordinator.ensureSecondaryMoveJob _).expects(storeGroupA, bravo2, *).twice.returns(Right(Right(true)))
@@ -672,7 +662,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
 
   // tests for beginCollocation(): Unit
   test("beginCollocation should acquire the collocation lock") {
-    withMocks(defaultStoreGroups, expectNoMockCoordinatorCalls, { lock =>
+    withMocks(defaultStoreGroups, expectNoMockCoordinatorCalls, expectNoMockMetricCalls, { lock =>
       (lock.acquire _).expects(10000L).once.returns(true)
 
     }) { (collocator, _) =>
@@ -681,7 +671,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
   }
 
   test("beginCollocation should throw a CollocationLockTimeout exception if it cannot acquire the collocation lock") {
-    withMocks(defaultStoreGroups, expectNoMockCoordinatorCalls, { lock =>
+    withMocks(defaultStoreGroups, expectNoMockCoordinatorCalls, expectNoMockMetricCalls, { lock =>
       (lock.acquire _).expects(10000L).once.returns(false)
 
     }) { (collocator, _) =>
@@ -695,7 +685,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
 
   // tests for commitCollocation(): Unit
   test("commitCollocation should release the collocation lock") {
-    withMocks(defaultStoreGroups, expectNoMockCoordinatorCalls, { lock =>
+    withMocks(defaultStoreGroups, expectNoMockCoordinatorCalls, expectNoMockMetricCalls, { lock =>
       (lock.release _).expects().once
 
     }) { (collocator, _) =>

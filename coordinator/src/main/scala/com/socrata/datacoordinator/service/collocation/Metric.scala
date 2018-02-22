@@ -11,7 +11,8 @@ trait MetricProvider {
   val metric: Metric
 }
 
-case class CoordinatedMetric(collocationGroup: Set[String], coordinator: Coordinator) extends Metric {
+case class CoordinatedMetric(collocationGroup: Set[String],
+                             coordinator: Coordinator)(implicit costOrdering: Ordering[Cost]) extends Metric {
   override def datasetMaxCost(storeGroup: String, dataset: DatasetInternalName): Either[ErrorResult, Cost] = {
     try {
       val currentInstances = coordinator.secondariesOfDataset(dataset).fold(throw _, _.getOrElse(throw DatasetNotFound(dataset)).secondaries.keySet)
@@ -22,8 +23,8 @@ case class CoordinatedMetric(collocationGroup: Set[String], coordinator: Coordin
       } yield {
         Cost(moves = 1, totalSizeBytes = metric.totalSizeBytes)
       }
-      // TODO: note we way want to replace Unknown here in the future with and error
-      val maxCost = costs.reduceOption(Cost.max).getOrElse(Cost.Unknown)
+      // TODO: note we way want to replace Unknown here in the future with an error (See EN-22542)
+      val maxCost = costs.reduceOption(costOrdering.max).getOrElse(Cost.Unknown)
 
       Right(maxCost)
     } catch {
