@@ -501,9 +501,14 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
   def deleteQuery_rollupMap = "DELETE FROM rollup_map WHERE copy_system_id IN (SELECT system_id FROM copy_map WHERE dataset_system_id = ?)"
   def deleteQuery_copyMap = "DELETE FROM copy_map WHERE dataset_system_id = ?"
   def deleteQuery_copyMapTableModifiers = "DELETE FROM copy_map_table_modifiers WHERE copy_system_id in (SELECT system_id FROM copy_map WHERE dataset_system_id = ?)"
+  def deleteQuery_secondaryMoveJobs = "DELETE FROM secondary_move_jobs WHERE dataset_system_id = ?"
   def deleteQuery_tableMap = "DELETE FROM dataset_map WHERE system_id = ?"
   def delete(tableInfo: DatasetInfo) {
     deleteCopiesOf(tableInfo)
+    using(conn.prepareStatement(deleteQuery_secondaryMoveJobs)) { stmt =>
+      stmt.setDatasetId(1, tableInfo.systemId)
+      t("delete-dataset-secondary-move-jobs", "dataset_id" -> tableInfo.systemId)(stmt.executeUpdate())
+    }
     using(conn.prepareStatement(deleteQuery_tableMap)) { stmt =>
       stmt.setDatasetId(1, tableInfo.systemId)
       val count = t("delete-dataset", "dataset_id" -> tableInfo.systemId)(stmt.executeUpdate())
