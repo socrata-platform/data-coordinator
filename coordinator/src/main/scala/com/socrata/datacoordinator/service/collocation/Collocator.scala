@@ -53,7 +53,7 @@ object CollocationResult {
 
 trait Collocator {
   def collocatedDatasets(datasets: Set[DatasetInternalName]): Either[RequestError, CollocatedDatasetsResult]
-  def dropDataset(dataset: DatasetInternalName): Option[RequestError]
+  def dropDataset(dataset: DatasetInternalName): Option[ErrorResult]
   def explainCollocation(storeGroup: String, request: CollocationRequest): Either[ErrorResult, CollocationResult]
   def executeCollocation(jobId: UUID, storeGroup: String, request: CollocationRequest): (Either[ErrorResult, CollocationResult], Seq[(Move, Boolean)])
   def commitCollocation(request: CollocationRequest): Unit
@@ -115,7 +115,7 @@ class CoordinatedCollocator(collocationGroup: Set[String],
     storesInGroup
   }
 
-  override def dropDataset(dataset: DatasetInternalName): Option[RequestError] = {
+  override def dropDataset(dataset: DatasetInternalName): Option[ErrorResult] = {
     log.info("Dropping dataset {} from collocation manifests", dataset)
     collocationGroup.flatMap { instance =>
       coordinator.dropCollocationsOnInstance(instance, dataset)

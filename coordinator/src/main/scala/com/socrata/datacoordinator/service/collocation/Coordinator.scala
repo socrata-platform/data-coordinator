@@ -44,7 +44,7 @@ trait Coordinator {
   }
 
   def collocatedDatasetsOnInstance(instance: String, datasets: Set[DatasetInternalName]): Either[RequestError, CollocatedDatasetsResult]
-  def dropCollocationsOnInstance(instance: String, internalName: DatasetInternalName): Option[RequestError]
+  def dropCollocationsOnInstance(instance: String, internalName: DatasetInternalName): Option[ErrorResult]
   def secondariesOfDataset(internalName: DatasetInternalName): Either[RequestError, Option[SecondariesOfDatasetResult]]
   def secondaryMetrics(storeId: String, instance: String): Either[ErrorResult, SecondaryMetric]
   def secondaryMetrics(storeId: String, internalName: DatasetInternalName): Either[ErrorResult, Option[SecondaryMetric]]
@@ -106,6 +106,24 @@ class HttpCoordinator(isThisInstance: String => Boolean,
     }
   }
 
+  private def noResponseRequest(instance: String, route: String, notFoundResult: ErrorResult)
+                               (request: RequestBuilder => SimpleHttpRequest): Option[ErrorResult] = {
+    doRequest[Option[ErrorResult]](instance, route, request) { response: Response =>
+      response.resultCode match {
+        case 200 => Right(None)
+        case 404 => Right(Some(notFoundResult))
+        case resultCode =>
+          val message = s"Received unexpected result code $resultCode from other instance $instance!"
+          log.error(message)
+          Right(Some(UnexpectedError(message)))
+      }
+    } match {
+      case Right(None) => None
+      case Right(Some(error)) => Some(error)
+      case Left(error) => Some(error)
+    }
+  }
+
   private def routeInternalName(route: String, internalName: DatasetInternalName): String =
     route + "/" + internalName.underlying
 
@@ -128,26 +146,13 @@ class HttpCoordinator(isThisInstance: String => Boolean,
     }
   }
 
-  override def dropCollocationsOnInstance(instance: String, internalName: DatasetInternalName): Option[RequestError] = {
+  override def dropCollocationsOnInstance(instance: String, internalName: DatasetInternalName): Option[ErrorResult] = {
     if (isThisInstance(instance)) {
       dropCollocations(internalName)
       None
     } else {
       val route = collocationManifestRoute(instance, Some(internalName))
-      doRequest[Option[RequestError]](instance, route, _.delete) { response =>
-        response.resultCode match {
-          case 200 => Right(None) // success
-          case 404 => Right(Some(InstanceNotFound(instance)))
-          case resultCode =>
-            val message = s"Received unexpected result code $resultCode from other instance $instance!"
-            log.error(message)
-            Right(Some(UnexpectedError(message)))
-        }
-      }
-    } match {
-      case Right(None) => None
-      case Right(Some(error)) => Some(error)
-      case Left(error) => Some(error)
+      noResponseRequest(instance, route, InstanceNotFound(instance))(_.delete)
     }
   }
 
@@ -292,25 +297,14 @@ class HttpCoordinator(isThisInstance: String => Boolean,
     if (isThisInstance(instance)) {
       rollbackSecondaryMoveJob(move.datasetInternalName.datasetId, request, dropFromStore)
     } else {
-      val parameters = Seq(
-        ("rollback", "true"),
-        ("dropFromStore", dropFromStore.toString)
-      )
-      doRequest[Option[ErrorResult]](instance, secondaryMoveRoute(None, move.datasetInternalName),
-        _.addParameters(parameters).jsonBody(request)) { response =>
-        response.resultCode match {
-          case 200 => Right(None) // success
-          case 404 => Right(Some(DatasetNotFound(move.datasetInternalName)))
-          case resultCode =>
-            val message = s"Received unexpected result code $resultCode from other instance $instance!"
-            log.error(message)
-            Right(Some(UnexpectedError(message)))
-        }
+      val route = secondaryMoveRoute(None, move.datasetInternalName)
+      noResponseRequest(instance, route, DatasetNotFound(move.datasetInternalName)) { req =>
+        val parameters = Seq(
+          ("rollback", "true"),
+          ("dropFromStore", dropFromStore.toString)
+        )
+        req.addParameters(parameters).jsonBody(request)
       }
-    } match {
-      case Right(None) => None
-      case Right(Some(error)) => Some(error)
-      case Left(error) => Some(error)
     }
   }
 }
