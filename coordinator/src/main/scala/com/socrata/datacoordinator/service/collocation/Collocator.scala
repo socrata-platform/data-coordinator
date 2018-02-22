@@ -6,14 +6,19 @@ import com.rojoma.json.v3.util._
 import com.socrata.datacoordinator.common.collocation.{CollocationLock, CollocationLockError, CollocationLockTimeout}
 import com.socrata.datacoordinator.id.DatasetInternalName
 import com.socrata.datacoordinator.resources.collocation.{CollocatedDatasetsResult, DatasetNotInStore, SecondaryMoveJobRequest, StoreNotAcceptingDatasets}
+import com.socrata.datacoordinator.service.collocation.CollocationRequest.CostLimits
 import com.socrata.datacoordinator.service.collocation.secondary.stores.SecondaryStoreSelector
 
 import scala.annotation.tailrec
 
 @JsonKeyStrategy(Strategy.Underscore)
-case class CollocationRequest(collocations: Seq[(DatasetInternalName, DatasetInternalName)])
+case class CollocationRequest(collocations: Seq[(DatasetInternalName, DatasetInternalName)],
+                              limits: CostLimits)
 
 object CollocationRequest {
+  type CostLimits = Cost
+
+  implicit val costLimitsDecode = AutomaticJsonDecodeBuilder[CostLimits]
   implicit val decode = AutomaticJsonDecodeBuilder[CollocationRequest]
 }
 
@@ -150,8 +155,8 @@ class CoordinatedCollocator(collocationGroup: Set[String],
           val replicationFactor = groupConfig.numReplicas
 
           request match {
-            case CollocationRequest(collocations) if collocations.isEmpty => Right(CollocationResult.canonicalEmpty)
-            case CollocationRequest(collocations) =>
+            case CollocationRequest(collocations, _) if collocations.isEmpty => Right(CollocationResult.canonicalEmpty)
+            case CollocationRequest(collocations, costLimits) =>
               val collocationEdges = collocations.map { collocation =>
                 Set(collocation._1, collocation._2)
               }.toSet
@@ -224,10 +229,20 @@ class CoordinatedCollocator(collocationGroup: Set[String],
 
               if (totalCost == Cost.Zero) return Right(CollocationResult.canonicalEmpty)
 
+              val totalStatus =
+                if (totalCost.moves > costLimits.moves)
+                  Rejected(s"the number of moves exceed the limit ${costLimits.moves}")
+                else if (totalCost.totalSizeBytes > costLimits.totalSizeBytes)
+                  Rejected(s"the total size in bytes exceeds the limit ${costLimits.totalSizeBytes}")
+                else if (totalCost.getMoveSizeMaxBytes > costLimits.getMoveSizeMaxBytes)
+                  Rejected(s"the max move size in bytes exceeds the limit ${costLimits.getMoveSizeMaxBytes}")
+                else
+                  Approved
+
               Right(CollocationResult(
                 id = None,
-                status = Approved,
-                message = Approved.message,
+                status = totalStatus,
+                message = totalStatus.message,
                 cost = totalCost, // here we return the full cost vector, we can obscure this further up the stack
                 moves = totalMoves
               ))
