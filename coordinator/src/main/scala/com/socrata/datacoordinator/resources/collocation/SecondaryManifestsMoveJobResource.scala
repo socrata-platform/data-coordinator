@@ -25,7 +25,6 @@ case class SecondaryManifestsMoveJobResource(storeGroup: String,
         responseOK(result)
       } catch {
         case StoreGroupNotFound(group) => storeGroupNotFound(group)
-        case _: Exception => InternalServerError
       }
     }
   }
@@ -62,7 +61,7 @@ case class SecondaryManifestsMoveJobResource(storeGroup: String,
         CollocationResult(
           id = Some(jobId),
           status = status,
-          cost = moves.map(_.cost).reduce(_ + _),
+          cost = moves.map(_.cost).fold(Cost.Zero)(_ + _),
           moves = moves.toSeq
         )
       case None => throw StoreGroupNotFound(storeGroup)

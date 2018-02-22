@@ -76,7 +76,7 @@ abstract class CollocationSodaResource extends BasicSodaResource {
     } catch {
       case e: IllegalArgumentException =>
         log.warn("Unable to parse job id as UUID", e)
-        Left(errorResponse(BadRequest, CollocationError.INVALID_JOB_ID, "job" -> JString(jobId)))
+        Left(errorResponse(BadRequest, CollocationError.INVALID_JOB_ID, "job-id" -> JString(jobId)))
     }
 
     id.fold(identity, handleRequest)
