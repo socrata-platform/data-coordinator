@@ -8,11 +8,11 @@ import com.socrata.http.server.responses._
 import com.socrata.http.server.{HttpRequest, HttpResponse}
 
 case class SecondaryManifestsCollocateResource(storeGroup: String,
-                                               coordinator: Coordinator with CollocatorProvider) extends CollocationSodaResource {
-
-  override protected val log = org.slf4j.LoggerFactory.getLogger(classOf[SecondaryManifestsCollocateResource])
+                                               provider: CoordinatorProvider with CollocatorProvider) extends CollocationSodaResource {
 
   override def post = doCollocateDatasets
+
+  import provider._
 
   private def doCollocateDatasets(req: HttpRequest): HttpResponse = {
     withBooleanParam("explain", req) { explain =>
@@ -20,12 +20,9 @@ case class SecondaryManifestsCollocateResource(storeGroup: String,
         withPostBody[CollocationRequest](req) { request =>
           try {
             log.info("Beginning collocation request for job {}", jobId)
-            coordinator.collocator.beginCollocation()
+            collocator.beginCollocation()
 
-            val storeGroups = storeGroup match {
-              case "_DEFAULT_" => coordinator.collocator.defaultStoreGroups
-              case other => Set(other)
-            }
+            val storeGroups = coordinator.secondaryGroups(storeGroup)
 
             doCollocationJob(jobId, storeGroups, request, explain) match {
               case Right(result) => responseOK(result)
@@ -36,7 +33,7 @@ case class SecondaryManifestsCollocateResource(storeGroup: String,
           } catch {
             case _: CollocationLockTimeout => Conflict
           } finally {
-            coordinator.collocator.commitCollocation()
+            collocator.commitCollocation()
           }
         }
       }
@@ -51,15 +48,15 @@ case class SecondaryManifestsCollocateResource(storeGroup: String,
     def rollbackCollocationJob(moves: Seq[(Move, Boolean)]): Unit = {
       if (!explain) {
         log.error("Attempting to roll back collocation moves for job {}", jobId)
-        coordinator.collocator.rollbackCollocation(jobId, moves)
+        collocator.rollbackCollocation(jobId, moves)
       }
     }
 
     val baseResult = if (explain) CollocationResult.canonicalEmpty else CollocationResult(jobId)
     val (collocationResult, _) = storeGroups.foldLeft((baseResult, Seq.empty[(Move, Boolean)])) { case ((totalResult, movesForRollback), group) =>
       val (result, moves) = try {
-        if (explain) (coordinator.collocator.explainCollocation(group, request), Seq.empty)
-        else coordinator.collocator.initiateCollocation(jobId, group, request)
+        if (explain) (collocator.explainCollocation(group, request), Seq.empty)
+        else collocator.initiateCollocation(jobId, group, request)
       } catch {
         case error: AssertionError =>
           log.error("Failed assertion while collocating datasets...", error)
@@ -85,7 +82,7 @@ case class SecondaryManifestsCollocateResource(storeGroup: String,
       }
     }
 
-    if (!explain) coordinator.collocator.saveCollocation(request)
+    if (!explain) collocator.saveCollocation(request)
 
     Right(collocationResult)
   }

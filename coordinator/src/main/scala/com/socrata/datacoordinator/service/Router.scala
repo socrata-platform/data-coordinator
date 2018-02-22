@@ -21,6 +21,8 @@ case class Router(parseDatasetId: String => Option[DatasetId],
                   secondaryManifestsCollocateResource: String => SodaResource,
                   secondaryManifestsMetricsResource: (String, Option[DatasetId]) => SodaResource,
                   secondaryManifestsMoveResource: (Option[String], DatasetId) => SodaResource,
+                  secondaryManifestsMoveJobResource: (String, String) => SodaResource,
+                  secondaryMoveJobsJobResource: String => SodaResource,
                   datasetSecondaryStatusResource: (Option[String], DatasetId) => SodaResource,
                   secondariesOfDatasetResource: DatasetId => SodaResource,
                   collocationManifestsResource: Option[String] => SodaResource,
@@ -72,6 +74,10 @@ case class Router(parseDatasetId: String => Option[DatasetId],
 
       Route("/secondary-manifest/move/{DatasetId}", secondaryManifestsMoveResource(None, _: DatasetId)),
       Route("/secondary-manifest/move/{OptString}/{DatasetId}", secondaryManifestsMoveResource),
+
+      Route("/secondary-manifest/move/{String}/job/{String}", secondaryManifestsMoveJobResource),
+
+      Route("/secondary-move-jobs/job/{String}", secondaryMoveJobsJobResource),
 
       Route("/secondaries-of-dataset/{DatasetId}", secondariesOfDatasetResource),
 

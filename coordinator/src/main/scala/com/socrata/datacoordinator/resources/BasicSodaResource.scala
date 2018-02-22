@@ -11,7 +11,7 @@ import org.slf4j.Logger
 
 abstract class BasicSodaResource extends SodaResource {
 
-  protected val log: Logger
+  protected val log: Logger = org.slf4j.LoggerFactory.getLogger(this.getClass)
 
   def responseOK[T : JsonEncode](content: T): HttpResponse = {
     OK ~> Json(content, pretty = true)

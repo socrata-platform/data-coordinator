@@ -12,11 +12,8 @@ import com.socrata.datacoordinator.id.DatasetInternalName
 import com.socrata.datacoordinator.resources.BasicSodaResource
 import com.socrata.http.server.{HttpRequest, HttpResponse}
 import com.socrata.http.server.responses._
-import org.slf4j.Logger
 
 abstract class CollocationSodaResource extends BasicSodaResource {
-
-  protected val log: Logger
 
   def instanceNotFound(instance: String, resp: HttpResponse = NotFound): HttpResponse =
     errorResponse(resp, CollocationError.INSTANCE_DOES_NOT_EXIST, "instance" -> JString(instance))
@@ -71,5 +68,17 @@ abstract class CollocationSodaResource extends BasicSodaResource {
         log.warn("Unable to parse request as JSON", e)
         errorResponse(BadRequest, BodyRequestError.MALFORMED_JSON, "message" -> JString(e.message))
     }
+  }
+
+  def withJobId(jobId: String, req: HttpRequest)(handleRequest: UUID => HttpResponse): HttpResponse = {
+    val id = try {
+      Right(UUID.fromString(jobId))
+    } catch {
+      case e: IllegalArgumentException =>
+        log.warn("Unable to parse job id {} as UUID", jobId)
+        Left(errorResponse(BadRequest, CollocationError.INVALID_JOB_ID, "job-id" -> JString(jobId)))
+    }
+
+    id.fold(identity, handleRequest)
   }
 }
