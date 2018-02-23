@@ -697,19 +697,19 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
 
   testExpectRejectedExplainAndExecuteCollocation(
     "for collocation with moves exceeding the supplied move limit should reject the collocation",
-     costLimits.copy(moves = 3),
+    costLimits = Cost(moves = 3, totalSizeBytes = 100L, moveSizeMaxBytes = Some(50L)),
     "collocation is rejected because the number of moves exceed the limit 3"
   )
 
   testExpectRejectedExplainAndExecuteCollocation(
     "for collocation with total size exceeding the supplied total size limit should reject the collocation",
-    costLimits.copy(totalSizeBytes = 30L),
+    costLimits = Cost(moves = 20, totalSizeBytes = 30L, moveSizeMaxBytes = Some(50L)),
     "collocation is rejected because the total size in bytes exceeds the limit 30"
   )
 
   testExpectRejectedExplainAndExecuteCollocation(
     "for collocation with max move size exceeding the supplied max move size limit should reject the collocation",
-    costLimits.copy(moveSizeMaxBytes = Some(5L)),
+    costLimits = Cost(moves = 20, totalSizeBytes = 100L, moveSizeMaxBytes = Some(5L)),
     "collocation is rejected because the max move size in bytes exceeds the limit 5"
   )
 
