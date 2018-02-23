@@ -150,7 +150,7 @@ class CoordinatedCollocator(collocationGroup: Set[String],
     try {
       coordinator.secondaryGroupConfigs.get(storeGroup) match {
         case Some(groupConfig) =>
-          val instances = groupConfig.instances
+          val instances = groupConfig.instances.keySet
           val replicationFactor = groupConfig.numReplicas
 
           request match {
@@ -181,14 +181,11 @@ class CoordinatedCollocator(collocationGroup: Set[String],
                 (dataset, metric.datasetMaxCost(storeGroup, dataset).fold(throw _, identity))
               }.toMap
 
-              // represents graph of collocated groups to be collocated
-              val collocatedGroupsEdges = collocationEdges.map(_.map(datasetGroupMap)).filter(_.size == 2)
+              val storeMetricsMap = instances.map { instance =>
+                (instance, metric.storeMetrics(instance).fold(throw _, identity))
+              }.toMap
 
-              val groupsToBeCollocated = graph.nodesByComponent(collocatedGroupsEdges)
-              val (totalCost, totalMoves) = groupsToBeCollocated.flatMap { groups =>
-                // from the filter condition above groups will have at least size 2
-                assert(groups.size >= 2)
-
+              def selectMoves(groups: Set[Set[DatasetInternalName]]): Set[Move] = {
                 val indexedGroups = groups.zipWithIndex
 
                 val groupCostMap = indexedGroups.map { case (group, index) =>
@@ -207,25 +204,31 @@ class CoordinatedCollocator(collocationGroup: Set[String],
                   (index, datasetStoresMap(representingDataset))
                 }.toMap
 
-                val destinationStores = SecondaryStoreSelector(storeGroup, groupConfig)
+                val destinationStores = SecondaryStoreSelector(storeGroup, groupConfig, storeMetricsMap)
                   .destinationStores(groupStoreMap, groupCostMap)
 
                 // cost and moves to move each other group to the most expensive group
-                indexedGroups.map { case (group, index) =>
-                  val moves = movesFor(
+                indexedGroups.flatMap { case (group, index) =>
+                  movesFor(
                     group,
                     storesFrom = groupStoreMap(index),
                     storesTo = destinationStores,
                     datasetCostMap
                   )
-                  val cost = Move.totalCost(moves)
-
-                  (cost, moves)
                 }
-              }.fold((Cost.Zero, Seq.empty[Move])) { case ((xCost, xMoves), (yCost, yMoves)) =>
-                (xCost + yCost, xMoves ++ yMoves)
               }
 
+              // represents graph of collocated groups to be collocated
+              val collocatedGroupsEdges = collocationEdges.map(_.map(datasetGroupMap)).filter(_.size == 2)
+
+              val groupsToBeCollocated = graph.nodesByComponent(collocatedGroupsEdges)
+              val totalMoves = groupsToBeCollocated.flatMap { groups =>
+                // from the filter condition above groups will have at least size 2
+                assert(groups.size >= 2)
+                selectMoves(groups)
+              }.toSeq
+
+              val totalCost = Move.totalCost(totalMoves)
               if (totalCost == Cost.Zero) return Right(CollocationResult.canonicalEmpty)
 
               val totalStatus =
@@ -235,8 +238,17 @@ class CoordinatedCollocator(collocationGroup: Set[String],
                   Rejected(s"the total size in bytes exceeds the limit ${costLimits.totalSizeBytes}")
                 else if (totalCost.getMoveSizeMaxBytes > costLimits.getMoveSizeMaxBytes)
                   Rejected(s"the max move size in bytes exceeds the limit ${costLimits.getMoveSizeMaxBytes}")
-                else
-                  Approved
+                else {
+                  totalMoves.groupBy(_.storeIdTo).flatMap { case (storeId, moves) =>
+                    val bytesToMove = Move.totalCost(moves).totalSizeBytes
+                    val storeTotalBytes = storeMetricsMap(storeId).totalSizeBytes
+                    val storeCapacityBytes = groupConfig.instances(storeId).storeCapacityMB * 1000 * 1000
+
+                    if (storeTotalBytes + bytesToMove > storeCapacityBytes)
+                      Some(Rejected(s"the moves exceed the capacity of store $storeId"))
+                    else None
+                  }.headOption.getOrElse(Approved)
+                }
 
               Right(CollocationResult(
                 id = None,

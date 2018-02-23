@@ -153,7 +153,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
         for (u <- common.universe) yield {
           u.datasetMapReader.datasetInfo(datasetId) match {
             case Some(_) =>
-              val moves = u.secondaryMoveJobs.jobs(datasetId).filter { move => groupConfig.instances(move.toStoreId) }
+              val moves = u.secondaryMoveJobs.jobs(datasetId).filter { move => groupConfig.instances.keySet(move.toStoreId) }
 
               Right(SecondaryMoveJobsResult(moves))
             case None =>
@@ -176,17 +176,17 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
               val fromStoreId = request.fromStoreId
               val toStoreId = request.toStoreId
 
-              if (!groupConfig.instances(fromStoreId)) return Left(StoreNotFound(fromStoreId))
-              if (!groupConfig.instances(toStoreId)) return Left(StoreNotFound(toStoreId))
+              if (!groupConfig.instances.keySet(fromStoreId)) return Left(StoreNotFound(fromStoreId))
+              if (!groupConfig.instances.keySet(toStoreId)) return Left(StoreNotFound(toStoreId))
 
-              if (groupConfig.instancesNotAcceptingNewDatasets.getOrElse(Set.empty)(toStoreId)) {
+              if (!groupConfig.instances(toStoreId).acceptingNewDatasets) {
                 log.warn("Cannot move dataset to store {} not accepting new datasets", toStoreId)
                 return Right(Left(StoreNotAcceptingDatasets))
               }
 
               val currentStores =
                 secondariesOfDataset(datasetId).map(_.secondaries.keySet).getOrElse(Set.empty).
-                  filter(groupConfig.instances(_))
+                  filter(groupConfig.instances.keySet(_))
 
               val existingJobs = u.secondaryMoveJobs.jobs(datasetId)
 
@@ -278,7 +278,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
   }
 
   def secondaryMetrics(storeId: String, datasetId: Option[DatasetId]): Either[ResourceNotFound, Option[SecondaryMetric]] = {
-    val secondaries = serviceConfig.secondary.groups.flatMap(_._2.instances).toSet
+    val secondaries = serviceConfig.secondary.groups.flatMap(_._2.instances.keySet).toSet
     if (secondaries(storeId)) {
       for (u <- common.universe) yield {
         datasetId match {
@@ -449,13 +449,10 @@ object Main extends DynamicPortMap {
 
     PropertyConfigurator.configure(Propertizer("log4j", serviceConfig.logProperties))
 
-    val secondaries: Set[String] = serviceConfig.secondary.groups.flatMap(_._2.instances).toSet
+    val secondaries: Set[String] = serviceConfig.secondary.groups.flatMap(_._2.instances.keySet).toSet
+    // TODO: remove this
     val secondariesNotAcceptingNewDatasets: Set[String] =
-      serviceConfig.secondary.groups.flatMap(_._2.instancesNotAcceptingNewDatasets).flatten.toSet
-    serviceConfig.secondary.groups.foreach { case (name, group) =>
-      if (!group.instancesNotAcceptingNewDatasets.getOrElse(Set.empty).subsetOf(group.instances))
-        throw new Exception(s"For secondary group $name instancesNotAcceptingNewDatasets must be a subset of instances!")
-    }
+      serviceConfig.secondary.groups.flatMap(_._2.instances.filter(!_._2.acceptingNewDatasets).keySet).toSet
 
     val collocationGroup: Set[String] = serviceConfig.collocation.group
     if (collocationGroup.nonEmpty && !collocationGroup.contains(serviceConfig.instance)) {
@@ -789,11 +786,10 @@ object Main extends DynamicPortMap {
      * only about secondaries in this group since selection is done group by group.  For example,
      * if we need two replicas in this group then secondaries outside this group don't count.
      */
-    val currentDatasetSecondariesForGroup = currentDatasetSecondaries.intersect(secondaryGroup.instances)
+    val currentDatasetSecondariesForGroup = currentDatasetSecondaries.intersect(secondaryGroup.instances.keySet)
     val desiredCopies = secondaryGroup.numReplicas
     val newCopiesRequired = Math.max(desiredCopies - currentDatasetSecondariesForGroup.size, 0)
-    val candidateSecondariesInGroup =
-      secondaryGroup.instances -- secondaryGroup.instancesNotAcceptingNewDatasets.getOrElse(Set.empty)
+    val candidateSecondariesInGroup = secondaryGroup.instances.filter(_._2.acceptingNewDatasets).keySet
 
     log.info(s"Dataset $datasetId exists on ${currentDatasetSecondariesForGroup.size} secondaries in group, " +
       s"want it on $desiredCopies so need to find $newCopiesRequired new secondaries")
