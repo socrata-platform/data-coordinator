@@ -12,7 +12,7 @@ import scala.annotation.tailrec
 
 @JsonKeyStrategy(Strategy.Underscore)
 case class CollocationRequest(collocations: Seq[(DatasetInternalName, DatasetInternalName)],
-                              limits: com.socrata.datacoordinator.service.collocation.CollocationRequest.CostLimits)
+                              limits: CollocationRequest.CostLimits)
 
 object CollocationRequest {
   type CostLimits = Cost
