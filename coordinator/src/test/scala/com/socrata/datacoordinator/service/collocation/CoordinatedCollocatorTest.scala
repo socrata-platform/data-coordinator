@@ -289,7 +289,10 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
     }
   }
 
-  def request(collocations: Seq[(DatasetInternalName, DatasetInternalName)]) = CollocationRequest(collocations)
+  val costLimits = Cost(moves = 20, totalSizeBytes = 100L, moveSizeMaxBytes = Some(50L))
+
+  def request(collocations: Seq[(DatasetInternalName, DatasetInternalName)]) =
+    CollocationRequest(collocations = collocations, costLimits)
 
   val requestEmpty = request(Seq.empty)
 
@@ -329,6 +332,22 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
     moves should be (result.moves.map { move => (move, true) })
   }
 
+  def explainShouldBeRejected(expectedMessage: String)(maybeResult: Either[ErrorResult, CollocationResult]): Unit = {
+    val result = maybeResult.right.get
+
+    result.id should be (None)
+    result.status.name should be (Rejected(expectedMessage).name)
+    result.message should be (expectedMessage)
+  }
+
+  def executeShouldBeRejected(expectedMessage: String)
+                              (jobId: UUID,
+                               maybeResult: Either[ErrorResult, CollocationResult],
+                               moves: Seq[(Move, Boolean)]): Unit = {
+    explainShouldBeRejected(expectedMessage)(maybeResult)
+    moves should be (Seq.empty)
+  }
+
   def expectSecondaryMoveJobsByDataset(storeGroup: String,
                                        datasetId: DatasetInternalName,
                                        result: Either[ErrorResult, SecondaryMoveJobsResult] = moveJobResultEmpty)(implicit coordinator: Coordinator): Unit = {
@@ -352,14 +371,14 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
     expectDatasetMaxCost(storeGroupA, charlie3, 10)
   }
 
-  def testExplainAndInitiateCollocation(message: String,
+  def testExplainAndExecuteCollocation(message: String,
                                         commonCoordinatorExpectations: Coordinator => Unit,
                                         commonMetricExpectations: Metric => Unit = { _ => },
-                                        initiateCoordinatorExpectations: Coordinator => Unit = { _ => })
+                                        executeCoordinatorExpectations: Coordinator => Unit = { _ => })
                                        (request: CollocationRequest,
                                         commonShould: Either[ErrorResult, CollocationResult] => Unit,
                                         explainShould: Either[ErrorResult, CollocationResult] => Unit = shouldBeApproved,
-                                        initiateShould: (UUID, Either[ErrorResult, CollocationResult], Seq[(Move, Boolean)]) => Unit = shouldBeInProgress): Unit = {
+                                        executeShould: (UUID, Either[ErrorResult, CollocationResult], Seq[(Move, Boolean)]) => Unit = shouldBeInProgress): Unit = {
     test("explainCollocation " + message) {
       withMocks(Set(storeGroupA), { coordinator =>
         commonCoordinatorExpectations(coordinator)
@@ -374,18 +393,18 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
     test("executeCollocation " + message) {
       withMocks(Set(storeGroupA), { coordinator =>
         commonCoordinatorExpectations(coordinator)
-        initiateCoordinatorExpectations(coordinator)
+        executeCoordinatorExpectations(coordinator)
       }, commonMetricExpectations) { case (collocator, _) =>
         val jobId = UUID.randomUUID()
         val (result, moves) = collocator.executeCollocation(jobId, storeGroupA, request)
 
         commonShould(result)
-        initiateShould(jobId, result, moves)
+        executeShould(jobId, result, moves)
       }
     }
   }
 
-  testExplainAndInitiateCollocation(
+  testExplainAndExecuteCollocation(
     "should return the canonical empty result for an empty request",
     { coordinator =>
       (coordinator.secondaryGroupConfigs _).expects().returns(Map(storeGroupA -> groupConfig(2, storesGroupA)))
@@ -399,14 +418,14 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
 
       explainResult should be (resultApprovedEmpty)
 
-    }, { (_, initiateResult, moves) =>
+    }, { (_, executeResult, moves) =>
 
-      initiateResult should be (resultCompleted)
+      executeResult should be (resultCompleted)
       moves should be (Seq.empty)
     }
   )
 
-  testExplainAndInitiateCollocation(
+  testExplainAndExecuteCollocation(
     "for two non-collocated datasets with no overlapping stores should move one dataset twice",
     { implicit coordinator =>
       (coordinator.secondaryGroupConfigs _).expects().returns(Map(storeGroupA -> groupConfig(2, storesGroupA)))
@@ -424,8 +443,8 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
       expectDatasetMaxCost(storeGroupA, alpha1, 10)
       expectDatasetMaxCost(storeGroupA, bravo1, 10)
 
-    }, { initiateCoordinator =>
-      (initiateCoordinator.ensureSecondaryMoveJob _).expects(storeGroupA, *, *).twice.returns(Right(Right(true)))
+    }, { executeCoordinator =>
+      (executeCoordinator.ensureSecondaryMoveJob _).expects(storeGroupA, *, *).twice.returns(Right(Right(true)))
     }) (
 
     request(Seq((alpha1, bravo1))),
@@ -441,7 +460,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
     }
   )
 
-  testExplainAndInitiateCollocation(
+  testExplainAndExecuteCollocation(
     "for two non-collocated datasets with one overlapping store should move one dataset once",
     { implicit coordinator =>
       (coordinator.secondaryGroupConfigs _).expects().returns(Map(storeGroupA -> groupConfig(2, storesGroupA)))
@@ -460,8 +479,8 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
       expectDatasetMaxCost(storeGroupA, bravo1, 10)
 
 
-    }, { initiateCoordinator =>
-      (initiateCoordinator.ensureSecondaryMoveJob _).expects(storeGroupA, *, *).once.returns(Right(Right(true)))
+    }, { executeCoordinator =>
+      (executeCoordinator.ensureSecondaryMoveJob _).expects(storeGroupA, *, *).once.returns(Right(Right(true)))
     }) (
 
     request(Seq((alpha1, bravo1))),
@@ -477,7 +496,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
     }
   )
 
-  testExplainAndInitiateCollocation(
+  testExplainAndExecuteCollocation(
     "for non-collocated datasets on the same stores should generate no moves",
     { implicit coordinator =>
       (coordinator.secondaryGroupConfigs _).expects().returns(Map(storeGroupA -> groupConfig(2, storesGroupA)))
@@ -512,7 +531,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
     }
   )
 
-  testExplainAndInitiateCollocation(
+  testExplainAndExecuteCollocation(
     "for already collocated datasets should return a result with completed status",
     { implicit coordinator =>
       (coordinator.secondaryGroupConfigs _).expects().returns(Map(storeGroupA -> groupConfig(2, storesGroupA)))
@@ -540,8 +559,8 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
 
     }, { explainCompleted => },
 
-    { (_, _, initiatedMoves) =>
-      initiatedMoves should be (Seq.empty)
+    { (_, _, executedMoves) =>
+      executedMoves should be (Seq.empty)
     }
   )
 
@@ -550,7 +569,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
   // moves:
   //   bravo.2: store5A, store7A -> store1A, store3A
   //
-  testExplainAndInitiateCollocation(
+  testExplainAndExecuteCollocation(
     "for a collocated dataset and a non-collocated dataset should move the non-collocated dataset twice",
     { implicit coordinator =>
       (coordinator.secondaryGroupConfigs _).expects().returns(Map(storeGroupA -> groupConfig(2, storesGroupA)))
@@ -568,8 +587,8 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
       expectDatasetMaxCostAlpha1WithCollocationsComplex
       expectDatasetMaxCost(storeGroupA, bravo2, 10)
 
-    }, { initiateCoordinator =>
-      (initiateCoordinator.ensureSecondaryMoveJob _).expects(storeGroupA, bravo2, *).twice.returns(Right(Right(true)))
+    }, { executeCoordinator =>
+      (executeCoordinator.ensureSecondaryMoveJob _).expects(storeGroupA, bravo2, *).twice.returns(Right(Right(true)))
     }) (
 
     request(Seq((alpha1, bravo2))),
@@ -592,7 +611,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
   //   bravo.2:   store5A, store7A -> store1A, store3A
   //   charlie.3: store5A, store7A -> store1A, store3A
   //
-  testExplainAndInitiateCollocation(
+  testExplainAndExecuteCollocation(
     "for two disjointly collocated datasets should move the dataset with the smaller collocated group",
     { implicit coordinator =>
       (coordinator.secondaryGroupConfigs _).expects().returns(Map(storeGroupA -> groupConfig(2, storesGroupA)))
@@ -610,9 +629,9 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
       expectDatasetMaxCostAlpha1WithCollocationsComplex
       expectDatasetMaxCostBravo2WithCollocationsSimple
 
-    }, { initiateCoordinator =>
-      (initiateCoordinator.ensureSecondaryMoveJob _).expects(storeGroupA, bravo2, *).twice.returns(Right(Right(true)))
-      (initiateCoordinator.ensureSecondaryMoveJob _).expects(storeGroupA, charlie3, *).twice.returns(Right(Right(true)))
+    }, { executeCoordinator =>
+      (executeCoordinator.ensureSecondaryMoveJob _).expects(storeGroupA, bravo2, *).twice.returns(Right(Right(true)))
+      (executeCoordinator.ensureSecondaryMoveJob _).expects(storeGroupA, charlie3, *).twice.returns(Right(Right(true)))
     }) (
 
     request(Seq((alpha1, bravo2))),
@@ -628,7 +647,72 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
       result.moves.map(_.storeIdTo).toSet should be (Set(store1A, store3A))
     }
   )
-  
+
+  // Cost will be: (Cost(4, 40L, Some(10L)))
+  def testExpectRejectedExplainAndExecuteCollocation(message: String, costLimits: Cost, expectedRejectionMessage: String): Unit = {
+    // collocate: alpha.1 (store1A, store3A) with bravo.2 (store5A, store7A)
+    //
+    // moves:
+    //   bravo.2:   store5A, store7A -> store1A, store3A
+    //   charlie.3: store5A, store7A -> store1A, store3A
+    //
+    testExplainAndExecuteCollocation(
+      message,
+      { implicit coordinator =>
+        (coordinator.secondaryGroupConfigs _).expects().returns(Map(storeGroupA -> groupConfig(2, storesGroupA)))
+
+        expectSecondaryMoveJobsByDataset(storeGroupA, alpha1)
+        (coordinator.secondariesOfDataset _).expects(alpha1).once.returns(secondaries(store1A, store3A))
+
+        expectSecondaryMoveJobsByDataset(storeGroupA, bravo2)
+        (coordinator.secondariesOfDataset _).expects(bravo2).once.returns(secondaries(store5A, store7A))
+
+        expectCDOIAlpha1WithCollocationsComplex() // group for alpha.1
+        expectCDOIBravo2WithCollocationsSimple() // group for bravo.2
+
+      }, { implicit metric =>
+        expectDatasetMaxCostAlpha1WithCollocationsComplex
+        expectDatasetMaxCostBravo2WithCollocationsSimple
+
+      }) (
+
+      request(Seq((alpha1, bravo2))).copy(limits = costLimits),
+
+      { commonResult =>
+        val result = commonResult.right.get
+
+        result.cost should be (Cost(4, 40L, Some(10L)))
+
+        result.moves.size should be (4)
+        result.moves.map(_.datasetInternalName).toSet should be (Set(bravo2, charlie3))
+        result.moves.map(_.storeIdFrom).toSet should be (Set(store5A, store7A))
+        result.moves.map(_.storeIdTo).toSet should be (Set(store1A, store3A))
+      },
+
+      explainShouldBeRejected(expectedRejectionMessage),
+
+      executeShouldBeRejected(expectedRejectionMessage)
+    )
+  }
+
+  testExpectRejectedExplainAndExecuteCollocation(
+    "for collocation with moves exceeding the supplied move limit should reject the collocation",
+    costLimits = Cost(moves = 3, totalSizeBytes = 100L, moveSizeMaxBytes = Some(50L)),
+    "collocation is rejected because the number of moves exceed the limit 3"
+  )
+
+  testExpectRejectedExplainAndExecuteCollocation(
+    "for collocation with total size exceeding the supplied total size limit should reject the collocation",
+    costLimits = Cost(moves = 20, totalSizeBytes = 30L, moveSizeMaxBytes = Some(50L)),
+    "collocation is rejected because the total size in bytes exceeds the limit 30"
+  )
+
+  testExpectRejectedExplainAndExecuteCollocation(
+    "for collocation with max move size exceeding the supplied max move size limit should reject the collocation",
+    costLimits = Cost(moves = 20, totalSizeBytes = 100L, moveSizeMaxBytes = Some(5L)),
+    "collocation is rejected because the max move size in bytes exceeds the limit 5"
+  )
+
   // tests for commitCollocation(request: CollocationRequest): Unit
   test("commitCollocation for an empty request should save nothing to the manifest") {
     withMocks(defaultStoreGroups) { (collocator, manifest) =>
