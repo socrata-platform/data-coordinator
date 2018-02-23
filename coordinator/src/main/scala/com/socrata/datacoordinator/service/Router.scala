@@ -25,7 +25,7 @@ case class Router(parseDatasetId: String => Option[DatasetId],
                   secondaryMoveJobsJobResource: String => SodaResource,
                   datasetSecondaryStatusResource: (Option[String], DatasetId) => SodaResource,
                   secondariesOfDatasetResource: DatasetId => SodaResource,
-                  collocationManifestsResource: Option[String] => SodaResource,
+                  collocationManifestsResource: (Option[String], Option[String]) => SodaResource,
                   versionResource: SodaResource) {
 
   type OptString = Option[String]
@@ -81,8 +81,9 @@ case class Router(parseDatasetId: String => Option[DatasetId],
 
       Route("/secondaries-of-dataset/{DatasetId}", secondariesOfDatasetResource),
 
-      Route("/collocation-manifest", collocationManifestsResource(None)),
-      Route("/collocation-manifest/{OptString}", collocationManifestsResource),
+      Route("/collocation-manifest", collocationManifestsResource(None, None)),
+      Route("/collocation-manifest/{OptString}", collocationManifestsResource(_: Option[String], None)),
+      Route("/collocation-manifest/{OptString}/{OptString}", collocationManifestsResource),
 
       Route("/version", versionResource)
     )

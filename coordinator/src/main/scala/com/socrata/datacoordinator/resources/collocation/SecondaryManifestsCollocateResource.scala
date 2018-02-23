@@ -20,7 +20,7 @@ case class SecondaryManifestsCollocateResource(storeGroup: String,
         withPostBody[CollocationRequest](req) { request =>
           try {
             log.info("Beginning collocation request for job {}", jobId)
-            collocator.beginCollocation()
+            collocator.lockCollocation()
 
             val storeGroups = coordinator.secondaryGroups(storeGroup)
 
@@ -33,7 +33,7 @@ case class SecondaryManifestsCollocateResource(storeGroup: String,
           } catch {
             case _: CollocationLockTimeout => Conflict
           } finally {
-            collocator.commitCollocation()
+            collocator.unlockCollocation()
           }
         }
       }
@@ -56,7 +56,7 @@ case class SecondaryManifestsCollocateResource(storeGroup: String,
     val (collocationResult, _) = storeGroups.foldLeft((baseResult, Seq.empty[(Move, Boolean)])) { case ((totalResult, movesForRollback), group) =>
       val (result, moves) = try {
         if (explain) (collocator.explainCollocation(group, request), Seq.empty)
-        else collocator.initiateCollocation(jobId, group, request)
+        else collocator.executeCollocation(jobId, group, request)
       } catch {
         case error: AssertionError =>
           log.error("Failed assertion while collocating datasets...", error)
@@ -82,7 +82,7 @@ case class SecondaryManifestsCollocateResource(storeGroup: String,
       }
     }
 
-    if (!explain) collocator.saveCollocation(request)
+    if (!explain) collocator.commitCollocation(request)
 
     Right(collocationResult)
   }

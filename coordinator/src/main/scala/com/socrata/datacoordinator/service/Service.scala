@@ -43,7 +43,7 @@ class Service(serviceConfig: ServiceConfig,
               secondaryManifestsMoveJobResource: (String, String) => SecondaryManifestsMoveJobResource,
               secondaryMoveJobsJobResource: String => SecondaryMoveJobsJobResource,
               datasetSecondaryStatusResource: (Option[String], DatasetId) => DatasetSecondaryStatusResource,
-              collocationManifestsResource: Option[String] => CollocationManifestsResource,
+              collocationManifestsResource: (Option[String], Option[String]) => CollocationManifestsResource,
               secondariesOfDatasetResource: DatasetId => SecondariesOfDatasetResource
              ) extends CoordinatorErrorsAndMetrics(formatDatasetId)
 {
@@ -312,7 +312,7 @@ object Service {
             formatDatasetId: DatasetId => String,
             parseDatasetId: String => Option[DatasetId],
             notFoundDatasetResource: (Option[String], (=> HttpResponse) => HttpResponse) => NotFoundDatasetResource,
-            datasetResource: (DatasetId, (=> HttpResponse) => HttpResponse) => DatasetResource,
+            datasetResource: CollocationLock => (String => Option[(String, Int)]) => (DatasetId, (=> HttpResponse) => HttpResponse) => DatasetResource,
             datasetSchemaResource: DatasetId => DatasetSchemaResource,
             datasetSnapshotsResource: DatasetId => DatasetSnapshotsResource,
             datasetSnapshotResource: (DatasetId, Long) => DatasetSnapshotResource,
@@ -326,7 +326,7 @@ object Service {
             secondaryManifestsMoveJobResource: (String => Option[(String, Int)]) => (String, String) => SecondaryManifestsMoveJobResource,
             secondaryMoveJobsJobResource: String => SecondaryMoveJobsJobResource,
             datasetSecondaryStatusResource: (Option[String], DatasetId) => DatasetSecondaryStatusResource,
-            collocationManifestsResource: CollocationLock => (String => Option[(String, Int)]) => Option[String] => CollocationManifestsResource,
+            collocationManifestsResource: CollocationLock => (String => Option[(String, Int)]) => (Option[String], Option[String]) => CollocationManifestsResource,
             secondariesOfDatasetResource: DatasetId => SecondariesOfDatasetResource
            )(collocationLock: CollocationLock, hostAndPort: (String => Option[(String, Int)])): Service = {
     new Service(
@@ -334,7 +334,7 @@ object Service {
       formatDatasetId,
       parseDatasetId,
       notFoundDatasetResource,
-      datasetResource,
+      datasetResource(collocationLock)(hostAndPort),
       datasetSchemaResource,
       datasetSnapshotsResource,
       datasetSnapshotResource,
