@@ -73,7 +73,7 @@ object SecondaryStoreSelector {
             storeMetrics: Map[String, SecondaryMetric])(implicit costOrdering: Ordering[Cost]): SecondaryStoreSelector = {
     val storesFreeSpaceMap = groupConfig.instances.map { case (storeId, storeConfig) =>
       val freeSpaceBytes = if (storeConfig.acceptingNewDatasets)
-        storeConfig.storeCapacityMB * 1000L * 1000L - storeMetrics(storeId).totalSizeBytes
+        storeConfig.storeCapacityMB * 1024L * 1024L - storeMetrics(storeId).totalSizeBytes
       else 0L
 
       (storeId, freeSpaceBytes)

@@ -452,7 +452,9 @@ object Main extends DynamicPortMap {
     val secondaries: Set[String] = serviceConfig.secondary.groups.flatMap(_._2.instances.keySet).toSet
     // TODO: remove this
     val secondariesNotAcceptingNewDatasets: Set[String] =
-      serviceConfig.secondary.groups.flatMap(_._2.instances.filter(!_._2.acceptingNewDatasets).keySet).toSet
+      serviceConfig.secondary.groups.flatMap { case (_, group) =>
+        group.instances.filter { case (_, instance) => !instance.acceptingNewDatasets }.keySet
+      }.toSet
 
     val collocationGroup: Set[String] = serviceConfig.collocation.group
     if (collocationGroup.nonEmpty && !collocationGroup.contains(serviceConfig.instance)) {

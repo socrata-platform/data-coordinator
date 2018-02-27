@@ -242,7 +242,7 @@ class CoordinatedCollocator(collocationGroup: Set[String],
                   totalMoves.groupBy(_.storeIdTo).flatMap { case (storeId, moves) =>
                     val bytesToMove = Move.totalCost(moves).totalSizeBytes
                     val storeTotalBytes = storeMetricsMap(storeId).totalSizeBytes
-                    val storeCapacityBytes = groupConfig.instances(storeId).storeCapacityMB * 1000 * 1000
+                    val storeCapacityBytes = groupConfig.instances(storeId).storeCapacityMB * 1024 * 1024
 
                     if (storeTotalBytes + bytesToMove > storeCapacityBytes)
                       Some(Rejected(s"the moves exceed the capacity of store $storeId"))
