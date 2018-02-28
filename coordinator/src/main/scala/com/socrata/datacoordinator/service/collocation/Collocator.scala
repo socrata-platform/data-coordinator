@@ -252,7 +252,7 @@ class CoordinatedCollocator(collocationGroup: Set[String],
 
               totalStatus match {
                 case Rejected(reason) => log.info("Rejecting collocation request because {}", reason)
-                case Approved => log.info("Approving collocation request")
+                case Approved => log.info("Approving collocation request for collocations: {}", request.collocations)
                 case _ => throw new Exception("Unexpected collocation status in explain")
               }
 
