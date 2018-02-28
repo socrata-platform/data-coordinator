@@ -2,8 +2,10 @@ package com.socrata.datacoordinator.service.collocation
 
 import java.util.UUID
 
-import com.socrata.datacoordinator.common.collocation.{CollocationLock, CollocationLockTimeout}
-import com.socrata.datacoordinator.id.{DatasetId, DatasetInternalName}
+import com.socrata.datacoordinator.common.collocation.CollocationLockTimeout
+import com.socrata.datacoordinator.collocation.TestData
+import com.socrata.datacoordinator.common.collocation.CollocationLock
+import com.socrata.datacoordinator.id.DatasetInternalName
 import com.socrata.datacoordinator.resources.SecondariesOfDatasetResult
 import com.socrata.datacoordinator.resources.collocation.{CollocatedDatasetsResult, SecondaryMoveJobsResult}
 import com.socrata.datacoordinator.secondary.SecondaryMetric
@@ -14,6 +16,7 @@ import org.scalatest.{FunSuite, Matchers}
 import scala.concurrent.duration.FiniteDuration
 
 class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory {
+  import TestData._
 
   implicit val costOrdering: Ordering[Cost] = WeightedCostOrdering(
     movesWeight = 1.0,
@@ -30,10 +33,6 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
 
     def get: Set[(DatasetInternalName, DatasetInternalName)] = manifest.toSet
   }
-
-  val alpha = "alpha"
-  val bravo = "bravo"
-  val charlie = "charlie"
 
   def expectNoMockCoordinatorCalls(mock: Coordinator): Unit = {
     (mock.rollbackSecondaryMoveJob _).expects(*, *, *, *).never
@@ -94,23 +93,6 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
     f(collocator, manifest)
   }
 
-  val storeGroupA = "store_group_a"
-  val storeGroupB = "store_group_b"
-
-  val store1A = "store_1_a"
-  val store3A = "store_3_a"
-  val store5A = "store_5_a"
-  val store7A = "store_7_a"
-
-  val storesGroupA = Set(store1A, store3A, store5A, store7A)
-
-  val store2B = "store_2_b"
-  val store4B = "store_4_b"
-  val store6B = "store_6_b"
-  val store8B = "store_8_b"
-
-  val storesGroupB = Set(store2B, store4B, store6B, store8B)
-
   def groupConfig(numReplicas: Int,
                   instances: Set[String],
                   instancesNotAcceptingNewDatasets: Set[String] = Set.empty) = {
@@ -121,21 +103,6 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
 
     SecondaryGroupConfig(numReplicas, instanceMap)
   }
-
-  val defaultStoreGroups = Set(storeGroupA, storeGroupB)
-
-  def internalName(instance: String, datasetId: Long): DatasetInternalName =
-    DatasetInternalName(instance, new DatasetId(datasetId))
-
-  val alpha1 = internalName(alpha, 1L)
-  val alpha2 = internalName(alpha, 2L)
-
-  val bravo1 = internalName(bravo, 1L)
-  val bravo2 = internalName(bravo, 2L)
-
-  val charlie1 = internalName(charlie, 1L)
-  val charlie2 = internalName(charlie, 2L)
-  val charlie3 = internalName(charlie, 3L)
 
   val datasetsEmpty = Set.empty[DatasetInternalName]
 
@@ -294,13 +261,6 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
       collocator.collocatedDatasets(Set(alpha1)) should be (collocatedDatasets(Set(alpha1, alpha2, bravo1, charlie1, charlie2)))
     }
   }
-
-  val costLimits = Cost(moves = 20, totalSizeBytes = 100L, moveSizeMaxBytes = Some(50L))
-
-  def request(collocations: Seq[(DatasetInternalName, DatasetInternalName)]) =
-    CollocationRequest(collocations = collocations, costLimits)
-
-  val requestEmpty = request(Seq.empty)
 
   val resultApprovedEmpty = Right(CollocationResult.canonicalEmpty)
   val resultCompleted = Right(CollocationResult.canonicalEmpty.copy(status = Completed, message = Completed.message))
