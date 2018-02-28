@@ -17,18 +17,26 @@ class SecondaryStoreSelectorTest extends FunSuite with ShouldMatchers {
   val store4 = "store_4"
   val store5 = "store_5"
 
-  val stores = Set(store1, store2, store3, store4, store5)
+  val stores = Map(store1 -> 100L, store2 -> 100L, store3 -> 100L, store4 -> 100L, store5 -> 100L)
+  def secondaryStoreSelector(stores: Map[String, Long],
+                             unavailableStores: Set[String] = Set.empty,
+                             replicationFactor: Int) = {
+    val storesMap = stores.map { case (store, actualFreeSpace) =>
+      val freeSpace = if (unavailableStores(store)) 0L else actualFreeSpace
+      (store, freeSpace)
+    }
+    new SecondaryStoreSelector("group_1", storesMap, replicationFactor)
+  }
 
-  val selector = new SecondaryStoreSelector("group_1", stores, Set.empty[String], replicationFactor = 1)
-  val selectorUnavailableStore1 = new SecondaryStoreSelector("group_1", stores, Set(store1), replicationFactor = 1)
+  val selector = secondaryStoreSelector(stores, replicationFactor = 1)
+  val selectorUnavailableStore1 = secondaryStoreSelector(stores, Set(store1), replicationFactor = 1)
+  val selectorRep0 = secondaryStoreSelector(stores, replicationFactor = 0)
+  val selectorRep2 = secondaryStoreSelector(stores, replicationFactor = 2)
 
-  val selectorRep0 = new SecondaryStoreSelector("group_1", stores, Set.empty[String], replicationFactor = 0)
-  val selectorRep2 = new SecondaryStoreSelector("group_1", stores, Set.empty[String], replicationFactor = 2)
-
-  val selectorRep2UnavailableStore1 = new SecondaryStoreSelector("group_1", stores, Set(store1), replicationFactor = 2)
-  val selectorRep2UnavailableStore13 = new SecondaryStoreSelector("group_1", stores, Set(store1, store3), replicationFactor = 2)
-  val selectorRep2UnavailableStore123 = new SecondaryStoreSelector("group_1", stores, Set(store1, store2, store3), replicationFactor = 2)
-  val selectorRep2UnavailableStore1234 = new SecondaryStoreSelector("group_1", stores, Set(store1, store2, store3, store4), replicationFactor = 2)
+  val selectorRep2UnavailableStore1 = secondaryStoreSelector(stores, Set(store1), replicationFactor = 2)
+  val selectorRep2UnavailableStore13 = secondaryStoreSelector(stores, Set(store1, store3), replicationFactor = 2)
+  val selectorRep2UnavailableStore123 = secondaryStoreSelector(stores, Set(store1, store2, store3), replicationFactor = 2)
+  val selectorRep2UnavailableStore1234 = secondaryStoreSelector(stores, Set(store1, store2, store3, store4), replicationFactor = 2)
 
   val costMapEmpty = Map.empty[Int, Cost]
   val storeMapEmpty = Map.empty[Int, Set[String]]
@@ -38,25 +46,25 @@ class SecondaryStoreSelectorTest extends FunSuite with ShouldMatchers {
   }
 
   test("An available store should always be a valid destination for an empty store map") {
-    selector.invalidDestinationStore(store1, storeMapEmpty) should be (false)
+    selector.invalidDestinationStore(store1, storeMapEmpty, costMapEmpty) should be (false)
   }
 
   test("An unavailable store should always be a valid destination for an empty store map") {
-    selectorUnavailableStore1.invalidDestinationStore("store_1", storeMapEmpty) should be (false)
+    selectorUnavailableStore1.invalidDestinationStore("store_1", storeMapEmpty, costMapEmpty) should be (false)
   }
 
   test("Should select replication factor number of stores for empty store and cost maps") {
     val destinations0 = selectorRep0.destinationStores(storeMapEmpty, costMapEmpty)
     destinations0 should have size 0
-    stores.intersect(destinations0) should have size 0
+    stores.keySet.intersect(destinations0) should have size 0
 
     val destinations1 = selector.destinationStores(storeMapEmpty, costMapEmpty)
     destinations1 should have size 1
-    stores.intersect(destinations1) should have size 1
+    stores.keySet.intersect(destinations1) should have size 1
 
     val destinations2 = selectorRep2.destinationStores(storeMapEmpty, costMapEmpty)
     destinations2 should have size 2
-    stores.intersect(destinations2) should have size 2
+    stores.keySet.intersect(destinations2) should have size 2
   }
 
   val costMap = Map(0 -> Cost(4, 40), 1 -> Cost(1, 10), 2 -> Cost(1, 10), 3 -> Cost(2, 20))
@@ -66,22 +74,37 @@ class SecondaryStoreSelectorTest extends FunSuite with ShouldMatchers {
     selector.maxCostKey(costMap) should be (Some(0))
   }
 
-  test("An available store should always to be a valid destination for a store map") {
-    selector.invalidDestinationStore(store1, storeMap) should be (false)
+  test("An available store with enough space should to be a valid destination for a store map") {
+    selector.invalidDestinationStore(store1, storeMap, costMap) should be (false)
+
+    val costMap2 = Map(0 -> Cost(4, 200), 1 -> Cost(1, 10), 2 -> Cost(1, 10), 3 -> Cost(2, 20))
+    selector.invalidDestinationStore(store1, storeMap, costMap2) should be (false)
+  }
+
+  test("An available store with not enough space should to be an invalid destination for a store map") {
+    val costMap = Map(0 -> Cost(4, 40), 1 -> Cost(1, 10), 2 -> Cost(1, 10), 3 -> Cost(2, 90))
+    selector.invalidDestinationStore(store1, storeMap, costMap) should be (true)
   }
 
   test("An unavailable store should be an invalid destination for a store map") {
-    selectorUnavailableStore1.invalidDestinationStore(store1, storeMap) should be (true)
+    selectorUnavailableStore1.invalidDestinationStore(store1, storeMap, costMap) should be (true)
   }
 
   val store1Map = Map(0 -> Set(store1), 1 -> Set(store1), 2 -> Set(store1), 3 -> Set(store1))
 
   test("An unavailable store should be a valid destination for a store map always containing that store") {
-    selectorUnavailableStore1.invalidDestinationStore(store1, store1Map) should be (false)
+    selectorUnavailableStore1.invalidDestinationStore(store1, store1Map, costMap) should be (false)
   }
 
   test("Should select the store for the key with the highest cost") {
     selector.destinationStores(storeMap, costMap) should be (Set(store1))
+  }
+
+  test("Should select the store where there is enough free space") {
+    // 0, 1 on store1
+    // 2, 3 on store3
+    val costMap = Map(0 -> Cost(4, 45), 1 -> Cost(1, 45), 2 -> Cost(1, 30), 3 -> Cost(2, 30))
+    selector.destinationStores(storeMap, costMap) should be (Set(store3))
   }
 
   test("Should select the available store for the key with the highest cost when preferred stores are unavailable") {

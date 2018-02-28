@@ -8,10 +8,11 @@ import net.ceedubs.ficus.FicusConfig._
 // reflection-based horror that doesn't even provide full paths to
 // errors.
 
+case class StoreConfig(storeCapacityMB: Long, acceptingNewDatasets: Boolean)
+
 case class SecondaryGroupConfig(
      numReplicas: Int,
-     instances: Set[String],
-     instancesNotAcceptingNewDatasets: Option[Set[String]]
+     instances: Map[String, StoreConfig]
  )
 
 case class SecondaryInstanceConfig(
