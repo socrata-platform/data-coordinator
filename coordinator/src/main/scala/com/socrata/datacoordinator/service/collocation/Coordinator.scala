@@ -229,7 +229,7 @@ class HttpCoordinator(isThisInstance: String => Boolean,
   }
 
   private def secondaryMoveRoute(storeGroup: Option[String], internalName: DatasetInternalName) =
-    routeInternalName("/secondary-manifest/move/" + storeGroup.map(_ + "/").getOrElse(""), internalName)
+    routeInternalName("/secondary-manifest/move/" + storeGroup.getOrElse(""), internalName)
 
   override def secondaryMoveJobs(storeGroup: String, internalName: DatasetInternalName): Either[ErrorResult, SecondaryMoveJobsResult] = {
     if (isThisInstance(internalName.instance)) {
