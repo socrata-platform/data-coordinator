@@ -9,3 +9,4 @@ local-secondary-watcher.conf
 .DS_Store
 coordinator/docker/*.jar
 coordinator/docker-secondary-watcher/*.jar
+data-coordinator*.log
