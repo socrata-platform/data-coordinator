@@ -39,7 +39,7 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
     using(conn.prepareStatement("SELECT CURRENT_TIMESTAMP")) { stmt=>
       using(stmt.executeQuery()) { rs =>
         rs.next()
-        toDateTime(rs.getTimestamp("now"))
+        toDateTime(rs.getTimestamp(1))
       }
     }
   }
