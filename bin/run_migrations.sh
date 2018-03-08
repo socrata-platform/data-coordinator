@@ -6,7 +6,7 @@ BINDIR=$(dirname "$REALPATH")
 # Run data coordinator migrations
 # run_migrations.sh [config] [migrate/undo/redo] [numchanges]
 
-CONFIG="configs/application.conf"
+CONFIG="$BINDIR/../configs/application.conf"
 COMMANDS="migrate"
 if [[ $1 == migrate || $1 == undo || $1 == redo ]]; then
   COMMANDS=( $1 $2 )

@@ -7,7 +7,7 @@ BINDIR=$(dirname "$REALPATH")
 
 CONFIG=$1
 if [[ -z $CONFIG ]]; then
-  CONFIG="configs/application.conf"
+  CONFIG="$BINDIR/../configs/application.conf"
 fi
 
 JARFILE=$("$BINDIR"/build.sh "$@")
