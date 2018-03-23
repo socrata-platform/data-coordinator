@@ -14,4 +14,4 @@ docker run \
   -e SERVER_CONFIG=/etc/configs/application-alpha.conf \
   -v "$local_config_dir":/etc/configs \
   -p 6020:6020 \
-  -d -t "$image"
+  -t "$image"
