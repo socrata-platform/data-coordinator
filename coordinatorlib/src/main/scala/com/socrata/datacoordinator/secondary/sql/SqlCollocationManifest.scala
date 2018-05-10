@@ -11,9 +11,9 @@ abstract class SqlCollocationManifest(conn: Connection) extends CollocationManif
   override def collocatedDatasets(datasets: Set[String]): Set[String] = {
     def getNeighbors(dataset: String): Set[String] = {
       using(conn.prepareStatement(
-        """SELECT dataset_internal_name_left FROM related_data_sets WHERE dataset_internal_name_right = ?
+        """SELECT dataset_internal_name_left FROM collocation_manifest WHERE dataset_internal_name_right = ?
           |UNION
-          |SELECT dataset_internal_name_right FROM related_data_sets WHERE dataset_internal_name_left = ?""".stripMargin))
+          |SELECT dataset_internal_name_right FROM collocation_manifest WHERE dataset_internal_name_left = ?""".stripMargin))
       { stmt =>
         stmt.setString(1, dataset)
         stmt.setString(2, dataset)
