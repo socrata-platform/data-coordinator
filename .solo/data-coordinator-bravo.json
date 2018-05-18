@@ -3,5 +3,6 @@
   "image_name": "data-coordinator",
   "ports": [ 6040 ],
   "start_container": "bin/start_dc_docker_bravo.sh",
-  "start_process": "bin/start_dc_bravo.sh"
+  "start_process": "bin/start_dc_bravo.sh",
+  "register_by_default": false
 }
