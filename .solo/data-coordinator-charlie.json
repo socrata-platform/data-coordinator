@@ -3,5 +3,6 @@
   "image_name": "data-coordinator",
   "ports": [ 6060 ],
   "start_container": "bin/start_dc_docker_charlie.sh",
-  "start_process": "bin/start_dc_charlie.sh"
+  "start_process": "bin/start_dc_charlie.sh",
+  "register_by_default: false"
 }

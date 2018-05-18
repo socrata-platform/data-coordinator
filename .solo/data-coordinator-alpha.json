@@ -3,5 +3,6 @@
   "image_name": "data-coordinator",
   "ports": [ 6020 ],
   "start_container": "bin/start_dc_docker_alpha.sh",
-  "start_process": "bin/start_dc_alpha.sh"
+  "start_process": "bin/start_dc_alpha.sh",
+  "register_by_default: false"
 }
