@@ -14,4 +14,4 @@ docker run \
   -e SERVER_CONFIG=/etc/configs/application-charlie.conf \
   -v "$local_config_dir":/etc/configs \
   -p 6060:6060 \
-  -t "$image"
+  "$image"
