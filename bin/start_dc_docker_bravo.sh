@@ -14,4 +14,4 @@ docker run \
   -e SERVER_CONFIG=/etc/configs/application-bravo.conf \
   -v "$local_config_dir":/etc/configs \
   -p 6040:6040 \
-  -t "$image"
+  "$image"
