@@ -55,7 +55,7 @@ case class SecondaryManifestsCollocateResource(storeGroup: String,
     val baseResult = if (explain) CollocationResult.canonicalEmpty else CollocationResult(jobId)
     val (collocationResult, _) = storeGroups.foldLeft((baseResult, Seq.empty[(Move, Boolean)])) { case ((totalResult, movesForRollback), group) =>
       val (result, moves) = try {
-        if (explain) (collocator.explainCollocation(group, request), Seq.empty)
+        if (explain) (collocator.explainCollocation(jobId, group, request), Seq.empty)
         else collocator.executeCollocation(jobId, group, request)
       } catch {
         case error: AssertionError =>
@@ -82,7 +82,7 @@ case class SecondaryManifestsCollocateResource(storeGroup: String,
       }
     }
 
-    if (!explain) collocator.commitCollocation(request)
+    if (!explain) collocator.commitCollocation(jobId, request)
 
     Right(collocationResult)
   }

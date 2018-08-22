@@ -10,6 +10,8 @@ import com.rojoma.simplearm.util._
 class SqlTableCleanup(conn: Connection, daysDelay: Int = 1) extends TableCleanup { // daysDelay: Int = 1 will change to:  daysDelay: FiniteDuration
   val log = org.slf4j.LoggerFactory.getLogger(classOf[SqlTableCleanup])
   def cleanupPendingDrops(): Boolean = {
+    cleanupDeleteds()
+
     using(conn.createStatement()) { stmt =>
       using(stmt.executeQuery(s"SELECT id, table_name FROM pending_table_drops WHERE queued_at < now() - ('$daysDelay day' :: INTERVAL) ORDER BY id LIMIT 1 FOR UPDATE")) { rs =>
         if(rs.next()) {
@@ -26,6 +28,13 @@ class SqlTableCleanup(conn: Connection, daysDelay: Int = 1) extends TableCleanup
           false
         }
       }
+    }
+  }
+
+  private def cleanupDeleteds(): Unit = {
+    using(conn.createStatement()) { stmt =>
+      stmt.executeQuery(s"DELETE FROM collocation_manifest WHERE deleted_at < now() - ('$daysDelay day' :: INTERVAL)")
+      stmt.executeQuery(s"DELETE FROM secondary_move_jobs WHERE deleted_at < now() - ('$daysDelay day' :: INTERVAL)")
     }
   }
 }

@@ -58,9 +58,9 @@ object CollocationResult {
 trait Collocator {
   def collocatedDatasets(datasets: Set[DatasetInternalName]): Either[RequestError, CollocatedDatasetsResult]
   def dropDataset(dataset: DatasetInternalName): Option[ErrorResult]
-  def explainCollocation(storeGroup: String, request: CollocationRequest): Either[ErrorResult, CollocationResult]
+  def explainCollocation(jobId: UUID, storeGroup: String, request: CollocationRequest): Either[ErrorResult, CollocationResult]
   def executeCollocation(jobId: UUID, storeGroup: String, request: CollocationRequest): (Either[ErrorResult, CollocationResult], Seq[(Move, Boolean)])
-  def commitCollocation(request: CollocationRequest): Unit
+  def commitCollocation(jobId: UUID, request: CollocationRequest): Unit
   def lockCollocation(): Unit
   def unlockCollocation(): Unit
   def rollbackCollocation(jobId: UUID, moves: Seq[(Move, Boolean)]): Option[ErrorResult]
@@ -73,7 +73,7 @@ trait CollocatorProvider {
 class CoordinatedCollocator(collocationGroup: Set[String],
                             coordinator: Coordinator,
                             metric: Metric,
-                            addCollocations: Seq[(DatasetInternalName, DatasetInternalName)] => Unit,
+                            addCollocations: (UUID, Seq[(DatasetInternalName, DatasetInternalName)]) => Unit,
                             lock: CollocationLock,
                             lockTimeoutMillis: Long)(implicit costOrdering: Ordering[Cost]) extends Collocator {
 
@@ -144,7 +144,8 @@ class CoordinatedCollocator(collocationGroup: Set[String],
     }
   }
 
-  override def explainCollocation(storeGroup: String,
+  override def explainCollocation(jobId: UUID,
+                                  storeGroup: String,
                                   request: CollocationRequest): Either[ErrorResult, CollocationResult] = {
     log.info("Explaining collocation on secondary store group {}", storeGroup)
     try {
@@ -280,7 +281,7 @@ class CoordinatedCollocator(collocationGroup: Set[String],
                                   storeGroup: String,
                                   request: CollocationRequest): (Either[ErrorResult, CollocationResult], Seq[(Move, Boolean)]) = {
     log.info("Executing collocation on secondary store group {}", storeGroup)
-    explainCollocation(storeGroup, request) match {
+    explainCollocation(jobId, storeGroup, request) match {
       case Right(CollocationResult(_, Approved, _, cost, moves)) =>
 
         log.info("Ensuring required move jobs exists: {}", moves)
@@ -327,11 +328,11 @@ class CoordinatedCollocator(collocationGroup: Set[String],
     }
   }
 
-  override def commitCollocation(request: CollocationRequest): Unit = {
+  override def commitCollocation(jobId: UUID, request: CollocationRequest): Unit = {
     // save the collocation relationships to the database after ensuring all required moves jobs exists
     // this way we only need to roll back jobs for our job id back if something goes wrong
     log.info("Adding collocation relationships to the manifest: {}", request.collocations)
-    addCollocations(request.collocations)
+    addCollocations(jobId, request.collocations)
   }
 
   override def lockCollocation(): Unit = {

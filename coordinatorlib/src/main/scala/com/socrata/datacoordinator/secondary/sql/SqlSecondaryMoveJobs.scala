@@ -16,7 +16,7 @@ class SqlSecondaryMoveJobs(conn: Connection) extends SecondaryMoveJobs {
     val filterCompleted = " AND (move_from_store_completed_at IS NULL OR move_to_store_completed_at IS NULL)"
     val clause = if (includeCompleted) where else where + filterCompleted
 
-    using(conn.prepareStatement(s"SELECT * FROM $tableName WHERE $clause")) { stmt =>
+    using(conn.prepareStatement(s"SELECT * FROM $tableName WHERE deleted_at is null AND $clause")) { stmt =>
       setParams(stmt)
       using(stmt.executeQuery()) { rs =>
         val result = Seq.newBuilder[SecondaryMoveJob]
@@ -93,7 +93,7 @@ class SqlSecondaryMoveJobs(conn: Connection) extends SecondaryMoveJobs {
 
   override def deleteJob(jodId: UUID, datasetId: DatasetId, fromStoreId: String, toStoreId: String): Unit = {
     using(conn.prepareStatement(
-      s"""DELETE FROM $tableName
+      s"""UPDATE $tableName SET deleted_at = now()
          |      WHERE job_id = ?
          |      AND dataset_system_id = ?
          |      AND from_store_id = ?
@@ -102,6 +102,13 @@ class SqlSecondaryMoveJobs(conn: Connection) extends SecondaryMoveJobs {
       stmt.setDatasetId(2, datasetId)
       stmt.setString(3, fromStoreId)
       stmt.setString(4, toStoreId)
+      stmt.execute()
+    }
+  }
+
+  override def deleteJob(jobId: UUID): Unit = {
+    using(conn.prepareStatement(s"UPDATE $tableName SET deleted_at = now() WHERE job_id = ?")) { stmt =>
+      stmt.setObject(1, jobId)
       stmt.execute()
     }
   }

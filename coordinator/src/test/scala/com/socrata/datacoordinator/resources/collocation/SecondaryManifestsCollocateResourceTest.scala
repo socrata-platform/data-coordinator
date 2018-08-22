@@ -37,9 +37,8 @@ class SecondaryManifestsCollocateResourceTest extends FunSuite with Matchers wit
     val expectedResult = Right(CollocationResult(None, Approved, Approved.message, Cost(4, 40, Some(10)), movesA ++ movesB))
 
     withMock("_DEFAULT_", explain = true) { collocator =>
-
-      (collocator.explainCollocation _).expects(storeGroupA, request(Seq((alpha1, bravo1)))).once.returns(resultA)
-      (collocator.explainCollocation _).expects(storeGroupB, request(Seq((alpha1, bravo1)))).once.returns(resultB)
+      (collocator.explainCollocation _).expects(jobId, storeGroupA, request(Seq((alpha1, bravo1)))).once.returns(resultA)
+      (collocator.explainCollocation _).expects(jobId, storeGroupB, request(Seq((alpha1, bravo1)))).once.returns(resultB)
 
     } { (resource, _) =>
       val result = resource.doCollocationJob(jobId, Set(storeGroupA, storeGroupB), request(Seq((alpha1, bravo1))), explain = true)
@@ -67,7 +66,7 @@ class SecondaryManifestsCollocateResourceTest extends FunSuite with Matchers wit
 
       (collocator.executeCollocation _).expects(jobId, storeGroupA, request(Seq((alpha1, bravo1)))).once.returns((resultA, movesA.map((_, true))))
       (collocator.executeCollocation _).expects(jobId, storeGroupB, request(Seq((alpha1, bravo1)))).once.returns((resultB, movesB.map((_, true))))
-      (collocator.commitCollocation _).expects(collocationRequest)
+      (collocator.commitCollocation _).expects(jobId, collocationRequest)
 
     } { (resource, _) =>
       val result = resource.doCollocationJob(jobId, Set(storeGroupA, storeGroupB), collocationRequest, explain = false)

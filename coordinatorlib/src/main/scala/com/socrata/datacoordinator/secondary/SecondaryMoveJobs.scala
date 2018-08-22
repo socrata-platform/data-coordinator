@@ -31,4 +31,5 @@ trait SecondaryMoveJobs {
   def markJobsFromStoreComplete(storeId: String, datasetId: DatasetId): Unit
   def markJobsToStoreComplete(storeId: String, datasetId: DatasetId): Unit
   def deleteJob(jodId: UUID, datasetId: DatasetId, fromStoreId: String, toStoreId: String): Unit
+  def deleteJob(jodId: UUID): Unit
 }

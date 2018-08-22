@@ -6,6 +6,7 @@ class CollocationManifest {
   private val manifest = collection.mutable.Set.empty[(DatasetInternalName, DatasetInternalName)]
 
   def add(collocations: Seq[(DatasetInternalName, DatasetInternalName)]): Unit = {
+    println("COLLOCATION MANIFEST " + collocations.mkString(":"))
     collocations.foreach(collocation => manifest.add(collocation))
   }
 
