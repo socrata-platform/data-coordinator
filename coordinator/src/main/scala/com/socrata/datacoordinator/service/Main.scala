@@ -141,9 +141,9 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
     }
   }
 
-  def secondaryMoveJobsByStoreId(storeId: UUID): SecondaryMoveJobsResult = {
+  def secondaryMoveJobs(jobId: UUID): SecondaryMoveJobsResult = {
     for (u <- common.universe) yield {
-      SecondaryMoveJobsResult(u.secondaryMoveJobs.jobs(storeId))
+      SecondaryMoveJobsResult(u.secondaryMoveJobs.jobs(jobId))
     }
   }
 
@@ -164,7 +164,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
     }
   }
 
-  
+
   def ensureSecondaryMoveJob(storeGroup: String,
                              datasetId: DatasetId,
                              request: SecondaryMoveJobRequest): Either[ResourceNotFound, Either[InvalidMoveJob, Boolean]] = {
@@ -598,7 +598,7 @@ object Main extends DynamicPortMap {
             operations.dropCollocations,
             operations.secondariesOfDataset,
             operations.secondaryMetrics,
-            operations.secondaryMoveJobsByStoreId,
+            operations.secondaryMoveJobs,
             operations.secondaryMoveJobs,
             operations.ensureSecondaryMoveJob,
             operations.rollbackSecondaryMoveJob
@@ -663,7 +663,7 @@ object Main extends DynamicPortMap {
           metricProvider(hostAndPort)
         )
 
-        val secondaryMoveJobsJobResource = SecondaryMoveJobsJobResource(_: String, operations.secondaryMoveJobsByStoreId)
+        val secondaryMoveJobsJobResource = SecondaryMoveJobsJobResource(_: String, operations.secondaryMoveJobs)
 
         def collocationManifestsResource(lock: CollocationLock)(hostAndPort: String => Option[(String, Int)]) = {
           CollocationManifestsResource(_: Option[String], _: Option[String], collocationProvider(hostAndPort, lock))

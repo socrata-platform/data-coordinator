@@ -48,7 +48,7 @@ trait Coordinator {
   def secondariesOfDataset(internalName: DatasetInternalName): Either[RequestError, Option[SecondariesOfDatasetResult]]
   def secondaryMetrics(storeId: String, instance: String): Either[ErrorResult, SecondaryMetric]
   def secondaryMetrics(storeId: String, internalName: DatasetInternalName): Either[ErrorResult, Option[SecondaryMetric]]
-  def secondaryMoveJobs(instance: String, storeId: UUID): Either[RequestError, SecondaryMoveJobsResult]
+  def secondaryMoveJobs(instance: String, jobId: UUID): Either[RequestError, SecondaryMoveJobsResult]
   def secondaryMoveJobs(storeGroup: String, internalName: DatasetInternalName): Either[ErrorResult, SecondaryMoveJobsResult]
   def ensureSecondaryMoveJob(storeGroup: String, internalName: DatasetInternalName, request: SecondaryMoveJobRequest): Either[ErrorResult, Either[InvalidMoveJob, Boolean]]
   def rollbackSecondaryMoveJob(instance: String, jobId: UUID, move: Move, dropFromStore: Boolean): Option[ErrorResult]
@@ -216,11 +216,11 @@ class HttpCoordinator(isThisInstance: String => Boolean,
     }
   }
 
-  override def secondaryMoveJobs(instance: String, storeId: UUID): Either[RequestError, SecondaryMoveJobsResult] = {
+  override def secondaryMoveJobs(instance: String, jobId: UUID): Either[RequestError, SecondaryMoveJobsResult] = {
     if (isThisInstance(instance)) {
-      Right(secondaryMoveJobsByJob(storeId))
+      Right(secondaryMoveJobsByJob(jobId))
     } else {
-      val route = s"/secondary-move-jobs/job/$storeId"
+      val route = s"/secondary-move-jobs/job/$jobId"
       request[SecondaryMoveJobsResult](instance, route)(_.get) match {
         case Right(result) => Right(result.get) // endpoint will never 404
         case Left(error) => Left(error)
