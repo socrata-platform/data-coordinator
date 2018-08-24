@@ -58,7 +58,7 @@ object CollocationResult {
 trait Collocator {
   def collocatedDatasets(datasets: Set[DatasetInternalName]): Either[RequestError, CollocatedDatasetsResult]
   def dropDataset(dataset: DatasetInternalName): Option[ErrorResult]
-  def explainCollocation(jobId: UUID, storeGroup: String, request: CollocationRequest): Either[ErrorResult, CollocationResult]
+  def explainCollocation(storeGroup: String, request: CollocationRequest): Either[ErrorResult, CollocationResult]
   def executeCollocation(jobId: UUID, storeGroup: String, request: CollocationRequest): (Either[ErrorResult, CollocationResult], Seq[(Move, Boolean)])
   def commitCollocation(jobId: UUID, request: CollocationRequest): Unit
   def lockCollocation(): Unit
@@ -144,8 +144,7 @@ class CoordinatedCollocator(collocationGroup: Set[String],
     }
   }
 
-  override def explainCollocation(jobId: UUID,
-                                  storeGroup: String,
+  override def explainCollocation(storeGroup: String,
                                   request: CollocationRequest): Either[ErrorResult, CollocationResult] = {
     log.info("Explaining collocation on secondary store group {}", storeGroup)
     try {
@@ -281,7 +280,7 @@ class CoordinatedCollocator(collocationGroup: Set[String],
                                   storeGroup: String,
                                   request: CollocationRequest): (Either[ErrorResult, CollocationResult], Seq[(Move, Boolean)]) = {
     log.info("Executing collocation on secondary store group {}", storeGroup)
-    explainCollocation(jobId, storeGroup, request) match {
+    explainCollocation(storeGroup, request) match {
       case Right(CollocationResult(_, Approved, _, cost, moves)) =>
 
         log.info("Ensuring required move jobs exists: {}", moves)

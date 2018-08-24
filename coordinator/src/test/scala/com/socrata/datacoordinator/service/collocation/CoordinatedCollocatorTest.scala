@@ -356,7 +356,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
         commonCoordinatorExpectations(coordinator)
       }, commonMetricExpectations) { case (collocator, _) =>
         val jobId = UUID.randomUUID()
-        val result = collocator.explainCollocation(jobId, storeGroupA, request)
+        val result = collocator.explainCollocation(storeGroupA, request)
 
         commonShould(result)
         explainShould(result)
