@@ -82,7 +82,7 @@ case class SecondaryManifestsCollocateResource(storeGroup: String,
       }
     }
 
-    if (!explain) collocator.commitCollocation(request)
+    if (!explain) collocator.commitCollocation(jobId, request)
 
     Right(collocationResult)
   }

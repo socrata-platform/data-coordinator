@@ -27,7 +27,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
   class CollocationManifest {
     private val manifest = collection.mutable.Set.empty[(DatasetInternalName, DatasetInternalName)]
 
-    def add(collocations: Seq[(DatasetInternalName, DatasetInternalName)]): Unit = {
+    def add(jobId: UUID, collocations: Seq[(DatasetInternalName, DatasetInternalName)]): Unit = {
       collocations.foreach(collocation => manifest.add(collocation))
     }
 
@@ -355,6 +355,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
       withMocks(Set(storeGroupA), { coordinator =>
         commonCoordinatorExpectations(coordinator)
       }, commonMetricExpectations) { case (collocator, _) =>
+        val jobId = UUID.randomUUID()
         val result = collocator.explainCollocation(storeGroupA, request)
 
         commonShould(result)
@@ -701,7 +702,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
   // tests for commitCollocation(request: CollocationRequest): Unit
   test("commitCollocation for an empty request should save nothing to the manifest") {
     withMocks(defaultStoreGroups) { (collocator, manifest) =>
-      collocator.commitCollocation(requestEmpty)
+      collocator.commitCollocation(UUID.randomUUID(), requestEmpty)
 
       manifest.get should be (Set.empty)
     }
@@ -709,7 +710,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
 
   test("commitCollocation for a single pair should save that pair to the manifest") {
     withMocks(defaultStoreGroups) { (collocator, manifest) =>
-      collocator.commitCollocation(request(Seq((alpha1, bravo1))))
+      collocator.commitCollocation(UUID.randomUUID(), request(Seq((alpha1, bravo1))))
 
       manifest.get should be (Set((alpha1, bravo1)))
     }
@@ -722,7 +723,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
         (bravo1, charlie2),
         (alpha1, charlie2)
       )
-      collocator.commitCollocation(request(collocations))
+      collocator.commitCollocation(UUID.randomUUID(), request(collocations))
 
       manifest.get should be (collocations.toSet)
     }

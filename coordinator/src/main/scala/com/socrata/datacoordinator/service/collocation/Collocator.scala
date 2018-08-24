@@ -60,7 +60,7 @@ trait Collocator {
   def dropDataset(dataset: DatasetInternalName): Option[ErrorResult]
   def explainCollocation(storeGroup: String, request: CollocationRequest): Either[ErrorResult, CollocationResult]
   def executeCollocation(jobId: UUID, storeGroup: String, request: CollocationRequest): (Either[ErrorResult, CollocationResult], Seq[(Move, Boolean)])
-  def commitCollocation(request: CollocationRequest): Unit
+  def commitCollocation(jobId: UUID, request: CollocationRequest): Unit
   def lockCollocation(): Unit
   def unlockCollocation(): Unit
   def rollbackCollocation(jobId: UUID, moves: Seq[(Move, Boolean)]): Option[ErrorResult]
@@ -73,7 +73,7 @@ trait CollocatorProvider {
 class CoordinatedCollocator(collocationGroup: Set[String],
                             coordinator: Coordinator,
                             metric: Metric,
-                            addCollocations: Seq[(DatasetInternalName, DatasetInternalName)] => Unit,
+                            addCollocations: (UUID, Seq[(DatasetInternalName, DatasetInternalName)]) => Unit,
                             lock: CollocationLock,
                             lockTimeoutMillis: Long)(implicit costOrdering: Ordering[Cost]) extends Collocator {
 
@@ -111,8 +111,8 @@ class CoordinatedCollocator(collocationGroup: Set[String],
     }
 
     val storesInGroup = instances.intersect(futureStores)
-    if (replicationFactor != storesInGroup.size) {
-      log.error("Dataset {}'s current replication factor {} is not the expected replication factor {} for the group {}",
+    if (replicationFactor > storesInGroup.size) {
+      log.error("Dataset {}'s current replication factor {} is smaller than the expected replication factor {} for the group {}",
         dataset.toString, storesInGroup.size.toString, replicationFactor.toString, storeGroup)
       throw new Exception("Dataset replicated to stores in an unexpected state!")
     }
@@ -132,8 +132,10 @@ class CoordinatedCollocator(collocationGroup: Set[String],
                          storesTo: Set[String],
                          costMap: Map[DatasetInternalName, Cost]): Seq[Move] = {
     if (storesFrom.size != storesTo.size) {
-      log.error("storesFrom.size != storesTo.size, something is wrong internally!")
-      throw new IllegalArgumentException("storesFrom and storesTo should be the same size!")
+      if ((storesFrom -- storesTo).size != storesTo.size) {
+        log.error("storesFrom.size != storesTo.size, something is wrong internally!")
+        throw new IllegalArgumentException("storesFrom and storesTo should be the same size!")
+      }
     }
 
     for {
@@ -327,11 +329,11 @@ class CoordinatedCollocator(collocationGroup: Set[String],
     }
   }
 
-  override def commitCollocation(request: CollocationRequest): Unit = {
+  override def commitCollocation(jobId: UUID, request: CollocationRequest): Unit = {
     // save the collocation relationships to the database after ensuring all required moves jobs exists
     // this way we only need to roll back jobs for our job id back if something goes wrong
     log.info("Adding collocation relationships to the manifest: {}", request.collocations)
-    addCollocations(request.collocations)
+    addCollocations(jobId, request.collocations)
   }
 
   override def lockCollocation(): Unit = {

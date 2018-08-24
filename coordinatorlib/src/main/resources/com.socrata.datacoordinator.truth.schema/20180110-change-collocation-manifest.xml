@@ -40,4 +40,25 @@
         <addUniqueConstraint tableName="collocation_manifest"
                              columnNames="dataset_internal_name_left,dataset_internal_name_right"/>
     </changeSet>
+
+    <changeSet author="Chi" id="20180821-add-job-id">
+        <preConditions onFail="MARK_RAN">
+            <not><columnExists tableName="collocation_manifest" columnName="job_id"/></not>
+        </preConditions>
+
+        <addColumn tableName="collocation_manifest">
+            <column name="job_id" type="UUID"></column>
+            <column name="deleted_at" type="TIMESTAMP WITH TIME ZONE"></column>
+        </addColumn>
+
+        <addColumn tableName="secondary_move_jobs">
+            <column name="deleted_at" type="TIMESTAMP WITH TIME ZONE"></column>
+        </addColumn>
+
+        <dropUniqueConstraint tableName="collocation_manifest" constraintName="collocation_manifest_dataset_internal_name_left_dataset_int_key" />
+
+        <sql>CREATE UNIQUE INDEX collocation_manifest_job_id_dataset_internal_names
+                 ON collocation_manifest(job_id, dataset_internal_name_left, dataset_internal_name_right)
+              WHERE deleted_at IS NULL</sql>
+    </changeSet>
 </databaseChangeLog>

@@ -265,15 +265,22 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
     }
   }
 
-  def addCollocations(collocations: Seq[(DatasetInternalName, DatasetInternalName)]): Unit = {
+  def addCollocations(jobId: UUID, collocations: Seq[(DatasetInternalName, DatasetInternalName)]): Unit = {
     for (u <- common.universe) yield {
-      u.collocationManifest.addCollocations(collocations.map { case (l, r) => (l.underlying, r.underlying) }.toSet)
+      u.collocationManifest.addCollocations(jobId, collocations.map { case (l, r) => (l.underlying, r.underlying) }.toSet)
     }
   }
 
   def dropCollocations(dataset: DatasetInternalName): Unit = {
     for (u <- common.universe) yield {
       u.collocationManifest.dropCollocations(dataset.underlying)
+    }
+  }
+
+  def dropCollocationJob(jobId: UUID): Unit = {
+    for (u <- common.universe) yield {
+      u.collocationManifest.dropCollocations(jobId)
+      u.secondaryMoveJobs.deleteJob(jobId)
     }
   }
 
@@ -663,7 +670,7 @@ object Main extends DynamicPortMap {
           metricProvider(hostAndPort)
         )
 
-        val secondaryMoveJobsJobResource = SecondaryMoveJobsJobResource(_: String, operations.secondaryMoveJobs)
+        val secondaryMoveJobsJobResource = SecondaryMoveJobsJobResource(_: String, operations.secondaryMoveJobs, operations.dropCollocationJob)
 
         def collocationManifestsResource(lock: CollocationLock)(hostAndPort: String => Option[(String, Int)]) = {
           CollocationManifestsResource(_: Option[String], _: Option[String], collocationProvider(hostAndPort, lock))
