@@ -111,8 +111,8 @@ class CoordinatedCollocator(collocationGroup: Set[String],
     }
 
     val storesInGroup = instances.intersect(futureStores)
-    if (replicationFactor != storesInGroup.size) {
-      log.error("Dataset {}'s current replication factor {} is not the expected replication factor {} for the group {}",
+    if (replicationFactor > storesInGroup.size) {
+      log.error("Dataset {}'s current replication factor {} is smaller than the expected replication factor {} for the group {}",
         dataset.toString, storesInGroup.size.toString, replicationFactor.toString, storeGroup)
       throw new Exception("Dataset replicated to stores in an unexpected state!")
     }
@@ -132,8 +132,10 @@ class CoordinatedCollocator(collocationGroup: Set[String],
                          storesTo: Set[String],
                          costMap: Map[DatasetInternalName, Cost]): Seq[Move] = {
     if (storesFrom.size != storesTo.size) {
-      log.error("storesFrom.size != storesTo.size, something is wrong internally!")
-      throw new IllegalArgumentException("storesFrom and storesTo should be the same size!")
+      if ((storesFrom -- storesTo).size != storesTo.size) {
+        log.error("storesFrom.size != storesTo.size, something is wrong internally!")
+        throw new IllegalArgumentException("storesFrom and storesTo should be the same size!")
+      }
     }
 
     for {
