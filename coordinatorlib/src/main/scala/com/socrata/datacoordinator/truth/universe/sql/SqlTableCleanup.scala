@@ -33,8 +33,8 @@ class SqlTableCleanup(conn: Connection, daysDelay: Int = 1) extends TableCleanup
 
   private def cleanupDeleteds(): Unit = {
     using(conn.createStatement()) { stmt =>
-      stmt.executeQuery(s"DELETE FROM collocation_manifest WHERE deleted_at < now() - ('$daysDelay day' :: INTERVAL)")
-      stmt.executeQuery(s"DELETE FROM secondary_move_jobs WHERE deleted_at < now() - ('$daysDelay day' :: INTERVAL)")
+      stmt.execute(s"DELETE FROM collocation_manifest WHERE deleted_at < now() - ('$daysDelay day' :: INTERVAL)")
+      stmt.execute(s"DELETE FROM secondary_move_jobs WHERE deleted_at < now() - ('$daysDelay day' :: INTERVAL)")
     }
   }
 }
