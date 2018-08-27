@@ -82,7 +82,7 @@ class CookieOperatorTest extends FunSuite with ShouldMatchers {
   test("deletes a source column with multiple computed columns") {
     testDeleteColumns(Set(postalCode), cookie, Set(postalCode, location, postalCodeLocation), Set(location, postalCodeLocation))
   }
-  
+
   test("deletes multiple columns") {
     testDeleteColumns(Set(address, postalCode, location), cookie, Set(address, postalCode, location, postalCodeLocation), Set(location, postalCodeLocation))
   }

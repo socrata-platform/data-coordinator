@@ -24,7 +24,7 @@ object TestTypeContext extends TypeContext[TestColumnType, TestColumnValue] {
 
     def s(x: TestColumnValue) = x.asInstanceOf[StringValue].value
 
-    def put(x: TestColumnValue, v: T) {
+    def put(x: TestColumnValue, v: T): Unit = {
       underlying += s(x) -> v
     }
 
@@ -32,7 +32,7 @@ object TestTypeContext extends TypeContext[TestColumnType, TestColumnValue] {
 
     def get(x: TestColumnValue) = underlying.get(s(x))
 
-    def clear() { underlying.clear() }
+    def clear(): Unit = { underlying.clear() }
 
     def contains(x: TestColumnValue) = underlying.contains(s(x))
 
@@ -40,7 +40,7 @@ object TestTypeContext extends TypeContext[TestColumnType, TestColumnValue] {
 
     def size = underlying.size
 
-    def foreach(f: (TestColumnValue, T) => Unit) {
+    def foreach(f: (TestColumnValue, T) => Unit): Unit = {
       underlying.foreach { case (k,v) =>
         f(StringValue(k), v)
       }
@@ -50,7 +50,7 @@ object TestTypeContext extends TypeContext[TestColumnType, TestColumnValue] {
 
     def valuesIterator = underlying.valuesIterator
 
-    def remove(x: TestColumnValue) {
+    def remove(x: TestColumnValue): Unit = {
       underlying.remove(s(x))
     }
   }

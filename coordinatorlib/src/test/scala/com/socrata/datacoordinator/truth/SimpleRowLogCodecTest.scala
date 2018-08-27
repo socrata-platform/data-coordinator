@@ -32,7 +32,7 @@ class SimpleRowLogCodecTest extends FunSuite with MustMatchers with PropertyChec
   def newCodec = new SimpleRowLogCodec[Int] {
     def rowDataVersion: Short = 0
 
-    protected def writeValue(target: CodedOutputStream, cv: Int) {
+    protected def writeValue(target: CodedOutputStream, cv: Int): Unit = {
       target.writeSInt32NoTag(cv)
     }
 

@@ -16,10 +16,10 @@ class ReaderWriterPairTest extends FunSuite with MustMatchers with PropertyCheck
         val readResult = new ArrayBlockingQueue[String](1)
         val readerThread = new Thread {
           setName("Reader thread")
-          override def run() {
+          override def run(): Unit = {
             val buf = new Array[Char](10)
             val sb = new StringBuilder
-            def loop() {
+            def loop(): Unit = {
               val count = rwp.reader.read(buf)
               if(count != -1) {
                 sb.appendAll(buf, 0, count)

@@ -30,7 +30,7 @@ class RowDecodePlan[CT, CV](schema: ColumnIdMap[ColumnInfo[CT]],
     sys.error("No version column in the schema?")
   }
   val versionRep = repFor(versionCol.typ)
-  val cookedSchema = locally {
+  val cookedSchema = {
     val res = MutableUserColumnIdMap[(ColumnId, JsonColumnReadRep[CT, CV])]()
     schema.foreach { (systemId, ci) =>
       res(ci.userColumnId) = (systemId, repFor(ci.typ))
@@ -38,22 +38,7 @@ class RowDecodePlan[CT, CV](schema: ColumnIdMap[ColumnInfo[CT]],
     res.freeze()
   }
 
-  val columnIds = locally {
-    val cids = new java.util.HashMap[String, String]
-    cookedSchema.keys.foreach { k =>
-      cids.put(k.underlying, k.underlying)
-    }
-    cids
-  }
-  def columnId(name: String): UserColumnId =
-    columnIds.get(name) match {
-      case null =>
-        // bad user; unknown column.  We're either going to throw or
-        // ignore this, so just wrap it up and return it.
-        new UserColumnId(name)
-      case existingName =>
-        new UserColumnId(existingName)
-    }
+  def columnId(name: String): UserColumnId = new UserColumnId(name)
 
   def cook(row: scala.collection.Map[String, JValue]): UserColumnIdMap[JValue] = {
     val res = MutableUserColumnIdMap[JValue]()

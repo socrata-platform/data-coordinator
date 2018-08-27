@@ -40,12 +40,12 @@ case class SecondaryManifestsCollocateResource(storeGroup: String,
     }
   }
 
- def doCollocationJob(jobId: UUID,
-                      storeGroups: Set[String],
-                      request: CollocationRequest,
-                      explain: Boolean): Either[ErrorResult, CollocationResult] = {
+  def doCollocationJob(jobId: UUID,
+                       storeGroups: Set[String],
+                       request: CollocationRequest,
+                       explain: Boolean): Either[ErrorResult, CollocationResult] = {
 
-   def rollbackCollocationJob(moves: Seq[(Move, Boolean)]): Unit = {
+    def rollbackCollocationJob(moves: Seq[(Move, Boolean)]): Unit = {
       if (!explain) {
         log.error("Attempting to roll back collocation moves for job {}", jobId)
         collocator.rollbackCollocation(jobId, moves)
@@ -53,33 +53,34 @@ case class SecondaryManifestsCollocateResource(storeGroup: String,
     }
 
     val baseResult = if (explain) CollocationResult.canonicalEmpty else CollocationResult(jobId)
-    val (collocationResult, _) = storeGroups.foldLeft((baseResult, Seq.empty[(Move, Boolean)])) { case ((totalResult, movesForRollback), group) =>
-      val (result, moves) = try {
-        if (explain) (collocator.explainCollocation(group, request), Seq.empty)
-        else collocator.executeCollocation(jobId, group, request)
-      } catch {
-        case error: AssertionError =>
-          log.error("Failed assertion while collocating datasets...", error)
-          rollbackCollocationJob(movesForRollback)
-          return Left(UnexpectedError("Assertion Failure"))
-        case error: CollocationLockTimeout =>
-          // never acquired lock... so we should not need any rollback
-          throw error
-        case error: Exception =>
-          log.error("Unexpected exception while collocating datasets...", error)
-          rollbackCollocationJob(movesForRollback)
-          return Left(UnexpectedError(error.getMessage))
-      }
+    val (collocationResult, _) = storeGroups.foldLeft((baseResult, Seq.empty[(Move, Boolean)])) {
+      case ((totalResult, movesForRollback), group) =>
+        val (result, moves) = try {
+          if (explain) (collocator.explainCollocation(group, request), Seq.empty)
+          else collocator.executeCollocation(jobId, group, request)
+        } catch {
+          case error: AssertionError =>
+            log.error("Failed assertion while collocating datasets...", error)
+            rollbackCollocationJob(movesForRollback)
+            return Left(UnexpectedError("Assertion Failure"))
+          case error: CollocationLockTimeout =>
+            // never acquired lock... so we should not need any rollback
+            throw error
+          case error: Exception =>
+            log.error("Unexpected exception while collocating datasets...", error)
+            rollbackCollocationJob(movesForRollback)
+            return Left(UnexpectedError(error.getMessage))
+        }
 
-      val totalMovesForRollback = movesForRollback ++ moves
+        val totalMovesForRollback = movesForRollback ++ moves
 
-      result match {
-        case Right(groupResult) =>
-          (totalResult + groupResult, totalMovesForRollback)
-        case Left(error) =>
-          rollbackCollocationJob(totalMovesForRollback)
-          return Left(error)
-      }
+        result match {
+          case Right(groupResult) =>
+            (totalResult + groupResult, totalMovesForRollback)
+          case Left(error) =>
+            rollbackCollocationJob(totalMovesForRollback)
+            return Left(error)
+        }
     }
 
     if (!explain) collocator.commitCollocation(jobId, request)

@@ -38,7 +38,7 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
   val typeContext = sqlizer.typeContext
 
   var lastJobNum: Int = -1
-  def checkJob(job: Int) {
+  def checkJob(job: Int): Unit = {
     if(job > lastJobNum) lastJobNum = job
     else throw new IllegalArgumentException("Job numbers must be strictly increasing")
   }
@@ -51,12 +51,12 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
       case None => None
     }
 
-  def upsert(job: Int, unpreparedRow: Row[CV], bySystemId: Boolean) {
+  def upsert(job: Int, unpreparedRow: Row[CV], bySystemId: Boolean): Unit = {
     def updateRowBySystemId(id: CV, updateForcedBySystemId: Boolean): Unit = {
       using(connection.createStatement()) { _ =>
         findRow(id, bySystemIdForced = updateForcedBySystemId) match {
           case Some(InspectedRow(_, sid, oldVersion, oldRow)) =>
-            def doUpdate() {
+            def doUpdate(): Unit = {
               val newVersion = versionProvider.allocate()
               val updateRow = rowPreparer.prepareForUpdate(unpreparedRow, oldRow = oldRow, newVersion = newVersion)
               using(connection.prepareStatement(sqlizer.prepareSystemIdUpdateStatement)) { stmt =>
@@ -86,7 +86,7 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
           case Some(id) =>
             findRow(id, bySystemIdForced = false) match {
               case Some(InspectedRow(_, sid, oldVersion, oldRow)) =>
-                def doUpdate() {
+                def doUpdate(): Unit = {
                   val newVersion = versionProvider.allocate()
                   val updateRow = rowPreparer.prepareForUpdate(unpreparedRow, oldRow = oldRow, newVersion = newVersion)
                   val updatedCount = using(connection.prepareStatement(sqlizer.prepareSystemIdUpdateStatement)) { stmt =>
@@ -161,12 +161,12 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
     }
   }
 
-  def delete(job: Int, id: CV, version: Option[Option[RowVersion]], bySystemId: Boolean) {
+  def delete(job: Int, id: CV, version: Option[Option[RowVersion]], bySystemId: Boolean): Unit = {
     checkJob(job)
     val deleteForcedBySystemId = datasetContext.hasUserPrimaryKey && bySystemId
     findRow(id, deleteForcedBySystemId) match {
       case Some(InspectedRow(_, sid, oldVersion, oldRow)) =>
-        def doDelete() {
+        def doDelete(): Unit = {
           val (result, ()) = sqlizer.deleteBatch(connection) { deleter =>
             deleter.delete(sid)
           }
@@ -184,10 +184,10 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
     }
   }
 
-  def finish() {
+  def finish(): Unit = {
     reportWriter.finished = true
   }
 
-  def close() {
+  def close(): Unit = {
   }
 }

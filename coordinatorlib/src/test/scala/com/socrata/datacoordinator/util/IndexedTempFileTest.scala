@@ -21,7 +21,7 @@ class IndexedTempFileTest extends FunSuite with MustMatchers with PropertyChecks
   def readAllFrom(xs: InputStream): Array[Byte] = {
     val baos = new ByteArrayOutputStream
     val buf = new Array[Byte](1024)
-    def loop() {
+    def loop(): Unit = {
       xs.read(buf) match {
         case -1 => // done
         case n => baos.write(buf, 0, n); loop()
@@ -31,7 +31,7 @@ class IndexedTempFileTest extends FunSuite with MustMatchers with PropertyChecks
     baos.toByteArray
   }
 
-  def roundtripTest(shuffleWrites: Boolean, shuffleReads: Boolean) {
+  def roundtripTest(shuffleWrites: Boolean, shuffleReads: Boolean): Unit = {
     forAll(Arbitrary.arbitrary[Long], Arbitrary.arbitrary[List[List[Array[Byte]]]], bound, bound) { (seed, streams, indexBufSize, dataBufSize) =>
       whenever(indexBufSize >= lowerBound && dataBufSize >= lowerBound && indexBufSize <= upperBound && dataBufSize <= upperBound ) {
         val rng = new scala.util.Random(seed)

@@ -55,7 +55,7 @@ class LongRep(columnId: ColumnId) extends TestColumnRep(columnId) {
 
   val sqlTypes = Array("BIGINT")
 
-  def csvifyForInsert(sb: StringBuilder, v: TestColumnValue) {
+  def csvifyForInsert(sb: StringBuilder, v: TestColumnValue): Unit = {
     if(v != NullValue) sb.append(v.asInstanceOf[LongValue].value)
   }
 
@@ -102,7 +102,7 @@ class StringRep(columnId: ColumnId) extends TestColumnRep(columnId) {
 
   val sqlTypes = Array("VARCHAR(255)")
 
-  def csvifyForInsert(sb: StringBuilder, v: TestColumnValue) {
+  def csvifyForInsert(sb: StringBuilder, v: TestColumnValue): Unit = {
     if(v != NullValue) sb.append(escape('"', v.asInstanceOf[StringValue].value))
   }
 

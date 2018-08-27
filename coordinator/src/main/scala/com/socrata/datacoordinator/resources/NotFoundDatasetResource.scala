@@ -53,7 +53,7 @@ case class NotFoundDatasetResource(datasetIdRaw: Option[String],
   }
 
 
-  private def doCreateDataset(req: HttpRequest)(resp: HttpServletResponse) {
+  private def doCreateDataset(req: HttpRequest)(resp: HttpServletResponse): Unit = {
     using(tempFileProvider()) { tmp =>
       val responseBuilder = withMutationScriptResults {
         jsonStream(req.servletRequest, commandReadLimit) match {

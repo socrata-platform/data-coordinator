@@ -50,7 +50,7 @@ class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
 
   val tableName = "tab"
 
-  def create(conn: Connection, schema: ColumnIdMap[TestColumnType]) {
+  def create(conn: Connection, schema: ColumnIdMap[TestColumnType]): Unit = {
     val sb = new StringBuilder("CREATE TABLE ").append(tableName).append(" (c_0 BIGINT NOT NULL PRIMARY KEY")
     for((k, v) <- schema.iterator) {
       sb.append(",").append("c_" + k.underlying).append(" ")
@@ -68,7 +68,7 @@ class SqlReaderTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
     }
   }
 
-  def load(conn: Connection)(rows: Seq[(Long, TestColumnValue)]*) {
+  def load(conn: Connection)(rows: Seq[(Long, TestColumnValue)]*): Unit = {
     using(conn.createStatement()) { stmt =>
       for(row <- rows) {
         val sb = new StringBuilder("INSERT INTO ").append(tableName).append(" (").append(row.iterator.map(c => "c_" + c._1).mkString(",")).append(") VALUES (")

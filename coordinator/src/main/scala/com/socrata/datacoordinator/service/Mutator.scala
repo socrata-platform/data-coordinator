@@ -449,19 +449,19 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
         ))
     }
 
-    def inserted(job: Int, result: IdAndVersion[CV]) {
+    def inserted(job: Int, result: IdAndVersion[CV]): Unit = {
       writeJson(job, jsonifyUpsert(result, "insert"))
     }
 
-    def updated(job: Int, result: IdAndVersion[CV]) {
+    def updated(job: Int, result: IdAndVersion[CV]): Unit = {
       writeJson(job, jsonifyUpsert(result, "update"))
     }
 
-    def deleted(job: Int, result: CV) {
+    def deleted(job: Int, result: CV): Unit = {
       writeJson(job, jsonifyDelete(result))
     }
 
-    def error(job: Int, result: Failure[CV]) {
+    def error(job: Int, result: Failure[CV]): Unit = {
       if(None == firstError && !ignorableFailureTypes.exists(_.isAssignableFrom(result.getClass)))
         firstError = Some(result)
       writeJson(job, jsonifyError(result))
@@ -481,7 +481,7 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
       (ctx.copyInfo.datasetInfo.systemId, events)
     }
 
-    def checkHash(index: Long, schemaHash: Option[String], ctx: DatasetCopyContext[CT]) {
+    def checkHash(index: Long, schemaHash: Option[String], ctx: DatasetCopyContext[CT]): Unit = {
       for(givenSchemaHash <- schemaHash) {
         val realSchemaHash = u.schemaFinder.schemaHash(ctx)
         if(givenSchemaHash != realSchemaHash) {
@@ -563,7 +563,7 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
       labels.getOrElse(label, throw NoSuchColumnLabel(datasetId, label.label)(idx))
 
     val datasetId = mutator.copyInfo.datasetInfo.systemId
-    def checkDDL(idx: Long) {
+    def checkDDL(idx: Long): Unit = {
       if(!allowDdlOnPublishedCopies && mutator.copyInfo.lifecycleStage != LifecycleStage.Unpublished)
         throw IncorrectLifecycleStage(datasetId, mutator.copyInfo.lifecycleStage,
                                       Set(LifecycleStage.Unpublished))(idx)
@@ -571,7 +571,7 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
 
     def carryOutCommands(commands: CommandStream): Seq[MutationScriptCommandResult] = {
       val reports = new VectorBuilder[MutationScriptCommandResult]
-      def loop() {
+      def loop(): Unit = {
         commands.nextCommand() match {
           case Some(cmd) => reports ++= carryOutCommand(commands, cmd); loop()
           case None => reports ++= flushPendingCommands()
@@ -763,21 +763,27 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
                        mergeReplace: MergeReplace): JsonReportWriter = {
       import mutator._
       class UnknownCid(val job: Int, val cid: UserColumnId) extends Exception
-      def onUnknownColumn(cid: UserColumnId) {
+      def onUnknownColumn(cid: UserColumnId): Unit = {
         throw new UnknownCid(jobCounter(), cid)
       }
       val plan = new RowDecodePlan(schema, jsonRepFor, typeNameFor,
                    (v: CV) => if(typeContext.isNull(v)) None else Some(typeContext.makeRowVersionFromValue(v)),
                    onUnknownColumn)
       try {
-        val reportWriter = new JsonReportWriter(mutator, jobCounter.peek, indexedTempFile, nonFatalRowErrors, bySystemId = bySystemId)
-        def checkForError() {
+        val reportWriter = new JsonReportWriter(
+          mutator,
+          jobCounter.peek,
+          indexedTempFile,
+          nonFatalRowErrors,
+          bySystemId = bySystemId)
+
+        def checkForError(): Unit = {
           for(error <- reportWriter.firstError) {
             val pk = schema.values.find(_.isUserPrimaryKey).
                                    orElse(schema.values.find(_.isSystemPrimaryKey)).
                                    getOrElse { sys.error("No primary key on this dataset?") }
             val trueError = error.map(jsonRepFor(pk.typ).toJValue)
-            val jsonizer = { (rv: RowVersion) =>
+            val jsonizer = { rv: RowVersion =>
               jsonRepFor(mutator.versionColumn.typ).toJValue(typeContext.makeValueFromRowVersion(rv))
             }
             throw UpsertError(mutator.copyInfo.datasetInfo.systemId, trueError, jsonizer)(idx)

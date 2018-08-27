@@ -84,7 +84,7 @@ case class DatasetResource(datasetId: DatasetId,
                     bw.write('[')
                     result.foreach(new Function1[MutationScriptCommandResult, Unit] {
                       var didOne = false
-                      def apply(r: MutationScriptCommandResult) {
+                      def apply(r: MutationScriptCommandResult): Unit = {
                         if(didOne) bw.write(',')
                         else didOne = true
                         writeResult(bw, r, tmp)

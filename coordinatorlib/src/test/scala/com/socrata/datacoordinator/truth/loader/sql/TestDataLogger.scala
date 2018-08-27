@@ -45,12 +45,12 @@ class TestDataLogger(conn: Connection, logTableName: String, sidCol: ColumnId) e
     r
   }
 
-  def insert(systemID: RowId, row: Row[TestColumnValue]) {
+  def insert(systemID: RowId, row: Row[TestColumnValue]): Unit = {
     assert(row.get(sidCol) == Some(LongValue(systemID.underlying)))
     list += JObject(Map("i" -> JsonEncode.toJValue(sortRow(row))))
   }
 
-  def update(sid: RowId, oldRow: Option[Row[TestColumnValue]], newRow: Row[TestColumnValue]) {
+  def update(sid: RowId, oldRow: Option[Row[TestColumnValue]], newRow: Row[TestColumnValue]): Unit = {
     assert(oldRow.isDefined, "We should never generate None for old-row")
     assert(oldRow.get.get(sidCol) == Some(LongValue(sid.underlying)))
     assert(newRow.get(sidCol) == Some(LongValue(sid.underlying)))
@@ -58,17 +58,17 @@ class TestDataLogger(conn: Connection, logTableName: String, sidCol: ColumnId) e
     list += JObject(Map("u" -> JsonEncode.toJValue(List(oldRow.get, delta).map(sortRow))))
   }
 
-  def delete(systemID: RowId, oldRow: Option[Row[TestColumnValue]]) {
+  def delete(systemID: RowId, oldRow: Option[Row[TestColumnValue]]): Unit = {
     assert(oldRow.isDefined, "We should never generate None for old-row")
     assert(oldRow.get.get(sidCol) == Some(LongValue(systemID.underlying)))
     list += JObject(Map("d" -> JsonEncode.toJValue(sortRow(oldRow.get))))
   }
 
-  def counterUpdated(nextCtr: Long) {
+  def counterUpdated(nextCtr: Long): Unit = {
     sys.error("Shouldn't call this")
   }
 
-  def finish() {
+  def finish(): Unit = {
     val ops = list.result()
     if(ops.nonEmpty) {
       using(conn.prepareStatement("INSERT INTO " + logTableName + " (version, subversion, rows, who) VALUES (1, ?, ?, 'hello')")) { stmt =>
@@ -79,5 +79,5 @@ class TestDataLogger(conn: Connection, logTableName: String, sidCol: ColumnId) e
     }
   }
 
-  def close() {}
+  def close(): Unit = {}
 }

@@ -23,7 +23,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
   val executor = java.util.concurrent.Executors.newCachedThreadPool()
 
-  override def afterAll() {
+  override def afterAll(): Unit = {
     executor.shutdownNow()
   }
 
@@ -37,7 +37,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     }
   }
 
-  def execute(conn: Connection, sql: String) {
+  def execute(conn: Connection, sql: String): Unit = {
     using(conn.createStatement()) { stmt =>
       stmt.execute(sql)
     }
@@ -62,7 +62,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
   val versionCol: ColumnId = new ColumnId(1)
   val versionColName = "c_" + versionCol.underlying
 
-  def makeTables(conn: Connection, ctx: AbstractRepBasedDataSqlizer[TestColumnType, TestColumnValue], logTableName: String) {
+  def makeTables(conn: Connection, ctx: AbstractRepBasedDataSqlizer[TestColumnType, TestColumnValue], logTableName: String): Unit = {
     execute(conn, "drop table if exists " + ctx.dataTableName)
     execute(conn, "drop table if exists " + logTableName)
     execute(conn, "CREATE TABLE " + ctx.dataTableName + " (c_" + idCol.underlying + " bigint not null primary key," + ctx.datasetContext.schema.iterator.filter(_._1 != idCol).map { case (c,t) =>
@@ -79,7 +79,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     execute(conn, "CREATE TABLE " + logTableName + " (version bigint not null, subversion bigint not null, rows varchar(65536) not null, who varchar(100) null, PRIMARY KEY(version, subversion))")
   }
 
-  def preload(conn: Connection, ctx: AbstractRepBasedDataSqlizer[TestColumnType, TestColumnValue], logTableName: String)(rows: Row[TestColumnValue]*) {
+  def preload(conn: Connection, ctx: AbstractRepBasedDataSqlizer[TestColumnType, TestColumnValue], logTableName: String)(rows: Row[TestColumnValue]*): Unit = {
     makeTables(conn, ctx, logTableName)
     for(row <- rows) {
       val LongValue(id) = row.getOrElse(ctx.datasetContext.systemIdColumn, sys.error("No :id"))
@@ -1476,7 +1476,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
 
           val primaryKeyCol = userIdCol.getOrElse(idCol)
 
-          def runCompareTest(ops: List[Op]) {
+          def runCompareTest(ops: List[Op]): Unit = {
             using(SqlLoader(smartConn, rowPreparer(primaryKeyCol), false, dataSqlizer, NullLogger[TestColumnType, TestColumnValue], smartIds, smartVersions, executor, NoopReportWriter, NoopTimingReport)) { txn =>
               applyOps(txn, ops)
               txn.finish()
@@ -1529,7 +1529,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       data <- Gen.frequency(2 -> Arbitrary.arbitrary[String].map(Some(_)), 1 -> Gen.const(None))
     } yield Upsert(Some(id), num, data.map(_.filterNot(_ == '\0')))
 
-    def applyOps(txn: Loader[TestColumnValue], ops: List[Op]) {
+    def applyOps(txn: Loader[TestColumnValue], ops: List[Op]): Unit = {
       for((op, job) <- ops.zipWithIndex) op match {
         case Delete(id) => txn.delete(job, LongValue(id), None, bySystemIdForced = bySystemId)
         case Upsert(id, numV, data) => txn.upsert(job, Row(
@@ -1565,7 +1565,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       data <- Gen.frequency(2 -> Arbitrary.arbitrary[String].map(Some(_)), 1 -> Gen.const(None))
     } yield Upsert(id, num, data.map(_.filterNot(_ == '\0')))
 
-    def applyOps(txn: Loader[TestColumnValue], ops: List[Op]) {
+    def applyOps(txn: Loader[TestColumnValue], ops: List[Op]): Unit = {
       for ((op, job) <- ops.zipWithIndex) op match {
         case Delete(id) => txn.delete(job, LongValue(id), None, bySystemIdForced = bySystemId)
         case Upsert(id, numV, data) =>

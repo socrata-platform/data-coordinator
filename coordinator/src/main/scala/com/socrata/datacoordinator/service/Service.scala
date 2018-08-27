@@ -290,7 +290,7 @@ class Service(serviceConfig: ServiceConfig,
 
   private val metricsOptions = MetricsOptions(serviceConfig.metrics)
 
-  def run(port: Int, broker: ServerBroker) {
+  def run(port: Int, broker: ServerBroker): Unit = {
     for { reporter <- MetricsReporter.managed(metricsOptions) } {
       val server = new SocrataServerJetty(
                      ThreadRenamingHandler(

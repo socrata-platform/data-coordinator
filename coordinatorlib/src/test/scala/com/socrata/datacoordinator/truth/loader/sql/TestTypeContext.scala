@@ -49,19 +49,19 @@ object TestTypeContext extends TypeContext[TestColumnType, TestColumnValue] {
   def makeIdMap[V](ignored: TestColumnType) = {
     new RowUserIdMap[TestColumnValue, V] {
       val m = new java.util.HashMap[TestColumnValue, V]
-      def put(x: TestColumnValue, v: V) { m.put(x, v) }
+      def put(x: TestColumnValue, v: V): Unit = { m.put(x, v) }
       def apply(x: TestColumnValue) = { val r = m.get(x); if(r == null) throw new NoSuchElementException; r }
       def contains(x: TestColumnValue) = m.containsKey(x)
 
       def get(x: TestColumnValue) = Option(m.get(x))
 
-      def clear() { m.clear() }
+      def clear(): Unit = { m.clear() }
 
       def isEmpty = m.isEmpty
 
       def size = m.size
 
-      def foreach(f: (TestColumnValue, V) => Unit) {
+      def foreach(f: (TestColumnValue, V) => Unit): Unit = {
         val it = m.entrySet.iterator
         while(it.hasNext) {
           val ent = it.next()
@@ -73,7 +73,7 @@ object TestTypeContext extends TypeContext[TestColumnType, TestColumnValue] {
 
       def valuesIterator = m.values().iterator.asScala
 
-      def remove(x: TestColumnValue) {
+      def remove(x: TestColumnValue): Unit = {
         m.remove(x)
       }
     }

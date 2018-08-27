@@ -13,7 +13,7 @@ import com.socrata.datacoordinator.util.IndexedTempFile
 class ReaderExceededBound(val bytesRead: Long) extends Exception
 class BoundedReader(underlying: Reader, bound: Long) extends Reader {
   private var count = 0L
-  private def inc(n: Int) {
+  private def inc(n: Int): Unit = {
     count += n
     if(count > bound) throw new ReaderExceededBound(count)
   }
@@ -68,7 +68,7 @@ object ServiceUtil {
         o.write('[')
         jobs.foreach(new Function1[Long, Unit] {
           var didOne = false
-          def apply(job: Long) {
+          def apply(job: Long): Unit = {
             if(didOne) {
               o.write(',')
             } else {

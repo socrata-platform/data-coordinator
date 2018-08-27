@@ -374,15 +374,12 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
                 copyCtx.datasetInfo.localeName,
                 approxRowCount,
                 it.map { row =>
-                  val arr = new Array[JValue](unwrappedCids.length)
-                  var i = 0
-                  while(i != unwrappedCids.length) {
-                    val cid = new ColumnId(unwrappedCids(i))
-                    val rep = jsonSchema(cid)
-                    arr(i) = rep.toJValue(row(cid))
-                    i += 1
+                  unwrappedCids.map{
+                    cidVal =>
+                      val cid = new ColumnId(cidVal)
+                      val rep = jsonSchema(cid)
+                      rep.toJValue(row(cid))
                   }
-                  arr
                 }))
               )
             }
@@ -445,12 +442,12 @@ object Main extends DynamicPortMap {
     }
   }
 
-  def main(args: Array[String]) {
+  def main(args: Array[String]): Unit = {
     val serviceConfig = try {
       new ServiceConfig(withDefaultAddress(ConfigFactory.load()), configRoot, hostPort)
     } catch {
       case e: Exception =>
-        Console.err.println(e)
+        log.error("Failed to get serviceConfig: ", e)
         sys.exit(1)
     }
 
@@ -706,7 +703,7 @@ object Main extends DynamicPortMap {
         val finished = new CountDownLatch(1)
         val tableDropper = new Thread() {
           setName("table dropper")
-          override def run() {
+          override def run(): Unit = {
             do {
               try {
                 for(u <- common.universe) {
@@ -724,7 +721,7 @@ object Main extends DynamicPortMap {
 
         val logTableCleanup = new Thread() {
           setName("logTableCleanup thread")
-          override def run() {
+          override def run(): Unit = {
             do {
               try {
                 for (u <- common.universe) {
