@@ -7,6 +7,7 @@ import com.socrata.datacoordinator.common.collocation.{CollocationLock, Collocat
 import com.socrata.datacoordinator.id.DatasetInternalName
 import com.socrata.datacoordinator.resources.collocation.{CollocatedDatasetsResult, DatasetNotInStore, SecondaryMoveJobRequest, StoreNotAcceptingDatasets}
 import com.socrata.datacoordinator.service.collocation.secondary.stores.SecondaryStoreSelector
+import org.joda.time.DateTime
 
 import scala.annotation.tailrec
 
@@ -162,7 +163,7 @@ class CoordinatedCollocator(collocationGroup: Set[String],
                 Set(collocation._1, collocation._2)
               }.toSet
 
-              val inputDatasets = collocationEdges.flatten
+              val inputDatasets = collocationEdges.flatten // example: Set(alpha.1, alpha.2)
 
               // we will 404 if we get a 404 projected stores for one of the input datasets
               val datasetStoresMap = inputDatasets.map { dataset =>
@@ -172,19 +173,21 @@ class CoordinatedCollocator(collocationGroup: Set[String],
                   log.warn("Unable to find dataset {} since it has an unrecognized instance name!", dataset)
                   return Left(DatasetNotFound(dataset))
                 }
-              }.toMap
+              }.toMap // datasetStoreMap example: Set(alpha.1 -> Set(pg1, pg2), alpha.2 -> Set(pg3, pg4))
 
               val datasetGroupMap = inputDatasets.map { dataset =>
-                (dataset, collocatedDatasets(Set(dataset)).fold(throw _, _.datasets))
+                val collocateDatasetsResult: Set[DatasetInternalName] =
+                  logTime(s"collocatedDatasets $dataset")(collocatedDatasets(Set(dataset)).fold(throw _, _.datasets))
+                (dataset, collocateDatasetsResult)
               }.toMap
 
               // cost of _all_ datasets in question, not just the input datasets
               val datasetCostMap = datasetGroupMap.flatMap(_._2).map { dataset =>
-                (dataset, metric.datasetMaxCost(storeGroup, dataset).fold(throw _, identity))
+                logTime(s"metric.datasetMaxCost $dataset")((dataset, metric.datasetMaxCost(storeGroup, dataset).fold(throw _, identity)))
               }.toMap
 
               val storeMetricsMap = instances.map { instance =>
-                (instance, metric.storeMetrics(instance).fold(throw _, identity))
+                logTime(s"metric.storeMetrics $instance")((instance, metric.storeMetrics(instance).fold(throw _, identity)))
               }.toMap
 
               def selectMoves(groups: Set[Set[DatasetInternalName]]): Set[Move] = {
@@ -223,11 +226,11 @@ class CoordinatedCollocator(collocationGroup: Set[String],
               // represents graph of collocated groups to be collocated
               val collocatedGroupsEdges = collocationEdges.map(_.map(datasetGroupMap)).filter(_.size == 2)
 
-              val groupsToBeCollocated = graph.nodesByComponent(collocatedGroupsEdges)
+              val groupsToBeCollocated = logTime(s"nodesByComponent ${collocatedGroupsEdges.size}")(graph.nodesByComponent(collocatedGroupsEdges))
               val totalMoves = groupsToBeCollocated.flatMap { groups =>
                 // from the filter condition above groups will have at least size 2
                 assert(groups.size >= 2)
-                selectMoves(groups)
+                logTime(s"""selectMoves ${groups.mkString(",")}""")(selectMoves(groups))
               }.toSeq
 
               val totalCost = Move.totalCost(totalMoves)
@@ -374,5 +377,13 @@ class CoordinatedCollocator(collocationGroup: Set[String],
     }
 
     errors.headOption
+  }
+
+  private def logTime[T](msg: String)(code: => T): T = {
+    val start = DateTime.now()
+    val result = code
+    val duration = new org.joda.time.Duration(DateTime.now(), start)
+    log.info(s"$msg took $duration")
+    result
   }
 }
