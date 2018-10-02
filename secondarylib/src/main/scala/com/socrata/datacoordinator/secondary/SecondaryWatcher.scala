@@ -438,7 +438,7 @@ object SecondaryWatcherScheduledExecutor {
           Thread.currentThread().setName("SecondaryWatcher scheduled health checker")
           log.debug("Running scheduled health check of: {}", name)
           if (checkFailed) {
-            log.error("Failed scheduled health check of: {}; exiting.", name)
+            log.error("Failed scheduled health check of: {}; exiting.  Increase claim-timeout in config for break/step when debugging.", name)
             sys.exit(1)
           }
         } catch {
