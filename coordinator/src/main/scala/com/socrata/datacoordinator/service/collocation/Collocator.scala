@@ -166,6 +166,9 @@ class CoordinatedCollocator(collocationGroup: Set[String],
               val inputDatasets = collocationEdges.flatten // example: Set(alpha.1, alpha.2)
 
               // we will 404 if we get a 404 projected stores for one of the input datasets
+              // example: Set(alpha.1 -> Set(pg1, pg2), alpha.2 -> Set(pg3, pg4))
+              // It needs to look up data from secondary_manifest and secondary_move_jobs to consider future location.
+              // TODO: Make sure we are cleaning up secondary_move_jobs table
               val datasetStoresMap = inputDatasets.map { dataset =>
                 if (collocationGroup(dataset.instance)) {
                   (dataset, stores(storeGroup, dataset, instances, replicationFactor))
@@ -173,22 +176,27 @@ class CoordinatedCollocator(collocationGroup: Set[String],
                   log.warn("Unable to find dataset {} since it has an unrecognized instance name!", dataset)
                   return Left(DatasetNotFound(dataset))
                 }
-              }.toMap // datasetStoreMap example: Set(alpha.1 -> Set(pg1, pg2), alpha.2 -> Set(pg3, pg4))
+              }.toMap // datasetStoreMap: key = dataset, values = set of secondary_instances the dataset lives
 
+              // Calculation of this requires recursive database sql calls.
+              // TODO: Consider to use recursive sql to speed up this.
               val datasetGroupMap = inputDatasets.map { dataset =>
                 val collocateDatasetsResult: Set[DatasetInternalName] =
                   logTime(s"collocatedDatasets $dataset")(collocatedDatasets(Set(dataset)).fold(throw _, _.datasets))
                 (dataset, collocateDatasetsResult)
-              }.toMap
+              }.toMap // datasetGroupMap: key = dataset, value = set of all related datasets in the collocation_manifest table.
 
               // cost of _all_ datasets in question, not just the input datasets
               val datasetCostMap = datasetGroupMap.flatMap(_._2).map { dataset =>
                 logTime(s"metric.datasetMaxCost $dataset")((dataset, metric.datasetMaxCost(storeGroup, dataset).fold(throw _, identity)))
               }.toMap
 
-              val storeMetricsMap = instances.map { instance =>
+              // If there are 12 secondaries, 8s on each secondary will add up to 1.5min
+              // Use parallel map to speed up store metric calculation within each group, i.e. alpha, beta.
+              // To further increase parallelism, update the map inside metric.storeMetrics function.
+              val storeMetricsMap = instances.par.map { instance =>
                 logTime(s"metric.storeMetrics $instance")((instance, metric.storeMetrics(instance).fold(throw _, identity)))
-              }.toMap
+              }.seq.toMap
 
               def selectMoves(groups: Set[Set[DatasetInternalName]]): Set[Move] = {
                 val indexedGroups = groups.zipWithIndex
