@@ -7,7 +7,7 @@ import com.google.protobuf.MessageLite
 import com.socrata.datacoordinator.truth.RowLogCodec
 import java.util.zip.{Deflater, DeflaterOutputStream}
 import com.socrata.datacoordinator.util.{Counter, TimingReport}
-import com.socrata.datacoordinator.truth.metadata.{RollupInfo, CopyInfo, ColumnInfo}
+import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, ComputationStrategyInfo, CopyInfo, RollupInfo}
 import com.socrata.datacoordinator.id.RowId
 import com.rojoma.simplearm.util._
 import org.joda.time.DateTime
@@ -70,6 +70,18 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
     checkTxn()
     flushRowData()
     logLine(ColumnRemoved, messages.ColumnRemoved(convert(info.unanchored)))
+  }
+
+  def computationStrategyCreated(info: ColumnInfo[CT], cs: ComputationStrategyInfo): Unit = {
+    checkTxn()
+    flushRowData()
+    logLine(ComputationStrategyCreated, messages.ComputationStrategyCreated(convert(info.unanchored)))
+  }
+
+  def computationStrategyRemoved(info: ColumnInfo[CT]): Unit = {
+    checkTxn()
+    flushRowData()
+    logLine(ComputationStrategyRemoved, messages.ComputationStrategyRemoved(convert(info.unanchored)))
   }
 
   def fieldNameUpdated(info: ColumnInfo[CT]): Unit = {

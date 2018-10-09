@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator
 package truth.loader
 
-import com.socrata.datacoordinator.truth.metadata.{RollupInfo, CopyInfo, ColumnInfo}
+import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, ComputationStrategyInfo, CopyInfo, RollupInfo}
 import com.socrata.datacoordinator.id.RowId
 import org.joda.time.DateTime
 
@@ -47,6 +47,10 @@ class NullLogger[CT, CV] extends Logger[CT, CV] {
   def truncated(): Unit = {}
 
   def versionColumnSet(info: ColumnInfo[CT]): Unit = {}
+
+  def computationStrategyCreated(info: ColumnInfo[CT], cs: ComputationStrategyInfo): Unit = {}
+
+  def computationStrategyRemoved(info: ColumnInfo[CT]): Unit = {}
 
   def fieldNameUpdated(info: ColumnInfo[CT]): Unit = {}
 }

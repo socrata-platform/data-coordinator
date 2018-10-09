@@ -67,6 +67,16 @@ trait BaseDatasetMapWriter[CT] extends BaseDatasetMapReader[CT] {
     * @throws CannotDropInitialWorkingCopyException if the dataset has not yet been published for the first time. */
   def dropCopy(copyInfo: CopyInfo)
 
+  /**
+    * Create a computation strategy from this column.
+    * @note Does not change the actual table; this just updates the bookkeeping. */
+  def addComputationStrategy(columnInfo: ColumnInfo[CT], computationStrategyInfo: ComputationStrategyInfo): ColumnInfo[CT]
+
+  /**
+    * Removes a computation strategy from this column.
+    * @note Does not change the actual table; this just updates the bookkeeping. */
+  def dropComputationStrategy(columnInfo: ColumnInfo[CT]): ColumnInfo[CT]
+
   /** Removes a column from this dataset-copy.
     * @note Does not change the actual table; this just updates the bookkeeping. */
   def dropColumn(columnInfo: ColumnInfo[CT])

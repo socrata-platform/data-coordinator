@@ -46,6 +46,12 @@ object Delogger {
   case class ColumnRemoved(info: UnanchoredColumnInfo) extends LogEvent[Nothing]
   object ColumnRemoved extends LogEventCompanion
 
+  case class ComputationStrategyCreated(info: UnanchoredColumnInfo) extends LogEvent[Nothing]
+  object ComputationStrategyCreated extends LogEventCompanion
+
+  case class ComputationStrategyRemoved(info: UnanchoredColumnInfo) extends LogEvent[Nothing]
+  object ComputationStrategyRemoved extends LogEventCompanion
+
   case class FieldNameUpdated(info: UnanchoredColumnInfo) extends LogEvent[Nothing]
   object FieldNameUpdated extends LogEventCompanion
 
@@ -133,6 +139,7 @@ object Delogger {
   // Note: the Delogger test checks that this is exhaustive
   val allLogEventCompanions: Set[LogEventCompanion] =
     Set(Truncated, ColumnCreated, ColumnRemoved, FieldNameUpdated, RowIdentifierSet, RowIdentifierCleared,
+      ComputationStrategyCreated, ComputationStrategyRemoved,
       SystemRowIdentifierChanged, VersionColumnChanged, LastModifiedChanged, WorkingCopyCreated, DataCopied,
       WorkingCopyPublished, WorkingCopyDropped, SnapshotDropped, RowDataUpdated, CounterUpdated,
       RollupCreatedOrUpdated, RollupDropped, RowsChangedPreview, EndTransaction)
@@ -146,6 +153,8 @@ object Delogger {
         case ColumnCreated => "ColumnCreated"
         case ColumnRemoved => "ColumnRemoved"
         case FieldNameUpdated => "FieldNameUpdated"
+        case ComputationStrategyCreated => "ComputationStrategyCreated"
+        case ComputationStrategyRemoved => "ComputationStrategyRemoved"
         case RowIdentifierSet => "RowIdentifierSet"
         case RowIdentifierCleared => "RowIdentifierCleared"
         case SystemRowIdentifierChanged => "SystemRowIdentifierChanged"
