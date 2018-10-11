@@ -5,9 +5,8 @@ package sql
 import java.sql.Connection
 
 import com.rojoma.simplearm.util._
-
-import com.socrata.datacoordinator.truth.sql.{DatabasePopulator, SqlPKableColumnRep, SqlColumnRep}
-import com.socrata.datacoordinator.truth.metadata.{LifecycleStage, CopyInfo, ColumnInfo}
+import com.socrata.datacoordinator.truth.sql.{DatabasePopulator, SqlColumnRep, SqlPKableColumnRep}
+import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, ComputationStrategyInfo, CopyInfo, LifecycleStage}
 
 class RepBasedPostgresSchemaLoader[CT, CV](conn: Connection, logger: Logger[CT, CV], repFor: ColumnInfo[CT] => SqlColumnRep[CT, CV], tablespace: String => Option[String]) extends SchemaLoader[CT] {
   private val uniqueViolation = "23505"
@@ -104,6 +103,14 @@ class RepBasedPostgresSchemaLoader[CT, CV](conn: Connection, logger: Logger[CT, 
       }
       stmt.execute(qb.toString)
     }
+  }
+
+  def addComputationStrategy(columnInfo: ColumnInfo[CT], computationStrategyInfo: ComputationStrategyInfo): Unit = {
+    logger.computationStrategyCreated(columnInfo, computationStrategyInfo)
+  }
+
+  def dropComputationStrategy(columnInfo: ColumnInfo[CT]): Unit = {
+    logger.computationStrategyRemoved(columnInfo)
   }
 
   def updateFieldName(columnInfo: ColumnInfo[CT]): Unit = {

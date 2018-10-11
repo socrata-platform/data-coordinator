@@ -204,6 +204,10 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
         Some(ColumnCreated(makeSecondaryColumnInfo(info)))
       case Delogger.ColumnRemoved(info) =>
         Some(ColumnRemoved(makeSecondaryColumnInfo(info)))
+      case Delogger.ComputationStrategyCreated(info) =>
+        Some(ComputationStrategyCreated(makeSecondaryColumnInfo(info)))
+      case Delogger.ComputationStrategyRemoved(info) =>
+        Some(ComputationStrategyRemoved(makeSecondaryColumnInfo(info)))
       case Delogger.FieldNameUpdated(info) =>
         Some(FieldNameUpdated(makeSecondaryColumnInfo(info)))
       case Delogger.RowIdentifierSet(info) =>

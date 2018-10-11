@@ -65,6 +65,7 @@ object Mutator {
   case class OperationAfterDrop(name: DatasetId)(val index: Long) extends MutationException
   case class IllegalColumnId(id: UserColumnId)(val index: Long) extends MutationException
   case class NoSuchColumn(dataset: DatasetId, id: UserColumnId)(val index: Long) extends MutationException
+  case class NoComputationStrategy(dataset: DatasetId, id: UserColumnId)(val index: Long) extends MutationException
   case class NoSuchType(name: TypeName)(val index: Long) extends MutationException
   case class ColumnAlreadyExists(dataset: DatasetId, id: UserColumnId)(val index: Long) extends MutationException
   case class FieldNameAlreadyExists(dataset: DatasetId, ColumnName: ColumnName)(val index: Long) extends MutationException
@@ -185,6 +186,8 @@ object Mutator {
                      bySystemId: Boolean) extends Command
   case class CreateOrUpdateRollup(index: Long, name: RollupName, soql: String) extends Command
   case class DropRollup(index: Long, name: RollupName) extends Command
+  case class AddComputationStrategy(index: Long, id: ColumnIdSpec, computationStrategy: ComputationStrategySpec) extends Command
+  case class DropComputationStrategy(index: Long, id: ColumnIdSpec) extends Command
 
   val AddColumnOp = "add column"
   val DropColumnOp = "drop column"
@@ -194,6 +197,8 @@ object Mutator {
   val RowDataOp = "row data"
   val CreateOrUpdateRollupOp = "create or update rollup"
   val DropRollupOp = "drop rollup"
+  val AddComputationStrategyOp = "add computation strategy"
+  val DropComputationStrategyOp = "drop computation strategy"
 }
 
 class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT, CV]) {
@@ -221,6 +226,13 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
             val nameHint = fieldName.fold(getWithStrictDefault[String]("hint", typ))(_.name)
             val computationStrategy = getOption[ComputationStrategySpec]("computation_strategy")
             AddColumn(index, id, nameHint, fieldName, TypeName(typ), computationStrategy)
+          case AddComputationStrategyOp =>
+            val column = get[ColumnIdSpec]("column")
+            val computationStrategy = get[ComputationStrategySpec]("computation_strategy")
+            AddComputationStrategy(index, column, computationStrategy)
+          case DropComputationStrategyOp =>
+            val column = get[ColumnIdSpec]("column")
+            DropComputationStrategy(index, column)
           case DropColumnOp =>
             val column = get[ColumnIdSpec]("column")
             DropColumn(index, column)
@@ -688,6 +700,23 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
           checkDDL(idx)
           pendingDrops += id
           Nil
+        case dcs@AddComputationStrategy(idx, Left(label), cs) =>
+          processCommand(dcs.copy(id = Right(idFor(idx, label))))
+        case AddComputationStrategy(idx, Right(id), cs) =>
+          if(!isExistingColumn(id)) throw NoSuchColumn(datasetId, id)(idx)
+          val col = mutator.columnInfo(id).getOrElse { sys.error("I just verified column " + id + " existed?") }
+          val csi = convertStrategy(idx, cs)
+          mutator.addComputationStrategy(col, csi)
+          Seq(MutationScriptCommandResult.Uninteresting)
+        case dcs@DropComputationStrategy(idx, Left(label)) =>
+          processCommand(dcs.copy(id = Right(idFor(idx, label))))
+        case DropComputationStrategy(idx, Right(id)) =>
+          if(!isExistingColumn(id)) throw NoSuchColumn(datasetId, id)(idx)
+          val col = mutator.columnInfo(id).getOrElse { sys.error("I just verified column " + id + " existed?") }
+          if(col.computationStrategyInfo.isEmpty) throw  NoComputationStrategy(datasetId, id)(idx)
+          if(isSystemColumnId(id)) throw InvalidSystemColumnOperation(datasetId, id, DropComputationStrategyOp)(idx)
+          mutator.dropComputationStrategy(col)
+          Seq(MutationScriptCommandResult.Uninteresting)
         case ufn@UpdateFieldName(idx, Left(label), _) =>
           processCommand(ufn.copy(id = Right(idFor(idx, label))))
         case UpdateFieldName(idx, Right(id), fieldName) =>

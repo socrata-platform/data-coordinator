@@ -752,6 +752,29 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
     }
   }
 
+  def addComputationStrategy(columnInfo: ColumnInfo[CT], strategy: ComputationStrategyInfo): ColumnInfo[CT] = {
+    using(conn.prepareStatement(addComputationStrategyQuery)) { stmt =>
+      val copyInfo = columnInfo.copyInfo
+      val ComputationStrategyInfo(strategyType, sourceColumnIds, parameters) = strategy
+
+      using(conn.prepareStatement(addComputationStrategyQuery)) { stmt =>
+        stmt.setLong(1, columnInfo.systemId.underlying)
+        stmt.setLong(2, columnInfo.copyInfo.systemId.underlying)
+        stmt.setString(3, strategyType.underlying)
+        stmt.setArray(4, conn.createArrayOf("varchar", sourceColumnIds.map(_.underlying).toArray))
+        stmt.setString(5, CompactJsonWriter.toString(parameters))
+        try {
+          t("add-column-computation-strategy-with-id", "dataset_id" -> copyInfo.datasetInfo.systemId, "copy_num" -> copyInfo.copyNumber, "column_id" -> columnInfo.systemId)(stmt.execute())
+        } catch {
+          case PostgresUniqueViolation("copy_system_id", "column_system_id") =>
+            throw new ColumnSystemIdAlreadyInUse(copyInfo, columnInfo.systemId)
+        }
+      }
+
+      columnInfo.copy(computationStrategyInfo = Some(strategy))
+    }
+  }
+
   def dropComputationStrategyQuery = "DELETE FROM computation_strategy_map WHERE copy_system_id = ? AND column_system_id = ?"
   def dropComputationStrategy(columnInfo: ColumnInfo[CT]): ColumnInfo[CT] = {
     using(conn.prepareStatement(dropComputationStrategyQuery)) { stmt =>

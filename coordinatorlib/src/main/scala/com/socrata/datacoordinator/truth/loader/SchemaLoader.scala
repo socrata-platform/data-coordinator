@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator
 package truth.loader
 
-import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, CopyInfo}
+import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, ComputationStrategyInfo, CopyInfo}
 import com.socrata.datacoordinator.id.UserColumnId
 
 trait SchemaLoader[CT] {
@@ -10,6 +10,9 @@ trait SchemaLoader[CT] {
 
   def addColumns(colInfo: Iterable[ColumnInfo[CT]])
   def dropColumns(colInfo: Iterable[ColumnInfo[CT]])
+
+  def addComputationStrategy(colInfo: ColumnInfo[CT], computationStrategyInfo: ComputationStrategyInfo)
+  def dropComputationStrategy(colInfo: ColumnInfo[CT])
 
   def updateFieldName(colInfo: ColumnInfo[CT])
 

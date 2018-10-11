@@ -111,6 +111,15 @@ message FieldNameUpdated {
   required UnanchoredColumnInfo columnInfo = 1;
 }
 
+message ComputationStrategyCreated {
+  required UnanchoredColumnInfo columnInfo = 1;
+}
+
+
+message ComputationStrategyRemoved {
+  required UnanchoredColumnInfo columnInfo = 1;
+}
+
 message RowsChangedPreview {
   required int64 rowsInserted = 1;
   required int64 rowsUpdated = 2;

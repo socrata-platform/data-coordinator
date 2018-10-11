@@ -167,6 +167,10 @@ trait DatasetMutator[CT, CV] {
     def unmakeUserPrimaryKey(ci: ColumnInfo[CT]): ColumnInfo[CT]
 
     def dropColumns(columns: Iterable[ColumnInfo[CT]]): Unit
+
+    def addComputationStrategy(column: ColumnInfo[CT], cs: ComputationStrategyInfo): Unit
+    def dropComputationStrategy(column: ColumnInfo[CT]): Unit
+
     def updateFieldName(column: ColumnInfo[CT], newName: ColumnName): Unit
     def truncate(): Unit
 
@@ -250,6 +254,18 @@ object DatasetMutator {
           copyCtx.removeColumn(ci.systemId)
         }
         schemaLoader.dropColumns(cs)
+      }
+
+      def addComputationStrategy(column: ColumnInfo[CT], cs: ComputationStrategyInfo): Unit = {
+        val updated = datasetMap.addComputationStrategy(column, cs)
+        copyCtx.updateColumn(updated)
+        schemaLoader.addComputationStrategy(updated, cs)
+      }
+
+      def dropComputationStrategy(column: ColumnInfo[CT]): Unit = {
+        val updated = datasetMap.dropComputationStrategy(column)
+        copyCtx.updateColumn(updated)
+        schemaLoader.dropComputationStrategy(updated)
       }
 
       def updateFieldName(column: ColumnInfo[CT], newName: ColumnName): Unit = {
