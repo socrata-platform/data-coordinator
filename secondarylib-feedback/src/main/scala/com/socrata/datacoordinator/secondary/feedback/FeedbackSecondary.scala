@@ -246,44 +246,60 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
       // WARNING: this .foldLeft(.) has side effects!
       case class FP(cookie: FeedbackCookie, columns: Set[UserColumnId])
       val resultFP = events.foldLeft(FP(cookieSeed, Set.empty)) { case (FP(newCookie, newCompCols), event) =>
-        event match {
-          case ColumnCreated(columnInfo) =>
-            // note: we will see ColumnCreated events both when new columns are created and after a WorkingCopyCreated event
 
+        def addComputationStrategy(columnInfo: ColumnInfo[CT]): FP = {
+          val newSystemId =
+            if (dataVersion == 1 && columnInfo.isSystemPrimaryKey) columnInfo.id
+            else newCookie.current.systemId
+
+          val old = newCookie.current.strategyMap
+          val (updatedStrategyMap, updatedCompCols) = columnInfo.computationStrategyInfo match {
+            case Some(strategy) if computationHandlers.exists(_.matchesStrategyType(strategy.strategyType)) && !old.contains(columnInfo.id) =>
+              // only track computed columns as new if we haven't seen them before
+              (old + (columnInfo.id -> strategy), newCompCols + columnInfo.id)
+            case _ => (old, newCompCols)
+          }
+          FP(newCookie.copy(
+            current = newCookie.current.copy(
+              systemId = newSystemId,
+              columnIdMap = newCookie.current.columnIdMap + (columnInfo.id -> columnInfo.systemId),
+              strategyMap = updatedStrategyMap
+            )
+          ), updatedCompCols)
+        }
+
+        def dropComputationStrategy(columnInfo: ColumnInfo[CT], alsoDropColumn: Boolean): FP = {
+          val old = newCookie.current.strategyMap
+          val (updatedStrategyMap, updatedCompCols) = columnInfo.computationStrategyInfo match {
+            case Some(strategy) if computationHandlers.exists(_.matchesStrategyType(strategy.strategyType)) =>
+              (old - columnInfo.id, (if (alsoDropColumn) newCompCols - columnInfo.id else newCompCols))
+            case _ => (old, newCompCols)
+          }
+          FP(newCookie.copy(
+            current = newCookie.current.copy(
+              columnIdMap = (if (alsoDropColumn) newCookie.current.columnIdMap - columnInfo.id else newCookie.current.columnIdMap),
+              strategyMap = updatedStrategyMap - columnInfo.id
+            )
+          ), updatedCompCols)
+        }
+
+        event match {
+          case ComputationStrategyCreated(columnInfo) =>
+            log.info(s"add computation strategy ${columnInfo.fieldName} ${columnInfo.computationStrategyInfo.map(_.strategyType.underlying).toString}")
+            addComputationStrategy(columnInfo)
+          case ColumnCreated(columnInfo) =>
+            log.info(s"add computation strategy via create column ${columnInfo.fieldName} ${columnInfo.computationStrategyInfo.map(_.strategyType.underlying).toString}")
+            // note: we will see ColumnCreated events both when new columns are created and after a WorkingCopyCreated event
             // so... since we are blindly setting the system id on version 1 to the expected value of ":id"
             // let's change that value to the UserColumnId of the column in the version that is said to actually
             // be the system primary key to not make any assumptions about what we actually name our system fields
-            val newSystemId =
-              if (dataVersion == 1 && columnInfo.isSystemPrimaryKey) columnInfo.id
-              else newCookie.current.systemId
-
-            val old = newCookie.current.strategyMap
-            val (updatedStrategyMap, updatedCompCols) = columnInfo.computationStrategyInfo match {
-              case Some(strategy) if computationHandlers.exists(_.matchesStrategyType(strategy.strategyType)) && !old.contains(columnInfo.id) =>
-                // only track computed columns as new if we haven't seen them before
-                (old + (columnInfo.id -> strategy), newCompCols + columnInfo.id)
-              case _ => (old, newCompCols)
-            }
-            FP(newCookie.copy(
-              current = newCookie.current.copy(
-                systemId = newSystemId,
-                columnIdMap = newCookie.current.columnIdMap + (columnInfo.id -> columnInfo.systemId),
-                strategyMap = updatedStrategyMap
-              )
-            ), updatedCompCols)
+            addComputationStrategy(columnInfo)
+          case ComputationStrategyRemoved(columnInfo) =>
+            log.info(s"drop computation strategy ${columnInfo.fieldName}")
+            dropComputationStrategy(columnInfo, alsoDropColumn = false)
           case ColumnRemoved(columnInfo) =>
-            val old = newCookie.current.strategyMap
-            val (updatedStrategyMap, updatedCompCols) = columnInfo.computationStrategyInfo match {
-              case Some(strategy) if computationHandlers.exists(_.matchesStrategyType(strategy.strategyType)) =>
-                (old - columnInfo.id, newCompCols - columnInfo.id)
-              case _ => (old, newCompCols)
-            }
-            FP(newCookie.copy(
-              current = newCookie.current.copy(
-                columnIdMap = newCookie.current.columnIdMap - columnInfo.id,
-                strategyMap = updatedStrategyMap
-              )
-            ), updatedCompCols)
+            log.info(s"drop computation strategy via drop column ${columnInfo.fieldName}")
+            dropComputationStrategy(columnInfo, alsoDropColumn = true)
           case SystemRowIdentifierChanged(columnInfo) =>
             // this will happen after a copy of the dataset has been created, the columns created, and optionally the data copied.
             FP(newCookie.copy(
