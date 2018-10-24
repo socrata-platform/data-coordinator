@@ -82,7 +82,14 @@ case class SecondaryManifestsCollocateResource(storeGroup: String,
       }
     }
 
-    if (!explain) collocator.commitCollocation(jobId, request)
+    if (!explain) {
+      collocationResult.status match {
+        case Rejected(s) =>
+          log.info(s"""do not commit rejected collocation ${collocationResult.id.getOrElse("")} $s""" )
+        case _ =>
+          collocator.commitCollocation(jobId, request)
+      }
+    }
 
     Right(collocationResult)
   }
