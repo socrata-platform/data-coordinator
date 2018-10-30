@@ -7,13 +7,13 @@ object Dependencies {
     val metricsScala    = "3.3.0"
     val jodaConvert     = "1.2"
     val jodaTime        = "2.1"
-    val rojomaJson      = "3.7.2" // on coflict this will be resolved to the lastest version
+    val rojomaJson      = "3.9.1" // on coflict this will be resolved to the lastest version
     val rojomaSimpleArm = "1.1.10"
     val scalaCheck      = "1.11.0"
     val scalaMock       = "3.2"
     val scalaTest       = "2.2.4"
     val slf4j           = "1.7.5"
-    val soqlReference   = "2.9.0"
+    val soqlReference   = "2.11.0"
     val thirdPartyUtils = "4.0.1"
     val curatorUtils    = "1.0.3"
     val httpCuratorBroker = "3.10.1"
