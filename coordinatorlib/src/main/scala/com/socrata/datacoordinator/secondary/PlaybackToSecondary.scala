@@ -5,8 +5,8 @@ import java.sql.SQLException
 
 import com.rojoma.simplearm.util._
 import com.rojoma.simplearm.SimpleArm
-import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.truth.loader.{Delogger, MissingVersion}
+import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.truth.metadata
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth.sql.SqlColumnReadRep
