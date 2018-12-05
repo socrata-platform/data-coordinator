@@ -1,13 +1,13 @@
 package com.socrata.datacoordinator.common.util
 
-import com.ibm.icu.text.Normalizer
+import com.ibm.icu.text.Normalizer2
 import com.rojoma.json.v3.io.{IdentifierEvent, FieldEvent, StringEvent, JsonEvent}
 
 object DatasetIdNormalizer {
 
-  val normalizationMode: Normalizer.Mode = Normalizer.NFC
+  val normalizer = Normalizer2.getNFCInstance
 
-  def norm(s: String) = Normalizer.normalize(s, normalizationMode)
+  def norm(s: String) = normalizer.normalize(s)
 
   def normalizeJson(token: JsonEvent): JsonEvent = {
     def position(t: JsonEvent) = t.positionedAt(token.position)
