@@ -43,7 +43,10 @@ object CoordinatorLib {
       GenLongLikeMap(targetDir, "com.socrata.datacoordinator.util.collection", "com.socrata.datacoordinator.id", "ColumnId") ++
         GenLongLikeMap(targetDir, "com.socrata.datacoordinator.util.collection", "com.socrata.datacoordinator.id", "CopyId") ++
         GenLongLikeMap(targetDir, "com.socrata.datacoordinator.util.collection", "com.socrata.datacoordinator.id", "RowId")
-    }
+    },
+    
+    // Explicit path to managed sources from scalabuff since intellij will ignore the directory otherwise
+    managedSourceDirectories in Compile += sourceManaged.value / "scala"
   )
 
   lazy val configs: Seq[Configuration] = BuildSettings.projectConfigs
