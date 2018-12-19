@@ -19,6 +19,7 @@ object FloatingTimestampRep extends CsvColumnRep[SoQLType, SoQLValue] {
         return Some(format.parseLocalDateTime(raw))
       } catch {
         case e: IllegalArgumentException => // ignore
+          // TODO: change to java8 java.time so that it does not need exception
       }
     }
     None
