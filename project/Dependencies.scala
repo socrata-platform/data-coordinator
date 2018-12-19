@@ -8,15 +8,15 @@ object Dependencies {
     val jodaConvert     = "1.2"
     val jodaTime        = "2.1"
     val rojomaJson      = "3.9.1" // on coflict this will be resolved to the lastest version
-    val rojomaSimpleArm = "1.1.10"
+    val rojomaSimpleArm = "2.1.0"
     val scalaCheck      = "1.11.0"
     val scalaMock       = "3.2"
     val scalaTest       = "2.2.4"
     val slf4j           = "1.7.5"
-    val soqlReference   = "2.11.3"
-    val thirdPartyUtils = "4.0.1"
-    val curatorUtils    = "1.0.3"
-    val httpCuratorBroker = "3.10.1"
+    val soqlReference   = "2.11.4"
+    val thirdPartyUtils = "4.0.16"
+    val curatorUtils    = "1.1.2"
+    val httpCuratorBroker = "3.11.4"
     val typesafeConfig  = "1.2.1"
   }
 
@@ -25,7 +25,7 @@ object Dependencies {
   val metricsScala = "nl.grons" %% "metrics-scala" % versions.metricsScala
 
   val rojomaJson      = "com.rojoma" %% "rojoma-json-v3" % versions.rojomaJson
-  val rojomaSimpleArm = "com.rojoma" %% "simple-arm"     % versions.rojomaSimpleArm
+  val rojomaSimpleArm = "com.rojoma" %% "simple-arm-v2"  % versions.rojomaSimpleArm
 
   val slf4jApi     = "org.slf4j" % "slf4j-api"     % versions.slf4j
   val slf4jLog4j12 = "org.slf4j" % "slf4j-log4j12" % versions.slf4j

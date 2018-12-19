@@ -26,10 +26,12 @@ object BuildSettings {
         testOptions in UnitTest <<= (testOptions in Test) map { _ ++ Seq(Tests.Argument("-l", "Slow")) },
         scalacOptions += "-language:implicitConversions",
         scalaVersion := "2.10.6",
+        resolvers += "socrata" at "https://repo.socrata.com/artifactory/libs-release",
         libraryDependencies ++=
           Seq(
             slf4jApi
-          )
+          ),
+        organization := "com.socrata"
       )
 
   lazy val buildConfigs = Configurations.default

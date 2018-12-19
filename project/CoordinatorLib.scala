@@ -20,8 +20,8 @@ object CoordinatorLib {
       typesafeConfig,
       "net.ceedubs" %% "ficus" % "1.0.0",
       "com.google.protobuf" % "protobuf-java" % "2.6.1",
-      "com.socrata" %% "soql-brita" % "1.3.0",
-      "com.socrata" %% "socrata-http-client" % "3.10.1",
+      "com.socrata" %% "soql-brita" % "1.4.1",
+      "com.socrata" %% "socrata-http-client" % "3.11.4",
       "com.typesafe" %% "scalalogging-slf4j" % "1.1.0",
       "commons-codec" % "commons-codec" % "1.8",
       "net.sf.trove4j" % "trove4j" % "3.0.3",
@@ -30,7 +30,7 @@ object CoordinatorLib {
       "org.liquibase" % "liquibase-plugin" % "1.9.5.0",
       "org.postgresql" % "postgresql" % "42.2.5", // we do use postgres-specific features some places
       "org.xerial.snappy" % "snappy-java" % "1.1.0-M3",
-      "com.socrata" %% "eurybates" % "2.0.0",
+      "com.socrata" %% "eurybates" % "2.0.2",
       "org.apache.activemq" % "activemq-core" % "5.7.0" exclude("org.apache", "commons.logging") exclude("commons-logging", "commons-logging") exclude("org.springframework", "spring-context"),
 
       TestDeps.scalaTest % "test,it",

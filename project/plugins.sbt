@@ -1,8 +1,8 @@
 resolvers ++= Seq(
-  "socrata releases" at "https://repository-socrata-oss.forge.cloudbees.com/release"
+  Resolver.url("socrata", url("https://repo.socrata.com/artifactor/ivy-libs-release"))(Resolver.ivyStylePatterns)
 )
 
-addSbtPlugin("com.socrata" % "socrata-sbt-plugins" % "1.5.3")
+addSbtPlugin("com.socrata" % "socrata-sbt-plugins" % "1.6.8")
 
 lazy val root = project.in(file(".")).dependsOn(scalabuff)
 
@@ -10,5 +10,5 @@ lazy val scalabuff = uri("git://github.com/tkawachi/sbt-scalabuff.git#47a1ab48a5
 
 libraryDependencies ++= Seq(
   "com.rojoma" %% "rojoma-json-v3" % "3.9.1",
-  "com.rojoma" %% "simple-arm" % "1.2.0"
+  "com.rojoma" %% "simple-arm-v2" % "2.1.0"
 )
