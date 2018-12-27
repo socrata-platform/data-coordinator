@@ -13,7 +13,6 @@ object DocumentRep extends JsonColumnRep[SoQLType, SoQLValue] {
   }
 
   def toJValue(input: SoQLValue): JValue = {
-    println("xxx")
     input match {
       case x@SoQLDocument(_, _, _) => SoQLDocument.jCodec.encode(x)
       case SoQLNull => JNull
