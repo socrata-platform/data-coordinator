@@ -33,8 +33,11 @@ object GenLongLikeMap {
     val targetClassName = sourceClass + "Map"
     val mutableVersion = "Mutable" + targetClassName
     val sourceType = sourcePackage + "." + sourceClass
-    """
-package """ + targetPackage + """
+
+    val sb = new StringBuilder
+
+    sb.append("""
+package """).append(targetPackage).append("""
 
 import scala.annotation.unchecked.uncheckedVariance
 import scala.collection.JavaConverters._
@@ -42,93 +45,131 @@ import scala.collection.JavaConverters._
 import gnu.trove.map.hash.TLongObjectHashMap
 import gnu.trove.iterator.TLongObjectIterator
 
-object """ + targetClassName + """ {
-  def apply[V](kvs: (""" + sourceType + """, V)*): """ + targetClassName + """[V] = {
-    val tmp = new """ + mutableVersion + """[V]
+object """).append(targetClassName).append(""" {
+""")
+
+    sb.append("""
+  def apply[V](kvs: (""").append(sourceType).append(""", V)*): """).append(targetClassName).append("""[V] = {
+    val tmp = new """).append(mutableVersion).append("""[V]
     tmp ++= kvs
     tmp.freeze()
   }
+""")
 
-  def apply[V](orig: Map[""" + sourceType + """, V]): """ + targetClassName + """[V] =
-    Mutable""" + sourceClass + """Map(orig).freeze()
+    sb.append("""
+  def apply[V](orig: Map[""").append(sourceType).append(""", V]): """).append(targetClassName).append("""[V] =
+    Mutable""").append(sourceClass).append("""Map(orig).freeze()
+""")
 
-  private val EMPTY = """ + targetClassName + """[Nothing]()
+    sb.append("""
+  private val EMPTY = """).append(targetClassName).append("""[Nothing]()
 
-  def empty[V]: """ + targetClassName + """[V] = EMPTY
+  def empty[V]: """).append(targetClassName).append("""[V] = EMPTY
+""")
+
+    sb.append("""
 }
+""")
 
-class """ + targetClassName + """[+V] private[""" + lastElemOf(targetPackage) + """] (val unsafeUnderlying: TLongObjectHashMap[V @uncheckedVariance]) {
+    sb.append("""
+class """).append(targetClassName).append("""[+V] private[""").append(lastElemOf(targetPackage)).append("""] (val unsafeUnderlying: TLongObjectHashMap[V @uncheckedVariance]) {
+""")
+
+    sb.append("""
   @inline def size = unsafeUnderlying.size
 
   @inline def isEmpty = unsafeUnderlying.isEmpty
 
   @inline def nonEmpty = !isEmpty
 
-  @inline def contains(t: """ + sourceType + """) = unsafeUnderlying.contains(t.underlying)
+  @inline def contains(t: """).append(sourceType).append(""") = unsafeUnderlying.contains(t.underlying)
+""")
 
-  @inline def get(t: """ + sourceType + """) = {
+    sb.append("""
+  @inline def get(t: """).append(sourceType).append(""") = {
     val x = unsafeUnderlying.get(t.underlying)
     if (x.asInstanceOf[AnyRef] eq null) None
     else Some(x)
   }
+""")
 
-  @inline def apply(t: """ + sourceType + """) = {
+    sb.append("""
+  @inline def apply(t: """).append(sourceType).append(""") = {
     val x = unsafeUnderlying.get(t.underlying)
     if (x.asInstanceOf[AnyRef] eq null) throw new NoSuchElementException("No key " + t)
     x
   }
+""")
 
-  def iterator = new """ + targetClassName + """Iterator[V](unsafeUnderlying.iterator)
+    sb.append("""
+  def iterator = new """).append(targetClassName).append("""Iterator[V](unsafeUnderlying.iterator)
+""")
 
-  def ++[V2 >: V](that: """ + targetClassName + """[V2]) = {
+    sb.append("""
+  def ++[V2 >: V](that: """).append(targetClassName).append("""[V2]) = {
     val tmp = new TLongObjectHashMap[V2](this.unsafeUnderlying)
     tmp.putAll(that.unsafeUnderlying)
-    new """ + targetClassName + """[V2](tmp)
+    new """).append(targetClassName).append("""[V2](tmp)
   }
+""")
 
-  def ++[V2 >: V](that: """ + mutableVersion + """[V2]) = {
+    sb.append("""
+  def ++[V2 >: V](that: """).append(mutableVersion).append("""[V2]) = {
     val tmp = new TLongObjectHashMap[V2](this.unsafeUnderlying)
     tmp.putAll(that.underlying)
-    new """ + targetClassName + """[V2](tmp)
+    new """).append(targetClassName).append("""[V2](tmp)
   }
+""")
 
-  def ++[V2 >: V](that: Iterable[(""" + sourceType + """, V2)]) = {
+    sb.append("""
+  def ++[V2 >: V](that: Iterable[(""").append(sourceType).append(""", V2)]) = {
     val tmp = new TLongObjectHashMap[V2](this.unsafeUnderlying)
     for((k, v) <- that) {
       tmp.put(k.underlying, v)
     }
-    new """ + targetClassName + """[V2](tmp)
+    new """).append(targetClassName).append("""[V2](tmp)
   }
+""")
 
-  def +[V2 >: V](kv: (""" + sourceType + """, V2)) = {
+    sb.append("""
+  def +[V2 >: V](kv: (""").append(sourceType).append(""", V2)) = {
     val tmp = new TLongObjectHashMap[V2](this.unsafeUnderlying)
     tmp.put(kv._1.underlying, kv._2)
-    new """ + targetClassName + """[V2](tmp)
+    new """).append(targetClassName).append("""[V2](tmp)
   }
+""")
 
-  def -(k: """ + sourceType + """) = {
+    sb.append("""
+  def -(k: """).append(sourceType).append(""") = {
     val tmp = new TLongObjectHashMap[V](this.unsafeUnderlying)
     tmp.remove(k.underlying)
-    new """ + targetClassName + """[V](tmp)
+    new """).append(targetClassName).append("""[V](tmp)
   }
+""")
 
-  @inline def getOrElse[B >: V](k: """ + sourceType + """, v: => B): B = {
+    sb.append("""
+  @inline def getOrElse[B >: V](k: """).append(sourceType).append(""", v: => B): B = {
     val result = unsafeUnderlying.get(k.underlying)
     if (result == null) v
     else result
   }
+""")
 
-  @inline def getOrElseStrict[B >: V](k: """ + sourceType + """, v: B): B = {
+    sb.append("""
+  @inline def getOrElseStrict[B >: V](k: """).append(sourceType).append(""", v: B): B = {
     val result = unsafeUnderlying.get(k.underlying)
     if (result == null) v
     else result
   }
+""")
 
-  def keys: Iterator[""" + sourceType + """] = iterator.map(_._1)
+    sb.append("""
+  def keys: Iterator[""").append(sourceType).append("""] = iterator.map(_._1)
   def values: Iterable[V] = unsafeUnderlying.valueCollection.asScala
+  def keySet = new """).append(sourceClass).append("""Set(unsafeUnderlying.keySet)
+""")
 
-  def keySet = new """ + sourceClass + """Set(unsafeUnderlying.keySet)
-
+    sb.append("""
   def mapValuesStrict[V2](f: V => V2) = {
     val x = new TLongObjectHashMap[V2]
     val it = unsafeUnderlying.iterator
@@ -136,93 +177,119 @@ class """ + targetClassName + """[+V] private[""" + lastElemOf(targetPackage) + 
       it.advance()
       x.put(it.key, f(it.value))
     }
-    new """ + targetClassName + """[V2](x)
+    new """).append(targetClassName).append("""[V2](x)
   }
+""")
 
-  def transform[V2](f: (""" + sourceType + """, V) => V2) = {
+    sb.append("""
+  def transform[V2](f: (""").append(sourceType).append(""", V) => V2) = {
     val x = new TLongObjectHashMap[V2]
     val it = unsafeUnderlying.iterator
     while(it.hasNext) {
       it.advance()
-      x.put(it.key, f(new """ + sourceType + """(it.key), it.value))
+      x.put(it.key, f(new """).append(sourceType).append("""(it.key), it.value))
     }
-    new """ + targetClassName + """[V2](x)
+    new """).append(targetClassName).append("""[V2](x)
   }
+""")
 
-  def foldLeft[S](init: S)(f: (S, (""" + sourceType + """, V)) => S): S =  {
+    sb.append("""
+  def foldLeft[S](init: S)(f: (S, (""").append(sourceType).append(""", V)) => S): S =  {
     var seed = init
     val it = unsafeUnderlying.iterator
     while(it.hasNext) {
       it.advance()
-      seed = f(seed, (new """ + sourceType + """(it.key), it.value))
+      seed = f(seed, (new """).append(sourceType).append("""(it.key), it.value))
     }
     seed
   }
+""")
 
+    sb.append("""
   override def toString = unsafeUnderlying.toString
+""")
 
-  def toSeq: Seq[(""" + sourceType + """, V)] = {
-    val arr = new Array[(""" + sourceType + """, V)](unsafeUnderlying.size)
+    sb.append("""
+  def toSeq: Seq[(""").append(sourceType).append(""", V)] = {
+    val arr = new Array[(""").append(sourceType).append(""", V)](unsafeUnderlying.size)
     val it = unsafeUnderlying.iterator
     var i = 0
     while(it.hasNext) {
       it.advance()
-      arr(i) = (new """ + sourceType + """(it.key), it.value)
+      arr(i) = (new """).append(sourceType).append("""(it.key), it.value)
       i += 1
     }
     arr
   }
+""")
 
-  def foreach[U](f: ((""" + sourceType + """, V)) => U) {
+    sb.append("""
+  def foreach[U](f: ((""").append(sourceType).append(""", V)) => U) {
     val it = unsafeUnderlying.iterator
     while(it.hasNext) {
       it.advance()
-      f((new """ + sourceType + """(it.key), it.value))
+      f((new """).append(sourceType).append("""(it.key), it.value))
     }
   }
+""")
 
-  def foreach[U](f: (""" + sourceType + """, V) => U) {
+    sb.append("""
+  def foreach[U](f: (""").append(sourceType).append(""", V) => U) {
     val it = unsafeUnderlying.iterator
     while(it.hasNext) {
       it.advance()
-      f(new """ + sourceType + """(it.key), it.value)
+      f(new """).append(sourceType).append("""(it.key), it.value)
     }
   }
+""")
 
-  def filter(f: (""" + sourceType + """, V) => Boolean) = {
+    sb.append("""
+  def filter(f: (""").append(sourceType).append(""", V) => Boolean) = {
     val x = new TLongObjectHashMap[V]
     val it = unsafeUnderlying.iterator
     while(it.hasNext) {
       it.advance()
-      if (f(new """ + sourceType + """(it.key), it.value)) x.put(it.key, it.value)
+      if (f(new """).append(sourceType).append("""(it.key), it.value)) x.put(it.key, it.value)
     }
-    new """ + targetClassName + """[V](x)
+    new """).append(targetClassName).append("""[V](x)
   }
+""")
 
-  def filterNot(f: (""" + sourceType + """, V) => Boolean) = {
+    sb.append("""
+  def filterNot(f: (""").append(sourceType).append(""", V) => Boolean) = {
     val x = new TLongObjectHashMap[V]
     val it = unsafeUnderlying.iterator
     while(it.hasNext) {
       it.advance()
-      if (!f(new """ + sourceType + """(it.key), it.value)) x.put(it.key, it.value)
+      if (!f(new """).append(sourceType).append("""(it.key), it.value)) x.put(it.key, it.value)
     }
-    new """ + targetClassName + """[V](x)
+    new """).append(targetClassName).append("""[V](x)
   }
+""")
 
+    sb.append("""
   override def hashCode = unsafeUnderlying.hashCode
   override def equals(o: Any) = o match {
-    case that: """ + targetClassName + """[_] => this.unsafeUnderlying == that.unsafeUnderlying
+    case that: """).append(targetClassName).append("""[_] => this.unsafeUnderlying == that.unsafeUnderlying
     case _ => false
   }
+""")
+
+    sb.append("""
 }
-"""
+""")
+
+    sb.toString()
   }
 
   def genMapIterator(targetPackage: String, sourcePackage: String, sourceClass: String): String = {
     val targetClassName = sourceClass + "MapIterator"
     val sourceType = sourcePackage + "." + sourceClass
-  """
-package """ + targetPackage + """
+
+    val sb = new StringBuilder
+
+    sb.append("""
+package """).append(targetPackage).append("""
 
 import scala.annotation.unchecked.uncheckedVariance
 import scala.collection.JavaConverters._
@@ -230,33 +297,47 @@ import scala.collection.JavaConverters._
 import gnu.trove.map.hash.TLongObjectHashMap
 import gnu.trove.iterator.TLongObjectIterator
 
-class """ + targetClassName + """[+V](val underlying: TLongObjectIterator[V @uncheckedVariance]) extends Iterator[(""" + sourceType + """, V)] {
-def hasNext = underlying.hasNext
+class """).append(targetClassName).append("""[+V](val underlying: TLongObjectIterator[V @uncheckedVariance]) extends Iterator[(""").append(sourceType).append(""", V)] {
+""")
+
+    sb.append("""
+  def hasNext = underlying.hasNext
   def next() = {
     advance()
-    (new """ + sourceType + """(underlying.key), underlying.value)
+    (new """).append(sourceType).append("""(underlying.key), underlying.value)
   }
   def advance() {
     underlying.advance()
   }
-  def key = new """ + sourceType + """(underlying.key)
+  def key = new """).append(sourceType).append("""(underlying.key)
   def value = underlying.value
+""")
+
+    sb.append("""
 }
-"""
+""")
+
+    sb.toString()
   }
 
   def genMutableMap(targetPackage: String, sourcePackage: String, sourceClass: String): String = {
     val immutableVersion = sourceClass + "Map"
     val targetClassName = "Mutable" + sourceClass + "Map"
     val sourceType = sourcePackage + "." + sourceClass
-    """
-package """ + targetPackage + """
+
+    val sb = new StringBuilder
+
+    sb.append("""
+package """).append(targetPackage).append("""
 
 import scala.collection.JavaConverters._
 import gnu.trove.map.hash.TLongObjectHashMap
 
-object """ + targetClassName + """ {
-  private def copyToTMap[V](m: Map[""" + sourceType + """, V]) = {
+object """).append(targetClassName).append(""" {
+""")
+
+    sb.append("""
+  private def copyToTMap[V](m: Map[""").append(sourceType).append(""", V]) = {
     val result = new TLongObjectHashMap[V]
     for((k, v) <- m) {
       if (v.asInstanceOf[AnyRef] eq null) throw new NullPointerException("Cannot store null values here")
@@ -264,126 +345,175 @@ object """ + targetClassName + """ {
     }
     result
   }
+""")
 
-  def apply[V](kvs: (""" + sourceType + """, V)*): """ + targetClassName + """[V] = {
-    val result = new """ + targetClassName + """[V]
+    sb.append("""
+  def apply[V](kvs: (""").append(sourceType).append(""", V)*): """).append(targetClassName).append("""[V] = {
+    val result = new """).append(targetClassName).append("""[V]
     result ++= kvs
     result
   }
+""")
 
-  def apply[V](kvs: """ + immutableVersion + """[V]): """ + targetClassName + """[V] = {
-    val result = new """ + targetClassName + """[V]
+    sb.append("""
+  def apply[V](kvs: """).append(immutableVersion).append("""[V]): """).append(targetClassName).append("""[V] = {
+    val result = new """).append(targetClassName).append("""[V]
     result ++= kvs
     result
   }
+""")
 
-  def apply[V](orig: Map[""" + sourceType + """, V]): """ + targetClassName +"""[V] =
-    new """ + targetClassName + """(copyToTMap(orig))
+    sb.append("""
+  def apply[V](orig: Map[""").append(sourceType).append(""", V]): """).append(targetClassName).append("""[V] =
+    new """).append(targetClassName).append("""(copyToTMap(orig))
+""")
+
+    sb.append("""
 }
 
-class """ + targetClassName + """[V](private var _underlying: TLongObjectHashMap[V]) {
+class """).append(targetClassName).append("""[V](private var _underlying: TLongObjectHashMap[V]) {
+""")
+
+    sb.append("""
   def this() = this(new TLongObjectHashMap[V])
-  def this(orig: """ + targetClassName + """[V]) = this(new TLongObjectHashMap(orig.underlying))
-  def this(orig: """ + immutableVersion + """[V]) = this(new TLongObjectHashMap(orig.unsafeUnderlying))
+  def this(orig: """).append(targetClassName).append("""[V]) = this(new TLongObjectHashMap(orig.underlying))
+  def this(orig: """).append(immutableVersion).append("""[V]) = this(new TLongObjectHashMap(orig.unsafeUnderlying))
+""")
 
+    sb.append("""
   def underlying = _underlying
+""")
 
+    sb.append("""
   def freeze() = {
     if (underlying == null) throw new NullPointerException
-    val result = new """ + immutableVersion + """[V](underlying)
+    val result = new """).append(immutableVersion).append("""[V](underlying)
     _underlying = null
     result
   }
+""")
 
+    sb.append("""
   def frozenCopy() = {
     if (underlying == null) throw new NullPointerException
     val tmp = new TLongObjectHashMap[V](_underlying)
-    new """ + immutableVersion + """[V](tmp)
+    new """).append(immutableVersion).append("""[V](tmp)
   }
+""")
 
+    sb.append("""
   @inline def size = underlying.size
 
   @inline def isEmpty = underlying.isEmpty
 
   @inline def nonEmpty = !underlying.isEmpty
 
-  @inline def contains(t: """ + sourceType + """) = underlying.contains(t.underlying)
+  @inline def contains(t: """).append(sourceType).append(""") = underlying.contains(t.underlying)
+""")
 
-  @inline def get(t: """ + sourceType + """) = {
+    sb.append("""
+  @inline def get(t: """).append(sourceType).append(""") = {
     val x = underlying.get(t.underlying)
     if (x.asInstanceOf[AnyRef] eq null) None
     else Some(x)
   }
+""")
 
-  @inline def apply(t: """ + sourceType + """) = {
+    sb.append("""
+  @inline def apply(t: """).append(sourceType).append(""") = {
     val x = underlying.get(t.underlying)
     if (x.asInstanceOf[AnyRef] eq null) throw new NoSuchElementException("No key " + t)
     x
   }
+""")
 
-  def iterator = new """ + sourceClass + """MapIterator[V](underlying.iterator)
+    sb.append("""
+  def iterator = new """).append(sourceClass).append("""MapIterator[V](underlying.iterator)
+""")
 
-  def ++(that: """ + targetClassName + """[V]) = {
+    sb.append("""
+  def ++(that: """).append(targetClassName).append("""[V]) = {
     val tmp = new TLongObjectHashMap[V]
     tmp.putAll(this.underlying)
     tmp.putAll(that.underlying)
-    new """ + immutableVersion + """[V](tmp)
+    new """).append(immutableVersion).append("""[V](tmp)
   }
+""")
 
-  def ++(that: """ + immutableVersion + """[V]) = {
+    sb.append("""
+  def ++(that: """).append(immutableVersion).append("""[V]) = {
     val tmp = new TLongObjectHashMap[V]
     tmp.putAll(this.underlying)
     tmp.putAll(that.unsafeUnderlying)
-    new """ + immutableVersion + """[V](tmp)
+    new """).append(immutableVersion).append("""[V](tmp)
   }
+""")
 
-  def ++(that: Iterable[(""" + sourceType + """, V)]) = {
+    sb.append("""
+  def ++(that: Iterable[(""").append(sourceType).append(""", V)]) = {
     val tmp = new TLongObjectHashMap[V]
     tmp.putAll(this.underlying)
     for((k, v) <- that) {
       tmp.put(k.underlying, v)
     }
-    new """ + immutableVersion + """[V](tmp)
+    new """).append(immutableVersion).append("""[V](tmp)
   }
+""")
 
-  def ++=(that: """ + targetClassName + """[V]) {
+    sb.append("""
+  def ++=(that: """).append(targetClassName).append("""[V]) {
     this.underlying.putAll(that.underlying)
   }
+""")
 
-  def ++=(that: """ + immutableVersion + """[V]) {
+    sb.append("""
+  def ++=(that: """).append(immutableVersion).append("""[V]) {
     this.underlying.putAll(that.unsafeUnderlying)
   }
+""")
 
-  def ++=(that: Iterable[(""" + sourceType + """, V)]) {
+    sb.append("""
+  def ++=(that: Iterable[(""").append(sourceType).append(""", V)]) {
     for(kv <- that) {
       this += kv
     }
   }
+""")
 
-  @inline def +=(kv: (""" + sourceType + """, V)) {
+    sb.append("""
+  @inline def +=(kv: (""").append(sourceType).append(""", V)) {
     update(kv._1, kv._2)
   }
+""")
 
-  @inline def -=(k: """ + sourceType + """) {
+    sb.append("""
+  @inline def -=(k: """).append(sourceType).append(""") {
     underlying.remove(k.underlying)
   }
+""")
 
-  @inline def update(k: """ + sourceType + """, v: V) {
+    sb.append("""
+  @inline def update(k: """).append(sourceType).append(""", v: V) {
     if (v.asInstanceOf[AnyRef] eq null) throw new NullPointerException("Cannot store null values here")
     underlying.put(k.underlying, v)
   }
+""")
 
-  @inline def getOrElse[B >: V](k: """ + sourceType + """, v: => B): B = {
+    sb.append("""
+  @inline def getOrElse[B >: V](k: """).append(sourceType).append(""", v: => B): B = {
     val result = underlying.get(k.underlying)
     if (result == null) v
     else result
   }
+""")
 
-  def keys: Iterator[""" + sourceType + """] = iterator.map(_._1)
+    sb.append("""
+  def keys: Iterator[""").append(sourceType).append("""] = iterator.map(_._1)
   def values: Iterable[V] = underlying.valueCollection.asScala
+  def keySet = new """).append(sourceClass).append("""Set(underlying.keySet)
+""")
 
-  def keySet = new """ + sourceClass + """Set(underlying.keySet)
-
+    sb.append("""
   def mapValuesStrict[V2](f: V => V2) = {
     val x = new TLongObjectHashMap[V2]
     val it = underlying.iterator
@@ -391,78 +521,117 @@ class """ + targetClassName + """[V](private var _underlying: TLongObjectHashMap
       it.advance()
       x.put(it.key, f(it.value))
     }
-    new """ + immutableVersion + """[V2](x)
+    new """).append(immutableVersion).append("""[V2](x)
   }
+""")
 
-  def transform[V2](f: (""" + sourceType + """, V) => V2) = {
+    sb.append("""
+  def transform[V2](f: (""").append(sourceType).append(""", V) => V2) = {
     val x = new TLongObjectHashMap[V2]
     val it = underlying.iterator
     while(it.hasNext) {
       it.advance()
-      x.put(it.key, f(new """ + sourceType + """(it.key), it.value))
+      x.put(it.key, f(new """).append(sourceType).append("""(it.key), it.value))
     }
-    new """ + immutableVersion + """[V2](x)
+    new """).append(immutableVersion).append("""[V2](x)
   }
+""")
 
-  def foldLeft[S](init: S)(f: (S, (""" + sourceType + """, V)) => S): S =  {
+    sb.append("""
+  def foldLeft[S](init: S)(f: (S, (""").append(sourceType).append(""", V)) => S): S =  {
     var seed = init
     val it = underlying.iterator
     while(it.hasNext) {
       it.advance()
-      seed = f(seed, (new """ + sourceType + """(it.key), it.value))
+      seed = f(seed, (new """).append(sourceType).append("""(it.key), it.value))
     }
     seed
   }
+""")
 
+    sb.append("""
   def clear() {
     underlying.clear()
   }
+""")
 
+    sb.append("""
   override def toString = underlying.toString
+""")
 
+    sb.append("""
   def toSeq = iterator.toSeq
+""")
 
+    sb.append("""
   override def hashCode = underlying.hashCode
   override def equals(o: Any) = o match {
-    case that: """ + targetClassName + """[_] => this.underlying == that.underlying
+    case that: """).append(targetClassName).append("""[_] => this.underlying == that.underlying
     case _ => false
   }
+""")
+
+    sb.append("""
 }
-"""
+""")
+
+    sb.toString()
   }
 
   def genSet(targetPackage: String, sourcePackage: String, sourceClass: String): String = {
     val targetClassName = sourceClass + "Set"
     val sourceType = sourcePackage + "." + sourceClass
-    """
-package """ + targetPackage + """
+
+    val sb = new StringBuilder
+
+    sb.append("""
+package """).append(targetPackage).append("""
 
 import gnu.trove.set.TLongSet
 import gnu.trove.set.hash.TLongHashSet
 import gnu.trove.procedure.TLongProcedure
 
-object """ + targetClassName + """ {
-  def apply(xs: """ + sourceType + """*): """ + targetClassName + """ = {
+object """).append(targetClassName).append(""" {
+""")
+
+    sb.append("""
+  def apply(xs: """).append(sourceType).append("""*): """).append(targetClassName).append(""" = {
     val tmp = new TLongHashSet
     xs.foreach { x => tmp.add(x.underlying) }
-    new """ + targetClassName + """(tmp)
+    new """).append(targetClassName).append("""(tmp)
   }
+""")
 
+    sb.append("""
   val empty = apply()
+""")
+
+    sb.append("""
 }
+""")
 
-class """ + targetClassName + """(val unsafeUnderlying: TLongSet) extends (""" + sourceType + """ => Boolean) {
-  def apply(x: """ + sourceType + """) = unsafeUnderlying.contains(x.underlying)
+    sb.append("""
+class """).append(targetClassName).append("""(val unsafeUnderlying: TLongSet) extends (""").append(sourceType).append(""" => Boolean) {
+""")
 
-  def contains(x: """ + sourceType + """) = unsafeUnderlying.contains(x.underlying)
+    sb.append("""
+  def apply(x: """).append(sourceType).append(""") = unsafeUnderlying.contains(x.underlying)
+""")
 
-  def iterator: Iterator[""" + sourceType + """] = new Iterator[""" + sourceType + """] {
+    sb.append("""
+  def contains(x: """).append(sourceType).append(""") = unsafeUnderlying.contains(x.underlying)
+""")
+
+    sb.append("""
+  def iterator: Iterator[""").append(sourceType).append("""] = new Iterator[""").append(sourceType).append("""] {
     val it = unsafeUnderlying.iterator
     def hasNext = it.hasNext
-    def next() = new """ + sourceType + """(it.next())
+    def next() = new """).append(sourceType).append("""(it.next())
   }
+""")
 
-  def intersect(that: """ + targetClassName + """): """ + targetClassName + """ = {
+    sb.append("""
+  def intersect(that: """).append(targetClassName).append("""): """).append(targetClassName).append(""" = {
     if (this.unsafeUnderlying.size <= that.unsafeUnderlying.size) {
       val filter = that.unsafeUnderlying
       val it = unsafeUnderlying.iterator
@@ -471,181 +640,257 @@ class """ + targetClassName + """(val unsafeUnderlying: TLongSet) extends (""" +
         val elem = it.next()
         if (filter.contains(elem)) target.add(elem)
       }
-      new """ + targetClassName + """(target)
+      new """).append(targetClassName).append("""(target)
     } else {
       that.intersect(this)
     }
   }
+""")
 
-  def -(x: """ + sourceType + """) = {
+    sb.append("""
+  def -(x: """).append(sourceType).append(""") = {
     val copy = new TLongHashSet(unsafeUnderlying)
     copy.remove(x.underlying)
-    new """ + targetClassName + """(copy)
+    new """).append(targetClassName).append("""(copy)
   }
+""")
 
-  def --(xs: """ + targetClassName + """) = {
+    sb.append("""
+  def --(xs: """).append(targetClassName).append(""") = {
     val copy = new TLongHashSet(unsafeUnderlying)
     copy.removeAll(xs.unsafeUnderlying)
-    new """ + targetClassName + """(copy)
+    new """).append(targetClassName).append("""(copy)
   }
+""")
 
-  def foreach[U](f: """ + sourceType + """ => U) {
+    sb.append("""
+  def foreach[U](f: """).append(sourceType).append(""" => U) {
     unsafeUnderlying.forEach(new TLongProcedure {
       def execute(l: Long) = {
-        f(new """ + sourceType + """(l))
+        f(new """).append(sourceType).append("""(l))
         true
       }
     })
   }
+""")
 
+    sb.append("""
   def size = unsafeUnderlying.size
+""")
 
+    sb.append("""
   def isEmpty = unsafeUnderlying.isEmpty
   def nonEmpty = !unsafeUnderlying.isEmpty
+""")
 
-  def filter(f: """ + sourceType + """ => Boolean) = {
+    sb.append("""
+  def filter(f: """).append(sourceType).append(""" => Boolean) = {
     val result = new TLongHashSet
     unsafeUnderlying.forEach(new TLongProcedure {
       def execute(l: Long) = {
-        if (f(new """ + sourceType + """(l))) result.add(l)
+        if (f(new """).append(sourceType).append("""(l))) result.add(l)
         true
       }
     })
-    new """ + targetClassName + """(result)
+    new """).append(targetClassName).append("""(result)
   }
+""")
 
-  def filterNot(f: """ + sourceType + """ => Boolean) = {
+    sb.append("""
+  def filterNot(f: """).append(sourceType).append(""" => Boolean) = {
     val result = new TLongHashSet
     unsafeUnderlying.forEach(new TLongProcedure {
       def execute(l: Long) = {
-        if (!f(new """ + sourceType + """(l))) result.add(l)
+        if (!f(new """).append(sourceType).append("""(l))) result.add(l)
         true
       }
     })
-    new """ + targetClassName + """(result)
+    new """).append(targetClassName).append("""(result)
   }
+""")
 
-  def partition(f: """ + sourceType + """ => Boolean) = {
+    sb.append("""
+  def partition(f: """).append(sourceType).append(""" => Boolean) = {
     val yes = new TLongHashSet
     val no = new TLongHashSet
     unsafeUnderlying.forEach(new TLongProcedure {
       def execute(l: Long) = {
-        if (f(new """ + sourceType + """(l))) yes.add(l)
+        if (f(new """).append(sourceType).append("""(l))) yes.add(l)
         else no.add(l)
         true
       }
     })
-    (new """ + targetClassName + """(yes), new """ + targetClassName + """(no))
+    (new """).append(targetClassName).append("""(yes), new """).append(targetClassName).append("""(no))
   }
+""")
 
+    sb.append("""
   def toSet = {
-    val b = Set.newBuilder[""" + sourceType + """]
+    val b = Set.newBuilder[""").append(sourceType).append("""]
     unsafeUnderlying.forEach(new TLongProcedure {
       def execute(l: Long) = {
-        b += new """ + sourceType + """(l)
+        b += new """).append(sourceType).append("""(l)
         true
       }
     })
     b.result()
   }
+""")
 
+    sb.append("""
   override def hashCode = unsafeUnderlying.hashCode
   override def equals(o: Any) = o match {
-    case that: """ + targetClassName + """ => this.unsafeUnderlying == that.unsafeUnderlying
+    case that: """).append(targetClassName).append(""" => this.unsafeUnderlying == that.unsafeUnderlying
     case _ => false
   }
+""")
 
+    sb.append("""
   override def toString = unsafeUnderlying.toString
+""")
+
+    sb.append("""
 }
-"""
+""")
+
+    sb.toString()
   }
 
   def genMutableSet(targetPackage: String, sourcePackage: String, sourceClass: String): String = {
     val targetClassName = "Mutable" + sourceClass + "Set"
     val sourceType = sourcePackage + "." + sourceClass
-    """
-package """ + targetPackage + """
+
+    val sb = new StringBuilder
+
+    sb.append("""
+package """).append(targetPackage).append("""
 
 import gnu.trove.set.TLongSet
 import gnu.trove.set.hash.TLongHashSet
 import gnu.trove.procedure.TLongProcedure
 
-object """ + targetClassName + """ {
-  def apply(xs: """ + sourceType + """*): """ + targetClassName + """ = {
+object """).append(targetClassName).append(""" {
+""")
+
+    sb.append("""
+  def apply(xs: """).append(sourceType).append("""*): """).append(targetClassName).append(""" = {
     val tmp = new TLongHashSet
     xs.foreach { x => tmp.add(x.underlying) }
-    new """ + targetClassName + """(tmp)
+    new """).append(targetClassName).append("""(tmp)
   }
+""")
 
+    sb.append("""
   val empty = apply()
+""")
+
+    sb.append("""
 }
+""")
 
-class """ + targetClassName + """(private var _underlying: TLongSet) extends (""" + sourceType + """ => Boolean) {
+    sb.append("""
+class """).append(targetClassName).append("""(private var _underlying: TLongSet) extends (""").append(sourceType).append(""" => Boolean) {
+""")
+
+    sb.append("""
   def underlying = _underlying
+""")
 
-  def apply(x: """ + sourceType + """) = underlying.contains(x.underlying)
+    sb.append("""
+  def apply(x: """).append(sourceType).append(""") = underlying.contains(x.underlying)
+""")
 
-  def contains(x: """ + sourceType + """) = underlying.contains(x.underlying)
+    sb.append("""
+  def contains(x: """).append(sourceType).append(""") = underlying.contains(x.underlying)
+""")
 
-  def iterator: Iterator[""" + sourceType + """] = new Iterator[""" + sourceType + """] {
+    sb.append("""
+  def iterator: Iterator[""").append(sourceType).append("""] = new Iterator[""").append(sourceType).append("""] {
     val it = underlying.iterator
     def hasNext = it.hasNext
-    def next() = new """ + sourceType + """(it.next())
+    def next() = new """).append(sourceType).append("""(it.next())
   }
+""")
 
+    sb.append("""
   @inline
-  def foreach[U](f: """ + sourceType + """ => U): Unit = {
+  def foreach[U](f: """).append(sourceType).append(""" => U): Unit = {
     val it = underlying.iterator
-    while(it.hasNext) f(new """ + sourceType + """(it.next()))
+    while(it.hasNext) f(new """).append(sourceType).append("""(it.next()))
   }
+""")
 
+    sb.append("""
   def freeze() = {
     if (underlying == null) throw new NullPointerException
-    val result = new """ + sourceClass + """Set(underlying)
+    val result = new """).append(sourceClass).append("""Set(underlying)
     _underlying = null
     result
   }
+""")
 
-  def ++=(x: """ + sourceClass + """Set) {
+    sb.append("""
+  def ++=(x: """).append(sourceClass).append("""Set) {
     underlying.addAll(x.unsafeUnderlying)
   }
+""")
 
-  def +=(x: """ + sourceType + """) {
+    sb.append("""
+  def +=(x: """).append(sourceType).append(""") {
     underlying.add(x.underlying)
   }
+""")
 
-  def -=(x: """ + sourceType + """) {
+    sb.append("""
+  def -=(x: """).append(sourceType).append(""") {
     underlying.remove(x.underlying)
   }
+""")
 
+    sb.append("""
   def size = underlying.size
+""")
 
+    sb.append("""
   def isEmpty = underlying.isEmpty
   def nonEmpty = !underlying.isEmpty
+""")
 
+    sb.append("""
   def clear() {
     underlying.clear()
   }
+""")
 
+    sb.append("""
   def toSet = {
-    val b = Set.newBuilder[""" + sourceType + """]
+    val b = Set.newBuilder[""").append(sourceType).append("""]
     underlying.forEach(new TLongProcedure {
       def execute(l: Long) = {
-        b += new """ + sourceType + """(l)
+        b += new """).append(sourceType).append("""(l)
         true
       }
     })
     b.result()
   }
+""")
 
+    sb.append("""
   override def hashCode = underlying.hashCode
   override def equals(o: Any) = o match {
-    case that: """ + targetClassName + """ => this.underlying == that.underlying
+    case that: """).append(targetClassName).append(""" => this.underlying == that.underlying
     case _ => false
   }
+""")
 
+    sb.append("""
   override def toString = underlying.toString
+""")
+
+    sb.append("""
 }
-"""
+""")
+
+    sb.toString()
   }
 }
