@@ -247,7 +247,7 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
       case class FP(cookie: FeedbackCookie, columns: Set[UserColumnId])
       val resultFP = events.foldLeft(FP(cookieSeed, Set.empty)) { case (FP(newCookie, newCompCols), event) =>
 
-        def addComputationStrategy(columnInfo: ColumnInfo[CT]): FP = {
+        def addComputationStrategy(columnInfo: ColumnInfo[CT], skipRefresh: Boolean): FP = {
           val newSystemId =
             if (dataVersion == 1 && columnInfo.isSystemPrimaryKey) columnInfo.id
             else newCookie.current.systemId
@@ -259,13 +259,14 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
               (old + (columnInfo.id -> strategy), newCompCols + columnInfo.id)
             case _ => (old, newCompCols)
           }
+          val refreshUpdatedCompCols = if (skipRefresh) Set.empty[UserColumnId] else updatedCompCols
           FP(newCookie.copy(
             current = newCookie.current.copy(
               systemId = newSystemId,
               columnIdMap = newCookie.current.columnIdMap + (columnInfo.id -> columnInfo.systemId),
               strategyMap = updatedStrategyMap
             )
-          ), updatedCompCols)
+          ), refreshUpdatedCompCols)
         }
 
         def dropComputationStrategy(columnInfo: ColumnInfo[CT], alsoDropColumn: Boolean): FP = {
@@ -286,14 +287,14 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
         event match {
           case ComputationStrategyCreated(columnInfo) =>
             log.info(s"add computation strategy ${columnInfo.fieldName} ${columnInfo.computationStrategyInfo.map(_.strategyType.underlying).toString}")
-            addComputationStrategy(columnInfo)
+            addComputationStrategy(columnInfo, skipRefresh = true)
           case ColumnCreated(columnInfo) =>
             log.info(s"add computation strategy via create column ${columnInfo.fieldName} ${columnInfo.computationStrategyInfo.map(_.strategyType.underlying).toString}")
             // note: we will see ColumnCreated events both when new columns are created and after a WorkingCopyCreated event
             // so... since we are blindly setting the system id on version 1 to the expected value of ":id"
             // let's change that value to the UserColumnId of the column in the version that is said to actually
             // be the system primary key to not make any assumptions about what we actually name our system fields
-            addComputationStrategy(columnInfo)
+            addComputationStrategy(columnInfo, skipRefresh = false)
           case ComputationStrategyRemoved(columnInfo) =>
             log.info(s"drop computation strategy ${columnInfo.fieldName}")
             dropComputationStrategy(columnInfo, alsoDropColumn = false)
