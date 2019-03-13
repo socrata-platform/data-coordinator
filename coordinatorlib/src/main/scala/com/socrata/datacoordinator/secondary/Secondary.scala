@@ -1,8 +1,9 @@
 package com.socrata.datacoordinator.secondary
 
 import com.rojoma.simplearm.Managed
-
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
+
+import scala.concurrent.duration.FiniteDuration
 
 trait Secondary[CT, CV] {
   import Secondary.Cookie
@@ -64,7 +65,7 @@ case class ResyncLaterSecondaryException(reason: String = "No reason") extends E
  * Thrown when a secondary decides that it cannot do an update _right now_ .
  * The process propagating data to the secondary should try again later.
  */
-case class ReplayLaterSecondaryException(reason: String = "No reason", cookie: Secondary.Cookie) extends Exception(reason)
+case class ReplayLaterSecondaryException(reason: String = "No reason", cookie: Secondary.Cookie, delay: Option[FiniteDuration] = None) extends Exception(reason)
 
 case class BrokenDatasetSecondaryException(reason: String = "No reason", cookie: Secondary.Cookie) extends Exception(reason)
 
