@@ -21,8 +21,10 @@ class SecondaryReplicationMessages[CT, CV](u: SecondaryReplicationMessages.Super
     //
     // We can probably get away with committing in between if we have to,
     // if this causes problems we can try that.
+    val reader = u.datasetMapReader
     for {
-      datasetInfo <- u.datasetMapReader.datasetInfo(datasetId)
+      datasetInfo <- reader.datasetInfo(datasetId)
+      copyInfo <- Some(reader.latest(datasetInfo, Some(endingDataVersion)))
       resourceName <- datasetInfo.resourceName
       groupName <- u.secondaryStoresConfig.group(storeId)
     } {
@@ -37,7 +39,8 @@ class SecondaryReplicationMessages[CT, CV](u: SecondaryReplicationMessages.Super
         // it's okay if the others are ahead
         producer.send(GroupReplicationComplete(uid, groupName, stores.keySet,
           newDataVersion = endingDataVersion,
-          endingAtMs = endingMillis
+          endingAtMs = endingMillis,
+          copyInfo.lifecycleStage
         ))
       }
     }

@@ -63,13 +63,15 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
       |  LEFT OUTER JOIN copy_map_table_modifiers ON copy_map.system_id = copy_map_table_modifiers.copy_system_id
       |WHERE
       |  dataset_system_id = ?
+      |  AND data_version <= ?
       |  AND lifecycle_stage <> 'Discarded'
       |ORDER BY
       |  data_version DESC, copy_number DESC
       |LIMIT 1""".stripMargin
-  def latest(datasetInfo: DatasetInfo) =
+  def latest(datasetInfo: DatasetInfo, dataVersion: Option[Long] = None) =
     using(conn.prepareStatement(latestQuery)) { stmt =>
       stmt.setDatasetId(1, datasetInfo.systemId)
+      stmt.setLong(2, dataVersion.getOrElse(Long.MaxValue))
       using(t("latest-copy", "dataset_id" -> datasetInfo.systemId)(stmt.executeQuery())) { rs =>
         if(!rs.next()) sys.error("Looked up a table for " + datasetInfo.systemId + " but didn't find any copy info?")
         CopyInfo(
