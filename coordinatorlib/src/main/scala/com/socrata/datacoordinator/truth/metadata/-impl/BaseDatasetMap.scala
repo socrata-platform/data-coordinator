@@ -9,7 +9,9 @@ import org.joda.time.DateTime
 trait BaseDatasetMapReader[CT] {
   /** Gets the newest _live_ copy, no matter what the lifecycle stage is.
     * @note this will not return a discarded copy or a snapshot */
-  def latest(datasetInfo: DatasetInfo, dataVersion: Option[Long] = None): CopyInfo
+  def latest(datasetInfo: DatasetInfo): CopyInfo
+
+  def latestUpTo(datasetInfo: DatasetInfo, dataVersion: Option[Long] = None): CopyInfo
 
   /** Returns all copies for this dataset, INCLUDING DISCARDED ONES.  The
     * results are guaranteed to be ordered by copy number. */

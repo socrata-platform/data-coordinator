@@ -68,7 +68,7 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
       |ORDER BY
       |  data_version DESC, copy_number DESC
       |LIMIT 1""".stripMargin
-  def latest(datasetInfo: DatasetInfo, dataVersion: Option[Long] = None) =
+  def latestUpTo(datasetInfo: DatasetInfo, dataVersion: Option[Long] = None) =
     using(conn.prepareStatement(latestQuery)) { stmt =>
       stmt.setDatasetId(1, datasetInfo.systemId)
       stmt.setLong(2, dataVersion.getOrElse(Long.MaxValue))
@@ -85,6 +85,8 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
         )
       }
     }
+
+  def latest(datasetInfo: DatasetInfo) = latestUpTo(datasetInfo, None)
 
   def allCopiesQuery =
     """SELECT

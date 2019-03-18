@@ -24,7 +24,7 @@ class SecondaryReplicationMessages[CT, CV](u: SecondaryReplicationMessages.Super
     val reader = u.datasetMapReader
     for {
       datasetInfo <- reader.datasetInfo(datasetId)
-      copyInfo <- Some(reader.latest(datasetInfo, Some(endingDataVersion)))
+      copyInfo <- Some(reader.latestUpTo(datasetInfo, Some(endingDataVersion)))
       resourceName <- datasetInfo.resourceName
       groupName <- u.secondaryStoresConfig.group(storeId)
     } {
