@@ -3,6 +3,7 @@ package com.socrata.datacoordinator.secondary.messaging
 import com.rojoma.json.v3.ast.JString
 import com.rojoma.json.v3.codec.JsonEncode
 import com.rojoma.json.v3.util._
+import com.socrata.datacoordinator.truth.metadata.LifecycleStage
 
 case class ViewUid(uid: String)
 
@@ -37,7 +38,8 @@ case class GroupReplicationComplete(viewUid: ViewUid,
                                     groupName: String,
                                     storeIds: Set[String],
                                     newDataVersion: Long,
-                                    endingAtMs: Long) extends Message
+                                    endingAtMs: Long,
+                                    lifecycleStage: LifecycleStage) extends Message
 
 object GroupReplicationComplete {
   implicit val encode = AutomaticJsonEncodeBuilder[GroupReplicationComplete]
