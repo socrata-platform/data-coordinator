@@ -41,6 +41,12 @@ abstract class SqlSecondaryMetrics(conn: Connection) extends SecondaryMetrics {
   }
 
   override def dropDataset(storeId: String, datasetId: DatasetId): Unit = {
+    using(conn.prepareStatement("DELETE FROM secondary_metrics_history WHERE dataset_system_id = ? AND store_id = ?")) { stmt =>
+      stmt.setDatasetId(1, datasetId)
+      stmt.setString(2, storeId)
+      stmt.execute()
+    }
+
     using(conn.prepareStatement("DELETE FROM secondary_metrics WHERE store_id = ? AND dataset_system_id = ?")) { stmt =>
       stmt.setString(1, storeId)
       stmt.setDatasetId(2, datasetId)
