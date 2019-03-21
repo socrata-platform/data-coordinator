@@ -78,6 +78,7 @@ class PostgresSecondaryMetrics(conn: Connection) extends SqlSecondaryMetrics(con
         case uv@PostgresUniqueViolation(_*) =>
             // there should only be one thread trying to due this at a time since this is only called in the SecondaryWatcher
             log.error("Inserting into secondary_metrics_history failed after updating no rows", uv)
+            throw new Exception("Unexpected Postgres unique constraint violation!", uv)
       }
     }
 
