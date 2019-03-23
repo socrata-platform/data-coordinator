@@ -66,4 +66,59 @@
                                  referencedTableName="secondary_manifest"
                                  referencedColumnNames="store_id,dataset_system_id"/>
     </changeSet>
+
+    <changeSet author="Chi" id="20190322-add-secondary-metrics-history-index">
+        <createIndex tableName="secondary_metrics_history" indexName="secondary_metrics_history_date_dataset_system_id_store_id_idx">
+            <column name="date"/>
+            <column name="dataset_system_id"/>
+            <column name="store_id"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet author="Chi" id="20190322-add-secondary-metrics-history-convenience" runOnChange="true">
+        <createProcedure>
+            <![CDATA[
+CREATE OR REPLACE FUNCTION dates_stores_datasets(d1 timestamp with time zone, d2 timestamp with time zone)
+       RETURNS table(date timestamp with time zone, store_id varchar(64), dataset_system_id bigint)
+    AS $$
+ BEGIN
+
+   RETURN QUERY
+     SELECT d.date, sm.store_id, sm.dataset_system_id
+       FROM (SELECT (d1 + ((interval '1 day') * i) ) as date
+               FROM generate_series(0, date_part('day',  d2 - d1)::int) as i
+            ) as d
+       FULL OUTER JOIN secondary_manifest sm on true;
+ END; $$
+ LANGUAGE 'plpgsql';
+             ]]>
+        </createProcedure>
+
+        <createProcedure>
+        <!-- usage: SELECT date, store_id, dataset_system_id, total_size
+                      FROM secondary_metrics_daily_history('2019-01-01', '2019-01-05')
+          -->
+            <![CDATA[
+CREATE OR REPLACE FUNCTION secondary_metrics_daily_history(d1 timestamp with time zone, d2 timestamp with time zone)
+       RETURNS table(date timestamp with time zone, store_id varchar(64), dataset_system_id bigint, total_size bigint)
+    AS $$
+ BEGIN
+
+   RETURN QUERY
+     SELECT t1.date, t1.store_id, t1.dataset_system_id,
+            (SELECT h2.total_size
+               FROM secondary_metrics_history h2
+              WHERE h2.date <= t1.date
+                and h2.store_id = t1.store_id
+                and h2.dataset_system_id = t1.dataset_system_id
+              ORDER by h2.date limit 1) as total_size
+       FROM dates_stores_datasets(d1, d2) as t1
+       LEFT OUTER JOIN secondary_metrics_history h on t1.date = h.date
+        and t1.store_id = h.store_id
+        and t1.dataset_system_id = h.dataset_system_id;
+ END; $$
+ LANGUAGE 'plpgsql';
+             ]]>
+        </createProcedure>
+    </changeSet>
 </databaseChangeLog>
