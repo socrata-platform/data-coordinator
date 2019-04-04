@@ -3,7 +3,8 @@ package com.socrata.datacoordinator.service
 import java.util.UUID
 
 import com.rojoma.json.v3.ast.{JString, JValue}
-import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.v2._
+import com.rojoma.simplearm.v2.conversions._
 import com.socrata.datacoordinator.common.soql.SoQLRep
 import com.socrata.datacoordinator.common.collocation.{CollocationLock, CuratedCollocationLock}
 import com.socrata.datacoordinator.common.{DataSourceFromConfig, SoQLCommon}
@@ -468,321 +469,321 @@ object Main extends DynamicPortMap {
       throw new Exception(s"Instance self ${serviceConfig.instance} is required to be in the collocation group when non-empty: $collocationGroup")
     }
 
-    for(dsInfo <- DataSourceFromConfig(serviceConfig.dataSource)) {
-      val executorService = Executors.newCachedThreadPool()
-      try {
-        val common = locally {
-          // force RT to be initialized to avoid circular-dependency NPE
-          // Merely putting a reference to T is sufficient; the call to hashCode
-          // is to silence a compiler warning about ignoring a pure value
-          clojure.lang.RT.T.hashCode
+    implicit val executorShutdown = Resource.executorShutdownNoTimeout
 
-          // serviceConfig.tablespace must be an expression with the free variable
-          // table-name which should return either `nil' or a valid Postgresql tablespace
-          // name.
-          //
-          // I wish there were an obvious way to read the expression separately and then
-          // splice it in knowing that it's well-formed.
-          val iFn = clojure.lang.Compiler.load(new java.io.StringReader(s"""(let [op (fn [^String table-name] ${serviceConfig.tablespace})]
-                                                                              (fn [^String table-name]
-                                                                                (let [result (op table-name)]
-                                                                                  (if result
-                                                                                      (scala.Some. result)
-                                                                                      (scala.Option/empty)))))""")).asInstanceOf[clojure.lang.IFn]
-          new SoQLCommon(
-            dsInfo.dataSource,
-            dsInfo.copyIn,
-            executorService,
-            { t => iFn.invoke(t).asInstanceOf[Option[String]] },
-            new DebugLoggedTimingReport(org.slf4j.LoggerFactory.getLogger("timing-report")) with StackedTimingReport,
-            allowDdlOnPublishedCopies = serviceConfig.allowDdlOnPublishedCopies,
-            serviceConfig.writeLockTimeout,
-            serviceConfig.instance,
-            serviceConfig.reports.directory,
-            serviceConfig.logTableCleanupDeleteOlderThan,
-            serviceConfig.logTableCleanupDeleteEvery,
-            //serviceConfig.tableCleanupDelay,
-            NullCache
-          )
-        }
+    for {
+      dsInfo <- DataSourceFromConfig(serviceConfig.dataSource).toV2
+      executorService <- managed(Executors.newCachedThreadPool)
+      httpClient <- managed(new HttpClientHttpClient(executorService))
+    } {
+      val common = locally {
+        // force RT to be initialized to avoid circular-dependency NPE
+        // Merely putting a reference to T is sufficient; the call to hashCode
+        // is to silence a compiler warning about ignoring a pure value
+        clojure.lang.RT.T.hashCode
 
-        val operations = new Main(common, serviceConfig)
-
-        def getSchema(datasetId: DatasetId) = {
-          for {
-            u <- common.universe
-            dsInfo <- u.datasetMapReader.datasetInfo(datasetId)
-          } yield {
-            val latest = u.datasetMapReader.latest(dsInfo)
-            val schema = u.datasetMapReader.schema(latest)
-            val ctx = new DatasetCopyContext(latest, schema)
-            u.schemaFinder.getSchema(ctx)
-          }
-        }
-
-        def getSnapshots(datasetId: DatasetId) = {
-          for {
-            u <- common.universe
-            dsInfo <- u.datasetMapReader.datasetInfo(datasetId)
-          } yield {
-            u.datasetMapReader.snapshots(dsInfo).map(_.unanchored).toVector
-          }
-        }
-
-        def deleteSnapshot(datasetId: DatasetId, copyNum: Long): CopyContextResult[UnanchoredCopyInfo] = {
-          for {
-            u <- common.universe
-          } yield {
-            val dsInfo = u.datasetMapWriter.datasetInfo(datasetId, common.PostgresUniverseCommon.writeLockTimeout).getOrElse {
-              return CopyContextResult.NoSuchDataset
-            }
-            u.datasetMapWriter.snapshots(dsInfo).find(_.copyNumber == copyNum) match {
-              case None =>
-                CopyContextResult.NoSuchCopy
-              case Some(snapshot) =>
-                u.schemaLoader(NullLogger[u.CT, u.CV]).drop(snapshot) // NullLogger because DropSnapshot is no longer a visible thing
-                u.datasetMapWriter.dropCopy(snapshot)
-                CopyContextResult.CopyInfo(snapshot.unanchored)
-            }
-          }
-        }
-
-        def getLog(datasetId: DatasetId, version: Long)(f: Iterator[Delogger.LogEvent[common.CV]] => Unit) = {
-          for {
-            u <- common.universe
-            dsInfo <- u.datasetMapReader.datasetInfo(datasetId)
-          } yield {
-            using(u.delogger(dsInfo).delog(version)) { it =>
-              f(it)
-            }
-          }
-        }
-
-        def getRollups(datasetId: DatasetId) = {
-          for {
-            u <- common.universe
-            dsInfo <- u.datasetMapReader.datasetInfo(datasetId)
-          } yield {
-            val latest = u.datasetMapReader.latest(dsInfo)
-            u.datasetMapReader.rollups(latest).toSeq
-          }
-        }
-
-        def getSnapshottedDatasets() = {
-          for {
-            u <- common.universe
-            dsInfos <- u.datasetMapReader.snapshottedDatasets()
-          } yield dsInfos
-        }
-
-
-        val notFoundDatasetResource = NotFoundDatasetResource(_: Option[String], common.internalNameFromDatasetId,
-          operations.makeReportTemporaryFile, operations.processCreation,
-          operations.listDatasets, _: (=> HttpResponse) => HttpResponse, serviceConfig.commandReadLimit)
-        val datasetSchemaResource = DatasetSchemaResource(_: DatasetId, getSchema, common.internalNameFromDatasetId)
-        val datasetSnapshotsResource = DatasetSnapshotsResource(_: DatasetId, getSnapshots, common.internalNameFromDatasetId)
-        val datasetSnapshotResource = DatasetSnapshotResource(_: DatasetId, _: Long, deleteSnapshot, common.internalNameFromDatasetId)
-        val datasetLogResource = DatasetLogResource[common.CV](_: DatasetId, _: Long, getLog, common.internalNameFromDatasetId)
-        val datasetRollupResource = DatasetRollupResource(_: DatasetId, getRollups, common.internalNameFromDatasetId)
-        val snapshottedResource = SnapshottedResource(getSnapshottedDatasets, common.internalNameFromDatasetId)
-        val secondaryManifestsResource = SecondaryManifestsResource(_: Option[String], secondaries,
-          operations.datasetsInStore, common.internalNameFromDatasetId)
-
-        implicit val weightedCostOrdering: Ordering[Cost] = WeightedCostOrdering(
-          movesWeight = serviceConfig.collocation.cost.movesWeight,
-          totalSizeBytesWeight = serviceConfig.collocation.cost.totalSizeBytesWeight,
-          moveSizeMaxBytesWeight = serviceConfig.collocation.cost.moveSizeMaxBytesWeight
+        // serviceConfig.tablespace must be an expression with the free variable
+        // table-name which should return either `nil' or a valid Postgresql tablespace
+        // name.
+        //
+        // I wish there were an obvious way to read the expression separately and then
+        // splice it in knowing that it's well-formed.
+        val iFn = clojure.lang.Compiler.load(new java.io.StringReader(s"""(let [op (fn [^String table-name] ${serviceConfig.tablespace})]
+                                                                            (fn [^String table-name]
+                                                                              (let [result (op table-name)]
+                                                                                (if result
+                                                                                    (scala.Some. result)
+                                                                                    (scala.Option/empty)))))""")).asInstanceOf[clojure.lang.IFn]
+        new SoQLCommon(
+          dsInfo.dataSource,
+          dsInfo.copyIn,
+          executorService,
+          { t => iFn.invoke(t).asInstanceOf[Option[String]] },
+          new DebugLoggedTimingReport(org.slf4j.LoggerFactory.getLogger("timing-report")) with StackedTimingReport,
+          allowDdlOnPublishedCopies = serviceConfig.allowDdlOnPublishedCopies,
+          serviceConfig.writeLockTimeout,
+          serviceConfig.instance,
+          serviceConfig.reports.directory,
+          serviceConfig.logTableCleanupDeleteOlderThan,
+          serviceConfig.logTableCleanupDeleteEvery,
+          //serviceConfig.tableCleanupDelay,
+          NullCache
         )
+      }
 
-        def httpCoordinator(hostAndPort: String => Option[(String, Int)]): Coordinator =
-          new HttpCoordinator(
-            serviceConfig.instance.equals,
-            serviceConfig.secondary.defaultGroups,
-            serviceConfig.secondary.groups,
-            hostAndPort,
-            new HttpClientHttpClient(executorService), // since executorService is currently unbounded we can share here
-            operations.collocatedDatasets,
-            operations.dropCollocations,
-            operations.secondariesOfDataset,
-            operations.secondaryMetrics,
-            operations.secondaryMoveJobs,
-            operations.secondaryMoveJobs,
-            operations.ensureSecondaryMoveJob,
-            operations.rollbackSecondaryMoveJob
-          )
+      val operations = new Main(common, serviceConfig)
 
-        def collocationProvider(hostAndPort: String => Option[(String, Int)],
-                                lock: CollocationLock): CoordinatorProvider with
-                                                        CollocatorProvider with
-                                                        MetricProvider = {
-          new CoordinatorProvider(httpCoordinator(hostAndPort)) with CollocatorProvider with MetricProvider {
-            override val metric: Metric = CoordinatedMetric(collocationGroup, coordinator)
-            override val collocator: Collocator = new CoordinatedCollocator(
-              collocationGroup = collocationGroup,
-              coordinator = coordinator,
-              metric = metric,
-              addCollocations = operations.addCollocations,
-              lock = lock,
-              lockTimeoutMillis = serviceConfig.collocation.lockTimeout.toMillis
-            )
+      def getSchema(datasetId: DatasetId) = {
+        for {
+          u <- common.universe
+          dsInfo <- u.datasetMapReader.datasetInfo(datasetId)
+        } yield {
+          val latest = u.datasetMapReader.latest(dsInfo)
+          val schema = u.datasetMapReader.schema(latest)
+          val ctx = new DatasetCopyContext(latest, schema)
+          u.schemaFinder.getSchema(ctx)
+        }
+      }
+
+      def getSnapshots(datasetId: DatasetId) = {
+        for {
+          u <- common.universe
+          dsInfo <- u.datasetMapReader.datasetInfo(datasetId)
+        } yield {
+          u.datasetMapReader.snapshots(dsInfo).map(_.unanchored).toVector
+        }
+      }
+
+      def deleteSnapshot(datasetId: DatasetId, copyNum: Long): CopyContextResult[UnanchoredCopyInfo] = {
+        for {
+          u <- common.universe
+        } yield {
+          val dsInfo = u.datasetMapWriter.datasetInfo(datasetId, common.PostgresUniverseCommon.writeLockTimeout).getOrElse {
+            return CopyContextResult.NoSuchDataset
+          }
+          u.datasetMapWriter.snapshots(dsInfo).find(_.copyNumber == copyNum) match {
+            case None =>
+              CopyContextResult.NoSuchCopy
+            case Some(snapshot) =>
+              u.schemaLoader(NullLogger[u.CT, u.CV]).drop(snapshot) // NullLogger because DropSnapshot is no longer a visible thing
+              u.datasetMapWriter.dropCopy(snapshot)
+              CopyContextResult.CopyInfo(snapshot.unanchored)
           }
         }
+      }
 
-        def metricProvider(hostAndPort: String => Option[(String, Int)]): CoordinatorProvider with MetricProvider = {
-          new CoordinatorProvider(httpCoordinator(hostAndPort)) with MetricProvider {
-            override val metric: Metric = CoordinatedMetric(collocationGroup, coordinator)
+      def getLog(datasetId: DatasetId, version: Long)(f: Iterator[Delogger.LogEvent[common.CV]] => Unit) = {
+        for {
+          u <- common.universe
+          dsInfo <- u.datasetMapReader.datasetInfo(datasetId)
+        } yield {
+          using(u.delogger(dsInfo).delog(version)) { it =>
+            f(it)
           }
         }
+      }
 
-        def datasetResource(lock: CollocationLock)(hostAndPort: String => Option[(String, Int)]) = {
-          DatasetResource(
-            _: DatasetId,
-            operations.makeReportTemporaryFile,
-            serviceConfig.commandReadLimit,
-            operations.processMutation,
-            operations.deleteDataset,
-            operations.exporter,
-            collocationProvider(hostAndPort, lock).collocator,
-            _: (=> HttpResponse) => HttpResponse,
-            common.internalNameFromDatasetId
-          )
+      def getRollups(datasetId: DatasetId) = {
+        for {
+          u <- common.universe
+          dsInfo <- u.datasetMapReader.datasetInfo(datasetId)
+        } yield {
+          val latest = u.datasetMapReader.latest(dsInfo)
+          u.datasetMapReader.rollups(latest).toSeq
         }
+      }
 
-        def secondaryManifestsCollocateResource(lock: CollocationLock)(hostAndPort: String => Option[(String, Int)]) = {
-          SecondaryManifestsCollocateResource(_: String, collocationProvider(hostAndPort, lock))
-        }
+      def getSnapshottedDatasets() = {
+        for {
+          u <- common.universe
+          dsInfos <- u.datasetMapReader.snapshottedDatasets()
+        } yield dsInfos
+      }
 
-        val secondaryManifestsMetricsResource = SecondaryManifestsMetricsResource(_: String, _: Option[DatasetId],
-          operations.secondaryMetrics, common.internalNameFromDatasetId)
 
-        val secondaryManifestsMoveResource = SecondaryManifestsMoveResource(
-          _: Option[String],
-          _: DatasetId,
+      val notFoundDatasetResource = NotFoundDatasetResource(_: Option[String], common.internalNameFromDatasetId,
+        operations.makeReportTemporaryFile, operations.processCreation,
+        operations.listDatasets, _: (=> HttpResponse) => HttpResponse, serviceConfig.commandReadLimit)
+      val datasetSchemaResource = DatasetSchemaResource(_: DatasetId, getSchema, common.internalNameFromDatasetId)
+      val datasetSnapshotsResource = DatasetSnapshotsResource(_: DatasetId, getSnapshots, common.internalNameFromDatasetId)
+      val datasetSnapshotResource = DatasetSnapshotResource(_: DatasetId, _: Long, deleteSnapshot, common.internalNameFromDatasetId)
+      val datasetLogResource = DatasetLogResource[common.CV](_: DatasetId, _: Long, getLog, common.internalNameFromDatasetId)
+      val datasetRollupResource = DatasetRollupResource(_: DatasetId, getRollups, common.internalNameFromDatasetId)
+      val snapshottedResource = SnapshottedResource(getSnapshottedDatasets, common.internalNameFromDatasetId)
+      val secondaryManifestsResource = SecondaryManifestsResource(_: Option[String], secondaries,
+        operations.datasetsInStore, common.internalNameFromDatasetId)
+
+      implicit val weightedCostOrdering: Ordering[Cost] = WeightedCostOrdering(
+        movesWeight = serviceConfig.collocation.cost.movesWeight,
+        totalSizeBytesWeight = serviceConfig.collocation.cost.totalSizeBytesWeight,
+        moveSizeMaxBytesWeight = serviceConfig.collocation.cost.moveSizeMaxBytesWeight
+      )
+
+      def httpCoordinator(hostAndPort: String => Option[(String, Int)]): Coordinator =
+        new HttpCoordinator(
+          serviceConfig.instance.equals,
+          serviceConfig.secondary.defaultGroups,
+          serviceConfig.secondary.groups,
+          hostAndPort,
+          httpClient, // since executorService is currently unbounded we can share here
+          operations.collocatedDatasets,
+          operations.dropCollocations,
+          operations.secondariesOfDataset,
+          operations.secondaryMetrics,
+          operations.secondaryMoveJobs,
           operations.secondaryMoveJobs,
           operations.ensureSecondaryMoveJob,
-          operations.rollbackSecondaryMoveJob,
-          common.datasetInternalNameFromDatasetId
+          operations.rollbackSecondaryMoveJob
         )
 
-        def secondaryManifestsMoveJobResource(hostAndPort: String => Option[(String, Int)]) = SecondaryManifestsMoveJobResource(
-          _: String,
-          _: String,
-          metricProvider(hostAndPort)
-        )
-
-        val secondaryMoveJobsJobResource = SecondaryMoveJobsJobResource(_: String, operations.secondaryMoveJobs, operations.dropCollocationJob)
-
-        def collocationManifestsResource(lock: CollocationLock)(hostAndPort: String => Option[(String, Int)]) = {
-          CollocationManifestsResource(_: Option[String], _: Option[String], collocationProvider(hostAndPort, lock))
+      def collocationProvider(hostAndPort: String => Option[(String, Int)],
+                              lock: CollocationLock): CoordinatorProvider with
+                                                      CollocatorProvider with
+                                                      MetricProvider = {
+        new CoordinatorProvider(httpCoordinator(hostAndPort)) with CollocatorProvider with MetricProvider {
+          override val metric: Metric = CoordinatedMetric(collocationGroup, coordinator)
+          override val collocator: Collocator = new CoordinatedCollocator(
+            collocationGroup = collocationGroup,
+            coordinator = coordinator,
+            metric = metric,
+            addCollocations = operations.addCollocations,
+            lock = lock,
+            lockTimeoutMillis = serviceConfig.collocation.lockTimeout.toMillis
+          )
         }
-
-        val datasetSecondaryStatusResource = DatasetSecondaryStatusResource(_: Option[String], _:DatasetId, secondaries,
-          secondariesNotAcceptingNewDatasets, operations.versionInStore, serviceConfig, operations.ensureInSecondary,
-          operations.ensureInSecondaryGroup, operations.deleteFromSecondary, common.internalNameFromDatasetId)
-        val secondariesOfDatasetResource = SecondariesOfDatasetResource(_: DatasetId, operations.secondariesOfDataset,
-          common.internalNameFromDatasetId)
-
-        val serv = Service(serviceConfig = serviceConfig,
-          formatDatasetId = common.internalNameFromDatasetId,
-          parseDatasetId = common.datasetIdFromInternalName,
-          notFoundDatasetResource = notFoundDatasetResource,
-          datasetResource = datasetResource,
-          datasetSchemaResource = datasetSchemaResource,
-          datasetSnapshotsResource = datasetSnapshotsResource,
-          datasetSnapshotResource = datasetSnapshotResource,
-          datasetLogResource = datasetLogResource,
-          datasetRollupResource = datasetRollupResource,
-          snapshottedResource = snapshottedResource,
-          secondaryManifestsResource = secondaryManifestsResource,
-          secondaryManifestsCollocateResource = secondaryManifestsCollocateResource,
-          secondaryManifestsMetricsResource = secondaryManifestsMetricsResource,
-          secondaryManifestsMoveResource = secondaryManifestsMoveResource,
-          secondaryManifestsMoveJobResource = secondaryManifestsMoveJobResource,
-          secondaryMoveJobsJobResource = secondaryMoveJobsJobResource,
-          collocationManifestsResource = collocationManifestsResource,
-          datasetSecondaryStatusResource = datasetSecondaryStatusResource,
-          secondariesOfDatasetResource = secondariesOfDatasetResource) _
-
-        val finished = new CountDownLatch(1)
-        val tableDropper = new Thread() {
-          setName("table dropper")
-          override def run() {
-            do {
-              try {
-                for(u <- common.universe) {
-                  while(finished.getCount > 0 && u.tableCleanup.cleanupPendingDrops()) {
-                    u.commit()
-                  }
-                }
-              } catch {
-                case e: Exception =>
-                  log.error("Unexpected error while dropping tables", e)
-              }
-            } while(!finished.await(30, TimeUnit.SECONDS))
-          }
-        }
-
-        val logTableCleanup = new Thread() {
-          setName("logTableCleanup thread")
-          override def run() {
-            do {
-              try {
-                for (u <- common.universe) {
-                  while (finished.getCount > 0 && u.logTableCleanup.cleanupOldVersions()) {
-                    u.commit()
-                    // a simple knob to allow us to slow the log table cleanup down without
-                    // requiring complicated things.
-                    finished.await(serviceConfig.logTableCleanupSleepTime.toMillis, TimeUnit.MILLISECONDS)
-                  }
-                }
-              } catch {
-                case e: Exception =>
-                  log.error("Unexpected error while cleaning log tables", e)
-              }
-            } while(!finished.await(30, TimeUnit.SECONDS))
-          }
-        }
-
-        try {
-          tableDropper.start()
-          logTableCleanup.start()
-          val address = serviceConfig.discovery.address
-          for {
-            curator <- CuratorFromConfig(serviceConfig.curator)
-            discovery <- DiscoveryFromConfig(classOf[AuxiliaryData], curator, serviceConfig.discovery)
-            pong <- managed(new LivenessCheckResponder(serviceConfig.livenessCheck))
-            provider <- managed(new ProviderCache(discovery, new strategies.RoundRobinStrategy, serviceConfig.discovery.name))
-          } {
-            pong.start()
-            val auxData = new AuxiliaryData(livenessCheckInfo = Some(pong.livenessCheckInfo))
-
-            def hostAndPort(instanceName: String): Option[(String, Int)] = {
-              Option(provider(instanceName).getInstance()).map[(String, Int)](instance => (instance.getAddress, instance.getPort))
-            }
-
-            val collocationLockPath =  s"/${serviceConfig.discovery.name}/${serviceConfig.collocation.lockPath}"
-            val collocationLock = new CuratedCollocationLock(curator, collocationLockPath)
-            serv(collocationLock, hostAndPort).run(serviceConfig.network.port,
-                     new CuratorBroker(discovery,
-                                       address,
-                                       serviceConfig.discovery.name + "." + serviceConfig.instance,
-                                       Some(auxData)) {
-                       override def register(port: Int): Cookie = {
-                         super.register(hostPort(port))
-                       }
-                     }
-                    )
-          }
-        } finally {
-          finished.countDown()
-        }
-
-        log.info("Waiting for table dropper to terminate")
-        tableDropper.join()
-      } finally {
-        executorService.shutdown()
       }
-      executorService.awaitTermination(Long.MaxValue, TimeUnit.SECONDS)
+
+      def metricProvider(hostAndPort: String => Option[(String, Int)]): CoordinatorProvider with MetricProvider = {
+        new CoordinatorProvider(httpCoordinator(hostAndPort)) with MetricProvider {
+          override val metric: Metric = CoordinatedMetric(collocationGroup, coordinator)
+        }
+      }
+
+      def datasetResource(lock: CollocationLock)(hostAndPort: String => Option[(String, Int)]) = {
+        DatasetResource(
+          _: DatasetId,
+          operations.makeReportTemporaryFile,
+          serviceConfig.commandReadLimit,
+          operations.processMutation,
+          operations.deleteDataset,
+          operations.exporter,
+          collocationProvider(hostAndPort, lock).collocator,
+          _: (=> HttpResponse) => HttpResponse,
+          common.internalNameFromDatasetId
+        )
+      }
+
+      def secondaryManifestsCollocateResource(lock: CollocationLock)(hostAndPort: String => Option[(String, Int)]) = {
+        SecondaryManifestsCollocateResource(_: String, collocationProvider(hostAndPort, lock))
+      }
+
+      val secondaryManifestsMetricsResource = SecondaryManifestsMetricsResource(_: String, _: Option[DatasetId],
+        operations.secondaryMetrics, common.internalNameFromDatasetId)
+
+      val secondaryManifestsMoveResource = SecondaryManifestsMoveResource(
+        _: Option[String],
+        _: DatasetId,
+        operations.secondaryMoveJobs,
+        operations.ensureSecondaryMoveJob,
+        operations.rollbackSecondaryMoveJob,
+        common.datasetInternalNameFromDatasetId
+      )
+
+      def secondaryManifestsMoveJobResource(hostAndPort: String => Option[(String, Int)]) = SecondaryManifestsMoveJobResource(
+        _: String,
+        _: String,
+        metricProvider(hostAndPort)
+      )
+
+      val secondaryMoveJobsJobResource = SecondaryMoveJobsJobResource(_: String, operations.secondaryMoveJobs, operations.dropCollocationJob)
+
+      def collocationManifestsResource(lock: CollocationLock)(hostAndPort: String => Option[(String, Int)]) = {
+        CollocationManifestsResource(_: Option[String], _: Option[String], collocationProvider(hostAndPort, lock))
+      }
+
+      val datasetSecondaryStatusResource = DatasetSecondaryStatusResource(_: Option[String], _:DatasetId, secondaries,
+        secondariesNotAcceptingNewDatasets, operations.versionInStore, serviceConfig, operations.ensureInSecondary,
+        operations.ensureInSecondaryGroup, operations.deleteFromSecondary, common.internalNameFromDatasetId)
+      val secondariesOfDatasetResource = SecondariesOfDatasetResource(_: DatasetId, operations.secondariesOfDataset,
+        common.internalNameFromDatasetId)
+
+      val serv = Service(serviceConfig = serviceConfig,
+        formatDatasetId = common.internalNameFromDatasetId,
+        parseDatasetId = common.datasetIdFromInternalName,
+        notFoundDatasetResource = notFoundDatasetResource,
+        datasetResource = datasetResource,
+        datasetSchemaResource = datasetSchemaResource,
+        datasetSnapshotsResource = datasetSnapshotsResource,
+        datasetSnapshotResource = datasetSnapshotResource,
+        datasetLogResource = datasetLogResource,
+        datasetRollupResource = datasetRollupResource,
+        snapshottedResource = snapshottedResource,
+        secondaryManifestsResource = secondaryManifestsResource,
+        secondaryManifestsCollocateResource = secondaryManifestsCollocateResource,
+        secondaryManifestsMetricsResource = secondaryManifestsMetricsResource,
+        secondaryManifestsMoveResource = secondaryManifestsMoveResource,
+        secondaryManifestsMoveJobResource = secondaryManifestsMoveJobResource,
+        secondaryMoveJobsJobResource = secondaryMoveJobsJobResource,
+        collocationManifestsResource = collocationManifestsResource,
+        datasetSecondaryStatusResource = datasetSecondaryStatusResource,
+        secondariesOfDatasetResource = secondariesOfDatasetResource) _
+
+      val finished = new CountDownLatch(1)
+      val tableDropper = new Thread() {
+        setName("table dropper")
+        override def run() {
+          do {
+            try {
+              for(u <- common.universe) {
+                while(finished.getCount > 0 && u.tableCleanup.cleanupPendingDrops()) {
+                  u.commit()
+                }
+              }
+            } catch {
+              case e: Exception =>
+                log.error("Unexpected error while dropping tables", e)
+            }
+          } while(!finished.await(30, TimeUnit.SECONDS))
+        }
+      }
+
+      val logTableCleanup = new Thread() {
+        setName("logTableCleanup thread")
+        override def run() {
+          do {
+            try {
+              for (u <- common.universe) {
+                while (finished.getCount > 0 && u.logTableCleanup.cleanupOldVersions()) {
+                  u.commit()
+                  // a simple knob to allow us to slow the log table cleanup down without
+                  // requiring complicated things.
+                  finished.await(serviceConfig.logTableCleanupSleepTime.toMillis, TimeUnit.MILLISECONDS)
+                }
+              }
+            } catch {
+              case e: Exception =>
+                log.error("Unexpected error while cleaning log tables", e)
+            }
+          } while(!finished.await(30, TimeUnit.SECONDS))
+        }
+      }
+
+      try {
+        tableDropper.start()
+        logTableCleanup.start()
+        val address = serviceConfig.discovery.address
+        for {
+          curator <- CuratorFromConfig(serviceConfig.curator)
+          discovery <- DiscoveryFromConfig(classOf[AuxiliaryData], curator, serviceConfig.discovery)
+          pong <- managed(new LivenessCheckResponder(serviceConfig.livenessCheck))
+          provider <- managed(new ProviderCache(discovery, new strategies.RoundRobinStrategy, serviceConfig.discovery.name))
+        } {
+          pong.start()
+          val auxData = new AuxiliaryData(livenessCheckInfo = Some(pong.livenessCheckInfo))
+
+          def hostAndPort(instanceName: String): Option[(String, Int)] = {
+            Option(provider(instanceName).getInstance()).map[(String, Int)](instance => (instance.getAddress, instance.getPort))
+          }
+
+          val collocationLockPath =  s"/${serviceConfig.discovery.name}/${serviceConfig.collocation.lockPath}"
+          val collocationLock = new CuratedCollocationLock(curator, collocationLockPath)
+          serv(collocationLock, hostAndPort).run(serviceConfig.network.port,
+                   new CuratorBroker(discovery,
+                                     address,
+                                     serviceConfig.discovery.name + "." + serviceConfig.instance,
+                                     Some(auxData)) {
+                     override def register(port: Int): Cookie = {
+                       super.register(hostPort(port))
+                     }
+                   }
+                  )
+        }
+      } finally {
+        finished.countDown()
+      }
+
+      log.info("Waiting for table dropper to terminate")
+      tableDropper.join()
     }
   }
 
