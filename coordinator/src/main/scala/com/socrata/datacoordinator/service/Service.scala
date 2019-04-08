@@ -200,8 +200,6 @@ class Service(serviceConfig: ServiceConfig,
                 "dataset" -> JString(formatDatasetId(datasetName)),
                 "column" -> JsonEncode.toJValue(userColumnId),
                 "type" -> JString(typeName.name))
-            case Mutator.DeleteRowIdentifierNotAllowed(datasetId, columnId) =>
-              columnErrorResponse(RowIdentifierUpdateError.DELETE, em.index, datasetId, columnId)
             case Mutator.DuplicateValuesInColumn(dataset, name) =>
               columnErrorResponse(RowIdentifierUpdateError.DUPLICATE_VALUES, em.index, dataset, name)
             case Mutator.NullsInColumn(dataset, name) =>
