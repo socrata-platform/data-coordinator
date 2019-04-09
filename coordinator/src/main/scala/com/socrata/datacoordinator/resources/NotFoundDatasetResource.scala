@@ -65,10 +65,11 @@ case class NotFoundDatasetResource(datasetIdRaw: Option[String],
             }
             iteratorOrError match {
               case Right(iterator) =>
-                val ProcessCreationReturns(dataset, dataVersion, lastModified, result) =
+                val ProcessCreationReturns(dataset, copyNumber, dataVersion, lastModified, result) =
                   processCreation(iterator.map { ev => boundResetter(); ev }, tmp)
                 OK ~>
                   Header("X-SODA2-Truth-Last-Modified", dateTimeFormat.print(lastModified)) ~>
+                  Header("X-SODA2-Truth-Copy-Number", copyNumber.toString) ~>
                   Header("X-SODA2-Truth-Version", dataVersion.toString) ~>
                   ContentType(JsonContentType) ~>
                   Stream { w =>

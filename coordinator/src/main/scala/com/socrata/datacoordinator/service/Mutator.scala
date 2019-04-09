@@ -362,7 +362,7 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
 
     // Have to re-lookup copy info to get a valid lastModified from the DB...
     val copyInfo = u.datasetMapReader.latest(u.datasetMapReader.datasetInfo(datasetId).get)
-    ProcessCreationReturns(datasetId, copyInfo.dataVersion, copyInfo.lastModified, mutationResults)
+    ProcessCreationReturns(datasetId, copyInfo.copyNumber, copyInfo.dataVersion, copyInfo.lastModified, mutationResults)
   }
 
   def updateScript(u: UniverseWithProviders, datasetId: DatasetId, commandStream: Iterator[JValue]):
