@@ -81,8 +81,6 @@ object Mutator {
   case class InvalidSystemColumnOperation(dataset: DatasetId,
                                           id: UserColumnId,
                                           op: String)(val index: Long) extends MutationException
-  case class DeleteRowIdentifierNotAllowed(dataset: DatasetId,
-                                           id: UserColumnId)(val index: Long) extends MutationException
   case class UpsertError(dataset: DatasetId, failure: Failure[JValue], versionToJson: RowVersion => JValue)
                         (val index: Long) extends MutationException
   case class RowLacksPrimaryKey(dataset: DatasetId)(val index: Long) extends MutationException
@@ -696,7 +694,9 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
         case DropColumn(idx, Right(id)) =>
           if(!isExistingColumn(id)) throw NoSuchColumn(datasetId, id)(idx)
           if(isSystemColumnId(id)) throw InvalidSystemColumnOperation(datasetId, id, DropColumnOp)(idx)
-          if(mutator.columnInfo(id).get.isUserPrimaryKey) throw DeleteRowIdentifierNotAllowed(datasetId, id)(idx)
+          if(mutator.columnInfo(id).get.isUserPrimaryKey) {
+            val Seq(MutationScriptCommandResult.Uninteresting) = processCommand(DropRowId(idx, Right(id)))
+          }
           checkDDL(idx)
           pendingDrops += id
           Nil
