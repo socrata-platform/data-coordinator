@@ -116,16 +116,14 @@ class FeedbackContext[CT,CV](user: String,
                              rows: IndexedSeq[Row[CV]],
                              targetColumns: Set[UserColumnId]): Either[ComputationFailure, Map[Int, Map[UserColumnId, CV]]] = {
     val perDatasetData = computationHandler.setupDataset(cookie)
-    val perColumnDataTargetColMap = cookie.strategyMap.toSeq.collect {
+    val perColumnDataAndTargetColId = cookie.strategyMap.toSeq.collect {
       case (targetCol, strat) if targetColumns.contains(targetCol) & computationHandler.matchesStrategyType(strat.strategyType) =>
-        (computationHandler.setupColumn(perDatasetData, strat, targetCol) -> targetCol)
-    }.toMap
-    val perColumnData = perColumnDataTargetColMap.keys.toSeq
+        (computationHandler.setupColumn(perDatasetData, strat, targetCol), targetCol)
+    }
     val toCompute = rows.iterator.zipWithIndex.flatMap { case (row, index) =>
       val rcis =
-        perColumnData.flatMap { columnData =>
+        perColumnDataAndTargetColId.flatMap { case (columnData, targetColId) =>
           // don't compute if there has been to change to the source columns
-          val targetColId = perColumnDataTargetColMap(columnData)
           // New value of either target or source will have the same existing if update does not contain the field.
           // There should be no change either they contain the same value or are not passed in
           if (noChange(row, columnData.strategy.sourceColumnIds :+ targetColId))
