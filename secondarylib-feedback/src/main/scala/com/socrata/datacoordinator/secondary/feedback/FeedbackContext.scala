@@ -116,18 +116,20 @@ class FeedbackContext[CT,CV](user: String,
                              rows: IndexedSeq[Row[CV]],
                              targetColumns: Set[UserColumnId]): Either[ComputationFailure, Map[Int, Map[UserColumnId, CV]]] = {
     val perDatasetData = computationHandler.setupDataset(cookie)
-    val perColumnData = cookie.strategyMap.toSeq.collect {
+    val perColumnDataAndDependentColumns = cookie.strategyMap.toSeq.collect {
       case (targetCol, strat) if targetColumns.contains(targetCol) & computationHandler.matchesStrategyType(strat.strategyType) =>
-        computationHandler.setupColumn(perDatasetData, strat, targetCol)
+        (computationHandler.setupColumn(perDatasetData, strat, targetCol), strat.sourceColumnIds :+ targetCol)
     }
     val toCompute = rows.iterator.zipWithIndex.flatMap { case (row, index) =>
       val rcis =
-        perColumnData.flatMap { columnData =>
-          // don't compute if there has been to change to the source columns
-          if (noChange(row, columnData.strategy.sourceColumnIds))
+        perColumnDataAndDependentColumns.flatMap { case (columnData, dependentColumns) =>
+          // Don't compute if there has been no change to the dependent columns which include source columns + target column.
+          // New value of either target or source will have the same existing if update does not contain the field.
+          // There should be no change either they contain the same value or are not passed in
+          if (noChange(row, dependentColumns))
             None
           else
-            Some(computationHandler.setupCell(columnData, row.data))
+            Some(computationHandler.setupCell(columnData, row))
         }
       if (rcis.isEmpty) Iterator.empty
       else Iterator.single(index -> rcis)

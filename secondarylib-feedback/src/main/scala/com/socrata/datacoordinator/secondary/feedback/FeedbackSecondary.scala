@@ -35,7 +35,7 @@ trait ComputationHandler[CT,CV] {
   /**
    * @return The PerCellData for performing the computation of the target column
    */
-  def setupCell(column: PerColumnData, row: secondary.Row[CV]): PerCellData
+  def setupCell(column: PerColumnData, row: Row[CV]): PerCellData
 
   type ComputationResult[RowHandle] = Either[ComputationFailure, Map[RowHandle, Map[UserColumnId, CV]]]
 
