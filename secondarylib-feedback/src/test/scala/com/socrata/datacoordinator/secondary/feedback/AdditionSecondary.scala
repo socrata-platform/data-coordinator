@@ -25,8 +25,8 @@ class AdditionHandler extends ComputationHandler[SoQLType, SoQLValue] {
     new AdditionColumnInfo(strategy.sourceColumnIds.map(cookie.columnIdMap(_)), strategy, targetColId)
   }
 
-  override def setupCell(colInfo: AdditionColumnInfo, row: secondary.Row[SoQLValue]): AdditionRowInfo = {
-    AdditionRowInfo(row, colInfo.sources, colInfo.targetColId)
+  override def setupCell(colInfo: AdditionColumnInfo, row: Row[SoQLValue]): AdditionRowInfo = {
+    AdditionRowInfo(row.data, colInfo.sources, colInfo.targetColId)
   }
 
   override def compute[RowHandle](sources: Map[RowHandle, Seq[AdditionRowInfo]]): ComputationResult[RowHandle] = {
