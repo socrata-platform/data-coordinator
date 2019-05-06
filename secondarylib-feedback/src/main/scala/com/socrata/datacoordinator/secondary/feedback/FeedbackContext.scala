@@ -123,7 +123,7 @@ class FeedbackContext[CT,CV](user: String,
     val toCompute = rows.iterator.zipWithIndex.flatMap { case (row, index) =>
       val rcis =
         perColumnDataAndDependentColumns.flatMap { case (columnData, dependentColumns) =>
-          // Don't compute if there has been to change to the dependent columns which include source columns + target column
+          // Don't compute if there has been no change to the dependent columns which include source columns + target column.
           // New value of either target or source will have the same existing if update does not contain the field.
           // There should be no change either they contain the same value or are not passed in
           if (noChange(row, dependentColumns))
