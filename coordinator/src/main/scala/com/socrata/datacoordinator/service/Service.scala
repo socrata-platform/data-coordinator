@@ -7,7 +7,7 @@ import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.resources._
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.http.server.responses._
-import com.socrata.http.server.util.handlers.{NewLoggingHandler, ThreadRenamingHandler}
+import com.socrata.http.server.util.handlers.{LoggingOptions, NewLoggingHandler, ThreadRenamingHandler}
 import com.socrata.http.server.util.ErrorAdapter
 import com.socrata.http.server.util.RequestId.ReqIdHeader
 import com.socrata.thirdparty.metrics.{MetricsOptions, MetricsReporter, SocrataHttpSupport}
@@ -20,6 +20,7 @@ import com.socrata.datacoordinator.external._
 import Service._
 import com.socrata.datacoordinator.common.collocation.CollocationLock
 import com.socrata.datacoordinator.resources.collocation._
+import org.slf4j.LoggerFactory
 
 /**
  * The main HTTP REST resource servicing class for the data coordinator.
@@ -283,8 +284,8 @@ class Service(serviceConfig: ServiceConfig,
     }
   }
 
-  private val logOptions = NewLoggingHandler.defaultOptions.copy(
-    logRequestHeaders = Set(ReqIdHeader, "X-Socrata-Resource"))
+  private val logOptions = LoggingOptions(LoggerFactory.getLogger(""),
+                                          logRequestHeaders = Set(ReqIdHeader, "X-Socrata-Resource"))
 
   private val metricsOptions = MetricsOptions(serviceConfig.metrics)
 
