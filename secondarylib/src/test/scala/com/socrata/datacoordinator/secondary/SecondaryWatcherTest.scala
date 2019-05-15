@@ -42,10 +42,10 @@ class SecondaryWatcherTest extends FunSuite with MustMatchers with MockFactory {
     new LoggedTimingReport(log) with StackedTimingReport with MetricsTimingReport with TaggableTimingReport,
     allowDdlOnPublishedCopies = false, // don't care,
     Duration.fromNanos(1L), // don't care
-    "primus-test",
+    "alpha-test",
     new java.io.File(System.getProperty("java.io.tmpdir")).getAbsoluteFile,
     Duration.fromNanos(1L), // don't care
-    Duration.fromNanos(1L), // don't care 
+    Duration.fromNanos(1L), // don't care
     //Duration.fromNanos(1L),
     NullCache
   )
