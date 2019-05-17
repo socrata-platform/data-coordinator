@@ -96,6 +96,7 @@ class SoQLCommon(dataSource: DataSource,
   def versionObfuscationContextFor(cryptProvider: CryptProvider) = new SoQLVersion.StringRep(cryptProvider)
   def generateObfuscationKey(): Array[Byte] = CryptProvider.generateKey()
   val initialCounterValue = 0L
+  val initialLatestDataVersion = 0L
 
   val sqlRepFor = SoQLRep.sqlRep _
   def jsonReps(datasetInfo: DatasetInfo): (SoQLType => JsonColumnRep[SoQLType, SoQLValue]) = {
@@ -218,6 +219,7 @@ class SoQLCommon(dataSource: DataSource,
     val executor: ExecutorService = common.executorService
     val obfuscationKeyGenerator: () => Array[Byte] = common.generateObfuscationKey _
     val initialCounterValue: Long = common.initialCounterValue
+    val initialLatestDataVersion: Long = common.initialLatestDataVersion
     val tablespace: (String) => Option[String] = common.tableSpace
     val copyInProvider: (Connection, String, OutputStream => Unit) => Long = common.copyInProvider
     val timingReport = common.timingReport

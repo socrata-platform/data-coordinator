@@ -41,6 +41,7 @@ trait PostgresCommonSupport[CT, CV] {
 
   val obfuscationKeyGenerator: () => Array[Byte]
   val initialCounterValue: Long
+  val initialLatestDataVersion: Long
   val tablespace: String => Option[String]
   val copyInProvider: (Connection, String, OutputStream => Unit) => Long
   val timingReport: TransferrableContextTimingReport
@@ -173,7 +174,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
     new PostgresDatasetMapReader(conn, typeContext.typeNamespace, timingReport)
 
   lazy val datasetMapWriter: DatasetMapWriter[CT] =
-    new PostgresDatasetMapWriter(conn, typeContext.typeNamespace, timingReport, obfuscationKeyGenerator, initialCounterValue)
+    new PostgresDatasetMapWriter(conn, typeContext.typeNamespace, timingReport, obfuscationKeyGenerator, initialCounterValue, initialLatestDataVersion)
 
   lazy val secondaryStoresConfig =
     new SqlSecondaryStoresConfig(conn, timingReport)

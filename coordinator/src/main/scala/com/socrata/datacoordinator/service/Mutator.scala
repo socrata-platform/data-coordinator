@@ -32,19 +32,22 @@ object Mutator {
     def index: Long
   }
 
-  case class NormalMutation(index: Long, datasetId: DatasetId, schemaHash: Option[String]) extends StreamType
+  case class NormalMutation(index: Long, datasetId: DatasetId, schemaHash: Option[String], expectedDataVersion: Option[Long]) extends StreamType
   case class CreateDatasetMutation(index: Long, localeName: String, resourceName: Option[String]) extends StreamType
   case class CreateWorkingCopyMutation(index: Long,
                                        datasetId: DatasetId,
                                        copyData: Boolean,
-                                       schemaHash: Option[String]) extends StreamType
+                                       schemaHash: Option[String],
+                                       expectedDataVersion: Option[Long]) extends StreamType
   case class PublishWorkingCopyMutation(index: Long,
                                         datasetId: DatasetId,
                                         keepSnapshot: Boolean,
-                                        schemaHash: Option[String]) extends StreamType
+                                        schemaHash: Option[String],
+                                        expectedDataVersion: Option[Long]) extends StreamType
   case class DropWorkingCopyMutation(index: Long,
                                      datasetId: DatasetId,
-                                     schemaHash: Option[String]) extends StreamType
+                                     schemaHash: Option[String],
+                                     expectedDataVersion: Option[Long]) extends StreamType
 
   // MutationExceptions
   sealed abstract class MutationException(msg: String = null, cause: Throwable = null)
@@ -95,6 +98,7 @@ object Mutator {
                                       field: String,
                                       value: JValue) (val index: Long) extends InvalidCommandStreamException
   case class MismatchedSchemaHash(name: DatasetId, schema: Schema)(val index: Long) extends InvalidCommandStreamException
+  case class MismatchedDataVersion(name: DatasetId, dataVersion: Long)(val index: Long) extends InvalidCommandStreamException
   case class NoSuchColumnLabel(name: DatasetId, label: String)(val index: Long) extends InvalidCommandStreamException
 
   // RowDataExceptions
@@ -305,17 +309,21 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
         case "copy" =>
           val copyData = get[Boolean]("copy_data")
           val schemaHash = getOption[String]("schema")
-          CreateWorkingCopyMutation(index, datasetId, copyData, schemaHash)
+          val dataVersion = getOption[Long]("data_version")
+          CreateWorkingCopyMutation(index, datasetId, copyData, schemaHash, dataVersion)
         case "publish" =>
           val schemaHash = getOption[String]("schema")
           val keepSnapshot = getWithStrictDefault("keep_snapshot", true)
-          PublishWorkingCopyMutation(index, datasetId, keepSnapshot, schemaHash)
+          val dataVersion = getOption[Long]("data_version")
+          PublishWorkingCopyMutation(index, datasetId, keepSnapshot, schemaHash, dataVersion)
         case "drop" =>
           val schemaHash = getOption[String]("schema")
-          DropWorkingCopyMutation(index, datasetId, schemaHash)
+          val dataVersion = getOption[Long]("data_version")
+          DropWorkingCopyMutation(index, datasetId, schemaHash, dataVersion)
         case "normal" =>
           val schemaHash = getOption[String]("schema")
-          NormalMutation(index, datasetId, schemaHash)
+          val dataVersion = getOption[Long]("data_version")
+          NormalMutation(index, datasetId, schemaHash, dataVersion)
         case other =>
           throw InvalidCommandFieldValue(originalObject, "c", JString(other))(index)
       }
@@ -491,11 +499,17 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
       (ctx.copyInfo.datasetInfo.systemId, events)
     }
 
-    def checkHash(index: Long, schemaHash: Option[String], ctx: DatasetCopyContext[CT]) {
+    def checkDatasetState(index: Long, schemaHash: Option[String], expectedDataVersion: Option[Long], ctx: DatasetCopyContext[CT]) {
       for(givenSchemaHash <- schemaHash) {
         val realSchemaHash = u.schemaFinder.schemaHash(ctx)
         if(givenSchemaHash != realSchemaHash) {
           throw MismatchedSchemaHash(ctx.datasetInfo.systemId, u.schemaFinder.getSchema(ctx))(index)
+        }
+      }
+      for(givenDataVersion <- expectedDataVersion) {
+        val realDataVersion = ctx.datasetInfo.latestDataVersion
+        if(givenDataVersion != realDataVersion) {
+          throw MismatchedDataVersion(ctx.datasetInfo.systemId, realDataVersion)(index)
         }
       }
     }
@@ -520,8 +534,8 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
     try {
       val mutator = u.datasetMutator
       commands.streamType match {
-        case NormalMutation(idx, datasetId, schemaHash) =>
-          for(ctxOpt <- mutator.openDataset(user)(datasetId, checkHash(idx, schemaHash, _))) yield {
+        case NormalMutation(idx, datasetId, schemaHash, expectedDataVersion) =>
+          for(ctxOpt <- mutator.openDataset(user)(datasetId, checkDatasetState(idx, schemaHash, expectedDataVersion, _))) yield {
             val ctx = ctxOpt.getOrElse { throw NoSuchDataset(datasetId)(idx) }
             doProcess(ctx)
           }
@@ -538,13 +552,13 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
             }
             doProcess(ctx)
           }
-        case CreateWorkingCopyMutation(idx, datasetId, copyData, schemaHash) =>
+        case CreateWorkingCopyMutation(idx, datasetId, copyData, schemaHash, expectedDataVersion) =>
           mutator.createCopy(user)(datasetId, copyData = copyData,
-                                   checkHash(idx, schemaHash, _)).map(process(idx, datasetId, mutator))
-        case PublishWorkingCopyMutation(idx, datasetId, keepSnapshot, schemaHash) =>
-          mutator.publishCopy(user)(datasetId, keepSnapshot, checkHash(idx, schemaHash, _)).map(process(idx, datasetId, mutator))
-        case DropWorkingCopyMutation(idx, datasetId, schemaHash) =>
-          mutator.dropCopy(user)(datasetId, checkHash(idx, schemaHash, _)).map {
+                                   checkDatasetState(idx, schemaHash, expectedDataVersion, _)).map(process(idx, datasetId, mutator))
+        case PublishWorkingCopyMutation(idx, datasetId, keepSnapshot, schemaHash, expectedDataVersion) =>
+          mutator.publishCopy(user)(datasetId, keepSnapshot, checkDatasetState(idx, schemaHash, expectedDataVersion, _)).map(process(idx, datasetId, mutator))
+        case DropWorkingCopyMutation(idx, datasetId, schemaHash, expectedDataVersion) =>
+          mutator.dropCopy(user)(datasetId, checkDatasetState(idx, schemaHash, expectedDataVersion, _)).map {
             case cc: mutator.CopyContextError =>
               processError(idx, datasetId, mutator)(cc)
             case mutator.InitialWorkingCopy =>

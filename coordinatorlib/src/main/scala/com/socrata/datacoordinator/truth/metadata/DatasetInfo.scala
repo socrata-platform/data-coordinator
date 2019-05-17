@@ -45,13 +45,14 @@ object UnanchoredDatasetInfo extends ((DatasetId, Long, String, Array[Byte], Opt
   * or [[com.socrata.datacoordinator.truth.metadata.DatasetMapWriter]].
   * @param tag Guard against a non-map accidentially instantiating this.
   */
-case class DatasetInfo(systemId: DatasetId, nextCounterValue: Long, localeName: String, obfuscationKey: Array[Byte], resourceName: Option[String])(implicit tag: com.socrata.datacoordinator.truth.metadata.`-impl`.Tag) extends DatasetInfoLike {
+case class DatasetInfo(systemId: DatasetId, nextCounterValue: Long, val latestDataVersion: Long, localeName: String, obfuscationKey: Array[Byte], resourceName: Option[String])(implicit tag: com.socrata.datacoordinator.truth.metadata.`-impl`.Tag) extends DatasetInfoLike {
   def unanchored: UnanchoredDatasetInfo = UnanchoredDatasetInfo(systemId, nextCounterValue, localeName, obfuscationKey, resourceName)
 
   override def equals(o: Any) = o match {
     case that: DatasetInfo =>
       this.systemId == that.systemId &&
         this.nextCounterValue == that.nextCounterValue &&
+        this.latestDataVersion == that.latestDataVersion &&
         this.localeName == that.localeName &&
         java.util.Arrays.equals(this.obfuscationKey, that.obfuscationKey) && // thanks, java
         this.resourceName == that.resourceName

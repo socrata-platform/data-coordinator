@@ -46,6 +46,7 @@ object ParameterRequestError {
 
 object ScriptHeaderRequestError{
   val MISMATCHED_SCHEMA = "req.script.header.mismatched-schema"
+  val MISMATCHED_DATA_VERSION = "req.script.header.mismatched-data-version"
   val MISSING = "req.script.header.missing"
 }
 
