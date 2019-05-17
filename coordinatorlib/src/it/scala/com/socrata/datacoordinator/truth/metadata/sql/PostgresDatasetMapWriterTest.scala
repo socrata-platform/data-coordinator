@@ -54,6 +54,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
     def userTypeForType(typ: TypeName): TypeName = typ
   }
   val ZeroID = 0L
+  val ZeroVersion = 0L
 
   val resourcName = Some("_abcd-1234")
 
@@ -102,7 +103,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
   test("Can create a table") {
     withDb() { conn =>
-      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID)
+      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID, ZeroVersion)
       val vi = tables.create("en_US", resourcName)
 
       vi.datasetInfo.tableBase must be ("t" + vi.datasetInfo.systemId.underlying)
@@ -116,7 +117,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
   test("Can add a column to a table") {
     withDb() { conn =>
-      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID)
+      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID, ZeroVersion)
       val vi = tables.create("en_US", resourcName)
       val ci = tables.addColumn(vi, c("col1"), fn("co1"), t("typ"), "colbase")
 
@@ -132,7 +133,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
   test("Can make a column a primary key") {
     withDb() { conn =>
-      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID)
+      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID, ZeroVersion)
       val vi = tables.create("en_US", resourcName)
       val ci = tables.addColumn(vi, c("col1"), fn("co1"), t("typ"), "colbase")
 
@@ -144,7 +145,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
   test("Can add a second column to a table") {
     withDb() { conn =>
-      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID)
+      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID, ZeroVersion)
       val vi = tables.create("en_US", resourcName)
       val ci1 = tables.addColumn(vi, c("col1"), fn("co1"), t("typ"), "colbase")
       val ci2 = tables.addColumn(vi, c("col2"), fn("co2"), t("typ2"), "colbase2")
@@ -161,7 +162,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
   test("Cannot have multiple primary keys") {
     withDb() { conn =>
-      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID)
+      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID, ZeroVersion)
       val vi = tables.create("en_US", resourcName)
       val ci1 = tables.addColumn(vi, c("col1"), fn("co1"), t("typ"), "colbase")
       val ci2 = tables.addColumn(vi, c("col2"), fn("co2"), t("typ2"), "colbase2")
@@ -175,7 +176,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
   test("Can clear a user primary key and re-seat it") {
     withDb() { conn =>
-      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID)
+      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID, ZeroVersion)
       val vi = tables.create("en_US", resourcName)
       val ci1 = tables.addColumn(vi, c("col1"), fn("co1"), t("typ"), "colbase")
       val ci2 = tables.addColumn(vi, c("col2"), fn("co2"), t("typ2"), "colbase2")
@@ -190,7 +191,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
   test("Cannot add the same column twice") {
     withDb() { conn =>
-      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID)
+      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID, ZeroVersion)
       val vi = tables.create("en_US", resourcName)
       tables.addColumn(vi, c("col1"), fn("co1"), t("typ"), "colbase")
 
@@ -200,7 +201,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
   test("Can publish the initial working copy") {
     withDb() { conn =>
-      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID)
+      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID, ZeroVersion)
       val vi1 = tables.create("en_US", resourcName)
       val vi2 = tables.publish(vi1)
       vi2 must equal ((vi1.copy(lifecycleStage = LifecycleStage.Published)(null), None))
@@ -212,7 +213,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
   test("Can drop a column") {
     withDb() { conn =>
-      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID)
+      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID, ZeroVersion)
       val vi = tables.create("en_US", resourcName)
       val c1 = tables.addColumn(vi, c("col1"), fn("co1"), t("typ1"), "pcol1")
       val c2 = tables.addColumn(vi, c("col2"), fn("co2"), t("typ2"), "pcol2")
@@ -225,7 +226,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
   test("Can make a working copy") {
     withDb() { conn =>
-      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID)
+      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID, ZeroVersion)
       val vi1 = tables.publish(tables.create("en_US", resourcName))
       val ci1 = tables.addColumn(vi1._1, c("col1"), fn("co1"), t("typ"), "colbase")
       val ci2 = tables.addColumn(vi1._1, c("col2"), fn("co2"), t("typ2"), "colbase2")
@@ -243,7 +244,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
   test("Cannot drop a published version") {
     withDb() { conn =>
-      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID)
+      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID, ZeroVersion)
       val vi1 = tables.create("en_US", resourcName)
       val vi2 = tables.publish(vi1)
 
@@ -254,7 +255,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
   test("Cannot drop the initial version when it's still unpublished") {
     withDb() { conn =>
-      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID)
+      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID, ZeroVersion)
       val vi = tables.create("en_US", resourcName)
       vi.lifecycleStage must be (LifecycleStage.Unpublished)
       an [CannotDropInitialWorkingCopyException] must be thrownBy { tables.dropCopy(vi) }
@@ -263,7 +264,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
   test("Can drop a non-initial unpublished version") {
     withDb() { conn =>
-      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID)
+      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID, ZeroVersion)
       val vi1 = tables.create("en_US", resourcName)
       val vi2 = tables.publish(vi1)
       val Right(CopyPair(_, vi3)) = tables.ensureUnpublishedCopy(vi2._1.datasetInfo)
@@ -277,7 +278,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
   test("Column IDs are allocated into the first gap if one exists") {
     withDb() { conn =>
-      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID)
+      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID, ZeroVersion)
       val vi = tables.create("en_US", resourcName)
       tables.addColumnWithId(new ColumnId(0), vi, c("col0"), fn("co0"), t("typ0"), "t")
       tables.addColumnWithId(new ColumnId(2), vi, c("col2"), fn("co2"), t("typ2"), "t")
@@ -287,7 +288,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
   test("Column IDs are allocated as 0 if it doesn't exist") {
     withDb() { conn =>
-      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID)
+      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID, ZeroVersion)
       val vi = tables.create("en_US", resourcName)
       tables.addColumnWithId(new ColumnId(1), vi, c("col1"), fn("co1"), t("typ1"), "t")
       tables.addColumnWithId(new ColumnId(2), vi, c("col2"), fn("co2"), t("typ2"), "t")
@@ -297,7 +298,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
   test("Column IDs are allocated at the end if there are no gaps") {
     withDb() { conn =>
-      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID)
+      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID, ZeroVersion)
       val vi = tables.create("en_US", resourcName)
       tables.addColumnWithId(new ColumnId(0), vi, c("col0"), fn("co0"), t("typ0"), "t")
       tables.addColumnWithId(new ColumnId(1), vi, c("col1"), fn("co1"), t("typ1"), "t")
@@ -307,7 +308,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
   test("Adding a column to a table does not use IDs from this table or the previous version") {
     withDb() { conn =>
-      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID)
+      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID, ZeroVersion)
       val vi0 = tables.create("en_US", resourcName)
       val ci0 = tables.addColumn(vi0, c("col0"), fn("co0"), t("typ0"), "base0")
       val ci1 = tables.addColumn(vi0, c("col1"), fn("co1"), t("typ1"), "base1")
@@ -322,7 +323,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
   test("Can delete a table entirely") {
     withDb() { conn =>
-      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID)
+      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID, ZeroVersion)
       val vi1 = tables.create("en_US", resourcName)
       tables.addColumn(vi1, c("col1"), fn("co1"), t("typ1"), "pcol1")
       tables.addColumn(vi1, c("col2"), fn("co2"), t("typ2"), "pcol2")
@@ -352,7 +353,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
   test("Can create and update rollup metadata") {
     withDb() { conn =>
-      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID)
+      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID, ZeroVersion)
       val vi1 = tables.create("en_US", resourcName)
       def rollupCount = count(conn, "rollup_map", s"name = '${rollupName.underlying}' AND copy_system_id=${vi1.systemId.underlying}")
 
@@ -373,7 +374,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
   test("Can lookup rollup metadata") {
     withDb() { conn =>
-      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID)
+      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID, ZeroVersion)
       val vi1 = tables.create("en_US", resourcName)
 
       tables.rollup(vi1, rollupName) must be (None)
@@ -392,7 +393,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
   test("Can drop rollup metadata") {
     withDb() { conn =>
-      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID)
+      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID, ZeroVersion)
       val vi1 = tables.create("en_US", resourcName)
 
       tables.rollup(vi1, rollupName) must be (None)
@@ -405,7 +406,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
   test("Can drop multiple rollup metadata") {
     withDb() { conn =>
-      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID)
+      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID, ZeroVersion)
       val vi1 = tables.create("en_US", resourcName)
 
       tables.rollup(vi1, rollupName) must be (None)
@@ -418,7 +419,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
 
   test("Dropping dataset drops all rollup metadata") {
     withDb() { conn =>
-      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID)
+      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID, ZeroVersion)
       val vi1 = tables.create("en_US", resourcName)
 
       tables.publish(vi1)
