@@ -91,6 +91,7 @@ trait BackupDatasetMap[CT] extends DatasetMapWriter[CT] with `-impl`.BaseDataset
     *       newly created dataset will have NO copies attached. */
   def unsafeCreateDataset(systemId: DatasetId,
                           nextCounterValue: Long,
+                          latestDataVersion: Long,
                           localeName: String,
                           obfuscationKey: Array[Byte],
                           resourceName: Option[String]): DatasetInfo
@@ -107,6 +108,7 @@ trait BackupDatasetMap[CT] extends DatasetMapWriter[CT] with `-impl`.BaseDataset
     *       for resyncing only.  The resulting dataset object will have NO copies. */
   def unsafeReloadDataset(datasetInfo: DatasetInfo,
                           nextCounterValue: Long,
+                          latestDataVersion: Long,
                           localeName: String,
                           obfuscationKey: Array[Byte],
                           resourceName: Option[String]): DatasetInfo

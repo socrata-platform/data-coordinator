@@ -76,6 +76,10 @@ class CoordinatorErrorsAndMetrics(formatDatasetId: DatasetId => String) extends 
     mismatchedSchema(code, formatDatasetId(datasetId), schema, data:_*)
   }
 
+  def mismatchedDataVersion(code: String, datasetId: DatasetId, version: Long, data: (String, JValue)*): HttpResponse = {
+    mismatchedDataVersion(code, formatDatasetId(datasetId), version, data:_*)
+  }
+
   def noSuchColumnLabel(code: String, datasetId: DatasetId, data: (String, JValue)*): HttpResponse = {
     datasetErrorResponse(BadRequest, code,
       "dataset" -> JString(formatDatasetId(datasetId)),
@@ -87,6 +91,13 @@ class CoordinatorErrorsAndMetrics(formatDatasetId: DatasetId => String) extends 
     datasetErrorResponse(Conflict, code,
       "dataset" -> JString(name),
       "schema" -> jsonifySchema(schema),
+      "data" -> JObject(data.toMap))
+  }
+
+  def mismatchedDataVersion(code: String, name: String, version: Long, data: (String, JValue)*): HttpResponse = {
+    datasetErrorResponse(Conflict, code,
+      "dataset" -> JString(name),
+      "version" -> JNumber(version),
       "data" -> JObject(data.toMap))
   }
 

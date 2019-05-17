@@ -129,6 +129,9 @@ class Service(serviceConfig: ServiceConfig,
             case Mutator.MismatchedSchemaHash(name, schema) =>
               mismatchedSchema(ScriptHeaderRequestError.MISMATCHED_SCHEMA, name, schema,
                 "commandIndex" -> JNumber(em.index))
+            case Mutator.MismatchedDataVersion(name, version) =>
+              mismatchedDataVersion(ScriptHeaderRequestError.MISMATCHED_DATA_VERSION, name, version,
+                "commandIndex" -> JNumber(em.index))
             case Mutator.NoSuchColumnLabel(name, label) =>
               noSuchColumnLabel(ScriptCommandRequestError.UNKNOWN_LABEL, name,
                 "commandIndex" -> JNumber(em.index),
