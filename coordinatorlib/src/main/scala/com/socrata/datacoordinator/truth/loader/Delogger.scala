@@ -97,6 +97,8 @@ object Delogger {
   case class RowsChangedPreview(rowsInserted: Long, rowsUpdated: Long, rowsDeleted: Long, truncated: Boolean) extends LogEvent[Nothing]
   object RowsChangedPreview extends LogEventCompanion
 
+  case object SecondaryReindex extends LogEvent[Nothing] with LogEventCompanion
+
   case object EndTransaction extends LogEvent[Nothing] with LogEventCompanion
 
   case class RowDataUpdated[CV](bytes: Array[Byte])(codec: RowLogCodec[CV]) extends LogEvent[CV] {
@@ -170,6 +172,7 @@ object Delogger {
         case RollupCreatedOrUpdated => "RollupCreatedOrUpdated"
         case RollupDropped => "RollupDropped"
         case RowsChangedPreview => "RowsChangedPreview"
+        case SecondaryReindex => "SecondaryReindex"
         case EndTransaction => "EndTransaction"
       }
       acc + (n -> obj)

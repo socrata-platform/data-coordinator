@@ -232,6 +232,8 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
         Some(RollupDropped(makeSecondaryRollupInfo(info)))
       case Delogger.RowsChangedPreview(inserted, updated, deleted, truncated) =>
         Some(RowsChangedPreview(inserted, updated, deleted, truncated))
+      case Delogger.SecondaryReindex =>
+        Some(SecondaryReindex)
       case Delogger.EndTransaction =>
         None
     }

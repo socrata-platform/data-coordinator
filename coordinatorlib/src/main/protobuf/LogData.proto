@@ -127,5 +127,8 @@ message RowsChangedPreview {
   required bool truncated = 4;
 }
 
+message SecondaryReindex {
+}
+
 message EndTransaction {
 }

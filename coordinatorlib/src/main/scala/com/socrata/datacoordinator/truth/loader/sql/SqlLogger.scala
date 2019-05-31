@@ -105,6 +105,7 @@ object SqlLogger {
   val RollupDropped = "rollupdr"
   val TransactionEnded = "endtxn"
   val RowsChangedPreview = "rowcount"
+  val SecondaryReindex = "secreidx"
 
   val allEvents = for {
     method <- getClass.getDeclaredMethods

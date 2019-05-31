@@ -190,6 +190,7 @@ object Mutator {
   case class DropRollup(index: Long, name: RollupName) extends Command
   case class AddComputationStrategy(index: Long, id: ColumnIdSpec, computationStrategy: ComputationStrategySpec) extends Command
   case class DropComputationStrategy(index: Long, id: ColumnIdSpec) extends Command
+  case class SecondaryReindex(index: Long) extends Command
 
   val AddColumnOp = "add column"
   val DropColumnOp = "drop column"
@@ -201,6 +202,7 @@ object Mutator {
   val DropRollupOp = "drop rollup"
   val AddComputationStrategyOp = "add computation strategy"
   val DropComputationStrategyOp = "drop computation strategy"
+  val SecondaryReindexOp = "secondary reindex"
 }
 
 class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT, CV]) {
@@ -268,6 +270,8 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
             val updateOnly = getWithStrictDefault[Boolean]("update_only", false)
             val bySystemId = getWithStrictDefault[Boolean]("by_system_id", false)
             RowData(index, truncate, mergeReplace, nonFatalRowErrorsClasses, updateOnly = updateOnly, bySystemId = bySystemId)
+          case SecondaryReindexOp =>
+            SecondaryReindex(index)
           case other =>
             throw InvalidCommandFieldValue(originalObject, "c", JString(other))(index)
         }
@@ -790,6 +794,9 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
           if(truncate) mutator.truncate()
           val data = processRowData(idx, commands.rawCommandStream, nonFatalRowErrors, updateOnly = updateOnly, bySystemId = bySystemId, mutator, mergeReplace)
           Seq(MutationScriptCommandResult.RowData(data.toJobRange))
+        case SecondaryReindex(_) =>
+          mutator.secondaryReindex()
+          Seq(MutationScriptCommandResult.Uninteresting)
       }
 
       val newResults = processCommand(cmd)

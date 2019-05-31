@@ -23,6 +23,7 @@ trait Logger[CT, CV] extends DataLogger[CV] {
   def workingCopyPublished(): Unit
   def rollupCreatedOrUpdated(info: RollupInfo): Unit
   def rollupDropped(info: RollupInfo): Unit
+  def secondaryReindex(): Unit
 
   /** Logs the end of the transaction and returns its version number.
    * @return The new log version number, or None if no other method was called. */

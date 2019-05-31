@@ -85,6 +85,8 @@ class PostgresDatabaseMutator[CT, CV](universe: Managed[Universe[CT, CV] with Lo
         (dataProvider.finish(), result)
       }
     }
+
+    def secondaryReindex(logger: Logger[CT, CV]) = {}
   }
 
   def openDatabase: Managed[MutationContext] = new SimpleArm[MutationContext] {
