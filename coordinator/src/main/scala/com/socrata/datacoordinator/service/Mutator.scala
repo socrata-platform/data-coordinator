@@ -190,9 +190,7 @@ object Mutator {
   case class DropRollup(index: Long, name: RollupName) extends Command
   case class AddComputationStrategy(index: Long, id: ColumnIdSpec, computationStrategy: ComputationStrategySpec) extends Command
   case class DropComputationStrategy(index: Long, id: ColumnIdSpec) extends Command
-  case object NoOpCommand extends Command {
-    def index: Long = 0L
-  }
+  case class NoOpCommand(index: Long) extends Command
 
   val AddColumnOp = "add column"
   val DropColumnOp = "drop column"
@@ -273,7 +271,7 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
             val bySystemId = getWithStrictDefault[Boolean]("by_system_id", false)
             RowData(index, truncate, mergeReplace, nonFatalRowErrorsClasses, updateOnly = updateOnly, bySystemId = bySystemId)
           case NoOp =>
-            NoOpCommand
+            NoOpCommand(index)
           case other =>
             throw InvalidCommandFieldValue(originalObject, "c", JString(other))(index)
         }
