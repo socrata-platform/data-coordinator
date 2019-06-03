@@ -144,7 +144,7 @@ object Delogger {
       ComputationStrategyCreated, ComputationStrategyRemoved,
       SystemRowIdentifierChanged, VersionColumnChanged, LastModifiedChanged, WorkingCopyCreated, DataCopied,
       WorkingCopyPublished, WorkingCopyDropped, SnapshotDropped, RowDataUpdated, CounterUpdated,
-      RollupCreatedOrUpdated, RollupDropped, RowsChangedPreview, EndTransaction)
+      RollupCreatedOrUpdated, RollupDropped, RowsChangedPreview, SecondaryReindex, EndTransaction)
 
   // Note: the Delogger test checks that this is exhaustive.  It is not intended
   // to be used outside of this object and that test.
