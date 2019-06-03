@@ -32,6 +32,8 @@ class NullLogger[CT, CV] extends Logger[CT, CV] {
 
   def rollupDropped(info: RollupInfo): Unit = {}
 
+  def secondaryReindex() = {}
+
   def endTransaction() = None
 
   def insert(systemID: RowId, row: Row[CV]): Unit = {}

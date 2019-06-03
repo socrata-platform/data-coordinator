@@ -167,6 +167,11 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
     logLine(RollupDropped, messages.RollupDropped(convert(info.unanchored)))
   }
 
+  def secondaryReindex() = {
+    checkTxn()
+    logLine(SecondaryReindex, messages.SecondaryReindex.defaultInstance)
+  }
+
   def endTransaction() = {
     checkTxn()
     transactionEnded = true

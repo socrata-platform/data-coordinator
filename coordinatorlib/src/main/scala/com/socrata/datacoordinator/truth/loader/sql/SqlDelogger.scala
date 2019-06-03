@@ -181,6 +181,8 @@ class SqlDelogger[CV](connection: Connection,
         case SqlLogger.TransactionEnded =>
           assert(!rs.next(), "there was data after TransactionEnded?")
           null
+        case SqlLogger.SecondaryReindex =>
+          Delogger.SecondaryReindex
         case other =>
           throw new UnknownEvent(version, op, errMsg(s"Unknown event $op"))
       }
