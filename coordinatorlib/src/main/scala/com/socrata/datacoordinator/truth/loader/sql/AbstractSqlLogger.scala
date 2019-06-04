@@ -175,7 +175,7 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
 
   def secondaryAddIndex(fieldName: ColumnName) = {
     checkTxn()
-    logLine(SecondaryAddIndex, messages.SecondaryAddIndex.defaultInstance)
+    logLine(SecondaryAddIndex, messages.SecondaryAddIndex(fieldName.caseFolded))
   }
 
   def endTransaction() = {

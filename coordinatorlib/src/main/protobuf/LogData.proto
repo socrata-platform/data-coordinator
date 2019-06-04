@@ -131,7 +131,7 @@ message SecondaryReindex {
 }
 
 message SecondaryAddIndex {
-  required string fieldName = 2;
+  required string fieldName = 1;
 }
 
 message EndTransaction {
