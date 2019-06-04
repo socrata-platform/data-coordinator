@@ -275,7 +275,7 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
           case SecondaryReindexOp =>
             SecondaryReindex(index)
           case SecondaryAddIndexOp =>
-            val fieldName = get[ColumnName]("field_name")
+            val fieldName = get[ColumnName]("column")
             SecondaryAddIndex(index, fieldName)
           case other =>
             throw InvalidCommandFieldValue(originalObject, "c", JString(other))(index)
