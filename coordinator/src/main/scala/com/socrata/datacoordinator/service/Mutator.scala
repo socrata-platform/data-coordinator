@@ -191,6 +191,7 @@ object Mutator {
   case class AddComputationStrategy(index: Long, id: ColumnIdSpec, computationStrategy: ComputationStrategySpec) extends Command
   case class DropComputationStrategy(index: Long, id: ColumnIdSpec) extends Command
   case class SecondaryReindex(index: Long) extends Command
+  case class SecondaryAddIndex(index: Long, fieldName: ColumnName) extends Command
 
   val AddColumnOp = "add column"
   val DropColumnOp = "drop column"
@@ -203,6 +204,7 @@ object Mutator {
   val AddComputationStrategyOp = "add computation strategy"
   val DropComputationStrategyOp = "drop computation strategy"
   val SecondaryReindexOp = "secondary reindex"
+  val SecondaryAddIndexOp = "secondary add index"
 }
 
 class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT, CV]) {
@@ -272,6 +274,9 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
             RowData(index, truncate, mergeReplace, nonFatalRowErrorsClasses, updateOnly = updateOnly, bySystemId = bySystemId)
           case SecondaryReindexOp =>
             SecondaryReindex(index)
+          case SecondaryAddIndexOp =>
+            val fieldName = get[ColumnName]("column")
+            SecondaryAddIndex(index, fieldName)
           case other =>
             throw InvalidCommandFieldValue(originalObject, "c", JString(other))(index)
         }
@@ -796,6 +801,9 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
           Seq(MutationScriptCommandResult.RowData(data.toJobRange))
         case SecondaryReindex(_) =>
           mutator.secondaryReindex()
+          Seq(MutationScriptCommandResult.Uninteresting)
+        case SecondaryAddIndex(_, fieldName) =>
+          mutator.secondaryAddIndex(fieldName)
           Seq(MutationScriptCommandResult.Uninteresting)
       }
 

@@ -10,6 +10,7 @@ import com.rojoma.simplearm.util._
 import com.socrata.datacoordinator.truth.RowLogCodec
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.util.{CloseableIterator, LeakDetect}
+import com.socrata.soql.environment.ColumnName
 
 class SqlDelogger[CV](connection: Connection,
                       logTableName: String,
@@ -183,6 +184,8 @@ class SqlDelogger[CV](connection: Connection,
           null
         case SqlLogger.SecondaryReindex =>
           Delogger.SecondaryReindex
+        case SqlLogger.SecondaryAddIndex =>
+          decodeSecondaryAddIndex(aux)
         case other =>
           throw new UnknownEvent(version, op, errMsg(s"Unknown event $op"))
       }
@@ -272,6 +275,11 @@ class SqlDelogger[CV](connection: Connection,
     def decodeRowsChangedPreview(aux: Array[Byte]) = {
       val msg = messages.RowsChangedPreview.defaultInstance.mergeFrom(aux)
       Delogger.RowsChangedPreview(msg.rowsInserted, msg.rowsUpdated, msg.rowsDeleted, msg.truncated)
+    }
+
+    def decodeSecondaryAddIndex(aux: Array[Byte]) = {
+      val msg = messages.SecondaryAddIndex.defaultInstance.mergeFrom(aux)
+      Delogger.SecondaryAddIndex(ColumnName(msg.`fieldName`))
     }
   }
 

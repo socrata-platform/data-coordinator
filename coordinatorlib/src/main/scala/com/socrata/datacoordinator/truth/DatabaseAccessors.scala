@@ -185,6 +185,7 @@ trait DatasetMutator[CT, CV] {
     def createOrUpdateRollup(name: RollupName, soql: String): Unit
     def dropRollup(name: RollupName): Option[RollupInfo]
     def secondaryReindex(): Unit
+    def secondaryAddIndex(fieldName: ColumnName): Unit
   }
 
   type TrueMutationContext <: MutationContext
@@ -474,6 +475,10 @@ object DatasetMutator {
 
       def secondaryReindex(): Unit = {
         logger.secondaryReindex()
+      }
+
+      def secondaryAddIndex(fieldName: ColumnName): Unit = {
+        logger.secondaryAddIndex(fieldName)
       }
     }
 

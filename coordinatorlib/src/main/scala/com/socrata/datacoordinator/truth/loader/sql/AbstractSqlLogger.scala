@@ -10,6 +10,7 @@ import com.socrata.datacoordinator.util.{Counter, TimingReport}
 import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, ComputationStrategyInfo, CopyInfo, RollupInfo}
 import com.socrata.datacoordinator.id.RowId
 import com.rojoma.simplearm.util._
+import com.socrata.soql.environment.ColumnName
 import org.joda.time.DateTime
 
 abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
@@ -170,6 +171,11 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
   def secondaryReindex() = {
     checkTxn()
     logLine(SecondaryReindex, messages.SecondaryReindex.defaultInstance)
+  }
+
+  def secondaryAddIndex(fieldName: ColumnName) = {
+    checkTxn()
+    logLine(SecondaryAddIndex, messages.SecondaryAddIndex(convert(fieldName)))
   }
 
   def endTransaction() = {

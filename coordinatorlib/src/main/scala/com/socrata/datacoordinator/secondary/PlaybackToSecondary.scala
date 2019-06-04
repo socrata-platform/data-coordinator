@@ -234,6 +234,8 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
         Some(RowsChangedPreview(inserted, updated, deleted, truncated))
       case Delogger.SecondaryReindex =>
         Some(SecondaryReindex)
+      case Delogger.SecondaryAddIndex(fieldName) =>
+        Some(SecondaryAddIndex(fieldName))
       case Delogger.EndTransaction =>
         None
     }
