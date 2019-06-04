@@ -130,5 +130,9 @@ message RowsChangedPreview {
 message SecondaryReindex {
 }
 
+message SecondaryAddIndex {
+  required string fieldName = 2;
+}
+
 message EndTransaction {
 }

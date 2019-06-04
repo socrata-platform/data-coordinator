@@ -183,6 +183,8 @@ class SqlDelogger[CV](connection: Connection,
           null
         case SqlLogger.SecondaryReindex =>
           Delogger.SecondaryReindex
+        case SqlLogger.SecondaryAddIndex =>
+          Delogger.SecondaryReindex
         case other =>
           throw new UnknownEvent(version, op, errMsg(s"Unknown event $op"))
       }

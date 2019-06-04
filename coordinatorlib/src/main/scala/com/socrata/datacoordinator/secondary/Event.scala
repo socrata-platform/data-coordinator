@@ -1,5 +1,6 @@
 package com.socrata.datacoordinator.secondary
 
+import com.socrata.soql.environment.ColumnName
 import org.joda.time.DateTime
 
 sealed abstract class Event[+CT, +CV] extends Product
@@ -25,3 +26,4 @@ case class RowsChangedPreview(rowsInserted: Long, rowsUpdated: Long, rowsDeleted
 case object WorkingCopyPublished extends Event[Nothing, Nothing]
 case class RowDataUpdated[CV](operations: Seq[Operation[CV]]) extends Event[Nothing, CV]
 case object SecondaryReindex extends Event[Nothing, Nothing]
+case class SecondaryAddIndex(fieldName: ColumnName) extends Event[Nothing, Nothing]

@@ -99,6 +99,9 @@ object Delogger {
 
   case object SecondaryReindex extends LogEvent[Nothing] with LogEventCompanion
 
+  case class SecondaryAddIndex(fieldName: ColumnName) extends LogEvent[Nothing]
+  object SecondaryAddIndex extends LogEventCompanion
+
   case object EndTransaction extends LogEvent[Nothing] with LogEventCompanion
 
   case class RowDataUpdated[CV](bytes: Array[Byte])(codec: RowLogCodec[CV]) extends LogEvent[CV] {
@@ -144,7 +147,9 @@ object Delogger {
       ComputationStrategyCreated, ComputationStrategyRemoved,
       SystemRowIdentifierChanged, VersionColumnChanged, LastModifiedChanged, WorkingCopyCreated, DataCopied,
       WorkingCopyPublished, WorkingCopyDropped, SnapshotDropped, RowDataUpdated, CounterUpdated,
-      RollupCreatedOrUpdated, RollupDropped, RowsChangedPreview, SecondaryReindex, EndTransaction)
+      RollupCreatedOrUpdated, RollupDropped, RowsChangedPreview,
+      SecondaryReindex, SecondaryAddIndex,
+      EndTransaction)
 
   // Note: the Delogger test checks that this is exhaustive.  It is not intended
   // to be used outside of this object and that test.
@@ -173,6 +178,7 @@ object Delogger {
         case RollupDropped => "RollupDropped"
         case RowsChangedPreview => "RowsChangedPreview"
         case SecondaryReindex => "SecondaryReindex"
+        case SecondaryAddIndex => "SecondaryAddIndex"
         case EndTransaction => "EndTransaction"
       }
       acc + (n -> obj)

@@ -3,6 +3,7 @@ package truth.loader
 
 import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, ComputationStrategyInfo, CopyInfo, RollupInfo}
 import com.socrata.datacoordinator.id.RowId
+import com.socrata.soql.environment.ColumnName
 import org.joda.time.DateTime
 
 class NullLogger[CT, CV] extends Logger[CT, CV] {
@@ -33,6 +34,8 @@ class NullLogger[CT, CV] extends Logger[CT, CV] {
   def rollupDropped(info: RollupInfo): Unit = {}
 
   def secondaryReindex() = {}
+
+  def secondaryAddIndex(fieldName: ColumnName) = {}
 
   def endTransaction() = None
 
