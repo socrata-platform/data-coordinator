@@ -326,20 +326,21 @@ final class SqlLoader[CT, CV](val connection: Connection,
     }
   }
 
+  val useBatchUpdates = true
+
   private def doUpdates(updates: Seq[SqlLoader.DecoratedRow[CV]], bySystemIdForced: Boolean): Long = {
     if(updates.nonEmpty) {
-      using(connection.prepareStatement(sqlizer.prepareSystemIdUpdateStatement)) { stmt =>
-        for(update <- updates) {
-          sqlizer.prepareSystemIdUpdate(stmt, update.rowId, update.newRow)
-          reportWriter.updated(update.job, IdAndVersion(update.id, update.version, bySystemIdForced = bySystemIdForced))
-          dataLogger.update(update.rowId, Some(update.oldRow), update.newRow) // This CAN be done here because there is no active query
-          stmt.addBatch()
+      val (updateCount, _) =
+        sqlizer.updateBatch(connection) { updater =>
+          for(update <- updates) {
+            updater.update(update.rowId, update.newRow)
+          }
         }
-        val results = stmt.executeBatch()
-        assert(results.length == updates.length, "Didn't get the same number of results as jobs in batch?")
-        assert(results.forall(_ == 1), "At least one update did not affect exactly one row!")
+      for(update <- updates) {
+        reportWriter.updated(update.job, IdAndVersion(update.id, update.version, bySystemIdForced = bySystemIdForced))
+        dataLogger.update(update.rowId, Some(update.oldRow), update.newRow)
       }
-      val updateCount = updates.length
+      assert(updateCount == updates.length, "Didn't get the same number of results as jobs in batch?")
       totalUpdateCount += updateCount
       updateCount
     } else {

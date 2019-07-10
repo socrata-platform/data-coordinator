@@ -15,8 +15,12 @@ class FixedTimestampRep(val base: String) extends RepUtils with SqlPKableColumnR
 
   val SIZE_GUESSTIMATE = 30
 
+  override val templateForInsert = placeholder
+
+  override val templateForUpdate = s"$base = $placeholder"
+
   def templateForMultiLookup(n: Int): String =
-    s"($base in (${Iterator.fill(n)("?").mkString(",")}))"
+    s"($base in (${Iterator.fill(n)(placeholder).mkString(",")}))"
 
   def prepareMultiLookup(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
     stmt.setTimestamp(start, new java.sql.Timestamp(v.asInstanceOf[SoQLFixedTimestamp].value.getMillis))
@@ -42,7 +46,7 @@ class FixedTimestampRep(val base: String) extends RepUtils with SqlPKableColumnR
 
   def count: String = s"count($base)"
 
-  def templateForSingleLookup: String = s"($base = ?)"
+  def templateForSingleLookup: String = s"($base = $placeholder)"
 
   def prepareSingleLookup(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = prepareMultiLookup(stmt, v, start)
 
@@ -91,4 +95,6 @@ object FixedTimestampRep {
     toFormatter.withZoneUTC
 
   private val timestampType = "TIMESTAMP (3) WITH TIME ZONE"
+
+  private val placeholder = s"(? :: $timestampType)"
 }

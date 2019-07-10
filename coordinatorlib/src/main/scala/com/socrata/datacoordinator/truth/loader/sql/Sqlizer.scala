@@ -34,13 +34,15 @@ trait DataSqlizer[CT, CV] extends ReadDataSqlizer[CT, CV] {
     def insert(row: Row[CV])
   }
 
+  def updateBatch[T](conn: Connection)(f: Updater => T): (Long, T)
+  trait Updater {
+    def update(sid: RowId, row: Row[CV])
+  }
+
   def deleteBatch[T](conn: Connection)(f: Deleter => T): (Long, T)
   trait Deleter {
     def delete(sid: RowId)
   }
-
-  def prepareSystemIdUpdateStatement: String
-  def prepareSystemIdUpdate(stmt: PreparedStatement, sid: RowId, row: Row[CV])
 }
 
 case class InspectedRow[CV](id: CV, rowId: RowId, version: RowVersion, row: Row[CV])

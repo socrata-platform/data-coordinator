@@ -1,15 +1,16 @@
 package com.socrata.datacoordinator
 package truth.loader.sql
 
-import java.sql.Connection
+import java.sql.{Connection, PreparedStatement}
 
 import org.postgresql.PGConnection
 
 import com.socrata.datacoordinator.truth.sql.RepBasedSqlDatasetContext
+import com.socrata.datacoordinator.id.RowId
 import java.io.{OutputStreamWriter, BufferedWriter, OutputStream}
 import java.nio.charset.StandardCharsets
 import org.postgresql.copy.CopyIn
-import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.v2._
 
 class PostgresRepBasedDataSqlizer[CT, CV](tableName: String,
                                           datasetContext: RepBasedSqlDatasetContext[CT, CV],
@@ -54,6 +55,86 @@ class PostgresRepBasedDataSqlizer[CT, CV](tableName: String,
 
     def close() {
       writer.close()
+    }
+  }
+
+  def updateBatch[T](conn: Connection)(f: Updater => T): (Long, T) = {
+    val updater = new UpdaterImpl(conn)
+    val fResult = f(updater)
+    (updater.finish(), fResult)
+  }
+
+
+  // We're constructing a statement that looks like
+  //  UPDATE t12345
+  //    SET c1 = the_rows.c1, c2 = the_rows.c2, ...
+  //    FROM (VALUES
+  //      (v1a, v2a, ...),
+  //      (v1b, v2b, ...),
+  //      ...
+  //    ) AS the_rows(c1, c2, ...)
+  //    WHERE t12345.sid = the_rows.sid
+
+  private val updaterPfx = "UPDATE " + dataTableName + " SET " + repSchema.values.map(_.physColumns.map { c => c + "=the_rows." + c }.mkString(",")).mkString(",") + " FROM (VALUES "
+  private val updaterRowValues = repSchema.values.map(_.templateForInsert).mkString("(", ",", ")")
+  private val updaterSfx = ") AS the_rows(" + repSchema.values.flatMap(_.physColumns).mkString(",") + ") WHERE " + sidRep.physColumns.map { c => dataTableName + "." + c + "=the_rows." + c }.mkString(" AND ")
+
+  class UpdaterImpl(conn: Connection) extends Updater {
+    val rows = Vector.newBuilder[Row[CV]]
+
+    def update(sid: RowId, row: Row[CV]) {
+      // The sid is only needed by the non-postgres-specific sqlizer
+      // in order to build the WHERE clause.  It's duplicated by
+      // (some) field in the row.
+      rows += row
+    }
+
+    def finish(): Long = {
+      using(new ResourceScope) { rs =>
+        // The maximum prepared statement parameter number is 2¹⁵-1, so we can
+        // have 2¹⁵-2 parameters  since they start with 1, not 0.
+        val maxParameters = 0x7ffe
+
+        val maxRowsPerStmt = maxParameters / repSchema.values.map(_.physColumns.length).sum
+
+        var lastStmt = Option.empty[PreparedStatement]
+        var totalUpdated = 0L
+
+        for(rowBatch <- rows.result().grouped(maxRowsPerStmt)) {
+          val stmt = lastStmt match {
+            case Some(s) if rowBatch.length == maxRowsPerStmt =>
+              s
+            case _ =>
+              lastStmt.foreach { stmt =>
+                totalUpdated += stmt.executeBatch().sum
+                rs.close(stmt)
+              }
+
+              val sql = Iterator.fill(rowBatch.size)(updaterRowValues).mkString(updaterPfx, ",", updaterSfx)
+              rs.open(conn.prepareStatement(sql))
+          }
+
+          lastStmt = Some(stmt)
+
+          var i = 1
+          for {
+            row <- rowBatch
+            cidRep <- repSchema
+          } {
+            val (cid, rep) = cidRep
+            val v = row.getOrElseStrict(cid, typeContext.nullValue)
+            i = rep.prepareInsert(stmt, v, i)
+          }
+
+          stmt.addBatch()
+        }
+
+        lastStmt.foreach { stmt =>
+          totalUpdated += stmt.executeBatch().sum
+        }
+
+        totalUpdated
+      }
     }
   }
 
