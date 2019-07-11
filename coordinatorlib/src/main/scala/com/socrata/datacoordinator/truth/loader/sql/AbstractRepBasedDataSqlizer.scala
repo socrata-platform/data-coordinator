@@ -105,18 +105,6 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
     }
   }
 
-  def prepareSystemIdUpdateStatement: String =
-    "UPDATE " + dataTableName + " SET " + repSchema.values.map(_.templateForUpdate).mkString(",") + " WHERE " + sidRep.templateForSingleLookup
-
-  def prepareSystemIdUpdate(stmt: PreparedStatement, sid: RowId, row: Row[CV]) {
-    var i = 1
-    repSchema.foreach { (cid, rep) =>
-      val v = row.getOrElseStrict(cid, typeContext.nullValue)
-      i = rep.prepareUpdate(stmt, v, i)
-    }
-    sidRep.prepareUpdate(stmt, typeContext.makeValueFromSystemId(sid), i)
-  }
-
   def blockQueryById[T](
     conn: Connection,
     bySystemId: Boolean,
