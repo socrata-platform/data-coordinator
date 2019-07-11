@@ -43,6 +43,8 @@ class GeometryLikeRep[T<:Geometry](
 
   override def selectList: String = "ST_AsBinary(" + base + ")"
 
+  override def templateForInsert: String = "ST_GeomFromEWKT(?)"
+
   override def templateForUpdate: String = base + "=ST_GeomFromEWKT(?)"
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue): Unit = {
