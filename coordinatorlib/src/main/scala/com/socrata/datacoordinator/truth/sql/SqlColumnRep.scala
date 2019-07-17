@@ -94,6 +94,9 @@ trait SqlColumnRep[Type, Value] extends SqlColumnReadRep[Type, Value] with SqlCo
 }
 
 trait SqlPKableColumnReadRep[Type, Value] extends SqlColumnReadRep[Type, Value] with SqlOrderableColumnRep {
+
+  def keyColumns: Array[String] = physColumns
+
   /** Generates sql equivalent to "column in (?, ...)" where there are `n` placeholders to be filled in by
     * `prepareMultiLookup`.
     * @param n The number of values to prepare slots for.

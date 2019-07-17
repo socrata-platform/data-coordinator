@@ -140,7 +140,7 @@ class RepBasedPostgresSchemaLoader[CT, CV](conn: Connection, logger: Logger[CT, 
         }
         using(conn.createStatement()) { stmt =>
           try {
-            for(col <- rep.physColumns) {
+            for(col <- rep.keyColumns) {
               stmt.execute("ALTER TABLE " + table + " ALTER " + col + " SET NOT NULL")
             }
             val indexName = "uniq_" + table + "_" + rep.base
