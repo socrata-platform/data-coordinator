@@ -23,4 +23,15 @@ object UrlRep extends JsonColumnRep[SoQLType, SoQLValue] {
       case _ => stdBadValue
     }
   }
+
+  /**
+    * Output the main sub-column - url only.  Ignore description.
+    * This keeps parsing of upsert mutation result simple.
+    */
+  override def toRowIdJValue(input: SoQLValue): JValue = {
+    input match {
+      case SoQLUrl(Some(url), _) => JsonEncode.toJValue(url)
+      case _ => stdBadValue
+    }
+  }
 }

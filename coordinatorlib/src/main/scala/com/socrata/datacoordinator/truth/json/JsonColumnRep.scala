@@ -13,6 +13,16 @@ trait JsonColumnReadRep[CT, CV] extends JsonColumnCommonRep[CT, CV] {
 
 trait JsonColumnWriteRep[CT, CV] extends JsonColumnCommonRep[CT, CV] {
   def toJValue(value: CV): JValue
+
+  /**
+    * Output of upsert mutation are in the form:
+    *   [{"typ":"insert","id": $JVALUE,"ver":"rv-vhb7.vn49.4xy9"}]
+    * Libraries were written to only handle "id" as json string.
+    * This allows complex type like URL to have a different/simplified json format when it is used
+    * as return id value in upsert mutation.
+    */
+  def toRowIdJValue(value: CV): JValue = toJValue(value)
+
   protected def stdBadValue: Nothing = sys.error("Incorrect value passed to toJValue")
 }
 

@@ -411,7 +411,7 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
     @volatile var firstError: Option[Failure[CV]] = None
     var jobLimit = firstJob - 1
 
-    def jsonifyId(id: CV, bySystemIdForced: Boolean) = rowIdRep(bySystemIdForced).toJValue(id)
+    def jsonifyId(id: CV, bySystemIdForced: Boolean) = rowIdRep(bySystemIdForced).toRowIdJValue(id)
     def jsonifyVersion(v: RowVersion) =
       verRep.toJValue(typeContext.makeValueFromRowVersion(v))
 
