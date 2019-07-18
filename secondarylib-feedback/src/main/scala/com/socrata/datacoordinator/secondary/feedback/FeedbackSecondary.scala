@@ -175,7 +175,9 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
     * already has this dataVersion.
     * @return a new cookie to store in the secondary map
     */
-  override def version(datasetInfo: DatasetInfo, dataVersion: Long, cookie: Cookie, events: Iterator[Event[CT,CV]]): Cookie = {
+  override def version(datasetInfo: DatasetInfo, dataVersion: Long, cookie: Cookie, unbufferedEvents: Iterator[Event[CT,CV]]): Cookie = {
+    val events = unbufferedEvents.buffered
+
     val datasetInternalName = datasetInfo.internalName
 
     val oldCookie = FeedbackCookie.decode(cookie).getOrElse {
@@ -243,115 +245,131 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
 
       val cookieSeed = oldCookie.copy(oldCookie.current.copy(DataVersion(dataVersion)), oldCookie.previous)
 
-      // WARNING: this .foldLeft(.) has side effects!
-      case class FP(cookie: FeedbackCookie, columns: Set[UserColumnId])
-      val resultFP = events.foldLeft(FP(cookieSeed, Set.empty)) { case (FP(newCookie, newCompCols), event) =>
+      case class IterationState(cookie: FeedbackCookie, columns: Set[UserColumnId])
 
-        def addComputationStrategy(columnInfo: ColumnInfo[CT], skipRefresh: Boolean): FP = {
-          val newSystemId =
-            if (dataVersion == 1 && columnInfo.isSystemPrimaryKey) columnInfo.id
-            else newCookie.current.systemId
+      def addComputationStrategy(state: IterationState, columnInfo: ColumnInfo[CT], skipRefresh: Boolean): IterationState = {
+        val newSystemId =
+          if (dataVersion == 1 && columnInfo.isSystemPrimaryKey) columnInfo.id
+          else state.cookie.current.systemId
 
-          val old = newCookie.current.strategyMap
-          val (updatedStrategyMap, updatedCompCols) = columnInfo.computationStrategyInfo match {
-            case Some(strategy) if computationHandlers.exists(_.matchesStrategyType(strategy.strategyType)) && !old.contains(columnInfo.id) =>
-              // only track computed columns as new if we haven't seen them before
-              (old + (columnInfo.id -> strategy), newCompCols + columnInfo.id)
-            case _ => (old, newCompCols)
-          }
-          val refreshUpdatedCompCols = if (skipRefresh) Set.empty[UserColumnId] else updatedCompCols
-          FP(newCookie.copy(
-            current = newCookie.current.copy(
-              systemId = newSystemId,
-              columnIdMap = newCookie.current.columnIdMap + (columnInfo.id -> columnInfo.systemId),
-              strategyMap = updatedStrategyMap
-            )
-          ), refreshUpdatedCompCols)
+        val old = state.cookie.current.strategyMap
+        val (updatedStrategyMap, updatedCompCols) = columnInfo.computationStrategyInfo match {
+          case Some(strategy) if computationHandlers.exists(_.matchesStrategyType(strategy.strategyType)) && !old.contains(columnInfo.id) =>
+            // only track computed columns as new if we haven't seen them before
+            (old + (columnInfo.id -> strategy), state.columns + columnInfo.id)
+          case _ => (old, state.columns)
         }
+        val refreshUpdatedCompCols = if (skipRefresh) Set.empty[UserColumnId] else updatedCompCols
 
-        def dropComputationStrategy(columnInfo: ColumnInfo[CT], alsoDropColumn: Boolean): FP = {
-          val old = newCookie.current.strategyMap
-          val (updatedStrategyMap, updatedCompCols) = columnInfo.computationStrategyInfo match {
-            case Some(strategy) if computationHandlers.exists(_.matchesStrategyType(strategy.strategyType)) =>
-              (old - columnInfo.id, (if (alsoDropColumn) newCompCols - columnInfo.id else newCompCols))
-            case _ => (old, newCompCols)
-          }
-          FP(newCookie.copy(
-            current = newCookie.current.copy(
-              columnIdMap = (if (alsoDropColumn) newCookie.current.columnIdMap - columnInfo.id else newCookie.current.columnIdMap),
-              strategyMap = updatedStrategyMap - columnInfo.id
-            )
-          ), updatedCompCols)
-        }
-
-        event match {
-          case ComputationStrategyCreated(columnInfo) =>
-            log.info(s"add computation strategy ${columnInfo.fieldName} ${columnInfo.computationStrategyInfo.map(_.strategyType.underlying).toString}")
-            addComputationStrategy(columnInfo, skipRefresh = true)
-          case ColumnCreated(columnInfo) =>
-            log.info(s"add computation strategy via create column ${columnInfo.fieldName} ${columnInfo.computationStrategyInfo.map(_.strategyType.underlying).toString}")
-            // note: we will see ColumnCreated events both when new columns are created and after a WorkingCopyCreated event
-            // so... since we are blindly setting the system id on version 1 to the expected value of ":id"
-            // let's change that value to the UserColumnId of the column in the version that is said to actually
-            // be the system primary key to not make any assumptions about what we actually name our system fields
-            addComputationStrategy(columnInfo, skipRefresh = false)
-          case ComputationStrategyRemoved(columnInfo) =>
-            log.info(s"drop computation strategy ${columnInfo.fieldName}")
-            dropComputationStrategy(columnInfo, alsoDropColumn = false)
-          case ColumnRemoved(columnInfo) =>
-            log.info(s"drop computation strategy via drop column ${columnInfo.fieldName}")
-            dropComputationStrategy(columnInfo, alsoDropColumn = true)
-          case SystemRowIdentifierChanged(columnInfo) =>
-            // this will happen after a copy of the dataset has been created, the columns created, and optionally the data copied.
-            FP(newCookie.copy(
-              current = newCookie.current.copy(
-                systemId = columnInfo.id
+        state.copy(
+          cookie =
+            state.cookie.copy(
+              current = state.cookie.current.copy(
+                systemId = newSystemId,
+                columnIdMap = state.cookie.current.columnIdMap + (columnInfo.id -> columnInfo.systemId),
+                strategyMap = updatedStrategyMap
               )
-            ), newCompCols)
-          case WorkingCopyCreated(copyInfo) =>
-            // Should _always_ be the first event in a version
-            if (newCompCols.nonEmpty) logErrorAndResync(notFirstEvent("WorkingCopyCreated"))
-            val previous = if (dataVersion == 1) None else Some(oldCookie.current) // let's drop our fake version 0 cookie
-            FP(newCookie.copy(
-              current = newCookie.current.copy(
-                copyNumber = CopyNumber(copyInfo.copyNumber)
-              ),
-              previous = previous
-            ), newCompCols)
-          case WorkingCopyDropped =>
-            // Should be the first event in this version
-            if (newCompCols.nonEmpty) logErrorAndResync(notFirstEvent("WorkingCopyDropped"))
-            FP(newCookie.copy(
-              current = newCookie.previous.getOrElse {
-                log.info("No previous value in cookie for dataset {}. Going to resync.", datasetInternalName)
-                throw ResyncSecondaryException(s"No previous value in cookie for dataset $datasetInternalName")
-              }.copy(dataVersion = DataVersion(dataVersion)),
-              previous = None
-            ), newCompCols)
-          case RowDataUpdated(operations) =>
-            // in practice this should only happen once per data version
-            // flush handling of newly created computed columns
-            handle(currentContext(newCookie).flushColumnCreations(newCompCols)) { updatedCookie =>
-              val toCompute = operations.toIterator.map { case op =>
-                op match {
-                  case insert: Insert[CV] =>
-                    Some(Row(insert.data, None))
-                  case update: Update[CV] =>
-                    Some(Row(update.data, update.oldData))
-                  case delete: Delete[CV] => // no-op
-                    None
-                }
-              }.filter(x => x.isDefined).map(x => x.get)
-
-              log.info("Processing row update of dataset {} in version {}...", datasetInternalName, dataVersion)
-              handle(currentContext(updatedCookie).feedback(toCompute))(FP(_, Set.empty))
-            }
-          case _ => // no-ops for us
-            // flush handling of newly created computed columns
-            handle(currentContext(newCookie).flushColumnCreations(newCompCols))(FP(_, Set.empty))
-        }
+            ),
+          columns = refreshUpdatedCompCols)
       }
-      handle(currentContext(resultFP.cookie).flushColumnCreations(resultFP.columns))(FeedbackCookie.encode)
+
+      def dropComputationStrategy(state: IterationState, columnInfo: ColumnInfo[CT], alsoDropColumn: Boolean): IterationState = {
+        val old = state.cookie.current.strategyMap
+        val (updatedStrategyMap, updatedCompCols) = columnInfo.computationStrategyInfo match {
+          case Some(strategy) if computationHandlers.exists(_.matchesStrategyType(strategy.strategyType)) =>
+            (old - columnInfo.id, (if (alsoDropColumn) state.columns - columnInfo.id else state.columns))
+          case _ => (old, state.columns)
+        }
+
+        state.copy(
+          cookie =
+            state.cookie.copy(
+              current = state.cookie.current.copy(
+                columnIdMap =
+                  if (alsoDropColumn) state.cookie.current.columnIdMap - columnInfo.id
+                  else state.cookie.current.columnIdMap,
+                strategyMap = updatedStrategyMap - columnInfo.id
+              )
+            ),
+          columns = updatedCompCols)
+      }
+
+      var state = IterationState(cookieSeed, Set.empty)
+      while(events.hasNext) {
+        val event = events.next()
+        state =
+          event match {
+            case ComputationStrategyCreated(columnInfo) =>
+              log.info(s"add computation strategy ${columnInfo.fieldName} ${columnInfo.computationStrategyInfo.map(_.strategyType.underlying).toString}")
+              addComputationStrategy(state, columnInfo, skipRefresh = true)
+            case ColumnCreated(columnInfo) =>
+              log.info(s"add computation strategy via create column ${columnInfo.fieldName} ${columnInfo.computationStrategyInfo.map(_.strategyType.underlying).toString}")
+              // note: we will see ColumnCreated events both when new columns are created and after a WorkingCopyCreated event
+              // so... since we are blindly setting the system id on version 1 to the expected value of ":id"
+              // let's change that value to the UserColumnId of the column in the version that is said to actually
+              // be the system primary key to not make any assumptions about what we actually name our system fields
+              addComputationStrategy(state, columnInfo, skipRefresh = false)
+            case ComputationStrategyRemoved(columnInfo) =>
+              log.info(s"drop computation strategy ${columnInfo.fieldName}")
+              dropComputationStrategy(state, columnInfo, alsoDropColumn = false)
+            case ColumnRemoved(columnInfo) =>
+              log.info(s"drop computation strategy via drop column ${columnInfo.fieldName}")
+              dropComputationStrategy(state, columnInfo, alsoDropColumn = true)
+            case SystemRowIdentifierChanged(columnInfo) =>
+              // this will happen after a copy of the dataset has been created, the columns created, and optionally the data copied.
+              state.copy(
+                cookie = state.cookie.copy(
+                  current = state.cookie.current.copy(
+                    systemId = columnInfo.id
+                  )
+                ))
+            case WorkingCopyCreated(copyInfo) =>
+              // Should _always_ be the first event in a version
+              if (state.columns.nonEmpty) logErrorAndResync(notFirstEvent("WorkingCopyCreated"))
+              val previous = if (dataVersion == 1) None else Some(oldCookie.current) // let's drop our fake version 0 cookie
+              state.copy(
+                cookie = state.cookie.copy(
+                  current = state.cookie.current.copy(
+                    copyNumber = CopyNumber(copyInfo.copyNumber)
+                  ),
+                  previous = previous
+                ))
+            case WorkingCopyDropped =>
+              // Should be the first event in this version
+              if (state.columns.nonEmpty) logErrorAndResync(notFirstEvent("WorkingCopyDropped"))
+              state.copy(
+                cookie = state.cookie.copy(
+                  current = state.cookie.previous.getOrElse {
+                    log.info("No previous value in cookie for dataset {}. Going to resync.", datasetInternalName)
+                    throw ResyncSecondaryException(s"No previous value in cookie for dataset $datasetInternalName")
+                  }.copy(dataVersion = DataVersion(dataVersion)),
+                  previous = None
+                ))
+            case RowDataUpdated(operations) =>
+              // in practice this should only happen once per data version
+              // flush handling of newly created computed columns
+              handle(currentContext(state.cookie).flushColumnCreations(state.columns)) { updatedCookie =>
+                val toCompute = operations.toIterator.map { case op =>
+                  op match {
+                    case insert: Insert[CV] =>
+                      Some(Row(insert.data, None))
+                    case update: Update[CV] =>
+                      Some(Row(update.data, update.oldData))
+                    case delete: Delete[CV] => // no-op
+                      None
+                  }
+                }.filter(x => x.isDefined).map(x => x.get)
+
+                log.info("Processing row update of dataset {} in version {}...", datasetInternalName, dataVersion)
+                handle(currentContext(updatedCookie).feedback(toCompute)) { newCookie => state.copy(cookie = newCookie, columns = Set.empty) }
+              }
+            case _ => // no-ops for us
+              // flush handling of newly created computed columns
+              handle(currentContext(state.cookie).flushColumnCreations(state.columns)) { newCookie => state.copy(cookie = newCookie, Set.empty) }
+          }
+      }
+
+      handle(currentContext(state.cookie).flushColumnCreations(state.columns))(FeedbackCookie.encode)
     }
   }
 
