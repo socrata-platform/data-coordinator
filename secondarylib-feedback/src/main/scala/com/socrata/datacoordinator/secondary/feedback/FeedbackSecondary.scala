@@ -295,6 +295,11 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
       }
 
       var state = IterationState(cookieSeed, Set.empty)
+
+      // this loop is a near-fold, though it is side-effecty, and in
+      // the case of RowDataUpdated we'll consume more than a single
+      // event during a pass through the loop.
+
       while(events.hasNext) {
         val event = events.next()
         state =
@@ -346,19 +351,34 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
                   previous = None
                 ))
             case RowDataUpdated(operations) =>
-              // in practice this should only happen once per data version
-              // flush handling of newly created computed columns
+              // in practice this (== having row data at all, not having
+              // only _one_ row data event) should only happen once per
+              // data version.  Because there can be multiple row data
+              // events, we'll pull as many as we can out of the events
+              // iterator.
               handle(currentContext(state.cookie).flushColumnCreations(state.columns)) { updatedCookie =>
-                val toCompute = operations.toIterator.map { case op =>
-                  op match {
+                val toCompute =
+                  new Iterator[Operation[CV]] {
+                    var current = operations.iterator
+
+                    def hasNext = {
+                      while(current.isEmpty && events.hasNext && events.head.isInstanceOf[RowDataUpdated[_]]) {
+                        current = events.next().asInstanceOf[RowDataUpdated[CV]].operations.iterator
+                      }
+                      current.hasNext
+                    }
+
+                    def next() =
+                      if(hasNext) current.next()
+                      else Iterator.empty.next()
+                  }.flatMap {
                     case insert: Insert[CV] =>
-                      Some(Row(insert.data, None))
+                      Iterator.single(Row(insert.data, None))
                     case update: Update[CV] =>
-                      Some(Row(update.data, update.oldData))
+                      Iterator.single(Row(update.data, update.oldData))
                     case delete: Delete[CV] => // no-op
-                      None
+                      Iterator.empty
                   }
-                }.filter(x => x.isDefined).map(x => x.get)
 
                 log.info("Processing row update of dataset {} in version {}...", datasetInternalName, dataVersion)
                 handle(currentContext(updatedCookie).feedback(toCompute)) { newCookie => state.copy(cookie = newCookie, columns = Set.empty) }
