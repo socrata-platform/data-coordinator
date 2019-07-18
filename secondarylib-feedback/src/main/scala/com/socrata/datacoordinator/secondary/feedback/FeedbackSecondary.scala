@@ -355,7 +355,14 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
               // only _one_ row data event) should only happen once per
               // data version.  Because there can be multiple row data
               // events, we'll pull as many as we can out of the events
-              // iterator.
+              // iterator, so that the feedback step itself can rechunk
+              // as it feels appropriate -- specifically because wide
+              // datasets will have a higher RowDataEvent:Row ratio,
+              // and so when feeding back, we unnecessarily produce
+              // way more actual updates to send to data-coordinator,
+              // which in turn means there are a lot more transactions
+              // created whose detritus cannot be vaccuumed away while
+              // we're holding this transaction open.
               handle(currentContext(state.cookie).flushColumnCreations(state.columns)) { updatedCookie =>
                 val toCompute =
                   new Iterator[Operation[CV]] {
