@@ -12,7 +12,7 @@ class UrlRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType
 
   val physColumns: Array[String] = Array(base + "_url", base + "_description")
 
-  override val keyColumns: Array[String] = Array(physColumns(0))
+  override val keyColumns: Array[String] = Array(physColumns(urlOffset))
 
   val sqlTypes: Array[String] = Array("TEXT", "TEXT")
 
@@ -32,28 +32,24 @@ class UrlRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType
   def sql_==(literal: SoQLValue): String = {
     val url = literal.asInstanceOf[SoQLUrl]
     url match {
-      case SoQLUrl(Some(url), Some(description)) =>
-        s"(${base}_url = ${sqlescape(url)} AND ${base}_description = ${sqlescape(description)})"
-      case SoQLUrl(Some(url), None) =>
-        s"(${base}_url = ${sqlescape(url)})"
-      case SoQLUrl(None, Some(description)) =>
-        s"(${base}_description = ${sqlescape(description)})"
-      case SoQLUrl(None, None) =>
-        s"(${base}_url is null and ${base}_description is null)"
+      case SoQLUrl(Some(url), _) =>
+        s"(${physColumns(urlOffset)} = ${sqlescape(url)})"
+      case _ =>
+        throw new Exception("URL key field is missing value")
     }
   }
 
-  def count: String = s"count(${physColumns(0)})"
+  def count: String = s"count(${physColumns(urlOffset)})"
 
   def sql_in(literals: Iterable[SoQLValue]): String = {
     literals.iterator.flatMap { lit =>
       lit.asInstanceOf[SoQLUrl].url.toIterator
-    }.map(sqlescape).mkString(s"(${physColumns(0)} in (", ",", "))")
+    }.map(sqlescape).mkString(s"(${physColumns(urlOffset)} in (", ",", "))")
   }
 
-  def equalityIndexExpression: String = physColumns(0)
+  def equalityIndexExpression: String = physColumns(urlOffset)
 
-  def templateForSingleLookup: String = s"(${physColumns(0)} = ?)"
+  def templateForSingleLookup: String = s"(${physColumns(urlOffset)} = ?)"
 
   def prepareSingleLookup(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
     val url = v.asInstanceOf[SoQLUrl]
@@ -71,7 +67,7 @@ class UrlRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType
   }
 
   def templateForMultiLookup(n: Int): String = {
-    s"(${base}_url in (${(1 to n).map(_ => "?").mkString(",")}))"
+    s"(${physColumns(urlOffset)} in (${(1 to n).map(_ => "?").mkString(",")}))"
   }
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue): Unit = {
