@@ -1,10 +1,9 @@
 package com.socrata.datacoordinator.common.soql
 
 import scala.collection.JavaConverters._
-
 import com.socrata.soql.types._
-import com.socrata.datacoordinator.truth.{SimpleRowUserIdMap, RowUserIdMap, TypeContext}
-import com.socrata.datacoordinator.id.{RowVersion, RowId}
+import com.socrata.datacoordinator.truth.{ComplexTypeRowUserIdMap, RowUserIdMap, SimpleRowUserIdMap, TypeContext}
+import com.socrata.datacoordinator.id.{RowId, RowVersion}
 import com.socrata.datacoordinator.truth.metadata.{DatasetInfo, TypeNamespace}
 import com.socrata.soql.environment.TypeName
 import com.socrata.datacoordinator.util.collection.MutableRowIdMap
@@ -87,6 +86,11 @@ object SoQLTypeContext extends TypeContext[SoQLType, SoQLValue] {
           map.values.iterator
       }
     } else {
-      new SimpleRowUserIdMap[SoQLValue, T]
+      idColumnType match {
+        case SoQLUrl =>
+          new ComplexTypeRowUserIdMap[SoQLUrl, SoQLValue, T]
+        case _ =>
+          new SimpleRowUserIdMap[SoQLValue, T]
+      }
     }
 }
