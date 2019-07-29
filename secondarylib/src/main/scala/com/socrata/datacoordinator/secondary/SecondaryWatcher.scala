@@ -107,12 +107,19 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
           // Prefer cookie handed-back by the exception, but since we write notes in out cookies currently that we don't
           // want to lose, let's avoid overriding those if we are not given Some other cookie string
           manifest(u).markSecondaryDatasetBroken(job, cookie.orElse(job.initialCookie))
-        case rlse@ReplayLaterSecondaryException(reason, cookie) =>
-          if (job.replayNum < maxReplays) {
-            val replayAfter = Math.min(replayWait.toSeconds * Math.log(job.replayNum + 2), maxReplayWait.toSeconds)
+        case rlse@ReplayLaterSecondaryException(reason, cookie, delay) =>
+          val (replayDelay, replayNum) =
+            delay match {
+              case Some(d) => (d, if (job.replayNum >= maxReplays) 0 else job.replayNum)
+              case None => (replayWait, job.replayNum)
+            }
+          if (replayNum < maxReplays) {
+            val replayAfter =
+              if (delay.isDefined) replayDelay.toSeconds
+              else Math.min(replayDelay.toSeconds * Math.log(job.replayNum + 2), maxReplayWait.toSeconds)
             log.info("Replay later requested while updating dataset {} in secondary {}, replaying in {}...",
               job.datasetId.asInstanceOf[AnyRef], secondary.storeId, replayAfter.toString, rlse)
-            manifest(u).updateReplayInfo(secondary.storeId, job.datasetId, cookie, job.replayNum + 1,
+            manifest(u).updateReplayInfo(secondary.storeId, job.datasetId, cookie, replayNum + 1,
               replayAfter.toInt)
           } else {
             log.error("Ran out of replay attempts while updating dataset {} in secondary {}; marking it as broken",
