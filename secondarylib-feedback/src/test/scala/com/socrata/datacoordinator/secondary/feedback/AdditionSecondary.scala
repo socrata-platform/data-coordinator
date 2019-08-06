@@ -55,7 +55,7 @@ class AdditionSecondary(dataCoordinatorClient: DataCoordinatorClient[SoQLType, S
   override val user = "addition-secondary"
 
   override val baseBatchSize: Int = 5
-  override val estimateValueSize = SoQLEstimateSize
+  override val estimateValueSize = { (v: SoQLValue) => v match { case id: SoQLID => 1; case _ => 0 } }
 
   override val computationHandlers =  Seq(new AdditionHandler)
   override val computationRetryLimit = 5

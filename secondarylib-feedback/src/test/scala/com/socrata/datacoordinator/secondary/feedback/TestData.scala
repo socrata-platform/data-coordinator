@@ -124,19 +124,21 @@ object TestData {
       "row-7vyr.88y6.a384"
     ).map(JString(_))
 
-    def toScripts(pk: ColumnInfo[_ <: SoQLType],
+    def toScripts(effectiveBatchSize: Int,
+                  pk: ColumnInfo[_ <: SoQLType],
                   pkRows: Iterable[JValue],
                   rowMap: Map[ColumnInfo[_ <: SoQLType], Iterable[JValue]]): Array[JArray] = {
       val columns = rowMap.map { case (col, values) => (col.id.underlying, values.toIndexedSeq) }
       pkRows.zipWithIndex.map { case (pkVal, index) =>
         JObject(Map(pk.id.underlying -> pkVal) ++ columns.map { case (col, values) => (col, values(index)) }.toMap)
-      }.grouped(batchSize).map { batch =>
+      }.grouped(effectiveBatchSize).map { batch =>
         JArray(commands ++ batch)
       }.toArray
     }
 
-    val sum12Scripts = toScripts(systemId, systemPKObsRows, Map(sum12 -> sum12Rows.map(JNumber(_))))
-    val sum23ScriptsV11 = toScripts(systemId, systemPKObsRows, Map(sum23 -> sum23RowsV11.map(JNumber(_))))
+    val sum12Scripts = toScripts(batchSize, systemId, systemPKObsRows, Map(sum12 -> sum12Rows.map(JNumber(_))))
+    val sum23ScriptsV11 = toScripts(batchSize, systemId, systemPKObsRows, Map(sum23 -> sum23RowsV11.map(JNumber(_))))
+    val sum23ScriptsV11BatchesOf3 = toScripts(3, systemId, systemPKObsRows, Map(sum23 -> sum23RowsV11.map(JNumber(_))))
 
     // DataCoordinatorClient.postMutationScriptResult(.) results
     type PostMutationScriptResult = Option[Either[RequestFailure, UpdateSchemaFailure]]
