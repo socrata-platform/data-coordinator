@@ -60,6 +60,7 @@ object SoQLEstimateSize extends (SoQLValue => Int) {
   def apply(value: SoQLValue) = value.typ match {
     case SoQLID => 8
     case SoQLVersion => 8
+    case SoQLNull => 8
     case other => CompactJsonWriter.toString(SoQLRep.jsonRepsMinusIdAndVersion(other).toJValue(value)).length // ick
   }
 }
