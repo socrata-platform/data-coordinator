@@ -75,7 +75,7 @@ object SoQLRep {
 
   // for(typ <- SoQLType.typesByName.values) assert(repFactories.contains(typ))
 
-  private val csvRepFactories = Map[SoQLType, CsvColumnRep[SoQLType, SoQLValue]](
+  private val csvReps = Map[SoQLType, CsvColumnRep[SoQLType, SoQLValue]](
     SoQLID -> csvreps.IDRep,
     SoQLText -> csvreps.TextRep,
     SoQLBoolean -> csvreps.BooleanRep,
@@ -99,11 +99,11 @@ object SoQLRep {
     SoQLBlob -> csvreps.BlobRep
   )
   def csvRep(columnInfo: ColumnInfo[SoQLType]): CsvColumnRep[SoQLType, SoQLValue] =
-    csvRepFactories(columnInfo.typ)
+    csvReps(columnInfo.typ)
   def csvRep(typ: SoQLType): CsvColumnRep[SoQLType, SoQLValue] =
-    csvRepFactories(typ)
+    csvReps(typ)
 
-  val jsonRepFactoriesMinusIdAndVersion = Map[SoQLType, JsonColumnRep[SoQLType, SoQLValue]](
+  val jsonRepsMinusIdAndVersion = Map[SoQLType, JsonColumnRep[SoQLType, SoQLValue]](
     SoQLText -> jsonreps.TextRep,
     SoQLBoolean -> jsonreps.BooleanRep,
     SoQLNumber -> new jsonreps.NumberLikeRep(SoQLNumber, _.asInstanceOf[SoQLNumber].value, SoQLNumber(_)),
@@ -140,7 +140,7 @@ object SoQLRep {
   }
 
   private def jsonRepFactories(idStringRep: SoQLID.StringRep, versionStringRep: SoQLVersion.StringRep) =
-    jsonRepFactoriesMinusIdAndVersion ++ Seq(
+    jsonRepsMinusIdAndVersion ++ Seq(
       SoQLID -> new jsonreps.IDRep(idStringRep),
       SoQLVersion -> new jsonreps.VersionRep(versionStringRep)
     )

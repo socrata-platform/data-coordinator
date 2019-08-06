@@ -2,9 +2,10 @@ package com.socrata.datacoordinator.secondary.feedback
 
 import com.rojoma.json.v3.ast.JValue
 import com.socrata.datacoordinator.id.{StrategyType, ColumnId, UserColumnId}
+import com.socrata.datacoordinator.common.soql.SoQLRep
 import com.socrata.datacoordinator.secondary
 import com.socrata.datacoordinator.secondary._
-import com.socrata.datacoordinator.secondary.feedback.instance.{SoQLTypeFromJValue, SoQLTypeFor, SoQLValueRepFrom, SoQLValueRepFor}
+import com.socrata.datacoordinator.secondary.feedback.instance.{SoQLTypeFromJValue, SoQLTypeFor, SoQLValueRepFrom, SoQLValueRepFor, SoQLEstimateSize}
 import com.socrata.datacoordinator.secondary.feedback.monitor.{DummyStatusMonitor, StatusMonitor}
 import com.socrata.soql.types._
 
@@ -54,6 +55,7 @@ class AdditionSecondary(dataCoordinatorClient: DataCoordinatorClient[SoQLType, S
   override val user = "addition-secondary"
 
   override val baseBatchSize: Int = 5
+  override val estimateValueSize = SoQLEstimateSize
 
   override val computationHandlers =  Seq(new AdditionHandler)
   override val computationRetryLimit = 5

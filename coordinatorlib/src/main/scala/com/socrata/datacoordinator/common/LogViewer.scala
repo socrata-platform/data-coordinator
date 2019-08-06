@@ -32,7 +32,7 @@ object LogViewer extends App {
     }
     val representedType: SoQLType = SoQLVersion
   }
-  val jsonReps = SoQLRep.jsonRepFactoriesMinusIdAndVersion ++ Map(
+  val jsonReps = SoQLRep.jsonRepsMinusIdAndVersion ++ Map(
     SoQLID -> idRep,
     SoQLVersion -> versionRep
   )

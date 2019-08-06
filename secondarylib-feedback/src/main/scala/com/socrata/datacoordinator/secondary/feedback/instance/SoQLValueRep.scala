@@ -1,6 +1,7 @@
 package com.socrata.datacoordinator.secondary.feedback.instance
 
 import com.rojoma.json.v3.ast.{JString, JNull, JValue}
+import com.rojoma.json.v3.io.CompactJsonWriter
 import com.socrata.datacoordinator.common.soql.SoQLRep
 import com.socrata.soql.environment.TypeName
 import com.socrata.soql.functions.SoQLTypeInfo
@@ -53,4 +54,12 @@ object SoQLTypeFromJValue extends (JValue => Option[SoQLType]) {
     case _ => None
   }
 
+}
+
+object SoQLEstimateSize extends (SoQLValue => Int) {
+  def apply(value: SoQLValue) = value.typ match {
+    case SoQLID => 8
+    case SoQLVersion => 8
+    case other => CompactJsonWriter.toString(SoQLRep.jsonRepsMinusIdAndVersion(other).toJValue(value)).length // ick
+  }
 }
