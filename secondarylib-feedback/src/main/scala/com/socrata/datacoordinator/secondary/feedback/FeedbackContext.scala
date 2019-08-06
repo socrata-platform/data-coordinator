@@ -248,7 +248,7 @@ class FeedbackContext[CT,CV](user: String,
         case Some(script) =>
           dataCoordinatorClient.postMutationScript(script, cookie) match {
             case None =>
-              log.info("Finished batch {} of approx. {} rows", count, size)
+              log.info("Finished batch {} of {} rows", count, batch.length)
               statusMonitor.update(datasetInternalName, cookie.dataVersion, size, count)
             case Some(Right(TargetColumnDoesNotExist(column))) =>
               // this is pretty lame; but better than doing a full resync
@@ -272,7 +272,7 @@ class FeedbackContext[CT,CV](user: String,
               return replayDataCoordinator(reason, resync) // TODO: use cause
           }
         case None =>
-          log.info("Batch {} had no rows to update of approx. {} rows; no script posted.", count, size)
+          log.info("Batch {} had no rows to update of {} rows; no script posted.", count, batch.length)
           statusMonitor.update(datasetInternalName, cookie.dataVersion, size, count)
       }
     }
