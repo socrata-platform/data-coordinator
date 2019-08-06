@@ -64,6 +64,7 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
    * The batch size of mutation scripts and general processing; should be a function of `width` of dataset.
    */
   val baseBatchSize: Int
+  val estimateValueSize: CV => Int
 
   def batchSize(width: Int): Int = baseBatchSize // TODO: figure out what this should be
 
@@ -109,7 +110,8 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
 
   private def datasetContext(datasetInternalName: String,
                              toJValueFunc: CV => JValue,
-                             fromJValueFunc: CT => JValue => Option[CV]): FeedbackCookie => FeedbackContext[CT,CV] =
+                             fromJValueFunc: CT => JValue => Option[CV],
+                             estimateValueSize: CV => Int): FeedbackCookie => FeedbackContext[CT,CV] =
     FeedbackContext(
       user,
       batchSize,
@@ -118,7 +120,7 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
       computationRetryLimit,
       dataCoordinator,
       dataCoordinatorRetryLimit,
-      datasetContext = (datasetInternalName, toJValueFunc, fromJValueFunc)
+      datasetContext = (datasetInternalName, toJValueFunc, fromJValueFunc, estimateValueSize)
     )
 
   private val systemId = new UserColumnId(":id")
@@ -241,7 +243,7 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
 
       val toJValueFunc = toJValue(datasetInfo.obfuscationKey)
       val fromJValueFunc = fromJValue(datasetInfo.obfuscationKey)
-      val currentContext = datasetContext(datasetInternalName, toJValueFunc, fromJValueFunc)
+      val currentContext = datasetContext(datasetInternalName, toJValueFunc, fromJValueFunc, estimateValueSize)
 
       val cookieSeed = oldCookie.copy(oldCookie.current.copy(DataVersion(dataVersion)), oldCookie.previous)
 
@@ -449,7 +451,8 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
           val result = datasetContext(
             datasetInfo.internalName,
             toJValueFunc,
-            fromJValueFunc)(newCookie).feedback(rws.map { row => Row(row, None) }, resync = true)
+            fromJValueFunc,
+            estimateValueSize)(newCookie).feedback(rws.map { row => Row(row, None) }, resync = true)
           handleFeedbackResult(originalCookie = None, feedbackResult =  result) { resultCookie =>
             newCookie = resultCookie
           }

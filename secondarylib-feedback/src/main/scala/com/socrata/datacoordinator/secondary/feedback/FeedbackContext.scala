@@ -28,8 +28,8 @@ object FeedbackContext {
                    computationRetryLimit: Int,
                    dataCoordinator: (String, CT => JValue => Option[CV]) => DataCoordinatorClient[CT,CV],
                    dataCoordinatorRetryLimit: Int,
-                   datasetContext: (String, CV => JValue, CT => JValue => Option[CV])): FeedbackCookie => FeedbackContext[CT,CV] = {
-    val (datasetInternalName, toJValueFunc, fromJValueFunc) = datasetContext
+                   datasetContext: (String, CV => JValue, CT => JValue => Option[CV], CV => Int)): FeedbackCookie => FeedbackContext[CT,CV] = {
+    val (datasetInternalName, toJValueFunc, fromJValueFunc, estimateValueSize) = datasetContext
     new FeedbackContext(
       user,
       batchSize,
@@ -41,6 +41,7 @@ object FeedbackContext {
       datasetInternalName,
       toJValueFunc,
       fromJValueFunc,
+      estimateValueSize,
       _
     )
   }
@@ -56,6 +57,7 @@ class FeedbackContext[CT,CV](user: String,
                              datasetInternalName: String,
                              toJValueFunc: CV => JValue,
                              fromJValueFunc: CT => JValue => Option[CV],
+                             estimateValueSize: CV => Int,
                              currentCookie: FeedbackCookie) {
 
   private def success(current: CookieSchema): Success = {
@@ -184,6 +186,29 @@ class FeedbackContext[CT,CV](user: String,
     else Some(JArray(commands ++ rowUpdates))
   }
 
+  private def estimateSecondarySize(row: secondary.Row[CV]) =
+    row.values.map(estimateValueSize).sum
+
+  private def estimateSize(row: Row[CV]): Long = {
+    val Row(data, oldData) = row
+    estimateSecondarySize(data) + oldData.fold(0L)(estimateSecondarySize)
+  }
+
+  private def batchRows(rows: Iterator[Row[CV]], batchSize: Long): Iterator[Vector[Row[CV]]] =
+    new Iterator[Vector[Row[CV]]] {
+      def hasNext = rows.hasNext
+      def next() = {
+        val result = Vector.newBuilder[Row[CV]]
+        var total = 0L
+        do {
+          val row = rows.next()
+          result += row
+          total += estimateSize(row)
+        } while(total < batchSize && rows.hasNext)
+        result.result()
+      }
+    }
+
   // this may throw a ReplayLaterSecondaryException or a BrokenDatasetSecondaryException
   def feedback(rows: Iterator[Row[CV]],
                targetColumns: Set[UserColumnId] = cookie.strategyMap.keySet,
@@ -194,8 +219,7 @@ class FeedbackContext[CT,CV](user: String,
     log.info("Feeding back rows with batch_size = {} for target computed columns: {}", size, targetColumns)
 
     var count = 0
-    rows.grouped(size).foreach { batchSeq =>
-      val batch: Seq[Row[CV]] = batchSeq.toIndexedSeq
+    batchRows(rows, size).foreach { batch =>
       count += 1
       val updates = computationHandlers.foldLeft(Map.empty[Int, Map[UserColumnId, CV]]) { (currentUpdates, computationHandler) =>
         val currentRows = batch.toArray

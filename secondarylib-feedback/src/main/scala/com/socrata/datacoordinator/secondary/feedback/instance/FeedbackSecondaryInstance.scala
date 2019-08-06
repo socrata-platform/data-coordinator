@@ -63,6 +63,7 @@ abstract class FeedbackSecondaryInstance(config: FeedbackSecondaryInstanceConfig
   override def dataCoordinator = HttpDataCoordinatorClient(httpClient, hostAndPort, internalDataCoordinatorRetryLimit, typeFromJValue)
 
   override val baseBatchSize: Int = config.baseBatchSize
+  override val estimateValueSize = SoQLEstimateSize
 
   override val dataCoordinatorRetryLimit: Int = config.dataCoordinatorRetries
 

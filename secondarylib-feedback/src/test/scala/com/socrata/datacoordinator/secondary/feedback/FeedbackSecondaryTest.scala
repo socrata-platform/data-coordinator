@@ -299,8 +299,9 @@ class FeedbackSecondaryTest extends WordSpec with ShouldMatchers with MockFactor
         // should not export any rows
         (mockDC.exportRows _).expects(*, *, *).never
         // computed values should be posted in batches
-        (mockDC.postMutationScript _).expects(TestScripts.sum23ScriptsV11(0), TestCookie.v10Schema).once.returning(TestScripts.success)
-        (mockDC.postMutationScript _).expects(TestScripts.sum23ScriptsV11(1), TestCookie.v10Schema).once.returning(TestScripts.success)
+        (mockDC.postMutationScript _).expects(TestScripts.sum23ScriptsV11BatchesOf3(0), TestCookie.v10Schema).once.returning(TestScripts.success)
+        (mockDC.postMutationScript _).expects(TestScripts.sum23ScriptsV11BatchesOf3(1), TestCookie.v10Schema).once.returning(TestScripts.success)
+        (mockDC.postMutationScript _).expects(TestScripts.sum23ScriptsV11BatchesOf3(2), TestCookie.v10Schema).once.returning(TestScripts.success)
       }) { case (secondary, cookie) =>
         shouldBe(secondary.version(datasetInfo, 10, cookie, TestEvent.v10Events), TestCookie.v10)
       }
