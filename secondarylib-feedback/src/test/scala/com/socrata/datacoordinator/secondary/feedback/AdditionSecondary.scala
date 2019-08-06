@@ -54,6 +54,11 @@ class AdditionSecondary(dataCoordinatorClient: DataCoordinatorClient[SoQLType, S
 
   override val user = "addition-secondary"
 
+  // The tests want predictable batch sizes.  This is a _little_
+  // difficult, but what we'll do here is: insert operations
+  // guesstimate at size 1, and update operations (which have "old
+  // data") will guestimate at size 2 (and hence actually batch into
+  // groups of 3).
   override val baseBatchSize: Int = 5
   override val estimateValueSize = { (v: SoQLValue) => v match { case id: SoQLID => 1; case _ => 0 } }
 
