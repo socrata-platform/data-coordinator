@@ -109,14 +109,14 @@ class HttpDataCoordinatorClient[CT,CV](httpClient: HttpClient,
   case class ErrorResponse(errorCode: String, data: JObject)
   implicit val erCodec = AutomaticJsonCodecBuilder[ErrorResponse]
 
-  private def doRequest[T](request: SimpleHttpRequest,
+  private def doRequest[T](request: () => SimpleHttpRequest,
                            message: String,
                            successHandle: Iterator[JValue]=> Either[UnexpectedError, T],
                            badRequestHandle: ErrorResponse => Either[UnexpectedError, T],
                            serverErrorMessageExtra: String,
                            resourceScope: ResourceScope): Either[RequestFailure, T] = {
     retrying[T] {
-      val resp = httpClient.execute(request, resourceScope)
+      val resp = httpClient.execute(request(), resourceScope)
       val start = System.nanoTime()
       def logContentTypeFailure[V](v: => JValue)(f: JValue => Either[RequestFailure, T]): Either[RequestFailure, T] =
         try {
@@ -220,7 +220,7 @@ class HttpDataCoordinatorClient[CT,CV](httpClient: HttpClient,
     }
 
     doRequest(
-      request = builder.get,
+      request = () => builder.get,
       message = s"Got row data for columns $columns",
       successHandle,
       badRequestHandle,
@@ -240,8 +240,6 @@ class HttpDataCoordinatorClient[CT,CV](httpClient: HttpClient,
   override def postMutationScript(script: JArray, cookie: CookieSchema): Option[Either[RequestFailure, UpdateSchemaFailure]] = {
     val endpoint = datasetEndpoint.getOrElse(return Some(Left(FailedToDiscoverDataCoordinator)))
     val builder = RequestBuilder(new java.net.URI(endpoint))
-
-    def body = JValueEventIterator(script)
 
     def successHandle(response: Iterator[JValue]): Either[UnexpectedError, Option[UpdateSchemaFailure]] = {
       try {
@@ -285,7 +283,7 @@ class HttpDataCoordinatorClient[CT,CV](httpClient: HttpClient,
 
     val requestResult = using(new ResourceScope("post mutation script")) { resourceScope =>
       doRequest(
-        request = builder.json(body),
+        request = () => builder.json(JValueEventIterator(script)),
         message = s"Posted mutation script with ${script.length - 2} row updates",
         successHandle,
         badRequestHandle,
