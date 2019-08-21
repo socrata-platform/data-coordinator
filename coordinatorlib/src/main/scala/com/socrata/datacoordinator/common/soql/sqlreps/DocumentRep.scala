@@ -21,7 +21,7 @@ class DocumentRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQ
   def templateForSingleLookup: String = s"($base @> (? :: JSONB))"
 
   def templateForMultiLookup(n: Int): String =
-    s"($base in (${(1 to n).map(_ => "? :: JSONB").mkString(",")}))"
+    (1 to n).map { _ => templateForSingleLookup }.mkString("(", " OR ", ")")
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue): Unit = {
     v match {
@@ -81,7 +81,7 @@ class DocumentRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQ
     literals.iterator.collect {
       case lit: SoQLDocument =>
         sql_==(lit)
-    }.mkString(s"(", " OR ", ")") // Not IN because == on this type is not a simple equality operation
+    }.mkString("(", " OR ", ")") // Not IN because == on this type is not a simple equality operation
 
 
   def count: String = s"count($base)"
