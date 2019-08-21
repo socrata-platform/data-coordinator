@@ -14,12 +14,14 @@ class DocumentRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQ
 
   val sqlTypes: Array[String] = Array("JSONB")
 
-  override def templateForUpdate: String = physColumns.map(_ + "=?::JSON").mkString(",")
+  override def templateForUpdate: String = physColumns.map(_ + "=?::JSONB").mkString(",")
 
-  def templateForSingleLookup: String = s"($base @> ?)"
+  override def templateForInsert: String = physColumns.map(_ + "?::JSONB").mkString(",")
+
+  def templateForSingleLookup: String = s"($base @> (? :: JSONB))"
 
   def templateForMultiLookup(n: Int): String =
-    s"($base in (${(1 to n).map(_ => "?").mkString(",")}))"
+    (1 to n).map { _ => templateForSingleLookup }.mkString("(", " OR ", ")")
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue): Unit = {
     v match {
@@ -72,14 +74,14 @@ class DocumentRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQ
 
   def sql_==(literal: SoQLValue): String = {
     val v = sqlescape(JsonUtil.renderJson(literal.asInstanceOf[SoQLDocument]))
-    s"($base @> $v)"
+    s"($base @> ($v :: JSONB))"
   }
 
   def sql_in(literals: Iterable[SoQLValue]): String =
     literals.iterator.collect {
       case lit: SoQLDocument =>
-        sqlescape(JsonUtil.renderJson(lit))
-    }.mkString(s"($base in (", ",", "))")
+        sql_==(lit)
+    }.mkString("(", " OR ", ")") // Not IN because == on this type is not a simple equality operation
 
 
   def count: String = s"count($base)"
