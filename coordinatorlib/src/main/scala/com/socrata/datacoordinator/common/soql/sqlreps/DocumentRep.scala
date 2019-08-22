@@ -16,7 +16,7 @@ class DocumentRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQ
 
   override def templateForUpdate: String = physColumns.map(_ + "=?::JSONB").mkString(",")
 
-  override def templateForInsert: String = physColumns.map(_ + "?::JSONB").mkString(",")
+  override def templateForInsert: String = physColumns.map(_ => "?::JSONB").mkString(",")
 
   def templateForSingleLookup: String = s"($base @> (? :: JSONB))"
 
