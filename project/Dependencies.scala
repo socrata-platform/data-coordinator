@@ -15,7 +15,7 @@ object Dependencies {
     val slf4j           = "1.7.5"
     val soqlReference   = "2.11.12"
     val thirdPartyUtils = "4.0.16"
-    val curatorUtils    = "1.1.2"
+    val curatorUtils    = "1.1.3"
     val httpCuratorBroker = "3.11.4"
     val typesafeConfig  = "1.2.1"
   }
