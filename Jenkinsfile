@@ -1,5 +1,5 @@
 // Set up the libraries
-@Library('socrata-pipeline-library')
+@Library('socrata-pipeline-library@ayn/EN-35942/assemble-multiple-subprojects')
 
 
 // set up service and project variables
@@ -58,6 +58,7 @@ pipeline {
             // Query-coordinator just uses sbt clean/compile/test for testing (these are the default sbt build operations)
             // If your service has additional testing, you may want to use the Test stage to implement that and uncomment the next line:
             // stage_test = true
+            stage_dockerize = true
           }
           else if (BRANCH_NAME == "master") { // we're running a build on master branch to deploy to staging
             stage_build = true
