@@ -137,7 +137,7 @@ pipeline {
 
           // build
           echo "Building sbt project..."
-          def docker_artifact = sbtbuild.getDockerArtifact
+          def docker_artifact = sbtbuild.getDockerArtifact()
           echo "Before we've built, the docker_artifact is ${docker_artifact}"
           sbtbuild.build()
         }
