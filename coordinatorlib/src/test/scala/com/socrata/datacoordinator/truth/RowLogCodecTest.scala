@@ -10,9 +10,9 @@ import com.socrata.datacoordinator.util.RowUtils
 import com.socrata.datacoordinator.util.collection.MutableColumnIdMap
 import org.scalatest.FunSuite
 import org.scalatest.MustMatchers
-import org.scalatest.prop.PropertyChecks
+import org.scalatestplus.scalacheck.ScalaCheckPropertyChecks
 
-class RowLogCodecTest extends FunSuite with MustMatchers with PropertyChecks {
+class RowLogCodecTest extends FunSuite with MustMatchers with ScalaCheckPropertyChecks {
   val InsertId = 0
   val UpdateNoOldRowId = 1
   val DeleteNoOldRowDataId = 2

@@ -8,8 +8,8 @@ import com.socrata.soql.environment.ColumnName
 import org.joda.time.DateTime
 
 object ToProtobuf {
-  def convert(ci: metadata.UnanchoredColumnInfo): UnanchoredColumnInfo =
-    UnanchoredColumnInfo(
+  def convert(ci: metadata.UnanchoredColumnInfo): LogData.UnanchoredColumnInfo =
+    LogData.UnanchoredColumnInfo(
       systemId = ci.systemId.underlying,
       userColumnId = ci.userColumnId.underlying,
       typeName = ci.typeName,
@@ -21,15 +21,15 @@ object ToProtobuf {
       computationStrategyInfo = ci.computationStrategyInfo.map(convert)
     )
 
-  def convert(ci: metadata.ComputationStrategyInfo): com.socrata.datacoordinator.truth.loader.sql.messages.UnanchoredColumnInfo.ComputationStrategyInfo =
-    com.socrata.datacoordinator.truth.loader.sql.messages.UnanchoredColumnInfo.ComputationStrategyInfo(
+  def convert(ci: metadata.ComputationStrategyInfo): LogData.UnanchoredColumnInfo.ComputationStrategyInfo =
+    LogData.UnanchoredColumnInfo.ComputationStrategyInfo(
       strategyType = ci.strategyType.underlying,
       sourceColumnIds = ci.sourceColumnIds.map(_.underlying).to[collection.immutable.Seq],
       parameters = CompactJsonWriter.toString(ci.parameters)
     )
 
-  def convert(ci: metadata.UnanchoredCopyInfo): UnanchoredCopyInfo =
-    UnanchoredCopyInfo(
+  def convert(ci: metadata.UnanchoredCopyInfo): LogData.UnanchoredCopyInfo =
+    LogData.UnanchoredCopyInfo(
       systemId = ci.systemId.underlying,
       copyNumber = ci.copyNumber,
       lifecycleStage = convert(ci.lifecycleStage),
@@ -40,23 +40,23 @@ object ToProtobuf {
   def convert(dateTime: DateTime): Long =
     dateTime.getMillis
 
-  def convert(ls: metadata.LifecycleStage): LifecycleStage.EnumVal = ls match {
-    case metadata.LifecycleStage.Unpublished => LifecycleStage.Unpublished
-    case metadata.LifecycleStage.Published => LifecycleStage.Published
-    case metadata.LifecycleStage.Snapshotted => LifecycleStage.Snapshotted
-    case metadata.LifecycleStage.Discarded => LifecycleStage.Discarded
+  def convert(ls: metadata.LifecycleStage): LogData.LifecycleStage = ls match {
+    case metadata.LifecycleStage.Unpublished => LogData.LifecycleStage.Unpublished
+    case metadata.LifecycleStage.Published => LogData.LifecycleStage.Published
+    case metadata.LifecycleStage.Snapshotted => LogData.LifecycleStage.Snapshotted
+    case metadata.LifecycleStage.Discarded => LogData.LifecycleStage.Discarded
   }
 
-  def convert(di: metadata.UnanchoredDatasetInfo): UnanchoredDatasetInfo =
-    UnanchoredDatasetInfo(
+  def convert(di: metadata.UnanchoredDatasetInfo): LogData.UnanchoredDatasetInfo =
+    LogData.UnanchoredDatasetInfo(
       systemId = di.systemId.underlying,
       nextCounterValue = di.nextCounterValue,
       localeName = di.localeName,
       obfuscationKey = ByteString.copyFrom(di.obfuscationKey)
     )
 
-  def convert(ri: metadata.UnanchoredRollupInfo): UnanchoredRollupInfo =
-    UnanchoredRollupInfo(
+  def convert(ri: metadata.UnanchoredRollupInfo): LogData.UnanchoredRollupInfo =
+    LogData.UnanchoredRollupInfo(
       name = ri.name.underlying,
       soql = ri.soql
     )

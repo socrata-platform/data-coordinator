@@ -133,6 +133,7 @@ pipeline {
           // perform any needed modifiers on the build parameters here
           sbtbuild.setRunITTest(true)
           sbtbuild.setNoSubproject(true)
+          sbtbuild.setScalaVersion("2.12")
 
           // build
           echo "Building sbt project..."

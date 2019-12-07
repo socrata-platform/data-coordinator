@@ -4,7 +4,7 @@ package sql
 import java.sql.{Timestamp, Connection}
 
 import org.joda.time.DateTime
-import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.v2._
 import com.socrata.datacoordinator.util.TimingReport
 
 class SqlSecondaryStoresConfig(conn: Connection, timingReport: TimingReport) extends SecondaryStoresConfig {
@@ -20,7 +20,7 @@ class SqlSecondaryStoresConfig(conn: Connection, timingReport: TimingReport) ext
       stmt <- managed(conn.prepareStatement(sql))
       _ <- unmanaged(stmt.setString(1, storeId))
       rs <- managed(stmt.executeQuery())
-    } yield {
+    } {
       if(rs.next()) {
         Some(SecondaryConfigInfo(
           rs.getString("store_id"),
@@ -67,7 +67,7 @@ class SqlSecondaryStoresConfig(conn: Connection, timingReport: TimingReport) ext
       stmt <- managed(conn.prepareStatement(sql))
       _ <- unmanaged(stmt.setString(1, storeId))
       rs <- managed(stmt.executeQuery())
-    } yield {
+    } {
       if(rs.next()) {
         Option(rs.getString("group_name"))
       } else {

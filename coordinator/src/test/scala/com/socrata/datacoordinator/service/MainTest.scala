@@ -1,6 +1,6 @@
 package com.socrata.datacoordinator.service
 
-import com.socrata.datacoordinator.secondary.config.{SecondaryGroupConfig, StoreConfig}
+import com.socrata.datacoordinator.secondary.config.mock.{SecondaryGroupConfig, StoreConfig}
 import com.socrata.datacoordinator.id.DatasetId
 import org.scalatest.{FunSuite, MustMatchers}
 

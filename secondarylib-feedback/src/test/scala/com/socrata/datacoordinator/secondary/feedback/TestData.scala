@@ -2,7 +2,7 @@ package com.socrata.datacoordinator.secondary.feedback
 
 import com.rojoma.json.v3.ast._
 import com.rojoma.json.v3.interpolation._
-import com.rojoma.simplearm.SimpleArm
+import com.rojoma.simplearm.v2._
 import com.socrata.datacoordinator.id._
 import com.socrata.datacoordinator.secondary
 import com.socrata.datacoordinator.secondary._
@@ -81,8 +81,8 @@ object TestData {
 
     def num1Num2Rows = toRows(systemId, systemPKRows, Map(num1 -> num1Rows, num2 -> num2Rows))
 
-    def managedRows(rows: Iterator[ColumnIdMap[SoQLValue]]) = new SimpleArm[Iterator[ColumnIdMap[SoQLValue]]] {
-      override def flatMap[B](f: (Iterator[ColumnIdMap[SoQLValue]]) => B): B = f(rows)
+    def managedRows(rows: Iterator[ColumnIdMap[SoQLValue]]) = new Managed[Iterator[ColumnIdMap[SoQLValue]]] {
+      override def run[B](f: (Iterator[ColumnIdMap[SoQLValue]]) => B): B = f(rows)
     }
 
     def num2Num3Sum23RowsV7 = toRows(systemId, systemPKRows, Map(num2 -> num2Rows, num3 -> num3RowsV6, sum23 -> sum23RowsV6))

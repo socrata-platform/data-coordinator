@@ -1,15 +1,14 @@
 package com.socrata.datacoordinator.truth
 package sql
 
-import com.rojoma.simplearm.Managed
-import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.v2._
 
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.util.CopyContextResult
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.id.{DatasetId, ColumnId}
 import java.sql.Connection
-import com.rojoma.simplearm.SimpleArm
+import com.rojoma.simplearm.v2._
 import com.socrata.datacoordinator.truth.loader.sql.RepBasedDatasetExtractor
 import com.socrata.datacoordinator.truth.Snapshot
 import scala.Some
@@ -58,7 +57,7 @@ class PostgresDatabaseReader[CT, CV](conn: Connection,
         for {
           stmt <- managed(conn.prepareStatement("SELECT " + colRep.count + " FROM " + copyCtx.copyInfo.dataTableName))
           rs <- managed(stmt.executeQuery())
-        } yield {
+        } {
           val foundOne = rs.next()
           assert(foundOne, "select count(id) returned zero rows?")
           rs.getLong(1)
@@ -81,8 +80,8 @@ class PostgresDatabaseReader[CT, CV](conn: Connection,
         copyCtx.schema.mapValuesStrict(repFor)).allRows(limit, offset, sorted, rowId)
   }
 
-  def openDatabase: Managed[ReadContext] = new SimpleArm[ReadContext] {
-    def flatMap[A](f: ReadContext => A): A =
+  def openDatabase: Managed[ReadContext] = new Managed[ReadContext] {
+    def run[A](f: ReadContext => A): A =
       f(new S(conn))
   }
 }

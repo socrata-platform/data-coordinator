@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator.secondary.feedback
 
 import com.rojoma.json.v3.ast._
-import com.rojoma.simplearm.Managed
+import com.rojoma.simplearm.v2._
 import com.socrata.datacoordinator.id.{UserColumnId, StrategyType}
 import com.socrata.datacoordinator.secondary
 import com.socrata.datacoordinator.secondary._

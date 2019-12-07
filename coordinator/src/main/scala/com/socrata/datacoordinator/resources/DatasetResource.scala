@@ -9,7 +9,7 @@ import com.rojoma.json.v3.ast.{JArray, JNumber, JString, JValue}
 import com.rojoma.json.v3.codec.JsonEncode
 import com.rojoma.json.v3.io.{CompactJsonWriter, JsonBadParse}
 import com.rojoma.json.v3.util.JsonArrayIterator
-import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.v2._
 import com.socrata.datacoordinator.id.{DatasetId, DatasetInternalName, UserColumnId}
 import com.socrata.datacoordinator.service.ServiceUtil._
 import com.socrata.datacoordinator.service._
@@ -44,7 +44,7 @@ case class DatasetResource(datasetId: DatasetId,
   override val log = org.slf4j.LoggerFactory.getLogger(classOf[DatasetResource])
 
   val dateTimeFormat = ISODateTimeFormat.dateTime
-  val mutateRate = metrics.meter("mutation-rate", "rows")
+  val mutateRate = metrics.meter("mutation-rate.rows")
   val suffixHashAlg = "SHA1"
   val suffixHashLen = MessageDigest.getInstance(suffixHashAlg).getDigestLength
 

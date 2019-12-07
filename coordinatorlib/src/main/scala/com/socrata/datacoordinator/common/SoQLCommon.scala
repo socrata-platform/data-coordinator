@@ -1,6 +1,6 @@
 package com.socrata.datacoordinator.common
 
-import com.rojoma.simplearm.{Managed, SimpleArm}
+import com.rojoma.simplearm.v2._
 import com.socrata.datacoordinator.common.soql.{SoQLRep, SoQLRowLogCodec, SoQLTypeContext}
 import com.socrata.datacoordinator.id._
 import com.socrata.datacoordinator.truth.json.{JsonColumnReadRep, JsonColumnRep, JsonColumnWriteRep}
@@ -115,8 +115,8 @@ class SoQLCommon(dataSource: DataSource,
   def isSystemColumnId(name: UserColumnId): Boolean =
     SoQLSystemColumns.isSystemColumnId(name)
 
-  val universe: Managed[PostgresUniverse[CT, CV] with SchemaFinderProvider] = new SimpleArm[PostgresUniverse[CT, CV] with SchemaFinderProvider] {
-    def flatMap[B](f: PostgresUniverse[CT, CV] with SchemaFinderProvider => B): B = {
+  val universe: Managed[PostgresUniverse[CT, CV] with SchemaFinderProvider] = new Managed[PostgresUniverse[CT, CV] with SchemaFinderProvider] {
+    def run[B](f: PostgresUniverse[CT, CV] with SchemaFinderProvider => B): B = {
       val conn = dataSource.getConnection()
       try {
         conn.setAutoCommit(false)

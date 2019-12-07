@@ -4,7 +4,7 @@ package sql
 
 import java.sql.{PreparedStatement, Connection}
 
-import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.v2._
 
 import com.socrata.datacoordinator.util.{LeakDetect, CloseableIterator, FastGroupedIterator}
 import com.socrata.datacoordinator.util.collection.{MutableRowIdMap, MutableColumnIdMap}

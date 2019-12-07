@@ -6,7 +6,7 @@ import com.rojoma.json.v3.codec.JsonEncode
 import com.socrata.datacoordinator.util.CopyContextResult
 import com.socrata.soql.environment.{ColumnName, TableName}
 import org.joda.time.DateTime
-import com.rojoma.simplearm.{Managed, SimpleArm}
+import com.rojoma.simplearm.v2._
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.util.collection.{ColumnIdMap, ColumnIdSet}
@@ -114,20 +114,20 @@ object DatasetReader {
     }
 
     def openDataset(datasetId: DatasetId, copySelector: CopySelector): Managed[CopyContextResult[ReadContext]] =
-      new SimpleArm[CopyContextResult[ReadContext]] {
-        def flatMap[A](f: CopyContextResult[ReadContext] => A): A = for {
+      new Managed[CopyContextResult[ReadContext]] {
+        def run[A](f: CopyContextResult[ReadContext] => A): A = for {
           llCtx <- databaseReader.openDatabase
-        } yield {
+        } {
           val ctxOpt = llCtx.loadDataset(datasetId, copySelector).map(new S(_, llCtx))
           f(ctxOpt)
         }
       }
 
     def openDataset(copyInfo: CopyInfo): Managed[ReadContext] =
-      new SimpleArm[ReadContext] {
-        def flatMap[A](f: ReadContext => A): A = for {
+      new Managed[ReadContext] {
+        def run[A](f: ReadContext => A): A = for {
           llCtx <- databaseReader.openDatabase
-        } yield {
+        } {
           val ctx = new S(llCtx.loadDataset(copyInfo), llCtx)
           f(ctx)
         }
@@ -489,7 +489,7 @@ object DatasetMutator {
     private def go[A](username: String, datasetId: DatasetId, canUpdateOccur: CanUpdateOccur, action: Option[S] => A): A =
       for {
         llCtx <- databaseMutator.openDatabase
-      } yield {
+      } {
         val ctx = llCtx.loadLatestVersionOfDataset(datasetId, lockTimeout) map { copyCtx =>
           val logger = llCtx.logger(copyCtx.datasetInfo, username)
           val schemaLoader = llCtx.schemaLoader(logger)
@@ -502,8 +502,8 @@ object DatasetMutator {
         result
       }
 
-    def openDataset(as: String)(datasetId: DatasetId, check: DatasetCopyContext[CT] => Unit): Managed[Option[S]] = new SimpleArm[Option[S]] {
-      def flatMap[A](f: Option[S] => A): A =
+    def openDataset(as: String)(datasetId: DatasetId, check: DatasetCopyContext[CT] => Unit): Managed[Option[S]] = new Managed[Option[S]] {
+      def run[A](f: Option[S] => A): A =
         go(as, datasetId, UpdateCanOccur, {
           case None => f(None)
           case s@Some(ctx) =>
@@ -512,9 +512,9 @@ object DatasetMutator {
         })
     }
 
-    def createDataset(as: String)(localeName: String, resourceName: Option[String]) = new SimpleArm[S] {
-      def flatMap[A](f: S => A): A =
-        for { llCtx <- databaseMutator.openDatabase } yield {
+    def createDataset(as: String)(localeName: String, resourceName: Option[String]) = new Managed[S] {
+      def run[A](f: S => A): A =
+        for { llCtx <- databaseMutator.openDatabase } {
           val m = llCtx.datasetMap
           val firstVersion = m.create(localeName, resourceName)
           val logger = llCtx.logger(firstVersion.datasetInfo, as)
@@ -528,8 +528,8 @@ object DatasetMutator {
     }
 
     def firstOp[U](as: String, datasetId: DatasetId, targetStage: LifecycleStage, op: S => Either[CopyContextError, U],
-                   check: DatasetCopyContext[CT] => Unit) = new SimpleArm[CopyContext] {
-      def flatMap[A](f: CopyContext => A): A =
+                   check: DatasetCopyContext[CT] => Unit) = new Managed[CopyContext] {
+      def run[A](f: CopyContext => A): A =
         go(as, datasetId, UpdateCanOccur, {
           case None =>
             f(DatasetDidNotExist())
@@ -553,9 +553,9 @@ object DatasetMutator {
       firstOp(as, datasetId, LifecycleStage.Published, _.makeWorkingCopy(copyData), check)
 
     def publishCopy(as: String)(datasetId: DatasetId, keepSnapshot: Boolean, check: DatasetCopyContext[CT] => Unit): Managed[CopyContext] =
-      new SimpleArm[CopyContext] {
-        def flatMap[B](f: CopyContext => B): B = {
-          firstOp(as, datasetId, LifecycleStage.Unpublished, _.publish(keepSnapshot), check).map {
+      new Managed[CopyContext] {
+        def run[B](f: CopyContext => B): B = {
+          firstOp(as, datasetId, LifecycleStage.Unpublished, _.publish(keepSnapshot), check).run {
             case good@CopyOperationComplete(ctx) =>
               f(good)
             case noGood =>
@@ -564,8 +564,8 @@ object DatasetMutator {
         }
       }
 
-    def dropCopy(as: String)(datasetId: DatasetId, check: DatasetCopyContext[CT] => Unit): Managed[DropCopyContext] = new SimpleArm[DropCopyContext] {
-      def flatMap[A](f: DropCopyContext => A): A =
+    def dropCopy(as: String)(datasetId: DatasetId, check: DatasetCopyContext[CT] => Unit): Managed[DropCopyContext] = new Managed[DropCopyContext] {
+      def run[A](f: DropCopyContext => A): A =
         go(as, datasetId, UpdateCannotOccur, {
           case None =>
             f(DatasetDidNotExist())

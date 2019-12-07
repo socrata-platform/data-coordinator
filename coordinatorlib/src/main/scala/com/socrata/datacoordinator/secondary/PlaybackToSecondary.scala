@@ -3,8 +3,7 @@ package secondary
 
 import java.sql.SQLException
 
-import com.rojoma.simplearm.util._
-import com.rojoma.simplearm.SimpleArm
+import com.rojoma.simplearm.v2._
 import com.socrata.datacoordinator.truth.loader.{Delogger, MissingVersion}
 import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.truth.metadata
@@ -15,10 +14,10 @@ import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.util.TimingReport
 import com.socrata.soql.environment.TypeName
 import com.socrata.thirdparty.metrics.Metrics
-import com.typesafe.scalalogging.slf4j.Logging
 import org.postgresql.util.PSQLException
 import scala.concurrent.duration.Duration
 import scala.util.control.ControlThrowable
+import org.slf4j.LoggerFactory
 
 object PlaybackToSecondary {
   type SuperUniverse[CT, CV] = Universe[CT, CV] with Commitable with
@@ -28,13 +27,16 @@ object PlaybackToSecondary {
                                                      DatasetMapWriterProvider with
                                                      DatasetReaderProvider with
                                                      DeloggerProvider
+  private val logger = LoggerFactory.getLogger(classOf[PlaybackToSecondary[_, _]])
 }
 
 class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
                                   repFor: metadata.ColumnInfo[CT] => SqlColumnReadRep[CT, CV],
                                   typeForName: TypeName => Option[CT],
                                   datasetIdFormatter: DatasetId => String,
-                                  timingReport: TimingReport) extends Logging {
+                                  timingReport: TimingReport) {
+  import PlaybackToSecondary.logger
+
   val datasetLockTimeout = Duration.Inf
 
   class LifecycleStageTrackingIterator(underlying: Iterator[Delogger.LogEvent[CV]],
@@ -100,7 +102,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
                                 underlying: Iterator[T],
                                 loggingRate: Int = 10000) extends Iterator[T] with Metrics {
     var itemNum = 0
-    val meter = metrics.meter(name, "rows")
+    val meter = metrics.meter(name + ".rows")
 
     def hasNext: Boolean = underlying.hasNext
     def next(): T = {
@@ -114,7 +116,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
 
   def apply(secondary: NamedSecondary[CT, CV], job: SecondaryRecord): Unit = {
     if (job.pendingDrop) {
-      logger.info("Executing pending drop of dataset {} from store {}.", job.datasetId.toString, job.storeId)
+      logger.info("Executing pending drop of dataset {} from store {}.", job.datasetId : Any, job.storeId)
       new UpdateOp(secondary, job).drop()
     } else {
       new UpdateOp(secondary, job).go()
@@ -391,9 +393,9 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
           val itRows = reader.rows(sorted=false)
           // Sigh. itRows is a simple-arm v1 Managed.  v2 has a monad map() which makes the code below
           // much, much shorter.
-          val wrappedRows = new SimpleArm[Iterator[ColumnIdMap[CV]]] {
-            def flatMap[A](f: Iterator[ColumnIdMap[CV]] => A): A = {
-              itRows.flatMap { it: Iterator[ColumnIdMap[CV]] =>
+          val wrappedRows = new Managed[Iterator[ColumnIdMap[CV]]] {
+            def run[A](f: Iterator[ColumnIdMap[CV]] => A): A = {
+              itRows.run { it: Iterator[ColumnIdMap[CV]] =>
                 f(new InstrumentedIterator("sync-copy-throughput",
                                            copyInfo.datasetInfo.systemId.toString,
                                            it))

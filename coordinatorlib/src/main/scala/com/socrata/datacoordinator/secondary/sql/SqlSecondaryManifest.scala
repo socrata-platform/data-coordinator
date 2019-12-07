@@ -4,7 +4,7 @@ package sql
 import java.sql.{Connection, SQLException, Types}
 import java.util.UUID
 
-import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.v2._
 import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.id.sql._
 import com.socrata.datacoordinator.secondary.Secondary.Cookie

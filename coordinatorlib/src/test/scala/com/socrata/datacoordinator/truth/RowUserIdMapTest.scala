@@ -4,9 +4,9 @@ import java.util.NoSuchElementException
 
 import org.scalatest.FunSuite
 import org.scalatest.MustMatchers
-import org.scalatest.prop.PropertyChecks
+import org.scalatestplus.scalacheck.ScalaCheckPropertyChecks
 
-class RowUserIdMapTest extends FunSuite with MustMatchers with PropertyChecks {
+class RowUserIdMapTest extends FunSuite with MustMatchers with ScalaCheckPropertyChecks {
 
   test("Map begins empty") {
     val map = new SimpleRowUserIdMap

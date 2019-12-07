@@ -5,8 +5,7 @@ import java.sql.Connection
 import javax.sql.DataSource
 
 import org.joda.time.DateTime
-import com.rojoma.simplearm.util._
-import com.rojoma.simplearm.Managed
+import com.rojoma.simplearm.v2._
 
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth.loader._
@@ -14,7 +13,6 @@ import com.socrata.datacoordinator.truth.loader.sql.{RepBasedSqlDatasetContentsC
 import com.socrata.datacoordinator.truth.{TypeContext, RowLogCodec}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.id.{DatasetId, RowId}
-import com.rojoma.simplearm.SimpleArm
 import scala.concurrent.duration.Duration
 import com.socrata.datacoordinator.util.{RowIdProvider, RowVersionProvider, RowDataProvider, TimingReport}
 import com.socrata.datacoordinator.truth.universe._
@@ -79,7 +77,7 @@ class PostgresDatabaseMutator[CT, CV](universe: Managed[Universe[CT, CV] with Lo
 
     def withDataLoader[A](copyCtx: DatasetCopyContext[CT], logger: Logger[CT, CV], reportWriter: ReportWriter[CV], replaceUpdatedRows: Boolean, updateOnly: Boolean)(f: (Loader[CV]) => A): (Long, A) = {
       val dataProvider = new RowDataProvider(copyCtx.datasetInfo.nextCounterValue)
-      for(loader <- universe.loader(copyCtx, new RowIdProvider(dataProvider), new RowVersionProvider(dataProvider), logger, reportWriter, replaceUpdatedRows, updateOnly)) yield {
+      for(loader <- universe.loader(copyCtx, new RowIdProvider(dataProvider), new RowVersionProvider(dataProvider), logger, reportWriter, replaceUpdatedRows, updateOnly)) {
         val result = f(loader)
         loader.finish()
         (dataProvider.finish(), result)
@@ -89,8 +87,8 @@ class PostgresDatabaseMutator[CT, CV](universe: Managed[Universe[CT, CV] with Lo
     def secondaryReindex(logger: Logger[CT, CV]) = {}
   }
 
-  def openDatabase: Managed[MutationContext] = new SimpleArm[MutationContext] {
-    def flatMap[A](f: MutationContext => A): A =
-      for { u <- universe } yield f(new S(u))
+  def openDatabase: Managed[MutationContext] = new Managed[MutationContext] {
+    def run[A](f: MutationContext => A): A =
+      for { u <- universe } f(new S(u))
   }
 }

@@ -3,9 +3,9 @@ package com.socrata.datacoordinator.secondary.feedback
 import com.rojoma.json.v3.ast.JObject
 import com.socrata.datacoordinator.id.{ColumnId, UserColumnId, StrategyType}
 import com.socrata.datacoordinator.secondary.ComputationStrategyInfo
-import org.scalatest.{FunSuite, ShouldMatchers}
+import org.scalatest.{FunSuite, Matchers}
 
-class CookieOperatorTest extends FunSuite with ShouldMatchers {
+class CookieOperatorTest extends FunSuite with Matchers {
 
   val id = new UserColumnId(":id")
   val name = new UserColumnId("name")

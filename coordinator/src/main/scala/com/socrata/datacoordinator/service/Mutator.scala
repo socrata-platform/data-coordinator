@@ -544,12 +544,12 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
       val mutator = u.datasetMutator
       commands.streamType match {
         case NormalMutation(idx, datasetId, schemaHash, expectedDataVersion) =>
-          for(ctxOpt <- mutator.openDataset(user)(datasetId, checkDatasetState(idx, schemaHash, expectedDataVersion, _))) yield {
+          for(ctxOpt <- mutator.openDataset(user)(datasetId, checkDatasetState(idx, schemaHash, expectedDataVersion, _))) {
             val ctx = ctxOpt.getOrElse { throw NoSuchDataset(datasetId)(idx) }
             doProcess(ctx)
           }
         case CreateDatasetMutation(idx, localeName, resourceName) =>
-          for(ctx <- u.datasetMutator.createDataset(user)(localeName, resourceName)) yield {
+          for(ctx <- u.datasetMutator.createDataset(user)(localeName, resourceName)) {
             val cis = ctx.addColumns(systemSchema.toSeq.map { case (col, colInfo) =>
               ctx.ColumnToAdd(col, colInfo.fieldName, colInfo.typ, physicalColumnBaseBase(col.underlying, systemColumn = true), colInfo.computationStrategy)
             })
@@ -563,11 +563,11 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
           }
         case CreateWorkingCopyMutation(idx, datasetId, copyData, schemaHash, expectedDataVersion) =>
           mutator.createCopy(user)(datasetId, copyData = copyData,
-                                   checkDatasetState(idx, schemaHash, expectedDataVersion, _)).map(process(idx, datasetId, mutator))
+                                   checkDatasetState(idx, schemaHash, expectedDataVersion, _)).run(process(idx, datasetId, mutator))
         case PublishWorkingCopyMutation(idx, datasetId, keepSnapshot, schemaHash, expectedDataVersion) =>
-          mutator.publishCopy(user)(datasetId, keepSnapshot, checkDatasetState(idx, schemaHash, expectedDataVersion, _)).map(process(idx, datasetId, mutator))
+          mutator.publishCopy(user)(datasetId, keepSnapshot, checkDatasetState(idx, schemaHash, expectedDataVersion, _)).run(process(idx, datasetId, mutator))
         case DropWorkingCopyMutation(idx, datasetId, schemaHash, expectedDataVersion) =>
-          mutator.dropCopy(user)(datasetId, checkDatasetState(idx, schemaHash, expectedDataVersion, _)).map {
+          mutator.dropCopy(user)(datasetId, checkDatasetState(idx, schemaHash, expectedDataVersion, _)).run {
             case cc: mutator.CopyContextError =>
               processError(idx, datasetId, mutator)(cc)
             case mutator.InitialWorkingCopy =>

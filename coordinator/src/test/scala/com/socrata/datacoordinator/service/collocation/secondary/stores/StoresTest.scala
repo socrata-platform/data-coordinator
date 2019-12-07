@@ -1,8 +1,8 @@
 package com.socrata.datacoordinator.service.collocation.secondary.stores
 
-import org.scalatest.{FunSuite, ShouldMatchers}
+import org.scalatest.{FunSuite, Matchers}
 
-class StoresTest extends FunSuite with ShouldMatchers {
+class StoresTest extends FunSuite with Matchers {
 
   def testRep(name: String, count: Int = 10)(f: => Unit): Unit = {
     test(name) {

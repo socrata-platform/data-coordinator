@@ -7,7 +7,7 @@ import javax.servlet.http.HttpServletResponse
 import com.rojoma.json.v3.ast.{JString, JValue}
 import com.rojoma.json.v3.io.{CompactJsonWriter, JsonBadParse}
 import com.rojoma.json.v3.util.JsonArrayIterator
-import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.v2._
 import com.socrata.datacoordinator.external.BodyRequestError
 import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.service.ProcessCreationReturns

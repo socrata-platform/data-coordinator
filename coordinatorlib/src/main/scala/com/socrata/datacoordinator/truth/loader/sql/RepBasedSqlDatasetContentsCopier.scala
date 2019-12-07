@@ -3,7 +3,7 @@ package sql
 
 import java.sql.Connection
 
-import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.v2._
 
 import com.socrata.datacoordinator.truth.metadata.{DatasetCopyContext, ColumnInfo, CopyInfo}
 import com.socrata.datacoordinator.truth.sql.SqlColumnWriteRep

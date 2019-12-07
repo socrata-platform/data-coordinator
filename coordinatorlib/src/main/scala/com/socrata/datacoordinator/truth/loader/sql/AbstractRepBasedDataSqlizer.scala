@@ -3,7 +3,7 @@ package truth.loader.sql
 
 import java.sql.{ResultSet, Connection, PreparedStatement}
 
-import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.v2._
 
 import com.socrata.datacoordinator.truth.sql.{SqlPKableColumnRep, RepBasedSqlDatasetContext, SqlColumnRep}
 import com.socrata.datacoordinator.util.{CloseableIterator, FastGroupedIterator, LeakDetect}

@@ -9,7 +9,7 @@ import com.socrata.datacoordinator.id.DatasetInternalName
 import com.socrata.datacoordinator.resources.SecondariesOfDatasetResult
 import com.socrata.datacoordinator.resources.collocation.{CollocatedDatasetsResult, SecondaryMoveJobsResult}
 import com.socrata.datacoordinator.secondary.SecondaryMetric
-import com.socrata.datacoordinator.secondary.config.{SecondaryGroupConfig, StoreConfig}
+import com.socrata.datacoordinator.secondary.config.mock.{SecondaryGroupConfig, StoreConfig}
 import org.scalamock.scalatest.MockFactory
 import org.scalatest.{FunSuite, Matchers}
 
@@ -97,7 +97,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
                   instances: Set[String],
                   instancesNotAcceptingNewDatasets: Set[String] = Set.empty) = {
     val instanceMap = instances.map { instance =>
-      val config = StoreConfig(1000L, !instancesNotAcceptingNewDatasets(instance))
+      val config = StoreConfig(1000, !instancesNotAcceptingNewDatasets(instance))
       (instance, config)
     }.toMap
 

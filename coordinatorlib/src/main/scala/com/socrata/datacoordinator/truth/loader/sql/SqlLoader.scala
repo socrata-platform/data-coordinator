@@ -9,7 +9,7 @@ import java.sql.Connection
 import java.util.concurrent.Executor
 
 import gnu.trove.map.hash.TIntObjectHashMap
-import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.v2._
 
 import com.socrata.datacoordinator.util._
 import com.socrata.datacoordinator.util.TIntObjectHashMapWrapper

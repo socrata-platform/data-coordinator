@@ -6,7 +6,7 @@ import java.lang.StringBuilder
 import java.io.Writer
 import java.sql.{ResultSet, Connection}
 
-import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.v2._
 
 import com.socrata.datacoordinator.id.ColumnId
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
