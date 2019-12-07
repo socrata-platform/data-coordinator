@@ -3,7 +3,7 @@ package com.socrata.datacoordinator.secondary.sql
 import java.sql.Connection
 import java.util.UUID
 
-import com.rojoma.simplearm.util.using
+import com.rojoma.simplearm.v2.using
 import com.socrata.datacoordinator.secondary.CollocationManifest
 
 import scala.collection.mutable

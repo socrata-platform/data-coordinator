@@ -4,7 +4,7 @@ package sql
 
 import java.sql.Connection
 
-import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.v2._
 import com.socrata.datacoordinator.truth.sql.{DatabasePopulator, SqlColumnRep, SqlPKableColumnRep}
 import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, ComputationStrategyInfo, CopyInfo, LifecycleStage}
 

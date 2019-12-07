@@ -3,15 +3,16 @@ package truth.loader
 package sql
 
 import java.sql.Connection
-import com.google.protobuf.MessageLite
 import com.socrata.datacoordinator.truth.RowLogCodec
 import java.util.zip.{Deflater, DeflaterOutputStream}
 import com.socrata.datacoordinator.util.{Counter, TimingReport}
 import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, ComputationStrategyInfo, CopyInfo, RollupInfo}
 import com.socrata.datacoordinator.id.RowId
-import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.v2._
 import com.socrata.soql.environment.ColumnName
 import org.joda.time.DateTime
+
+import messages.LogData
 
 abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
                                          val auditTableName: String,
@@ -33,7 +34,7 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
     for {
       stmt <- managed(connection.createStatement())
       rs <- managed(stmt.executeQuery("SELECT MAX(version) FROM " + auditTableName))
-    } yield {
+    } {
       val hasNext = rs.next()
       assert(hasNext, "next version query didn't return anything?")
       // MAX(version) will be null if there is no data in the log table;
@@ -57,75 +58,75 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
     }
   }
 
-  private def logLine(what: String, aux: MessageLite) {
+  private def logLine[T](what: String, aux: scalapb.GeneratedMessage) {
     logLine(what, aux.toByteArray)
   }
 
   def columnCreated(info: ColumnInfo[CT]) {
     checkTxn()
     flushRowData()
-    logLine(ColumnCreated, messages.ColumnCreated(convert(info.unanchored)))
+    logLine(ColumnCreated, LogData.ColumnCreated(convert(info.unanchored)))
   }
 
   def columnRemoved(info: ColumnInfo[CT]) {
     checkTxn()
     flushRowData()
-    logLine(ColumnRemoved, messages.ColumnRemoved(convert(info.unanchored)))
+    logLine(ColumnRemoved, LogData.ColumnRemoved(convert(info.unanchored)))
   }
 
   def computationStrategyCreated(info: ColumnInfo[CT], cs: ComputationStrategyInfo): Unit = {
     checkTxn()
     flushRowData()
-    logLine(ComputationStrategyCreated, messages.ComputationStrategyCreated(convert(info.unanchored)))
+    logLine(ComputationStrategyCreated, LogData.ComputationStrategyCreated(convert(info.unanchored)))
   }
 
   def computationStrategyRemoved(info: ColumnInfo[CT]): Unit = {
     checkTxn()
     flushRowData()
-    logLine(ComputationStrategyRemoved, messages.ComputationStrategyRemoved(convert(info.unanchored)))
+    logLine(ComputationStrategyRemoved, LogData.ComputationStrategyRemoved(convert(info.unanchored)))
   }
 
   def fieldNameUpdated(info: ColumnInfo[CT]): Unit = {
     checkTxn()
     flushRowData()
     assert(info.fieldName.isDefined, "Got a field name updated without a field name?  This should be impossible.")
-    logLine(FieldNameUpdated, messages.FieldNameUpdated(convert(info.unanchored)))
+    logLine(FieldNameUpdated, LogData.FieldNameUpdated(convert(info.unanchored)))
   }
 
   def rowIdentifierSet(info: ColumnInfo[CT]) {
     checkTxn()
     flushRowData()
-    logLine(RowIdentifierSet, messages.RowIdentifierSet(convert(info.unanchored)))
+    logLine(RowIdentifierSet, LogData.RowIdentifierSet(convert(info.unanchored)))
   }
 
   def rowIdentifierCleared(info: ColumnInfo[CT]) {
     checkTxn()
     flushRowData()
-    logLine(RowIdentifierCleared, messages.RowIdentifierCleared(convert(info.unanchored)))
+    logLine(RowIdentifierCleared, LogData.RowIdentifierCleared(convert(info.unanchored)))
   }
 
   def systemIdColumnSet(info: ColumnInfo[CT]) {
     checkTxn()
     flushRowData()
-    logLine(SystemRowIdentifierChanged, messages.SystemIdColumnSet(convert(info.unanchored)))
+    logLine(SystemRowIdentifierChanged, LogData.SystemIdColumnSet(convert(info.unanchored)))
   }
 
   def versionColumnSet(info: ColumnInfo[CT]) {
     checkTxn()
     flushRowData()
-    logLine(VersionColumnChanged, messages.VersionColumnSet(convert(info.unanchored)))
+    logLine(VersionColumnChanged, LogData.VersionColumnSet(convert(info.unanchored)))
   }
 
   def lastModifiedChanged(lastModified: DateTime) {
     checkTxn()
     flushRowData()
-    logLine(LastModifiedChanged, messages.LastModifiedChanged(convert(lastModified)))
+    logLine(LastModifiedChanged, LogData.LastModifiedChanged(convert(lastModified)))
   }
 
   def workingCopyCreated(info: CopyInfo) {
     checkTxn()
     flushRowData()
-    logLine(WorkingCopyCreated, messages.WorkingCopyCreated(
+    logLine(WorkingCopyCreated, LogData.WorkingCopyCreated(
       convert(info.datasetInfo.unanchored),
       convert(info.unanchored))
     )
@@ -135,47 +136,47 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
     checkTxn()
     flushRowData()
 
-    logLine(DataCopied, messages.DataCopied.defaultInstance)
+    logLine(DataCopied, LogData.DataCopied.defaultInstance)
   }
 
   def snapshotDropped(info: CopyInfo) {
     checkTxn()
     flushRowData()
-    logLine(SnapshotDropped, messages.SnapshotDropped(convert(info.unanchored)))
+    logLine(SnapshotDropped, LogData.SnapshotDropped(convert(info.unanchored)))
   }
 
   def workingCopyDropped() {
     checkTxn()
     flushRowData()
-    logLine(WorkingCopyDropped, messages.WorkingCopyDropped.defaultInstance)
+    logLine(WorkingCopyDropped, LogData.WorkingCopyDropped.defaultInstance)
   }
 
   def workingCopyPublished() {
     checkTxn()
     flushRowData()
-    logLine(WorkingCopyPublished, messages.WorkingCopyPublished.defaultInstance)
+    logLine(WorkingCopyPublished, LogData.WorkingCopyPublished.defaultInstance)
   }
 
   def rollupCreatedOrUpdated(info: RollupInfo) {
     checkTxn()
     flushRowData()
-    logLine(RollupCreatedOrUpdated, messages.RollupCreatedOrUpdated(convert(info.unanchored)))
+    logLine(RollupCreatedOrUpdated, LogData.RollupCreatedOrUpdated(convert(info.unanchored)))
   }
 
   def rollupDropped(info: RollupInfo) {
     checkTxn()
     flushRowData()
-    logLine(RollupDropped, messages.RollupDropped(convert(info.unanchored)))
+    logLine(RollupDropped, LogData.RollupDropped(convert(info.unanchored)))
   }
 
   def secondaryReindex() = {
     checkTxn()
-    logLine(SecondaryReindex, messages.SecondaryReindex.defaultInstance)
+    logLine(SecondaryReindex, LogData.SecondaryReindex.defaultInstance)
   }
 
   def secondaryAddIndex(fieldName: ColumnName) = {
     checkTxn()
-    logLine(SecondaryAddIndex, messages.SecondaryAddIndex(convert(fieldName)))
+    logLine(SecondaryAddIndex, LogData.SecondaryAddIndex(convert(fieldName)))
   }
 
   def endTransaction() = {
@@ -185,7 +186,7 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
     flushRowData()
 
     if(nextSubVersionNum.peek != nextSubVersionNum.init) {
-      logLine(TransactionEnded, messages.EndTransaction.defaultInstance)
+      logLine(TransactionEnded, LogData.EndTransaction.defaultInstance)
       flushBatch()
       Some(versionNum)
     } else {
@@ -196,7 +197,7 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
   def counterUpdated(nextCounter: Long) {
     checkTxn()
     flushRowData()
-    logLine(CounterUpdated, messages.CounterUpdated(nextCounter))
+    logLine(CounterUpdated, LogData.CounterUpdated(nextCounter))
   }
 
   // DataLogger facet starts here
@@ -264,7 +265,7 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
 
   private def noteDataEnd(): Unit = {
     dataStart.foreach { subVersion =>
-      val aux = messages.RowsChangedPreview(rowsInserted, rowsUpdated, rowsDeleted, dataTruncated)
+      val aux = LogData.RowsChangedPreview(rowsInserted, rowsUpdated, rowsDeleted, dataTruncated)
       logRowsChangePreview(subVersion, RowsChangedPreview, aux.toByteArray)
     }
     dataStart = None
@@ -293,7 +294,7 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
     checkTxn()
     flushRowData()
     noteDataStart()
-    logLine(Truncated, messages.Truncated.defaultInstance)
+    logLine(Truncated, LogData.Truncated())
     dataTruncated = true
     rowDataState = WroteTruncated
   }

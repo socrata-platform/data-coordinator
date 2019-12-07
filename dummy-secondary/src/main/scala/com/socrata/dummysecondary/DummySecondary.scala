@@ -1,10 +1,11 @@
 package com.socrata.dummysecondary
 
+import com.rojoma.simplearm.v2._
 import com.socrata.datacoordinator.secondary._
 import com.typesafe.config.Config
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.datacoordinator.secondary.ColumnInfo
-import scala.Some
+import scala.io.StdIn
 import com.socrata.datacoordinator.secondary.DatasetInfo
 
 class DummySecondary(config: Config) extends Secondary[Any, Any] {
@@ -20,14 +21,14 @@ class DummySecondary(config: Config) extends Secondary[Any, Any] {
    *         return 0 if this ID does not name a known dataset.
    */
   def currentVersion(datasetInternalName: String, cookie: Secondary.Cookie): Long =
-    readLine("What version of " + datasetInternalName + "? (" + cookie + ") ").toLong
+    StdIn.readLine("What version of " + datasetInternalName + "? (" + cookie + ") ").toLong
 
   /**
    * @return The `copyNumber` of the latest copy this secondary has.  Should
    *         return 0 if this ID does not name a known dataset.
    */
   def currentCopyNumber(datasetInternalName: String, cookie: Secondary.Cookie): Long =
-    readLine("What copy of " + datasetInternalName + "? (" + cookie + ") ").toLong
+    StdIn.readLine("What copy of " + datasetInternalName + "? (" + cookie + ") ").toLong
 
   /**
    * Order this secondary to drop a snapshot.  This should ignore the request
@@ -35,7 +36,7 @@ class DummySecondary(config: Config) extends Secondary[Any, Any] {
    * copyNumber does not name a snapshot).
    */
   def dropCopy(datasetInfo: DatasetInfo, copyInfo: CopyInfo, cookie: Secondary.Cookie, isLatestCopy: Boolean): Secondary.Cookie =
-    readLine("Dropping copy " + datasetInfo.internalName + "; new cookie? (" + cookie + ") ") match {
+    StdIn.readLine("Dropping copy " + datasetInfo.internalName + "; new cookie? (" + cookie + ") ") match {
       case "" => cookie
       case other => Some(other)
     }
@@ -49,7 +50,7 @@ class DummySecondary(config: Config) extends Secondary[Any, Any] {
     println("Got a new version of " + datasetInfo.internalName)
     println("Version " + dataVersion)
     println("Current cookie: " + cookie)
-    readLine("Skip or read or resync? ") match {
+    StdIn.readLine("Skip or read or resync? ") match {
       case "skip" | "s" =>
         // pass
       case "read" | "r" =>
@@ -58,29 +59,29 @@ class DummySecondary(config: Config) extends Secondary[Any, Any] {
         ???
     }
     println("Current cookie: " + cookie)
-    readLine("New cookie? ") match {
+    StdIn.readLine("New cookie? ") match {
       case "" => cookie
       case other => Some(other)
     }
   }
 
   def resync(datasetInfo: DatasetInfo, copyInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo[Any]], cookie: Secondary.Cookie,
-             rows: _root_.com.rojoma.simplearm.Managed[Iterator[com.socrata.datacoordinator.secondary.Row[Any]]],
+             rows: Managed[Iterator[com.socrata.datacoordinator.secondary.Row[Any]]],
              rollups: Seq[RollupInfo], isLatestCopy: Boolean): Secondary.Cookie = {
     println("Got a resync request on " + datasetInfo.internalName)
     println("Copy: " + copyInfo)
     println("Current cookie: " + cookie)
-    readLine("Skip or read? ") match {
+    StdIn.readLine("Skip or read? ") match {
       case "skip" | "s" =>
         // pass
       case "read" | "r" =>
-        rows.foreach { it =>
+        rows.run { it =>
           it.foreach(println)
         }
         rollups.foreach(println)
     }
     println("Current cookie: " + cookie)
-    readLine("New cookie? ") match {
+    StdIn.readLine("New cookie? ") match {
       case "" => cookie
       case other => Some(other)
     }

@@ -4,7 +4,7 @@ import java.sql.Connection
 
 import scala.io.{Source, Codec}
 
-import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.v2._
 import com.socrata.datacoordinator.util.TemplateReplacer
 
 object DatabasePopulator {

@@ -5,12 +5,14 @@ import scala.io.Codec
 
 import java.sql.{ResultSet, PreparedStatement, Connection}
 
-import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.v2._
 
 import com.socrata.datacoordinator.truth.RowLogCodec
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.util.{CloseableIterator, LeakDetect}
 import com.socrata.soql.environment.ColumnName
+
+import messages.LogData
 
 class SqlDelogger[CV](connection: Connection,
                       logTableName: String,
@@ -195,62 +197,62 @@ class SqlDelogger[CV](connection: Connection,
       Delogger.RowDataUpdated(aux)(rowCodecFactory())
 
     def decodeCounterUpdated(aux: Array[Byte]) = {
-      val msg = messages.CounterUpdated.defaultInstance.mergeFrom(aux)
+      val msg = LogData.CounterUpdated.parseFrom(aux)
       Delogger.CounterUpdated(msg.nextCounter)
     }
 
     def decodeColumnCreated(aux: Array[Byte]) = {
-      val msg = messages.ColumnCreated.defaultInstance.mergeFrom(aux)
+      val msg = LogData.ColumnCreated.parseFrom(aux)
       Delogger.ColumnCreated(convert(msg.columnInfo))
     }
 
     def decodeColumnRemoved(aux: Array[Byte]) = {
-      val msg = messages.ColumnRemoved.defaultInstance.mergeFrom(aux)
+      val msg = LogData.ColumnRemoved.parseFrom(aux)
       Delogger.ColumnRemoved(convert(msg.columnInfo))
     }
 
     def decodeComputationStrategyCreated(aux: Array[Byte]) = {
-      val msg = messages.ComputationStrategyCreated.defaultInstance.mergeFrom(aux)
+      val msg = LogData.ComputationStrategyCreated.parseFrom(aux)
       Delogger.ComputationStrategyCreated(convert(msg.columnInfo))
     }
 
     def decodeComputationStrategyRemoved(aux: Array[Byte]) = {
-      val msg = messages.ComputationStrategyRemoved.defaultInstance.mergeFrom(aux)
+      val msg = LogData.ComputationStrategyRemoved.parseFrom(aux)
       Delogger.ComputationStrategyRemoved(convert(msg.columnInfo))
     }
 
     def decodeFieldNameUpdated(aux: Array[Byte]) = {
-      val msg = messages.FieldNameUpdated.defaultInstance.mergeFrom(aux)
+      val msg = LogData.FieldNameUpdated.parseFrom(aux)
       Delogger.FieldNameUpdated(convert(msg.columnInfo))
     }
 
     def decodeRowIdentifierSet(aux: Array[Byte]) = {
-      val msg = messages.RowIdentifierSet.defaultInstance.mergeFrom(aux)
+      val msg = LogData.RowIdentifierSet.parseFrom(aux)
       Delogger.RowIdentifierSet(convert(msg.columnInfo))
     }
 
     def decodeLastModifiedChanged(aux: Array[Byte]) = {
-      val msg = messages.LastModifiedChanged.defaultInstance.mergeFrom(aux)
+      val msg = LogData.LastModifiedChanged.parseFrom(aux)
       Delogger.LastModifiedChanged(convert(msg.lastModified))
     }
 
     def decodeRowIdentifierCleared(aux: Array[Byte]) = {
-      val msg = messages.RowIdentifierCleared.defaultInstance.mergeFrom(aux)
+      val msg = LogData.RowIdentifierCleared.parseFrom(aux)
       Delogger.RowIdentifierCleared(convert(msg.columnInfo))
     }
 
     def decodeSystemRowIdentifierChanged(aux: Array[Byte]) = {
-      val msg = messages.SystemIdColumnSet.defaultInstance.mergeFrom(aux)
+      val msg = LogData.SystemIdColumnSet.parseFrom(aux)
       Delogger.SystemRowIdentifierChanged(convert(msg.columnInfo))
     }
 
     def decodeVersionColumnChanged(aux: Array[Byte]) = {
-      val msg = messages.VersionColumnSet.defaultInstance.mergeFrom(aux)
+      val msg = LogData.VersionColumnSet.parseFrom(aux)
       Delogger.VersionColumnChanged(convert(msg.columnInfo))
     }
 
     def decodeWorkingCopyCreated(aux: Array[Byte]) = {
-      val msg = messages.WorkingCopyCreated.defaultInstance.mergeFrom(aux)
+      val msg = LogData.WorkingCopyCreated.parseFrom(aux)
       Delogger.WorkingCopyCreated(
         convert(msg.datasetInfo),
         convert(msg.copyInfo)
@@ -258,28 +260,28 @@ class SqlDelogger[CV](connection: Connection,
     }
 
     def decodeSnapshotDropped(aux: Array[Byte]) = {
-      val msg = messages.SnapshotDropped.defaultInstance.mergeFrom(aux)
+      val msg = LogData.SnapshotDropped.parseFrom(aux)
       Delogger.SnapshotDropped(convert(msg.copyInfo))
     }
 
     def decodeRollupCreatedOrUpdated(aux: Array[Byte]) = {
-      val msg = messages.RollupCreatedOrUpdated.defaultInstance.mergeFrom(aux)
+      val msg = LogData.RollupCreatedOrUpdated.parseFrom(aux)
       Delogger.RollupCreatedOrUpdated(convert(msg.rollupInfo))
     }
 
     def decodeRollupDropped(aux: Array[Byte]) = {
-      val msg = messages.RollupDropped.defaultInstance.mergeFrom(aux)
+      val msg = LogData.RollupDropped.parseFrom(aux)
       Delogger.RollupDropped(convert(msg.rollupInfo))
     }
 
     def decodeRowsChangedPreview(aux: Array[Byte]) = {
-      val msg = messages.RowsChangedPreview.defaultInstance.mergeFrom(aux)
+      val msg = LogData.RowsChangedPreview.parseFrom(aux)
       Delogger.RowsChangedPreview(msg.rowsInserted, msg.rowsUpdated, msg.rowsDeleted, msg.truncated)
     }
 
     def decodeSecondaryAddIndex(aux: Array[Byte]) = {
-      val msg = messages.SecondaryAddIndex.defaultInstance.mergeFrom(aux)
-      Delogger.SecondaryAddIndex(ColumnName(msg.`fieldName`))
+      val msg = LogData.SecondaryAddIndex.parseFrom(aux)
+      Delogger.SecondaryAddIndex(ColumnName(msg.fieldName))
     }
   }
 

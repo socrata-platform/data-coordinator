@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator.common
 
 import scala.concurrent.duration._
-import com.rojoma.simplearm.Managed
+import com.rojoma.simplearm.v2._
 import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.truth.metadata.{DatasetCopyContext, Schema, SchemaWithFieldName}
 import com.socrata.datacoordinator.truth.universe.{CacheProvider, DatasetMapReaderProvider, Universe}

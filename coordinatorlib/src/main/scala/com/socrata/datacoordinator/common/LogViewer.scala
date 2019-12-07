@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator.common
 
 import com.typesafe.config.ConfigFactory
-import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.v2._
 import com.socrata.datacoordinator.truth.loader.sql.SqlDelogger
 import com.socrata.datacoordinator.common.soql.{SoQLRep, SoQLRowLogCodec}
 import com.socrata.datacoordinator.truth.loader.{Delete, Update, Insert, Delogger}

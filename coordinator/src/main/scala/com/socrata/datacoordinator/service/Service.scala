@@ -10,7 +10,7 @@ import com.socrata.http.server.responses._
 import com.socrata.http.server.util.handlers.{LoggingOptions, NewLoggingHandler, ThreadRenamingHandler}
 import com.socrata.http.server.util.ErrorAdapter
 import com.socrata.http.server.util.RequestId.ReqIdHeader
-import com.socrata.thirdparty.metrics.{MetricsOptions, MetricsReporter, SocrataHttpSupport}
+import com.socrata.thirdparty.metrics.{MetricsReporter, SocrataHttpSupport}
 import java.util.concurrent.atomic.AtomicInteger
 
 import com.socrata.datacoordinator.service.ServiceUtil._
@@ -290,7 +290,7 @@ class Service(serviceConfig: ServiceConfig,
   private val logOptions = LoggingOptions(LoggerFactory.getLogger(""),
                                           logRequestHeaders = Set(ReqIdHeader, "X-Socrata-Resource"))
 
-  private val metricsOptions = MetricsOptions(serviceConfig.metrics)
+  private val metricsOptions = serviceConfig.metrics
 
   def run(port: Int, broker: ServerBroker) {
     for { reporter <- MetricsReporter.managed(metricsOptions) } {

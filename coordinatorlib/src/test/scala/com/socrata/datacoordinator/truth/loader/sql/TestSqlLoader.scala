@@ -9,15 +9,15 @@ import scala.collection.immutable.VectorBuilder
 import java.sql.{Connection, DriverManager, ResultSet}
 
 import org.scalatest.MustMatchers
-import org.scalatest.prop.PropertyChecks
-import com.rojoma.simplearm.util._
+import org.scalatestplus.scalacheck.ScalaCheckPropertyChecks
+import com.rojoma.simplearm.v2._
 import com.socrata.datacoordinator.util.{NoopTimingReport, RowDataProvider, RowIdProvider, RowVersionProvider}
 import com.socrata.datacoordinator.id.{ColumnId, RowId, RowVersion}
 import com.socrata.datacoordinator.util.collection.{ColumnIdMap, MutableColumnIdMap}
 import com.rojoma.json.v3.ast.{JNumber, JString, JValue}
 import org.scalacheck.{Arbitrary, Gen}
 
-class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with BeforeAndAfterAll {
+class TestSqlLoader extends FunSuite with MustMatchers with ScalaCheckPropertyChecks with BeforeAndAfterAll {
 
   Class.forName("org.h2.Driver") // force driver to load
 
@@ -47,7 +47,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
     for {
       stmt <- managed(conn.createStatement())
       rs <- managed(stmt.executeQuery(sql))
-    } yield {
+    } {
       val result = new VectorBuilder[Map[String, Any]]
       while(rs.next()) {
         result += (1 to rs.getMetaData.getColumnCount).foldLeft(Map.empty[String, Any]) { (row, col) =>
@@ -1492,14 +1492,14 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
             val smartData = for {
               smartStmt <- managed(smartConn.createStatement())
               smartRs <- managed(smartStmt.executeQuery(query(dataSqlizer.dataTableName)))
-            } yield {
+            } {
               result(smartRs)
             }
 
             val stupidData = for {
               stupidStmt <- managed(stupidConn.createStatement())
               stupidRs <- managed(stupidStmt.executeQuery(query(stupidDataSqlizer.dataTableName)))
-            } yield {
+            } {
               result(stupidRs)
             }
 
@@ -1527,7 +1527,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       id <- genId
       num <- Gen.frequency(2 -> Arbitrary.arbitrary[Long].map(Some(_)), 1 -> Gen.const(None))
       data <- Gen.frequency(2 -> Arbitrary.arbitrary[String].map(Some(_)), 1 -> Gen.const(None))
-    } yield Upsert(Some(id), num, data.map(_.filterNot(_ == '\0')))
+    } yield Upsert(Some(id), num, data.map(_.filterNot(_ == '\u0000')))
 
     def applyOps(txn: Loader[TestColumnValue], ops: List[Op]) {
       for((op, job) <- ops.zipWithIndex) op match {
@@ -1563,7 +1563,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with PropertyChecks with 
       id <- Gen.frequency(1 -> genId.map(Some(_)), 2 -> Gen.const(None))
       num <- Gen.frequency(2 -> Arbitrary.arbitrary[Long].map(Some(_)), 1 -> Gen.const(None))
       data <- Gen.frequency(2 -> Arbitrary.arbitrary[String].map(Some(_)), 1 -> Gen.const(None))
-    } yield Upsert(id, num, data.map(_.filterNot(_ == '\0')))
+    } yield Upsert(id, num, data.map(_.filterNot(_ == '\u0000')))
 
     def applyOps(txn: Loader[TestColumnValue], ops: List[Op]) {
       for ((op, job) <- ops.zipWithIndex) op match {

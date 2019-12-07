@@ -7,8 +7,7 @@ import java.io.{File, OutputStream, Reader}
 
 import com.socrata.datacoordinator.secondary.messaging.MessageProducer
 import org.joda.time.DateTime
-import com.rojoma.simplearm.SimpleArm
-import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.v2._
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth.sql.{PostgresDatabaseMutator, PostgresDatabaseReader, RepBasedSqlDatasetContext, SqlColumnRep}
 import com.socrata.datacoordinator.truth._
@@ -204,8 +203,8 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
   lazy val datasetReader = DatasetReader(lowLevelDatabaseReader)
 
   lazy val lowLevelDatabaseMutator = new PostgresDatabaseMutator[ColumnType, ColumnValue](
-    new SimpleArm[PostgresUniverse.this.type] {
-      def flatMap[B](f: PostgresUniverse.this.type => B): B = f(PostgresUniverse.this)
+    new Managed[PostgresUniverse.this.type] {
+      def run[B](f: PostgresUniverse.this.type => B): B = f(PostgresUniverse.this)
     }
   )
 

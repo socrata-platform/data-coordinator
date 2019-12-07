@@ -12,7 +12,7 @@ import scala.collection.immutable.VectorBuilder
 import java.sql._
 
 import org.postgresql.util.PSQLException
-import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.v2.using
 
 import com.socrata.datacoordinator.truth.{DatabaseInReadOnlyMode, DatasetIdInUseByWriterException}
 import com.socrata.datacoordinator.id._

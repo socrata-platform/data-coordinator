@@ -1,6 +1,6 @@
 package com.socrata.datacoordinator.secondary
 
-import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.v2._
 import java.io.OutputStream
 import java.sql.Connection
 import java.util.concurrent.{Executors, TimeUnit}

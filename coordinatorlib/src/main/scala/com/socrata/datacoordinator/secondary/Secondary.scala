@@ -1,6 +1,6 @@
 package com.socrata.datacoordinator.secondary
 
-import com.rojoma.simplearm.Managed
+import com.rojoma.simplearm.v2._
 
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 

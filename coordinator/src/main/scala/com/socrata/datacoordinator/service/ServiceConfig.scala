@@ -8,43 +8,34 @@ import com.socrata.curator.{CuratorConfig, DiscoveryConfig}
 import com.typesafe.config.Config
 import java.util.concurrent.TimeUnit
 
-import net.ceedubs.ficus.FicusConfig._
+import com.socrata.thirdparty.typesafeconfig.ConfigClass
+import com.socrata.thirdparty.metrics.MetricsOptions
 
-import scala.concurrent.duration.{FiniteDuration, MILLISECONDS}
+class ServiceConfig(val config: Config, root: String, hostPort: Int => Int) extends ConfigClass(config, root) {
+  val collocation = getConfig("collocation", new CollocationConfig(_, _))
+  val secondary = getConfig("secondary", new SecondaryConfig(_, _))
+  val network = getConfig("network", new NetworkConfig(_, _))
+  val curator = getConfig("curator", new CuratorConfig(_, _))
+  val discovery = getConfig("service-advertisement", new DiscoveryConfig(_, _))
+  val livenessCheck = getConfig("liveness-check", new LivenessCheckConfig(_, _) {
+                                  override val port = optionally(getInt("port")).map(hostPort)
+                                })
+  val dataSource = getConfig("database", new DataSourceConfig(_, _))
+  val logProperties = getRawConfig("log4j")
+  val commandReadLimit = getBytes("command-read-limit")
+  val allowDdlOnPublishedCopies = getBoolean("allow-ddl-on-published-copies")
+  val instance = getString("instance")
+  val tablespace = getString("tablespace")
+  val writeLockTimeout = getDuration("write-lock-timeout")
+  val reports = getConfig("reports", new ReportsConfig(_, _))
+  val metrics = MetricsOptions(getRawConfig("metrics")) // TODO make that a ConfigClass
+  val logTableCleanupSleepTime = getDuration("log-table-cleanup-sleep-time")
+  val logTableCleanupDeleteOlderThan = getDuration("log-table-cleanup-delete-older-than")
+  val logTableCleanupDeleteEvery = getDuration("log-table-cleanup-delete-every")
+  val maxMutationThreads = getInt("max-mutation-threads")
+  val mutationResourceTimeout = getDuration("mutation-resource-timeout")
+  val jettyThreadpool = getRawConfig("jetty-threadpool") // TODO make that a ConfigClass
 
-class ServiceConfig(val config: Config, root: String, hostPort: Int => Int) {
-  private def k(field: String) = root + "." + field
-  val collocation = new CollocationConfig(config, k("collocation"))
-  val secondary = new SecondaryConfig(config.getConfig(k("secondary")))
-  val network = new NetworkConfig(config, k("network"))
-  val curator = new CuratorConfig(config, k("curator"))
-  val discovery = new DiscoveryConfig(config, k("service-advertisement"))
-  val livenessCheck = new LivenessCheckConfig(config, k("liveness-check")) {
-    override val port = optionally(getInt("port")).map(hostPort)
-  }
-  val dataSource = new DataSourceConfig(config, k("database"))
-  val logProperties = config.getConfig(k("log4j"))
-  val commandReadLimit = config.getBytes(k("command-read-limit")).longValue
-  val allowDdlOnPublishedCopies = config.getBoolean(k("allow-ddl-on-published-copies"))
-  val instance = config.getString(k("instance"))
-  val tablespace = config.getString(k("tablespace"))
-  val writeLockTimeout = new FiniteDuration(config.getDuration(k("write-lock-timeout"), MILLISECONDS),
-                                            TimeUnit.MILLISECONDS)
-  val reports = new ReportsConfig(config, k("reports"))
-  val metrics = config.getConfig(k("metrics"))
-  val logTableCleanupSleepTime = new FiniteDuration(config.getDuration(k("log-table-cleanup-sleep-time"), MILLISECONDS),
-                                                    TimeUnit.MILLISECONDS)
-  val logTableCleanupDeleteOlderThan = new FiniteDuration(
-                                         config.getDuration(k("log-table-cleanup-delete-older-than"), MILLISECONDS),
-                                         TimeUnit.MILLISECONDS)
-  val logTableCleanupDeleteEvery = new FiniteDuration(
-                                     config.getDuration(k("log-table-cleanup-delete-every"), MILLISECONDS),
-                                     TimeUnit.MILLISECONDS)
-  //val tableCleanupDelay = new FiniteDuration (config.getDuration (k("table-cleanup-delay"), MILLISECONDS), TimeUnit.MILLISECONDS)
-  val maxMutationThreads = config.getInt(k("max-mutation-threads"))
-  val mutationResourceTimeout = new FiniteDuration(config.getDuration(k("mutation-resource-timeout"),
-                                                   MILLISECONDS), TimeUnit.MILLISECONDS)
-  val jettyThreadpool = config.getConfig(k("jetty-threadpool"))
   require(instance.matches("[a-zA-Z0-9._]+"),
           "Instance names must consist of only ASCII letters, numbers, periods, and underscores")
 }

@@ -1,8 +1,8 @@
 package com.socrata.datacoordinator.service.collocation.graph
 
-import org.scalatest.{FunSuite, ShouldMatchers}
+import org.scalatest.{FunSuite, Matchers}
 
-class GraphTest extends FunSuite with ShouldMatchers {
+class GraphTest extends FunSuite with Matchers {
 
   val edgesEmpty = Set.empty[Set[Int]]
 

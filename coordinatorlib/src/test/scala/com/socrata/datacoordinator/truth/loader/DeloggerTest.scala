@@ -12,8 +12,13 @@ class DeloggerTest extends FunSuite with MustMatchers with Assertions {
     val classes = typeOf[LogEvent[_]].typeSymbol.asClass.knownDirectSubclasses
     classes must not be 'empty
 
+    val mirror = runtimeMirror(classOf[LogEvent[_]].getClassLoader)
+
     val companions = classes.map { sym =>
-      sym.asClass.companionSymbol.name.toString
+      val cls = sym.asClass
+      val javaCls = mirror.runtimeClass(cls)
+      if(classOf[LogEventCompanion].isAssignableFrom(javaCls)) cls.name.toString
+      else cls.companion.name.toString
     }
     classes.size must equal (companions.size)
 

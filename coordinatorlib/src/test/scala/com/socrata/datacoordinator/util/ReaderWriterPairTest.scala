@@ -4,11 +4,11 @@ import java.util.concurrent.ArrayBlockingQueue
 
 import org.scalatest.FunSuite
 import org.scalatest.MustMatchers
-import org.scalatest.prop.PropertyChecks
+import org.scalatestplus.scalacheck.ScalaCheckPropertyChecks
 import org.scalacheck.{Arbitrary, Gen}
 import java.io.IOException
 
-class ReaderWriterPairTest extends FunSuite with MustMatchers with PropertyChecks {
+class ReaderWriterPairTest extends FunSuite with MustMatchers with ScalaCheckPropertyChecks {
   test("Should be able to read and write") {
     forAll(implicitly[Arbitrary[Array[String]]].arbitrary, Gen.choose(1, 1000), Gen.choose(1, 1000)) { (ss, size, count) =>
       whenever(size > 0 && count > 0) {

@@ -12,14 +12,14 @@ class UrlRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType
 
   val physColumns: Array[String] = Array(base + "_url", base + "_description")
 
-  override val keyColumns: Array[String] = Array(physColumns(urlOffset))
-
-  val sqlTypes: Array[String] = Array("TEXT", "TEXT")
-
   // sub-column offsets
   val urlOffset = 0
   val descriptionOffset = 1
   val lastOffset = 2
+
+  override val keyColumns: Array[String] = Array(physColumns(urlOffset))
+
+  val sqlTypes: Array[String] = Array("TEXT", "TEXT")
 
   override def selectList: String =
     Array(physColumns(urlOffset), physColumns(descriptionOffset)).mkString(",")

@@ -5,7 +5,7 @@ import java.sql.{DriverManager, Connection}
 
 import org.scalatest.{BeforeAndAfterAll, FunSuite}
 import org.scalatest.MustMatchers
-import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.v2._
 
 import com.socrata.datacoordinator.truth.sql.{ReadOnlyRepBasedSqlDatasetContext, SqlColumnReadRep}
 import com.socrata.datacoordinator.util.collection.{ColumnIdSet, MutableColumnIdMap, ColumnIdMap}

@@ -7,7 +7,7 @@ import com.socrata.datacoordinator.truth.RowLogCodec
 import com.socrata.datacoordinator.util.TimingReport
 import java.io._
 import java.nio.charset.StandardCharsets
-import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.v2._
 import java.nio.ByteBuffer
 
 class PostgresLogger[CT, CV](connection: Connection,
@@ -168,10 +168,10 @@ object PostgresLogger {
 
   @volatile var lastBatchSize = 1000000L
 
-  val binaryFormatHeader = "PGCOPY\n\u00ff\r\n\0\0\0\0\0\0\0\0\0".getBytes(StandardCharsets.ISO_8859_1)
-  //          header proper ^^^^^^^^^^^^^^^^^^^^
-  //                                      flags ^^^^^^^^
-  //                            header extension length ^^^^^^^^
+  val binaryFormatHeader = "PGCOPY\n\u00ff\r\n\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000".getBytes(StandardCharsets.ISO_8859_1)
+  //          header proper ^^^^^^^^^^^^^^^^^^^^^^^^
+  //                                          flags ^^^^^^^^^^^^^^^^^^^^^^^^
+  //                                                header extension length ^^^^^^^^^^^^^^^^^^^^^^^^
 
   val bytesOf = SqlLogger.allEvents.map { s => s -> s.getBytes(StandardCharsets.UTF_8) }.toMap
 }
