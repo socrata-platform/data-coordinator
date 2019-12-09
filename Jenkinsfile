@@ -18,7 +18,6 @@ def boolean stage_deploy = false
 
 // instanciate libraries
 def sbtbuild = new com.socrata.SBTBuild(steps, service, project_wd)
-sbtbuild.setScalaVersion("2.12")
 def dockerize = new com.socrata.Dockerize(steps, service, BUILD_NUMBER)
 def deploy = new com.socrata.MarathonDeploy(steps)
 
@@ -134,6 +133,7 @@ pipeline {
           // perform any needed modifiers on the build parameters here
           sbtbuild.setRunITTest(true)
           sbtbuild.setNoSubproject(true)
+          sbtbuild.setScalaVersion("2.12")
 
           // build
           echo "Building sbt project..."
