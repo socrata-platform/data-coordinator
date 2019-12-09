@@ -28,7 +28,7 @@ val dummySecondary = (project in file("dummy-secondary")).
 val secondarylibFeedback = (project in file("secondarylib-feedback")).
   dependsOn(secondarylib)
 
-publishArtifact := false
+publish / skip := true
 
 releaseProcess -= ReleaseTransformations.publishArtifacts
 
