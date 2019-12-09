@@ -9,10 +9,12 @@ ThisBuild / resolvers += "socrata maven" at "https://repo.socrata.com/artifactor
 ThisBuild / scalacOptions ++= Seq("-deprecation", "-feature")
 
 val coordinatorExternal = (project in file("coordinator-external")).
-  configs(IntegrationTest)
+  configs(IntegrationTest).
+  settings(Defaults.itSettings)
 
 val coordinatorlib = (project in file("coordinatorlib")).
-  configs(IntegrationTest)
+  configs(IntegrationTest).
+  settings(Defaults.itSettings)
 
 val coordinator = (project in file("coordinator")).
   dependsOn(coordinatorlib, coordinatorExternal)
