@@ -8,6 +8,8 @@ ThisBuild / resolvers += "socrata maven" at "https://repo.socrata.com/artifactor
 
 ThisBuild / scalacOptions ++= Seq("-deprecation", "-feature")
 
+ThisBuild / classLoaderLayeringStrategy in Test := ClassLoaderLayeringStrategy.ScalaLibrary
+
 val coordinatorExternal = (project in file("coordinator-external")).
   configs(IntegrationTest).
   settings(Defaults.itSettings)
