@@ -22,6 +22,8 @@ test in assembly := {}
 
 mainClass in assembly := Some("com.socrata.datacoordinator.Launch")
 
+// not setting "publish / skip" because soql-postgres-adapter uses this package in its tests.
+
 enablePlugins(BuildInfoPlugin)
 
 buildInfoKeys := Seq[BuildInfoKey](name, version, scalaVersion, sbtVersion)
