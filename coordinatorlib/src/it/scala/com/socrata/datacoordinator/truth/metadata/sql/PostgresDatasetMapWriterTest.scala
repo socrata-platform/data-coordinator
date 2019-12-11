@@ -43,7 +43,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
   def t(s: String) = TypeName(s)
   def fn(s: String) = Some(ColumnName(s))
 
-  def noopKeyGen() = new Array[Byte](0)
+  val noopKeyGen = () => new Array[Byte](0)
   val noopTypeNamespace = new TypeNamespace[TypeName] {
     def nameForType(typ: TypeName): String = typ.name
 
