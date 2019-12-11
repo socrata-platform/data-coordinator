@@ -1,28 +1,37 @@
 package com.socrata.datacoordinator.secondary.config
 
+import com.socrata.thirdparty.typesafeconfig.ConfigClass
 import com.typesafe.config.Config
 import java.io.File
-import net.ceedubs.ficus.FicusConfig._
 
-// TODO: rewrite this to use our config classes instead of this
-// reflection-based horror that doesn't even provide full paths to
-// errors.
+trait StoreConfig {
+  val storeCapacityMB: Int
+  val acceptingNewDatasets: Boolean
+}
 
-case class StoreConfig(storeCapacityMB: Long, acceptingNewDatasets: Boolean)
+class StoreConfigCfg(config: Config, root: String) extends ConfigClass(config, root) with StoreConfig {
+  val storeCapacityMB = getInt("storeCapacityMB")
+  val acceptingNewDatasets = getBoolean("acceptingNewDatasets")
+}
 
-case class SecondaryGroupConfig(
-     numReplicas: Int,
-     instances: Map[String, StoreConfig]
- )
+trait SecondaryGroupConfig {
+  val numReplicas: Int
+  val instances: Map[String, StoreConfig]
+}
 
-case class SecondaryInstanceConfig(
-    secondaryType: String,
-    numWorkers: Int,
-    config: Config
-)
+class SecondaryGroupConfigCfg(config: Config, root: String) extends ConfigClass(config, root) with SecondaryGroupConfig {
+  val numReplicas = getInt("numReplicas")
+  val instances = getObjectOf[StoreConfig]("instances", new StoreConfigCfg(_, _))
+}
 
-class SecondaryConfig(config: Config) {
-  val defaultGroups = config.as[Set[String]]("defaultGroups")
-  val groups = config.as[Map[String, SecondaryGroupConfig]]("groups")
-  val instances = config.as[Map[String, SecondaryInstanceConfig]]("instances")
+class SecondaryInstanceConfig(cfg: Config, root: String) extends ConfigClass(cfg, root) {
+  val secondaryType = getString("secondaryType")
+  val numWorkers = getInt("numWorkers")
+  val config = getRawConfig("config")
+}
+
+class SecondaryConfig(config: Config, root: String) extends ConfigClass(config, root) {
+  val defaultGroups = getStringList("defaultGroups").toSet
+  val groups = getObjectOf[SecondaryGroupConfig]("groups", new SecondaryGroupConfigCfg(_, _))
+  val instances = getObjectOf("instances", new SecondaryInstanceConfig(_, _))
 }

@@ -8,7 +8,7 @@ import com.socrata.soql.environment.ColumnName
 import org.joda.time.DateTime
 
 object FromProtobuf {
-   def convert(ci: UnanchoredColumnInfo): metadata.UnanchoredColumnInfo =
+   def convert(ci: LogData.UnanchoredColumnInfo): metadata.UnanchoredColumnInfo =
      metadata.UnanchoredColumnInfo(
        systemId = new ColumnId(ci.systemId),
        userColumnId = new UserColumnId(ci.userColumnId),
@@ -21,14 +21,14 @@ object FromProtobuf {
        computationStrategyInfo = ci.computationStrategyInfo.map(convert(_))
      )
 
-  def convert(ci: com.socrata.datacoordinator.truth.loader.sql.messages.UnanchoredColumnInfo.ComputationStrategyInfo): metadata.ComputationStrategyInfo =
+  def convert(ci: LogData.UnanchoredColumnInfo.ComputationStrategyInfo): metadata.ComputationStrategyInfo =
     metadata.ComputationStrategyInfo(
       strategyType = new StrategyType(ci.strategyType),
       sourceColumnIds = ci.sourceColumnIds.map(new UserColumnId(_)),
       parameters = JsonUtil.parseJson[JObject](ci.parameters).fold(err => sys.error(err.english), identity)
     )
 
-   def convert(ci: UnanchoredCopyInfo): metadata.UnanchoredCopyInfo =
+   def convert(ci: LogData.UnanchoredCopyInfo): metadata.UnanchoredCopyInfo =
      metadata.UnanchoredCopyInfo(
        systemId = new CopyId(ci.systemId),
        copyNumber = ci.copyNumber,
@@ -40,15 +40,15 @@ object FromProtobuf {
   def convert(time: Long): DateTime =
     new DateTime(time)
 
-   def convert(ls: LifecycleStage.EnumVal): metadata.LifecycleStage = ls match {
-     case LifecycleStage.Unpublished => metadata.LifecycleStage.Unpublished
-     case LifecycleStage.Published => metadata.LifecycleStage.Published
-     case LifecycleStage.Snapshotted => metadata.LifecycleStage.Snapshotted
-     case LifecycleStage.Discarded => metadata.LifecycleStage.Discarded
-     case other => sys.error("Unknown lifecycle stage: " + other.name)
+   def convert(ls: LogData.LifecycleStage): metadata.LifecycleStage = ls match {
+     case LogData.LifecycleStage.Unpublished => metadata.LifecycleStage.Unpublished
+     case LogData.LifecycleStage.Published => metadata.LifecycleStage.Published
+     case LogData.LifecycleStage.Snapshotted => metadata.LifecycleStage.Snapshotted
+     case LogData.LifecycleStage.Discarded => metadata.LifecycleStage.Discarded
+     case LogData.LifecycleStage.Unrecognized(other) => sys.error("Unknown lifecycle stage: " + other)
    }
 
-   def convert(di: UnanchoredDatasetInfo): metadata.UnanchoredDatasetInfo =
+   def convert(di: LogData.UnanchoredDatasetInfo): metadata.UnanchoredDatasetInfo =
      metadata.UnanchoredDatasetInfo(
        systemId = new DatasetId(di.systemId),
        nextCounterValue = di.nextCounterValue,
@@ -57,7 +57,7 @@ object FromProtobuf {
        resourceName = di.resourceName
      )
 
-  def convert(ri: UnanchoredRollupInfo): metadata.UnanchoredRollupInfo =
+  def convert(ri: LogData.UnanchoredRollupInfo): metadata.UnanchoredRollupInfo =
     metadata.UnanchoredRollupInfo(
       name = new RollupName(ri.name),
       soql = ri.soql

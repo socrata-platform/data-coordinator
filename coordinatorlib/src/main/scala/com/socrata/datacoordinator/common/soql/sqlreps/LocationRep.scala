@@ -25,6 +25,8 @@ class LocationRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType,
   override def selectList: String =
     Array(s"ST_AsBinary(${physColumns(geomOffset)})", physColumns(addressOffset)).mkString(",")
 
+  override def templateForInsert: String = "ST_GeomFromEWKT(?),?"
+
   override def templateForUpdate: String = Array(
     s"${physColumns(geomOffset)}=ST_GeomFromEWKT(?)",
     s"${physColumns(addressOffset)}=?").mkString(",")

@@ -6,7 +6,7 @@ import java.sql.{PreparedStatement, Connection}
 
 import com.socrata.datacoordinator.util.TimingReport
 import com.socrata.datacoordinator.truth.RowLogCodec
-import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.v2._
 
 class SqlLogger[CT, CV](connection: Connection,
                         auditTableName: String,

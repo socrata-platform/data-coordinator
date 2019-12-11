@@ -1,6 +1,6 @@
 package com.socrata.datacoordinator.truth.universe
 
-import com.rojoma.simplearm.Managed
+import com.rojoma.simplearm.v2.Managed
 import com.socrata.datacoordinator.secondary.messaging.MessageProducer
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.truth.metadata._
@@ -28,7 +28,7 @@ trait TypeUniverse {
  * for the type system to match up `CT`/`CV` with other systems' `CT`/`CV`.
  * The general pattern will be to take a `Managed[Universe[A,B] with This with That with TheOther]`
  * and then access it like
- *     for { u <- universe } yield {
+ *     for(u <- universe) {
  *       import u._
  *       // ...use the various methods of the individual traits...
  *     }

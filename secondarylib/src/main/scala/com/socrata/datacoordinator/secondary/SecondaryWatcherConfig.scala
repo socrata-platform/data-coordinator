@@ -3,31 +3,33 @@ package com.socrata.datacoordinator.secondary
 import com.socrata.datacoordinator.common.DataSourceConfig
 import com.socrata.datacoordinator.secondary.config.{SecondaryConfig => ServiceSecondaryConfig}
 import com.socrata.datacoordinator.secondary.messaging.eurybates.MessageProducerConfig
-import com.typesafe.config.{Config, ConfigException}
+import com.typesafe.config.Config
 import java.util.UUID
 
 import com.socrata.curator.{CuratorConfig, DiscoveryConfig}
 import com.socrata.datacoordinator.common.collocation.CollocationConfig
 
-import scala.concurrent.duration._
+import com.socrata.thirdparty.typesafeconfig.ConfigClass
+import com.socrata.thirdparty.metrics.MetricsOptions
 
-class SecondaryWatcherConfig(config: Config, root: String) {
-  private def k(s: String) = root + "." + s
-  val log4j = config.getConfig(k("log4j"))
-  val database = new DataSourceConfig(config, k("database"))
-  val curator = new CuratorConfig(config, k("curator"))
-  val discovery = new DiscoveryConfig(config, k("service-advertisement"))
-  val secondaryConfig = new ServiceSecondaryConfig(config.getConfig(k("secondary")))
-  val instance = config.getString(k("instance"))
-  val collocation = new CollocationConfig(config, k("collocation"))
-  val metrics = config.getConfig(k("metrics"))
-  val watcherId = UUID.fromString(config.getString(k("watcher-id")))
-  val claimTimeout = config.getDuration(k("claim-timeout"), MILLISECONDS).longValue.millis
-  val maxRetries = config.getInt(k("max-retries"))
-  val maxReplays = try { Some(config.getInt(k("max-replays"))) } catch { case _: ConfigException.Missing => None }
-  val backoffInterval = config.getDuration(k("backoff-interval"), MILLISECONDS).longValue.millis
-  val maxReplayWait = config.getDuration(k("max-replay-wait"), MILLISECONDS).longValue.millis
-  val replayWait = config.getDuration(k("replay-wait"), MILLISECONDS).longValue.millis
-  val tmpdir = new java.io.File(config.getString(k("tmpdir"))).getAbsoluteFile
-  val messageProducerConfig = try { Some(new MessageProducerConfig(config, k("message-producer"))) } catch { case _: ConfigException.Missing => None }
+class SecondaryWatcherConfig(config: Config, root: String) extends ConfigClass(config, root) {
+  val log4j = getRawConfig("log4j")
+  val database = getConfig("database", new DataSourceConfig(_, _))
+  val curator = getConfig("curator", new CuratorConfig(_, _))
+  val discovery = getConfig("service-advertisement", new DiscoveryConfig(_, _))
+  val secondaryConfig = getConfig("secondary", new ServiceSecondaryConfig(_, _))
+  val instance = getString("instance")
+  val collocation = getConfig("collocation", new CollocationConfig(_, _))
+  val metrics = MetricsOptions(getRawConfig("metrics")) // TODO: make this a ConfigClass
+  val watcherId = UUID.fromString(getString("watcher-id"))
+  val claimTimeout = getDuration("claim-timeout")
+  val maxRetries = getInt("max-retries")
+  val maxReplays = optionally(getInt("max-replays"))
+  val backoffInterval = getDuration("backoff-interval")
+  val maxReplayWait = getDuration("max-replay-wait")
+  val replayWait = getDuration("replay-wait")
+  val tmpdir = new java.io.File(getString("tmpdir")).getAbsoluteFile
+  val messageProducerConfig = optionally(getRawConfig("message-producer")).map { _ =>
+    getConfig("message-producer", new MessageProducerConfig(_, _))
+  }
 }

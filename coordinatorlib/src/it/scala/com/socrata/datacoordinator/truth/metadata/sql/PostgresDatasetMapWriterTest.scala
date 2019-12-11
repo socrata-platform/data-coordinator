@@ -2,7 +2,7 @@ package com.socrata.datacoordinator.truth.metadata.sql
 
 import java.sql.{Connection, DriverManager, SQLException}
 
-import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.v2._
 import com.socrata.datacoordinator.id.{ColumnId, RollupName, UserColumnId}
 import com.socrata.datacoordinator.truth.metadata.{CopyPair, _}
 import com.socrata.datacoordinator.truth.migration.Migration
@@ -95,7 +95,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with Befor
     for {
       stmt <- managed(conn.createStatement())
       rs <- managed(stmt.executeQuery("SELECT count(*) FROM " + table + (if(where != null) " WHERE " + where else "")))
-    } yield {
+    } {
       rs.next()
       rs.getInt(1)
     }

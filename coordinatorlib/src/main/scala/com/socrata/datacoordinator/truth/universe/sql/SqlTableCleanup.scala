@@ -4,7 +4,7 @@ package sql
 import java.sql.Connection
 import scala.concurrent.duration.FiniteDuration
 
-import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.v2._
 //import scala.concurrent.duration.FiniteDuration
 
 class SqlTableCleanup(conn: Connection, daysDelay: Int = 1) extends TableCleanup { // daysDelay: Int = 1 will change to:  daysDelay: FiniteDuration

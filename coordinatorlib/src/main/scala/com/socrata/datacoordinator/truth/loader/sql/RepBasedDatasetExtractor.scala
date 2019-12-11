@@ -2,8 +2,7 @@ package com.socrata.datacoordinator
 package truth.loader
 package sql
 
-import com.rojoma.simplearm.{SimpleArm, Managed}
-import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.v2._
 
 import java.sql.{ResultSet, Connection}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
@@ -32,8 +31,8 @@ class RepBasedDatasetExtractor[CT, CV](conn: Connection, dataTableName: String, 
   }
 
   def allRows(limit: Option[Long], offset: Option[Long], sorted: Boolean, rowId: Option[CV])
-    : Managed[Iterator[Row[CV]]] = new SimpleArm[Iterator[Row[CV]]] {
-    def flatMap[B](f: (Iterator[Row[CV]]) => B): B = {
+    : Managed[Iterator[Row[CV]]] = new Managed[Iterator[Row[CV]]] {
+    def run[B](f: (Iterator[Row[CV]]) => B): B = {
       if(schema.isEmpty) {
         f(Iterator.empty)
       } else {

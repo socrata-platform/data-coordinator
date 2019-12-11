@@ -1,18 +1,18 @@
 package com.socrata.datacoordinator.secondary.feedback
 
 import com.rojoma.json.v3.ast.JValue
-import com.rojoma.simplearm.Managed
+import com.rojoma.simplearm.v2._
 import com.socrata.datacoordinator.id.UserColumnId
 import com.socrata.datacoordinator.secondary.feedback.TestData._
 import com.socrata.datacoordinator.secondary.Secondary.Cookie
 import com.socrata.datacoordinator.secondary._
 import com.socrata.soql.types.{SoQLType, SoQLValue}
 import org.scalamock.scalatest.MockFactory
-import org.scalatest.{ShouldMatchers, WordSpec}
+import org.scalatest.{Matchers, WordSpec}
 
 
 
-class FeedbackSecondaryTest extends WordSpec with ShouldMatchers with MockFactory {
+class FeedbackSecondaryTest extends WordSpec with Matchers with MockFactory {
   def typeFromJValue(jVal: JValue) = None
 
   def fromJValueFunc(typ: SoQLType) = { _: JValue => None }

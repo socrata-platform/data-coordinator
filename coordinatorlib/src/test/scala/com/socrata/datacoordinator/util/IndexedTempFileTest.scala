@@ -1,13 +1,13 @@
 package com.socrata.datacoordinator.util
 
 import org.scalatest.FunSuite
-import org.scalatest.prop.PropertyChecks
+import org.scalatestplus.scalacheck.ScalaCheckPropertyChecks
 import org.scalatest.MustMatchers
 import java.io.{InputStream, ByteArrayOutputStream}
 import org.scalacheck.{Arbitrary, Gen}
-import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.v2._
 
-class IndexedTempFileTest extends FunSuite with MustMatchers with PropertyChecks {
+class IndexedTempFileTest extends FunSuite with MustMatchers with ScalaCheckPropertyChecks {
   val lowerBound = 0xf
   val upperBound = 0xfff
   val bound = Gen.choose(lowerBound, upperBound)

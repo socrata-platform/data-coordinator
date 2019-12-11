@@ -8,7 +8,7 @@ import org.postgresql.ds.PGSimpleDataSource
 import com.socrata.datacoordinator.truth.universe.sql.{PostgresCopyIn, C3P0WrappedPostgresCopyIn}
 import com.socrata.thirdparty.typesafeconfig.{C3P0Propertizer, ConfigClass}
 import com.mchange.v2.c3p0.DataSources
-import com.rojoma.simplearm.{SimpleArm, Managed}
+import com.rojoma.simplearm.v2._
 
 class DataSourceConfig(config: Config, root: String) extends ConfigClass(config, root) {
   val host = getString("host")
@@ -27,8 +27,8 @@ class DataSourceConfig(config: Config, root: String) extends ConfigClass(config,
 object DataSourceFromConfig {
   case class DSInfo(dataSource: DataSource, copyIn: (Connection, String, OutputStream => Unit) => Long)
   def apply(config: DataSourceConfig): Managed[DSInfo] =
-    new SimpleArm[DSInfo] {
-      def flatMap[A](f: DSInfo => A): A = {
+    new Managed[DSInfo] {
+      def run[A](f: DSInfo => A): A = {
         val dataSource = new PGSimpleDataSource
         dataSource.setServerName(config.host)
         dataSource.setPortNumber(config.port)

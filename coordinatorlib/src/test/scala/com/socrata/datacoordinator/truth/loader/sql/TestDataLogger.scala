@@ -8,7 +8,7 @@ import scala.collection.mutable.LinkedHashMap
 
 import java.sql.Connection
 
-import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.v2._
 import com.rojoma.json.v3.ast._
 import com.rojoma.json.v3.codec._
 

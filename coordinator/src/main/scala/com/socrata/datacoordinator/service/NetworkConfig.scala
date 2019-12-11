@@ -2,7 +2,8 @@ package com.socrata.datacoordinator.service
 
 import com.typesafe.config.Config
 
-class NetworkConfig(config: Config, root: String) {
-  private def k(s: String) = root + "." + s
-  val port = config.getInt(k("port"))
+import com.socrata.thirdparty.typesafeconfig.ConfigClass
+
+class NetworkConfig(config: Config, root: String) extends ConfigClass(config, root) {
+  val port = getInt("port")
 }

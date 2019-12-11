@@ -42,7 +42,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Main])
 
   def ensureInSecondary(storeId: String, datasetId: DatasetId): Boolean =
-    for(u <- common.universe) yield{
+    for(u <- common.universe) {
       try {
         u.datasetMapWriter.datasetInfo(datasetId, serviceConfig.writeLockTimeout) match {
           case Some(_) =>
@@ -60,7 +60,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
     }
 
   def ensureInSecondaryGroup(secondaryGroupStr: String, datasetId: DatasetId): Boolean = {
-    for(u <- common.universe) yield {
+    for(u <- common.universe) {
       val secondaryGroup = serviceConfig.secondary.groups.getOrElse(secondaryGroupStr, {
         log.info("Can't find secondary group {}", secondaryGroupStr)
         return false
@@ -79,7 +79,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
   }
 
   def deleteFromSecondary(storeId: String, datasetId: DatasetId): Boolean =
-    for(u <- common.universe) yield {
+    for(u <- common.universe) {
       u.datasetMapWriter.datasetInfo(datasetId, serviceConfig.writeLockTimeout) match {
         case Some(_) =>
           log.info("Marking dataset {} for pending drop from store {}", datasetId, storeId)
@@ -94,13 +94,13 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
     }
 
   def datasetsInStore(storeId: String): Map[DatasetId, Long] = {
-    for (u <- common.universe) yield {
+    for (u <- common.universe) {
       u.secondaryManifest.datasets(storeId)
     }
   }
 
   def versionInStore(storeId: String, datasetId: DatasetId): Option[Long] = {
-    for (u <- common.universe) yield {
+    for (u <- common.universe) {
       for {
         result <- u.secondaryManifest.readLastDatasetInfo(storeId, datasetId)
       } yield result._1
@@ -108,7 +108,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
   }
 
   def secondariesOfDataset(datasetId: DatasetId): Option[SecondariesOfDatasetResult] = {
-    for (u <- common.universe) yield {
+    for (u <- common.universe) {
       val datasetMapReader = u.datasetMapReader
       datasetMapReader.datasetInfo(datasetId).map { datasetInfo =>
         val secondaryManifest = u.secondaryManifest
@@ -143,7 +143,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
   }
 
   def secondaryMoveJobs(jobId: UUID): SecondaryMoveJobsResult = {
-    for (u <- common.universe) yield {
+    for (u <- common.universe) {
       SecondaryMoveJobsResult(u.secondaryMoveJobs.jobs(jobId))
     }
   }
@@ -151,7 +151,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
   def secondaryMoveJobs(storeGroup: String, datasetId: DatasetId): Either[ResourceNotFound, SecondaryMoveJobsResult] = {
     serviceConfig.secondary.groups.get(storeGroup) match {
       case Some(groupConfig) =>
-        for (u <- common.universe) yield {
+        for (u <- common.universe) {
           u.datasetMapReader.datasetInfo(datasetId) match {
             case Some(_) =>
               val moves = u.secondaryMoveJobs.jobs(datasetId).filter { move => groupConfig.instances.keySet(move.toStoreId) }
@@ -171,7 +171,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
                              request: SecondaryMoveJobRequest): Either[ResourceNotFound, Either[InvalidMoveJob, Boolean]] = {
     serviceConfig.secondary.groups.get(storeGroup) match {
       case Some(groupConfig) =>
-        for (u <- common.universe) yield {
+        for (u <- common.universe) {
           u.datasetMapReader.datasetInfo(datasetId) match {
             case Some(_) =>
               val fromStoreId = request.fromStoreId
@@ -233,7 +233,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
   def rollbackSecondaryMoveJob(datasetId: DatasetId,
                                request: SecondaryMoveJobRequest,
                                dropFromStore: Boolean): Option[DatasetNotFound] = {
-    for (u <- common.universe) yield {
+    for (u <- common.universe) {
       u.datasetMapWriter.datasetInfo(datasetId, serviceConfig.writeLockTimeout) match {
         case Some(_) =>
           u.secondaryMoveJobs.deleteJob(request.jobId, datasetId, request.fromStoreId, request.toStoreId)
@@ -254,7 +254,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
   }
 
   def collocatedDatasets(datasets: Set[DatasetInternalName]): CollocatedDatasetsResult = {
-    for (u <- common.universe) yield {
+    for (u <- common.universe) {
       val collocatedDatasets = u.collocationManifest.collocatedDatasets(datasets.map(_.underlying)).map { dataset =>
         DatasetInternalName(dataset).getOrElse {
           // we will validate dataset internal names on the way in so this should never happen... but
@@ -267,19 +267,19 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
   }
 
   def addCollocations(jobId: UUID, collocations: Seq[(DatasetInternalName, DatasetInternalName)]): Unit = {
-    for (u <- common.universe) yield {
+    for (u <- common.universe) {
       u.collocationManifest.addCollocations(jobId, collocations.map { case (l, r) => (l.underlying, r.underlying) }.toSet)
     }
   }
 
   def dropCollocations(dataset: DatasetInternalName): Unit = {
-    for (u <- common.universe) yield {
+    for (u <- common.universe) {
       u.collocationManifest.dropCollocations(dataset.underlying)
     }
   }
 
   def dropCollocationJob(jobId: UUID): Unit = {
-    for (u <- common.universe) yield {
+    for (u <- common.universe) {
       u.collocationManifest.dropCollocations(jobId)
       u.secondaryMoveJobs.deleteJob(jobId)
     }
@@ -288,7 +288,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
   def secondaryMetrics(storeId: String, datasetId: Option[DatasetId]): Either[ResourceNotFound, Option[SecondaryMetric]] = {
     val secondaries = serviceConfig.secondary.groups.flatMap(_._2.instances.keySet).toSet
     if (secondaries(storeId)) {
-      for (u <- common.universe) yield {
+      for (u <- common.universe) {
         datasetId match {
           case Some(id) => u.datasetMapReader.datasetInfo(id) match {
             case Some(_) => Right(u.secondaryMetrics.dataset(storeId, id))
@@ -305,25 +305,25 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
   private def mutator(tmp: IndexedTempFile) = new Mutator(tmp, common.Mutator)
 
   def processMutation(datasetId: DatasetId, input: Iterator[JValue], tmp: IndexedTempFile) = {
-    for(u <- common.universe) yield {
+    for(u <- common.universe) {
       mutator(tmp).updateScript(u, datasetId, input)
     }
   }
 
   def processCreation(input: Iterator[JValue], tmp: IndexedTempFile) = {
-    for(u <- common.universe) yield {
+    for(u <- common.universe) {
       mutator(tmp).createScript(u, input)
     }
   }
 
   def listDatasets(): Seq[DatasetId] = {
-    for(u <- common.universe) yield {
+    for(u <- common.universe) {
       u.datasetMapReader.allDatasetIds()
     }
   }
 
   def deleteDataset(datasetId: DatasetId) = {
-    for(u <- common.universe) yield {
+    for(u <- common.universe) {
       u.datasetDropper.dropDataset(datasetId)
     }
   }
@@ -343,7 +343,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
      String,
      Long,
      Iterator[Array[JValue]])] => Unit): Exporter.Result[Unit] = {
-    for(u <- common.universe) yield {
+    for(u <- common.universe) {
       readRowId(u, id, copy, rowId) match {
         case Right(rid) =>
           Exporter.export(u, id, copy, columns, limit, offset, precondition, ifModifiedSince, sorted, rid)
@@ -404,24 +404,24 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
                         copy: CopySelector,
                         rowId: Option[String]): Either[Exporter.Result[Unit], Option[SoQLValue]] = {
 
-    ( for {
-        rid <- rowId
-        // Missing dataset copy is not handled as error here.  It is handled further downstream.
-        ctxOpt <- u.datasetReader.openDataset(id, copy)
-        ctx <- ctxOpt.toOption
-      } yield {
-        ctx.copyCtx.userIdCol match {
-          case Some(_) => // dataset has custom row identifier
-            val rowIdRep = SoQLRep.csvRep(ctx.copyCtx.pkCol_!)
-            // optional row id type must be simple which is represented by a single csv string.
-            rowIdRep.decode(IndexedSeq(rid), IndexedSeq(0))
-                    .map(x => Right(Some(x)))
-                    .getOrElse(Left(Exporter.InvalidRowId))
-          case None => // no customer row identifier.  Use system row identifier.
-            val rowIdRep = common.jsonReps(ctx.copyCtx.datasetInfo)(ctx.copyCtx.pkCol_!.typ)
-            rowIdRep.fromJValue(JString(rid)).map(x => Right(Some(x))).getOrElse(Left(Exporter.InvalidRowId))
-        }
-      }
+    ( rowId.flatMap { rid =>
+       // Missing dataset copy is not handled as error here.  It is handled further downstream.
+       for(ctxOpt <- u.datasetReader.openDataset(id, copy)) {
+         for(ctx <- ctxOpt.toOption) yield {
+           ctx.copyCtx.userIdCol match {
+             case Some(_) => // dataset has custom row identifier
+               val rowIdRep = SoQLRep.csvRep(ctx.copyCtx.pkCol_!)
+               // optional row id type must be simple which is represented by a single csv string.
+               rowIdRep.decode(IndexedSeq(rid), IndexedSeq(0))
+                 .map(x => Right(Some(x)))
+                 .getOrElse(Left(Exporter.InvalidRowId))
+             case None => // no customer row identifier.  Use system row identifier.
+               val rowIdRep = common.jsonReps(ctx.copyCtx.datasetInfo)(ctx.copyCtx.pkCol_!.typ)
+               rowIdRep.fromJValue(JString(rid)).map(x => Right(Some(x))).getOrElse(Left(Exporter.InvalidRowId))
+           }
+         }
+       }
+     }
     ).getOrElse(Right(None))
   }
 
@@ -473,7 +473,7 @@ object Main extends DynamicPortMap {
     implicit val executorShutdown = Resource.executorShutdownNoTimeout
 
     for {
-      dsInfo <- DataSourceFromConfig(serviceConfig.dataSource).toV2
+      dsInfo <- DataSourceFromConfig(serviceConfig.dataSource)
       executorService <- managed(Executors.newCachedThreadPool)
       httpClient <- managed(new HttpClientHttpClient(executorService))
     } {
@@ -515,30 +515,26 @@ object Main extends DynamicPortMap {
       val operations = new Main(common, serviceConfig)
 
       def getSchema(datasetId: DatasetId) = {
-        for {
-          u <- common.universe
-          dsInfo <- u.datasetMapReader.datasetInfo(datasetId)
-        } yield {
-          val latest = u.datasetMapReader.latest(dsInfo)
-          val schema = u.datasetMapReader.schema(latest)
-          val ctx = new DatasetCopyContext(latest, schema)
-          u.schemaFinder.getSchema(ctx)
+        for(u <- common.universe) {
+          for(dsInfo <- u.datasetMapReader.datasetInfo(datasetId)) yield {
+            val latest = u.datasetMapReader.latest(dsInfo)
+            val schema = u.datasetMapReader.schema(latest)
+            val ctx = new DatasetCopyContext(latest, schema)
+            u.schemaFinder.getSchema(ctx)
+          }
         }
       }
 
       def getSnapshots(datasetId: DatasetId) = {
-        for {
-          u <- common.universe
-          dsInfo <- u.datasetMapReader.datasetInfo(datasetId)
-        } yield {
-          u.datasetMapReader.snapshots(dsInfo).map(_.unanchored).toVector
+        for(u <- common.universe) {
+          for(dsInfo <- u.datasetMapReader.datasetInfo(datasetId)) yield {
+            u.datasetMapReader.snapshots(dsInfo).map(_.unanchored).toVector
+          }
         }
       }
 
       def deleteSnapshot(datasetId: DatasetId, copyNum: Long): CopyContextResult[UnanchoredCopyInfo] = {
-        for {
-          u <- common.universe
-        } yield {
+        for(u <- common.universe) {
           val dsInfo = u.datasetMapWriter.datasetInfo(datasetId, common.PostgresUniverseCommon.writeLockTimeout).getOrElse {
             return CopyContextResult.NoSuchDataset
           }
@@ -557,7 +553,7 @@ object Main extends DynamicPortMap {
         for {
           u <- common.universe
           dsInfo <- u.datasetMapReader.datasetInfo(datasetId)
-        } yield {
+        } {
           using(u.delogger(dsInfo).delog(version)) { it =>
             f(it)
           }
@@ -565,32 +561,30 @@ object Main extends DynamicPortMap {
       }
 
       def getRollups(datasetId: DatasetId) = {
-        for {
-          u <- common.universe
-          dsInfo <- u.datasetMapReader.datasetInfo(datasetId)
-        } yield {
-          val latest = u.datasetMapReader.latest(dsInfo)
-          u.datasetMapReader.rollups(latest).toSeq
+        for(u <- common.universe) {
+          for(dsInfo <- u.datasetMapReader.datasetInfo(datasetId)) yield {
+            val latest = u.datasetMapReader.latest(dsInfo)
+            u.datasetMapReader.rollups(latest).toSeq
+          }
         }
       }
 
       def getSnapshottedDatasets() = {
-        for {
-          u <- common.universe
-          dsInfos <- u.datasetMapReader.snapshottedDatasets()
-        } yield dsInfos
+        for(u <- common.universe) {
+          u.datasetMapReader.snapshottedDatasets()
+        }
       }
 
 
       val notFoundDatasetResource = NotFoundDatasetResource(_: Option[String], common.internalNameFromDatasetId,
-        operations.makeReportTemporaryFile, operations.processCreation,
-        operations.listDatasets, _: (=> HttpResponse) => HttpResponse, serviceConfig.commandReadLimit)
+        operations.makeReportTemporaryFile _, operations.processCreation,
+        operations.listDatasets _, _: (=> HttpResponse) => HttpResponse, serviceConfig.commandReadLimit)
       val datasetSchemaResource = DatasetSchemaResource(_: DatasetId, getSchema, common.internalNameFromDatasetId)
       val datasetSnapshotsResource = DatasetSnapshotsResource(_: DatasetId, getSnapshots, common.internalNameFromDatasetId)
       val datasetSnapshotResource = DatasetSnapshotResource(_: DatasetId, _: Long, deleteSnapshot, common.internalNameFromDatasetId)
       val datasetLogResource = DatasetLogResource[common.CV](_: DatasetId, _: Long, getLog, common.internalNameFromDatasetId)
       val datasetRollupResource = DatasetRollupResource(_: DatasetId, getRollups, common.internalNameFromDatasetId)
-      val snapshottedResource = SnapshottedResource(getSnapshottedDatasets, common.internalNameFromDatasetId)
+      val snapshottedResource = SnapshottedResource(getSnapshottedDatasets _, common.internalNameFromDatasetId)
       val secondaryManifestsResource = SecondaryManifestsResource(_: Option[String], secondaries,
         operations.datasetsInStore, common.internalNameFromDatasetId)
 
@@ -643,7 +637,7 @@ object Main extends DynamicPortMap {
       def datasetResource(lock: CollocationLock)(hostAndPort: String => Option[(String, Int)]) = {
         DatasetResource(
           _: DatasetId,
-          operations.makeReportTemporaryFile,
+          operations.makeReportTemporaryFile _,
           serviceConfig.commandReadLimit,
           operations.processMutation,
           operations.deleteDataset,

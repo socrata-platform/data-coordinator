@@ -5,7 +5,7 @@ import com.socrata.datacoordinator.common.{DataSourceConfig, DataSourceFromConfi
 import com.socrata.datacoordinator.truth.migration.Migration
 
 import com.typesafe.config.ConfigFactory
-import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.v2._
 
 /**
  * Performs Liquibase migrations on the truth store.

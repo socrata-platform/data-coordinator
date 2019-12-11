@@ -1,8 +1,10 @@
 package com.socrata.datacoordinator.secondary
 
+import scala.collection.JavaConverters._
+
 import java.lang.Runnable
 import java.util.UUID
-import java.util.concurrent.{CountDownLatch, Executors, ScheduledExecutorService, TimeUnit}
+import java.util.concurrent.{CountDownLatch, Executors, ScheduledExecutorService, TimeUnit, ConcurrentHashMap}
 
 import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.secondary.messaging._
@@ -11,8 +13,7 @@ import com.socrata.datacoordinator.secondary.messaging.eurybates.MessageProducer
 import scala.collection.mutable
 import scala.concurrent.duration._
 import scala.util.Random
-import com.rojoma.simplearm.Managed
-import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.v2._
 import com.socrata.curator.CuratorFromConfig
 import com.socrata.datacoordinator.common.{DataSourceFromConfig, SoQLCommon}
 import com.socrata.datacoordinator.common.DataSourceFromConfig.DSInfo
@@ -21,7 +22,7 @@ import com.socrata.datacoordinator.common.collocation.{CollocationLock, Collocat
 import com.socrata.datacoordinator.truth.universe._
 import com.socrata.datacoordinator.util._
 import com.socrata.soql.types.{SoQLType, SoQLValue}
-import com.socrata.thirdparty.metrics.{MetricsOptions, MetricsReporter}
+import com.socrata.thirdparty.metrics.MetricsReporter
 import com.socrata.thirdparty.typesafeconfig.Propertizer
 import com.typesafe.config.{Config, ConfigFactory}
 import org.apache.log4j.PropertyConfigurator
@@ -263,7 +264,7 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
    */
   def cleanOrphanedJobs(secondaryConfigInfo: SecondaryConfigInfo): Unit = {
     // At startup clean up any orphaned jobs which may have been created by this watcher
-    for { u <- universe } yield {
+    for { u <- universe } {
       u.secondaryManifest.cleanOrphanedClaimedDatasets(secondaryConfigInfo.storeId, claimantId)
     }
   }
@@ -277,7 +278,7 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
     var done = maybeSleep(secondaryConfigInfo.storeId, nextRunTime, finished)
     while(!done) {
       try {
-        for {u <- universe} yield {
+        for {u <- universe} {
           import u._
 
           while(run(u, new NamedSecondary(secondaryConfigInfo.storeId, secondary, secondaryConfigInfo.groupName)) &&
@@ -314,26 +315,32 @@ object SecondaryWatcherClaimManager {
   private val log = LoggerFactory.getLogger(classOf[SecondaryWatcherClaimManager])
 
   // in-memory list of datasets that are actively being worked on by _this_ instance
-  private val workingSet = new mutable.HashSet[(String, Long)] with mutable.SynchronizedSet[(String, Long)]
+  private object X // like Unit, but nullable because Java
+  private val workingSet = new ConcurrentHashMap[(String, Long), X.type]
 
   def workingOn(storeId: String, datasetId: DatasetId): Unit = {
-    if (workingSet.contains((storeId, datasetId.underlying))) {
+    if(workingSet.putIfAbsent((storeId, datasetId.underlying), X) ne null) {
       log.error("We have already claimed dataset {} for store {} in our working set." +
         s" An unexpected error has occurred; exiting.", datasetId, storeId)
       sys.exit(1)
     }
 
-    workingSet += ((storeId, datasetId.underlying))
     log.debug(s"Added dataset {} for store $storeId to our working set which is now {}.", datasetId, workingSet)
   }
 
   def doneWorkingOn(storeId: String, datasetId: DatasetId): Unit = {
-    workingSet -= ((storeId, datasetId.underlying))
+    workingSet.remove((storeId, datasetId.underlying))
     log.debug(s"Removed dataset {} for store $storeId from our working set which is now {}.", datasetId, workingSet)
   }
 
-  def andInWorkingSetSQL: String = workingSet.headOption.map { _ =>
-    workingSet.map(_._2).mkString(" AND dataset_system_id IN (", ",", ")") }.getOrElse("")
+  def andInWorkingSetSQL: String = {
+    val ids = workingSet.keySet.iterator.asScala.map(_._2).to[Vector]
+    if(ids.nonEmpty) {
+      ids.mkString(" AND dataset_system_id IN (", ",", ")")
+    } else {
+      ""
+    }
+  }
 }
 
 class SecondaryWatcherClaimManager(dsInfo: DSInfo, claimantId: UUID, claimTimeout: FiniteDuration) {
@@ -479,7 +486,7 @@ object SecondaryWatcherApp {
     val log = LoggerFactory.getLogger(classOf[SecondaryWatcher[_,_]])
     log.info(s"Starting secondary watcher with watcher claim uuid of ${config.watcherId}")
 
-    val metricsOptions = MetricsOptions(config.metrics)
+    val metricsOptions = config.metrics
 
     Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
       def uncaughtException(t: Thread, e: Throwable): Unit = {

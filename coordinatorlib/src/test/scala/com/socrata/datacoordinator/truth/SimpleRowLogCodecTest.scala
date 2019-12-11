@@ -4,13 +4,13 @@ package truth
 import com.socrata.datacoordinator.truth.loader.Insert
 import org.scalatest.FunSuite
 import org.scalatest.MustMatchers
-import org.scalatest.prop.PropertyChecks
+import org.scalatestplus.scalacheck.ScalaCheckPropertyChecks
 import java.io.ByteArrayOutputStream
 import com.google.protobuf.{CodedInputStream, CodedOutputStream}
 import com.socrata.datacoordinator.id.{ColumnId, RowId}
 import com.socrata.datacoordinator.util.collection.MutableColumnIdMap
 
-class SimpleRowLogCodecTest extends FunSuite with MustMatchers with PropertyChecks {
+class SimpleRowLogCodecTest extends FunSuite with MustMatchers with ScalaCheckPropertyChecks {
   def serialize[T](codec: SimpleRowLogCodec[T], row: Row[T]): Array[Byte] = {
     val baos = new ByteArrayOutputStream
     val cos = CodedOutputStream.newInstance(baos)

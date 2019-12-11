@@ -5,7 +5,7 @@ import com.socrata.datacoordinator.id.DatasetId
 import java.sql.Connection
 import scala.concurrent.duration.Duration
 import com.socrata.datacoordinator.truth.metadata.DatasetMapWriter
-import com.rojoma.simplearm.util._
+import com.rojoma.simplearm.v2._
 import java.io.Closeable
 import com.socrata.datacoordinator.truth.DatasetIdInUseByWriterException
 
