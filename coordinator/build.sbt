@@ -8,9 +8,6 @@ libraryDependencies ++= Seq(
   metricsScala,
   socrataThirdPartyUtils,
   jna,
-  metricsJetty9,
-  metricsGraphite,
-  metricsJmx,
   opencsv,
   clojure,
 
