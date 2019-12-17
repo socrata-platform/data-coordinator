@@ -1438,6 +1438,49 @@ class TestSqlLoader extends FunSuite with MustMatchers with ScalaCheckPropertyCh
     }
   }
 
+  test("deleting a row with a null value results in \"no such row: null\"") {
+    val ids = idProvider(154)
+    val vers = versionProvider(136123)
+    val dsContext = new TestDatasetContext(standardSchema, idCol, Some(str), versionCol)
+    val dataSqlizer = new TestDataSqlizer(standardTableName, dsContext)
+
+    withDB() { conn =>
+      preload(conn, dataSqlizer, standardLogTableName)(
+        Row(idCol -> LongValue(1), versionCol -> LongValue(2), str -> StringValue("q"), num -> LongValue(2)),
+        Row(idCol -> LongValue(3), versionCol -> LongValue(4), str -> StringValue("w"), num -> LongValue(3)),
+        Row(idCol -> LongValue(5), versionCol -> LongValue(6), str -> StringValue("e"), num -> LongValue(4))
+      )
+      conn.commit()
+
+      val reportWriter = simpleReportWriter()
+      for {
+        dataLogger <- managed(new TestDataLogger(conn, standardLogTableName, idCol))
+        txn <- managed(SqlLoader(conn, rowPreparer(idCol), false, dataSqlizer, dataLogger, ids, vers, executor, reportWriter, NoopTimingReport))
+      } {
+        txn.delete(0, StringValue("w"), None, bySystemId = false)
+        txn.delete(1, NullValue, None, bySystemId = false)
+        txn.delete(2, StringValue("q"), None, bySystemId = false)
+        txn.finish()
+
+        val report = reportWriter.report
+        dataLogger.finish()
+
+        report.inserted must be ('empty)
+        report.updated must be ('empty)
+        report.deleted must equal (Map(0 -> StringValue("w"), 2 -> StringValue("q"))) // got both
+        report.errors must equal (Map(1 -> NoSuchRowToDelete(NullValue))) // correct error
+      }
+      conn.commit()
+
+      ids.underlying.finish() must be (154L) // no change
+      vers.underlying.finish() must be (136123L) // no change
+
+      query(conn, rawSelect) must equal (Seq(
+        Map(idColName -> 5L, versionColName -> 6L, numName -> 4L, strName -> "e")
+      ))
+    }
+  }
+
   sealed abstract class Op
   case class Upsert(id: Option[Long], num: Option[Long], data: Option[String]) extends Op
   case class Delete(id: Long) extends Op
