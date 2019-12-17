@@ -274,27 +274,31 @@ final class SqlLoader[CT, CV](val connection: Connection,
   def delete(jobId: Int, id: CV, version: Option[Option[RowVersion]], bySystemId: Boolean): Unit = {
     checkJob(jobId)
 
-    // by_system_id only changes the behavior for datasets with user primary keys
-    val deleteBySystemIdForced = datasetContext.hasUserPrimaryKey && bySystemId
+    if(typeContext.isNull(id)) {
+      reportWriter.error(jobId, NoSuchRowToDelete(id))
+    } else {
+      // by_system_id only changes the behavior for datasets with user primary keys
+      val deleteBySystemIdForced = datasetContext.hasUserPrimaryKey && bySystemId
 
-    // if deleteBySystemIdForced is true we will assume all deletes are done by the system id column
-    if (deleteBySystemIdForced && currentBatch.hasOpsByPrimaryKey) {
-      log.debug("Delete by system id after upserts by primary key forced a flush")
-      flush()
-    } else if (!deleteBySystemIdForced && currentBatch.hasOpsForcedBySystemId) {
-      log.debug("Delete by primary key after upserts by system id forced a flush")
-      flush()
-    } else if (currentBatch.hasUpsertFor(id)) {
-      log.debug("Upsert forced a flush; potential pipeline stall")
-      flush()
+      // if deleteBySystemIdForced is true we will assume all deletes are done by the system id column
+      if (deleteBySystemIdForced && currentBatch.hasOpsByPrimaryKey) {
+        log.debug("Delete by system id after upserts by primary key forced a flush")
+        flush()
+      } else if (!deleteBySystemIdForced && currentBatch.hasOpsForcedBySystemId) {
+        log.debug("Delete by primary key after upserts by system id forced a flush")
+        flush()
+      } else if (currentBatch.hasUpsertFor(id)) {
+        log.debug("Upsert forced a flush; potential pipeline stall")
+        flush()
+      }
+
+      // we only will treat the bySystemId parameter as true when there is a user primary key column
+      if (deleteBySystemIdForced)
+        currentBatch += DeleteOpBySystemIdForced(jobId, id, version)
+      else
+        currentBatch += DeleteOp(jobId, id, version)
+      maybeFlush()
     }
-
-    // we only will treat the bySystemId parameter as true when there is a user primary key column
-    if (deleteBySystemIdForced)
-      currentBatch += DeleteOpBySystemIdForced(jobId, id, version)
-    else
-      currentBatch += DeleteOp(jobId, id, version)
-    maybeFlush()
   }
 
   private def process(batch: Queues) {
