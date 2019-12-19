@@ -119,8 +119,10 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
         val publishedVersion = copies.find { _.lifecycleStage == LifecycleStage.Published }.map { _.dataVersion }
         val unpublishedVersion = copies.find { _.lifecycleStage == LifecycleStage.Unpublished }.map { _.dataVersion }
 
+
         val secondaries = secondaryManifest.stores(datasetId)
         val feedbackSecondaries = secondaryManifest.feedbackSecondaries(datasetId)
+        val brokenSecondaries = secondaryManifest.brokenAts(datasetId)
 
         val groups = scala.collection.mutable.HashMap[String, Set[String]]()
         secondaries.keys.foreach { storeId =>
@@ -136,7 +138,8 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
           unpublishedVersion,
           secondaries,
           feedbackSecondaries,
-          groups.toMap
+          groups.toMap,
+          brokenSecondaries
         )
       }
     }

@@ -13,6 +13,7 @@ import scala.collection.immutable.VectorBuilder
 import com.socrata.datacoordinator.truth.metadata
 import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 import com.socrata.datacoordinator.util.PostgresUniqueViolation
+import org.joda.time.DateTime
 import org.postgresql.util.PSQLException
 
 import scala.concurrent.duration.FiniteDuration
@@ -94,6 +95,19 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
         val result = Map.newBuilder[String, Long]
         while(rs.next()) {
           result += rs.getString("store_id") -> rs.getLong("latest_secondary_data_version")
+        }
+        result.result()
+      }
+    }
+  }
+
+  def brokenAts(datasetId: DatasetId): Map[String, DateTime] = {
+    using(conn.prepareStatement("SELECT store_id, broken_at FROM secondary_manifest WHERE dataset_system_id = ? and broken_at is not null")) { stmt =>
+      stmt.setDatasetId(1, datasetId)
+      using(stmt.executeQuery()) { rs =>
+        val result = Map.newBuilder[String, DateTime]
+        while(rs.next()) {
+          result += rs.getString("store_id") -> DateTime.parse(rs.getDate("broken_at").toString())
         }
         result.result()
       }
