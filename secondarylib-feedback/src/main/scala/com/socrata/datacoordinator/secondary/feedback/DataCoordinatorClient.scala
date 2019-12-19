@@ -69,7 +69,7 @@ class HttpDataCoordinatorClient[CT,CV](httpClient: HttpClient,
   }
 
   private def unexpectedError[T](message: String, cause: Throwable = null): Left[UnexpectedError, T] = {
-    log.error(message)
+    log.error(message, cause)
     Left(UnexpectedError(message, cause))
   }
 
