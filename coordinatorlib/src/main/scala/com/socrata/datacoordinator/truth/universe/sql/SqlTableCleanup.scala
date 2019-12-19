@@ -32,9 +32,15 @@ class SqlTableCleanup(conn: Connection, daysDelay: Int = 1) extends TableCleanup
   }
 
   private def cleanupDeleteds(): Unit = {
+    val PurgedDatasets = """SELECT sm.dataset_system_id from secondary_manifest sm
+                              LEFT OUTER JOIN dataset_map dm on dm.system_id = sm.dataset_system_id
+                             WHERE dm.system_id is null"""
     using(conn.createStatement()) { stmt =>
       stmt.execute(s"DELETE FROM collocation_manifest WHERE deleted_at < now() - ('$daysDelay day' :: INTERVAL)")
       stmt.execute(s"DELETE FROM secondary_move_jobs WHERE deleted_at < now() - ('$daysDelay day' :: INTERVAL)")
+      stmt.execute(s"DELETE FROM secondary_metrics_history WHERE dataset_system_id IN (${PurgedDatasets})")
+      stmt.execute(s"DELETE FROM secondary_metrics WHERE dataset_system_id IN (${PurgedDatasets})")
+      stmt.execute(s"DELETE FROM secondary_manifest WHERE dataset_system_id IN (${PurgedDatasets})")
     }
   }
 }
