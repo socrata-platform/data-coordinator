@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator.resources
 
-import com.rojoma.json.v3.ast._
-import com.rojoma.json.v3.util._
+import com.rojoma.json.v3.ast.{JObject, Json}
+import com.rojoma.json.v3.util.{AutomaticJsonCodecBuilder, Strategy, JsonKeyStrategy}
 import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.thirdparty.json.AdditionalJsonCodecs._
 import com.socrata.http.server._

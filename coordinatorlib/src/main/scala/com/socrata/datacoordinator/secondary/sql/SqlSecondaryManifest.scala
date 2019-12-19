@@ -107,7 +107,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
       using(stmt.executeQuery()) { rs =>
         val result = Map.newBuilder[String, DateTime]
         while(rs.next()) {
-          result += rs.getString("store_id") -> DateTime.parse(rs.getDate("broken_at").toString())
+          result += rs.getString("store_id") -> new DateTime(rs.getTimestamp("broken_at"))
         }
         result.result()
       }
