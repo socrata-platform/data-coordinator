@@ -4,8 +4,11 @@ package secondary
 import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.secondary.Secondary.Cookie
 import com.socrata.datacoordinator.truth.metadata
+
 import scala.concurrent.duration.FiniteDuration
 import java.util.UUID
+
+import org.joda.time.DateTime
 
 case class SecondaryRecord(storeId: String,
                            claimantId: UUID,
@@ -30,6 +33,7 @@ trait SecondaryManifest {
 
   def datasets(storeId: String): Map[DatasetId, Long]
   def stores(datasetId: DatasetId): Map[String, Long]
+  def brokenAts(datasetId: DatasetId): Map[String, DateTime]
 
   def cleanOrphanedClaimedDatasets(storeId: String, claimantId: UUID): Unit
   def claimDatasetNeedingReplication(storeId: String,

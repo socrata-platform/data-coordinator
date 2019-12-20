@@ -4,9 +4,8 @@ package truth.metadata
 import com.rojoma.json.v3.util.{AutomaticJsonCodecBuilder, JsonKey}
 import com.socrata.datacoordinator.id.CopyId
 import org.joda.time.DateTime
-import com.rojoma.json.v3.codec.{DecodeError, JsonDecode, JsonEncode}
-import org.joda.time.format.ISODateTimeFormat
-import com.rojoma.json.v3.ast.{JString, JValue}
+import com.socrata.thirdparty.json.AdditionalJsonCodecs._
+
 
 sealed trait CopyInfoLike extends Product {
   val systemId: CopyId
@@ -25,22 +24,6 @@ case class UnanchoredCopyInfo(@JsonKey("sid") systemId: CopyId,
 object UnanchoredCopyInfo extends ((CopyId, Long, LifecycleStage, Long, DateTime) => UnanchoredCopyInfo) {
   override def toString = "UnanchoredCopyInfo"
 
-  private implicit object DateTimeCodec extends JsonDecode[DateTime] with JsonEncode[DateTime] {
-    val formatter = ISODateTimeFormat.dateTime
-    val parser = ISODateTimeFormat.dateTimeParser
-    def encode(x: DateTime): JValue = JString(formatter.print(x))
-    def decode(x: JValue): JsonDecode.DecodeResult[DateTime] = x match {
-      case JString(s) =>
-        try {
-          Right(parser.parseDateTime(x.toString()))
-        } catch {
-          case _: IllegalArgumentException =>
-            Left(DecodeError.InvalidValue(x))
-        }
-      case other =>
-        Left(DecodeError.InvalidType(JString, other.jsonType))
-    }
-  }
   implicit val jCodec = AutomaticJsonCodecBuilder[UnanchoredCopyInfo]
 }
 
