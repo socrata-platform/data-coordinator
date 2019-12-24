@@ -59,10 +59,11 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
             def doUpdate() {
               val newVersion = versionProvider.allocate()
               val updateRow = rowPreparer.prepareForUpdate(unpreparedRow, oldRow = oldRow, newVersion = newVersion)
-              val (updatedCount, ()) = sqlizer.updateBatch(connection) { updater =>
-                updater.update(sid, updateRow)
+              using(connection.prepareStatement(sqlizer.prepareSystemIdUpdateStatement)) { stmt =>
+                sqlizer.prepareSystemIdUpdate(stmt, sid, updateRow)
+                val result = stmt.executeUpdate()
+                assert(result == 1, "From update: " + result)
               }
-              assert(updatedCount == 1, "From update: " + updatedCount)
               dataLogger.update(sid, Some(oldRow), updateRow)
               reportWriter.updated(job, IdAndVersion(id, newVersion, bySystemIdForced = updateForcedBySystemId))
             }
@@ -88,8 +89,9 @@ class StupidSqlLoader[CT, CV](val connection: Connection,
                 def doUpdate() {
                   val newVersion = versionProvider.allocate()
                   val updateRow = rowPreparer.prepareForUpdate(unpreparedRow, oldRow = oldRow, newVersion = newVersion)
-                  val (updatedCount, ()) = sqlizer.updateBatch(connection) { updater =>
-                    updater.update(sid, updateRow)
+                  val updatedCount = using(connection.prepareStatement(sqlizer.prepareSystemIdUpdateStatement)) { stmt =>
+                    sqlizer.prepareSystemIdUpdate(stmt, sid, updateRow)
+                    stmt.executeUpdate()
                   }
                   assert(updatedCount == 1)
                   dataLogger.update(sid, Some(oldRow), updateRow)

@@ -41,15 +41,24 @@ class SqlPrevettedLoader[CT, CV](val conn: Connection, sqlizer: DataSqlizer[CT, 
   def flushUpdates() {
     if(updateBatch.nonEmpty) {
       try {
-        val (updated, ()) = sqlizer.updateBatch(conn) { updater =>
+        for(stmt <- managed(conn.prepareStatement(sqlizer.prepareSystemIdUpdateStatement))) {
           for(update <- updateBatch) {
-            updater.update(update.systemId, update.data)
+            sqlizer.prepareSystemIdUpdate(stmt, update.systemId, update.data)
+            stmt.addBatch()
           }
+          checkResults(stmt.executeBatch(), 1)
         }
-        assert(updated == updateBatch.size, "Pre-vetted update didn't affect exactly " + updateBatch.size + " row(s)?")
       } finally {
         updateBatch.clear()
       }
+    }
+  }
+
+  def checkResults(updated: Array[Int], expected: Int) {
+    var i = 0
+    while(i < updated.length) {
+      assert(updated(i) == expected, "Pre-vetted update didn't affect exactly " + expected + " row(s)?")
+      i += 1
     }
   }
 
