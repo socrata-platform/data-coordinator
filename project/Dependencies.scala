@@ -2,7 +2,7 @@ import sbt._
 
 object Dependencies {
   object versions {
-    val activemq        = "5.7.0"
+    val activemq        = "5.13.3"
     val c3po            = "0.9.5-pre9"
     val clojure         = "1.5.1"
     val commonsCodec    = "1.8"
@@ -34,7 +34,7 @@ object Dependencies {
     val typesafeConfig  = "1.2.1"
   }
 
-  val activemq = "org.apache.activemq" % "activemq-core" % versions.activemq exclude("org.apache", "commons.logging") exclude("commons-logging", "commons-logging") exclude("org.springframework", "spring-context")
+  val activemq = "org.apache.activemq" % "activemq-client" % versions.activemq exclude("org.apache", "commons.logging") exclude("commons-logging", "commons-logging") exclude("org.springframework", "spring-context")
 
   val c3po = "com.mchange" % "c3p0" % versions.c3po
 
