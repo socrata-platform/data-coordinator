@@ -73,7 +73,8 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
       stmt.setDatasetId(1, datasetInfo.systemId)
       stmt.setLong(2, dataVersion.getOrElse(Long.MaxValue))
       using(t("latest-copy", "dataset_id" -> datasetInfo.systemId)(stmt.executeQuery())) { rs =>
-        if(!rs.next()) sys.error("Looked up a table for " + datasetInfo.systemId + " but didn't find any copy info?")
+        if(!rs.next()) sys.error("Looked up a table for " + datasetInfo.systemId +
+          " < version " + dataVersion.getOrElse(Long.MaxValue) + " but didn't find any copy info?")
         CopyInfo(
           datasetInfo,
           new CopyId(rs.getLong("system_id")),
