@@ -245,20 +245,25 @@ class CoordinatedCollocator(collocationGroup: Set[String],
               if (totalCost == Cost.Zero) return Right(CollocationResult.canonicalEmpty)
 
               val totalStatus =
-                if (totalCost.moves > costLimits.moves)
+                if (totalCost.moves > costLimits.moves) {
+                  log.warn(s"the number of moves exceed the limit ${costLimits.moves}, ${totalCost.moves}")
                   Rejected(s"the number of moves exceed the limit ${costLimits.moves}")
-                else if (totalCost.totalSizeBytes > costLimits.totalSizeBytes)
+                } else if (totalCost.totalSizeBytes > costLimits.totalSizeBytes) {
+                  log.warn(s"the total size in bytes exceeds the limit ${costLimits.totalSizeBytes}, ${totalCost.totalSizeBytes}")
                   Rejected(s"the total size in bytes exceeds the limit ${costLimits.totalSizeBytes}")
-                else if (totalCost.getMoveSizeMaxBytes > costLimits.getMoveSizeMaxBytes)
+                } else if (totalCost.getMoveSizeMaxBytes > costLimits.getMoveSizeMaxBytes) {
+                  log.warn(s"the max move size in bytes exceeds the limit ${costLimits.getMoveSizeMaxBytes}, ${totalCost.getMoveSizeMaxBytes}")
                   Rejected(s"the max move size in bytes exceeds the limit ${costLimits.getMoveSizeMaxBytes}")
-                else {
+                } else {
                   totalMoves.groupBy(_.storeIdTo).flatMap { case (storeId, moves) =>
                     val bytesToMove = Move.totalCost(moves).totalSizeBytes
                     val storeTotalBytes = storeMetricsMap(storeId).totalSizeBytes
                     val storeCapacityBytes = groupConfig.instances(storeId).storeCapacityMB * 1024 * 1024
 
-                    if (storeTotalBytes + bytesToMove > storeCapacityBytes)
+                    if (storeTotalBytes + bytesToMove > storeCapacityBytes) {
+                      log.warn(s"the moves exceed the capacity of store $storeId, $storeTotalBytes, $bytesToMove, $storeCapacityBytes")
                       Some(Rejected(s"the moves exceed the capacity of store $storeId"))
+                    }
                     else None
                   }.headOption.getOrElse(Approved)
                 }
