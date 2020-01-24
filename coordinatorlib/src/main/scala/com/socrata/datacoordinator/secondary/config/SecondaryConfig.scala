@@ -5,12 +5,12 @@ import com.typesafe.config.Config
 import java.io.File
 
 trait StoreConfig {
-  val storeCapacityMB: Int
+  val storeCapacityMB: Long
   val acceptingNewDatasets: Boolean
 }
 
 class StoreConfigCfg(config: Config, root: String) extends ConfigClass(config, root) with StoreConfig {
-  val storeCapacityMB = getInt("storeCapacityMB")
+  val storeCapacityMB = getInt("storeCapacityMB").toLong
   val acceptingNewDatasets = getBoolean("acceptingNewDatasets")
 }
 
