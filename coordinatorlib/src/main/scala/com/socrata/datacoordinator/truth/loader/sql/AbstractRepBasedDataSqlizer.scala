@@ -128,7 +128,7 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
     class ResultIterator extends CloseableIterator[Seq[T]] {
       val blockSize = 100
       val grouped = new FastGroupedIterator(ids, blockSize)
-      val prefix = s"SELECT ${selectReps.map(_.selectList).mkString(",")} FROM $dataTableName WHERE "
+      val prefix = s"SELECT ${selectReps.flatMap(_.transformedSelectList).mkString(",")} FROM $dataTableName WHERE "
       var _fullStmt: PreparedStatement = null
 
       def fullStmt = {
@@ -176,7 +176,7 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
       var i = 1
       repSchema.foreach { (cid, rep) =>
         row(cid) = rep.fromResultSet(rs, i)
-        i += rep.physColumns.length
+        i += rep.transformedSelectList.length
       }
       val sid = row(datasetContext.systemIdColumn)
       val id = if (bySystemId) sid else row(datasetContext.primaryKeyColumn)

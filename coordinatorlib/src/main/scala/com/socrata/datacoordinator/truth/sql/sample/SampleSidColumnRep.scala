@@ -4,7 +4,7 @@ package sample
 import java.sql.{ResultSet, PreparedStatement}
 
 class SampleSidColumnRep(val base: String) extends SqlPKableColumnRep[SampleType, SampleValue] {
-  def representedType = SampleSidColumn
+  val representedType = SampleSidColumn
 
   val sqlTypes = Array("BIGINT")
   val physColumns = Array(base)
@@ -34,7 +34,11 @@ class SampleSidColumnRep(val base: String) extends SqlPKableColumnRep[SampleType
     sb.append(extract(v))
   }
 
-  def prepareInsert(stmt: PreparedStatement, v: SampleValue, start: Int): Int = prepareMultiLookup(stmt, v, start)
+  val prepareInserts = Array(
+    { (stmt: PreparedStatement, v: SampleValue, start: Int) =>
+      prepareMultiLookup(stmt, v, start)
+    }
+  )
 
   def estimateSize(v: SampleValue) = 10
 

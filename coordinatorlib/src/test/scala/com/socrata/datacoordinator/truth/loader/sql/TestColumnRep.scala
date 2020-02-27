@@ -51,7 +51,7 @@ class LongRep(columnId: ColumnId) extends TestColumnRep(columnId) {
   def sql_==(literal: TestColumnValue) =
     "(" + base + "=" + literal.asInstanceOf[LongValue].value + ")"
 
-  def representedType = LongColumn
+  val representedType = LongColumn
 
   val sqlTypes = Array("BIGINT")
 
@@ -59,11 +59,12 @@ class LongRep(columnId: ColumnId) extends TestColumnRep(columnId) {
     if(v != NullValue) sb.append(v.asInstanceOf[LongValue].value)
   }
 
-  def prepareInsert(stmt: PreparedStatement, v: TestColumnValue, start: Int) = {
-    if(v == NullValue) stmt.setNull(start, Types.BIGINT)
-    else stmt.setLong(start, v.asInstanceOf[LongValue].value)
-    start + 1
-  }
+  val prepareInserts = Array(
+    { (stmt: PreparedStatement, v: TestColumnValue, start: Int) =>
+      if(v == NullValue) stmt.setNull(start, Types.BIGINT)
+      else stmt.setLong(start, v.asInstanceOf[LongValue].value)
+    }
+  )
 
   def estimateSize(v: TestColumnValue) = 8
 
@@ -98,7 +99,7 @@ class StringRep(columnId: ColumnId) extends TestColumnRep(columnId) {
   def sql_==(literal: TestColumnValue) =
     "(" + base + "=" + escape('\'', literal.asInstanceOf[StringValue].value) + ")"
 
-  def representedType = StringColumn
+  val representedType = StringColumn
 
   val sqlTypes = Array("VARCHAR(255)")
 
@@ -106,11 +107,12 @@ class StringRep(columnId: ColumnId) extends TestColumnRep(columnId) {
     if(v != NullValue) sb.append(escape('"', v.asInstanceOf[StringValue].value))
   }
 
-  def prepareInsert(stmt: PreparedStatement, v: TestColumnValue, start: Int) = {
-    if(v == NullValue) stmt.setNull(start, Types.VARCHAR)
-    else stmt.setString(start, v.asInstanceOf[StringValue].value)
-    start + 1
-  }
+  val prepareInserts = Array(
+    { (stmt: PreparedStatement, v: TestColumnValue, start: Int) =>
+      if(v == NullValue) stmt.setNull(start, Types.VARCHAR)
+      else stmt.setString(start, v.asInstanceOf[StringValue].value)
+    }
+  )
 
   def estimateSize(v: TestColumnValue) =
     if(v == NullValue) 8

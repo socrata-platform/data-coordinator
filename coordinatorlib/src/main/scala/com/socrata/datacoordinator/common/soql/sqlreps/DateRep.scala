@@ -15,7 +15,7 @@ class DateRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
   def printer = ISODateTimeFormat.date
   def parser = ISODateTimeFormat.localDateParser
 
-  override def templateForInsert: String = placeholder
+  override lazy val insertPlaceholders: Array[String] = Array(placeholder)
 
   def templateForMultiLookup(n: Int): String =
     s"($base in (${Iterator.fill(n)(placeholder).mkString(",")}))"
@@ -55,7 +55,7 @@ class DateRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
 
   def equalityIndexExpression: String = base
 
-  def representedType: SoQLType = SoQLDate
+  val representedType: SoQLType = SoQLDate
 
   val physColumns: Array[String] = Array(base)
 
@@ -66,11 +66,12 @@ class DateRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
     else printer.printTo(sb, v.asInstanceOf[SoQLDate].value)
   }
 
-  def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
-    if(SoQLNull == v) stmt.setNull(start, Types.VARCHAR)
-    else stmt.setObject(start, printer.print(v.asInstanceOf[SoQLDate].value), Types.VARCHAR)
-    start + 1
-  }
+  val prepareInserts = Array(
+    { (stmt: PreparedStatement, v: SoQLValue, start: Int) =>
+      if(SoQLNull == v) stmt.setNull(start, Types.VARCHAR)
+      else stmt.setObject(start, printer.print(v.asInstanceOf[SoQLDate].value), Types.VARCHAR)
+    }
+  )
 
   def estimateSize(v: SoQLValue): Int =
     if(SoQLNull == v) standardNullInsertSize

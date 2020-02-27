@@ -6,7 +6,7 @@ import java.sql.{ResultSet, Types, PreparedStatement}
 import java.lang.StringBuilder
 
 class DoubleRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType, SoQLValue] {
-  def representedType = SoQLDouble
+  val representedType = SoQLDouble
 
   def templateForMultiLookup(n: Int): String =
     s"($base in (${(1 to n).map(_ => "?").mkString(",")}))"
@@ -44,11 +44,12 @@ class DoubleRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLT
     else sb.append(dbl(v))
   }
 
-  def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
-    if(SoQLNull == v) stmt.setNull(start, Types.DOUBLE)
-    else stmt.setDouble(start, dbl(v))
-    start + 1
-  }
+  val prepareInserts = Array(
+    { (stmt: PreparedStatement, v: SoQLValue, start: Int) =>
+      if(SoQLNull == v) stmt.setNull(start, Types.DOUBLE)
+      else stmt.setDouble(start, dbl(v))
+    }
+  )
 
   def estimateSize(v: SoQLValue): Int =
     if(SoQLNull == v) standardNullInsertSize

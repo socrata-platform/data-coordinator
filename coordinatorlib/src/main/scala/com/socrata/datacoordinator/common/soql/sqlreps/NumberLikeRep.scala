@@ -7,9 +7,7 @@ import java.sql.{ResultSet, Types, PreparedStatement}
 import com.socrata.datacoordinator.truth.sql.SqlPKableColumnRep
 import com.socrata.soql.types.{SoQLNull, SoQLValue, SoQLType}
 
-class NumberLikeRep(repType: SoQLType, num: SoQLValue => java.math.BigDecimal, value: java.math.BigDecimal => SoQLValue, val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType, SoQLValue] {
-  def representedType: SoQLType = repType
-
+class NumberLikeRep(val representedType: SoQLType, num: SoQLValue => java.math.BigDecimal, value: java.math.BigDecimal => SoQLValue, val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType, SoQLValue] {
   def templateForMultiLookup(n: Int): String =
     s"($base in (${(1 to n).map(_ => "?").mkString(",")}))"
 
@@ -43,11 +41,12 @@ class NumberLikeRep(repType: SoQLType, num: SoQLValue => java.math.BigDecimal, v
     else sb.append(num(v))
   }
 
-  def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
-    if(SoQLNull == v) stmt.setNull(start, Types.DECIMAL)
-    else stmt.setBigDecimal(start, num(v))
-    start + 1
-  }
+  val prepareInserts = Array(
+    { (stmt: PreparedStatement, v: SoQLValue, start: Int) =>
+      if(SoQLNull == v) stmt.setNull(start, Types.DECIMAL)
+      else stmt.setBigDecimal(start, num(v))
+    }
+  )
 
   def estimateSize(v: SoQLValue): Int =
     if(SoQLNull == v) standardNullInsertSize

@@ -7,7 +7,7 @@ import com.socrata.datacoordinator.truth.sql.SqlColumnRep
 import com.socrata.soql.types.{SoQLNull, SoQLPhoto, SoQLType, SoQLValue}
 
 class PhotoRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType, SoQLValue] {
-  def representedType: SoQLType = SoQLPhoto
+  val representedType: SoQLType = SoQLPhoto
 
   val physColumns: Array[String] = Array(base)
 
@@ -18,11 +18,12 @@ class PhotoRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType, So
     else csvescape(sb, v.asInstanceOf[SoQLPhoto].value)
   }
 
-  def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
-    if(SoQLNull == v) stmt.setNull(start, Types.VARCHAR)
-    else stmt.setString(start, v.asInstanceOf[SoQLPhoto].value)
-    start + 1
-  }
+  val prepareInserts = Array(
+    { (stmt: PreparedStatement, v: SoQLValue, start: Int) =>
+      if(SoQLNull == v) stmt.setNull(start, Types.VARCHAR)
+      else stmt.setString(start, v.asInstanceOf[SoQLPhoto].value)
+    }
+  )
 
   def estimateSize(v: SoQLValue): Int =
     if(SoQLNull == v) standardNullInsertSize

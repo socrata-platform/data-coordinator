@@ -8,7 +8,7 @@ import com.socrata.soql.types._
 
 class UrlRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType, SoQLValue] {
 
-  def representedType: SoQLType = SoQLUrl
+  val representedType: SoQLType = SoQLUrl
 
   val physColumns: Array[String] = Array(base + "_url", base + "_description")
 
@@ -20,9 +20,6 @@ class UrlRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType
   override val keyColumns: Array[String] = Array(physColumns(urlOffset))
 
   val sqlTypes: Array[String] = Array("TEXT", "TEXT")
-
-  override def selectList: String =
-    Array(physColumns(urlOffset), physColumns(descriptionOffset)).mkString(",")
 
   override def templateForUpdate: String = Array(
     s"${physColumns(urlOffset)}=?",
@@ -83,24 +80,30 @@ class UrlRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType
     }
   }
 
-  def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
-    if (SoQLNull == v) {
-      stmt.setNull(start + urlOffset, Types.VARCHAR)
-      stmt.setNull(start + descriptionOffset, Types.VARCHAR)
-    }
-    else {
-      val url = v.asInstanceOf[SoQLUrl]
-      url.url match {
-        case Some(x) => stmt.setString(start + urlOffset, x)
-        case None => stmt.setNull(start, Types.VARCHAR)
+  val prepareInserts = Array(
+    { (stmt: PreparedStatement, v: SoQLValue, start: Int) =>
+      if (SoQLNull == v) {
+        stmt.setNull(start, Types.VARCHAR)
+      } else {
+        val url = v.asInstanceOf[SoQLUrl]
+        url.url match {
+          case Some(x) => stmt.setString(start, x)
+          case None => stmt.setNull(start, Types.VARCHAR)
+        }
       }
-      url.description match {
-        case Some(x) => stmt.setString(start + descriptionOffset, x)
-        case None => stmt.setNull(start + descriptionOffset, Types.VARCHAR)
+    },
+    { (stmt: PreparedStatement, v: SoQLValue, start: Int) =>
+      if (SoQLNull == v) {
+        stmt.setNull(start, Types.VARCHAR)
+      } else {
+        val url = v.asInstanceOf[SoQLUrl]
+        url.description match {
+          case Some(x) => stmt.setString(start, x)
+          case None => stmt.setNull(start, Types.VARCHAR)
+        }
       }
     }
-    start + lastOffset
-  }
+  )
 
   def estimateSize(v: SoQLValue): Int =
     if(SoQLNull == v) standardNullInsertSize

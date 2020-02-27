@@ -7,13 +7,13 @@ import java.lang.StringBuilder
 import com.socrata.datacoordinator.id.{RowId, ColumnId}
 
 class IdRep(cid: ColumnId) extends SqlPKableColumnReadRep[TestColumnType, TestColumnValue] {
-  def representedType = IdType
+  val representedType = IdType
 
   val base = "c_" + cid.underlying
 
-  def physColumns = Array(base)
+  val physColumns = Array(base)
 
-  def sqlTypes = Array("BIGINT")
+  val sqlTypes = Array("BIGINT")
 
   def fromResultSet(rs: ResultSet, start: Int) =
     IdValue(new RowId(rs.getLong(start)))
@@ -41,13 +41,13 @@ class IdRep(cid: ColumnId) extends SqlPKableColumnReadRep[TestColumnType, TestCo
 }
 
 class NumberRep(val cid: ColumnId) extends SqlColumnReadRep[TestColumnType, TestColumnValue] {
-  def representedType = NumberType
+  val representedType = NumberType
 
   val base = "c_" + cid.underlying
 
-  def physColumns = Array(base)
+  val physColumns = Array(base)
 
-  def sqlTypes = Array("BIGINT")
+  val sqlTypes = Array("BIGINT")
 
   def fromResultSet(rs: ResultSet, start: Int) = {
     val v = rs.getLong(start)
@@ -57,13 +57,13 @@ class NumberRep(val cid: ColumnId) extends SqlColumnReadRep[TestColumnType, Test
 }
 
 class StringRep(val cid: ColumnId) extends SqlPKableColumnReadRep[TestColumnType, TestColumnValue] {
-  def representedType = StringType
+  val representedType = StringType
 
   val base = "c_" + cid.underlying
 
-  def physColumns = Array(base)
+  val physColumns = Array(base)
 
-  def sqlTypes = Array("VARCHAR(255)")
+  val sqlTypes = Array("VARCHAR(255)")
 
   def fromResultSet(rs: ResultSet, start: Int) = {
     val v = rs.getString(start)

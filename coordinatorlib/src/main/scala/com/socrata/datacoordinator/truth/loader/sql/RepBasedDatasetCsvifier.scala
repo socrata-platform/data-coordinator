@@ -29,7 +29,7 @@ class RepBasedDatasetCsvifier[CT, CV](conn: Connection, dataTableName: String, s
       rep.csvifyForInsert(target, v)
 
       idx += 1
-      src += rep.physColumns.length
+      src += rep.transformedSelectList.length
     }
     target.append('\n')
   }
@@ -37,7 +37,7 @@ class RepBasedDatasetCsvifier[CT, CV](conn: Connection, dataTableName: String, s
   def csvify(target: Writer, columns: Seq[ColumnId]) {
     if(columns.nonEmpty) {
       val orderedReps = columns.map(schema(_)).toArray
-      val colSelectors = orderedReps.flatMap(_.physColumns)
+      val colSelectors = orderedReps.flatMap(_.transformedSelectList)
       val q = "SELECT " + colSelectors.mkString(",") + " FROM " + dataTableName
       using(conn.createStatement()) { stmt =>
         stmt.setFetchSize(1000)

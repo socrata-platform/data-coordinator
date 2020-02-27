@@ -4,32 +4,47 @@ import java.sql.{ResultSet, PreparedStatement}
 
 trait SqlColumnCommonRep[Type] {
   /** The logical type of this column */
-  def representedType: Type
+  val representedType: Type
 
   /** The "base name" from which physical column names are derived.  This must
     * be a legal SQL column name without quotes! */
-  def base: String
+  val base: String
 
-  /** Physical SQL table columns used by this logical column. */
-  def physColumns: Array[String]
+  /** Physical SQL table columns used by this logical column; these must be
+    * legal SQL column names without quotes */
+  val physColumns: Array[String]
 
   /** Types of the physical SQL table columns used by this logical column.
     * @note This will have the same length as `physColumns`. */
-  def sqlTypes: Array[String]
+  val sqlTypes: Array[String]
 
   /** Helper function to create physical column names for types with multiple physical columns. */
   protected def physCol(suffix: String) = "\"" + base + "$" + suffix + "\""
 
-  def isPKableRep: Boolean = false
+  val isPKableRep: Boolean = false
 }
 
 trait SqlColumnReadRep[Type, Value] extends SqlColumnCommonRep[Type] {
-  /** Produces a column select list for this logical column */
-  def selectList: String = simpleSelectList
-  private lazy val simpleSelectList = physColumns.mkString(",")
+  /** Produces a column select list for this logical column.  It is
+    * a set of prefixes and suffixes that are used to wrap the raw
+    * column for extraction by "fromResultSet".  Specifically, it
+    * wraps geometry types in ST_AsBinary.
+    *
+    * @note for each element, given some valid SQL expression "expr",
+    *   the result of PREFIX + expr + SUFFIX must also be a valid
+    *   sql expression.
+    *
+    * @note This will be the same length as `physColumns` */
+  lazy val selectListTransforms: Array[(String, String)] = physColumns.map { _ => ("","") }
+
+  /** The select list, transformed by `selectListTransforms`. */
+  lazy val transformedSelectList: Array[String] =
+    (physColumns, selectListTransforms).zipped.map { (col, wrapper) =>
+      wrapper._1 + col + wrapper._2
+    }
 
   /** Extract a value from the result set.  This will "use up" a number of
-    * columns equal to `physColumnsForQuery.length`.
+    * columns equal to `transformedSelectList.length`.
     */
   def fromResultSet(rs: ResultSet, start: Int): Value
   def asPKableRep: SqlPKableColumnReadRep[Type, Value] = sys.error("Not a PKable rep")
@@ -60,17 +75,30 @@ trait SqlColumnWriteRep[Type, Value] extends SqlColumnCommonRep[Type] {
     */
   def csvifyForInsert(sb: java.lang.StringBuilder, v: Value)
 
-  /** Produce a prepared statement fragment which can be filled in by `prepareInsert`.
-    * It will contain one "?" for each value in `physColumns`, in that same order.
+  /** Produce a set of prepared statement fragment which can be filled
+    * in by `prepareInsert`.  It will be an array of strings, the same
+    * length as `physColumns`, each element of which contains exactly
+    * one "?" placeholder (possibly wrapped in extra functions).
     */
-  def templateForInsert: String = simpleTemplateForInsert
-  private lazy val simpleTemplateForInsert = physColumns.map(_ => "?").mkString(",")
+  lazy val insertPlaceholders: Array[String] = simpleTemplateForInsert
+  final lazy val templateForInsert: String = insertPlaceholders.mkString(",")
+  private def simpleTemplateForInsert = physColumns.map(_ => "?")
+
+  /** Produces a series of functions, each of which fills in exactly
+    * one placeholder in the given prepared statement; the length is
+    * the same as `physColumns` and is called in that order.
+    */
+  val prepareInserts: Array[(PreparedStatement, Value, Int) => Unit]
 
   /** Fill in a template produced by `templateForInsert`.
     * @param start The position of the first "?" in the template
     * @return The first position after the last "?" in the template
     */
-  def prepareInsert(stmt: PreparedStatement, v: Value, start: Int): Int
+  final def prepareInsert(stmt: PreparedStatement, v: Value, start: Int): Int =
+    prepareInserts.foldLeft(start) { (col, pi) =>
+      pi(stmt, v, col)
+      col + 1
+    }
 
   /** Produce a prepared statement fragment which can be filled in by `prepareUpdate`.
     * It will contain one "?" for each value in `physColumns`, in that same order.
@@ -141,7 +169,7 @@ trait SqlPKableColumnReadRep[Type, Value] extends SqlColumnReadRep[Type, Value] 
     * for use in equality expressions. */
   def equalityIndexExpression: String
 
-  override def isPKableRep = true
+  override val isPKableRep = true
 
   override def asPKableRep: this.type = this
 }

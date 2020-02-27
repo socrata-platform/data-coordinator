@@ -9,7 +9,7 @@ import com.socrata.soql.types.{SoQLType, SoQLValue, SoQLNull, SoQLVersion}
 class VersionRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType, SoQLValue] {
   val SIZE_GUESSTIMATE = 30
 
-  def representedType: SoQLType = SoQLVersion
+  val representedType: SoQLType = SoQLVersion
 
   val physColumns: Array[String] = Array(base)
 
@@ -20,10 +20,11 @@ class VersionRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType, 
     else sb.append(v.asInstanceOf[SoQLVersion].value)
   }
 
-  def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
-    stmt.setLong(start, v.asInstanceOf[SoQLVersion].value)
-    start + 1
-  }
+  val prepareInserts = Array(
+    { (stmt: PreparedStatement, v: SoQLValue, start: Int) =>
+      stmt.setLong(start, v.asInstanceOf[SoQLVersion].value)
+    }
+  )
 
   def estimateSize(v: SoQLValue): Int = SIZE_GUESSTIMATE
 

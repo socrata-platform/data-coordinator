@@ -7,7 +7,7 @@ import java.lang.StringBuilder
 import java.sql.{ResultSet, Types, PreparedStatement}
 
 class GeometryLikeRep[T<:Geometry](
-  repType: SoQLType,
+  val representedType: SoQLType,
   geometry: SoQLValue => T,
   value: T => SoQLValue,
   val presimplifiedZoomLevels: Seq[Int],
@@ -15,10 +15,8 @@ class GeometryLikeRep[T<:Geometry](
     extends RepUtils with SqlColumnRep[SoQLType, SoQLValue]  {
   private val WGS84SRID = 4326
 
-  def representedType: SoQLType = repType
-
-  def fromWkt(str: String): Option[T] = repType.asInstanceOf[SoQLGeometryLike[T]].WktRep.unapply(str)
-  def fromWkb(bytes: Array[Byte]): Option[T] = repType.asInstanceOf[SoQLGeometryLike[T]].WkbRep.unapply(bytes)
+  def fromWkt(str: String): Option[T] = representedType.asInstanceOf[SoQLGeometryLike[T]].WktRep.unapply(str)
+  def fromWkb(bytes: Array[Byte]): Option[T] = representedType.asInstanceOf[SoQLGeometryLike[T]].WkbRep.unapply(bytes)
   // TODO: Also write to database  using WKB, would be more efficient
   def toEWkt(v: SoQLValue): String = v.typ.asInstanceOf[SoQLGeometryLike[T]].EWktRep(geometry(v), WGS84SRID)
 
@@ -34,16 +32,16 @@ class GeometryLikeRep[T<:Geometry](
       s"${base}_zoom_${levels.min}"
     }
 
-    new GeometryLikeRep[T](repType, geometry, value, presimplifiedZoomLevels, newBase) {
+    new GeometryLikeRep[T](representedType, geometry, value, presimplifiedZoomLevels, newBase) {
       override def forZoom(level: Int) = original.forZoom(level)
     }
   }
 
   val sqlTypes: Array[String] = Array("GEOMETRY(Geometry," + WGS84SRID + ")")
 
-  override def selectList: String = "ST_AsBinary(" + base + ")"
+  override lazy val selectListTransforms = Array(("ST_AsBinary(", ")"))
 
-  override def templateForInsert: String = "ST_GeomFromEWKT(?)"
+  override lazy val insertPlaceholders: Array[String] = Array("ST_GeomFromEWKT(?)")
 
   override def templateForUpdate: String = base + "=ST_GeomFromEWKT(?)"
 
@@ -52,12 +50,12 @@ class GeometryLikeRep[T<:Geometry](
     else csvescape(sb, toEWkt(v))
   }
 
-  def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
-    if(SoQLNull == v) stmt.setNull(start, Types.VARCHAR)
-    else stmt.setString(start, toEWkt(v))
-
-    start + 1
-  }
+  val prepareInserts = Array(
+    { (stmt: PreparedStatement, v: SoQLValue, start: Int) =>
+      if(SoQLNull == v) stmt.setNull(start, Types.VARCHAR)
+      else stmt.setString(start, toEWkt(v))
+    }
+  )
 
   def estimateSize(v: SoQLValue): Int = {
     if(SoQLNull == v) standardNullInsertSize

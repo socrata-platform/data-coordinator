@@ -4,7 +4,7 @@ package sample
 import java.sql.{ResultSet, PreparedStatement}
 
 class SampleTextColumnRep(val base: String) extends SqlPKableColumnRep[SampleType, SampleValue] {
-  def representedType = SampleTextColumn
+  val representedType = SampleTextColumn
 
   val sqlTypes = Array("TEXT")
   val physColumns = Array(base)
@@ -43,7 +43,9 @@ class SampleTextColumnRep(val base: String) extends SqlPKableColumnRep[SampleTyp
     }
   }
 
-  def prepareInsert(stmt: PreparedStatement, v: SampleValue, n: Int) = prepareMultiLookup(stmt, v, n)
+  val prepareInserts = Array(
+    { (stmt: PreparedStatement, v: SampleValue, n: Int) => prepareMultiLookup(stmt, v, n) }
+  )
 
   def estimateSize(v: SampleValue) = v match {
     case SampleText(text) => text.length

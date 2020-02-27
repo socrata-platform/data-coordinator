@@ -40,7 +40,7 @@ class TextRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
 
   def equalityIndexExpression: String = s"$base text_pattern_ops"
 
-  def representedType: SoQLType = SoQLText
+  val representedType: SoQLType = SoQLText
 
   val physColumns: Array[String] = Array(base)
 
@@ -51,11 +51,12 @@ class TextRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
     else csvescape(sb, v.asInstanceOf[SoQLText].value.replace("\u0000", ""))
   }
 
-  def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
-    if(SoQLNull == v) stmt.setNull(start, Types.VARCHAR)
-    else stmt.setString(start, v.asInstanceOf[SoQLText].value)
-    start + 1
-  }
+  val prepareInserts = Array(
+    { (stmt: PreparedStatement, v: SoQLValue, start: Int) =>
+      if(SoQLNull == v) stmt.setNull(start, Types.VARCHAR)
+      else stmt.setString(start, v.asInstanceOf[SoQLText].value)
+    }
+  )
 
   def estimateSize(v: SoQLValue): Int =
     if(SoQLNull == v) standardNullInsertSize

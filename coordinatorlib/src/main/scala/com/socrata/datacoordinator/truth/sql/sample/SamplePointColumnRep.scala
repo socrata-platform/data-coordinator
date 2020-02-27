@@ -4,7 +4,7 @@ package sample
 import java.sql.{Types, PreparedStatement, ResultSet}
 
 class SamplePointColumnRep(val base: String) extends SqlColumnRep[SampleType, SampleValue] {
-  def representedType = SamplePointColumn
+  val representedType = SamplePointColumn
 
   val sqlTypes = Array("DOUBLE PRECISION", "DOUBLE PRECISION")
   val x = physCol("x")
@@ -22,20 +22,28 @@ class SamplePointColumnRep(val base: String) extends SqlColumnRep[SampleType, Sa
     }
   }
 
-  def prepareInsert(stmt: PreparedStatement, v: SampleValue, i: Int) = {
-    v match {
-      case SamplePoint(vx, vy) =>
-        stmt.setDouble(i, vx)
-        stmt.setDouble(i + 1, vy)
-        i + 2
-      case SampleNull =>
-        stmt.setNull(i, Types.DOUBLE)
-        stmt.setNull(i + 1, Types.DOUBLE)
-        i + 2
-      case _ =>
-        sys.error("Illegal value for point column")
+  val prepareInserts = Array(
+    { (stmt: PreparedStatement, v: SampleValue, i: Int) =>
+      v match {
+        case SamplePoint(vx, vy) =>
+          stmt.setDouble(i, vx)
+        case SampleNull =>
+          stmt.setNull(i, Types.DOUBLE)
+        case _ =>
+          sys.error("Illegal value for point column")
+      }
+    },
+    { (stmt: PreparedStatement, v: SampleValue, i: Int) =>
+      v match {
+        case SamplePoint(vx, vy) =>
+          stmt.setDouble(i, vy)
+        case SampleNull =>
+          stmt.setNull(i, Types.DOUBLE)
+        case _ =>
+          sys.error("Illegal value for point column")
+      }
     }
-  }
+  )
 
   def estimateSize(v: SampleValue) = 16
 

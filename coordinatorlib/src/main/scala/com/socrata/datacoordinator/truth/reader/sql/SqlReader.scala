@@ -76,11 +76,11 @@ class SqlReader[CT, CV](connection: Connection,
         while(rs.next()) {
           val sid = typeContext.makeSystemIdFromValue(sidRep.fromResultSet(rs, 1))
           val row = new MutableColumnIdMap[CV]
-          var i = 1 + sidRep.physColumns.length
+          var i = 1 + sidRep.transformedSelectList.length
           for(c <- columns) {
             val rep = repSchema(c)
             val v = rep.fromResultSet(rs, i)
-            i += rep.physColumns.length
+            i += rep.transformedSelectList.length
             row(c) = v
           }
           result(sid) = row.freeze()
@@ -100,10 +100,10 @@ class SqlReader[CT, CV](connection: Connection,
       val underlying = new FastGroupedIterator(ids, blockSize)
       val selectPrefix = {
         val sb = new StringBuilder("SELECT ")
-        sb.append(uidRep.physColumns.mkString(","))
+        sb.append(uidRep.transformedSelectList.mkString(","))
         if(!columns.isEmpty) {
           sb.append(",")
-          sb.append(columns.flatMap(c => repSchema(c).physColumns).mkString(","))
+          sb.append(columns.flatMap(c => repSchema(c).transformedSelectList).mkString(","))
         }
         sb.append(" FROM ").append(dataTableName).append(" WHERE ")
         sb.toString
@@ -148,11 +148,11 @@ class SqlReader[CT, CV](connection: Connection,
           while(rs.next()) {
             val uid = uidRep.fromResultSet(rs, 1)
             val row = new MutableColumnIdMap[CV]
-            var i = 1 + uidRep.physColumns.length
+            var i = 1 + uidRep.transformedSelectList.length
             for(c <- columns) {
               val rep = repSchema(c)
               val v = rep.fromResultSet(rs, i)
-              i += rep.physColumns.length
+              i += rep.transformedSelectList.length
               row += c -> v
             }
             result.put(uid, row.freeze())

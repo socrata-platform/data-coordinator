@@ -36,7 +36,7 @@ class IDRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType,
 
   def equalityIndexExpression: String = base
 
-  def representedType: SoQLType = SoQLID
+  val representedType: SoQLType = SoQLID
 
   val physColumns: Array[String] = Array(base)
 
@@ -47,10 +47,11 @@ class IDRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType,
     else sb.append(v.asInstanceOf[SoQLID].value)
   }
 
-  def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
-    stmt.setLong(start, v.asInstanceOf[SoQLID].value)
-    start + 1
-  }
+  val prepareInserts = Array(
+    { (stmt: PreparedStatement, v: SoQLValue, start: Int) =>
+      stmt.setLong(start, v.asInstanceOf[SoQLID].value)
+    }
+  )
 
   def estimateSize(v: SoQLValue): Int = SIZE_GUESSTIMATE
 

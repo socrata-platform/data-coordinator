@@ -7,7 +7,7 @@ import com.socrata.datacoordinator.truth.sql.SqlColumnRep
 import com.socrata.soql.types.{SoQLNull, SoQLBlob, SoQLType, SoQLValue}
 
 class BlobRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType, SoQLValue] {
-  def representedType: SoQLType = SoQLBlob
+  val representedType: SoQLType = SoQLBlob
 
   val physColumns: Array[String] = Array(base)
 
@@ -18,11 +18,12 @@ class BlobRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType, SoQ
     else csvescape(sb, v.asInstanceOf[SoQLBlob].value)
   }
 
-  def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
-    if(SoQLNull == v) stmt.setNull(start, Types.VARCHAR)
-    else stmt.setString(start, v.asInstanceOf[SoQLBlob].value)
-    start + 1
-  }
+  val prepareInserts = Array(
+    { (stmt: PreparedStatement, v: SoQLValue, start: Int) =>
+      if(SoQLNull == v) stmt.setNull(start, Types.VARCHAR)
+      else stmt.setString(start, v.asInstanceOf[SoQLBlob].value)
+    }
+  )
 
   def estimateSize(v: SoQLValue): Int =
     if(SoQLNull == v) standardNullInsertSize

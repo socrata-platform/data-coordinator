@@ -8,7 +8,7 @@ import java.sql.{ResultSet, Types, PreparedStatement}
 import com.rojoma.json.v3.ast.JObject
 
 class ObjectRep (val base: String) extends RepUtils with SqlColumnRep[SoQLType, SoQLValue] {
-  def representedType: SoQLType = SoQLObject
+  val representedType: SoQLType = SoQLObject
 
   def string(v: SoQLValue): String = CompactJsonWriter.toString(v.asInstanceOf[SoQLObject].value)
 
@@ -21,11 +21,12 @@ class ObjectRep (val base: String) extends RepUtils with SqlColumnRep[SoQLType, 
     else csvescape(sb, string(v))
   }
 
-  def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
-    if(SoQLNull == v) stmt.setNull(start, Types.VARCHAR)
-    else stmt.setString(start, string(v))
-    start + 1
-  }
+  val prepareInserts = Array(
+    { (stmt: PreparedStatement, v: SoQLValue, start: Int) =>
+      if(SoQLNull == v) stmt.setNull(start, Types.VARCHAR)
+      else stmt.setString(start, string(v))
+    }
+  )
 
   def estimateSize(v: SoQLValue): Int =
     if(SoQLNull == v) standardNullInsertSize

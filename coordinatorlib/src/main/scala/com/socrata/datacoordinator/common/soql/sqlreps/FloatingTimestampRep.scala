@@ -12,8 +12,6 @@ import org.joda.time.format.{DateTimeFormatterBuilder, ISODateTimeFormat}
 class FloatingTimestampRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType, SoQLValue] {
   import FloatingTimestampRep._
 
-  override val templateForInsert = placeholder
-
   def templateForMultiLookup(n: Int): String =
     s"($base in (${Iterator.fill(n)(placeholder).mkString(",")}))"
 
@@ -50,7 +48,7 @@ class FloatingTimestampRep(val base: String) extends RepUtils with SqlPKableColu
 
   def equalityIndexExpression: String = base
 
-  def representedType: SoQLType = SoQLFloatingTimestamp
+  val representedType: SoQLType = SoQLFloatingTimestamp
 
   val physColumns: Array[String] = Array(base)
 
@@ -63,11 +61,12 @@ class FloatingTimestampRep(val base: String) extends RepUtils with SqlPKableColu
     }
   }
 
-  def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
-    if(SoQLNull == v) stmt.setNull(start, Types.VARCHAR)
-    else stmt.setObject(start, printer.print(v.asInstanceOf[SoQLFloatingTimestamp].value), Types.VARCHAR)
-    start + 1
-  }
+  val prepareInserts = Array(
+    { (stmt: PreparedStatement, v: SoQLValue, start: Int) =>
+      if(SoQLNull == v) stmt.setNull(start, Types.VARCHAR)
+      else stmt.setObject(start, printer.print(v.asInstanceOf[SoQLFloatingTimestamp].value), Types.VARCHAR)
+    }
+  )
 
   def estimateSize(v: SoQLValue): Int =
     if(SoQLNull == v) standardNullInsertSize

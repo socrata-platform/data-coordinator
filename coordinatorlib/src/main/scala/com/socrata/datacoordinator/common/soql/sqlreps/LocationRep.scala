@@ -11,7 +11,7 @@ class LocationRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType,
 
   private val WGS84SRID = 4326
 
-  def representedType: SoQLType = SoQLLocation
+  val representedType: SoQLType = SoQLLocation
 
   val physColumns: Array[String] = Array(base + "_geom", base + "_address")
 
@@ -22,10 +22,11 @@ class LocationRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType,
   val addressOffset = 1
   val lastOffset = 2
 
-  override def selectList: String =
-    Array(s"ST_AsBinary(${physColumns(geomOffset)})", physColumns(addressOffset)).mkString(",")
+  override lazy val selectListTransforms =
+    Array(("ST_AsBinary(", ")"),
+          ("", ""))
 
-  override def templateForInsert: String = "ST_GeomFromEWKT(?),?"
+  override lazy val insertPlaceholders: Array[String] = Array("ST_GeomFromEWKT(?)", "?")
 
   override def templateForUpdate: String = Array(
     s"${physColumns(geomOffset)}=ST_GeomFromEWKT(?)",
@@ -51,25 +52,31 @@ class LocationRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType,
     s"SRID=$srid;POINT(${location.longitude.get} ${location.latitude.get})" // x (longitude), y (latitude)
   }
 
-  def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
-    if (SoQLNull == v) {
-      stmt.setNull(start + geomOffset, Types.VARCHAR)
-      stmt.setNull(start + addressOffset, Types.VARCHAR)
-    }
-    else {
-      val loc = v.asInstanceOf[SoQLLocation]
-      if (geomNonEmpty(loc)) {
-        stmt.setString(start, toEWkt(loc, WGS84SRID))
-      } else {
+  val prepareInserts = Array(
+    { (stmt: PreparedStatement, v: SoQLValue, start: Int) =>
+      if (SoQLNull == v) {
         stmt.setNull(start, Types.VARCHAR)
+      } else {
+        val loc = v.asInstanceOf[SoQLLocation]
+        if (geomNonEmpty(loc)) {
+          stmt.setString(start, toEWkt(loc, WGS84SRID))
+        } else {
+          stmt.setNull(start, Types.VARCHAR)
+        }
       }
-      loc.address match {
-        case Some(a) => stmt.setString(start + addressOffset, a)
-        case None => stmt.setNull(start + addressOffset, Types.VARCHAR)
+    },
+    { (stmt: PreparedStatement, v: SoQLValue, start: Int) =>
+      if (SoQLNull == v) {
+        stmt.setNull(start, Types.VARCHAR)
+      } else {
+        val loc = v.asInstanceOf[SoQLLocation]
+        loc.address match {
+          case Some(a) => stmt.setString(start, a)
+          case None => stmt.setNull(start, Types.VARCHAR)
+        }
       }
     }
-    start + lastOffset
-  }
+  )
 
   def estimateSize(v: SoQLValue): Int =
     if(SoQLNull == v) standardNullInsertSize

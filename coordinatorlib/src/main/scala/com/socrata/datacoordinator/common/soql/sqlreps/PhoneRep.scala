@@ -8,7 +8,7 @@ import com.socrata.soql.types._
 
 class PhoneRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType, SoQLValue] {
 
-  def representedType: SoQLType = SoQLPhone
+  val representedType: SoQLType = SoQLPhone
 
   val physColumns: Array[String] = Array(base + "_number", base + "_type")
 
@@ -18,9 +18,6 @@ class PhoneRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType, So
   val numberOffset = 0
   val typeOffset = 1
   val lastOffset = 2
-
-  override def selectList: String =
-    Array(physColumns(numberOffset), physColumns(typeOffset)).mkString(",")
 
   override def templateForUpdate: String = Array(
     s"${physColumns(numberOffset)}=?",
@@ -39,24 +36,30 @@ class PhoneRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType, So
     }
   }
 
-  def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
-    if (SoQLNull == v) {
-      stmt.setNull(start + numberOffset, Types.VARCHAR)
-      stmt.setNull(start + typeOffset, Types.VARCHAR)
-    }
-    else {
-      val phone = v.asInstanceOf[SoQLPhone]
-      phone.phoneNumber match {
-        case Some(x) => stmt.setString(start + numberOffset, x)
-        case None => stmt.setNull(start, Types.VARCHAR)
+  val prepareInserts = Array(
+    { (stmt: PreparedStatement, v: SoQLValue, start: Int) =>
+      if (SoQLNull == v) {
+        stmt.setNull(start, Types.VARCHAR)
+      } else {
+        val phone = v.asInstanceOf[SoQLPhone]
+        phone.phoneNumber match {
+          case Some(x) => stmt.setString(start + numberOffset, x)
+          case None => stmt.setNull(start, Types.VARCHAR)
+        }
       }
-      phone.phoneType match {
-        case Some(x) => stmt.setString(start + typeOffset, x)
-        case None => stmt.setNull(start + typeOffset, Types.VARCHAR)
+    },
+    { (stmt: PreparedStatement, v: SoQLValue, start: Int) =>
+      if (SoQLNull == v) {
+        stmt.setNull(start, Types.VARCHAR)
+      } else {
+        val phone = v.asInstanceOf[SoQLPhone]
+        phone.phoneType match {
+          case Some(x) => stmt.setString(start, x)
+          case None => stmt.setNull(start, Types.VARCHAR)
+        }
       }
     }
-    start + lastOffset
-  }
+  )
 
   def estimateSize(v: SoQLValue): Int =
     if(SoQLNull == v) standardNullInsertSize

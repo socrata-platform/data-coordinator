@@ -8,7 +8,7 @@ import com.socrata.datacoordinator.truth.sql.SqlPKableColumnRep
 import com.socrata.soql.types._
 
 class DocumentRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType, SoQLValue] {
-  def representedType: SoQLType = SoQLDocument
+  val representedType: SoQLType = SoQLDocument
 
   val physColumns: Array[String] = Array(base)
 
@@ -16,7 +16,7 @@ class DocumentRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQ
 
   override def templateForUpdate: String = physColumns.map(_ + "=?::JSONB").mkString(",")
 
-  override def templateForInsert: String = physColumns.map(_ => "?::JSONB").mkString(",")
+  override lazy val insertPlaceholders: Array[String] = Array("(?::JSONB)")
 
   def templateForSingleLookup: String = s"($base @> (? :: JSONB))"
 
@@ -33,17 +33,12 @@ class DocumentRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQ
     }
   }
 
-  def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
-    v match {
-      case x: SoQLDocument =>
-        stmt.setObject(start, JsonUtil.renderJson(x))
-      case SoQLNull =>
-        stmt.setNull(start, Types.VARCHAR)
-      case unknown =>
-        throw new Exception("unknown SoQLValue")
+  val prepareInserts = Array(
+    { (stmt: PreparedStatement, v: SoQLValue, start: Int) =>
+      if(SoQLNull == v) stmt.setNull(start, Types.VARCHAR)
+      else stmt.setString(start, JsonUtil.renderJson(v.asInstanceOf[SoQLDocument]))
     }
-    start + 1
-  }
+  )
 
   def prepareMultiLookup(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
     stmt.setString(start, JsonUtil.renderJson(v.asInstanceOf[SoQLDocument]))

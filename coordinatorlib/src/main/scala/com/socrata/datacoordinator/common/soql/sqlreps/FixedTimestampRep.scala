@@ -15,8 +15,6 @@ class FixedTimestampRep(val base: String) extends RepUtils with SqlPKableColumnR
 
   val SIZE_GUESSTIMATE = 30
 
-  override val templateForInsert = placeholder
-
   override val templateForUpdate = s"$base = $placeholder"
 
   def templateForMultiLookup(n: Int): String =
@@ -59,7 +57,7 @@ class FixedTimestampRep(val base: String) extends RepUtils with SqlPKableColumnR
 
   def equalityIndexExpression: String = base
 
-  def representedType: SoQLType = SoQLFixedTimestamp
+  val representedType: SoQLType = SoQLFixedTimestamp
 
   val physColumns: Array[String] = Array(base)
 
@@ -70,11 +68,12 @@ class FixedTimestampRep(val base: String) extends RepUtils with SqlPKableColumnR
     else printer.printTo(sb, v.asInstanceOf[SoQLFixedTimestamp].value)
   }
 
-  def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
-    if(SoQLNull == v) stmt.setNull(start, Types.TIMESTAMP)
-    else stmt.setTimestamp(start, new java.sql.Timestamp(v.asInstanceOf[SoQLFixedTimestamp].value.getMillis))
-    start + 1
-  }
+  val prepareInserts = Array(
+    { (stmt: PreparedStatement, v: SoQLValue, start: Int) =>
+      if(SoQLNull == v) stmt.setNull(start, Types.TIMESTAMP)
+      else stmt.setTimestamp(start, new java.sql.Timestamp(v.asInstanceOf[SoQLFixedTimestamp].value.getMillis))
+    }
+  )
 
   def estimateSize(v: SoQLValue): Int =
     if(SoQLNull == v) standardNullInsertSize

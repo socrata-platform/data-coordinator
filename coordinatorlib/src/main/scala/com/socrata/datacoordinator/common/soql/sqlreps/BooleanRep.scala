@@ -40,7 +40,7 @@ class BooleanRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQL
 
   def equalityIndexExpression: String = base
 
-  def representedType: SoQLType = SoQLBoolean
+  val representedType: SoQLType = SoQLBoolean
 
   val physColumns: Array[String] = Array(base)
 
@@ -51,11 +51,12 @@ class BooleanRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQL
     else sb.append(v.asInstanceOf[SoQLBoolean].value)
   }
 
-  def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
-    if(SoQLNull == v) stmt.setNull(start, Types.BOOLEAN)
-    else stmt.setBoolean(start, v.asInstanceOf[SoQLBoolean].value)
-    start + 1
-  }
+  val prepareInserts = Array(
+    { (stmt: PreparedStatement, v: SoQLValue, start: Int) =>
+      if(SoQLNull == v) stmt.setNull(start, Types.BOOLEAN)
+      else stmt.setBoolean(start, v.asInstanceOf[SoQLBoolean].value)
+    }
+  )
 
   def estimateSize(v: SoQLValue): Int =
     if(SoQLNull == v) standardNullInsertSize

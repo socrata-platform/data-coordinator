@@ -24,7 +24,7 @@ class RepBasedDatasetExtractor[CT, CV](conn: Connection, dataTableName: String, 
     while(idx != cids.length) {
       val rep = reps(idx)
       result(new ColumnId(cids(idx))) = rep.fromResultSet(rs, src)
-      src += rep.physColumns.length
+      src += rep.transformedSelectList.length
       idx += 1
     }
     result.freeze()
@@ -36,7 +36,7 @@ class RepBasedDatasetExtractor[CT, CV](conn: Connection, dataTableName: String, 
       if(schema.isEmpty) {
         f(Iterator.empty)
       } else {
-        val colSelectors = cids.map { cid => schema(new ColumnId(cid)).selectList }
+        val colSelectors = cids.flatMap { cid => schema(new ColumnId(cid)).transformedSelectList }
         val q = "SELECT " + colSelectors.mkString(",") + " FROM " + dataTableName +
           (if (rowId.isDefined) " WHERE " + sidCol.templateForSingleLookup else "" ) +
           (if(sorted) " ORDER BY " + sidCol.orderBy() else "") +
