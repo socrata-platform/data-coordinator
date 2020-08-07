@@ -177,13 +177,13 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
     * already has this dataVersion.
     * @return a new cookie to store in the secondary map
     */
-  override def version(datasetInfo: DatasetInfo, dataVersion: Long, cookie: Cookie, unbufferedEvents: Iterator[Event[CT,CV]]): Cookie = {
+  override def version(datasetInfo: DatasetInfo, initialDataVersion: Long, finalDataVersion: Long, cookie: Cookie, unbufferedEvents: Iterator[Event[CT,CV]]): Cookie = {
     val events = unbufferedEvents.buffered
 
     val datasetInternalName = datasetInfo.internalName
 
     val oldCookie = FeedbackCookie.decode(cookie).getOrElse {
-      if (dataVersion == 1) {
+      if (initialDataVersion == 1) {
         log.info("No existing cookie for dataset {} since it is version 1; creating cookie.")
         val schema = CookieSchema(
           dataVersion = DataVersion(0),
@@ -204,7 +204,7 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
     }
 
     if (oldCookie.current.resync) {
-      log.info("Cookie for dataset {} for version {} specified to resync.", datasetInternalName, dataVersion)
+      log.info("Cookie for dataset {} for version {}/{} specified to resync.", datasetInternalName, initialDataVersion.asInstanceOf[AnyRef], finalDataVersion.asInstanceOf[AnyRef])
       throw ResyncSecondaryException("My cookie specified to resync!")
     }
 
@@ -213,16 +213,16 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
     checkRetriesLeft(oldCookie, oldCookie.current.dataCoordinatorRetriesLeft, "data-coordinator")
 
     val expectedDataVersion = oldCookie.current.dataVersion.underlying + 1
-    if (dataVersion < expectedDataVersion) {
+    if (finalDataVersion < expectedDataVersion) {
       // if the data version is less than are equal to the version in our cookie, we have seen this version and are done
       log.info("Cookie for dataset {} expects data version {}, we have already replicated {}",
-        datasetInternalName, expectedDataVersion.toString, dataVersion.toString)
+        datasetInternalName, expectedDataVersion.toString, finalDataVersion.toString)
       cookie
-    } else if (dataVersion > expectedDataVersion) {
+    } else if (initialDataVersion > expectedDataVersion) {
       // if the data version is more than 1 greater than the version in our cookie, this is unexpected and we should resync
       log.warn("Cookie for dataset {} expects data version {}, version {} is unexpected; going to resync.",
-        datasetInternalName, expectedDataVersion.toString, dataVersion.toString)
-      val reason = s"Unexpected data version $dataVersion"
+        datasetInternalName, expectedDataVersion.toString, initialDataVersion.toString)
+      val reason = s"Unexpected data version $initialDataVersion"
       throw ResyncSecondaryException(reason)
     } else {
       // if the data version is 1 greater than the version in our cookie, we should try replaying it
@@ -234,7 +234,7 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
       }
 
       def notFirstEvent(event: String) =
-        s"$event not the first event in version $dataVersion for dataset $datasetInternalName? Something is wrong!"
+        s"$event not the first event in version $initialDataVersion for dataset $datasetInternalName? Something is wrong!"
 
       def logErrorAndResync(message: String): Nothing = {
         log.error(message + " Going to resync.")
@@ -245,13 +245,13 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
       val fromJValueFunc = fromJValue(datasetInfo.obfuscationKey)
       val currentContext = datasetContext(datasetInternalName, toJValueFunc, fromJValueFunc, estimateValueSize)
 
-      val cookieSeed = oldCookie.copy(oldCookie.current.copy(DataVersion(dataVersion)), oldCookie.previous)
+      val cookieSeed = oldCookie.copy(oldCookie.current.copy(DataVersion(finalDataVersion)), oldCookie.previous)
 
       case class IterationState(cookie: FeedbackCookie, columns: Set[UserColumnId])
 
       def addComputationStrategy(state: IterationState, columnInfo: ColumnInfo[CT], skipRefresh: Boolean): IterationState = {
         val newSystemId =
-          if (dataVersion == 1 && columnInfo.isSystemPrimaryKey) columnInfo.id
+          if (initialDataVersion == 1 && columnInfo.isSystemPrimaryKey) columnInfo.id
           else state.cookie.current.systemId
 
         val old = state.cookie.current.strategyMap
@@ -333,7 +333,7 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
             case WorkingCopyCreated(copyInfo) =>
               // Should _always_ be the first event in a version
               if (state.columns.nonEmpty) logErrorAndResync(notFirstEvent("WorkingCopyCreated"))
-              val previous = if (dataVersion == 1) None else Some(oldCookie.current) // let's drop our fake version 0 cookie
+              val previous = if (initialDataVersion == 1) None else Some(oldCookie.current) // let's drop our fake version 0 cookie
               state.copy(
                 cookie = state.cookie.copy(
                   current = state.cookie.current.copy(
@@ -349,7 +349,7 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
                   current = state.cookie.previous.getOrElse {
                     log.info("No previous value in cookie for dataset {}. Going to resync.", datasetInternalName)
                     throw ResyncSecondaryException(s"No previous value in cookie for dataset $datasetInternalName")
-                  }.copy(dataVersion = DataVersion(dataVersion)),
+                  }.copy(dataVersion = DataVersion(finalDataVersion)),
                   previous = None
                 ))
             case RowDataUpdated(operations) =>
@@ -389,7 +389,7 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
                       Iterator.empty
                   }
 
-                log.info("Processing row update of dataset {} in version {}...", datasetInternalName, dataVersion)
+                log.info("Processing row update of dataset {} in version {}...", datasetInternalName, initialDataVersion)
                 handle(currentContext(updatedCookie).feedback(toCompute)) { newCookie => state.copy(cookie = newCookie, columns = Set.empty) }
               }
             case _ => // no-ops for us

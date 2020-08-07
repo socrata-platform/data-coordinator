@@ -23,14 +23,24 @@ class SqlDelogger[CV](connection: Connection,
 
   require(!connection.getAutoCommit, "connection is in auto-commit mode") // need non-AC in order to do streaming reads
 
-  var stmt: PreparedStatement = null
+  private val rs = new ResourceScope
+  var _queryStmt: PreparedStatement = null
+  var _queryTypesStmt: PreparedStatement = null
 
-  def query = {
-    if(stmt == null) {
-      stmt = connection.prepareStatement("select subversion, what, aux from " + logTableName + " where version = ? order by subversion")
-      stmt.setFetchSize(1)
+  def queryStmt = {
+    if(_queryStmt == null) {
+      _queryStmt = rs.open(connection.prepareStatement("select subversion, what, aux from " + logTableName + " where version = ? order by subversion"))
+      _queryStmt.setFetchSize(1)
     }
-    stmt
+    _queryStmt
+  }
+
+  def queryTypesStmt = {
+    if(_queryTypesStmt == null) {
+      _queryTypesStmt = rs.open(connection.prepareStatement("select subversion, what from " + logTableName + " where version = ? order by subversion"))
+      _queryTypesStmt.setFetchSize(1000)
+    }
+    _queryTypesStmt
   }
 
   def findPublishEvent(fromVersion: Long, toVersion: Long): Option[Long] =
@@ -75,10 +85,23 @@ class SqlDelogger[CV](connection: Connection,
     it
   }
 
-  class LogIterator(version: Long) extends CloseableIterator[Delogger.LogEvent[CV]] {
+  def delogOnlyTypes(version: Long) = {
+    val it = new LogTypesIterator(version) with LeakDetect
+    try {
+      it.advance()
+    } catch {
+      case _: NoEndOfTransactionMarker =>
+        it.close()
+        throw new MissingVersion(version, "Version " + version + " not found in log " + logTableName)
+    }
+    it
+  }
+
+  abstract class AbstractLogIterator[T](iteratorType: String, stmt: PreparedStatement, version: Long) extends CloseableIterator[T] {
+    assert(stmt != null)
     var rs: ResultSet = null
     var lastSubversion = 0L
-    var nextResult: Delogger.LogEvent[CV] = null
+    var nextResult: Option[T] = None
     var done = false
     val UTF8 = Codec.UTF8.charSet
 
@@ -90,30 +113,30 @@ class SqlDelogger[CV](connection: Connection,
       // behaviour when tracing through it and IDEA tries to call
       // toString on "this".
       val state = if(!done) "unfinished" else "finished"
-      s"LogIterator($state)"
+      s"$iteratorType($state)"
     }
 
     def advance() {
-      nextResult = null
+      nextResult = None
       if(rs == null) {
-        query.setLong(1, version)
-        rs = query.executeQuery()
+        stmt.setLong(1, version)
+        rs = stmt.executeQuery()
       }
       decodeNext()
-      done = nextResult == null
+      done = nextResult == None
     }
 
     def hasNext = {
       if(done) false
       else {
-        if(nextResult == null) advance()
+        if(nextResult == None) advance()
         !done
       }
     }
 
     def next() =
       if(hasNext) {
-        val r = nextResult
+        val r = nextResult.get
         advance()
         r
       } else {
@@ -136,58 +159,100 @@ class SqlDelogger[CV](connection: Connection,
       lastSubversion = subversion
 
       val op = rs.getString("what")
-      val aux = rs.getBytes("aux")
 
-      nextResult = op match {
-        case SqlLogger.RowDataUpdated =>
-          decodeRowDataUpdated(aux)
-        case SqlLogger.CounterUpdated =>
-          decodeCounterUpdated(aux)
-        case SqlLogger.ColumnCreated =>
-          decodeColumnCreated(aux)
-        case SqlLogger.ColumnRemoved =>
-          decodeColumnRemoved(aux)
-        case SqlLogger.ComputationStrategyCreated =>
-          decodeComputationStrategyCreated(aux)
-        case SqlLogger.ComputationStrategyRemoved =>
-          decodeComputationStrategyRemoved(aux)
-        case SqlLogger.FieldNameUpdated =>
-          decodeFieldNameUpdated(aux)
-        case SqlLogger.RowIdentifierSet =>
-          decodeRowIdentifierSet(aux)
-        case SqlLogger.RowIdentifierCleared =>
-          decodeRowIdentifierCleared(aux)
-        case SqlLogger.SystemRowIdentifierChanged =>
-          decodeSystemRowIdentifierChanged(aux)
-        case SqlLogger.VersionColumnChanged =>
-          decodeVersionColumnChanged(aux)
-        case SqlLogger.LastModifiedChanged =>
-          decodeLastModifiedChanged(aux)
-        case SqlLogger.WorkingCopyCreated =>
-          decodeWorkingCopyCreated(aux)
-        case SqlLogger.DataCopied =>
-          Delogger.DataCopied
-        case SqlLogger.WorkingCopyDropped =>
-          Delogger.WorkingCopyDropped
-        case SqlLogger.SnapshotDropped =>
-          decodeSnapshotDropped(aux)
-        case SqlLogger.WorkingCopyPublished =>
-          Delogger.WorkingCopyPublished
-        case SqlLogger.Truncated =>
-          Delogger.Truncated
-        case SqlLogger.RollupCreatedOrUpdated =>
-          decodeRollupCreatedOrUpdated(aux)
-        case SqlLogger.RollupDropped =>
-          decodeRollupDropped(aux)
-        case SqlLogger.RowsChangedPreview =>
-          decodeRowsChangedPreview(aux)
+      nextResult = decode(op, rs)
+    }
+
+    def decode(op: String, rs: ResultSet): Option[T]
+  }
+
+  class LogTypesIterator(version: Long) extends AbstractLogIterator[Delogger.LogEventCompanion]("LogTypesIterator", queryTypesStmt, version) {
+    def decode(op: String, rs: ResultSet) =
+      op match {
+        case SqlLogger.RowDataUpdated => Some(Delogger.RowDataUpdated)
+        case SqlLogger.CounterUpdated => Some(Delogger.CounterUpdated)
+        case SqlLogger.ColumnCreated => Some(Delogger.ColumnCreated)
+        case SqlLogger.ColumnRemoved => Some(Delogger.ColumnRemoved)
+        case SqlLogger.ComputationStrategyCreated => Some(Delogger.ComputationStrategyCreated)
+        case SqlLogger.ComputationStrategyRemoved => Some(Delogger.ComputationStrategyRemoved)
+        case SqlLogger.FieldNameUpdated => Some(Delogger.FieldNameUpdated)
+        case SqlLogger.RowIdentifierSet => Some(Delogger.RowIdentifierSet)
+        case SqlLogger.RowIdentifierCleared => Some(Delogger.RowIdentifierCleared)
+        case SqlLogger.SystemRowIdentifierChanged => Some(Delogger.SystemRowIdentifierChanged)
+        case SqlLogger.VersionColumnChanged => Some(Delogger.VersionColumnChanged)
+        case SqlLogger.LastModifiedChanged => Some(Delogger.LastModifiedChanged)
+        case SqlLogger.WorkingCopyCreated => Some(Delogger.WorkingCopyCreated)
+        case SqlLogger.DataCopied => Some(Delogger.DataCopied)
+        case SqlLogger.WorkingCopyDropped => Some(Delogger.WorkingCopyDropped)
+        case SqlLogger.SnapshotDropped => Some(Delogger.SnapshotDropped)
+        case SqlLogger.WorkingCopyPublished => Some(Delogger.WorkingCopyPublished)
+        case SqlLogger.Truncated => Some(Delogger.Truncated)
+        case SqlLogger.RollupCreatedOrUpdated => Some(Delogger.RollupCreatedOrUpdated)
+        case SqlLogger.RollupDropped => Some(Delogger.RollupDropped)
+        case SqlLogger.RowsChangedPreview => Some(Delogger.RowsChangedPreview)
         case SqlLogger.TransactionEnded =>
           assert(!rs.next(), "there was data after TransactionEnded?")
-          null
+          None
+        case SqlLogger.SecondaryReindex => Some(Delogger.SecondaryReindex)
+        case SqlLogger.SecondaryAddIndex => Some(Delogger.SecondaryAddIndex)
+        case other =>
+          throw new UnknownEvent(version, op, errMsg(s"Unknown event $op"))
+      }
+  }
+
+  class LogIterator(version: Long) extends AbstractLogIterator[Delogger.LogEvent[CV]]("LogIterator", queryStmt, version) {
+    override def decode(op: String, rs: ResultSet) = {
+      val aux = rs.getBytes("aux")
+      op match {
+        case SqlLogger.RowDataUpdated =>
+          Some(decodeRowDataUpdated(aux))
+        case SqlLogger.CounterUpdated =>
+          Some(decodeCounterUpdated(aux))
+        case SqlLogger.ColumnCreated =>
+          Some(decodeColumnCreated(aux))
+        case SqlLogger.ColumnRemoved =>
+          Some(decodeColumnRemoved(aux))
+        case SqlLogger.ComputationStrategyCreated =>
+          Some(decodeComputationStrategyCreated(aux))
+        case SqlLogger.ComputationStrategyRemoved =>
+          Some(decodeComputationStrategyRemoved(aux))
+        case SqlLogger.FieldNameUpdated =>
+          Some(decodeFieldNameUpdated(aux))
+        case SqlLogger.RowIdentifierSet =>
+          Some(decodeRowIdentifierSet(aux))
+        case SqlLogger.RowIdentifierCleared =>
+          Some(decodeRowIdentifierCleared(aux))
+        case SqlLogger.SystemRowIdentifierChanged =>
+          Some(decodeSystemRowIdentifierChanged(aux))
+        case SqlLogger.VersionColumnChanged =>
+          Some(decodeVersionColumnChanged(aux))
+        case SqlLogger.LastModifiedChanged =>
+          Some(decodeLastModifiedChanged(aux))
+        case SqlLogger.WorkingCopyCreated =>
+          Some(decodeWorkingCopyCreated(aux))
+        case SqlLogger.DataCopied =>
+          Some(Delogger.DataCopied)
+        case SqlLogger.WorkingCopyDropped =>
+          Some(Delogger.WorkingCopyDropped)
+        case SqlLogger.SnapshotDropped =>
+          Some(decodeSnapshotDropped(aux))
+        case SqlLogger.WorkingCopyPublished =>
+          Some(Delogger.WorkingCopyPublished)
+        case SqlLogger.Truncated =>
+          Some(Delogger.Truncated)
+        case SqlLogger.RollupCreatedOrUpdated =>
+          Some(decodeRollupCreatedOrUpdated(aux))
+        case SqlLogger.RollupDropped =>
+          Some(decodeRollupDropped(aux))
+        case SqlLogger.RowsChangedPreview =>
+          Some(decodeRowsChangedPreview(aux))
+        case SqlLogger.TransactionEnded =>
+          assert(!rs.next(), "there was data after TransactionEnded?")
+          None
         case SqlLogger.SecondaryReindex =>
-          Delogger.SecondaryReindex
+          Some(Delogger.SecondaryReindex)
         case SqlLogger.SecondaryAddIndex =>
-          decodeSecondaryAddIndex(aux)
+          Some(decodeSecondaryAddIndex(aux))
         case other =>
           throw new UnknownEvent(version, op, errMsg(s"Unknown event $op"))
       }
@@ -286,6 +351,8 @@ class SqlDelogger[CV](connection: Connection,
   }
 
   def close() {
-    if(stmt != null) { stmt.close(); stmt = null }
+    _queryStmt = null
+    _queryTypesStmt = null
+    rs.close()
   }
 }

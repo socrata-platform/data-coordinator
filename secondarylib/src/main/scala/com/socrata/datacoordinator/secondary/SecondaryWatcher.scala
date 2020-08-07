@@ -77,6 +77,7 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
         val startingMillis = System.currentTimeMillis()
         try {
           playbackToSecondary(secondary, job)
+          manifest(u).updateRetryInfo(job.storeId, job.datasetId, 0, 0) // done with the job, reset the retry counter
           log.info("<< Sync done for {} into {}", job.datasetId, secondary.storeId)
           completeSecondaryMoveJobs(u, job)
           // Essentially, this simulates unclaimDataset in a finally block.  That is, make sure we clean up whether

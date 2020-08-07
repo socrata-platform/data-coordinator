@@ -167,9 +167,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
         case Some(datasetInfo) =>
           logger.info("Found dataset " + datasetInfo.systemId + " in truth")
           try {
-            for(dataVersion <- job.startingDataVersion to job.endingDataVersion) {
-              playbackLog(datasetInfo, dataVersion)
-            }
+            reconsolidateAndPlayback(datasetInfo)
           } catch {
             case e: MissingVersion =>
               logger.info("Couldn't find version {} in log; resyncing", e.version.toString)
@@ -183,6 +181,163 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
         case None =>
           drop()
       }
+    }
+
+
+    def reconsolidateAndPlayback(datasetInfo: metadata.DatasetInfo): Unit = {
+      var dataVersion = job.startingDataVersion
+      while(dataVersion <= job.endingDataVersion) {
+        logger.trace("Playing back version {}", dataVersion)
+        using(u.delogger(datasetInfo)) { delogger =>
+          val lastConsolidatableVersion: Option[Long] =
+            (job.startingDataVersion to job.endingDataVersion).iterator.takeWhile { dv =>
+              using(delogger.delogOnlyTypes(dataVersion)) { it =>
+                consolidatable(it.buffered)
+              }
+            }.toStream.lastOption
+
+          lastConsolidatableVersion match {
+            case Some(n) if n > dataVersion =>
+              // at least two versions can be consolidated into one
+              logger.info("Consolidating data versions {} through {} into a single thing", dataVersion, n)
+              using(consolidate(delogger, dataVersion, n)) { it =>
+                playbackLog(datasetInfo, it, dataVersion, n)
+              }
+              dataVersion = n
+            case _ =>
+              // Zero or one version can be consolidated into one
+              using(delogger.delog(dataVersion)) { it =>
+                playbackLog(datasetInfo, it, dataVersion, dataVersion)
+              }
+          }
+        }
+        updateSecondaryMap(dataVersion)
+        dataVersion += 1
+      }
+    }
+
+    // A series of events is consolidatable if it is an update which only
+    // changes row data, which is to say if it has the form:
+    //    RowsChangedPreview
+    //    zero or more RowDataUpdated
+    //    LastModifiedChanged
+    def consolidatable(it: BufferedIterator[Delogger.LogEventCompanion]): Boolean = {
+      if(!it.hasNext || it.next() != Delogger.RowsChangedPreview) {
+        return false
+      }
+      while(it.hasNext && it.head == Delogger.RowDataUpdated) {
+        it.next()
+      }
+      if(!it.hasNext || it.next() != Delogger.LastModifiedChanged) {
+        return false
+      }
+
+      !it.hasNext
+    }
+
+    def consolidate(delogger: Delogger[CV], startingDataVersion: Long, endingDataVersion: Long) =
+      new Iterator[Delogger.LogEvent[CV]] with AutoCloseable {
+        // ok, so we're going to want to produce a fake event stream
+        // shaped like a consolidatable (see above) version.  To do
+        // this, we'll combine all the versions' RowsChangedPreview
+        // events then the concatenation of their RowDataUpdateds,
+        // then the final job's LastModifiedChanged.
+
+        val rs = new ResourceScope
+
+        val (effectiveStartingDataVersion, fakeRCP) =
+          (startingDataVersion to endingDataVersion).foldLeft((startingDataVersion, Delogger.RowsChangedPreview(0, 0, 0, false))) { (acc, i) =>
+            val (currentStartingDataVersion, rcp) = acc
+            managed(delogger.delog(i)).run(_.buffered.headOption) match {
+              case Some(Delogger.RowsChangedPreview(rowsInserted, rowsUpdated, rowsDeleted, false)) =>
+                (currentStartingDataVersion, Delogger.RowsChangedPreview(rcp.rowsInserted + rowsInserted,
+                                                                         rcp.rowsUpdated + rowsUpdated,
+                                                                         rcp.rowsDeleted + rowsDeleted,
+                                                                         rcp.truncated))
+              case Some(rcp : Delogger.RowsChangedPreview) =>
+                // it was truncated; just start from here
+                (i, rcp)
+              case _ =>
+                throw ResyncSecondaryException("Consolidation saw the log change?!  No RowsChangedPreview!")
+            }
+          }
+
+        // bleargghhgh -- annoying that this super lazy flatmap over
+        // the data versions has a side effect, but I can't think of a
+        // clearer way to do this.
+        var mostRecentLastModified: Option[Delogger.LastModifiedChanged] = None
+        val data = (effectiveStartingDataVersion to endingDataVersion).iterator.flatMap { i =>
+          new Iterator[Delogger.LogEvent[CV]] {
+            var done: Boolean = false
+
+            val eventsRaw = rs.open(delogger.delog(i))
+            val events = eventsRaw.buffered
+            if(!events.hasNext || !events.next().isInstanceOf[Delogger.RowsChangedPreview]) {
+              throw ResyncSecondaryException("Consolidation saw the log change?!  First item was gone or not RowsChangedPreview!")
+            }
+
+            def hasNext: Boolean = {
+              if(done) return false
+
+              events.headOption match {
+                case Some(v@Delogger.RowDataUpdated(_)) =>
+                  true
+
+                case Some(lmc@Delogger.LastModifiedChanged(_)) =>
+                  mostRecentLastModified = Some(lmc) // this is the reason for the bleargghhgh before
+                  done = true
+
+                  events.next() // skip LMC
+                  events.headOption match {
+                    case None =>
+                      // ok good
+                    case Some(other) =>
+                      throw ResyncSecondaryException(s"Consolidation saw the log change?!  Saw s{other.companion.productPrefix} while expecting EndTransaction!")
+                  }
+
+                  rs.close(eventsRaw)
+                  false
+
+                case Some(other) =>
+                  throw ResyncSecondaryException(s"Consolidation saw the log change?!  Saw s{other.companion.productPrefix} while expecting RowsChangedPreview or LastModifiedChanged!")
+
+                case None =>
+                  throw ResyncSecondaryException("Consolidation saw the log change?!  Reached EOF while expecting RowsChangedPreview or LastModifiedChanged!")
+              }
+            }
+
+            def next() = {
+              if(hasNext) events.next()
+              else Iterator.empty.next()
+            }
+          }
+        }
+
+        val fakeEvents =
+          Iterator(fakeRCP) ++
+            data ++
+            // bleargghhgh part 3: Iterator#++ is sufficiently lazy
+            // for this lookup of the var that's modified by iterating
+            // through `data` to work.
+            Iterator(mostRecentLastModified.getOrElse {
+                       throw ResyncSecondaryException("Consolidation saw the log change - no LastModifiedChanged?!")
+                     })
+
+        def hasNext = fakeEvents.hasNext
+        def next() = fakeEvents.next()
+
+        def close() {
+          rs.close()
+        }
+      }
+
+    def playbackLog(datasetInfo: metadata.DatasetInfo, it: Iterator[Delogger.LogEvent[CV]], initialDataVersion: Long, finalDataVersion: Long) {
+      val secondaryDatasetInfo = makeSecondaryDatasetInfo(datasetInfo)
+      val instrumentedIt = new InstrumentedIterator("playback-log-throughput",
+                                                    datasetInfo.systemId.toString,
+                                                    it)
+      currentCookie = secondary.store.version(secondaryDatasetInfo, initialDataVersion, finalDataVersion,
+                                              currentCookie, instrumentedIt.flatMap(convertEvent))
     }
 
     def convertOp(op: truth.loader.Operation[CV]): Operation[CV] = op match {
@@ -240,22 +395,6 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
         Some(SecondaryAddIndex(fieldName))
       case Delogger.EndTransaction =>
         None
-    }
-
-    def playbackLog(datasetInfo: metadata.DatasetInfo, dataVersion: Long): Unit = {
-      logger.trace("Playing back version {}", dataVersion.toString)
-      for {
-        delogger <- managed(u.delogger(datasetInfo))
-        it <- managed(delogger.delog(dataVersion))
-      } {
-        val secondaryDatasetInfo = makeSecondaryDatasetInfo(datasetInfo)
-        val instrumentedIt = new InstrumentedIterator("playback-log-throughput",
-                                                      datasetInfo.systemId.toString,
-                                                      it)
-        currentCookie = secondary.store.version(secondaryDatasetInfo, dataVersion,
-                                                currentCookie, instrumentedIt.flatMap(convertEvent))
-      }
-      updateSecondaryMap(dataVersion)
     }
 
     def saveMetrics(datasetInfo: metadata.DatasetInfo): Unit = {
