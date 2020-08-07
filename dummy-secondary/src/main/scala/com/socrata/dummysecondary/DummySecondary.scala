@@ -46,7 +46,7 @@ class DummySecondary(config: Config) extends Secondary[Any, Any] {
     * @return a new cookie to store in the secondary map
     */
   def version(datasetInfo: DatasetInfo, dataVersion: Long, cookie: Secondary.Cookie,
-              events: Iterator[Event[Any, Any]]): Secondary.Cookie = {
+              events: Iterator[Event[Any, Any]], moreComing: Boolean): Secondary.Cookie = {
     println("Got a new version of " + datasetInfo.internalName)
     println("Version " + dataVersion)
     println("Current cookie: " + cookie)
@@ -58,6 +58,7 @@ class DummySecondary(config: Config) extends Secondary[Any, Any] {
       case "resync" =>
         ???
     }
+    println("More coming afetr this version: " + moreComing)
     println("Current cookie: " + cookie)
     StdIn.readLine("New cookie? ") match {
       case "" => cookie

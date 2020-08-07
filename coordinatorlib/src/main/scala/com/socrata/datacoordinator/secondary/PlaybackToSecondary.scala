@@ -168,7 +168,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
           logger.info("Found dataset " + datasetInfo.systemId + " in truth")
           try {
             for(dataVersion <- job.startingDataVersion to job.endingDataVersion) {
-              playbackLog(datasetInfo, dataVersion)
+              playbackLog(datasetInfo, dataVersion, dataVersion != job.endingDataVersion)
             }
           } catch {
             case e: MissingVersion =>
@@ -242,7 +242,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
         None
     }
 
-    def playbackLog(datasetInfo: metadata.DatasetInfo, dataVersion: Long): Unit = {
+    def playbackLog(datasetInfo: metadata.DatasetInfo, dataVersion: Long, moreComing: Boolean): Unit = {
       logger.trace("Playing back version {}", dataVersion.toString)
       for {
         delogger <- managed(u.delogger(datasetInfo))
@@ -253,7 +253,8 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
                                                       datasetInfo.systemId.toString,
                                                       it)
         currentCookie = secondary.store.version(secondaryDatasetInfo, dataVersion,
-                                                currentCookie, instrumentedIt.flatMap(convertEvent))
+                                                currentCookie, instrumentedIt.flatMap(convertEvent),
+                                                moreComing)
       }
       updateSecondaryMap(dataVersion)
     }

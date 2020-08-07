@@ -28,7 +28,11 @@ trait Secondary[CT, CV] {
     * already has this dataVersion.
     * @return a new cookie to store in the secondary map
     */
-  def version(datasetInfo: DatasetInfo, dataVersion: Long, cookie: Cookie, events: Iterator[Event[CT, CV]]): Cookie
+  def version(datasetInfo: DatasetInfo,
+              dataVersion: Long,
+              cookie: Cookie,
+              events: Iterator[Event[CT, CV]],
+              moreComing: Boolean): Cookie
 
   /**
    * Resyncs a copy of a dataset as part of the resync path.
