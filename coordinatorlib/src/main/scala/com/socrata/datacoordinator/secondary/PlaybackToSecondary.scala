@@ -219,6 +219,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
     // A series of events is consolidatable if it is an update which only
     // changes row data, which is to say if it has the form:
     //    RowsChangedPreview
+    //    zero or one Truncated
     //    zero or more RowDataUpdated
     //    LastModifiedChanged
     def consolidatable(it: BufferedIterator[Delogger.LogEventCompanion]): Boolean = {
