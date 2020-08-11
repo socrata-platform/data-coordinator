@@ -283,6 +283,9 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
               if(!events.hasNext || events.next().companion != Delogger.Truncated) {
                 throw ResyncSecondaryException("RowsChangedPreview said the dataset was to be truncated, but there was no Truncated event!")
               }
+              if(mostRecentLastModified.isDefined) {
+                throw ResyncSecondaryException("Dataset was truncated but it wasn't the first batch we were looking at!")
+              }
             }
 
             def hasNext: Boolean = {
