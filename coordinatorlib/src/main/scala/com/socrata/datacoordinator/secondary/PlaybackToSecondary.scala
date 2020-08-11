@@ -225,6 +225,9 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
       if(!it.hasNext || it.next() != Delogger.RowsChangedPreview) {
         return false
       }
+      if(it.hasNext && it.head == Delogger.Truncated) {
+        it.next()
+      }
       while(it.hasNext && it.head == Delogger.RowDataUpdated) {
         it.next()
       }
@@ -272,8 +275,13 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
 
             val eventsRaw = rs.open(delogger.delog(i))
             val events = eventsRaw.buffered
-            if(!events.hasNext || !events.next().isInstanceOf[Delogger.RowsChangedPreview]) {
+            if(!events.hasNext || events.head.companion != Delogger.RowsChangedPreview) {
               throw ResyncSecondaryException("Consolidation saw the log change?!  First item was gone or not RowsChangedPreview!")
+            }
+            if(events.next().asInstanceOf[Delogger.RowsChangedPreview].truncated) {
+              if(!events.hasNext || events.next().companion != Delogger.Truncated) {
+                throw ResyncSecondaryException("RowsChangedPreview said the dataset was to be truncated, but there was no Truncated event!")
+              }
             }
 
             def hasNext: Boolean = {
@@ -315,6 +323,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
 
         val fakeEvents =
           Iterator(fakeRCP) ++
+            (if(fakeRCP.truncated) Iterator(Delogger.Truncated) else Iterator.empty) ++
             data ++
             // bleargghhgh part 3: Iterator#++ is sufficiently lazy
             // for this lookup of the var that's modified by iterating
