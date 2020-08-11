@@ -45,10 +45,10 @@ class DummySecondary(config: Config) extends Secondary[Any, Any] {
     * already has this dataVersion.
     * @return a new cookie to store in the secondary map
     */
-  def version(datasetInfo: DatasetInfo, dataVersion: Long, cookie: Secondary.Cookie,
+  def version(datasetInfo: DatasetInfo, initialDataVersion: Long, finalDataVersion: Long, cookie: Secondary.Cookie,
               events: Iterator[Event[Any, Any]]): Secondary.Cookie = {
     println("Got a new version of " + datasetInfo.internalName)
-    println("Version " + dataVersion)
+    println("Version range " + initialDataVersion + "-" + finalDataVersion)
     println("Current cookie: " + cookie)
     StdIn.readLine("Skip or read or resync? ") match {
       case "skip" | "s" =>

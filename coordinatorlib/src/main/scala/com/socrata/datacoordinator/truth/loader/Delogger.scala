@@ -22,6 +22,7 @@ class UnknownEvent(version: Long, val event: String, msg: String) extends Corrup
 trait Delogger[CV] extends Closeable {
   @throws(classOf[MissingVersion])
   def delog(version: Long): CloseableIterator[Delogger.LogEvent[CV]]
+  def delogOnlyTypes(version: Long): CloseableIterator[Delogger.LogEventCompanion]
   def findPublishEvent(fromVersion: Long, toVersion: Long): Option[Long]
   def lastWorkingCopyCreatedVersion: Option[Long]
   def lastWorkingCopyDroppedOrPublishedVersion: Option[Long]
