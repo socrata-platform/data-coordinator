@@ -191,7 +191,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
         using(u.delogger(datasetInfo)) { delogger =>
           val lastConsolidatableVersion: Option[Long] =
             (job.startingDataVersion to job.endingDataVersion).iterator.takeWhile { dv =>
-              using(delogger.delogOnlyTypes(dataVersion)) { it =>
+              using(delogger.delogOnlyTypes(dv)) { it =>
                 consolidatable(it.buffered)
               }
             }.toStream.lastOption
