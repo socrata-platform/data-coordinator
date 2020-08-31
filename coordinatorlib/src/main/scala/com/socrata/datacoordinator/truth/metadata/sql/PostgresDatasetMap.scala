@@ -432,7 +432,7 @@ class PostgresDatasetMapReader[CT](val conn: Connection, tns: TypeNamespace[CT],
   }
 }
 
-trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] with `-impl`.BaseDatasetMapWriter[CT] {
+trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] with `-impl`.BaseDatasetMapWriter[CT] with IndexControl[CT] {
   val obfuscationKeyGenerator: () => Array[Byte]
   val initialCounterValue: Long
   val initialLatestDataVersion: Long

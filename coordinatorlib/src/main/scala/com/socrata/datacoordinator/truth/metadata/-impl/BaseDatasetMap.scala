@@ -1,7 +1,8 @@
 package com.socrata.datacoordinator.truth.metadata
 package `-impl`
 
-import com.socrata.datacoordinator.id.{RollupName, DatasetId}
+import com.rojoma.json.v3.ast.JObject
+import com.socrata.datacoordinator.id.{DatasetId, RollupName}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.soql.environment.ColumnName
 import org.joda.time.DateTime
@@ -140,4 +141,7 @@ trait BaseDatasetMapWriter[CT] extends BaseDatasetMapReader[CT] {
     */
   def dropRollup(copyInfo: CopyInfo, name: Option[RollupName])
 
+  def createIndexDirectives(columnInfo: ColumnInfo[CT], directives: JObject): Unit
+
+  def deleteIndexDirectives(columnInfo: ColumnInfo[CT]): Unit
 }
