@@ -107,6 +107,7 @@ object SqlLogger {
   val RowsChangedPreview = "rowcount"
   val SecondaryReindex = "secreidx"
   val SecondaryAddIndex = "secadidx"
+  val SecondaryDeleteIndex = "secdeidx"
 
   val allEvents = for {
     method <- getClass.getDeclaredMethods

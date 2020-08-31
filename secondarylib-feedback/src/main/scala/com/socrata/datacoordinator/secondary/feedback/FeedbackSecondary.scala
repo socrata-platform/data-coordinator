@@ -2,11 +2,12 @@ package com.socrata.datacoordinator.secondary.feedback
 
 import com.rojoma.json.v3.ast._
 import com.rojoma.simplearm.v2._
-import com.socrata.datacoordinator.id.{UserColumnId, StrategyType}
+import com.socrata.datacoordinator.id.{StrategyType, UserColumnId}
 import com.socrata.datacoordinator.secondary
 import com.socrata.datacoordinator.secondary._
 import com.socrata.datacoordinator.secondary.Secondary.Cookie
 import com.socrata.datacoordinator.secondary.feedback.monitor.StatusMonitor
+import com.socrata.datacoordinator.truth.metadata.IndexDirectives
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 
 trait HasStrategy {
@@ -406,7 +407,8 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
    * Part of the resync path for (un)published copies.
    */
   override def resync(datasetInfo: DatasetInfo, copyInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo[CT]], cookie: Cookie,
-                      rows: Managed[Iterator[ColumnIdMap[CV]]], rollups: Seq[RollupInfo], isLatestLivingCopy: Boolean): Cookie = {
+                      rows: Managed[Iterator[ColumnIdMap[CV]]], rollups: Seq[RollupInfo],
+                      indexDirectives: Seq[IndexDirectives], isLatestLivingCopy: Boolean): Cookie = {
     try {
       // update cookie
       val copyNumber = CopyNumber(copyInfo.copyNumber)
