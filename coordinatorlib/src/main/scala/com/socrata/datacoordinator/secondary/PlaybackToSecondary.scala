@@ -558,12 +558,16 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
           }
           val rollups: Seq[RollupInfo] = u.datasetMapReader.rollups(copyInfo).toSeq.
                                            map(makeSecondaryRollupInfo)
+
+          val indexDirectives = u.datasetMapReader.indexDirectives(copyCtx.datasetInfo)
+
           currentCookie = secondary.store.resync(secondaryDatasetInfo,
                                                  secondaryCopyInfo,
                                                  secondarySchema,
                                                  currentCookie,
                                                  wrappedRows,
                                                  rollups,
+                                                 indexDirectives,
                                                  isLatestLivingCopy)
         }
       }

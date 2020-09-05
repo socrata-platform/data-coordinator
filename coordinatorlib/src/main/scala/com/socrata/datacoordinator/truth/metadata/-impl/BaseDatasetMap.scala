@@ -54,6 +54,11 @@ trait BaseDatasetMapReader[CT] {
     */
   def rollup(copyInfo: CopyInfo, name: RollupName): Option[RollupInfo]
 
+  /**
+    * Returns all index directives for this dataset
+    */
+  def indexDirectives(datasetInfo: DatasetInfo): Seq[IndexDirectives]
+
   /** Gets the current time.
    */
   def currentTime(): DateTime
