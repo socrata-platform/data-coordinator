@@ -21,9 +21,10 @@
     </changeSet>
 
     <changeSet author="chi" id="20200901-make-index-directives-index-unique">
-        <preConditions onFail="MARK_RAN">
+        <!-- preConditions onFail="MARK_RAN">
+             Apparently, indexExists tries to look at all the schema and takes longer to run that we allow time to acquire lock.
             <not><indexExists tableName="index_directives" indexName="index_directives_dataset_system_id_field_nanme_casefolded"/></not>
-        </preConditions>
+        </preConditions -->
 
         <createIndex tableName="index_directives" indexName="index_directives_dataset_system_id_field_nanme_casefolded" unique="true">
             <column name="dataset_system_id"/>
