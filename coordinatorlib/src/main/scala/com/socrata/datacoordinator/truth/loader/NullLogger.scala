@@ -1,6 +1,7 @@
 package com.socrata.datacoordinator
 package truth.loader
 
+import com.rojoma.json.v3.ast.JObject
 import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, ComputationStrategyInfo, CopyInfo, RollupInfo}
 import com.socrata.datacoordinator.id.RowId
 import com.socrata.soql.environment.ColumnName
@@ -35,7 +36,9 @@ class NullLogger[CT, CV] extends Logger[CT, CV] {
 
   def secondaryReindex() = {}
 
-  def secondaryAddIndex(fieldName: ColumnName) = {}
+  def secondaryAddIndex(fieldName: ColumnName, directives: JObject) = {}
+
+  def secondaryDeleteIndex(fieldName: ColumnName) = {}
 
   def endTransaction() = None
 

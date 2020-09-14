@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
+
+    <changeSet author="chi" id="20200901-create-index-directives">
+
+        <preConditions onFail="MARK_RAN">
+            <not><tableExists tableName="index_directives"/></not>
+        </preConditions>
+
+        <createTable tableName="index_directives">
+            <column name="dataset_system_id" type="bigint"/>
+            <column name="field_name_casefolded" type="text"/>
+            <column name="directives" type="text"/>
+            <column name="created_at" type="timestamp with time zone" defaultValueComputed="now()"/>
+            <column name="updated_at" type="timestamp with time zone" defaultValueComputed="now()"/>
+            <column name="deleted_at" type="timestamp with time zone"/>
+        </createTable>
+    </changeSet>
+
+    <changeSet author="chi" id="20200901-make-index-directives-index-unique">
+        <preConditions onFail="MARK_RAN">
+            <not><indexExists tableName="index_directives" indexName="index_directives_dataset_system_id_field_nanme_casefolded"/></not>
+        </preConditions>
+
+        <createIndex tableName="index_directives" indexName="index_directives_dataset_system_id_field_nanme_casefolded" unique="true">
+            <column name="dataset_system_id"/>
+            <column name="field_name_casefolded"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

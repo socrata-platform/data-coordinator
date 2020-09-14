@@ -2,16 +2,14 @@ package com.socrata.datacoordinator
 package truth.loader.sql
 
 import scala.io.Codec
+import java.sql.{Connection, PreparedStatement, ResultSet}
 
-import java.sql.{ResultSet, PreparedStatement, Connection}
-
+import com.rojoma.json.v3.ast.{JBoolean, JObject}
 import com.rojoma.simplearm.v2._
-
 import com.socrata.datacoordinator.truth.RowLogCodec
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.util.{CloseableIterator, LeakDetect}
 import com.socrata.soql.environment.ColumnName
-
 import messages.LogData
 
 class SqlDelogger[CV](connection: Connection,
@@ -195,6 +193,7 @@ class SqlDelogger[CV](connection: Connection,
           None
         case SqlLogger.SecondaryReindex => Some(Delogger.SecondaryReindex)
         case SqlLogger.SecondaryAddIndex => Some(Delogger.SecondaryAddIndex)
+        case SqlLogger.SecondaryDeleteIndex => Some(Delogger.SecondaryDeleteIndex)
         case other =>
           throw new UnknownEvent(version, op, errMsg(s"Unknown event $op"))
       }
@@ -253,6 +252,8 @@ class SqlDelogger[CV](connection: Connection,
           Some(Delogger.SecondaryReindex)
         case SqlLogger.SecondaryAddIndex =>
           Some(decodeSecondaryAddIndex(aux))
+        case SqlLogger.SecondaryDeleteIndex =>
+          Some(decodeSecondaryDeleteIndex(aux))
         case other =>
           throw new UnknownEvent(version, op, errMsg(s"Unknown event $op"))
       }
@@ -346,7 +347,13 @@ class SqlDelogger[CV](connection: Connection,
 
     def decodeSecondaryAddIndex(aux: Array[Byte]) = {
       val msg = LogData.SecondaryAddIndex.parseFrom(aux)
-      Delogger.SecondaryAddIndex(ColumnName(msg.fieldName))
+      val directives = JObject(Map("enabled" -> JBoolean(msg.enabled)))
+      Delogger.SecondaryAddIndex(ColumnName(msg.fieldName), directives)
+    }
+
+    def decodeSecondaryDeleteIndex(aux: Array[Byte]) = {
+      val msg = LogData.SecondaryDeleteIndex.parseFrom(aux)
+      Delogger.SecondaryDeleteIndex(ColumnName(msg.fieldName))
     }
   }
 

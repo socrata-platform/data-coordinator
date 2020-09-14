@@ -321,13 +321,13 @@ class FeedbackSecondaryTest extends WordSpec with Matchers with MockFactory {
     "called with no cookie on the latest living copy where no updates are needed" should {
       withMockDC("do no work and return the expected cookie") { case (secondary, _) =>
         val rows = TestRows.managedRows(TestRows.num2Num3Sum23RowsV11)
-        shouldBe(secondary.resync(datasetInfo, v11copyInfo, schema, None, rows, Seq.empty, isLatestLivingCopy = true), TestCookie.v11)
+        shouldBe(secondary.resync(datasetInfo, v11copyInfo, schema, None, rows, Seq.empty, Seq.empty, isLatestLivingCopy = true), TestCookie.v11)
       }
     }
     "called with random string cookie on the latest living copy where no updates are needed" should {
       withMockDC("do no work and return the expected cookie") { case (secondary, _) =>
         val rows = TestRows.managedRows(TestRows.num2Num3Sum23RowsV11)
-        shouldBe(secondary.resync(datasetInfo, v11copyInfo, schema, Some("random string"), rows, Seq.empty, isLatestLivingCopy = true), TestCookie.v11)
+        shouldBe(secondary.resync(datasetInfo, v11copyInfo, schema, Some("random string"), rows, Seq.empty, Seq.empty, isLatestLivingCopy = true), TestCookie.v11)
       }
     }
     "called with random string cookie on the latest living copy where updates are needed" should {
@@ -339,19 +339,19 @@ class FeedbackSecondaryTest extends WordSpec with Matchers with MockFactory {
         (mockDC.postMutationScript _).expects(TestScripts.sum23ScriptsV11(1), TestCookie.v10Schema).once.returning(TestScripts.success)
       }) { case (secondary, _) =>
         val rows = TestRows.managedRows(TestRows.num2Num3Sum23RowsV10)
-        shouldBe(secondary.resync(datasetInfo, v10copyInfo, schema, Some("random string"), rows, Seq.empty, isLatestLivingCopy = true), TestCookie.v10)
+        shouldBe(secondary.resync(datasetInfo, v10copyInfo, schema, Some("random string"), rows, Seq.empty, Seq.empty, isLatestLivingCopy = true), TestCookie.v10)
       }
     }
     "called with no cookie on not the latest living copy" should {
       withMockDC("do no work and return the expected cookie") { case (secondary, _) =>
         val rows = TestRows.managedRows(TestRows.num2Num3Sum23RowsV7)
-        shouldBe(secondary.resync(datasetInfo, v7copyInfo, schema, None, rows, Seq.empty, isLatestLivingCopy = false), TestCookie.v7)
+        shouldBe(secondary.resync(datasetInfo, v7copyInfo, schema, None, rows, Seq.empty, Seq.empty, isLatestLivingCopy = false), TestCookie.v7)
       }
     }
     "called with previous version and copy cookie on the latest living copy" should {
       withMockDC("do no work and return the expected cookie", TestCookie.v7) { case (secondary, cookie) =>
         val rows = TestRows.managedRows(TestRows.num2Num3Sum23RowsV7)
-        shouldBe(secondary.resync(datasetInfo, v8copyInfo, schema, cookie, rows, Seq.empty, isLatestLivingCopy = true), TestCookie.v8NoPrevious)
+        shouldBe(secondary.resync(datasetInfo, v8copyInfo, schema, cookie, rows, Seq.empty, Seq.empty, isLatestLivingCopy = true), TestCookie.v8NoPrevious)
       }
     }
   }
