@@ -1,9 +1,8 @@
 package com.socrata.datacoordinator
 package truth
 
-import com.rojoma.json.v3.ast.{JNumber, JObject, JString, JValue}
+import com.rojoma.json.v3.ast.{JNumber, JString, JValue}
 import com.rojoma.json.v3.codec.JsonEncode
-import com.rojoma.json.v3.util.JsonUtil
 import com.socrata.datacoordinator.util.CopyContextResult
 import com.socrata.soql.environment.{ColumnName, TableName}
 import org.joda.time.DateTime
@@ -186,8 +185,7 @@ trait DatasetMutator[CT, CV] {
     def createOrUpdateRollup(name: RollupName, soql: String): Unit
     def dropRollup(name: RollupName): Option[RollupInfo]
     def secondaryReindex(): Unit
-    def secondaryAddIndex(column: ColumnInfo[CT], directives: JObject): Unit
-    def secondaryDeleteIndex(column: ColumnInfo[CT]): Unit
+    def secondaryAddIndex(fieldName: ColumnName): Unit
   }
 
   type TrueMutationContext <: MutationContext
@@ -479,14 +477,8 @@ object DatasetMutator {
         logger.secondaryReindex()
       }
 
-      def secondaryAddIndex(column: ColumnInfo[CT], directives: JObject): Unit = {
-        datasetMap.createIndexDirectives(column, directives)
-        logger.secondaryAddIndex(column.fieldName.get, directives)
-      }
-
-      def secondaryDeleteIndex(column: ColumnInfo[CT]): Unit = {
-        datasetMap.deleteIndexDirectives(column)
-        logger.secondaryDeleteIndex(column.fieldName.get)
+      def secondaryAddIndex(fieldName: ColumnName): Unit = {
+        logger.secondaryAddIndex(fieldName)
       }
     }
 

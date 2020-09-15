@@ -38,7 +38,7 @@ import scala.concurrent.duration.Duration
   *                 ///-._ _ _ _ _ _ _}^ - - - - ~                     ~-- ,.-~
   *                                                                    /.-~
   */
-class PostgresDatasetMapWriterTest extends FunSuite with PostgresDatasetMapWriterIndexDirectivesTest with MustMatchers with BeforeAndAfterAll {
+class PostgresDatasetMapWriterTest extends FunSuite with MustMatchers with BeforeAndAfterAll {
   def c(s: String) = new UserColumnId(s)
   def t(s: String) = TypeName(s)
   def fn(s: String) = Some(ColumnName(s))

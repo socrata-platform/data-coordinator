@@ -1,19 +1,16 @@
 package com.socrata.datacoordinator
 package truth.loader
 
-import java.io.{ByteArrayInputStream, Closeable, OutputStream}
+import java.io.{ByteArrayInputStream, OutputStream, Closeable}
 
 import com.socrata.datacoordinator.secondary.ComputationStrategyInfo
 import com.socrata.datacoordinator.util.CloseableIterator
-import com.socrata.datacoordinator.truth.metadata.{UnanchoredColumnInfo, UnanchoredCopyInfo, UnanchoredDatasetInfo, UnanchoredRollupInfo}
+import com.socrata.datacoordinator.truth.metadata.{UnanchoredRollupInfo, UnanchoredDatasetInfo, UnanchoredColumnInfo, UnanchoredCopyInfo}
 import com.socrata.datacoordinator.id.{ColumnId, RowId}
 import com.socrata.datacoordinator.truth.RowLogCodec
 import com.socrata.soql.environment.ColumnName
-
 import scala.collection.immutable.VectorBuilder
 import java.util.zip.InflaterInputStream
-
-import com.rojoma.json.v3.ast.JObject
 import org.joda.time.DateTime
 
 sealed abstract class CorruptLogException(val version: Long, msg: String) extends Exception(msg)
@@ -103,11 +100,8 @@ object Delogger {
 
   case object SecondaryReindex extends LogEvent[Nothing] with LogEventCompanion
 
-  case class SecondaryAddIndex(fieldName: ColumnName, directives: JObject) extends LogEvent[Nothing]
+  case class SecondaryAddIndex(fieldName: ColumnName) extends LogEvent[Nothing]
   object SecondaryAddIndex extends LogEventCompanion
-
-  case class SecondaryDeleteIndex(fieldName: ColumnName) extends LogEvent[Nothing]
-  object SecondaryDeleteIndex extends LogEventCompanion
 
   case object EndTransaction extends LogEvent[Nothing] with LogEventCompanion
 
@@ -155,7 +149,7 @@ object Delogger {
       SystemRowIdentifierChanged, VersionColumnChanged, LastModifiedChanged, WorkingCopyCreated, DataCopied,
       WorkingCopyPublished, WorkingCopyDropped, SnapshotDropped, RowDataUpdated, CounterUpdated,
       RollupCreatedOrUpdated, RollupDropped, RowsChangedPreview,
-      SecondaryReindex, SecondaryAddIndex, SecondaryDeleteIndex,
+      SecondaryReindex, SecondaryAddIndex,
       EndTransaction)
 
   // Note: the Delogger test checks that this is exhaustive.  It is not intended
@@ -186,7 +180,6 @@ object Delogger {
         case RowsChangedPreview => "RowsChangedPreview"
         case SecondaryReindex => "SecondaryReindex"
         case SecondaryAddIndex => "SecondaryAddIndex"
-        case SecondaryDeleteIndex => "SecondaryDeleteIndex"
         case EndTransaction => "EndTransaction"
       }
       acc + (n -> obj)

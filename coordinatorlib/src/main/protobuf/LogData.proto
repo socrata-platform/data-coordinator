@@ -134,11 +134,6 @@ message SecondaryReindex {
 
 message SecondaryAddIndex {
   required string fieldName = 1;
-  required bool enabled = 2;
-}
-
-message SecondaryDeleteIndex {
-  required string fieldName = 1;
 }
 
 message EndTransaction {
