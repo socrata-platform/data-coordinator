@@ -186,8 +186,8 @@ trait DatasetMutator[CT, CV] {
     def createOrUpdateRollup(name: RollupName, soql: String): Unit
     def dropRollup(name: RollupName): Option[RollupInfo]
     def secondaryReindex(): Unit
-    def secondaryAddIndex(column: ColumnInfo[CT], directives: JObject): Unit
-    def secondaryDeleteIndex(column: ColumnInfo[CT]): Unit
+    def createOrUpdateIndexDirective(column: ColumnInfo[CT], directive: JObject): Unit
+    def dropIndexDirective(column: ColumnInfo[CT]): Unit
   }
 
   type TrueMutationContext <: MutationContext
@@ -479,14 +479,14 @@ object DatasetMutator {
         logger.secondaryReindex()
       }
 
-      def secondaryAddIndex(column: ColumnInfo[CT], directives: JObject): Unit = {
-        datasetMap.createIndexDirectives(column, directives)
-        logger.secondaryAddIndex(column.fieldName.get, directives)
+      def createOrUpdateIndexDirective(column: ColumnInfo[CT], directive: JObject): Unit = {
+        datasetMap.createOrUpdateIndexDirective(column, directive)
+        logger.indexDirectiveCreatedOrUpdated(column, directive)
       }
 
-      def secondaryDeleteIndex(column: ColumnInfo[CT]): Unit = {
-        datasetMap.deleteIndexDirectives(column)
-        logger.secondaryDeleteIndex(column.fieldName.get)
+      def dropIndexDirective(column: ColumnInfo[CT]): Unit = {
+        datasetMap.dropIndexDirective(column)
+        logger.indexDirectiveDropped(column)
       }
     }
 

@@ -374,16 +374,18 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
     }
 
   private def indexDirectivesQuery =
-    "SELECT field_name_casefolded, directives FROM index_directives WHERE dataset_system_id = ? AND deleted_at is null"
-  def indexDirectives(datasetInfo: DatasetInfo): Seq[IndexDirectives] = {
+    "SELECT column_system_id, directive FROM index_directive_map WHERE copy_system_id = ? AND deleted_at is null"
+  def indexDirectives(copyInfo: CopyInfo): Seq[IndexDirective[CT]] = {
+    val columnIdMap = schema(copyInfo)
     using(conn.prepareStatement(indexDirectivesQuery)) { stmt =>
-      stmt.setDatasetId(1, datasetInfo.systemId)
+      stmt.setLong(1, copyInfo.systemId.underlying)
       using(stmt.executeQuery()) { rs =>
-        val res = new VectorBuilder[IndexDirectives]
+        val res = new VectorBuilder[IndexDirective[CT]]
         while(rs.next()) {
-          JsonUtil.parseJson[JObject](rs.getString("directives")) match {
+          JsonUtil.parseJson[JObject](rs.getString("directive")) match {
             case Right(jo) =>
-              res += IndexDirectives(datasetInfo, ColumnName(rs.getString("field_name_casefolded")), jo)
+              val columnId = rs.getColumnId("column_system_id")
+              res += IndexDirective(copyInfo, columnIdMap(columnId), jo)
             case _ =>
           }
         }
@@ -523,7 +525,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
 
   // Yay no "DELETE ... CASCADE"!
   def deleteQuery_computationStrategyMap = "DELETE FROM computation_strategy_map WHERE copy_system_id IN (SELECT system_id FROM copy_map WHERE dataset_system_id = ?)"
-  def deleteQuery_indexDirecitves = "DELETE FROM index_directives WHERE dataset_system_id = ?"
+  def deleteQuery_indexDirecitveMap = "DELETE FROM index_directive_map WHERE copy_system_id IN (SELECT system_id FROM copy_map WHERE dataset_system_id = ?)"
   def deleteQuery_columnMap = "DELETE FROM column_map WHERE copy_system_id IN (SELECT system_id FROM copy_map WHERE dataset_system_id = ?)"
   def deleteQuery_rollupMap = "DELETE FROM rollup_map WHERE copy_system_id IN (SELECT system_id FROM copy_map WHERE dataset_system_id = ?)"
   def deleteQuery_copyMap = "DELETE FROM copy_map WHERE dataset_system_id = ?"
@@ -548,7 +550,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
       stmt.setDatasetId(1, datasetInfo.systemId)
       t("delete-dataset-computation-strategies", "dataset_id" -> datasetInfo.systemId)(stmt.executeUpdate())
     }
-    using(conn.prepareStatement(deleteQuery_indexDirecitves)) { stmt =>
+    using(conn.prepareStatement(deleteQuery_indexDirecitveMap)) { stmt =>
       stmt.setDatasetId(1, datasetInfo.systemId)
       t("delete-index-directives", "dataset_id" -> datasetInfo.systemId)(stmt.executeUpdate())
     }

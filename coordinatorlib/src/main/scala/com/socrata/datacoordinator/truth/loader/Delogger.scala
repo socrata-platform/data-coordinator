@@ -103,11 +103,11 @@ object Delogger {
 
   case object SecondaryReindex extends LogEvent[Nothing] with LogEventCompanion
 
-  case class SecondaryAddIndex(fieldName: ColumnName, directives: JObject) extends LogEvent[Nothing]
-  object SecondaryAddIndex extends LogEventCompanion
+  case class IndexDirectiveCreatedOrUpdated(info: UnanchoredColumnInfo, directive: JObject) extends LogEvent[Nothing]
+  object IndexDirectiveCreatedOrUpdated extends LogEventCompanion
 
-  case class SecondaryDeleteIndex(fieldName: ColumnName) extends LogEvent[Nothing]
-  object SecondaryDeleteIndex extends LogEventCompanion
+  case class IndexDirectiveDropped(info: UnanchoredColumnInfo) extends LogEvent[Nothing]
+  object IndexDirectiveDropped extends LogEventCompanion
 
   case object EndTransaction extends LogEvent[Nothing] with LogEventCompanion
 
@@ -155,7 +155,7 @@ object Delogger {
       SystemRowIdentifierChanged, VersionColumnChanged, LastModifiedChanged, WorkingCopyCreated, DataCopied,
       WorkingCopyPublished, WorkingCopyDropped, SnapshotDropped, RowDataUpdated, CounterUpdated,
       RollupCreatedOrUpdated, RollupDropped, RowsChangedPreview,
-      SecondaryReindex, SecondaryAddIndex, SecondaryDeleteIndex,
+      SecondaryReindex, IndexDirectiveCreatedOrUpdated, IndexDirectiveDropped,
       EndTransaction)
 
   // Note: the Delogger test checks that this is exhaustive.  It is not intended
@@ -185,8 +185,8 @@ object Delogger {
         case RollupDropped => "RollupDropped"
         case RowsChangedPreview => "RowsChangedPreview"
         case SecondaryReindex => "SecondaryReindex"
-        case SecondaryAddIndex => "SecondaryAddIndex"
-        case SecondaryDeleteIndex => "SecondaryDeleteIndex"
+        case IndexDirectiveCreatedOrUpdated => "IndexDirectiveCreatedOrUpdated"
+        case IndexDirectiveDropped => "IndexDirectiveDropped"
         case EndTransaction => "EndTransaction"
       }
       acc + (n -> obj)

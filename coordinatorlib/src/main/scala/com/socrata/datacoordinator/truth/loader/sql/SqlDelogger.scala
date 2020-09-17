@@ -192,8 +192,8 @@ class SqlDelogger[CV](connection: Connection,
           assert(!rs.next(), "there was data after TransactionEnded?")
           None
         case SqlLogger.SecondaryReindex => Some(Delogger.SecondaryReindex)
-        case SqlLogger.SecondaryAddIndex => Some(Delogger.SecondaryAddIndex)
-        case SqlLogger.SecondaryDeleteIndex => Some(Delogger.SecondaryDeleteIndex)
+        case SqlLogger.IndexDirectiveCreatedOrUpdated => Some(Delogger.IndexDirectiveCreatedOrUpdated)
+        case SqlLogger.IndexDirectiveDropped => Some(Delogger.IndexDirectiveDropped)
         case other =>
           throw new UnknownEvent(version, op, errMsg(s"Unknown event $op"))
       }
@@ -250,10 +250,10 @@ class SqlDelogger[CV](connection: Connection,
           None
         case SqlLogger.SecondaryReindex =>
           Some(Delogger.SecondaryReindex)
-        case SqlLogger.SecondaryAddIndex =>
-          Some(decodeSecondaryAddIndex(aux))
-        case SqlLogger.SecondaryDeleteIndex =>
-          Some(decodeSecondaryDeleteIndex(aux))
+        case SqlLogger.IndexDirectiveCreatedOrUpdated =>
+          Some(decodeIndexDirectiveCreatedOrUpdated(aux))
+        case SqlLogger.IndexDirectiveDropped =>
+          Some(decodeIndexDirectiveDropped(aux))
         case other =>
           throw new UnknownEvent(version, op, errMsg(s"Unknown event $op"))
       }
@@ -345,15 +345,15 @@ class SqlDelogger[CV](connection: Connection,
       Delogger.RowsChangedPreview(msg.rowsInserted, msg.rowsUpdated, msg.rowsDeleted, msg.truncated)
     }
 
-    def decodeSecondaryAddIndex(aux: Array[Byte]) = {
-      val msg = LogData.SecondaryAddIndex.parseFrom(aux)
-      val directives = JObject(Map("enabled" -> JBoolean(msg.enabled)))
-      Delogger.SecondaryAddIndex(ColumnName(msg.fieldName), directives)
+    def decodeIndexDirectiveCreatedOrUpdated(aux: Array[Byte]) = {
+      val msg = LogData.IndexDirectiveCreatedOrUpdated.parseFrom(aux)
+      val directive = JObject(Map("enabled" -> JBoolean(msg.enabled)))
+      Delogger.IndexDirectiveCreatedOrUpdated(convert(msg.columnInfo), directive)
     }
 
-    def decodeSecondaryDeleteIndex(aux: Array[Byte]) = {
-      val msg = LogData.SecondaryDeleteIndex.parseFrom(aux)
-      Delogger.SecondaryDeleteIndex(ColumnName(msg.fieldName))
+    def decodeIndexDirectiveDropped(aux: Array[Byte]) = {
+      val msg = LogData.IndexDirectiveDropped.parseFrom(aux)
+      Delogger.IndexDirectiveDropped(convert(msg.columnInfo))
     }
   }
 

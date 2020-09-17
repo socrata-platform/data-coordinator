@@ -8,7 +8,7 @@ import com.socrata.datacoordinator.secondary.ColumnInfo
 
 import scala.io.StdIn
 import com.socrata.datacoordinator.secondary.DatasetInfo
-import com.socrata.datacoordinator.truth.metadata.IndexDirectives
+import com.socrata.datacoordinator.truth.metadata.IndexDirective
 
 class DummySecondary(config: Config) extends Secondary[Any, Any] {
   def shutdown(): Unit = {}
@@ -69,7 +69,7 @@ class DummySecondary(config: Config) extends Secondary[Any, Any] {
 
   def resync(datasetInfo: DatasetInfo, copyInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo[Any]], cookie: Secondary.Cookie,
              rows: Managed[Iterator[com.socrata.datacoordinator.secondary.Row[Any]]],
-             rollups: Seq[RollupInfo], indexDirectives: Seq[IndexDirectives], isLatestCopy: Boolean): Secondary.Cookie = {
+             rollups: Seq[RollupInfo], indexDirectives: Seq[IndexDirective[Any]], isLatestCopy: Boolean): Secondary.Cookie = {
     println("Got a resync request on " + datasetInfo.internalName)
     println("Copy: " + copyInfo)
     println("Current cookie: " + cookie)

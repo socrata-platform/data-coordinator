@@ -191,8 +191,8 @@ object Mutator {
   case class AddComputationStrategy(index: Long, id: ColumnIdSpec, computationStrategy: ComputationStrategySpec) extends Command
   case class DropComputationStrategy(index: Long, id: ColumnIdSpec) extends Command
   case class SecondaryReindex(index: Long) extends Command
-  case class SecondaryAddIndex(index: Long, fieldName: ColumnName, directives: JObject) extends Command
-  case class SecondaryDeleteIndex(index: Long, fieldName: ColumnName) extends Command
+  case class CreateOrUpdateIndexDirective(index: Long, id: ColumnIdSpec, directive: JObject) extends Command
+  case class DropIndexDirective(index: Long, id: ColumnIdSpec) extends Command
 
   val AddColumnOp = "add column"
   val DropColumnOp = "drop column"
@@ -205,8 +205,8 @@ object Mutator {
   val AddComputationStrategyOp = "add computation strategy"
   val DropComputationStrategyOp = "drop computation strategy"
   val SecondaryReindexOp = "secondary reindex"
-  val SecondaryAddIndexOp = "secondary add index"
-  val SecondaryDeleteIndexOp = "secondary delete index"
+  val CreateOrUpdateIndexDirectiveOp = "create or update index directive"
+  val DropIndexDirectiveOp = "drop index directive"
 }
 
 class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT, CV]) {
@@ -276,13 +276,13 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
             RowData(index, truncate, mergeReplace, nonFatalRowErrorsClasses, updateOnly = updateOnly, bySystemId = bySystemId)
           case SecondaryReindexOp =>
             SecondaryReindex(index)
-          case SecondaryAddIndexOp =>
-            val fieldName = get[ColumnName]("field_name")
-            val directives = get[JObject]("directives")
-            SecondaryAddIndex(index, fieldName, directives)
-          case SecondaryDeleteIndexOp =>
-            val fieldName = get[ColumnName]("field_name")
-            SecondaryDeleteIndex(index, fieldName)
+          case CreateOrUpdateIndexDirectiveOp =>
+            val column = get[ColumnIdSpec]("column")
+            val directive = get[JObject]("directive")
+            CreateOrUpdateIndexDirective(index, column, directive)
+          case DropIndexDirectiveOp =>
+            val column = get[ColumnIdSpec]("column")
+            DropIndexDirective(index, column)
           case other =>
             throw InvalidCommandFieldValue(originalObject, "c", JString(other))(index)
         }
@@ -808,13 +808,13 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
         case SecondaryReindex(_) =>
           mutator.secondaryReindex()
           Seq(MutationScriptCommandResult.Uninteresting)
-        case SecondaryAddIndex(_, fieldName, directives) =>
+        case CreateOrUpdateIndexDirective(_, fieldName, directive) =>
           val columnOpt = mutator.schema.values.find(_.fieldName == Some(fieldName))
-          columnOpt.foreach(column => mutator.secondaryAddIndex(column, directives))
+          columnOpt.foreach(column => mutator.createOrUpdateIndexDirective(column, directive))
           Seq(MutationScriptCommandResult.Uninteresting)
-        case SecondaryDeleteIndex(_, fieldName) =>
+        case DropIndexDirective(_, fieldName) =>
           val columnOpt = mutator.schema.values.find(_.fieldName == Some(fieldName))
-          columnOpt.foreach(column => mutator.secondaryDeleteIndex(column))
+          columnOpt.foreach(column => mutator.dropIndexDirective(column))
           Seq(MutationScriptCommandResult.Uninteresting)
       }
 

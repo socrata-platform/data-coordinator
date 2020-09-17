@@ -8,40 +8,37 @@ import com.rojoma.simplearm.v2.using
 trait IndexControl[CT] { this: BasePostgresDatasetMapWriter[CT] =>
 
   private val upsertSql = """
-      INSERT INTO index_directives(dataset_system_id, field_name_casefolded, directives)
+      INSERT INTO index_directive_map(copy_system_id, column_system_id, directive)
              VALUES (?, ?, ?)
-          ON CONFLICT(dataset_system_id, field_name_casefolded)
-          DO UPDATE SET directives = ?,
+          ON CONFLICT(copy_system_id, column_system_id)
+          DO UPDATE SET directive = ?,
                         updated_at = now(),
                         deleted_at = null
     """
 
   private val deleteSql = """
-      UPDATE index_directives SET deleted_at = now()
-       WHERE dataset_system_id = ?
-         AND field_name_casefolded = ?
+      UPDATE index_directive_map SET deleted_at = now()
+       WHERE copy_system_id = ?
+         AND column_system_id = ?
     """
 
-  def createIndexDirectives(columnInfo: ColumnInfo[CT], directives: JObject): Unit = {
-    columnInfo.fieldName.foreach { fieldName =>
-      val directivesJson = JsonUtil.renderJson(directives)
-      using(conn.prepareStatement(upsertSql)) { stmt =>
-        stmt.setLong(1, columnInfo.copyInfo.datasetInfo.systemId.underlying)
-        stmt.setString(2, fieldName.caseFolded)
-        stmt.setString(3, directivesJson)
-        stmt.setString(4, directivesJson)
-        stmt.execute()
-      }
+  def createOrUpdateIndexDirective(columnInfo: ColumnInfo[CT], directive: JObject): Unit = {
+    val directiveJson = JsonUtil.renderJson(directive)
+    using(conn.prepareStatement(upsertSql)) { stmt =>
+      stmt.setLong(1, columnInfo.copyInfo.systemId.underlying)
+      stmt.setLong(2, columnInfo.systemId.underlying)
+      stmt.setString(3, directiveJson)
+      stmt.setString(4, directiveJson)
+      stmt.execute()
     }
   }
 
-  def deleteIndexDirectives(columnInfo: ColumnInfo[CT]): Unit = {
-    columnInfo.fieldName.foreach { fieldName =>
-      using(conn.prepareStatement(deleteSql)) { stmt =>
-        stmt.setLong(1, columnInfo.copyInfo.datasetInfo.systemId.underlying)
-        stmt.setString(2, fieldName.caseFolded)
-        stmt.execute()
-      }
+  def dropIndexDirective(columnInfo: ColumnInfo[CT]): Unit = {
+    using(conn.prepareStatement(deleteSql)) { stmt =>
+      stmt.setLong(1, columnInfo.copyInfo.systemId.underlying)
+      stmt.setLong(2, columnInfo.systemId.underlying)
+      stmt.execute()
     }
+
   }
 }

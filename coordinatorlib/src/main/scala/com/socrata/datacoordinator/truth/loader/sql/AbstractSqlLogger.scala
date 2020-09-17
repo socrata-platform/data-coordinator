@@ -176,18 +176,18 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
     logLine(SecondaryReindex, LogData.SecondaryReindex.defaultInstance)
   }
 
-  def secondaryAddIndex(fieldName: ColumnName, directives: JObject) = {
+  def indexDirectiveCreatedOrUpdated(info: ColumnInfo[CT], directive: JObject) = {
     checkTxn()
-    val enabled = directives.get("enabled") match {
+    val enabled = directive.get("enabled") match {
       case Some(JBoolean(b)) => b
       case _ => false
     }
-    logLine(SecondaryAddIndex, LogData.SecondaryAddIndex(convert(fieldName), enabled))
+    logLine(IndexDirectiveCreatedOrUpdated, LogData.IndexDirectiveCreatedOrUpdated(convert(info.unanchored), enabled))
   }
 
-  def secondaryDeleteIndex(fieldName: ColumnName) = {
+  def indexDirectiveDropped(info: ColumnInfo[CT]) = {
     checkTxn()
-    logLine(SecondaryDeleteIndex, LogData.SecondaryDeleteIndex(convert(fieldName)))
+    logLine(IndexDirectiveDropped, LogData.IndexDirectiveDropped(convert(info.unanchored)))
   }
 
   def endTransaction() = {

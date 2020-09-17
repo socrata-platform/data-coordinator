@@ -132,13 +132,13 @@ message RowsChangedPreview {
 message SecondaryReindex {
 }
 
-message SecondaryAddIndex {
-  required string fieldName = 1;
+message IndexDirectiveCreatedOrUpdated {
+  required UnanchoredColumnInfo columnInfo = 1;
   required bool enabled = 2;
 }
 
-message SecondaryDeleteIndex {
-  required string fieldName = 1;
+message IndexDirectiveDropped {
+  required UnanchoredColumnInfo columnInfo = 1;
 }
 
 message EndTransaction {

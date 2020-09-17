@@ -36,9 +36,9 @@ class NullLogger[CT, CV] extends Logger[CT, CV] {
 
   def secondaryReindex() = {}
 
-  def secondaryAddIndex(fieldName: ColumnName, directives: JObject) = {}
+  def indexDirectiveCreatedOrUpdated(info: ColumnInfo[CT], directive: JObject): Unit = {}
 
-  def secondaryDeleteIndex(fieldName: ColumnName) = {}
+  def indexDirectiveDropped(info: ColumnInfo[CT]): Unit = {}
 
   def endTransaction() = None
 

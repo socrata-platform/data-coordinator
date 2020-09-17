@@ -57,7 +57,7 @@ trait BaseDatasetMapReader[CT] {
   /**
     * Returns all index directives for this dataset
     */
-  def indexDirectives(datasetInfo: DatasetInfo): Seq[IndexDirectives]
+  def indexDirectives(copyInfo: CopyInfo): Seq[IndexDirective[CT]]
 
   /** Gets the current time.
    */
@@ -146,7 +146,7 @@ trait BaseDatasetMapWriter[CT] extends BaseDatasetMapReader[CT] {
     */
   def dropRollup(copyInfo: CopyInfo, name: Option[RollupName])
 
-  def createIndexDirectives(columnInfo: ColumnInfo[CT], directives: JObject): Unit
+  def createOrUpdateIndexDirective(columnInfo: ColumnInfo[CT], directive: JObject): Unit
 
-  def deleteIndexDirectives(columnInfo: ColumnInfo[CT]): Unit
+  def dropIndexDirective(columnInfo: ColumnInfo[CT]): Unit
 }
