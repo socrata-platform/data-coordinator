@@ -1,5 +1,6 @@
 package com.socrata.datacoordinator.secondary
 
+import com.rojoma.json.v3.ast.JObject
 import com.socrata.soql.environment.ColumnName
 import org.joda.time.DateTime
 
@@ -26,4 +27,5 @@ case class RowsChangedPreview(rowsInserted: Long, rowsUpdated: Long, rowsDeleted
 case object WorkingCopyPublished extends Event[Nothing, Nothing]
 case class RowDataUpdated[CV](operations: Seq[Operation[CV]]) extends Event[Nothing, CV]
 case object SecondaryReindex extends Event[Nothing, Nothing]
-case class SecondaryAddIndex(fieldName: ColumnName) extends Event[Nothing, Nothing]
+case class SecondaryAddIndex(fieldName: ColumnName, directives: JObject) extends Event[Nothing, Nothing]
+case class SecondaryDeleteIndex(fieldName: ColumnName) extends Event[Nothing, Nothing]
