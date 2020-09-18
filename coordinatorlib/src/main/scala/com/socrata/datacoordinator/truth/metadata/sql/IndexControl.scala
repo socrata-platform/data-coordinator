@@ -2,7 +2,7 @@ package com.socrata.datacoordinator.truth.metadata.sql
 
 import com.rojoma.json.v3.ast.JObject
 import com.rojoma.json.v3.util.JsonUtil
-import com.socrata.datacoordinator.truth.metadata.ColumnInfo
+import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, CopyInfo}
 import com.rojoma.simplearm.v2.using
 
 trait IndexControl[CT] { this: BasePostgresDatasetMapWriter[CT] =>
@@ -17,9 +17,14 @@ trait IndexControl[CT] { this: BasePostgresDatasetMapWriter[CT] =>
     """
 
   private val deleteSql = """
-      UPDATE index_directive_map SET deleted_at = now()
+      DELETE FROM index_directive_map
        WHERE copy_system_id = ?
          AND column_system_id = ?
+    """
+
+  private val deleteByCopySql = """
+      DELETE FROM index_directive_map
+       WHERE copy_system_id = ?
     """
 
   def createOrUpdateIndexDirective(columnInfo: ColumnInfo[CT], directive: JObject): Unit = {
@@ -39,6 +44,12 @@ trait IndexControl[CT] { this: BasePostgresDatasetMapWriter[CT] =>
       stmt.setLong(2, columnInfo.systemId.underlying)
       stmt.execute()
     }
+  }
 
+  def dropIndexDirectives(copyInfo: CopyInfo): Unit = {
+    using(conn.prepareStatement(deleteByCopySql)) { stmt =>
+      stmt.setLong(1, copyInfo.systemId.underlying)
+      stmt.execute()
+    }
   }
 }

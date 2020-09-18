@@ -780,6 +780,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
   def dropColumnQuery = "DELETE FROM column_map WHERE copy_system_id = ? AND system_id = ?"
   def dropColumn(columnInfo: ColumnInfo[CT]) {
     columnInfo.computationStrategyInfo.foreach{ _ => dropComputationStrategy(columnInfo) }
+    dropIndexDirective(columnInfo)
     using(conn.prepareStatement(dropColumnQuery)) { stmt =>
       stmt.setLong(1, columnInfo.copyInfo.systemId.underlying)
       stmt.setLong(2, columnInfo.systemId.underlying)
