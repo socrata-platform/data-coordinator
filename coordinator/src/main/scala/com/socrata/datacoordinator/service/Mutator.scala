@@ -808,13 +808,21 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
         case SecondaryReindex(_) =>
           mutator.secondaryReindex()
           Seq(MutationScriptCommandResult.Uninteresting)
-        case CreateOrUpdateIndexDirective(_, fieldName, directive) =>
-          val columnOpt = mutator.schema.values.find(_.fieldName == Some(fieldName))
-          columnOpt.foreach(column => mutator.createOrUpdateIndexDirective(column, directive))
+        case CreateOrUpdateIndexDirective(_, columnIdSpec, directive) =>
+          columnIdSpec match {
+            case Right(columnId) =>
+              val columnOpt = mutator.schema.values.find(_.userColumnId == columnId)
+              columnOpt.foreach(column => mutator.createOrUpdateIndexDirective(column, directive))
+            case Left(columnLabel) =>
+          }
           Seq(MutationScriptCommandResult.Uninteresting)
-        case DropIndexDirective(_, fieldName) =>
-          val columnOpt = mutator.schema.values.find(_.fieldName == Some(fieldName))
-          columnOpt.foreach(column => mutator.dropIndexDirective(column))
+        case DropIndexDirective(_, columnIdSpec) =>
+          columnIdSpec match {
+            case Right(columnId) =>
+              val columnOpt = mutator.schema.values.find(_.userColumnId == columnId)
+              columnOpt.foreach(column => mutator.dropIndexDirective(column))
+            case Left(columnLabel) =>
+          }
           Seq(MutationScriptCommandResult.Uninteresting)
       }
 

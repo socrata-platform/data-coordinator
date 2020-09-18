@@ -27,5 +27,5 @@ case class RowsChangedPreview(rowsInserted: Long, rowsUpdated: Long, rowsDeleted
 case object WorkingCopyPublished extends Event[Nothing, Nothing]
 case class RowDataUpdated[CV](operations: Seq[Operation[CV]]) extends Event[Nothing, CV]
 case object SecondaryReindex extends Event[Nothing, Nothing]
-case class IndexDirectiveCreatedOrUpdated[CT](info: ColumnInfo[CT], directive: JObject) extends Event[Nothing, Nothing]
-case class IndexDirectiveDropped[CT](info: ColumnInfo[CT]) extends Event[Nothing, Nothing]
+case class IndexDirectiveCreatedOrUpdated[CT](info: ColumnInfo[CT], directive: JObject) extends Event[CT, Nothing]
+case class IndexDirectiveDropped[CT](info: ColumnInfo[CT]) extends Event[CT, Nothing]
