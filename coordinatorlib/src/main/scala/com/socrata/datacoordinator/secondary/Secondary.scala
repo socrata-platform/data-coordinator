@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator.secondary
 
 import com.rojoma.simplearm.v2._
-
+import com.socrata.datacoordinator.truth.metadata.IndexDirective
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 
 trait Secondary[CT, CV] {
@@ -35,7 +35,8 @@ trait Secondary[CT, CV] {
    * This will only be called on copies that are published or unpublished.
    */
   def resync(datasetInfo: DatasetInfo, copyInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo[CT]], cookie: Cookie,
-             rows: Managed[Iterator[ColumnIdMap[CV]]], rollups: Seq[RollupInfo], isLatestLivingCopy: Boolean): Cookie
+             rows: Managed[Iterator[ColumnIdMap[CV]]], rollups: Seq[RollupInfo], indexDirectives: Seq[IndexDirective[CT]],
+             isLatestLivingCopy: Boolean): Cookie
 
   /**
    * @return Optionally metrics, namely size, about the dataset on the secondary store

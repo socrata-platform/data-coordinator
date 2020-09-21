@@ -404,8 +404,10 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
         Some(RowsChangedPreview(inserted, updated, deleted, truncated))
       case Delogger.SecondaryReindex =>
         Some(SecondaryReindex)
-      case Delogger.SecondaryAddIndex(fieldName) =>
-        Some(SecondaryAddIndex(fieldName))
+      case Delogger.IndexDirectiveCreatedOrUpdated(info, directives) =>
+        Some(IndexDirectiveCreatedOrUpdated(makeSecondaryColumnInfo(info), directives))
+      case Delogger.IndexDirectiveDropped(info) =>
+        Some(IndexDirectiveDropped(makeSecondaryColumnInfo(info)))
       case Delogger.EndTransaction =>
         None
     }
@@ -554,14 +556,17 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
               }
             }
           }
-          val rollups: Seq[RollupInfo] = u.datasetMapReader.rollups(copyInfo).toSeq.
-                                           map(makeSecondaryRollupInfo)
+          val rollups: Seq[RollupInfo] = u.datasetMapReader.rollups(copyInfo).toSeq.map(makeSecondaryRollupInfo)
+
+          val indexDirectives = u.datasetMapReader.indexDirectives(copyInfo)
+
           currentCookie = secondary.store.resync(secondaryDatasetInfo,
                                                  secondaryCopyInfo,
                                                  secondarySchema,
                                                  currentCookie,
                                                  wrappedRows,
                                                  rollups,
+                                                 indexDirectives,
                                                  isLatestLivingCopy)
         }
       }

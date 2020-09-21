@@ -2,16 +2,14 @@ package com.socrata.datacoordinator
 package truth.loader.sql
 
 import scala.io.Codec
+import java.sql.{Connection, PreparedStatement, ResultSet}
 
-import java.sql.{ResultSet, PreparedStatement, Connection}
-
+import com.rojoma.json.v3.ast.{JBoolean, JObject}
 import com.rojoma.simplearm.v2._
-
 import com.socrata.datacoordinator.truth.RowLogCodec
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.util.{CloseableIterator, LeakDetect}
 import com.socrata.soql.environment.ColumnName
-
 import messages.LogData
 
 class SqlDelogger[CV](connection: Connection,
@@ -194,7 +192,8 @@ class SqlDelogger[CV](connection: Connection,
           assert(!rs.next(), "there was data after TransactionEnded?")
           None
         case SqlLogger.SecondaryReindex => Some(Delogger.SecondaryReindex)
-        case SqlLogger.SecondaryAddIndex => Some(Delogger.SecondaryAddIndex)
+        case SqlLogger.IndexDirectiveCreatedOrUpdated => Some(Delogger.IndexDirectiveCreatedOrUpdated)
+        case SqlLogger.IndexDirectiveDropped => Some(Delogger.IndexDirectiveDropped)
         case other =>
           throw new UnknownEvent(version, op, errMsg(s"Unknown event $op"))
       }
@@ -251,8 +250,10 @@ class SqlDelogger[CV](connection: Connection,
           None
         case SqlLogger.SecondaryReindex =>
           Some(Delogger.SecondaryReindex)
-        case SqlLogger.SecondaryAddIndex =>
-          Some(decodeSecondaryAddIndex(aux))
+        case SqlLogger.IndexDirectiveCreatedOrUpdated =>
+          Some(decodeIndexDirectiveCreatedOrUpdated(aux))
+        case SqlLogger.IndexDirectiveDropped =>
+          Some(decodeIndexDirectiveDropped(aux))
         case other =>
           throw new UnknownEvent(version, op, errMsg(s"Unknown event $op"))
       }
@@ -344,9 +345,15 @@ class SqlDelogger[CV](connection: Connection,
       Delogger.RowsChangedPreview(msg.rowsInserted, msg.rowsUpdated, msg.rowsDeleted, msg.truncated)
     }
 
-    def decodeSecondaryAddIndex(aux: Array[Byte]) = {
-      val msg = LogData.SecondaryAddIndex.parseFrom(aux)
-      Delogger.SecondaryAddIndex(ColumnName(msg.fieldName))
+    def decodeIndexDirectiveCreatedOrUpdated(aux: Array[Byte]) = {
+      val msg = LogData.IndexDirectiveCreatedOrUpdated.parseFrom(aux)
+      val directive = JObject(Map("enabled" -> JBoolean(msg.enabled)))
+      Delogger.IndexDirectiveCreatedOrUpdated(convert(msg.columnInfo), directive)
+    }
+
+    def decodeIndexDirectiveDropped(aux: Array[Byte]) = {
+      val msg = LogData.IndexDirectiveDropped.parseFrom(aux)
+      Delogger.IndexDirectiveDropped(convert(msg.columnInfo))
     }
   }
 

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
+
+    <changeSet author="chi" id="20200901-create-index-map">
+
+        <preConditions onFail="MARK_RAN">
+            <not><tableExists tableName="index_directive_map"/></not>
+        </preConditions>
+
+        <createTable tableName="index_directive_map">
+            <column name="copy_system_id" type="bigint">
+                <constraints nullable="false"
+                             primaryKey="true" primaryKeyName="index_directive_map_pk"
+                             foreignKeyName="index_map_copy_system_id_fkey"
+                             references="copy_map(system_id)"
+                />
+            </column>
+            <column name="column_system_id" type="bigint">
+                <constraints nullable="false"
+                             primaryKey="true" primaryKeyName="index_directive_map_pk"
+                />
+            </column>
+            <column name="directive" type="text"/>
+            <column name="created_at" type="timestamp with time zone" defaultValueComputed="now()"/>
+            <column name="updated_at" type="timestamp with time zone" defaultValueComputed="now()"/>
+            <column name="deleted_at" type="timestamp with time zone"/>
+        </createTable>
+
+    </changeSet>
+</databaseChangeLog>

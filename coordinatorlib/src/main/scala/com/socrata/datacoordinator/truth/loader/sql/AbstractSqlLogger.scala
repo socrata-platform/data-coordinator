@@ -3,15 +3,17 @@ package truth.loader
 package sql
 
 import java.sql.Connection
+
 import com.socrata.datacoordinator.truth.RowLogCodec
 import java.util.zip.{Deflater, DeflaterOutputStream}
+
+import com.rojoma.json.v3.ast.{JBoolean, JObject}
 import com.socrata.datacoordinator.util.{Counter, TimingReport}
 import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, ComputationStrategyInfo, CopyInfo, RollupInfo}
 import com.socrata.datacoordinator.id.RowId
 import com.rojoma.simplearm.v2._
 import com.socrata.soql.environment.ColumnName
 import org.joda.time.DateTime
-
 import messages.LogData
 
 abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
@@ -174,9 +176,18 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
     logLine(SecondaryReindex, LogData.SecondaryReindex.defaultInstance)
   }
 
-  def secondaryAddIndex(fieldName: ColumnName) = {
+  def indexDirectiveCreatedOrUpdated(info: ColumnInfo[CT], directive: JObject) = {
     checkTxn()
-    logLine(SecondaryAddIndex, LogData.SecondaryAddIndex(convert(fieldName)))
+    val enabled = directive.get("enabled") match {
+      case Some(JBoolean(b)) => b
+      case _ => false
+    }
+    logLine(IndexDirectiveCreatedOrUpdated, LogData.IndexDirectiveCreatedOrUpdated(convert(info.unanchored), enabled))
+  }
+
+  def indexDirectiveDropped(info: ColumnInfo[CT]) = {
+    checkTxn()
+    logLine(IndexDirectiveDropped, LogData.IndexDirectiveDropped(convert(info.unanchored)))
   }
 
   def endTransaction() = {
