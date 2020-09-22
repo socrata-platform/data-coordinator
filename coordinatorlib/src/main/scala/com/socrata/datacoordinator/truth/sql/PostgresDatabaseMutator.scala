@@ -1,14 +1,24 @@
 package com.socrata.datacoordinator.truth
 package sql
 
+import java.sql.Connection
+import javax.sql.DataSource
+
+import org.joda.time.DateTime
 import com.rojoma.simplearm.v2._
 
 import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.truth.loader._
-import com.socrata.datacoordinator.id.DatasetId
+import com.socrata.datacoordinator.truth.loader.sql.{RepBasedSqlDatasetContentsCopier, SqlLogger}
+import com.socrata.datacoordinator.truth.{TypeContext, RowLogCodec}
+import com.socrata.datacoordinator.util.collection.ColumnIdMap
+import com.socrata.datacoordinator.id.{DatasetId, RowId}
 import scala.concurrent.duration.Duration
-import com.socrata.datacoordinator.util.{RowIdProvider, RowVersionProvider, RowDataProvider}
+import com.socrata.datacoordinator.util.{RowIdProvider, RowVersionProvider, RowDataProvider, TimingReport}
 import com.socrata.datacoordinator.truth.universe._
+import com.socrata.datacoordinator.truth.metadata.ColumnInfo
+import com.socrata.datacoordinator.truth.metadata.DatasetInfo
+import com.socrata.datacoordinator.truth.metadata.CopyInfo
 import com.socrata.datacoordinator.truth.metadata.DatasetInfo
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
 
