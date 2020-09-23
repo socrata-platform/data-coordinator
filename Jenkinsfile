@@ -8,6 +8,7 @@ def project_wd = "coordinator"
 def deploy_service_pattern = "data-coordinator*"
 def deploy_environment = "staging"
 def default_branch_specifier = "origin/master"
+def scala_version = "2.12"
 
 def service_sha = env.GIT_COMMIT
 
@@ -112,7 +113,12 @@ pipeline {
             sh(returnStdout: true, script: "git config branch.master.remote origin")
             sh(returnStdout: true, script: "git config branch.master.merge refs/heads/master")
 
-            echo sh(returnStdout: true, script: "echo y | sbt \"release with-defaults\"")
+            // increasing meta space size to avoid build errors during release step
+            javaopts = "JAVA_OPTS=-XX:MaxMetaspaceSize=512m"
+
+            withEnv([javaopts]) {
+              echo sh(returnStdout: true, script: "echo y | sbt \"release with-defaults\"")
+            }
 
             cutNeeded = true
           }
@@ -144,11 +150,20 @@ pipeline {
           // perform any needed modifiers on the build parameters here
           sbtbuild.setRunITTest(true)
           sbtbuild.setNoSubproject(true)
-          sbtbuild.setScalaVersion("2.12")
+          sbtbuild.setScalaVersion(scala_version)
 
           // build
           echo "Building sbt project..."
           sbtbuild.build()
+
+          // If we're cutting, also publish libraries if they haven't already been published for this version
+          if(stage_cut == true) {
+            result = sh(returnStdout: true, script: "#!/bin/sh -e\ncurl -s -o /dev/null -w \"%{http_code}\" -u ${ARTIFACTORY_USER}:${ARTIFACTORY_PASSWORD} https://repo.socrata.com/artifactory/libs-release/com/socrata/coordinatorlib_${scala_version}/${sbtbuild.getServiceVersion()}/coordinatorlib_${scala_version}-${sbtbuild.getServiceVersion()}.pom").trim()
+            echo "Check for published artifact result: [${result}]"
+            if(result == "404") {
+              echo sh(returnStdout: true, script: "sbt +publish")
+            }
+          }
         }
       }
     }
