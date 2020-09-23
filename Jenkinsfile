@@ -160,7 +160,7 @@ pipeline {
           if(stage_cut == true) {
             result = sh(returnStdout: true, script: "#!/bin/sh -e\ncurl -s -o /dev/null -w \"%{http_code}\" -u ${ARTIFACTORY_USER}:${ARTIFACTORY_PASSWORD} https://repo.socrata.com/artifactory/libs-release/com/socrata/coordinatorlib_${scala_version}/${sbtbuild.getServiceVersion()}/coordinatorlib_${scala_version}-${sbtbuild.getServiceVersion()}.pom").trim()
             echo "Check for published artifact result: [${result}]"
-            if(result != "200") {
+            if(result == "404") {
               echo sh(returnStdout: true, script: "sbt +publish")
             }
           }
