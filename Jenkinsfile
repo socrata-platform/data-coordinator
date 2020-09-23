@@ -162,6 +162,7 @@ pipeline {
             echo "Check for published artifact result: [${result}]"
             if(result != "200") {
               echo sh(returnStdout: true, script: "sbt +publish")
+            }
           }
         }
       }
