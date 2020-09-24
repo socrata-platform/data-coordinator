@@ -35,22 +35,26 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
     }
 
   def addDataset(storeId: String, datasetId: DatasetId): Unit = {
-    try {
-      using(conn.prepareStatement(
-        """INSERT INTO secondary_manifest (store_id, dataset_system_id, latest_data_version)
-          | SELECT ?, dataset_system_id, data_version
-          |   FROM copy_map
-          |   WHERE dataset_system_id = ?
-          |   ORDER BY data_version DESC
-          |   LIMIT 1""".stripMargin)) { stmt =>
-        stmt.setString(1, storeId)
-        stmt.setDatasetId(2, datasetId)
-        stmt.execute()
-        (0L, None)
+    // this used to be just insert-from-select, but now that the
+    // result count is important, we need to be able to tell the
+    // difference between "nothing inserted because source wasn't
+    // there" and "nothing inserted because conflict".  Selecting FOR
+    // SHARE so that a concurrent update will be blocked until the
+    // new secondary manifest row exists for the trigger to update.
+    using(conn.prepareStatement("SELECT data_version FROM copy_map WHERE dataset_system_id = ? ORDER BY data_version DESC limit 1 FOR SHARE")) { stmt =>
+      stmt.setDatasetId(1, datasetId)
+      using(stmt.executeQuery()) { rs =>
+        if(rs.next()) {
+          using(conn.prepareStatement("INSERT INTO secondary_manifest (store_id, dataset_system_id, latest_data_version) VALUES (?, ?, ?) ON CONFLICT DO NOTHING")) { insertStmt =>
+            insertStmt.setString(1, storeId)
+            insertStmt.setDatasetId(2, datasetId)
+            insertStmt.setLong(3, rs.getLong("data_version"))
+            if(insertStmt.executeUpdate() != 1) {
+              throw new DatasetAlreadyInSecondary(storeId, datasetId)
+            }
+          }
+        }
       }
-    } catch {
-      case PostgresUniqueViolation(_*) =>
-        throw new DatasetAlreadyInSecondary(storeId, datasetId)
     }
   }
 
