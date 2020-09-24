@@ -41,25 +41,61 @@ import scala.util.Random
 class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Main])
 
-  def ensureInSecondary(storeId: String, datasetId: DatasetId): Boolean =
-    for(u <- common.universe) {
-      try {
-        u.datasetMapWriter.datasetInfo(datasetId, serviceConfig.writeLockTimeout) match {
-          case Some(_) =>
-            u.secondaryManifest.addDataset(storeId, datasetId)
-            true
-          case None =>
-            log.info("No dataset found with id: {}", datasetId)
-            false
+  def ensureInSecondary(coordinator: Coordinator)(storeId: String, datasetId: DatasetId): Boolean = {
+    val remote = Set.newBuilder[DatasetInternalName]
+
+    val result =
+      for(u <- common.universe) {
+        def loop(datasetId: DatasetId): Boolean = {
+          try {
+            u.datasetMapWriter.datasetInfo(datasetId, serviceConfig.writeLockTimeout) match {
+              case Some(_) =>
+                // ok so this also needs to keep collocation
+                // up-to-date, which means we need to find out what
+                // datasets are collocated with it, and add them too.
+                // That may entail telling other DCs to move their
+                // datasets.  There's no danger of loops because this
+                // "add dataset" step will fail and we'll just say "ok
+                // all is well" if it's already here.
+                u.secondaryManifest.addDataset(storeId, datasetId)
+                // great, now do collocation stuff...
+                val collocatedDatasets = u.collocationManifest.collocatedDatasets(Set(common.internalNameFromDatasetId(datasetId)))
+                for(otherInternalName <- collocatedDatasets) {
+                  common.datasetIdFromInternalName(otherInternalName) match {
+                    case Some(otherDatasetId) =>
+                      loop(otherDatasetId)
+                    case None =>
+                      // lives on another DC, we'll have to poke it...
+                      DatasetInternalName(otherInternalName) match {
+                        case Some(dsin) =>
+                          remote += dsin
+                        case None =>
+                          log.warn("Collocation query returned an invalid internal name: {}", JString(otherInternalName))
+                      }
+                  }
+                }
+                true
+              case None =>
+                log.info("No dataset found with id: {}", datasetId)
+                false
+            }
+          } catch {
+            case _: DatasetAlreadyInSecondary =>
+              // ok, it's there
+              true
+          }
         }
-      } catch {
-        case _: DatasetAlreadyInSecondary =>
-        // ok, it's there
-        true
+        loop(datasetId)
       }
+
+    for(remoteDataset <- remote.result()) {
+      coordinator.ensureInSecondary(storeId, remoteDataset)
     }
 
-  def ensureInSecondaryGroup(secondaryGroupStr: String, datasetId: DatasetId): Boolean = {
+    result
+  }
+
+  def ensureInSecondaryGroup(coordinator: Coordinator)(secondaryGroupStr: String, datasetId: DatasetId): Boolean = {
     for(u <- common.universe) {
       val secondaryGroup = serviceConfig.secondary.groups.getOrElse(secondaryGroupStr, {
         log.info("Can't find secondary group {}", secondaryGroupStr)
@@ -74,7 +110,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
         datasetId,
         secondaryGroupStr)
 
-      newSecondaries.toVector.map(ensureInSecondary(_, datasetId)).forall(identity) // no side effects in forall
+      newSecondaries.toVector.map(ensureInSecondary(coordinator)(_, datasetId)).forall(identity) // no side effects in forall
     }
   }
 
@@ -169,7 +205,8 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
   }
 
 
-  def ensureSecondaryMoveJob(storeGroup: String,
+  def ensureSecondaryMoveJob(coordinator: Coordinator)
+                            (storeGroup: String,
                              datasetId: DatasetId,
                              request: SecondaryMoveJobRequest): Either[ResourceNotFound, Either[InvalidMoveJob, Boolean]] = {
     serviceConfig.secondary.groups.get(storeGroup) match {
@@ -205,7 +242,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
                 // so we should add a new move job
 
                 try {
-                  ensureInSecondary(toStoreId, datasetId)
+                  ensureInSecondary(coordinator)(toStoreId, datasetId)
                 } catch {
                   case _: DatasetAlreadyInSecondary => ???
                 }
@@ -597,7 +634,7 @@ object Main extends DynamicPortMap {
         moveSizeMaxBytesWeight = serviceConfig.collocation.cost.moveSizeMaxBytesWeight
       )
 
-      def httpCoordinator(hostAndPort: String => Option[(String, Int)]): Coordinator =
+      def httpCoordinator(hostAndPort: HostAndPort): Coordinator =
         new HttpCoordinator(
           serviceConfig.instance.equals,
           serviceConfig.secondary.defaultGroups,
@@ -607,6 +644,7 @@ object Main extends DynamicPortMap {
           operations.collocatedDatasets,
           operations.dropCollocations,
           operations.secondariesOfDataset,
+          operations.ensureInSecondary,
           operations.secondaryMetrics,
           operations.secondaryMoveJobs,
           operations.secondaryMoveJobs,
@@ -614,7 +652,7 @@ object Main extends DynamicPortMap {
           operations.rollbackSecondaryMoveJob
         )
 
-      def collocationProvider(hostAndPort: String => Option[(String, Int)],
+      def collocationProvider(hostAndPort: HostAndPort,
                               lock: CollocationLock): CoordinatorProvider with
                                                       CollocatorProvider with
                                                       MetricProvider = {
@@ -631,7 +669,7 @@ object Main extends DynamicPortMap {
         }
       }
 
-      def metricProvider(hostAndPort: String => Option[(String, Int)]): CoordinatorProvider with MetricProvider = {
+      def metricProvider(hostAndPort: HostAndPort): CoordinatorProvider with MetricProvider = {
         new CoordinatorProvider(httpCoordinator(hostAndPort)) with MetricProvider {
           override val metric: Metric = CoordinatedMetric(collocationGroup, coordinator)
         }
@@ -651,23 +689,23 @@ object Main extends DynamicPortMap {
         )
       }
 
-      def secondaryManifestsCollocateResource(lock: CollocationLock)(hostAndPort: String => Option[(String, Int)]) = {
+      def secondaryManifestsCollocateResource(lock: CollocationLock)(hostAndPort: HostAndPort) = {
         SecondaryManifestsCollocateResource(_: String, collocationProvider(hostAndPort, lock))
       }
 
       val secondaryManifestsMetricsResource = SecondaryManifestsMetricsResource(_: String, _: Option[DatasetId],
         operations.secondaryMetrics, common.internalNameFromDatasetId)
 
-      val secondaryManifestsMoveResource = SecondaryManifestsMoveResource(
+      def secondaryManifestsMoveResource(hostAndPort: HostAndPort) = SecondaryManifestsMoveResource(
         _: Option[String],
         _: DatasetId,
         operations.secondaryMoveJobs,
-        operations.ensureSecondaryMoveJob,
+        operations.ensureSecondaryMoveJob(httpCoordinator(hostAndPort)),
         operations.rollbackSecondaryMoveJob,
         common.datasetInternalNameFromDatasetId
       )
 
-      def secondaryManifestsMoveJobResource(hostAndPort: String => Option[(String, Int)]) = SecondaryManifestsMoveJobResource(
+      def secondaryManifestsMoveJobResource(hostAndPort: HostAndPort) = SecondaryManifestsMoveJobResource(
         _: String,
         _: String,
         metricProvider(hostAndPort)
@@ -675,13 +713,15 @@ object Main extends DynamicPortMap {
 
       val secondaryMoveJobsJobResource = SecondaryMoveJobsJobResource(_: String, operations.secondaryMoveJobs, operations.dropCollocationJob)
 
-      def collocationManifestsResource(lock: CollocationLock)(hostAndPort: String => Option[(String, Int)]) = {
+      def collocationManifestsResource(lock: CollocationLock)(hostAndPort: HostAndPort) = {
         CollocationManifestsResource(_: Option[String], _: Option[String], collocationProvider(hostAndPort, lock))
       }
 
-      val datasetSecondaryStatusResource = DatasetSecondaryStatusResource(_: Option[String], _:DatasetId, secondaries,
-        secondariesNotAcceptingNewDatasets, operations.versionInStore, serviceConfig, operations.ensureInSecondary,
-        operations.ensureInSecondaryGroup, operations.deleteFromSecondary, common.internalNameFromDatasetId)
+      def datasetSecondaryStatusResource(hostAndPort: HostAndPort) =
+        DatasetSecondaryStatusResource(_: Option[String], _:DatasetId, secondaries,
+                                       secondariesNotAcceptingNewDatasets, operations.versionInStore, serviceConfig, operations.ensureInSecondary(httpCoordinator(hostAndPort)),
+                                       operations.ensureInSecondaryGroup(httpCoordinator(hostAndPort)), operations.deleteFromSecondary, common.internalNameFromDatasetId)
+
       val secondariesOfDatasetResource = SecondariesOfDatasetResource(_: DatasetId, operations.secondariesOfDataset,
         common.internalNameFromDatasetId)
 

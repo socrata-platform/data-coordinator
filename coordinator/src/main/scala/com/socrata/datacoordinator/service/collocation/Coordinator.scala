@@ -3,6 +3,7 @@ package com.socrata.datacoordinator.service.collocation
 import java.util.UUID
 
 import com.rojoma.json.v3.ast.JObject
+import com.rojoma.json.v3.io.JValueEventIterator
 import com.rojoma.json.v3.codec.{DecodeError, JsonDecode}
 import com.rojoma.json.v3.util.AutomaticJsonDecodeBuilder
 import com.socrata.datacoordinator.external.{CollocationError, SecondaryMetricsError}
@@ -12,6 +13,7 @@ import com.socrata.datacoordinator.resources.{SecondariesOfDatasetResult, Second
 import com.socrata.datacoordinator.secondary.SecondaryMetric
 import com.socrata.datacoordinator.secondary.config.SecondaryGroupConfig
 import com.socrata.http.client._
+import com.socrata.datacoordinator.service.HostAndPort
 
 case class CoordinatorError(resultCode: String, data: JObject)
 
@@ -46,6 +48,7 @@ trait Coordinator {
   def collocatedDatasetsOnInstance(instance: String, datasets: Set[DatasetInternalName]): Either[RequestError, CollocatedDatasetsResult]
   def dropCollocationsOnInstance(instance: String, internalName: DatasetInternalName): Option[ErrorResult]
   def secondariesOfDataset(internalName: DatasetInternalName): Either[RequestError, Option[SecondariesOfDatasetResult]]
+  def ensureInSecondary(storeId: String, internalName: DatasetInternalName): Option[ErrorResult]
   def secondaryMetrics(storeId: String, instance: String): Either[ErrorResult, SecondaryMetric]
   def secondaryMetrics(storeId: String, internalName: DatasetInternalName): Either[ErrorResult, Option[SecondaryMetric]]
   def secondaryMoveJobs(instance: String, jobId: UUID): Either[RequestError, SecondaryMoveJobsResult]
@@ -59,15 +62,16 @@ abstract class CoordinatorProvider(val coordinator: Coordinator)
 class HttpCoordinator(isThisInstance: String => Boolean,
                       val defaultSecondaryGroups: Set[String],
                       val secondaryGroupConfigs: Map[String, SecondaryGroupConfig],
-                      hostAndPort: String => Option[(String, Int)],
+                      hostAndPort: HostAndPort,
                       httpClient: HttpClient,
                       collocatedDatasets: Set[DatasetInternalName] => CollocatedDatasetsResult,
                       dropCollocations: DatasetInternalName => Unit,
                       secondariesOfDataset: DatasetId => Option[SecondariesOfDatasetResult],
+                      ensureInSecondary: Coordinator => (String, DatasetId) => Boolean,
                       secondaryMetrics: (String, Option[DatasetId]) => Either[ResourceNotFound, Option[SecondaryMetric]],
                       secondaryMoveJobsByJob: UUID => SecondaryMoveJobsResult,
                       secondaryMoveJobs: (String, DatasetId) => Either[ResourceNotFound, SecondaryMoveJobsResult],
-                      ensureSecondaryMoveJob: (String, DatasetId, SecondaryMoveJobRequest) => Either[ResourceNotFound, Either[InvalidMoveJob, Boolean]],
+                      ensureSecondaryMoveJob: Coordinator => (String, DatasetId, SecondaryMoveJobRequest) => Either[ResourceNotFound, Either[InvalidMoveJob, Boolean]],
                       rollbackSecondaryMoveJob: (DatasetId, SecondaryMoveJobRequest, Boolean) => Option[DatasetNotFound]) extends Coordinator {
 
   private val log = org.slf4j.LoggerFactory.getLogger(classOf[HttpCoordinator])
@@ -165,6 +169,15 @@ class HttpCoordinator(isThisInstance: String => Boolean,
     }
   }
 
+  override def ensureInSecondary(storeId: String, internalName: DatasetInternalName) =
+    if(isThisInstance(internalName.instance)) {
+      ensureInSecondary(this)(storeId, internalName.datasetId)
+      None
+    } else {
+      val route = routeInternalName(s"/secondary-manifest/$storeId", internalName)
+      request[SecondariesOfDatasetResult](internalName.instance, route)(_.json(JValueEventIterator(JObject.canonicalEmpty))).left.toOption
+    }
+
   private def secondaryMetricsRoute(storeId: String, internalName: Option[DatasetInternalName] = None) =
     routeInternalName(s"/secondary-manifest/metrics/$storeId", internalName)
 
@@ -251,7 +264,7 @@ class HttpCoordinator(isThisInstance: String => Boolean,
                                       request: SecondaryMoveJobRequest): Either[ErrorResult, Either[InvalidMoveJob, Boolean]] = {
     if (secondaryGroupConfigs.contains(storeGroup)) {
       if (isThisInstance(internalName.instance)) {
-        ensureSecondaryMoveJob(storeGroup, internalName.datasetId, request)
+        ensureSecondaryMoveJob(this)(storeGroup, internalName.datasetId, request)
       } else {
         val instance = internalName.instance
         doRequest[Either[ResourceNotFound, Either[InvalidMoveJob, Boolean]]](instance, secondaryMoveRoute(Some(storeGroup), internalName), _.jsonBody(request)) { response =>
