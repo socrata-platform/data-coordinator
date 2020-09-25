@@ -324,13 +324,13 @@ object Service {
             secondaryManifestsResource: Option[String] => SecondaryManifestsResource,
             secondaryManifestsCollocateResource: CollocationLock => (String => Option[(String, Int)]) => String => SecondaryManifestsCollocateResource,
             secondaryManifestsMetricsResource: (String, Option[DatasetId]) => SecondaryManifestsMetricsResource,
-            secondaryManifestsMoveResource: (Option[String], DatasetId) => SecondaryManifestsMoveResource,
-            secondaryManifestsMoveJobResource: (String => Option[(String, Int)]) => (String, String) => SecondaryManifestsMoveJobResource,
+            secondaryManifestsMoveResource: HostAndPort => (Option[String], DatasetId) => SecondaryManifestsMoveResource,
+            secondaryManifestsMoveJobResource: HostAndPort => (String, String) => SecondaryManifestsMoveJobResource,
             secondaryMoveJobsJobResource: String => SecondaryMoveJobsJobResource,
-            datasetSecondaryStatusResource: (Option[String], DatasetId) => DatasetSecondaryStatusResource,
-            collocationManifestsResource: CollocationLock => (String => Option[(String, Int)]) => (Option[String], Option[String]) => CollocationManifestsResource,
+            datasetSecondaryStatusResource: HostAndPort => (Option[String], DatasetId) => DatasetSecondaryStatusResource,
+            collocationManifestsResource: CollocationLock => HostAndPort => (Option[String], Option[String]) => CollocationManifestsResource,
             secondariesOfDatasetResource: DatasetId => SecondariesOfDatasetResource
-           )(collocationLock: CollocationLock, hostAndPort: (String => Option[(String, Int)])): Service = {
+           )(collocationLock: CollocationLock, hostAndPort: HostAndPort): Service = {
     new Service(
       serviceConfig,
       formatDatasetId,
@@ -346,10 +346,10 @@ object Service {
       secondaryManifestsResource,
       secondaryManifestsCollocateResource(collocationLock)(hostAndPort),
       secondaryManifestsMetricsResource,
-      secondaryManifestsMoveResource,
+      secondaryManifestsMoveResource(hostAndPort),
       secondaryManifestsMoveJobResource(hostAndPort),
       secondaryMoveJobsJobResource,
-      datasetSecondaryStatusResource,
+      datasetSecondaryStatusResource(hostAndPort),
       collocationManifestsResource(collocationLock)(hostAndPort),
       secondariesOfDatasetResource
     )
