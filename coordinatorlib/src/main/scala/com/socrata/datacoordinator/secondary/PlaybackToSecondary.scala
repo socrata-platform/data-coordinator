@@ -222,7 +222,14 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
     //    zero or one Truncated
     //    zero or more RowDataUpdated
     //    LastModifiedChanged
+    // or
+    //    LastModifiedChanged
     def consolidatable(it: BufferedIterator[Delogger.LogEventCompanion]): Boolean = {
+      if(it.hasNext && it.head == Delogger.LastModifiedChanged) {
+        it.next()
+        return !it.hasNext;
+      }
+
       if(!it.hasNext || it.next() != Delogger.RowsChangedPreview) {
         return false
       }
@@ -261,6 +268,9 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
               case Some(rcp : Delogger.RowsChangedPreview) =>
                 // it was truncated; just start from here
                 (i, rcp)
+              case Some(Delogger.LastModifiedChanged(_)) =>
+                // no change -- just keep acc
+                (currentStartingDataVersion, rcp)
               case _ =>
                 throw ResyncSecondaryException("Consolidation saw the log change?!  No RowsChangedPreview!")
             }
@@ -276,15 +286,20 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
 
             val eventsRaw = rs.open(delogger.delog(i))
             val events = eventsRaw.buffered
-            if(!events.hasNext || events.head.companion != Delogger.RowsChangedPreview) {
-              throw ResyncSecondaryException("Consolidation saw the log change?!  First item was gone or not RowsChangedPreview!")
-            }
-            if(events.next().asInstanceOf[Delogger.RowsChangedPreview].truncated) {
-              if(!events.hasNext || events.next().companion != Delogger.Truncated) {
-                throw ResyncSecondaryException("RowsChangedPreview said the dataset was to be truncated, but there was no Truncated event!")
+
+            if(events.hasNext && events.head.companion == Delogger.LastModifiedChanged) {
+              // empty changeset.
+            } else {
+              if(!events.hasNext || events.head.companion != Delogger.RowsChangedPreview) {
+                throw ResyncSecondaryException("Consolidation saw the log change?!  First item was gone or not RowsChangedPreview!")
               }
-              if(mostRecentLastModified.isDefined) {
-                throw ResyncSecondaryException("Dataset was truncated but it wasn't the first batch we were looking at!")
+              if(events.next().asInstanceOf[Delogger.RowsChangedPreview].truncated) {
+                if(!events.hasNext || events.next().companion != Delogger.Truncated) {
+                  throw ResyncSecondaryException("RowsChangedPreview said the dataset was to be truncated, but there was no Truncated event!")
+                }
+                if(mostRecentLastModified.isDefined) {
+                  throw ResyncSecondaryException("Dataset was truncated but it wasn't the first batch we were looking at!")
+                }
               }
             }
 
