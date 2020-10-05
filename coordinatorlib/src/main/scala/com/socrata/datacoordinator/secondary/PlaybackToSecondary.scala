@@ -349,8 +349,9 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
       val instrumentedIt = new InstrumentedIterator("playback-log-throughput",
                                                     datasetInfo.systemId.toString,
                                                     it)
+      val latestVersion = () => u.datasetMapReader.latest(datasetInfo).dataVersion
       currentCookie = secondary.store.version(secondaryDatasetInfo, initialDataVersion, finalDataVersion,
-                                              currentCookie, instrumentedIt.flatMap(convertEvent))
+                                              currentCookie, instrumentedIt.flatMap(convertEvent), latestVersion)
     }
 
     def convertOp(op: truth.loader.Operation[CV]): Operation[CV] = op match {

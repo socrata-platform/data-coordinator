@@ -48,7 +48,7 @@ class DummySecondary(config: Config) extends Secondary[Any, Any] {
     * @return a new cookie to store in the secondary map
     */
   def version(datasetInfo: DatasetInfo, initialDataVersion: Long, finalDataVersion: Long, cookie: Secondary.Cookie,
-              events: Iterator[Event[Any, Any]]): Secondary.Cookie = {
+              events: Iterator[Event[Any, Any]], lastestDataVersion: () => Long): Secondary.Cookie = {
     println("Got a new version of " + datasetInfo.internalName)
     println("Version range " + initialDataVersion + "-" + finalDataVersion)
     println("Current cookie: " + cookie)

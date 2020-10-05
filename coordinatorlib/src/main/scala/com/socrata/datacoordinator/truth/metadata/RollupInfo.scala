@@ -3,6 +3,7 @@ package truth.metadata
 
 import com.rojoma.json.v3.util.{AutomaticJsonCodecBuilder, JsonKey}
 import com.socrata.datacoordinator.id.RollupName
+import org.joda.time.DateTime
 
 sealed trait RollupInfoLike extends Product {
   val name: RollupName
@@ -22,6 +23,6 @@ object UnanchoredRollupInfo extends ((RollupName, String) => UnanchoredRollupInf
   * or [[com.socrata.datacoordinator.truth.metadata.DatasetMapWriter]].
   * @param tag Guard against a non-map accidentially instantiating this.
   */
-case class RollupInfo(copyInfo: CopyInfo, name: RollupName, soql: String)(implicit tag: com.socrata.datacoordinator.truth.metadata.`-impl`.Tag) extends RollupInfoLike {
+case class RollupInfo(copyInfo: CopyInfo, name: RollupName, soql: String, updatedAt: DateTime)(implicit tag: com.socrata.datacoordinator.truth.metadata.`-impl`.Tag) extends RollupInfoLike {
   def unanchored: UnanchoredRollupInfo = UnanchoredRollupInfo(name, soql)
 }

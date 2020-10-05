@@ -316,28 +316,28 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
     }
   }
 
-  def rollupsQuery = "SELECT name, soql FROM rollup_map WHERE copy_system_id = ?"
+  def rollupsQuery = "SELECT name, soql, updated_at FROM rollup_map WHERE copy_system_id = ?"
   def rollups(copyInfo: CopyInfo): Seq[RollupInfo] = {
     using(conn.prepareStatement(rollupsQuery)) { stmt =>
       stmt.setLong(1, copyInfo.systemId.underlying)
       using(t("rollups", "copy_id" -> copyInfo.systemId)(stmt.executeQuery())) { rs =>
         val res = new VectorBuilder[RollupInfo]
         while(rs.next()) {
-          res += RollupInfo(copyInfo, new RollupName(rs.getString("name")), rs.getString("soql"))
+          res += RollupInfo(copyInfo, new RollupName(rs.getString("name")), rs.getString("soql"), toDateTime(rs.getTimestamp("updated_at")))
         }
         res.result()
       }
     }
   }
 
-  def rollupQuery = "SELECT soql FROM rollup_map WHERE copy_system_id = ? AND name = ?"
+  def rollupQuery = "SELECT soql, updated_at FROM rollup_map WHERE copy_system_id = ? AND name = ?"
   def rollup(copyInfo: CopyInfo, name: RollupName): Option[RollupInfo] = {
     using(conn.prepareStatement(rollupQuery)) { stmt =>
       stmt.setLong(1, copyInfo.systemId.underlying)
       stmt.setString(2, name.underlying)
       using(t("rollup", "copy_id" -> copyInfo.systemId,"name" -> name)(stmt.executeQuery())) { rs =>
         if(rs.next()) {
-          Some(RollupInfo(copyInfo, name, rs.getString("soql")))
+          Some(RollupInfo(copyInfo, name, rs.getString("soql"), toDateTime(rs.getTimestamp("updated_at"))))
         } else {
           None
         }
@@ -1088,9 +1088,10 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
     }
   }
 
-  def insertRollupQuery = "INSERT INTO rollup_map (name, copy_system_id, soql) VALUES (?, ?, ?)"
-  def updateRollupQuery = "UPDATE rollup_map SET soql = ? WHERE name = ? AND copy_system_id = ?"
+  def insertRollupQuery = "INSERT INTO rollup_map (name, copy_system_id, soql, updated_at) VALUES (?, ?, ?, now())"
+  def updateRollupQuery = "UPDATE rollup_map SET soql = ? WHERE name = ? AND copy_system_id = ?, updated_at = now()"
   def createOrUpdateRollup(copyInfo: CopyInfo, name: RollupName, soql: String): RollupInfo = {
+    val now = DateTime.now()
     rollup(copyInfo, name) match {
       case Some(_) =>
         using(conn.prepareStatement(updateRollupQuery)) { stmt =>
@@ -1107,7 +1108,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
           t("create-or-update-rollup", "action" -> "insert", "copy-id" -> copyInfo.systemId, "name" -> name)(stmt.executeUpdate())
         }
     }
-    RollupInfo(copyInfo, name, soql)
+    RollupInfo(copyInfo, name, soql, now)
   }
 
   private val DropRollupsQuery = "DELETE FROM rollup_map WHERE copy_system_id = ?"
