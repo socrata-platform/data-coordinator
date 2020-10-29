@@ -175,7 +175,7 @@ class HttpCoordinator(isThisInstance: String => Boolean,
       None
     } else {
       val route = routeInternalName(s"/secondary-manifest/$storeId", internalName)
-      request[SecondariesOfDatasetResult](internalName.instance, route)(_.json(JValueEventIterator(JObject.canonicalEmpty))).left.toOption
+      noResponseRequest(internalName.instance, route, InstanceNotFound("Dataset " + internalName.underlying + " not found"))(_.json(JValueEventIterator(JObject.canonicalEmpty)))
     }
 
   private def secondaryMetricsRoute(storeId: String, internalName: Option[DatasetInternalName] = None) =
