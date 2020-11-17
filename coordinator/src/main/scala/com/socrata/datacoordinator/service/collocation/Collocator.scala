@@ -101,17 +101,17 @@ class CoordinatedCollocator(collocationGroup: Set[String],
   private def secondariesOfDataset(dataset: DatasetInternalName): Set[String] =
     coordinator.secondariesOfDataset(dataset).fold(throw _, _.getOrElse(throw DatasetNotFound(dataset)).secondaries.keySet)
 
-  protected def stores(storeGroup: String, dataset: DatasetInternalName, instances: Set[String], replicationFactor: Int): Set[String] = {
+  protected def stores(storeGroup: String, dataset: DatasetInternalName, storeGroupInstances: Set[String], replicationFactor: Int): Set[String] = {
     // we want to get jobs _before_ current stores
     val jobs = coordinator.secondaryMoveJobs(storeGroup, dataset).fold(throw _, identity)
-    val currentStores = coordinator.secondariesOfDataset(dataset).fold(throw _, _.getOrElse(throw DatasetNotFound(dataset)).secondaries.keySet)
+    val currentStores = coordinator.secondariesOfDataset(dataset).fold(throw _, _.getOrElse(throw DatasetNotFound(dataset)).secondaries.keySet).filter(storeGroupInstances)
 
     // apply moves to the current stores in the order they will execute in
     val futureStores = jobs.moves.sorted.foldLeft(currentStores) { (stores, move) =>
       stores - move.fromStoreId + move.toStoreId
     }
 
-    val storesInGroup = instances.intersect(futureStores)
+    val storesInGroup = storeGroupInstances.intersect(futureStores)
     if (replicationFactor > storesInGroup.size) {
       log.error("Dataset {}'s current replication factor {} is smaller than the expected replication factor {} for the group {}",
         dataset.toString, storesInGroup.size.toString, replicationFactor.toString, storeGroup)
