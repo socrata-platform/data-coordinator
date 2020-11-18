@@ -28,7 +28,9 @@ case class SecondaryManifestsCollocateResource(storeGroup: String,
               case Right(result) => responseOK(result)
               case Left(StoreGroupNotFound(group)) => storeGroupNotFound(group)
               case Left(DatasetNotFound(dataset)) => datasetNotFound(dataset, BadRequest)
-              case Left(_) => InternalServerError
+              case Left(other) =>
+                log.error("Internal error when doing collocation job: {}", other)
+                InternalServerError
             }
           } catch {
             case _: CollocationLockTimeout => Conflict
