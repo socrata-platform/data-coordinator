@@ -236,6 +236,10 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
                 stores - move.fromStoreId + move.toStoreId
               }
 
+              log.info("Told to move {} from {} to {}", datasetId.asInstanceOf[AnyRef], fromStoreId, toStoreId)
+              log.info("Current stores: {}", currentStores)
+              log.info("Future stores: {}", futureStores)
+
               val result = if (futureStores(fromStoreId) && !currentStores(toStoreId)) {
                 // once existing moves complete the dataset will be "from" this store
                 // and the dataset will not yet be "to" the other store:
