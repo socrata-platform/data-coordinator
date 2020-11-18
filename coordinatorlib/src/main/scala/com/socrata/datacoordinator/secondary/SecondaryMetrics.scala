@@ -1,8 +1,13 @@
 package com.socrata.datacoordinator.secondary
 
+import com.rojoma.json.v3.util.AutomaticJsonCodecBuilder
+
 import com.socrata.datacoordinator.id.DatasetId
 
 case class SecondaryMetric(totalSizeBytes: Long)
+object SecondaryMetric extends (Long => SecondaryMetric) {
+  implicit val codec = AutomaticJsonCodecBuilder[SecondaryMetric]
+}
 
 trait SecondaryMetrics {
   def storeTotal(storeId: String): SecondaryMetric

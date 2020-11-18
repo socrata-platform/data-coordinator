@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator.id
 
 import com.rojoma.json.v3.ast.{JString, JValue}
-import com.rojoma.json.v3.codec.{DecodeError, JsonDecode, JsonEncode}
+import com.rojoma.json.v3.codec.{DecodeError, JsonDecode, JsonEncode, FieldEncode, FieldDecode}
 
 import scala.util.Try
 
@@ -26,5 +26,14 @@ object DatasetInternalName {
         }
       case other => Left(DecodeError.InvalidType(JString, other.jsonType))
     }
+  }
+
+  implicit val fCodec = new FieldEncode[DatasetInternalName] with FieldDecode[DatasetInternalName] {
+    def encode(datasetInternalName: DatasetInternalName) = datasetInternalName.underlying
+    def decode(s: String): Either[DecodeError.InvalidField, DatasetInternalName] =
+      DatasetInternalName(s) match {
+        case Some(din) => Right(din)
+        case None => Left(DecodeError.InvalidField(s))
+      }
   }
 }
