@@ -229,44 +229,49 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
                 secondariesOfDataset(datasetId).map(_.secondaries.keySet).getOrElse(Set.empty).
                   filter(groupConfig.instances.keySet(_))
 
-              val existingJobs = u.secondaryMoveJobs.jobs(datasetId)
-
-              // apply moves to the current stores in the order they were created in
-              val futureStores = existingJobs.sorted.foldLeft(currentStores) { (stores, move) =>
-                stores - move.fromStoreId + move.toStoreId
-              }
-
-              log.info("Told to move {} from {} to {}", datasetId.asInstanceOf[AnyRef], fromStoreId, toStoreId)
-              log.info("Current stores: {}", currentStores)
-              log.info("Future stores: {}", futureStores)
-
-              val result = if (futureStores(fromStoreId) && !currentStores(toStoreId)) {
-                // once existing moves complete the dataset will be "from" this store
-                // and the dataset will not yet be "to" the other store:
-                // so we should add a new move job
-
-                try {
-                  ensureInSecondary(coordinator)(toStoreId, datasetId)
-                } catch {
-                  case _: DatasetAlreadyInSecondary => ???
-                }
-
-                u.secondaryMoveJobs.addJob(request.jobId, datasetId, fromStoreId, toStoreId)
-
-                Right(true)
-              } else if (!futureStores(fromStoreId) && currentStores(toStoreId)) {
-                // there is an existing (not complete) job doing the same thing
-                existingJobs.find { job => job.fromStoreId == fromStoreId && job.toStoreId == toStoreId } match {
-                  case Some(existingJob) => Right(false)
-                  case None => ???
-                }
+              if(currentStores(toStoreId)) {
+                // it's already in the target store.  We don't need to do anything!
+                Right(Right(false))
               } else {
-                // in this case it does not make sense to move the dataset from
-                // one store to the other
-                Left(DatasetNotInStore)
-              }
+                val existingJobs = u.secondaryMoveJobs.jobs(datasetId)
 
-              Right(result)
+                // apply moves to the current stores in the order they were created in
+                val futureStores = existingJobs.sorted.foldLeft(currentStores) { (stores, move) =>
+                  stores - move.fromStoreId + move.toStoreId
+                }
+
+                log.info("Told to move {} from {} to {}", datasetId.asInstanceOf[AnyRef], fromStoreId, toStoreId)
+                log.info("Current stores: {}", currentStores)
+                log.info("Future stores: {}", futureStores)
+
+                val result = if (futureStores(fromStoreId) && !currentStores(toStoreId)) {
+                  // once existing moves complete the dataset will be "from" this store
+                  // and the dataset will not yet be "to" the other store:
+                  // so we should add a new move job
+
+                  try {
+                    ensureInSecondary(coordinator)(toStoreId, datasetId)
+                  } catch {
+                    case _: DatasetAlreadyInSecondary => ???
+                  }
+
+                  u.secondaryMoveJobs.addJob(request.jobId, datasetId, fromStoreId, toStoreId)
+
+                  Right(true)
+                } else if (!futureStores(fromStoreId) && currentStores(toStoreId)) {
+                  // there is an existing (not complete) job doing the same thing
+                  existingJobs.find { job => job.fromStoreId == fromStoreId && job.toStoreId == toStoreId } match {
+                    case Some(existingJob) => Right(false)
+                    case None => ???
+                  }
+                } else {
+                  // in this case it does not make sense to move the dataset from
+                  // one store to the other
+                  Left(DatasetNotInStore)
+                }
+
+                Right(result)
+              }
             case None => Left(DatasetNotFound(common.datasetInternalNameFromDatasetId(datasetId)))
           }
         }
