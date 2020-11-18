@@ -2,6 +2,7 @@ package com.socrata.datacoordinator.service.collocation
 
 import java.util.UUID
 
+import com.rojoma.json.v3.codec.JsonEncode
 import com.rojoma.json.v3.util._
 import com.socrata.datacoordinator.common.collocation.{CollocationLock, CollocationLockError, CollocationLockTimeout}
 import com.socrata.datacoordinator.id.DatasetInternalName
@@ -149,12 +150,13 @@ class CoordinatedCollocator(collocationGroup: Set[String],
 
   override def explainCollocation(storeGroup: String,
                                   request: CollocationRequest): Either[ErrorResult, CollocationResult] = {
-    log.info("Explaining collocation on secondary store group {}", storeGroup)
+    log.info("Explaining collocation on secondary store group {}: {}", storeGroup:Any, request)
     try {
       coordinator.secondaryGroupConfigs.get(storeGroup) match {
         case Some(groupConfig) =>
           val instances = groupConfig.instances.keySet
           val replicationFactor = groupConfig.numReplicas
+          log.info("Instances in store group: {} (repfactor {})", instances, replicationFactor)
 
           request match {
             case CollocationRequest(collocations, _) if collocations.isEmpty => Right(CollocationResult.canonicalEmpty)
@@ -177,6 +179,7 @@ class CoordinatedCollocator(collocationGroup: Set[String],
                   return Left(DatasetNotFound(dataset))
                 }
               }.toMap // datasetStoreMap: key = dataset, values = set of secondary_instances the dataset lives
+              log.info("Dataset stores map: {}", JsonEncode.toJValue(datasetStoresMap))
 
               // Calculation of this requires recursive database sql calls.
               // TODO: Consider to use recursive sql to speed up this.
@@ -185,11 +188,13 @@ class CoordinatedCollocator(collocationGroup: Set[String],
                   logTime(s"collocatedDatasets $dataset")(collocatedDatasets(Set(dataset)).fold(throw _, _.datasets))
                 (dataset, collocateDatasetsResult)
               }.toMap // datasetGroupMap: key = dataset, value = set of all related datasets in the collocation_manifest table.
+              log.info("Dataset group map: {}", JsonEncode.toJValue(datasetGroupMap))
 
               // cost of _all_ datasets in question, not just the input datasets
               val datasetCostMap = datasetGroupMap.flatMap(_._2).map { dataset =>
                 logTime(s"metric.datasetMaxCost $dataset")((dataset, metric.datasetMaxCost(storeGroup, dataset).fold(throw _, identity)))
               }.toMap
+              log.info("Dataset cost map: {}", JsonEncode.toJValue(datasetCostMap))
 
               // If there are 12 secondaries, 8s on each secondary will add up to 1.5min
               // Use parallel map to speed up store metric calculation within each group, i.e. alpha, beta.
@@ -197,8 +202,11 @@ class CoordinatedCollocator(collocationGroup: Set[String],
               val storeMetricsMap = instances.par.map { instance =>
                 logTime(s"metric.storeMetrics $instance")((instance, metric.storeMetrics(instance).fold(throw _, identity)))
               }.seq.toMap
+              log.info("Store metrics map: {}", JsonEncode.toJValue(storeMetricsMap))
 
               def selectMoves(groups: Set[Set[DatasetInternalName]]): Set[Move] = {
+                log.info("Selecting moves for groups: {}", JsonEncode.toJValue(groups))
+
                 val indexedGroups = groups.zipWithIndex
 
                 val groupCostMap = indexedGroups.map { case (group, index) =>
@@ -207,6 +215,8 @@ class CoordinatedCollocator(collocationGroup: Set[String],
 
                   (index, cost)
                 }.toMap
+
+                log.info("Group cost map: {}", JsonEncode.toJValue(groupCostMap))
 
                 val groupStoreMap = indexedGroups.map { case (group, index) =>
                   // a group should have at least on dataset in it
@@ -217,18 +227,25 @@ class CoordinatedCollocator(collocationGroup: Set[String],
                   (index, datasetStoresMap(representingDataset))
                 }.toMap
 
+                log.info("Group store map: {}", JsonEncode.toJValue(groupStoreMap))
+
                 val destinationStores = SecondaryStoreSelector(storeGroup, groupConfig, storeMetricsMap)
                   .destinationStores(groupStoreMap, groupCostMap)
 
+                log.info("Destination stores: {}", JsonEncode.toJValue(destinationStores))
+
                 // cost and moves to move each other group to the most expensive group
-                indexedGroups.flatMap { case (group, index) =>
-                  movesFor(
-                    group,
-                    storesFrom = groupStoreMap(index),
-                    storesTo = destinationStores,
-                    datasetCostMap
-                  )
-                }
+                val selectedMoves =
+                  indexedGroups.flatMap { case (group, index) =>
+                    movesFor(
+                      group,
+                      storesFrom = groupStoreMap(index),
+                      storesTo = destinationStores,
+                      datasetCostMap
+                    )
+                  }
+                log.info("Selected moves: {}", JsonEncode.toJValue(selectedMoves))
+                selectedMoves
               }
 
               // represents graph of collocated groups to be collocated
