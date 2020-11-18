@@ -15,7 +15,7 @@ import com.socrata.datacoordinator.secondary.config.SecondaryGroupConfig
 import com.socrata.http.client._
 import com.socrata.datacoordinator.service.HostAndPort
 
-case class CoordinatorError(resultCode: String, data: JObject)
+case class CoordinatorError(errorCode: String, data: JObject)
 
 object CoordinatorError {
   implicit val decode = AutomaticJsonDecodeBuilder[CoordinatorError]
