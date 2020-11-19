@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
+    <changeSet author="Chi" id="20201005-add-column-rollup-map-updated-at">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="rollup_map" columnName="updated_at"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="rollup_map">
+            <column name="updated_at" type="TIMESTAMP WITH TIMEZONE"/>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>
