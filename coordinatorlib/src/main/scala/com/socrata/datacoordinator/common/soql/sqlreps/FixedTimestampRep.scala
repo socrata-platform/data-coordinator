@@ -19,11 +19,6 @@ class FixedTimestampRep(val base: String) extends RepUtils with SqlPKableColumnR
 
   val SIZE_GUESSTIMATE = 30
 
-  override def selectList =
-    // This, sadly, appears to be the best way to get postgresql to
-    // produce an ISO8601 timestamp...
-    s"(to_json($base)#>>'{}')"
-
   override val templateForInsert = placeholder
 
   override val templateForUpdate = s"$base = $placeholder"
@@ -92,7 +87,7 @@ class FixedTimestampRep(val base: String) extends RepUtils with SqlPKableColumnR
   def fromResultSet(rs: ResultSet, start: Int): SoQLValue = {
     val ts = rs.getString(start)
     if(ts == null) SoQLNull
-    else SoQLFixedTimestamp(new DateTime(FixedTimestampHelper.parse(ts).toEpochMilli))
+    else SoQLFixedTimestamp(new DateTime(FixedTimestampHelper.parse(ts).toInstant.toEpochMilli))
   }
 }
 
