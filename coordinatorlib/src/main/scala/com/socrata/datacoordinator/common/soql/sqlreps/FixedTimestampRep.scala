@@ -3,17 +3,26 @@ package sqlreps
 
 import java.lang.StringBuilder
 import java.sql.{ResultSet, Types, PreparedStatement}
+import java.time.format.{DateTimeFormatter => JFormatter}
+import java.time.Instant
 
-import org.joda.time.DateTime
+import org.joda.time.{DateTime, DateTimeZone}
 
 import com.socrata.datacoordinator.truth.sql.SqlPKableColumnRep
 import com.socrata.soql.types.{SoQLNull, SoQLValue, SoQLFixedTimestamp, SoQLType}
 import org.joda.time.format.{DateTimeFormatterBuilder, ISODateTimeFormat, DateTimeFormatter}
 
+// This class avoids java.sql.Timestamp because it does _weird_ things
+// when dealing with pre-Gregorian dates, which we have a few of.
 class FixedTimestampRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType, SoQLValue] {
   import FixedTimestampRep._
 
   val SIZE_GUESSTIMATE = 30
+
+  override def selectList =
+    // This, sadly, appears to be the best way to get postgresql to
+    // produce an ISO8601 timestamp...
+    s"(to_json($base)#>>'{}')"
 
   override val templateForInsert = placeholder
 
@@ -23,7 +32,7 @@ class FixedTimestampRep(val base: String) extends RepUtils with SqlPKableColumnR
     s"($base in (${Iterator.fill(n)(placeholder).mkString(",")}))"
 
   def prepareMultiLookup(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
-    stmt.setTimestamp(start, new java.sql.Timestamp(v.asInstanceOf[SoQLFixedTimestamp].value.getMillis))
+    stmt.setString(start, printer.print(v.asInstanceOf[SoQLFixedTimestamp].value))
     start + 1
   }
 
@@ -71,8 +80,8 @@ class FixedTimestampRep(val base: String) extends RepUtils with SqlPKableColumnR
   }
 
   def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
-    if(SoQLNull == v) stmt.setNull(start, Types.TIMESTAMP)
-    else stmt.setTimestamp(start, new java.sql.Timestamp(v.asInstanceOf[SoQLFixedTimestamp].value.getMillis))
+    if(SoQLNull == v) stmt.setNull(start, Types.VARCHAR)
+    else stmt.setString(start, printer.print(v.asInstanceOf[SoQLFixedTimestamp].value))
     start + 1
   }
 
@@ -81,9 +90,9 @@ class FixedTimestampRep(val base: String) extends RepUtils with SqlPKableColumnR
     else SIZE_GUESSTIMATE
 
   def fromResultSet(rs: ResultSet, start: Int): SoQLValue = {
-    val ts = rs.getTimestamp(start)
+    val ts = rs.getString(start)
     if(ts == null) SoQLNull
-    else SoQLFixedTimestamp(new DateTime(ts.getTime))
+    else SoQLFixedTimestamp(new DateTime(FixedTimestampHelper.parse(ts).toEpochMilli))
   }
 }
 
