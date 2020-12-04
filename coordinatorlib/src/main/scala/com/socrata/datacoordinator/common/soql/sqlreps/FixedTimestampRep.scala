@@ -110,7 +110,7 @@ object FixedTimestampRep {
   // we'll turn them into an Instant.
   private val pattern = Pattern.compile("^([0-9]{4,})-([0-9]{2})-([0-9]{2}) ([0-9]{2}:[0-9]{2}:[0-9]{2}(?:.[0-9]+)?)([+-][0-9]{2}(?::[0-9]{2}(?::[0-9]{2})?)?)( BC)?$");
 
-  private def parse(s: String): Instant = {
+  private[sqlreps] def parse(s: String): Instant = {
     val m = pattern.matcher(s)
     if(!m.matches()) throw new IllegalArgumentException("Malformed timestamp: " + JString(s))
 
