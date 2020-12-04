@@ -4,8 +4,10 @@ package sqlreps
 import java.lang.StringBuilder
 import java.sql.{ResultSet, Types, PreparedStatement}
 import java.time.format.{DateTimeFormatter => JFormatter}
-import java.time.Instant
+import java.time.{Instant, LocalTime, LocalDate, LocalDateTime, ZoneOffset}
+import java.util.regex.Pattern
 
+import com.rojoma.json.v3.ast.JString
 import org.joda.time.{DateTime, DateTimeZone}
 
 import com.socrata.datacoordinator.truth.sql.SqlPKableColumnRep
@@ -87,7 +89,7 @@ class FixedTimestampRep(val base: String) extends RepUtils with SqlPKableColumnR
   def fromResultSet(rs: ResultSet, start: Int): SoQLValue = {
     val ts = rs.getString(start)
     if(ts == null) SoQLNull
-    else SoQLFixedTimestamp(new DateTime(FixedTimestampHelper.parse(ts).toInstant.toEpochMilli))
+    else SoQLFixedTimestamp(new DateTime(parse(ts).toEpochMilli))
   }
 }
 
@@ -101,4 +103,29 @@ object FixedTimestampRep {
   private val timestampType = "TIMESTAMP (3) WITH TIME ZONE"
 
   private val placeholder = s"(? :: $timestampType)"
+
+  // Postgresql will hand dates to us formatted like
+  //   YYYY[Y...]-MM-DD HH:MM:SS[.ssss...]±HH[:MM[:SS]][ BC]
+  // This regex pulls those bits out and then
+  // we'll turn them into an Instant.
+  private val pattern = Pattern.compile("^([0-9]{4,})-([0-9]{2})-([0-9]{2}) ([0-9]{2}:[0-9]{2}:[0-9]{2}(?:.[0-9]+)?)([+-][0-9]{2}(?::[0-9]{2}(?::[0-9]{2})?)?)( BC)?$");
+
+  private def parse(s: String): Instant = {
+    val m = pattern.matcher(s)
+    if(!m.matches()) throw new IllegalArgumentException("Malformed timestamp: " + JString(s))
+
+    val year = m.group(1)
+    val month = m.group(2)
+    val day = m.group(3)
+    val time = m.group(4)
+    val offset = m.group(5)
+    val bc = m.group(6) != null
+
+    LocalDateTime.of(LocalDate.of((if(bc) -1 else 1) * year.toInt,
+                                  month.toInt,
+                                  day.toInt),
+                     LocalTime.parse(time)).
+      atOffset(ZoneOffset.of(offset)).
+      toInstant
+  }
 }
