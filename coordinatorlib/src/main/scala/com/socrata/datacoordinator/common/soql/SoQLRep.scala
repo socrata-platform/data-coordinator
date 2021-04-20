@@ -67,7 +67,8 @@ object SoQLRep {
     SoQLUrl -> (ci => new UrlRep(ci.physicalColumnBase)),
     SoQLDocument -> (ci => new DocumentRep(ci.physicalColumnBase)),
     SoQLPhoto -> (ci => new PhotoRep(ci.physicalColumnBase)),
-    SoQLBlob -> (ci => new sqlreps.BlobRep(ci.physicalColumnBase))
+    SoQLBlob -> (ci => new sqlreps.BlobRep(ci.physicalColumnBase)),
+    SoQLJson -> (ci => new sqlreps.JsonRep(ci.physicalColumnBase))
   )
 
   def sqlRep(columnInfo: ColumnInfo[SoQLType]): SqlColumnRep[SoQLType, SoQLValue] =
@@ -96,7 +97,8 @@ object SoQLRep {
     SoQLUrl -> csvreps.UrlRep,
     SoQLDocument -> csvreps.DocumentRep,
     SoQLPhoto -> csvreps.PhotoRep,
-    SoQLBlob -> csvreps.BlobRep
+    SoQLBlob -> csvreps.BlobRep,
+    SoQLJson -> csvreps.JsonRep
   )
   def csvRep(columnInfo: ColumnInfo[SoQLType]): CsvColumnRep[SoQLType, SoQLValue] =
     csvReps(columnInfo.typ)
@@ -126,7 +128,8 @@ object SoQLRep {
     SoQLUrl -> jsonreps.UrlRep,
     SoQLDocument -> jsonreps.DocumentRep,
     SoQLPhoto -> jsonreps.PhotoRep,
-    SoQLBlob -> jsonreps.BlobRep
+    SoQLBlob -> jsonreps.BlobRep,
+    SoQLJson -> jsonreps.JsonRep
   )
 
   trait IdObfuscationContext {

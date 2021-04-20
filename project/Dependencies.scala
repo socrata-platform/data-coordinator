@@ -29,7 +29,7 @@ object Dependencies {
     val socrataHttp     = "3.13.3"
     val socrataThirdPartyUtils = "5.0.0"
     val soqlBrita       = "1.4.1"
-    val soqlReference   = "3.2.2"
+    val soqlReference   = "3.3.1"
     val trove4j         = "3.0.3"
     val typesafeConfig  = "1.2.1"
   }
