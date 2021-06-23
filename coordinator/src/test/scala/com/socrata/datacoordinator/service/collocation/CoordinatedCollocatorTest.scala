@@ -269,7 +269,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
 
   def secondariesFromSeq(instances: Seq[String]) = {
     val s = instances.map { instance => (instance, 0L) }.toMap
-    Right(Some(SecondariesOfDatasetResult(0L, 0L, Some(0L), Some(0L), s, Set.empty[String], Map.empty, Map.empty)))
+    Right(Some(SecondariesOfDatasetResult("alpha", 0L, 0L, Some(0L), Some(0L), s, Set.empty[String], Map.empty, Map.empty)))
   }
 
   def secondaries(instances: String*) = secondariesFromSeq(instances)
