@@ -11,7 +11,8 @@ import org.joda.time.DateTime
 
 
 @JsonKeyStrategy(Strategy.Underscore)
-case class SecondariesOfDatasetResult(truthVersion: Long, // TODO: remove this field once soda-fountain no-longer uses it
+case class SecondariesOfDatasetResult(truthInstance: String,
+                                      truthVersion: Long, // TODO: remove this field once soda-fountain no-longer uses it
                                       latestVersion: Long,
                                       publishedVersion: Option[Long],
                                       unpublishedVersion: Option[Long],

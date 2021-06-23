@@ -168,6 +168,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
         }
 
         SecondariesOfDatasetResult(
+          serviceConfig.instance,
           latestVersion,
           latestVersion,
           publishedVersion,
