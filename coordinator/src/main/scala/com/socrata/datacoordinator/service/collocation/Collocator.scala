@@ -66,6 +66,7 @@ trait Collocator {
   def lockCollocation(): Unit
   def unlockCollocation(): Unit
   def rollbackCollocation(jobId: UUID, moves: Seq[(Move, Boolean)]): Option[ErrorResult]
+  def secondariesOfDataset(dataset: DatasetInternalName): Set[String]
 }
 
 trait CollocatorProvider {
@@ -99,7 +100,7 @@ class CoordinatedCollocator(collocationGroup: Set[String],
     }
   }
 
-  private def secondariesOfDataset(dataset: DatasetInternalName): Set[String] =
+  def secondariesOfDataset(dataset: DatasetInternalName): Set[String] =
     coordinator.secondariesOfDataset(dataset).fold(throw _, _.getOrElse(throw DatasetNotFound(dataset)).secondaries.keySet)
 
   protected def stores(storeGroup: String, dataset: DatasetInternalName, instances: Set[String], replicationFactor: Int): Set[String] = {
