@@ -6,7 +6,7 @@ import com.rojoma.json.v3.ast.{JString, JValue}
 import com.rojoma.simplearm.v2._
 import com.rojoma.simplearm.v2.conversions._
 import com.socrata.datacoordinator.common.soql.SoQLRep
-import com.socrata.datacoordinator.common.collocation.{CollocationLock, CuratedCollocationLock}
+import com.socrata.datacoordinator.common.collocation.{CollocationLock, CuratedCollocationLock, NoOPCollocationLock}
 import com.socrata.datacoordinator.common.{DataSourceFromConfig, SoQLCommon}
 import com.socrata.datacoordinator.id.{ColumnId, DatasetId, DatasetInternalName, UserColumnId}
 import com.socrata.datacoordinator.resources._
@@ -27,9 +27,10 @@ import com.socrata.curator.{CuratorFromConfig, DiscoveryFromConfig, ProviderCach
 import com.socrata.soql.types.{SoQLType, SoQLValue}
 import com.socrata.thirdparty.typesafeconfig.Propertizer
 import com.typesafe.config.{Config, ConfigFactory}
-import java.util.concurrent.{CountDownLatch, Executors, TimeUnit}
 
+import java.util.concurrent.{CountDownLatch, Executors, TimeUnit}
 import com.socrata.datacoordinator.resources.collocation._
+import com.socrata.datacoordinator.service.Main.log
 import com.socrata.datacoordinator.service.collocation.{MetricProvider, _}
 import com.socrata.http.client.HttpClientHttpClient
 import org.apache.curator.x.discovery.{ServiceInstanceBuilder, strategies}
@@ -95,7 +96,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
     result
   }
 
-  def ensureInSecondaryGroup(coordinator: Coordinator)(secondaryGroupStr: String, datasetId: DatasetId): Boolean = {
+  def ensureInSecondaryGroup(coordinator: Coordinator, collocationProvider: CollocatorProvider)(secondaryGroupStr: String, datasetId: DatasetId, secondariesLike: Option[DatasetInternalName]): Boolean = {
     for(u <- common.universe) {
       val secondaryGroup = serviceConfig.secondary.groups.getOrElse(secondaryGroupStr, {
         log.info("Can't find secondary group {}", secondaryGroupStr)
@@ -105,10 +106,11 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
 
       val currentDatasetSecondaries = secondariesOfDataset(datasetId).map(_.secondaries.keySet).getOrElse(Set.empty)
 
-      val newSecondaries = Main.secondariesToAdd(secondaryGroup,
+      val newSecondaries = secondariesToAdd(collocationProvider, secondaryGroup,
         currentDatasetSecondaries,
         datasetId,
-        secondaryGroupStr)
+        secondaryGroupStr,
+        secondariesLike)
 
       newSecondaries.toVector.map(ensureInSecondary(coordinator)(_, datasetId)).forall(identity) // no side effects in forall
     }
@@ -480,6 +482,26 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
       indexBufSizeHint = serviceConfig.reports.indexBlockSize,
       dataBufSizeHint = serviceConfig.reports.dataBlockSize,
       tmpDir = serviceConfig.reports.directory)
+
+  def secondariesToAdd(collocationProvider: CollocatorProvider, secondaryGroup: SecondaryGroupConfig, currentDatasetSecondaries: Set[String],
+                       datasetId: DatasetId, secondaryGroupStr: String, secondariesLike: Option[DatasetInternalName]): Set[String] = {
+
+    val preferredSecondaries = secondariesLike match {
+      case Some(datasetInternalName) =>
+        val candidateSecondariesInGroup = secondaryGroup.instances.filter(_._2.acceptingNewDatasets).keySet
+        val secs = collocationProvider.collocator.secondariesOfDataset(datasetInternalName)
+        secs.find(!candidateSecondariesInGroup.contains(_)) match {
+          case Some(sec) =>
+            throw new Exception(s"Secondary ${sec} like ${datasetInternalName.underlying} is no longer accepting datasets" )
+          case None =>
+            secs
+        }
+      case None =>
+        Set.empty[String]
+    }
+
+    Main.secondariesToAdd(secondaryGroup, currentDatasetSecondaries, datasetId, secondaryGroupStr, preferredSecondaries)
+  }
 }
 
 object Main extends DynamicPortMap {
@@ -730,7 +752,7 @@ object Main extends DynamicPortMap {
       def datasetSecondaryStatusResource(hostAndPort: HostAndPort) =
         DatasetSecondaryStatusResource(_: Option[String], _:DatasetId, secondaries,
                                        secondariesNotAcceptingNewDatasets, operations.versionInStore, serviceConfig, operations.ensureInSecondary(httpCoordinator(hostAndPort)),
-                                       operations.ensureInSecondaryGroup(httpCoordinator(hostAndPort)), operations.deleteFromSecondary, common.internalNameFromDatasetId)
+                                       operations.ensureInSecondaryGroup(httpCoordinator(hostAndPort), collocationProvider(hostAndPort, NoOPCollocationLock)), operations.deleteFromSecondary, common.internalNameFromDatasetId)
 
       val secondariesOfDatasetResource = SecondariesOfDatasetResource(_: DatasetId, operations.secondariesOfDataset,
         common.internalNameFromDatasetId)
@@ -835,9 +857,8 @@ object Main extends DynamicPortMap {
     }
   }
 
-
   def secondariesToAdd(secondaryGroup: SecondaryGroupConfig, currentDatasetSecondaries: Set[String],
-                       datasetId: DatasetId, secondaryGroupStr: String): Set[String] = {
+                       datasetId: DatasetId, secondaryGroupStr: String, preferredSecondaries: Set[String] = Set.empty): Set[String] = {
 
     /*
      * The dataset may be in secondaries defined in other groups, but here we need to reason
@@ -852,9 +873,11 @@ object Main extends DynamicPortMap {
     log.info(s"Dataset $datasetId exists on ${currentDatasetSecondariesForGroup.size} secondaries in group, " +
       s"want it on $desiredCopies so need to find $newCopiesRequired new secondaries")
 
-    val newSecondaries = Random.shuffle((candidateSecondariesInGroup -- currentDatasetSecondariesForGroup).toList)
-      .take(newCopiesRequired)
-      .toSet
+    val newSecondaries =
+      if (preferredSecondaries.nonEmpty) preferredSecondaries
+      else Random.shuffle((candidateSecondariesInGroup -- currentDatasetSecondariesForGroup).toList)
+                 .take(newCopiesRequired)
+                 .toSet
 
     if (newSecondaries.size < newCopiesRequired) {
       // TODO: proper error, this is configuration error though
