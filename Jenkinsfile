@@ -7,7 +7,7 @@ def service = "data-coordinator"
 def project_wd = "coordinator"
 def deploy_service_pattern = "data-coordinator*"
 def deploy_environment = "staging"
-def default_branch_specifier = "origin/master"
+def default_branch_specifier = "origin/main"
 def scala_version = "2.12"
 
 def service_sha = env.GIT_COMMIT
@@ -71,7 +71,7 @@ pipeline {
             // If your service has additional testing, you may want to use the Test stage to implement that and uncomment the next line:
             // stage_test = true
           }
-          else if (BRANCH_NAME == "master") { // we're running a build on master branch to deploy to staging
+          else if (BRANCH_NAME == "main") { // we're running a build on main branch to deploy to staging
             stage_build = true
             stage_dockerize = true
             stage_deploy = true
@@ -110,8 +110,8 @@ pipeline {
 
             // The git config setup required for your project prior to running 'sbt release with-defaults' may vary:
             sh(returnStdout: true, script: "git config remote.origin.fetch +refs/heads/*:refs/remotes/origin/*")
-            sh(returnStdout: true, script: "git config branch.master.remote origin")
-            sh(returnStdout: true, script: "git config branch.master.merge refs/heads/master")
+            sh(returnStdout: true, script: "git config branch.main.remote origin")
+            sh(returnStdout: true, script: "git config branch.main.merge refs/heads/main")
 
             // increasing meta space size to avoid build errors during release step
             javaopts = "JAVA_OPTS=-XX:MaxMetaspaceSize=512m"

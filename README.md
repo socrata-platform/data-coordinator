@@ -81,7 +81,7 @@ Below is a copy of the email distributed to engineering when breaking changes we
 >The install and start scripts in `docs/onramp` have been updated (pending merge) -- they also now include the geocoding / region coding secondary.
 
 >How to update your stack:
-> - Pull master of `data-coordinator`, `soql-postgres-adapter`, and `geocoding-secondary` (if you wish)
+> - Pull main of `data-coordinator`, `soql-postgres-adapter`, and `geocoding-secondary` (if you wish)
 > - Fetch `spandex` and `docs` and check-out branches `en-7807` and `aerust/en-7807` respectively (branches aren't quite merged but functioning).
 > - Run `sbt assembly` for all of the above scala projects.
 > - Update your `/etc/soda2.conf` file; `com.socrata.coordinator.common.secondary.instances` should be empty (but still needs to be there :( ). Copy the new config files for the secondaries over to `/etc`:
