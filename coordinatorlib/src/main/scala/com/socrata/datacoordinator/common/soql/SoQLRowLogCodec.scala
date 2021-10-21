@@ -13,7 +13,7 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[SoQLValue] {
 
   // fixme; it'd be much better to do this in a manner similar to how column reps work
 
-  protected def writeValue(target: CodedOutputStream, v: SoQLValue) {
+  def writeValue(target: CodedOutputStream, v: SoQLValue) {
     v match {
       case SoQLID(l) =>
         target.writeRawByte(0)
@@ -121,7 +121,7 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[SoQLValue] {
     }
   }
 
-  protected def readValue(source: CodedInputStream): SoQLValue =
+  def readValue(source: CodedInputStream): SoQLValue =
     source.readRawByte() match {
       case 0 =>
         SoQLID(source.readInt64())
