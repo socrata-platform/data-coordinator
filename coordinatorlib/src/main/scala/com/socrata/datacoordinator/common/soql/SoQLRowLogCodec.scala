@@ -118,6 +118,8 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[SoQLValue] {
         target.writeStringNoTag(id)
       case SoQLNull =>
         target.writeRawByte(-1)
+      case SoQLInterval(_) =>
+        ???
     }
   }
 
