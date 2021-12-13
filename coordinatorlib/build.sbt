@@ -37,17 +37,17 @@ libraryDependencies ++= Seq(
       TestDeps.slf4jSimple % "test,it"
 )
 
-sourceGenerators in Compile += Def.task {
-  val targetDir = (sourceManaged in Compile).value
+Compile / sourceGenerators += Def.task {
+  val targetDir = (Compile/sourceManaged).value
   GenLongLikeMap(targetDir, "com.socrata.datacoordinator.util.collection", "com.socrata.datacoordinator.id", "ColumnId") ++
     GenLongLikeMap(targetDir, "com.socrata.datacoordinator.util.collection", "com.socrata.datacoordinator.id", "CopyId") ++
     GenLongLikeMap(targetDir, "com.socrata.datacoordinator.util.collection", "com.socrata.datacoordinator.id", "RowId")
 }
 
-managedSourceDirectories in Compile += sourceManaged.value / "scala"
+Compile / managedSourceDirectories += sourceManaged.value / "scala"
 
-PB.targets in Compile := Seq(
-  scalapb.gen() -> (sourceManaged in Compile).value / "protobuf"
+Compile / PB.targets := Seq(
+  scalapb.gen() -> (Compile/sourceManaged).value / "protobuf"
 )
 
 disablePlugins(AssemblyPlugin)

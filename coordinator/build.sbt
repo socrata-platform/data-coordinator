@@ -15,9 +15,9 @@ libraryDependencies ++= Seq(
   TestDeps.scalaMock  % "test"
 )
 
-test in assembly := {}
+assembly/test := {}
 
-mainClass in assembly := Some("com.socrata.datacoordinator.Launch")
+assembly/mainClass := Some("com.socrata.datacoordinator.Launch")
 
 // not setting "publish / skip" because soql-postgres-adapter uses this package in its tests.
 
