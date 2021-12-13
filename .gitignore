@@ -10,3 +10,4 @@ local-secondary-watcher.conf
 coordinator/docker/*.jar
 coordinator/docker-secondary-watcher/*.jar
 data-coordinator*.log
+/.bsp/

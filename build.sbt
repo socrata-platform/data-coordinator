@@ -1,12 +1,14 @@
 ThisBuild / organization := "com.socrata"
 
-ThisBuild / testOptions in Test += Tests.Argument(TestFrameworks.ScalaTest, "-oFD")
+ThisBuild / Test / testOptions += Tests.Argument(TestFrameworks.ScalaTest, "-oFD")
 
 ThisBuild / scalaVersion := "2.12.8"
 
 ThisBuild / resolvers += "socrata maven" at "https://repo.socrata.com/artifactory/libs-release"
 
 ThisBuild / scalacOptions ++= Seq("-deprecation", "-feature")
+
+ThisBuild / evictionErrorLevel := Level.Warn
 
 val coordinatorExternal = (project in file("coordinator-external")).
   configs(IntegrationTest).
