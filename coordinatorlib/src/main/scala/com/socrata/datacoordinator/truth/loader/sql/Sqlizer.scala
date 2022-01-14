@@ -14,8 +14,12 @@ trait ReadDataSqlizer[CT, CV] {
 
   def dataTableName: String
 
-  // convenience method; like calling findRowsSubset with all column IDs in the dataset.
   def findRows(conn: Connection, bySystemId: Boolean, ids: Iterator[CV]): CloseableIterator[Seq[InspectedRow[CV]]]
+  // When finding rows, it will be performed (and returned) in chunks
+  // of this size (note that if you ask for rows that don't exist or
+  // provide duplicate IDs, the produced chunks may be smaller than
+  // requested)
+  val findRowsBlockSize: Int
 }
 
 /** Generates SQL for execution. */
