@@ -126,13 +126,12 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
       (decode: ResultSet => T): CloseableIterator[Seq[T]] = {
 
     class ResultIterator extends CloseableIterator[Seq[T]] {
-      val blockSize = 100
-      val grouped = new FastGroupedIterator(ids, blockSize)
+      val grouped = new FastGroupedIterator(ids, findRowsBlockSize)
       val prefix = s"SELECT ${selectReps.map(_.selectList).mkString(",")} FROM $dataTableName WHERE "
       var _fullStmt: PreparedStatement = null
 
       def fullStmt = {
-        if(_fullStmt == null) _fullStmt = conn.prepareStatement(prefix + pkRep(bySystemId).templateForMultiLookup(blockSize))
+        if(_fullStmt == null) _fullStmt = conn.prepareStatement(prefix + pkRep(bySystemId).templateForMultiLookup(findRowsBlockSize))
         _fullStmt
       }
 
@@ -144,7 +143,7 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
 
       def next(): Seq[T] = {
         val block = grouped.next()
-        if(block.size != blockSize) {
+        if(block.size != findRowsBlockSize) {
           using(conn.prepareStatement(prefix + pkRep(bySystemId).templateForMultiLookup(block.size))) { stmt2 =>
             fillAndResult(stmt2, block)
           }
@@ -169,6 +168,8 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
     }
     new ResultIterator with LeakDetect
   }
+
+  val findRowsBlockSize = 100
 
   def findRows(conn: Connection, bySystemId: Boolean, ids: Iterator[CV]): CloseableIterator[Seq[InspectedRow[CV]]] =
     blockQueryById(conn, bySystemId, ids, repSchema.values, dataTableName) { rs =>

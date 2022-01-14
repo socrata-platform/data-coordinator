@@ -362,28 +362,32 @@ final class SqlLoader[CT, CV](val connection: Connection,
 
   private def processDeletes(deletes: Seq[DeleteOp], bySystemIdForced: Boolean): Long = {
     if(deletes.nonEmpty) {
-      val existingRows = lookupRows(bySystemIdForced = bySystemIdForced, deletes.iterator.map(_.id))
-      val completedDeletions = new mutable.ArrayBuffer[(RowId, Int, CV, Row[CV])](deletes.size)
-      val (deletedCount, ()) = sqlizer.deleteBatch(connection) { deleter =>
-        for(delete <- deletes) {
-          existingRows.get(delete.id) match {
-            case Some(InspectedRow(_, sid, version, oldRow)) =>
-              checkVersion(delete.job, delete.id, delete.version, Some(version), bySystemIdForced = bySystemIdForced) {
-                deleter.delete(sid)
-                completedDeletions += ((sid, delete.job, delete.id, oldRow))
-                existingRows.remove(delete.id)
-              }
-            case None =>
-              reportWriter.error(delete.job, NoSuchRowToDelete(delete.id))
+      var deletedCount = 0L
+      for(deleteChunk <- deletes.grouped(sqlizer.findRowsBlockSize)) {
+        val existingRows = lookupRows(bySystemIdForced = bySystemIdForced, deleteChunk.iterator.map(_.id))
+        val completedDeletions = new mutable.ArrayBuffer[(RowId, Int, CV, Row[CV])](deleteChunk.size)
+        val (chunkDeletedCount, ()) = sqlizer.deleteBatch(connection) { deleter =>
+          for(delete <- deleteChunk) {
+            existingRows.get(delete.id) match {
+              case Some(InspectedRow(_, sid, version, oldRow)) =>
+                checkVersion(delete.job, delete.id, delete.version, Some(version), bySystemIdForced = bySystemIdForced) {
+                  deleter.delete(sid)
+                  completedDeletions += ((sid, delete.job, delete.id, oldRow))
+                  existingRows.remove(delete.id)
+                }
+              case None =>
+                reportWriter.error(delete.job, NoSuchRowToDelete(delete.id))
+            }
           }
         }
+        assert(chunkDeletedCount == completedDeletions.size, "Didn't delete as many rows as I thought it would?")
+        deletedCount += chunkDeletedCount
+        for((sid, job, id, oldRow) <- completedDeletions) {
+          dataLogger.delete(sid, Some(oldRow))
+          reportWriter.deleted(job, id)
+        }
       }
-      assert(deletedCount == completedDeletions.size, "Didn't delete as many rows as I thought it would?")
       totalDeleteCount += deletedCount
-      for((sid, job, id, oldRow) <- completedDeletions) {
-        dataLogger.delete(sid, Some(oldRow))
-        reportWriter.deleted(job, id)
-      }
       deletedCount
     } else {
       0
