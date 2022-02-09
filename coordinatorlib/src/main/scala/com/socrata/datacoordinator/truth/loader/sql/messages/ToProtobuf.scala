@@ -34,6 +34,7 @@ object ToProtobuf {
       copyNumber = ci.copyNumber,
       lifecycleStage = convert(ci.lifecycleStage),
       dataVersion = ci.dataVersion,
+      shapeDataVersion = Some(ci.shapeDataVersion),
       lastModified = convert(ci.lastModified)
     )
 

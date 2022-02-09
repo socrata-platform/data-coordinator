@@ -9,13 +9,23 @@ import com.socrata.http.server.responses._
 import com.socrata.http.server.implicits._
 import org.joda.time.DateTime
 
+@JsonKeyStrategy(Strategy.Underscore)
+case class VersionSpec(raw: Long, shape: Long)
+
+object VersionSpec {
+  implicit val codec = AutomaticJsonCodecBuilder[VersionSpec]
+}
+
 
 @JsonKeyStrategy(Strategy.Underscore)
 case class SecondariesOfDatasetResult(truthInstance: String,
                                       truthVersion: Long, // TODO: remove this field once soda-fountain no-longer uses it
                                       latestVersion: Long,
-                                      publishedVersion: Option[Long],
-                                      unpublishedVersion: Option[Long],
+                                      latestShapeVersion: Long,
+                                      publishedVersion: Option[Long], // TODO: Remove once soda-fountain no longer uses it
+                                      unpublishedVersion: Option[Long], // TODO: Remove once soda-fountain no longer uses it
+                                      publishedVersions: Option[VersionSpec],
+                                      unpublishedVersions: Option[VersionSpec],
                                       secondaries: Map[String, Long],
                                       feedbackSecondaries: Set[String],
                                       groups: Map[String, Set[String]],
@@ -23,7 +33,6 @@ case class SecondariesOfDatasetResult(truthInstance: String,
                                       )
 
 object SecondariesOfDatasetResult {
-
   implicit val codec = AutomaticJsonCodecBuilder[SecondariesOfDatasetResult]
 }
 

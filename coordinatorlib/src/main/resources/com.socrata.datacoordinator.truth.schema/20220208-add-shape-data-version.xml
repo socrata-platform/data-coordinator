@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
+    <changeSet author="robertm" id="20220208-add-shape-data-version">
+        <preConditions onFail="MARK_RAN">
+            <not>
+                <columnExists tableName="copy_map" columnName="shape_data_version"/>
+            </not>
+        </preConditions>
+        <addColumn tableName="copy_map">
+          <column name="shape_data_version" type="bigint">
+            <constraints nullable="true"/>
+          </column>
+        </addColumn>
+    </changeSet>
+</databaseChangeLog>
