@@ -190,11 +190,15 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
         logger.trace("Playing back version {}", dataVersion)
         using(u.delogger(datasetInfo)) { delogger =>
           val lastConsolidatableVersion: Option[Long] =
-            (job.startingDataVersion to job.endingDataVersion).iterator.takeWhile { dv =>
+            // We'll scan over the range of versions, eliminating
+            // possibilities for consolidation until there's nothing
+            // left, and then play them all back together.
+            (job.startingDataVersion to job.endingDataVersion).iterator.scanLeft((-1L, Consolidatable.all)) { (dvAcc, dv) =>
+              val (_, acc) = dvAcc
               using(delogger.delogOnlyTypes(dv)) { it =>
-                consolidatable(it.buffered)
+                (dv, acc.intersect(consolidatable(it.buffered)))
               }
-            }.toStream.lastOption
+            }.drop(1).takeWhile(_._2.nonEmpty).map(_._1).toStream.lastOption
 
           lastConsolidatableVersion match {
             case Some(n) if n > dataVersion =>
@@ -216,34 +220,67 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
       }
     }
 
+    sealed abstract class Consolidatable
+    object Consolidatable {
+      def all = Set[Consolidatable](Rows, Rollups)
+    }
+    case object Rows extends Consolidatable
+    case object Rollups extends Consolidatable
+
     // A series of events is consolidatable if it is an update which only
-    // changes row data, which is to say if it has the form:
+    // changes row data or rollups, which is to say if it has the form:
     //    RowsChangedPreview
     //    zero or one Truncated
     //    zero or more RowDataUpdated
     //    LastModifiedChanged
     // or
+    //    zero or more intermingled RollupCreatedOrUpdated and RollupDropped
     //    LastModifiedChanged
-    def consolidatable(it: BufferedIterator[Delogger.LogEventCompanion]): Boolean = {
+    // or
+    //    LastModifiedChanged
+    def consolidatable(it: BufferedIterator[Delogger.LogEventCompanion]): Set[Consolidatable] = {
       if(it.hasNext && it.head == Delogger.LastModifiedChanged) {
         it.next()
-        return !it.hasNext;
+        if(it.hasNext) {
+          return Set.empty
+        } else {
+          // Empty changeset, can be consolidated with anything
+          return Set(Rows, Rollups)
+        }
       }
 
-      if(!it.hasNext || it.next() != Delogger.RowsChangedPreview) {
-        return false
-      }
-      if(it.hasNext && it.head == Delogger.Truncated) {
-        it.next()
-      }
-      while(it.hasNext && it.head == Delogger.RowDataUpdated) {
-        it.next()
-      }
-      if(!it.hasNext || it.next() != Delogger.LastModifiedChanged) {
-        return false
+      if(!it.hasNext) {
+        return Set.empty
       }
 
-      !it.hasNext
+      it.next() match {
+        case Delogger.RollupCreatedOrUpdated | Delogger.RollupDropped =>
+          while(it.hasNext && (it.head == Delogger.RollupCreatedOrUpdated || it.head == Delogger.RollupDropped)) {
+            it.next()
+          }
+          if(!it.hasNext || it.next() != Delogger.LastModifiedChanged) {
+            return Set.empty
+          }
+          if(it.hasNext) Set.empty // didn't end with LastModifiedChanged?
+          else Set(Rollups)
+
+        case Delogger.RowsChangedPreview =>
+          if(it.hasNext && it.head == Delogger.Truncated) {
+            it.next()
+          }
+          while(it.hasNext && it.head == Delogger.RowDataUpdated) {
+            it.next()
+          }
+          if(!it.hasNext || it.next() != Delogger.LastModifiedChanged) {
+            return Set.empty
+          }
+
+          if(it.hasNext) Set.empty // didn't end with LastModifiedChanged?
+          else Set(Rows)
+
+        case _ =>
+          Set.empty
+      }
     }
 
     def consolidate(delogger: Delogger[CV], startingDataVersion: Long, endingDataVersion: Long) =
@@ -256,108 +293,227 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
 
         val rs = new ResourceScope
 
-        val (effectiveStartingDataVersion, fakeRCP) =
-          (startingDataVersion to endingDataVersion).foldLeft((startingDataVersion, Delogger.RowsChangedPreview(0, 0, 0, false))) { (acc, i) =>
-            val (currentStartingDataVersion, rcp) = acc
+        sealed abstract class State
+        case object Unknown extends State
+        case class ConsolidatingRows(preview: Delogger.RowsChangedPreview) extends State
+        case object ConsolidatingRollups extends State
+
+        val (effectiveStartingDataVersion, state) =
+          (startingDataVersion to endingDataVersion).foldLeft((startingDataVersion, Unknown:State)) { (acc, i) =>
+            val (currentStartingDataVersion, state) = acc
+
+            def rcpOfState() =
+              state match {
+                case Unknown => Delogger.RowsChangedPreview(0, 0, 0, false)
+                case ConsolidatingRows(rcp) => rcp
+                case ConsolidatingRollups => throw new ResyncSecondaryException("Was consolidating rows, now rollups?")
+              }
+            def ensureRollups() =
+              state match {
+                case Unknown | ConsolidatingRollups => ConsolidatingRollups
+                case ConsolidatingRows(_) => throw new ResyncSecondaryException("Was consolidating rollups, now rows?")
+              }
+
             managed(delogger.delog(i)).run(_.buffered.headOption) match {
               case Some(Delogger.RowsChangedPreview(rowsInserted, rowsUpdated, rowsDeleted, false)) =>
-                (currentStartingDataVersion, Delogger.RowsChangedPreview(rcp.rowsInserted + rowsInserted,
-                                                                         rcp.rowsUpdated + rowsUpdated,
-                                                                         rcp.rowsDeleted + rowsDeleted,
-                                                                         rcp.truncated))
+                val rcp = rcpOfState()
+                (currentStartingDataVersion, ConsolidatingRows(Delogger.RowsChangedPreview(rcp.rowsInserted + rowsInserted,
+                                                                                           rcp.rowsUpdated + rowsUpdated,
+                                                                                           rcp.rowsDeleted + rowsDeleted,
+                                                                                           rcp.truncated)))
               case Some(rcp : Delogger.RowsChangedPreview) =>
+                rcpOfState() // ensure we don't think we're looking at rollups
                 // it was truncated; just start from here
-                (i, rcp)
+                (i, ConsolidatingRows(rcp))
               case Some(Delogger.LastModifiedChanged(_)) =>
                 // no change -- just keep acc
-                (currentStartingDataVersion, rcp)
+                (currentStartingDataVersion, state)
+              case Some(Delogger.RollupCreatedOrUpdated(_) | Delogger.RollupDropped(_)) =>
+                (currentStartingDataVersion, ensureRollups())
               case _ =>
                 throw ResyncSecondaryException("Consolidation saw the log change?!  No RowsChangedPreview!")
             }
           }
 
-        // bleargghhgh -- annoying that this super lazy flatmap over
-        // the data versions has a side effect, but I can't think of a
-        // clearer way to do this.
-        var mostRecentLastModified: Option[Delogger.LastModifiedChanged] = None
-        val data = (effectiveStartingDataVersion to endingDataVersion).iterator.flatMap { i =>
-          new Iterator[Delogger.LogEvent[CV]] {
-            var done: Boolean = false
-
-            val eventsRaw = rs.open(delogger.delog(i))
-            val events = eventsRaw.buffered
-
-            if(events.hasNext && events.head.companion == Delogger.LastModifiedChanged) {
-              // empty changeset.
-            } else {
-              if(!events.hasNext || events.head.companion != Delogger.RowsChangedPreview) {
-                throw ResyncSecondaryException("Consolidation saw the log change?!  First item was gone or not RowsChangedPreview!")
-              }
-              if(events.next().asInstanceOf[Delogger.RowsChangedPreview].truncated) {
-                if(!events.hasNext || events.next().companion != Delogger.Truncated) {
-                  throw ResyncSecondaryException("RowsChangedPreview said the dataset was to be truncated, but there was no Truncated event!")
-                }
-                if(mostRecentLastModified.isDefined) {
-                  throw ResyncSecondaryException("Dataset was truncated but it wasn't the first batch we were looking at!")
-                }
-              }
-            }
-
-            def hasNext: Boolean = {
-              if(done) return false
-
-              events.headOption match {
-                case Some(v@Delogger.RowDataUpdated(_)) =>
-                  true
-
-                case Some(lmc@Delogger.LastModifiedChanged(_)) =>
-                  mostRecentLastModified = Some(lmc) // this is the reason for the bleargghhgh before
-                  done = true
-
-                  events.next() // skip LMC
-                  events.headOption match {
-                    case None =>
-                      // ok good
-                    case Some(other) =>
-                      throw ResyncSecondaryException(s"Consolidation saw the log change?!  Saw s{other.companion.productPrefix} while expecting EndTransaction!")
-                  }
-
-                  rs.close(eventsRaw)
-                  false
-
-                case Some(other) =>
-                  throw ResyncSecondaryException(s"Consolidation saw the log change?!  Saw s{other.companion.productPrefix} while expecting RowsChangedPreview or LastModifiedChanged!")
-
-                case None =>
-                  throw ResyncSecondaryException("Consolidation saw the log change?!  Reached EOF while expecting RowsChangedPreview or LastModifiedChanged!")
-              }
-            }
-
-            def next() = {
-              if(hasNext) events.next()
-              else Iterator.empty.next()
-            }
+        val finalIterator =
+          state match {
+            case Unknown =>
+              // bunch of empty updates...?  Ok.
+              consolidateNothing(delogger, effectiveStartingDataVersion, endingDataVersion, rs)
+            case ConsolidatingRows(fakeRCP) =>
+              consolidateRows(fakeRCP, delogger, effectiveStartingDataVersion, endingDataVersion, rs)
+            case ConsolidatingRollups =>
+              consolidateRollups(delogger, effectiveStartingDataVersion, endingDataVersion, rs)
           }
-        }
 
-        val fakeEvents =
-          Iterator(fakeRCP) ++
-            (if(fakeRCP.truncated) Iterator(Delogger.Truncated) else Iterator.empty) ++
-            data ++
-            // bleargghhgh part 3: Iterator#++ is sufficiently lazy
-            // for this lookup of the var that's modified by iterating
-            // through `data` to work.
-            Iterator(mostRecentLastModified.getOrElse {
-                       throw ResyncSecondaryException("Consolidation saw the log change - no LastModifiedChanged?!")
-                     })
-
-        def hasNext = fakeEvents.hasNext
-        def next() = fakeEvents.next()
+        def hasNext = finalIterator.hasNext
+        def next() = finalIterator.next()
 
         def close() {
           rs.close()
         }
       }
+
+    private def consolidateNothing(delogger: Delogger[CV], startingDataVersion: Long, endingDataVersion: Long, rs: ResourceScope): Iterator[Delogger.LogEvent[CV]] = {
+      val data = (startingDataVersion to endingDataVersion).iterator.flatMap { i =>
+        new Iterator[Delogger.LogEvent[CV]] {
+          var done = false
+          val eventsRaw = rs.open(delogger.delog(i))
+          val events = eventsRaw.buffered
+
+          def hasNext: Boolean = {
+            if(done) return false
+            events.headOption match {
+              case Some(Delogger.LastModifiedChanged(_)) =>
+                true
+              case Some(other) =>
+                throw ResyncSecondaryException(s"Consolidation saw the log change?!  Saw s{other.companion.productPrefix} while expecting LastModifiedChanged!")
+              case None =>
+                done = true
+                rs.close(events)
+                false
+            }
+          }
+
+          def next() = {
+            if(hasNext) events.next()
+            else Iterator.empty.next()
+          }
+        }
+      }
+      if(data.hasNext) Iterator.single(data.toStream.last)
+      else throw ResyncSecondaryException(s"Consolidation saw the log change?!  No LastModifiedChanged!")
+    }
+
+    private def consolidateRows(fakeRCP: Delogger.RowsChangedPreview, delogger: Delogger[CV], startingDataVersion: Long, endingDataVersion: Long, rs: ResourceScope): Iterator[Delogger.LogEvent[CV]] = {
+      // bleargghhgh -- annoying that this super lazy flatmap over
+      // the data versions has a side effect, but I can't think of a
+      // clearer way to do this.
+      var mostRecentLastModified: Option[Delogger.LastModifiedChanged] = None
+      val data = (startingDataVersion to endingDataVersion).iterator.flatMap { i =>
+        new Iterator[Delogger.LogEvent[CV]] {
+          var done: Boolean = false
+
+          val eventsRaw = rs.open(delogger.delog(i))
+          val events = eventsRaw.buffered
+
+          if(events.hasNext && events.head.companion == Delogger.LastModifiedChanged) {
+            // empty changeset.
+          } else {
+            if(!events.hasNext || events.head.companion != Delogger.RowsChangedPreview) {
+              throw ResyncSecondaryException("Consolidation saw the log change?!  First item was gone or not RowsChangedPreview!")
+            }
+            if(events.next().asInstanceOf[Delogger.RowsChangedPreview].truncated) {
+              if(!events.hasNext || events.next().companion != Delogger.Truncated) {
+                throw ResyncSecondaryException("RowsChangedPreview said the dataset was to be truncated, but there was no Truncated event!")
+              }
+              if(mostRecentLastModified.isDefined) {
+                throw ResyncSecondaryException("Dataset was truncated but it wasn't the first batch we were looking at!")
+              }
+            }
+          }
+
+          def hasNext: Boolean = {
+            if(done) return false
+
+            events.headOption match {
+              case Some(v@Delogger.RowDataUpdated(_)) =>
+                true
+
+              case Some(lmc@Delogger.LastModifiedChanged(_)) =>
+                mostRecentLastModified = Some(lmc) // this is the reason for the bleargghhgh before
+                done = true
+                ensureEnd(events)
+                rs.close(eventsRaw)
+                false
+
+              case Some(other) =>
+                throw ResyncSecondaryException(s"Consolidation saw the log change?!  Saw s{other.companion.productPrefix} while expecting RowsChangedPreview or LastModifiedChanged!")
+
+              case None =>
+                throw ResyncSecondaryException("Consolidation saw the log change?!  Reached EOF while expecting RowsChangedPreview or LastModifiedChanged!")
+            }
+          }
+
+          def next() = {
+            if(hasNext) events.next()
+            else Iterator.empty.next()
+          }
+        }
+      }
+
+      Iterator(fakeRCP) ++
+        (if(fakeRCP.truncated) Iterator(Delogger.Truncated) else Iterator.empty) ++
+        data ++
+        // bleargghhgh part 3: Iterator#++ is sufficiently lazy
+        // for this lookup of the var that's modified by iterating
+        // through `data` to work.
+        Iterator(mostRecentLastModified.getOrElse {
+                   throw ResyncSecondaryException("Consolidation saw the log change - no LastModifiedChanged?!")
+                 })
+    }
+
+    private def consolidateRollups(delogger: Delogger[CV], startingDataVersion: Long, endingDataVersion: Long, rs: ResourceScope): Iterator[Delogger.LogEvent[CV]] = {
+      // Same "bleargh" as in consolidateRows re: iterator operation
+      // with this mutable thing.  At least consolidating rollups is
+      // way simpler...
+      var mostRecentLastModified: Option[Delogger.LastModifiedChanged] = None
+      val data = (startingDataVersion to endingDataVersion).iterator.flatMap { i =>
+        new Iterator[Delogger.LogEvent[CV]] {
+          var done: Boolean = false
+
+          val eventsRaw = rs.open(delogger.delog(i))
+          val events = eventsRaw.buffered
+
+          if(events.hasNext && events.head.companion == Delogger.LastModifiedChanged) {
+            // empty changeset.
+          } else if(!events.hasNext || (events.head.companion != Delogger.RollupCreatedOrUpdated && events.head.companion != Delogger.RollupDropped)) {
+            throw ResyncSecondaryException("Consolidation saw the log change?!  First item was gone or not a rollup event!")
+          }
+
+          def hasNext: Boolean = {
+            if(done) return false
+            events.headOption match {
+              case Some(Delogger.RollupCreatedOrUpdated(_) | Delogger.RollupDropped(_)) =>
+                true
+              case Some(lmc@Delogger.LastModifiedChanged(_)) =>
+                mostRecentLastModified = Some(lmc)
+                done = true
+                ensureEnd(events)
+                rs.close(eventsRaw)
+                false
+
+              case Some(other) =>
+                throw ResyncSecondaryException(s"Consolidation saw the log change?!  Saw s{other.companion.productPrefix} while expecting RollupCreatedOrUpdated, RollupDropped, or LastModifiedChanged!")
+
+              case None =>
+                throw ResyncSecondaryException("Consolidation saw the log change?!  Reached EOF while expecting RollupCreatedOrUpdated, RollupDropped, or LastModifiedChanged!")
+            }
+          }
+
+          def next() = {
+            if(hasNext) events.next()
+            else Iterator.empty.next()
+          }
+        }
+      }
+
+      data ++ Iterator(mostRecentLastModified.getOrElse {
+                         throw new ResyncSecondaryException("Consolidation saw the log change - no LastModifiedChanged?!")
+                       })
+    }
+
+    // This is called when the iterator is focused on a
+    // LastModifiedChanged to ensure it's the final event.
+    private def ensureEnd(events: BufferedIterator[Delogger.LogEvent[CV]]): Unit = {
+      events.next() // skip LastModifiedChanged
+      events.headOption match {
+        case None =>
+        // ok good
+        case Some(other) =>
+          throw ResyncSecondaryException(s"Consolidation saw the log change?!  Saw s{other.companion.productPrefix} while expecting EndTransaction!")
+      }
+    }
 
     def playbackLog(datasetInfo: metadata.DatasetInfo, it: Iterator[Delogger.LogEvent[CV]], initialDataVersion: Long, finalDataVersion: Long) {
       val secondaryDatasetInfo = makeSecondaryDatasetInfo(datasetInfo)
