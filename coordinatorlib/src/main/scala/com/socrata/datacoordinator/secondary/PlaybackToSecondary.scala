@@ -245,7 +245,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
           return Set.empty
         } else {
           // Empty changeset, can be consolidated with anything
-          return Set(Rows, Rollups)
+          return Consolidatable.all
         }
       }
 
