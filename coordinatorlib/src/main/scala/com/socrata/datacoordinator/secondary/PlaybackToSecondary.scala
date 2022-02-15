@@ -306,12 +306,12 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
               state match {
                 case Unknown => Delogger.RowsChangedPreview(0, 0, 0, false)
                 case ConsolidatingRows(rcp) => rcp
-                case ConsolidatingRollups => throw new ResyncSecondaryException("Was consolidating rows, now rollups?")
+                case ConsolidatingRollups => throw new ResyncSecondaryException("Trying to consolidate rows, but current state is for rollups?")
               }
             def ensureRollups() =
               state match {
                 case Unknown | ConsolidatingRollups => ConsolidatingRollups
-                case ConsolidatingRows(_) => throw new ResyncSecondaryException("Was consolidating rollups, now rows?")
+                case ConsolidatingRows(_) => throw new ResyncSecondaryException("Trying to consoldate rollups, but current state is for rows?")
               }
 
             managed(delogger.delog(i)).run(_.buffered.headOption) match {
