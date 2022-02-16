@@ -51,7 +51,7 @@ trait LowLevelDatabaseMutator[CT, CV] {
                           replaceUpdatedRows: Boolean, updateOnly: Boolean)(f: Loader[CV] => A): (Long, A)
     def truncate(table: CopyInfo, logger: Logger[CT, CV]): Unit
 
-    def finishDatasetTransaction(username: String, copyInfo: CopyInfo, updateLastUpdated: Boolean): Unit
+    def finishDatasetTransaction(username: String, copyInfo: CopyInfo, updateLastUpdated: Boolean, dataShapeUpdated: Boolean): Unit
 
     def loadLatestVersionOfDataset(datasetId: DatasetId, lockTimeout: Duration): Option[DatasetCopyContext[CT]]
 
@@ -231,6 +231,10 @@ object DatasetMutator {
       def columnInfo(id: ColumnId): Option[ColumnInfo[CT]] = copyCtx.columnInfoOpt(id)
       def columnInfo(name: UserColumnId): Option[ColumnInfo[CT]] = copyCtx.columnInfoOpt(name)
 
+      // This becomes true if a change is made which affects the
+      // schema, the rows, or the meaning of future upsert operations.
+      var dataShapeUpdated = false
+
       var doingRows = false
       def checkDoingRows(): Unit = {
         if(doingRows) throw new IllegalStateException("Cannot perform operation while rows are being processed")
@@ -247,6 +251,7 @@ object DatasetMutator {
           newColumn
         }
         schemaLoader.addColumns(newColumns)
+        dataShapeUpdated = true
         newColumns
       }
 
@@ -258,6 +263,7 @@ object DatasetMutator {
           copyCtx.removeColumn(ci.systemId)
         }
         schemaLoader.dropColumns(cs)
+        dataShapeUpdated = true
       }
 
       def addComputationStrategy(column: ColumnInfo[CT], cs: ComputationStrategyInfo): Unit = {
@@ -276,6 +282,7 @@ object DatasetMutator {
         val updated = datasetMap.updateFieldName(column, newName)
         copyCtx.updateColumn(updated)
         schemaLoader.updateFieldName(updated)
+        dataShapeUpdated = true
       }
 
       def makeSystemPrimaryKey(ci: ColumnInfo[CT]): ColumnInfo[CT] = {
@@ -288,6 +295,7 @@ object DatasetMutator {
             sys.error("Unable to create system primary key? " + e)
         }
         copyCtx.addColumn(result)
+        dataShapeUpdated = true
         result
       }
 
@@ -296,6 +304,7 @@ object DatasetMutator {
         val result = datasetMap.setVersion(ci)
         schemaLoader.makeVersion(result)
         copyCtx.addColumn(result)
+        dataShapeUpdated = true
         result
       }
 
@@ -304,6 +313,7 @@ object DatasetMutator {
         val result = datasetMap.clearUserPrimaryKey(ci)
         schemaLoader.dropPrimaryKey(ci)
         copyCtx.addColumn(result)
+        dataShapeUpdated = true
         result
       }
 
@@ -323,6 +333,7 @@ object DatasetMutator {
           }
         }
         copyCtx.addColumn(result)
+        dataShapeUpdated = true
         result
       }
 
@@ -382,6 +393,9 @@ object DatasetMutator {
               }
 
               copyCtx = newCopyCtx
+
+              dataShapeUpdated ||= !copyData
+
               newCopy
           }
         }
@@ -431,6 +445,7 @@ object DatasetMutator {
       def truncate(): Unit = {
         checkDoingRows()
         llCtx.truncate(copyInfo, logger)
+        dataShapeUpdated = true
       }
 
       def upsert(inputGenerator: Iterator[RowDataUpdateJob], reportWriter: ReportWriter[CV],
@@ -447,6 +462,7 @@ object DatasetMutator {
           copyCtx.copyInfo = datasetMap.updateNextCounterValue(copyInfo, nextCounterValue)
         } finally {
           doingRows = false
+          dataShapeUpdated = true // Almost certainly going to be reverted, but if it's not changes may have happened
         }
       }
 
@@ -454,6 +470,7 @@ object DatasetMutator {
         checkFeedbackSecondaries().toLeft {
           datasetMap.dropCopy(copyInfo)
           schemaLoader.drop(copyInfo)
+          dataShapeUpdated = true // Unfortunate, but we're reverting arbitrary versions so conservatively assume the worse
           // Do not update copyCtx.copyInfo or previously published dataVersion will be bumped
           // copyCtx.copyInfo = datasetMap.latest(copyInfo.datasetInfo)
         }
@@ -505,7 +522,7 @@ object DatasetMutator {
         }
         val result = action(ctx)
         ctx.foreach { state =>
-          llCtx.finishDatasetTransaction(username, state.copyInfo, updateLastUpdated = canUpdateOccur == UpdateCanOccur)
+          llCtx.finishDatasetTransaction(username, state.copyInfo, updateLastUpdated = canUpdateOccur == UpdateCanOccur, dataShapeUpdated = state.dataShapeUpdated)
         }
         result
       }
@@ -530,7 +547,7 @@ object DatasetMutator {
           schemaLoader.create(firstVersion)
           val state = new S(new DatasetCopyContext(firstVersion, ColumnIdMap.empty).thaw(), llCtx, logger, schemaLoader)
           val result = f(state)
-          llCtx.finishDatasetTransaction(as, state.copyInfo, updateLastUpdated = true)
+          llCtx.finishDatasetTransaction(as, state.copyInfo, updateLastUpdated = true, dataShapeUpdated = state.dataShapeUpdated)
           result
         }
     }

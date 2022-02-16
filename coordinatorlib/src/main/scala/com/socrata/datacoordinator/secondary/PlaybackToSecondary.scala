@@ -131,6 +131,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
              copyInfo.copyNumber,
              copyInfo.lifecycleStage.correspondingSecondaryStage,
              copyInfo.dataVersion,
+             copyInfo.dataShapeVersion,
              copyInfo.lastModified)
 
   def makeSecondaryRollupInfo(rollupInfo: metadata.RollupInfoLike) =

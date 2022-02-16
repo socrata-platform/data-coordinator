@@ -151,11 +151,13 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
       datasetMapReader.datasetInfo(datasetId).map { datasetInfo =>
         val secondaryManifest = u.secondaryManifest
         val secondaryStoresConfig = u.secondaryStoresConfig
-        val latestVersion = datasetMapReader.latest(datasetInfo).dataVersion
+        val copyInfo = datasetMapReader.latest(datasetInfo)
+        val latestVersion = copyInfo.dataVersion
+        val latestShapeVersion = copyInfo.dataShapeVersion
 
         val copies = datasetMapReader.allCopies(datasetInfo)
-        val publishedVersion = copies.find { _.lifecycleStage == LifecycleStage.Published }.map { _.dataVersion }
-        val unpublishedVersion = copies.find { _.lifecycleStage == LifecycleStage.Unpublished }.map { _.dataVersion }
+        val publishedCopy = copies.find { _.lifecycleStage == LifecycleStage.Published }
+        val unpublishedCopy = copies.find { _.lifecycleStage == LifecycleStage.Unpublished }
 
 
         val secondaries = secondaryManifest.stores(datasetId)
@@ -173,8 +175,11 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
           serviceConfig.instance,
           latestVersion,
           latestVersion,
-          publishedVersion,
-          unpublishedVersion,
+          latestShapeVersion,
+          publishedCopy.map(_.dataVersion),
+          unpublishedCopy.map(_.dataVersion),
+          publishedCopy.map { c => VersionSpec(c.dataVersion, c.dataShapeVersion) },
+          unpublishedCopy.map { c => VersionSpec(c.dataVersion, c.dataShapeVersion) },
           secondaries,
           feedbackSecondaries,
           groups.toMap,
@@ -391,7 +396,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
     ifModifiedSince: Option[DateTime],
     sorted: Boolean,
     rowId: Option[String]
-   )(f: Either[Schema, (EntityTag, Long, DateTime, Seq[SchemaField], Option[UserColumnId],
+   )(f: Either[Schema, (EntityTag, Long, Long, Long, DateTime, Seq[SchemaField], Option[UserColumnId],
      String,
      Long,
      Iterator[Array[JValue]])] => Unit): Exporter.Result[Unit] = {
@@ -422,6 +427,8 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
               f(Right((
                 entityTag,
                 copyCtx.datasetInfo.latestDataVersion,
+                copyCtx.copyInfo.dataVersion,
+                copyCtx.copyInfo.dataShapeVersion,
                 copyCtx.copyInfo.lastModified,
                 orderedSchema,
                 pkColName,

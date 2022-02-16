@@ -126,7 +126,7 @@ trait BaseDatasetMapWriter[CT] extends BaseDatasetMapReader[CT] {
     * updated `DatasetInfo`. */
   def updateNextCounterValue(copyInfo: CopyInfo, newNextCounterValue: Long): CopyInfo
 
-  def updateDataVersion(copyInfo: CopyInfo, newDataVersion: Long): CopyInfo
+  def updateDataVersion(copyInfo: CopyInfo, newDataVersion: Long, dataShapeUpdated: Boolean): CopyInfo
 
   /** Updates the last-modified information for this copy.
     */

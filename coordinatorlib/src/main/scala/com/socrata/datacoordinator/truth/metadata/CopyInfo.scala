@@ -12,6 +12,7 @@ sealed trait CopyInfoLike extends Product {
   val copyNumber: Long
   val lifecycleStage: LifecycleStage
   val dataVersion: Long
+  val dataShapeVersion: Long
   val lastModified: DateTime
 }
 
@@ -19,9 +20,10 @@ case class UnanchoredCopyInfo(@JsonKey("sid") systemId: CopyId,
                               @JsonKey("num") copyNumber: Long,
                               @JsonKey("stage") lifecycleStage: LifecycleStage,
                               @JsonKey("ver") dataVersion: Long,
+                              @JsonKey("sver") dataShapeVersion: Long,
                               @JsonKey("lm") lastModified: DateTime) extends CopyInfoLike
 
-object UnanchoredCopyInfo extends ((CopyId, Long, LifecycleStage, Long, DateTime) => UnanchoredCopyInfo) {
+object UnanchoredCopyInfo extends ((CopyId, Long, LifecycleStage, Long, Long, DateTime) => UnanchoredCopyInfo) {
   override def toString = "UnanchoredCopyInfo"
 
   implicit val jCodec = AutomaticJsonCodecBuilder[UnanchoredCopyInfo]
@@ -31,7 +33,7 @@ object UnanchoredCopyInfo extends ((CopyId, Long, LifecycleStage, Long, DateTime
   * or [[com.socrata.datacoordinator.truth.metadata.DatasetMapWriter]].
   * @param tag Guard against a non-map accidentially instantiating this.
   */
-case class CopyInfo(datasetInfo: DatasetInfo, systemId: CopyId, copyNumber: Long, lifecycleStage: LifecycleStage, dataVersion: Long, lastModified: DateTime, tableModifier: Option[Long])(implicit tag: com.socrata.datacoordinator.truth.metadata.`-impl`.Tag) extends CopyInfoLike {
+case class CopyInfo(datasetInfo: DatasetInfo, systemId: CopyId, copyNumber: Long, lifecycleStage: LifecycleStage, dataVersion: Long, dataShapeVersion: Long, lastModified: DateTime, tableModifier: Option[Long])(implicit tag: com.socrata.datacoordinator.truth.metadata.`-impl`.Tag) extends CopyInfoLike {
   lazy val dataTableName = datasetInfo.tableBase + "_" + copyNumber + tableModifier.fold("")("_" + _)
-  def unanchored: UnanchoredCopyInfo = UnanchoredCopyInfo(systemId, copyNumber,lifecycleStage, dataVersion, lastModified)
+  def unanchored: UnanchoredCopyInfo = UnanchoredCopyInfo(systemId, copyNumber,lifecycleStage, dataVersion, dataShapeVersion, lastModified)
 }

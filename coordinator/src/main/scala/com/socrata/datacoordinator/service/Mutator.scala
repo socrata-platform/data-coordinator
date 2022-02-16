@@ -394,7 +394,7 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
     val commands = createCommandStream(0L, commandStream.next(), datasetId, commandStream)
     val (_, mutationResults) = runScript(u, commands)
     val copyInfo = u.datasetMapReader.latest(u.datasetMapReader.datasetInfo(datasetId).get)
-    ProcessMutationReturns(copyInfo.copyNumber, copyInfo.dataVersion, copyInfo.lastModified, mutationResults)
+    ProcessMutationReturns(copyInfo.copyNumber, copyInfo.dataVersion, copyInfo.dataShapeVersion, copyInfo.lastModified, mutationResults)
   }
 
   val jobCounter = new Counter(0)

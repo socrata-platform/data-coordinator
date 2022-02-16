@@ -54,6 +54,7 @@ case class DatasetResource(datasetId: DatasetId,
 
   val HEADER_LAST_MODIFIED = "X-SODA2-Truth-Last-Modified"
   val HEADER_TRUTH_VERSION = "X-SODA2-Truth-Version"
+  val HEADER_TRUTH_SHAPE_VERSION = "X-SODA2-Truth-Shape-Version"
   val HEADER_TRUTH_COPY_NUMBER = "X-SODA2-Truth-Copy-Number"
 
   override def post = doMutation
@@ -72,12 +73,13 @@ case class DatasetResource(datasetId: DatasetId,
             }
             iteratorOrError match {
               case Right(iterator) =>
-                val ProcessMutationReturns(copyNumber, version, lastModified, result) =
+                val ProcessMutationReturns(copyNumber, dataVersion, dataShapeVersion, lastModified, result) =
                   processMutation(datasetId, iterator.map { ev => boundResetter(); mutateRate.mark(); ev }, tmp)
                 OK ~>
                   ContentType(JsonContentType) ~>
                   Header(HEADER_LAST_MODIFIED, dateTimeFormat.print(lastModified)) ~>
-                  Header(HEADER_TRUTH_VERSION, version.toString) ~>
+                  Header(HEADER_TRUTH_VERSION, dataVersion.toString) ~>
+                  Header(HEADER_TRUTH_SHAPE_VERSION, dataShapeVersion.toString) ~>
                   Header(HEADER_TRUTH_COPY_NUMBER, copyNumber.toString) ~>
                   Stream { w =>
                     val bw = new BufferedOutputStream(w)
@@ -199,7 +201,7 @@ case class DatasetResource(datasetId: DatasetId,
             upstreamPrecondition, ifModifiedSince, sorted, rowId) {
             case Left(newSchema) =>
               mismatchedSchema(ExportRequestError.MISMATCHED_SCHEMA, datasetId, newSchema)(resp)
-            case Right((etag, dataVersion, lastModified, schema, rowIdCol, locale, approxRowCount, rows)) =>
+            case Right((etag, dataVersion, copyDataVersion, copyDataShapeVersion, lastModified, schema, rowIdCol, locale, approxRowCount, rows)) =>
               resp.setContentType("application/json")
               resp.setCharacterEncoding("utf-8")
               resp.setDateHeader("Last-Modified", lastModified.getMillis)
@@ -210,6 +212,10 @@ case class DatasetResource(datasetId: DatasetId,
               out.write(JNumber(approxRowCount).toString)
               out.write("\n ,\"data_version\":")
               out.write(JNumber(dataVersion).toString)
+              out.write("\n ,\"copy_data_version\":")
+              out.write(JNumber(copyDataVersion).toString)
+              out.write("\n ,\"copy_data_shape_version\":")
+              out.write(JNumber(copyDataShapeVersion).toString)
               out.write("\n ,\"last_modified\":")
               jsonWriter.write(JString(ISODateTimeFormat.dateTime.print(lastModified)))
               out.write("\n ,\"locale\":")
@@ -247,6 +253,6 @@ case class DatasetResource(datasetId: DatasetId,
 }
 
 object DatasetResource{
-  type datasetContentsFunc = Either[Schema, (EntityTag, Long, DateTime, Seq[SchemaField], Option[UserColumnId], String, Long,
+  type datasetContentsFunc = Either[Schema, (EntityTag, Long, Long, Long, DateTime, Seq[SchemaField], Option[UserColumnId], String, Long,
     Iterator[Array[JValue]])] => Unit
 }

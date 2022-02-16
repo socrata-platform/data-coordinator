@@ -41,11 +41,11 @@ object TestData {
     sum23.systemId -> sum23
   )
 
-  def v7copyInfo = CopyInfo(new CopyId(10), 1, LifecycleStage.Published, 7, DateTime.now)
-  def v8copyInfo = CopyInfo(new CopyId(10), 2, LifecycleStage.Unpublished, 8, DateTime.now)
+  def v7copyInfo = CopyInfo(new CopyId(10), 1, LifecycleStage.Published, 7, 7, DateTime.now)
+  def v8copyInfo = CopyInfo(new CopyId(10), 2, LifecycleStage.Unpublished, 8, 8, DateTime.now)
 
-  def v10copyInfo = CopyInfo(new CopyId(10), 1, LifecycleStage.Published, 10, DateTime.now)
-  def v11copyInfo = CopyInfo(new CopyId(10), 1, LifecycleStage.Published, 11, DateTime.now)
+  def v10copyInfo = CopyInfo(new CopyId(10), 1, LifecycleStage.Published, 10, 10, DateTime.now)
+  def v11copyInfo = CopyInfo(new CopyId(10), 1, LifecycleStage.Published, 11, 11, DateTime.now)
 
   object TestRows {
     type ExportRowsResult = Either[RequestFailure, Either[ColumnsDoNotExist, RowData[SoQLValue]]]
@@ -216,7 +216,7 @@ object TestData {
       (args :+ LastModifiedChanged(DateTime.now)).toIterator // events always end with a LastModifiedChanged event
 
     def workcopy(number: Long, version: Long) =
-      WorkingCopyCreated(CopyInfo(new CopyId(number), number, LifecycleStage.Unpublished, version, DateTime.now))
+      WorkingCopyCreated(CopyInfo(new CopyId(number), number, LifecycleStage.Unpublished, version, version, DateTime.now))
 
     def rowdata[CV <: SoQLValue](systemPKRows: Seq[SoQLID], oldData: Seq[secondary.Row[CV]], data: Seq[secondary.Row[CV]]): RowDataUpdated[CV] = {
       RowDataUpdated(systemPKRows.zip(oldData.zip(data)).map { case (rowId, (oldRow, row)) =>
