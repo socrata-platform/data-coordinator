@@ -153,7 +153,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
         val secondaryStoresConfig = u.secondaryStoresConfig
         val copyInfo = datasetMapReader.latest(datasetInfo)
         val latestVersion = copyInfo.dataVersion
-        val latestShapeVersion = copyInfo.shapeDataVersion
+        val latestShapeVersion = copyInfo.dataShapeVersion
 
         val copies = datasetMapReader.allCopies(datasetInfo)
         val publishedCopy = copies.find { _.lifecycleStage == LifecycleStage.Published }
@@ -178,8 +178,8 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
           latestShapeVersion,
           publishedCopy.map(_.dataVersion),
           unpublishedCopy.map(_.dataVersion),
-          publishedCopy.map { c => VersionSpec(c.dataVersion, c.shapeDataVersion) },
-          unpublishedCopy.map { c => VersionSpec(c.dataVersion, c.shapeDataVersion) },
+          publishedCopy.map { c => VersionSpec(c.dataVersion, c.dataShapeVersion) },
+          unpublishedCopy.map { c => VersionSpec(c.dataVersion, c.dataShapeVersion) },
           secondaries,
           feedbackSecondaries,
           groups.toMap,
@@ -428,7 +428,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
                 entityTag,
                 copyCtx.datasetInfo.latestDataVersion,
                 copyCtx.copyInfo.dataVersion,
-                copyCtx.copyInfo.shapeDataVersion,
+                copyCtx.copyInfo.dataShapeVersion,
                 copyCtx.copyInfo.lastModified,
                 orderedSchema,
                 pkColName,

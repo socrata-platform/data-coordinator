@@ -23,7 +23,7 @@ message UnanchoredCopyInfo {
   required LifecycleStage lifecycleStage = 3;
   required int64 dataVersion = 4;
   required int64 lastModified = 5;
-  optional int64 shapeDataVersion = 6;
+  optional int64 dataShapeVersion = 6;
 }
 
 message UnanchoredColumnInfo {

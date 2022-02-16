@@ -55,16 +55,21 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
       }
     }
 
-  // shape_data_version is nullable; if it's null it means this
+  // data_shape_version is nullable; if it's null it means this
   // dataset was created before that column was introduced and that
   // data_version should be used in its place.
-  private def getShapeDataVersion(rs: ResultSet): Long = {
-    Some(rs.getLong("shape_data_version")).filterNot(_ => rs.wasNull).getOrElse(rs.getLong("data_version"))
+  private def getDataShapeVersion(rs: ResultSet): Long = {
+    val dsv = rs.getLong("data_shape_version")
+    if(rs.wasNull) {
+      rs.getLong("data_version")
+    } else {
+      dsv
+    }
   }
 
   def latestQuery =
     """SELECT
-      |  system_id, copy_number, lifecycle_stage :: TEXT, data_version, shape_data_version, last_modified, table_modifier
+      |  system_id, copy_number, lifecycle_stage :: TEXT, data_version, data_shape_version, last_modified, table_modifier
       |FROM
       |  copy_map
       |  LEFT OUTER JOIN copy_map_table_modifiers ON copy_map.system_id = copy_map_table_modifiers.copy_system_id
@@ -88,7 +93,7 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
           rs.getLong("copy_number"),
           LifecycleStage.valueOf(rs.getString("lifecycle_stage")),
           rs.getLong("data_version"),
-          getShapeDataVersion(rs),
+          getDataShapeVersion(rs),
           toDateTime(rs.getTimestamp("last_modified")),
           rs.getNullableLong("table_modifier")
         )
@@ -99,7 +104,7 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
 
   def allCopiesQuery =
     """SELECT
-      |  system_id, copy_number, lifecycle_stage :: TEXT, data_version, shape_data_version, last_modified, table_modifier
+      |  system_id, copy_number, lifecycle_stage :: TEXT, data_version, data_shape_version, last_modified, table_modifier
       |FROM
       |  copy_map
       |  LEFT OUTER JOIN copy_map_table_modifiers ON copy_map.system_id = copy_map_table_modifiers.copy_system_id
@@ -122,7 +127,7 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
         rs.getLong("copy_number"),
         LifecycleStage.valueOf(rs.getString("lifecycle_stage")),
         rs.getLong("data_version"),
-        getShapeDataVersion(rs),
+        getDataShapeVersion(rs),
         toDateTime(rs.getTimestamp("last_modified")),
         rs.getNullableLong("table_modifier")
       )
@@ -132,7 +137,7 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
 
   def lookupQuery =
     """SELECT
-      |  system_id, copy_number, data_version, shape_data_version, last_modified, table_modifier
+      |  system_id, copy_number, data_version, data_shape_version, last_modified, table_modifier
       |FROM
       |  copy_map
       |  LEFT OUTER JOIN copy_map_table_modifiers ON copy_map.system_id = copy_map_table_modifiers.copy_system_id
@@ -147,7 +152,7 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
       stmt.setString(2, stage.name)
       using(t("lookup-copy","dataset_id" -> datasetInfo.systemId,"lifecycle-stage"->stage)(stmt.executeQuery())) { rs =>
         if(rs.next()) {
-          Some(CopyInfo(datasetInfo, new CopyId(rs.getLong("system_id")), rs.getLong("copy_number"), stage, rs.getLong("data_version"), getShapeDataVersion(rs), toDateTime(rs.getTimestamp("last_modified")), rs.getNullableLong("table_modifier")))
+          Some(CopyInfo(datasetInfo, new CopyId(rs.getLong("system_id")), rs.getLong("copy_number"), stage, rs.getLong("data_version"), getDataShapeVersion(rs), toDateTime(rs.getTimestamp("last_modified")), rs.getNullableLong("table_modifier")))
         } else {
           None
         }
@@ -157,7 +162,7 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
 
   def lookupCopyQuery =
     """SELECT
-      |  system_id, copy_number, lifecycle_stage, data_version, shape_data_version, last_modified, table_modifier
+      |  system_id, copy_number, lifecycle_stage, data_version, data_shape_version, last_modified, table_modifier
       |FROM
       |  copy_map
       |  LEFT OUTER JOIN copy_map_table_modifiers ON copy_map.system_id = copy_map_table_modifiers.copy_system_id
@@ -172,7 +177,7 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
       stmt.setLong(2, copyNumber)
       using(t("lookup-copy","dataset_id" -> datasetInfo.systemId,"copy_number"->copyNumber)(stmt.executeQuery())) { rs =>
         if(rs.next()) {
-          Some(CopyInfo(datasetInfo, new CopyId(rs.getLong("system_id")), rs.getLong("copy_number"), rs.getLifecycleStage("lifecycle_stage"), rs.getLong("data_version"), getShapeDataVersion(rs), toDateTime(rs.getTimestamp("last_modified")), rs.getNullableLong("table_modifier")))
+          Some(CopyInfo(datasetInfo, new CopyId(rs.getLong("system_id")), rs.getLong("copy_number"), rs.getLifecycleStage("lifecycle_stage"), rs.getLong("data_version"), getDataShapeVersion(rs), toDateTime(rs.getTimestamp("last_modified")), rs.getNullableLong("table_modifier")))
         } else {
           None
         }
@@ -182,7 +187,7 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
 
   def previousVersionQuery =
     """SELECT
-      |  system_id, copy_number, lifecycle_stage :: TEXT, data_version, shape_data_version, last_modified, table_modifier
+      |  system_id, copy_number, lifecycle_stage :: TEXT, data_version, data_shape_version, last_modified, table_modifier
       |FROM
       |  copy_map
       |  LEFT OUTER JOIN copy_map_table_modifiers ON copy_map.system_id = copy_map_table_modifiers.copy_system_id
@@ -205,7 +210,7 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
             rs.getLong("copy_number"),
             LifecycleStage.valueOf(rs.getString("lifecycle_stage")),
             rs.getLong("data_version"),
-            getShapeDataVersion(rs),
+            getDataShapeVersion(rs),
             toDateTime(rs.getTimestamp("last_modified")),
             rs.getNullableLong("table_modifier")
           ))
@@ -218,7 +223,7 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
 
   def copyNumberQuery =
     """SELECT
-      |  system_id, lifecycle_stage, data_version, shape_data_version, last_modified, table_modifier
+      |  system_id, lifecycle_stage, data_version, data_shape_version, last_modified, table_modifier
       |FROM
       |  copy_map
       |  LEFT OUTER JOIN copy_map_table_modifiers ON copy_map.system_id = copy_map_table_modifiers.copy_system_id
@@ -237,7 +242,7 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
             copyNumber,
             LifecycleStage.valueOf(rs.getString("lifecycle_stage")),
             rs.getLong("data_version"),
-            getShapeDataVersion(rs),
+            getDataShapeVersion(rs),
             toDateTime(rs.getTimestamp("last_modified")),
             rs.getNullableLong("table_modifier")
           ))
@@ -368,7 +373,7 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
 
   def snapshotsQuery =
     """SELECT
-      |  system_id, copy_number, lifecycle_stage :: TEXT, data_version, shape_data_version, last_modified, table_modifier
+      |  system_id, copy_number, lifecycle_stage :: TEXT, data_version, data_shape_version, last_modified, table_modifier
       |FROM
       |  copy_map
       |  LEFT OUTER JOIN copy_map_table_modifiers ON copy_map.system_id = copy_map_table_modifiers.copy_system_id
@@ -472,7 +477,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
   private def toTimestamp(time: DateTime): Timestamp = new Timestamp(time.getMillis)
 
   def createQuery_tableMap = "INSERT INTO dataset_map (next_counter_value, latest_data_version, locale_name, obfuscation_key, resource_name) VALUES (?, ?, ?, ?, ?) RETURNING system_id"
-  def createQuery_copyMap = "INSERT INTO copy_map (dataset_system_id, copy_number, lifecycle_stage, data_version, shape_data_version, last_modified) VALUES (?, ?, CAST(? AS dataset_lifecycle_stage), ?, ?, ?) RETURNING system_id"
+  def createQuery_copyMap = "INSERT INTO copy_map (dataset_system_id, copy_number, lifecycle_stage, data_version, data_shape_version, last_modified) VALUES (?, ?, CAST(? AS dataset_lifecycle_stage), ?, ?, ?) RETURNING system_id"
   def create(localeName: String, resourceName: Option[String]): CopyInfo = {
     val datasetInfo = using(conn.prepareStatement(createQuery_tableMap)) { stmt =>
       val datasetInfoNoSystemId = DatasetInfo(DatasetId.Invalid, initialCounterValue, initialLatestDataVersion, localeName, obfuscationKeyGenerator(), resourceName)
@@ -501,7 +506,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
       stmt.setLong(2, copyInfoNoSystemId.copyNumber)
       stmt.setString(3, copyInfoNoSystemId.lifecycleStage.name)
       stmt.setLong(4, copyInfoNoSystemId.dataVersion)
-      stmt.setLong(5, copyInfoNoSystemId.shapeDataVersion)
+      stmt.setLong(5, copyInfoNoSystemId.dataShapeVersion)
       stmt.setTimestamp(6, toTimestamp(copyInfoNoSystemId.lastModified))
       using(t("create-initial-copy", "dataset_id" -> datasetInfo.systemId)(stmt.executeQuery())) { rs =>
         val foundSomething = rs.next()
@@ -511,7 +516,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
     }
   }
 
-  def createQuery_copyMapWithSystemId = "INSERT INTO copy_map (system_id, dataset_system_id, copy_number, lifecycle_stage, data_version, shape_data_version, last_modified) VALUES (?, ?, ?, CAST(? AS dataset_lifecycle_stage), ?, ?, ?)"
+  def createQuery_copyMapWithSystemId = "INSERT INTO copy_map (system_id, dataset_system_id, copy_number, lifecycle_stage, data_version, data_shape_version, last_modified) VALUES (?, ?, ?, CAST(? AS dataset_lifecycle_stage), ?, ?, ?)"
   def createWithId(systemId: DatasetId, initialCopyId: CopyId, localeName: String, obfuscationKey: Array[Byte], resourceName: Option[String]): CopyInfo = {
     val datasetInfo = unsafeCreateDataset(systemId, initialCounterValue, initialLatestDataVersion, localeName, obfuscationKey, resourceName)
 
@@ -523,7 +528,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
       stmt.setLong(3, copyInfo.copyNumber)
       stmt.setString(4, copyInfo.lifecycleStage.name)
       stmt.setLong(5, copyInfo.dataVersion)
-      stmt.setLong(6, copyInfo.shapeDataVersion)
+      stmt.setLong(6, copyInfo.dataShapeVersion)
       stmt.setTimestamp(7, toTimestamp(copyInfo.lastModified))
       try {
         t("create-create-copy-with-system-id", "dataset_id" -> systemId, "copy_id" -> initialCopyId)(stmt.execute())
@@ -764,14 +769,14 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
     newDatasetInfo
   }
 
-  def unsafeCreateCopyQuery = "INSERT INTO copy_map (system_id, dataset_system_id, copy_number, lifecycle_stage, data_version, shape_data_version, last_modified) values (?, ?, ?, CAST(? AS dataset_lifecycle_stage), ?, ?, ?)"
+  def unsafeCreateCopyQuery = "INSERT INTO copy_map (system_id, dataset_system_id, copy_number, lifecycle_stage, data_version, data_shape_version, last_modified) values (?, ?, ?, CAST(? AS dataset_lifecycle_stage), ?, ?, ?)"
   def unsafeCreateCopy(datasetInfo: DatasetInfo,
                        systemId: CopyId,
                        copyNumber: Long,
                        lifecycleStage: LifecycleStage,
                        dataVersion: Long,
-                       shapeDataVersion: Long): CopyInfo = {
-    val newCopy = CopyInfo(datasetInfo, systemId, copyNumber, lifecycleStage, dataVersion, shapeDataVersion, DateTime.now, None)
+                       dataShapeVersion: Long): CopyInfo = {
+    val newCopy = CopyInfo(datasetInfo, systemId, copyNumber, lifecycleStage, dataVersion, dataShapeVersion, DateTime.now, None)
 
     using(conn.prepareStatement(unsafeCreateCopyQuery)) { stmt =>
       stmt.setLong(1, newCopy.systemId.underlying)
@@ -779,7 +784,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
       stmt.setLong(3, newCopy.copyNumber)
       stmt.setString(4, newCopy.lifecycleStage.name)
       stmt.setLong(5, newCopy.dataVersion)
-      stmt.setLong(6, newCopy.shapeDataVersion)
+      stmt.setLong(6, newCopy.dataShapeVersion)
       stmt.setTimestamp(7, toTimestamp(newCopy.lastModified))
       try {
         t("unsafe-create-copy", "dataset_id" -> datasetInfo.systemId, "copy_num" -> copyNumber)(stmt.execute())
@@ -916,7 +921,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
     copyInfo.copy(datasetInfo = updateNextCounterValue(copyInfo.datasetInfo, newNextCounterValue))
 
   def updateDataVersionQuery = "UPDATE copy_map SET data_version = ? WHERE system_id = ?"
-  def updateDataAndShapeVersionQuery = "UPDATE copy_map SET data_version = ?, shape_data_version = ? WHERE system_id = ?"
+  def updateDataAndShapeVersionQuery = "UPDATE copy_map SET data_version = ?, data_shape_version = ? WHERE system_id = ?"
   def updateDataVersion(copyInfo: CopyInfo, newDataVersion: Long, dataShapeUpdated: Boolean): CopyInfo = {
     // Not "== copyInfo.dataVersion + 1" because if a working copy was dropped
     assert(newDataVersion > copyInfo.dataVersion, s"Setting data version to $newDataVersion when it was ${copyInfo.dataVersion}")
@@ -928,7 +933,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
         val count = t("update-data-version", "dataset_id" -> copyInfo.datasetInfo.systemId, "copy_num" -> copyInfo.copyNumber)(stmt.executeUpdate())
         assert(count == 1)
       }
-      copyInfo.copy(dataVersion = newDataVersion, shapeDataVersion = newDataVersion)
+      copyInfo.copy(dataVersion = newDataVersion, dataShapeVersion = newDataVersion)
     } else {
       using(conn.prepareStatement(updateDataVersionQuery)) { stmt =>
         stmt.setLong(1, newDataVersion)
@@ -1003,7 +1008,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
   }
 
   def ensureUnpublishedCopyQuery_newCopyNumber = "SELECT max(copy_number) + 1 FROM copy_map WHERE dataset_system_id = ?"
-  def ensureUnpublishedCopyQuery_copyMap = "INSERT INTO copy_map (dataset_system_id, copy_number, lifecycle_stage, data_version, shape_data_version, last_modified) values (?, ?, CAST(? AS dataset_lifecycle_stage), ?, ?, ?) RETURNING system_id"
+  def ensureUnpublishedCopyQuery_copyMap = "INSERT INTO copy_map (dataset_system_id, copy_number, lifecycle_stage, data_version, data_shape_version, last_modified) values (?, ?, CAST(? AS dataset_lifecycle_stage), ?, ?, ?) RETURNING system_id"
   def ensureUnpublishedCopy(tableInfo: DatasetInfo): Either[CopyInfo, CopyPair[CopyInfo]] =
     ensureUnpublishedCopy(tableInfo, None)
 
@@ -1040,7 +1045,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
                   stmt.setLong(2, newCopyWithoutSystemId.copyNumber)
                   stmt.setString(3, newCopyWithoutSystemId.lifecycleStage.name)
                   stmt.setLong(4, newCopyWithoutSystemId.dataVersion)
-                  stmt.setLong(5, newCopyWithoutSystemId.shapeDataVersion)
+                  stmt.setLong(5, newCopyWithoutSystemId.dataShapeVersion)
                   stmt.setTimestamp(6, toTimestamp(newCopyWithoutSystemId.lastModified))
                   using(t("create-new-copy", "dataset_id" -> newCopyWithoutSystemId.datasetInfo.systemId)(stmt.executeQuery())) { rs =>
                     val foundSomething = rs.next()
@@ -1060,7 +1065,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
                   newCopyNumber,
                   LifecycleStage.Unpublished,
                   publishedCopy.dataVersion,
-                  publishedCopy.shapeDataVersion)
+                  publishedCopy.dataShapeVersion)
             }
 
             Right(CopyPair(publishedCopy, newCopy))

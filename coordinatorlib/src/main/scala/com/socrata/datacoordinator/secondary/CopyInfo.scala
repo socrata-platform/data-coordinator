@@ -4,4 +4,4 @@ import com.socrata.datacoordinator.id.CopyId
 import org.joda.time.DateTime
 
 case class CopyInfo(systemId: CopyId, copyNumber: Long, lifecycleStage: LifecycleStage,
-                    dataVersion: Long, shapeDataVersion: Long, lastModified: DateTime)
+                    dataVersion: Long, dataShapeVersion: Long, lastModified: DateTime)
