@@ -371,7 +371,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
                 throw ResyncSecondaryException(s"Consolidation saw the log change?!  Saw s{other.companion.productPrefix} while expecting LastModifiedChanged!")
               case None =>
                 done = true
-                rs.close(events)
+                rs.close(eventsRaw)
                 false
             }
           }
