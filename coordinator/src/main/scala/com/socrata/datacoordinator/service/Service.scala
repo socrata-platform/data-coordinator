@@ -153,6 +153,10 @@ class Service(serviceConfig: ServiceConfig,
               datasetErrorResponse(NotFound, RollupDeleteError.DOES_NOT_EXIST,
                 "commandIndex" -> JNumber(em.index),
                 "rollup" -> JString(name.underlying))
+            case Mutator.InvalidRollup(name) =>
+              datasetErrorResponse(BadRequest, RollupCreateError.INVALID,
+                "commandIndex" -> JNumber(em.index),
+                "rollup" -> JString(name.underlying))
             case Mutator.CannotAcquireDatasetWriteLock(name) =>
               writeLockError(name, "commandIndex" -> JNumber(em.index))
             case Mutator.SystemInReadOnlyMode() =>
