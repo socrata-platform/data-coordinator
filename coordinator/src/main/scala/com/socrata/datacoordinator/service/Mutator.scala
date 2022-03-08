@@ -59,6 +59,7 @@ object Mutator {
   case class NoSuchDataset(name: DatasetId)(val index: Long) extends MutationException
   case class SecondaryStoresNotUpToDate(name: DatasetId, stores: Set[String])(val index: Long) extends MutationException
   case class NoSuchRollup(name: RollupName)(val index: Long) extends MutationException
+  case class InvalidRollup(name: RollupName)(val index: Long) extends MutationException
   case class CannotAcquireDatasetWriteLock(name: DatasetId)(val index: Long) extends MutationException
   case class SystemInReadOnlyMode()(val index: Long) extends MutationException
   case class IncorrectLifecycleStage(name: DatasetId,
@@ -793,8 +794,12 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
           }
           Seq(MutationScriptCommandResult.Uninteresting)
         case CreateOrUpdateRollup(idx, name, soql) =>
-          mutator.createOrUpdateRollup(name, soql)
-          Seq(MutationScriptCommandResult.Uninteresting)
+          mutator.createOrUpdateRollup(name, soql) match {
+            case Right(_) =>
+              Seq(MutationScriptCommandResult.Uninteresting)
+            case Left(_) =>
+              throw InvalidRollup(name)(idx)
+          }
         case DropRollup(idx, name) =>
           mutator.dropRollup(name) match {
             case Some(info) => Seq(MutationScriptCommandResult.Uninteresting)

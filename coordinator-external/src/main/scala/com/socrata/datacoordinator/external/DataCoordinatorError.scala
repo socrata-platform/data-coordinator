@@ -12,6 +12,10 @@ object RollupDeleteError{
   val DOES_NOT_EXIST = "delete.rollup.does-not-exist"
 }
 
+object RollupCreateError{
+  val INVALID = "create.rollup.invalid"
+}
+
 // Request Errors
 
 object RequestError{

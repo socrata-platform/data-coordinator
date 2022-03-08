@@ -18,7 +18,7 @@ import com.socrata.datacoordinator.truth.metadata.CopyInfo
 import com.socrata.datacoordinator.id._
 import com.socrata.soql.SoQLAnalyzer
 import com.socrata.soql.collection.OrderedMap
-import com.socrata.soql.exceptions.NoSuchColumn
+import com.socrata.soql.exceptions.{NoSuchColumn, SoQLException}
 
 import scala.concurrent.duration.Duration
 
@@ -164,6 +164,7 @@ trait DatasetMutator[CT, CV] {
     case class UnPKableColumnException(name: UserColumnId, typ: CT) extends PrimaryKeyCreationException
     case class NullCellsException(name: UserColumnId) extends PrimaryKeyCreationException
     case class DuplicateCellsException(name: UserColumnId) extends PrimaryKeyCreationException
+    case class RollupValidationException(ru: RollupInfo, message: String) extends Exception(message)
 
     def unmakeUserPrimaryKey(ci: ColumnInfo[CT]): ColumnInfo[CT]
 
@@ -183,7 +184,7 @@ trait DatasetMutator[CT, CV] {
 
     def upsert(inputGenerator: Iterator[RowDataUpdateJob], reportWriter: ReportWriter[CV], replaceUpdatedRows: Boolean, updateOnly: Boolean, bySystemId: Boolean): Unit
 
-    def createOrUpdateRollup(name: RollupName, soql: String): Unit
+    def createOrUpdateRollup(name: RollupName, soql: String): Either[Exception, RollupInfo]
     def dropRollup(name: RollupName): Option[RollupInfo]
     def secondaryReindex(): Unit
     def createOrUpdateIndexDirective(column: ColumnInfo[CT], directive: JObject): Unit
@@ -420,25 +421,37 @@ object DatasetMutator {
       }
 
       private def dropInvalidRollups(copyInfo: CopyInfo): Unit = {
-        val prefixedSchema: Seq[(ColumnName, CT)] =
-          datasetMap.schema(copyInfo).values.map { colInfo =>
-            (new ColumnName("_" + colInfo.userColumnId.underlying), colInfo.typ)
-          }(collection.breakOut)
-        val prefixedDsContext = new com.socrata.soql.environment.DatasetContext[CT] {
-            val schema: OrderedMap[ColumnName, CT] = OrderedMap(prefixedSchema: _*)
-        }
         val rollups = datasetMap.rollups(copyInfo)
         if (rollups.nonEmpty) {
-          val analyzer = soqlAnalyzer
-          rollups.foreach { (ru: RollupInfo) =>
+          rollups.foreach { ru: RollupInfo =>
             try {
-              analyzer.analyzeFullQuery(ru.soql)(Map(TableName.PrimaryTable.qualifier -> prefixedDsContext))
+              validateRollup(ru)
             } catch {
-              case ex: NoSuchColumn =>
-                log.info(s"drop rollup ${ru.name.underlying} because ${ex.getMessage}")
-                datasetMap.dropRollup(copyInfo, Some(ru.name))
+              case ex: RollupValidationException =>
+                log.info(s"drop invalid rollup ${ru.name.underlying} ${ex.getMessage}")
+                dropRollup(ru.name)
             }
           }
+        }
+      }
+
+      def validateRollup(ru: RollupInfo): Unit = {
+        val prefixedSchema: Seq[(ColumnName, CT)] =
+          datasetMap.schema(ru.copyInfo).values.map { colInfo =>
+            val prefix = if (colInfo.userColumnId.underlying.startsWith(":")) "" else "_"
+            (new ColumnName(prefix + colInfo.userColumnId.underlying), colInfo.typ)
+          }(collection.breakOut)
+        val prefixedDsContext = new com.socrata.soql.environment.DatasetContext[CT] {
+          val schema: OrderedMap[ColumnName, CT] = OrderedMap(prefixedSchema: _*)
+        }
+        val analyzer = soqlAnalyzer
+        try {
+          analyzer.analyzeFullQuery(ru.soql)(Map(TableName.PrimaryTable.qualifier -> prefixedDsContext))
+        } catch {
+          case ex: NoSuchColumn =>
+            throw RollupValidationException(ru, ex.getMessage)
+          case ex: SoQLException =>
+            throw RollupValidationException(ru, ex.getMessage)
         }
       }
 
@@ -476,9 +489,17 @@ object DatasetMutator {
         }
       }
 
-      def createOrUpdateRollup(name: RollupName, soql: String): Unit = {
+      def createOrUpdateRollup(name: RollupName, soql: String): Either[Exception, RollupInfo] = {
         val info: RollupInfo = datasetMap.createOrUpdateRollup(copyInfo, name, soql)
-        logger.rollupCreatedOrUpdated(info)
+        try {
+          validateRollup(info)
+          logger.rollupCreatedOrUpdated(info)
+          Right(info)
+        } catch {
+          case ex: RollupValidationException =>
+            log.info(s"create rollup failed ${name.underlying} ${ex.getMessage}")
+            Left(ex)
+        }
       }
 
       def dropRollup(name: RollupName): Option[RollupInfo] = {
