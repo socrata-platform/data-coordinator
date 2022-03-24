@@ -5,7 +5,7 @@ import com.rojoma.json.v3.ast.{JNumber, JObject, JString, JValue}
 import com.rojoma.json.v3.codec.JsonEncode
 import com.rojoma.json.v3.util.JsonUtil
 import com.socrata.datacoordinator.util.CopyContextResult
-import com.socrata.soql.environment.{ColumnName, TableName}
+import com.socrata.soql.environment.{ColumnName, ResourceName, TableName}
 import org.joda.time.DateTime
 import com.rojoma.simplearm.v2._
 import com.socrata.datacoordinator.truth.metadata._
@@ -16,9 +16,11 @@ import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.metadata.CopyPair
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
 import com.socrata.datacoordinator.id._
-import com.socrata.soql.SoQLAnalyzer
+import com.socrata.soql.ast.{JoinFunc, JoinQuery, JoinTable, Select}
+import com.socrata.soql.{BinaryTree, Compound, Leaf, SoQLAnalyzer}
 import com.socrata.soql.collection.OrderedMap
 import com.socrata.soql.exceptions.{NoSuchColumn, SoQLException}
+import com.socrata.soql.parsing.{AbstractParser, Parser}
 
 import scala.concurrent.duration.Duration
 
@@ -44,6 +46,7 @@ trait LowLevelDatabaseMutator[CT, CV] {
   trait MutationContext {
     def now: DateTime
     def datasetMap: DatasetMapWriter[CT]
+    def datasetMapReader: DatasetMapReader[CT]
     def logger(info: DatasetInfo, user: String): Logger[CT, CV]
     def schemaLoader(logger: Logger[CT, CV]): SchemaLoader[CT]
     def datasetContentsCopier(logger: Logger[CT, CV]): DatasetContentsCopier[CT]
@@ -243,6 +246,7 @@ object DatasetMutator {
 
       def now: DateTime = llCtx.now
       def datasetMap: DatasetMapWriter[CT] = llCtx.datasetMap
+      def datasetMapReader: DatasetMapReader[CT] = llCtx.datasetMapReader
 
       def addColumns(columnsToAdd: Iterable[ColumnToAdd]): Iterable[ColumnInfo[CT]] = {
         checkDoingRows()
@@ -435,18 +439,40 @@ object DatasetMutator {
         }
       }
 
-      def validateRollup(ru: RollupInfo): Unit = {
-        val prefixedSchema: Seq[(ColumnName, CT)] =
-          datasetMap.schema(ru.copyInfo).values.map { colInfo =>
-            val prefix = if (colInfo.userColumnId.underlying.startsWith(":")) "" else "_"
-            (new ColumnName(prefix + colInfo.userColumnId.underlying), colInfo.typ)
-          }(collection.breakOut)
+      private def getPrefixedDsContext(copyInfo: CopyInfo): com.socrata.soql.environment.DatasetContext[CT] = {
+        val prefixedSchema: Seq[(ColumnName, CT)] = datasetMap.schema(copyInfo).values.map { colInfo =>
+          val prefix = if (colInfo.userColumnId.underlying.startsWith(":")) "" else "_"
+          (new ColumnName(prefix + colInfo.userColumnId.underlying), colInfo.typ)
+        }(collection.breakOut)
         val prefixedDsContext = new com.socrata.soql.environment.DatasetContext[CT] {
           val schema: OrderedMap[ColumnName, CT] = OrderedMap(prefixedSchema: _*)
         }
+        prefixedDsContext
+      }
+
+      def validateRollup(ru: RollupInfo): Unit = {
+        val prefixedDsContext = getPrefixedDsContext(ru.copyInfo)
         val analyzer = soqlAnalyzer
         try {
-          analyzer.analyzeFullQuery(ru.soql)(Map(TableName.PrimaryTable.qualifier -> prefixedDsContext))
+          val parsed = new Parser(AbstractParser.defaultParameters).binaryTreeSelect(ru.soql)
+          val tableNames = collectTableNames(parsed)
+          val initContext = Map(TableName.PrimaryTable.qualifier -> prefixedDsContext)
+          val contexts = tableNames.foldLeft(initContext) { (acc, tn) =>
+            val tableName = TableName(tn)
+            val ctx = for {
+              dsInfo <- datasetMapReader.datasetInfoByResourceName(ResourceName(tableName.nameWithSodaFountainPrefix))
+              copyInfo <- datasetMap.published(dsInfo)
+            } yield {
+              getPrefixedDsContext(copyInfo)
+            }
+            ctx match {
+              case Some(context) =>
+                acc + (tn -> context)
+              case None =>
+                acc
+            }
+          }
+          analyzer.analyzeBinary(parsed)(contexts)
         } catch {
           case ex: NoSuchColumn =>
             throw RollupValidationException(ru, ex.getMessage)
@@ -510,6 +536,24 @@ object DatasetMutator {
             r
           case None =>
             None
+        }
+      }
+
+      def collectTableNames(selects: BinaryTree[Select]): Set[String] = {
+        selects match {
+          case Compound(_, l, r) =>
+            collectTableNames(l) ++ collectTableNames(r)
+          case Leaf(select) =>
+            select.joins.foldLeft(select.from.map(_.name).filter(_ != TableName.This).toSet) { (acc, join) =>
+              join.from match {
+                case JoinTable(TableName(name, _)) =>
+                  acc + name
+                case JoinQuery(selects, _) =>
+                  acc ++ collectTableNames(selects)
+                case JoinFunc(_, _) =>
+                  throw new Exception("Unexpected join function")
+              }
+            }
         }
       }
 
