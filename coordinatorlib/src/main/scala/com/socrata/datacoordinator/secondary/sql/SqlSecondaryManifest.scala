@@ -407,6 +407,15 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
     }
   }
 
+  def performResync(datasetId: DatasetId, storeId: String): Unit = {
+    using(conn.prepareStatement(
+      "UPDATE secondary_manifest SET latest_secondary_data_version=-1, broken_at = null, cookie = null, next_retry = '2000-01-01', retry_num = 0 WHERE dataset_system_id = ? AND store_id = ?")) { stmt =>
+      stmt.setLong(1, datasetId.underlying)
+      stmt.setString(2, storeId)
+      stmt.executeUpdate
+    }
+  }
+
   def lockResync(datasetId: DatasetId, storeId: String, groupName: String): Unit = {
     using(conn.prepareStatement("INSERT INTO resync(dataset_system_id, store_id, group_name) values(?, ?, ?)")) { stmt =>
       val savepoint = conn.setSavepoint()
