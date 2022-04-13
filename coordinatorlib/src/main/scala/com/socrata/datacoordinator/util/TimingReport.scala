@@ -6,6 +6,43 @@ import org.slf4j.{MDC, Logger}
 
 trait TimingReport {
   def apply[T](name: String, kv: (String, Any)*)(f: => T): T
+
+  def info[T](name: String, kv: (String, Any)*)(f: => T): T = apply(name, kv: _*)(f)
+
+  protected def content(kv: (String, Any)*): String = {
+    JsonUtil.renderJson(kv.map { case (k,v) => (k, String.valueOf(v)) })
+  }
+
+  protected def time[T](f: => T)(report: (Long) => Unit): T = {
+    val start = System.nanoTime()
+    try {
+      f
+    } finally {
+      val end = System.nanoTime()
+      val timeInMs = (end - start) / 1000000
+      report(timeInMs)
+    }
+  }
+}
+
+trait LogTimingReport extends TimingReport {
+  val logger: Logger
+
+  protected def infoReport[T](name: String, kv: (String, Any)*)(f: => T): T = {
+    time(f) { (elapsed: Long) =>
+      if(logger.isInfoEnabled) {
+        logger.info("{}: {}ms; {}", name, elapsed.toString, content(kv: _*))
+      }
+    }
+  }
+
+  protected def debugReport[T](name: String, kv: (String, Any)*)(f: => T): T = {
+    time(f) { (elapsed: Long) =>
+      if(logger.isDebugEnabled) {
+        logger.debug("{}: {}ms; {}", name, elapsed.toString, content(kv: _*))
+      }
+    }
+  }
 }
 
 trait TransferrableContextTimingReport extends TimingReport {
@@ -53,36 +90,18 @@ trait MetricsTimingReport extends TimingReport with Metrics {
   }
 }
 
-class LoggedTimingReport(log: Logger) extends TimingReport {
-  def apply[T](name: String, kv: (String, Any)*)(f: => T): T = {
-    val start = System.nanoTime()
-    try {
-      f
-    } finally {
-      val end = System.nanoTime()
-      val timeInMs = (end - start) / 1000000
-      if(log.isInfoEnabled) {
-        log.info("{}: {}ms; {}", name, timeInMs.asInstanceOf[AnyRef],
-                                 JsonUtil.renderJson(kv.map { case (k,v) => (k, String.valueOf(v)) }))
-      }
-    }
-  }
+class LoggedTimingReport(log: Logger) extends LogTimingReport {
+  val logger = log
+
+  def apply[T](name: String, kv: (String, Any)*)(f: => T): T = infoReport(name, kv: _*)(f)
 }
 
-class DebugLoggedTimingReport(log: Logger) extends TimingReport {
-  def apply[T](name: String, kv: (String, Any)*)(f: => T): T = {
-    val start = System.nanoTime()
-    try {
-      f
-    } finally {
-      val end = System.nanoTime()
-      val timeInMs = (end - start) / 1000000
-      if(log.isDebugEnabled) {
-        log.debug("{}: {}ms; {}", name, timeInMs.asInstanceOf[AnyRef],
-          JsonUtil.renderJson(kv.map { case (k,v) => (k, String.valueOf(v)) }))
-      }
-    }
-  }
+class DebugLoggedTimingReport(log: Logger) extends LogTimingReport {
+  val logger = log
+
+  def apply[T](name: String, kv: (String, Any)*)(f: => T): T = debugReport(name, kv: _*)(f)
+
+  override def info[T](name: String, kv: (String, Any)*)(f: => T): T = infoReport(name, kv: _*)(f)
 }
 
 /**
