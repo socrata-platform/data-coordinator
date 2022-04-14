@@ -335,7 +335,7 @@ object Service {
             secondaryMoveJobsJobResource: String => SecondaryMoveJobsJobResource,
             datasetSecondaryStatusResource: HostAndPort => (Option[String], DatasetId) => DatasetSecondaryStatusResource,
             collocationManifestsResource: CollocationLock => HostAndPort => (Option[String], Option[String]) => CollocationManifestsResource,
-            resyncResource: HostAndPort => (DatasetId, String) => ResyncResource,
+            resyncResource: (DatasetId, String) => ResyncResource,
             secondariesOfDatasetResource: DatasetId => SecondariesOfDatasetResource
            )(collocationLock: CollocationLock, hostAndPort: HostAndPort): Service = {
     new Service(
@@ -358,7 +358,7 @@ object Service {
       secondaryMoveJobsJobResource,
       datasetSecondaryStatusResource(hostAndPort),
       collocationManifestsResource(collocationLock)(hostAndPort),
-      resyncResource(hostAndPort),
+      resyncResource,
       secondariesOfDatasetResource
     )
   }

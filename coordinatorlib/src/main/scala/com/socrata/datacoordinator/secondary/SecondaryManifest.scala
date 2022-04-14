@@ -55,6 +55,7 @@ trait SecondaryManifest {
   def feedbackSecondaries(datasetId: DatasetId): Set[String] // store IDs
   def outOfDateFeedbackSecondaries(datasetId: DatasetId): Set[String] // store IDs
 
+  def isInSecondary(datasetId: DatasetId, storeId: String): Boolean
 
   def performResync(datasetId: DatasetId, storeId: String): Unit
   def lockResync(datasetId: DatasetId, storeId: String, groupName: String): Unit

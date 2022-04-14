@@ -195,6 +195,10 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
     }
   }
 
+  def isInSecondary(storeId: String, datasetId: DatasetId): Boolean = {
+    common.universe.foreach(_.secondaryManifest.isInSecondary(datasetId, storeId))
+  }
+
 
   def secondaryMoveJobs(jobId: UUID): SecondaryMoveJobsResult = {
     for (u <- common.universe) {
@@ -762,7 +766,7 @@ object Main extends DynamicPortMap {
         CollocationManifestsResource(_: Option[String], _: Option[String], collocationProvider(hostAndPort, lock))
       }
 
-      def resyncResource(hostAndPort: HostAndPort) = ResyncResource(common.internalNameFromDatasetId, operations.ensureInSecondary(httpCoordinator(hostAndPort)), operations.performResync) _
+      def resyncResource = ResyncResource(common.internalNameFromDatasetId, operations.isInSecondary, operations.performResync) _
 
       def datasetSecondaryStatusResource(hostAndPort: HostAndPort) =
         DatasetSecondaryStatusResource(_: Option[String], _:DatasetId, secondaries,

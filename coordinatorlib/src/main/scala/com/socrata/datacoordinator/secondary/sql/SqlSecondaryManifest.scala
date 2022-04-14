@@ -407,6 +407,20 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
     }
   }
 
+  def isInSecondary(datasetId: DatasetId, storeId: String): Boolean = {
+    using(conn.prepareStatement(
+      "select count(*) from secondary_manifest WHERE dataset_system_id = ? AND store_id = ? AND not pending_drop")) { stmt =>
+      stmt.setLong(1, datasetId.underlying)
+      stmt.setString(2, storeId)
+      val count = using(stmt.executeQuery()) { rs =>
+        rs.next()
+        rs.getInt("count")
+      }
+      count > 0
+    }
+  }
+
+
   def performResync(datasetId: DatasetId, storeId: String): Unit = {
     using(conn.prepareStatement(
       "UPDATE secondary_manifest SET latest_secondary_data_version=-1, broken_at = null, cookie = null, next_retry = '2000-01-01', retry_num = 0 WHERE dataset_system_id = ? AND store_id = ? AND not pending_drop")) { stmt =>
