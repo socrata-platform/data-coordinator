@@ -110,6 +110,10 @@ object DatasetUpdateError{
   val LACKS_PRIMARY_KEY = "update.dataset.lacks-primary-key"
 }
 
+object ResyncError{
+  val dataset_not_in_secondary = "resync.dataset.not-in-secondary"
+}
+
 object RowUpdateError{
   val PRIMARY_KEY_NONEXISTENT_OR_NULL = "update.row.primary-key-nonexistent-or-null"
   val NO_SUCH_ID = "update.row.no-such-id"

@@ -762,7 +762,7 @@ object Main extends DynamicPortMap {
         CollocationManifestsResource(_: Option[String], _: Option[String], collocationProvider(hostAndPort, lock))
       }
 
-      def resyncResource(hostAndPort: HostAndPort) = ResyncResource(operations.performResync) _
+      def resyncResource(hostAndPort: HostAndPort) = ResyncResource(common.internalNameFromDatasetId, operations.ensureInSecondary(httpCoordinator(hostAndPort)), operations.performResync) _
 
       def datasetSecondaryStatusResource(hostAndPort: HostAndPort) =
         DatasetSecondaryStatusResource(_: Option[String], _:DatasetId, secondaries,

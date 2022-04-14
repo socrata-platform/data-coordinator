@@ -109,6 +109,11 @@ class CoordinatorErrorsAndMetrics(formatDatasetId: DatasetId => String) extends 
       "data" -> JObject(data.toMap))
   }
 
+  def datasetNotInSecondary(datasetId: DatasetId, secondary: String) = datasetErrorResponse(NotFound, ResyncError.dataset_not_in_secondary,
+    "dataset" -> JString(formatDatasetId(datasetId)),
+    "secondary" -> JString(secondary)
+  )
+
   def snapshotNotFoundError(datasetId: DatasetId, copy: CopySelector, data: (String, JValue)*): HttpResponse = {
     datasetErrorResponse(NotFound, DatasetUpdateError.SNAPSHOT_DOES_NOT_EXIST,
       "dataset" -> JString(formatDatasetId(datasetId)),
