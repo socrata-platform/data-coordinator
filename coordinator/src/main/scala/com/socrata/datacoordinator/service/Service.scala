@@ -45,6 +45,7 @@ class Service(serviceConfig: ServiceConfig,
               secondaryMoveJobsJobResource: String => SecondaryMoveJobsJobResource,
               datasetSecondaryStatusResource: (Option[String], DatasetId) => DatasetSecondaryStatusResource,
               collocationManifestsResource: (Option[String], Option[String]) => CollocationManifestsResource,
+              resyncResource: (DatasetId, String) => ResyncResource,
               secondariesOfDatasetResource: DatasetId => SecondariesOfDatasetResource
              ) extends CoordinatorErrorsAndMetrics(formatDatasetId)
 {
@@ -275,6 +276,7 @@ class Service(serviceConfig: ServiceConfig,
     collocationManifestsResource = collocationManifestsResource,
     datasetSecondaryStatusResource = datasetSecondaryStatusResource,
     secondariesOfDatasetResource = secondariesOfDatasetResource,
+    resyncResource = resyncResource,
     versionResource = VersionResource)
 
   private val errorHandlingHandler = new ErrorAdapter(router.handler) {
@@ -333,6 +335,7 @@ object Service {
             secondaryMoveJobsJobResource: String => SecondaryMoveJobsJobResource,
             datasetSecondaryStatusResource: HostAndPort => (Option[String], DatasetId) => DatasetSecondaryStatusResource,
             collocationManifestsResource: CollocationLock => HostAndPort => (Option[String], Option[String]) => CollocationManifestsResource,
+            resyncResource: (DatasetId, String) => ResyncResource,
             secondariesOfDatasetResource: DatasetId => SecondariesOfDatasetResource
            )(collocationLock: CollocationLock, hostAndPort: HostAndPort): Service = {
     new Service(
@@ -355,6 +358,7 @@ object Service {
       secondaryMoveJobsJobResource,
       datasetSecondaryStatusResource(hostAndPort),
       collocationManifestsResource(collocationLock)(hostAndPort),
+      resyncResource,
       secondariesOfDatasetResource
     )
   }

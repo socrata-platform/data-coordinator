@@ -189,6 +189,17 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
     }
   }
 
+  def performResync(storeId: String, datasetId: DatasetId): Unit = {
+    common.universe.foreach { u =>
+      u.secondaryManifest.performResync(datasetId, storeId)
+    }
+  }
+
+  def isInSecondary(storeId: String, datasetId: DatasetId): Boolean = {
+    common.universe.foreach(_.secondaryManifest.isInSecondary(datasetId, storeId))
+  }
+
+
   def secondaryMoveJobs(jobId: UUID): SecondaryMoveJobsResult = {
     for (u <- common.universe) {
       SecondaryMoveJobsResult(u.secondaryMoveJobs.jobs(jobId))
@@ -211,7 +222,6 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
       case None => Left(StoreGroupNotFound(storeGroup))
     }
   }
-
 
   def ensureSecondaryMoveJob(coordinator: Coordinator)
                             (storeGroup: String,
@@ -756,6 +766,8 @@ object Main extends DynamicPortMap {
         CollocationManifestsResource(_: Option[String], _: Option[String], collocationProvider(hostAndPort, lock))
       }
 
+      def resyncResource = ResyncResource(common.internalNameFromDatasetId, operations.isInSecondary, operations.performResync) _
+
       def datasetSecondaryStatusResource(hostAndPort: HostAndPort) =
         DatasetSecondaryStatusResource(_: Option[String], _:DatasetId, secondaries,
                                        secondariesNotAcceptingNewDatasets, operations.versionInStore, serviceConfig, operations.ensureInSecondary(httpCoordinator(hostAndPort)),
@@ -782,6 +794,7 @@ object Main extends DynamicPortMap {
         secondaryManifestsMoveJobResource = secondaryManifestsMoveJobResource,
         secondaryMoveJobsJobResource = secondaryMoveJobsJobResource,
         collocationManifestsResource = collocationManifestsResource,
+        resyncResource = resyncResource,
         datasetSecondaryStatusResource = datasetSecondaryStatusResource,
         secondariesOfDatasetResource = secondariesOfDatasetResource) _
 
