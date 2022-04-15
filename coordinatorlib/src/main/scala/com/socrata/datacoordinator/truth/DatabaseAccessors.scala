@@ -187,7 +187,7 @@ trait DatasetMutator[CT, CV] {
 
     def upsert(inputGenerator: Iterator[RowDataUpdateJob], reportWriter: ReportWriter[CV], replaceUpdatedRows: Boolean, updateOnly: Boolean, bySystemId: Boolean): Unit
 
-    def createOrUpdateRollup(name: RollupName, soql: String): Either[Exception, RollupInfo]
+    def createOrUpdateRollup(name: RollupName, soql: String, rawSoql: Option[String]): Either[Exception, RollupInfo]
     def dropRollup(name: RollupName): Option[RollupInfo]
     def secondaryReindex(): Unit
     def createOrUpdateIndexDirective(column: ColumnInfo[CT], directive: JObject): Unit
@@ -515,8 +515,8 @@ object DatasetMutator {
         }
       }
 
-      def createOrUpdateRollup(name: RollupName, soql: String): Either[Exception, RollupInfo] = {
-        val info: RollupInfo = datasetMap.createOrUpdateRollup(copyInfo, name, soql)
+      def createOrUpdateRollup(name: RollupName, soql: String, rawSoql: Option[String]): Either[Exception, RollupInfo] = {
+        val info: RollupInfo = datasetMap.createOrUpdateRollup(copyInfo, name, soql, rawSoql)
         try {
           validateRollup(info)
           logger.rollupCreatedOrUpdated(info)
