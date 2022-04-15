@@ -187,7 +187,7 @@ object Mutator {
                      nonfatalRowErrors: Set[Class[_ <: Failure[_]]],
                      updateOnly: Boolean,
                      bySystemId: Boolean) extends Command
-  case class CreateOrUpdateRollup(index: Long, name: RollupName, soql: String) extends Command
+  case class CreateOrUpdateRollup(index: Long, name: RollupName, soql: String, rawSoql: Option[String]) extends Command
   case class DropRollup(index: Long, name: RollupName) extends Command
   case class AddComputationStrategy(index: Long, id: ColumnIdSpec, computationStrategy: ComputationStrategySpec) extends Command
   case class DropComputationStrategy(index: Long, id: ColumnIdSpec) extends Command
@@ -258,7 +258,8 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
           case CreateOrUpdateRollupOp =>
             val name = get[RollupName]("name")
             val soql = get[String]("soql")
-            CreateOrUpdateRollup(index, name, soql)
+            val rawSoql = getOption[String]("raw_soql")
+            CreateOrUpdateRollup(index, name, soql, rawSoql)
           case DropRollupOp =>
             val name = get[RollupName]("name")
             DropRollup(index, name)
@@ -793,8 +794,8 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
               throw NoSuchColumn(datasetId, id)(idx)
           }
           Seq(MutationScriptCommandResult.Uninteresting)
-        case CreateOrUpdateRollup(idx, name, soql) =>
-          mutator.createOrUpdateRollup(name, soql) match {
+        case CreateOrUpdateRollup(idx, name, soql, rawSoql) =>
+          mutator.createOrUpdateRollup(name, soql, rawSoql) match {
             case Right(_) =>
               Seq(MutationScriptCommandResult.Uninteresting)
             case Left(_) =>

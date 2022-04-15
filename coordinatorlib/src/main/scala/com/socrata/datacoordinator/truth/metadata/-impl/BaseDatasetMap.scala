@@ -140,7 +140,7 @@ trait BaseDatasetMapWriter[CT] extends BaseDatasetMapReader[CT] {
   /** Creates or updates the metadata about the given rollup based on name and
     * given soql query.
     */
-  def createOrUpdateRollup(copyInfo: CopyInfo, name: RollupName, soql: String): RollupInfo
+  def createOrUpdateRollup(copyInfo: CopyInfo, name: RollupName, soql: String, rawSoql: Option[String]): RollupInfo
 
   /** Drops the given rollup.
     */

@@ -1122,15 +1122,16 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
     }
   }
 
-  def insertRollupQuery = "INSERT INTO rollup_map (name, copy_system_id, soql) VALUES (?, ?, ?)"
-  def updateRollupQuery = "UPDATE rollup_map SET soql = ? WHERE name = ? AND copy_system_id = ?"
-  def createOrUpdateRollup(copyInfo: CopyInfo, name: RollupName, soql: String): RollupInfo = {
+  def insertRollupQuery = "INSERT INTO rollup_map (name, copy_system_id, soql, raw_soql) VALUES (?, ?, ?, ?)"
+  def updateRollupQuery = "UPDATE rollup_map SET soql = ?, raw_soql = ? WHERE name = ? AND copy_system_id = ?"
+  def createOrUpdateRollup(copyInfo: CopyInfo, name: RollupName, soql: String, rawSoql: Option[String]): RollupInfo = {
     rollup(copyInfo, name) match {
       case Some(_) =>
         using(conn.prepareStatement(updateRollupQuery)) { stmt =>
           stmt.setString(1, soql)
-          stmt.setString(2, name.underlying)
-          stmt.setLong(3, copyInfo.systemId.underlying)
+          stmt.setString(2, rawSoql.orNull)
+          stmt.setString(3, name.underlying)
+          stmt.setLong(4, copyInfo.systemId.underlying)
           t("create-or-update-rollup", "action" -> "update", "copy-id" -> copyInfo.systemId, "name" -> name)(stmt.executeUpdate())
         }
       case None =>
@@ -1138,6 +1139,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
           stmt.setString(1, name.underlying)
           stmt.setLong(2, copyInfo.systemId.underlying)
           stmt.setString(3, soql)
+          stmt.setString(4, rawSoql.orNull)
           t("create-or-update-rollup", "action" -> "insert", "copy-id" -> copyInfo.systemId, "name" -> name)(stmt.executeUpdate())
         }
     }

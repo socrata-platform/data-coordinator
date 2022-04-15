@@ -358,13 +358,13 @@ class PostgresDatasetMapWriterTest extends FunSuite with PostgresDatasetMapWrite
       def rollupCount = count(conn, "rollup_map", s"name = '${rollupName.underlying}' AND copy_system_id=${vi1.systemId.underlying}")
 
       rollupCount must be (0)
-      val createdRollup = tables.createOrUpdateRollup(vi1, rollupName, rollupSoql)
+      val createdRollup = tables.createOrUpdateRollup(vi1, rollupName, rollupSoql, None)
       createdRollup.copyInfo must equal (vi1)
       createdRollup.name must equal (rollupName)
       createdRollup.soql must equal (rollupSoql)
       rollupCount must be (1)
 
-      val updatedRollup = tables.createOrUpdateRollup(vi1, rollupName, rollupSoql2)
+      val updatedRollup = tables.createOrUpdateRollup(vi1, rollupName, rollupSoql2, Some(rollupSoql2))
       updatedRollup.copyInfo must equal (vi1)
       updatedRollup.name must equal (rollupName)
       updatedRollup.soql must equal (rollupSoql2)
@@ -378,7 +378,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with PostgresDatasetMapWrite
       val vi1 = tables.create("en_US", resourcName)
 
       tables.rollup(vi1, rollupName) must be (None)
-      tables.createOrUpdateRollup(vi1, rollupName, rollupSoql)
+      tables.createOrUpdateRollup(vi1, rollupName, rollupSoql, Some(rollupSoql))
 
       tables.rollup(vi1, rollupName) match {
         case Some(lookedupRollup) =>
@@ -397,7 +397,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with PostgresDatasetMapWrite
       val vi1 = tables.create("en_US", resourcName)
 
       tables.rollup(vi1, rollupName) must be (None)
-      tables.createOrUpdateRollup(vi1, rollupName, rollupSoql)
+      tables.createOrUpdateRollup(vi1, rollupName, rollupSoql, None)
       tables.rollup(vi1, rollupName) must not be (None)
       tables.dropRollup(vi1, Some(rollupName))
       tables.rollup(vi1, rollupName) must be (None)
@@ -410,7 +410,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with PostgresDatasetMapWrite
       val vi1 = tables.create("en_US", resourcName)
 
       tables.rollup(vi1, rollupName) must be (None)
-      rollupNames.foreach(name => tables.createOrUpdateRollup(vi1, name, rollupSoql))
+      rollupNames.foreach(name => tables.createOrUpdateRollup(vi1, name, rollupSoql, None))
       rollupNames.foreach(name => tables.rollup(vi1, name) must not be (None))
       tables.dropRollup(vi1, None)
       rollupNames.foreach(name => tables.rollup(vi1, name) must be (None))
@@ -428,7 +428,7 @@ class PostgresDatasetMapWriterTest extends FunSuite with PostgresDatasetMapWrite
         case Right(CopyPair(_, vi2)) =>
           vi2.systemId must not equal (vi1.systemId)
           rollupNames.foreach(name => tables.rollup(vi2, name) must be (None))
-          rollupNames.foreach(name => tables.createOrUpdateRollup(vi2, name, rollupSoql))
+          rollupNames.foreach(name => tables.createOrUpdateRollup(vi2, name, rollupSoql, None))
           rollupNames.foreach(name => tables.rollup(vi2, name) must not be (None))
 
           tables.delete(vi2.datasetInfo)
