@@ -332,28 +332,28 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
     }
   }
 
-  def rollupsQuery = "SELECT name, soql FROM rollup_map WHERE copy_system_id = ?"
+  def rollupsQuery = "SELECT name, soql, raw_soql FROM rollup_map WHERE copy_system_id = ?"
   def rollups(copyInfo: CopyInfo): Seq[RollupInfo] = {
     using(conn.prepareStatement(rollupsQuery)) { stmt =>
       stmt.setLong(1, copyInfo.systemId.underlying)
       using(t("rollups", "copy_id" -> copyInfo.systemId)(stmt.executeQuery())) { rs =>
         val res = new VectorBuilder[RollupInfo]
         while(rs.next()) {
-          res += RollupInfo(copyInfo, new RollupName(rs.getString("name")), rs.getString("soql"))
+          res += RollupInfo(copyInfo, new RollupName(rs.getString("name")), rs.getString("soql"), Option(rs.getString("soql")))
         }
         res.result()
       }
     }
   }
 
-  def rollupQuery = "SELECT soql FROM rollup_map WHERE copy_system_id = ? AND name = ?"
+  def rollupQuery = "SELECT soql, raw_soql FROM rollup_map WHERE copy_system_id = ? AND name = ?"
   def rollup(copyInfo: CopyInfo, name: RollupName): Option[RollupInfo] = {
     using(conn.prepareStatement(rollupQuery)) { stmt =>
       stmt.setLong(1, copyInfo.systemId.underlying)
       stmt.setString(2, name.underlying)
       using(t("rollup", "copy_id" -> copyInfo.systemId,"name" -> name)(stmt.executeQuery())) { rs =>
         if(rs.next()) {
-          Some(RollupInfo(copyInfo, name, rs.getString("soql")))
+          Some(RollupInfo(copyInfo, name, rs.getString("soql"), Option(rs.getString("raw_soql"))))
         } else {
           None
         }
@@ -1092,7 +1092,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
   }
 
   def ensureUnpublishedCopyQuery_rollupMap =
-    "INSERT INTO rollup_map (name, copy_system_id, soql) SELECT name, ?, soql FROM rollup_map WHERE copy_system_id = ?"
+    "INSERT INTO rollup_map (name, copy_system_id, soql, raw_soql) SELECT name, ?, soql, raw_soql FROM rollup_map WHERE copy_system_id = ?"
   def copyRollupsIntoUnpublishedCopy(oldCopy: CopyInfo, newCopy: CopyInfo) {
     using(conn.prepareStatement(ensureUnpublishedCopyQuery_rollupMap)) { stmt =>
       stmt.setLong(1, newCopy.systemId.underlying)
@@ -1143,7 +1143,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
           t("create-or-update-rollup", "action" -> "insert", "copy-id" -> copyInfo.systemId, "name" -> name)(stmt.executeUpdate())
         }
     }
-    RollupInfo(copyInfo, name, soql)
+    RollupInfo(copyInfo, name, soql, rawSoql)
   }
 
   private val DropRollupsQuery = "DELETE FROM rollup_map WHERE copy_system_id = ?"
