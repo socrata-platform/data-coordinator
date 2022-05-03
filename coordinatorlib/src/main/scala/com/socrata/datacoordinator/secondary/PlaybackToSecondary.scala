@@ -155,6 +155,9 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
     }
   }
 
+  def makeSecondaryIndexInfo(indexInfo: metadata.IndexInfoLike) =
+    IndexInfo(indexInfo.systemId, indexInfo.name.underlying, indexInfo.expressions, indexInfo.filter)
+
   private class UpdateOp(secondary: NamedSecondary[CT, CV],
                          job: SecondaryRecord)
   {
@@ -580,6 +583,10 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
         Some(IndexDirectiveCreatedOrUpdated(makeSecondaryColumnInfo(info), directives))
       case Delogger.IndexDirectiveDropped(info) =>
         Some(IndexDirectiveDropped(makeSecondaryColumnInfo(info)))
+      case Delogger.IndexCreatedOrUpdated(info) =>
+        Some(IndexCreatedOrUpdated(makeSecondaryIndexInfo(info)))
+      case Delogger.IndexDropped(name) =>
+        Some(IndexDropped(name))
       case Delogger.EndTransaction =>
         None
     }
@@ -729,7 +736,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
             }
           }
           val rollups: Seq[RollupInfo] = u.datasetMapReader.rollups(copyInfo).toSeq.map(makeSecondaryRollupInfo)
-
+          val indexes: Seq[IndexInfo] = u.datasetMapReader.indexes(copyInfo).toSeq.map(makeSecondaryIndexInfo)
           val indexDirectives = u.datasetMapReader.indexDirectives(copyInfo)
 
           currentCookie = secondary.store.resync(secondaryDatasetInfo,
@@ -739,6 +746,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
                                                  wrappedRows,
                                                  rollups,
                                                  indexDirectives,
+                                                 indexes,
                                                  isLatestLivingCopy)
         }
       }

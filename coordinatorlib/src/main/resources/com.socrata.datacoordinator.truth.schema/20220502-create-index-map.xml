@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
+    <changeSet author="chi" id="20220502-create-index-map">
+        <preConditions onFail="MARK_RAN">
+            <not><tableExists tableName="index_map"/></not>
+        </preConditions>
+        <createTable tableName="index_map">
+            <column name="system_id" type="bigint" autoIncrement="true">
+                <constraints nullable="false" primaryKey="true"/>
+            </column>
+            <column name="copy_system_id" type="bigint">
+                <constraints nullable="false"
+                             foreignKeyName="index_map_copy_system_id_fkey"
+                             references="copy_map(system_id)"
+                />
+            </column>
+            <column name="name" type="text">
+                <constraints nullable="false"/>
+            </column>
+            <column name="expressions" type="text"><constraints nullable="false"/></column>
+            <column name="filter" type="text"/>
+            <column name="created_at" type="timestamp with time zone" defaultValueComputed="now()"/>
+            <column name="updated_at" type="timestamp with time zone" defaultValueComputed="now()"/>
+            <column name="deleted_at" type="timestamp with time zone"/>
+        </createTable>
+
+        <sql>
+            CREATE UNIQUE INDEX IF NOT EXISTS index_map_copy_system_id_name
+                ON index_map(copy_system_id, name)
+             WHERE deleted_at IS NULL
+        </sql>
+    </changeSet>
+</databaseChangeLog>

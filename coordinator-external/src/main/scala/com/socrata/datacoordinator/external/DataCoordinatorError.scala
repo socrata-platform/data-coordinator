@@ -16,6 +16,14 @@ object RollupCreateError{
   val INVALID = "create.rollup.invalid"
 }
 
+object IndexDeleteError{
+  val DOES_NOT_EXIST = "delete.index.does-not-exist"
+}
+
+object IndexCreateError{
+  val INVALID = "create.index.invalid"
+}
+
 // Request Errors
 
 object RequestError{

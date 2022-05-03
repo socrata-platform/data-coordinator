@@ -407,7 +407,7 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
    */
   override def resync(datasetInfo: DatasetInfo, copyInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo[CT]], cookie: Cookie,
                       rows: Managed[Iterator[ColumnIdMap[CV]]], rollups: Seq[RollupInfo],
-                      indexDirectives: Seq[IndexDirective[CT]], isLatestLivingCopy: Boolean): Cookie = {
+                      indexDirectives: Seq[IndexDirective[CT]], indexes: Seq[IndexInfo], isLatestLivingCopy: Boolean): Cookie = {
     try {
       // update cookie
       val copyNumber = CopyNumber(copyInfo.copyNumber)

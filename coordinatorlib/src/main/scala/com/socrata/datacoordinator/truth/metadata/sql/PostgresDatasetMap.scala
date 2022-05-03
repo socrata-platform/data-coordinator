@@ -361,6 +361,36 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
     }
   }
 
+  def indexesQuery = "SELECT system_id, name, expressions, filter FROM index_map WHERE copy_system_id = ? AND deleted_at is null"
+  def indexes(copyInfo: CopyInfo): Seq[IndexInfo] = {
+    using(conn.prepareStatement(indexesQuery)) { stmt =>
+      stmt.setLong(1, copyInfo.systemId.underlying)
+      using(t("indexes", "copy_id" -> copyInfo.systemId)(stmt.executeQuery())) { rs =>
+        val res = new VectorBuilder[IndexInfo]
+        while(rs.next()) {
+          res += IndexInfo(rs.getIndexId("system_id"), copyInfo, new IndexName(rs.getString("name")),
+            rs.getString("expressions"), Option(rs.getString("filter")))
+        }
+        res.result()
+      }
+    }
+  }
+
+  def indexQuery = "SELECT system_id, expressions, filter FROM index_map WHERE copy_system_id = ? AND name = ? AND deleted_at is null"
+  def index(copyInfo: CopyInfo, name: IndexName): Option[IndexInfo] = {
+    using(conn.prepareStatement(indexQuery)) { stmt =>
+      stmt.setLong(1, copyInfo.systemId.underlying)
+      stmt.setString(2, name.underlying)
+      using(t("index", "copy_id" -> copyInfo.systemId,"name" -> name)(stmt.executeQuery())) { rs =>
+        if(rs.next()) {
+          Some(IndexInfo(rs.getIndexId("system_id"), copyInfo, name, rs.getString("expressions"), Option(rs.getString("filter"))))
+        } else {
+          None
+        }
+      }
+    }
+  }
+
   // These are from the reader trait but they're used in the writer tests
   def unpublished(datasetInfo: DatasetInfo) =
     lookup(datasetInfo, LifecycleStage.Unpublished)
@@ -544,6 +574,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
   // Yay no "DELETE ... CASCADE"!
   def deleteQuery_computationStrategyMap = "DELETE FROM computation_strategy_map WHERE copy_system_id IN (SELECT system_id FROM copy_map WHERE dataset_system_id = ?)"
   def deleteQuery_indexDirecitveMap = "DELETE FROM index_directive_map WHERE copy_system_id IN (SELECT system_id FROM copy_map WHERE dataset_system_id = ?)"
+  def deleteQuery_indexMap = "DELETE FROM index_map WHERE copy_system_id IN (SELECT system_id FROM copy_map WHERE dataset_system_id = ?)"
   def deleteQuery_columnMap = "DELETE FROM column_map WHERE copy_system_id IN (SELECT system_id FROM copy_map WHERE dataset_system_id = ?)"
   def deleteQuery_rollupMap = "DELETE FROM rollup_map WHERE copy_system_id IN (SELECT system_id FROM copy_map WHERE dataset_system_id = ?)"
   def deleteQuery_copyMap = "DELETE FROM copy_map WHERE dataset_system_id = ?"
@@ -571,6 +602,10 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
     using(conn.prepareStatement(deleteQuery_indexDirecitveMap)) { stmt =>
       stmt.setDatasetId(1, datasetInfo.systemId)
       t("delete-index-directives", "dataset_id" -> datasetInfo.systemId)(stmt.executeUpdate())
+    }
+    using(conn.prepareStatement(deleteQuery_indexMap)) { stmt =>
+      stmt.setDatasetId(1, datasetInfo.systemId)
+      t("delete-indexes", "dataset_id" -> datasetInfo.systemId)(stmt.executeUpdate())
     }
     using(conn.prepareStatement(deleteQuery_columnMap)) { stmt =>
       stmt.setDatasetId(1, datasetInfo.systemId)
@@ -1056,6 +1091,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
 
                 copySchemaIntoUnpublishedCopy(publishedCopy, newCopy)
                 copyRollupsIntoUnpublishedCopy(publishedCopy, newCopy)
+                copyIndexesIntoUnpublishedCopy(publishedCopy, newCopy)
 
                 newCopy
               case Some(cid) =>
@@ -1103,6 +1139,16 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
       stmt.setLong(1, newCopy.systemId.underlying)
       stmt.setLong(2, oldCopy.systemId.underlying)
       t("copy-rollups-to-unpublished-copy", "dataset_id" -> oldCopy.datasetInfo.systemId, "old_copy_num" -> oldCopy.copyNumber, "new_copy_num" -> newCopy.copyNumber)(stmt.execute())
+    }
+  }
+
+  def ensureUnpublishedCopyQuery_indexMap =
+    "INSERT INTO index_map (name, copy_system_id, expressions, filter, created_at, updated_at) SELECT name, ?, expressions, filter, created_at, updated_at FROM index_map WHERE copy_system_id = ? AND deleted_at is null"
+  def copyIndexesIntoUnpublishedCopy(oldCopy: CopyInfo, newCopy: CopyInfo) {
+    using(conn.prepareStatement(ensureUnpublishedCopyQuery_indexMap)) { stmt =>
+      stmt.setLong(1, newCopy.systemId.underlying)
+      stmt.setLong(2, oldCopy.systemId.underlying)
+      t("copy-indexes-to-unpublished-copy", "dataset_id" -> oldCopy.datasetInfo.systemId, "old_copy_num" -> oldCopy.copyNumber, "new_copy_num" -> newCopy.copyNumber)(stmt.execute())
     }
   }
 
@@ -1170,6 +1216,59 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
         using(conn.prepareStatement(DropRollupsQuery)) { stmt =>
           stmt.setLong(1, copyInfo.systemId.underlying)
           t("drop-rollup", "copy-id" -> copyInfo.systemId)(stmt.executeUpdate())
+        }
+    }
+  }
+
+  def insertIndexQuery = "INSERT INTO index_map (name, copy_system_id, expressions, filter) VALUES (?, ?, ?, ?) RETURNING system_id"
+  def updateIndexQuery = "UPDATE index_map SET expressions = ?, filter = ?, updated_at = now() WHERE name = ? AND copy_system_id = ?"
+  def createOrUpdateIndex(copyInfo: CopyInfo, name: IndexName, expressions: String, filter: Option[String]): IndexInfo = {
+    val indexId = index(copyInfo, name) match {
+      case Some(exist) =>
+        using(conn.prepareStatement(updateIndexQuery)) { stmt =>
+          stmt.setString(1, expressions)
+          stmt.setString(2, filter.orNull)
+          stmt.setString(3, name.underlying)
+          stmt.setLong(4, copyInfo.systemId.underlying)
+          t("create-or-update-index", "action" -> "update", "copy-id" -> copyInfo.systemId, "name" -> name)(stmt.executeUpdate())
+          exist.systemId
+        }
+      case None =>
+        using(conn.prepareStatement(insertIndexQuery)) { stmt =>
+          stmt.setString(1, name.underlying)
+          stmt.setLong(2, copyInfo.systemId.underlying)
+          stmt.setString(3, expressions)
+          stmt.setString(4, filter.orNull)
+          t("create-or-update-index", "action" -> "insert", "copy-id" -> copyInfo.systemId, "name" -> name) {
+            using(stmt.executeQuery()) { rs =>
+              if (rs.next()) rs.getIndexId(1)
+              else throw new FailToCreateIndex(copyInfo, name)
+            }
+          }
+        }
+    }
+    IndexInfo(indexId, copyInfo, name, expressions, filter)
+  }
+
+  private val DropIndexsQuery = "DELETE FROM index_map WHERE copy_system_id = ?"
+  private val DropIndexQuery = s"$DropIndexsQuery AND name = ?"
+
+  /**
+    * @param copyInfo - Copy of Indexs that are to be dropped.
+    * @param IndexName - If Some, drop one Index.  If None, drop all Indexs.
+    */
+  def dropIndex(copyInfo: CopyInfo, IndexName: Option[IndexName]) {
+    IndexName match {
+      case Some(name) =>
+        using(conn.prepareStatement(DropIndexQuery)) { stmt =>
+          stmt.setLong(1, copyInfo.systemId.underlying)
+          stmt.setString(2, name.underlying)
+          t("drop-index", "copy-id" -> copyInfo.systemId, "name" -> name)(stmt.executeUpdate())
+        }
+      case None =>
+        using(conn.prepareStatement(DropIndexsQuery)) { stmt =>
+          stmt.setLong(1, copyInfo.systemId.underlying)
+          t("drop-indexes", "copy-id" -> copyInfo.systemId)(stmt.executeUpdate())
         }
     }
   }

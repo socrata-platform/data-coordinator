@@ -40,6 +40,7 @@
     <include file="com.socrata.datacoordinator.truth.schema/20210201-add-column-rollup-created-at.xml"/>
     <include file="com.socrata.datacoordinator.truth.schema/20220208-add-data-shape-version.xml"/>
     <include file="com.socrata.datacoordinator.truth.schema/20220415-add-column-rollup-raw-soql.xml"/>
+    <include file="com.socrata.datacoordinator.truth.schema/20220502-create-index-map.xml"/>
     <!-- run-on-change migrations: recreation of triggers typically comes after other changes that they may depend on -->
     <include file="com.socrata.datacoordinator.truth.schema/triggers/update-dataset-log-trigger.xml"/>
 

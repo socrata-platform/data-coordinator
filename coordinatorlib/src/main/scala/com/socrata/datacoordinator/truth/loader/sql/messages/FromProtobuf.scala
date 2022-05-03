@@ -63,4 +63,12 @@ object FromProtobuf {
       name = new RollupName(ri.name),
       soql = ri.soql
     )
+
+  def convert(ri: LogData.UnanchoredIndexInfo): metadata.UnanchoredIndexInfo =
+    metadata.UnanchoredIndexInfo(
+      systemId = new IndexId(ri.systemId),
+      name = new IndexName(ri.name),
+      expressions = ri.expressions,
+      filter = ri.filter
+    )
  }

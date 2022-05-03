@@ -60,6 +60,8 @@ object Mutator {
   case class SecondaryStoresNotUpToDate(name: DatasetId, stores: Set[String])(val index: Long) extends MutationException
   case class NoSuchRollup(name: RollupName)(val index: Long) extends MutationException
   case class InvalidRollup(name: RollupName)(val index: Long) extends MutationException
+  case class NoSuchIndex(name: IndexName)(val index: Long) extends MutationException
+  case class InvalidIndex(name: IndexName)(val index: Long) extends MutationException
   case class CannotAcquireDatasetWriteLock(name: DatasetId)(val index: Long) extends MutationException
   case class SystemInReadOnlyMode()(val index: Long) extends MutationException
   case class IncorrectLifecycleStage(name: DatasetId,
@@ -194,6 +196,8 @@ object Mutator {
   case class SecondaryReindex(index: Long) extends Command
   case class CreateOrUpdateIndexDirective(index: Long, id: ColumnIdSpec, directive: JObject) extends Command
   case class DropIndexDirective(index: Long, id: ColumnIdSpec) extends Command
+  case class CreateOrUpdateIndex(index: Long, name: IndexName, expressions: String, filter: Option[String]) extends Command
+  case class DropIndex(index: Long, name: IndexName) extends Command
 
   val AddColumnOp = "add column"
   val DropColumnOp = "drop column"
@@ -208,6 +212,8 @@ object Mutator {
   val SecondaryReindexOp = "secondary reindex"
   val CreateOrUpdateIndexDirectiveOp = "create or update index directive"
   val DropIndexDirectiveOp = "drop index directive"
+  val CreateOrUpdateIndexOp = "create or update index"
+  val DropIndexOp = "drop index"
 }
 
 class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT, CV]) {
@@ -285,6 +291,14 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
           case DropIndexDirectiveOp =>
             val column = get[ColumnIdSpec]("column")
             DropIndexDirective(index, column)
+          case CreateOrUpdateIndexOp =>
+            val name = get[IndexName]("name")
+            val expressions = get[String]("expressions")
+            val filter = getOption[String]("filter")
+            CreateOrUpdateIndex(index, name, expressions, filter)
+          case DropIndexOp =>
+            val name = get[IndexName]("name")
+            DropIndex(index, name)
           case other =>
             throw InvalidCommandFieldValue(originalObject, "c", JString(other))(index)
         }
@@ -806,7 +820,6 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
             case Some(info) => Seq(MutationScriptCommandResult.Uninteresting)
             case None => throw NoSuchRollup(name)(idx)
           }
-
         case RowData(idx, truncate, mergeReplace, nonFatalRowErrors, updateOnly, bySystemId) =>
           if(truncate) mutator.truncate()
           val data = processRowData(idx, commands.rawCommandStream, nonFatalRowErrors, updateOnly = updateOnly, bySystemId = bySystemId, mutator, mergeReplace)
@@ -830,6 +843,18 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
             case Left(columnLabel) =>
           }
           Seq(MutationScriptCommandResult.Uninteresting)
+        case CreateOrUpdateIndex(idx, name, expressions, filter) =>
+          mutator.createOrUpdateIndex(name,expressions, filter) match {
+            case Right(_) =>
+              Seq(MutationScriptCommandResult.Uninteresting)
+            case Left(_) =>
+              throw InvalidIndex(name)(idx)
+          }
+        case DropIndex(idx, name) =>
+          mutator.dropIndex(name) match {
+            case Some(_) => Seq(MutationScriptCommandResult.Uninteresting)
+            case None => throw NoSuchIndex(name)(idx)
+          }
       }
 
       val newResults = processCommand(cmd)

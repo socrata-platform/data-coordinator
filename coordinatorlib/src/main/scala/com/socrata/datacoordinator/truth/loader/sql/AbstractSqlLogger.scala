@@ -3,14 +3,13 @@ package truth.loader
 package sql
 
 import java.sql.Connection
-
 import com.socrata.datacoordinator.truth.RowLogCodec
-import java.util.zip.{Deflater, DeflaterOutputStream}
 
+import java.util.zip.{Deflater, DeflaterOutputStream}
 import com.rojoma.json.v3.ast.{JBoolean, JObject}
 import com.socrata.datacoordinator.util.{Counter, TimingReport}
-import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, ComputationStrategyInfo, CopyInfo, RollupInfo}
-import com.socrata.datacoordinator.id.RowId
+import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, ComputationStrategyInfo, CopyInfo, IndexInfo, RollupInfo}
+import com.socrata.datacoordinator.id.{IndexName, RowId}
 import com.rojoma.simplearm.v2._
 import com.socrata.soql.environment.ColumnName
 import org.joda.time.DateTime
@@ -188,6 +187,18 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
   def indexDirectiveDropped(info: ColumnInfo[CT]) = {
     checkTxn()
     logLine(IndexDirectiveDropped, LogData.IndexDirectiveDropped(convert(info.unanchored)))
+  }
+
+  def indexCreatedOrUpdated(info: IndexInfo): Unit = {
+    checkTxn()
+    flushRowData()
+    logLine(IndexCreatedOrUpdated, LogData.IndexCreatedOrUpdated(convert(info.unanchored)))
+  }
+
+  def indexDropped(name: IndexName): Unit = {
+    checkTxn()
+    flushRowData()
+    logLine(IndexDropped, LogData.IndexDropped(name.underlying))
   }
 
   def endTransaction() = {

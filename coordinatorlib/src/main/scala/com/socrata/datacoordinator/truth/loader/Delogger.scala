@@ -2,17 +2,15 @@ package com.socrata.datacoordinator
 package truth.loader
 
 import java.io.{ByteArrayInputStream, Closeable, OutputStream}
-
 import com.socrata.datacoordinator.secondary.ComputationStrategyInfo
 import com.socrata.datacoordinator.util.CloseableIterator
-import com.socrata.datacoordinator.truth.metadata.{UnanchoredColumnInfo, UnanchoredCopyInfo, UnanchoredDatasetInfo, UnanchoredRollupInfo}
-import com.socrata.datacoordinator.id.{ColumnId, RowId}
+import com.socrata.datacoordinator.truth.metadata.{UnanchoredColumnInfo, UnanchoredCopyInfo, UnanchoredDatasetInfo, UnanchoredIndexInfo, UnanchoredRollupInfo}
+import com.socrata.datacoordinator.id.{ColumnId, IndexName, RowId}
 import com.socrata.datacoordinator.truth.RowLogCodec
 import com.socrata.soql.environment.ColumnName
 
 import scala.collection.immutable.VectorBuilder
 import java.util.zip.InflaterInputStream
-
 import com.rojoma.json.v3.ast.JObject
 import org.joda.time.DateTime
 
@@ -109,6 +107,12 @@ object Delogger {
   case class IndexDirectiveDropped(info: UnanchoredColumnInfo) extends LogEvent[Nothing]
   object IndexDirectiveDropped extends LogEventCompanion
 
+  case class IndexCreatedOrUpdated(info: UnanchoredIndexInfo) extends LogEvent[Nothing]
+  object IndexCreatedOrUpdated extends LogEventCompanion
+
+  case class IndexDropped(name: IndexName) extends LogEvent[Nothing]
+  object IndexDropped extends LogEventCompanion
+
   case object EndTransaction extends LogEvent[Nothing] with LogEventCompanion
 
   case class RowDataUpdated[CV](bytes: Array[Byte])(codec: RowLogCodec[CV]) extends LogEvent[CV] {
@@ -156,6 +160,7 @@ object Delogger {
       WorkingCopyPublished, WorkingCopyDropped, SnapshotDropped, RowDataUpdated, CounterUpdated,
       RollupCreatedOrUpdated, RollupDropped, RowsChangedPreview,
       SecondaryReindex, IndexDirectiveCreatedOrUpdated, IndexDirectiveDropped,
+      IndexCreatedOrUpdated, IndexDropped,
       EndTransaction)
 
   // Note: the Delogger test checks that this is exhaustive.  It is not intended
@@ -187,6 +192,8 @@ object Delogger {
         case SecondaryReindex => "SecondaryReindex"
         case IndexDirectiveCreatedOrUpdated => "IndexDirectiveCreatedOrUpdated"
         case IndexDirectiveDropped => "IndexDirectiveDropped"
+        case IndexCreatedOrUpdated => "IndexCreatedOrUpdated"
+        case IndexDropped => "IndexDropped"
         case EndTransaction => "EndTransaction"
       }
       acc + (n -> obj)
