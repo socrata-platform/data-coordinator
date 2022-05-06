@@ -12,6 +12,7 @@ object JsonRep extends JsonColumnRep[SoQLType, SoQLValue] {
   def fromJValue(input: JValue): Option[SoQLValue] = {
     input match {
       case JObject(m) => m.get("json").map(js => SoQLJson(js))
+      case JNull => Some(SoQLNull)
       case _ => None
     }
   }
