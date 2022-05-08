@@ -11,7 +11,7 @@ import com.rojoma.simplearm.v2._
  * Performs Liquibase migrations on the truth store.
  */
 object SchemaMigrator {
-  def apply(databaseTree: String, operation: MigrationOperation, numChanges: Int = 1): Unit = {
+  def apply(databaseTree: String, operation: MigrationOperation, numChanges: Int = 1, dryRun: Boolean = false): Unit = {
     val config = ConfigFactory.load
     for {
       dataSourceInfo <- DataSourceFromConfig(new DataSourceConfig(config, databaseTree))
@@ -19,7 +19,7 @@ object SchemaMigrator {
       stmt <- managed(conn.createStatement())
     } {
       stmt.execute("SET lock_timeout = '30s'")
-      Migration.migrateDb(conn, operation, numChanges)
+      Migration.migrateDb(conn, operation, numChanges, dryRun = dryRun)
     }
   }
 }
