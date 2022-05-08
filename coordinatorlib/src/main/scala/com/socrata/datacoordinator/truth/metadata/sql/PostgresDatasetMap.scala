@@ -1080,13 +1080,18 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
       "FROM column_map WHERE copy_system_id = ?;" +
     "INSERT INTO computation_strategy_map (copy_system_id, column_system_id, strategy_type, source_column_ids, parameters) " +
       "SELECT ?, column_system_id, strategy_type, source_column_ids, parameters FROM computation_strategy_map " +
-      "WHERE copy_system_id = ?"
+      "WHERE copy_system_id = ?;" +
+    "INSERT INTO index_directive_map (copy_system_id, column_system_id, directive, created_at, updated_at) " +
+      "SELECT ?, column_system_id, directive, created_at, updated_at FROM index_directive_map " +
+      "WHERE copy_system_id = ? AND deleted_at is null"
   def copySchemaIntoUnpublishedCopy(oldCopy: CopyInfo, newCopy: CopyInfo) {
     using(conn.prepareStatement(ensureUnpublishedCopyQuery_columnMap)) { stmt =>
       stmt.setLong(1, newCopy.systemId.underlying)
       stmt.setLong(2, oldCopy.systemId.underlying)
       stmt.setLong(3, newCopy.systemId.underlying)
       stmt.setLong(4, oldCopy.systemId.underlying)
+      stmt.setLong(5, newCopy.systemId.underlying)
+      stmt.setLong(6, oldCopy.systemId.underlying)
       t("copy-schema-to-unpublished-copy", "dataset_id" -> oldCopy.datasetInfo.systemId, "old_copy_num" -> oldCopy.copyNumber, "new_copy_num" -> newCopy.copyNumber)(stmt.execute())
     }
   }
