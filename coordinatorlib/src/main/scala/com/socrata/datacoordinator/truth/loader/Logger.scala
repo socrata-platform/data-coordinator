@@ -2,7 +2,8 @@ package com.socrata.datacoordinator
 package truth.loader
 
 import com.rojoma.json.v3.ast.JObject
-import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, ComputationStrategyInfo, CopyInfo, RollupInfo}
+import com.socrata.datacoordinator.id.IndexName
+import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, ComputationStrategyInfo, CopyInfo, IndexInfo, RollupInfo}
 import org.joda.time.DateTime
 
 trait Logger[CT, CV] extends DataLogger[CV] {
@@ -27,6 +28,8 @@ trait Logger[CT, CV] extends DataLogger[CV] {
   def secondaryReindex(): Unit
   def indexDirectiveCreatedOrUpdated(info: ColumnInfo[CT], directive: JObject): Unit
   def indexDirectiveDropped(info: ColumnInfo[CT]): Unit
+  def indexCreatedOrUpdated(info: IndexInfo): Unit
+  def indexDropped(name: IndexName): Unit
 
   /** Logs the end of the transaction and returns its version number.
    * @return The new log version number, or None if no other method was called. */

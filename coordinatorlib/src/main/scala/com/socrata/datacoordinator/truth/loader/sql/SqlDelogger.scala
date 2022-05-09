@@ -3,9 +3,9 @@ package truth.loader.sql
 
 import scala.io.Codec
 import java.sql.{Connection, PreparedStatement, ResultSet}
-
 import com.rojoma.json.v3.ast.{JBoolean, JObject}
 import com.rojoma.simplearm.v2._
+import com.socrata.datacoordinator.id.IndexName
 import com.socrata.datacoordinator.truth.RowLogCodec
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.util.{CloseableIterator, LeakDetect}
@@ -194,6 +194,8 @@ class SqlDelogger[CV](connection: Connection,
         case SqlLogger.SecondaryReindex => Some(Delogger.SecondaryReindex)
         case SqlLogger.IndexDirectiveCreatedOrUpdated => Some(Delogger.IndexDirectiveCreatedOrUpdated)
         case SqlLogger.IndexDirectiveDropped => Some(Delogger.IndexDirectiveDropped)
+        case SqlLogger.IndexCreatedOrUpdated => Some(Delogger.IndexCreatedOrUpdated)
+        case SqlLogger.IndexDropped => Some(Delogger.IndexDropped)
         case other =>
           throw new UnknownEvent(version, op, errMsg(s"Unknown event $op"))
       }
@@ -254,6 +256,10 @@ class SqlDelogger[CV](connection: Connection,
           Some(decodeIndexDirectiveCreatedOrUpdated(aux))
         case SqlLogger.IndexDirectiveDropped =>
           Some(decodeIndexDirectiveDropped(aux))
+        case SqlLogger.IndexCreatedOrUpdated =>
+          Some(decodeIndexCreatedOrUpdated(aux))
+        case SqlLogger.IndexDropped =>
+          Some(decodeIndexDropped(aux))
         case other =>
           throw new UnknownEvent(version, op, errMsg(s"Unknown event $op"))
       }
@@ -354,6 +360,16 @@ class SqlDelogger[CV](connection: Connection,
     def decodeIndexDirectiveDropped(aux: Array[Byte]) = {
       val msg = LogData.IndexDirectiveDropped.parseFrom(aux)
       Delogger.IndexDirectiveDropped(convert(msg.columnInfo))
+    }
+
+    def decodeIndexCreatedOrUpdated(aux: Array[Byte]) = {
+      val msg = LogData.IndexCreatedOrUpdated.parseFrom(aux)
+      Delogger.IndexCreatedOrUpdated(convert(msg.indexInfo))
+    }
+
+    def decodeIndexDropped(aux: Array[Byte]) = {
+      val msg = LogData.IndexDropped.parseFrom(aux)
+      Delogger.IndexDropped(new IndexName(msg.name))
     }
   }
 

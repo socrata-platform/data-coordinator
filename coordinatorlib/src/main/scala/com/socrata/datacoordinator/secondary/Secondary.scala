@@ -35,7 +35,8 @@ trait Secondary[CT, CV] {
    * This will only be called on copies that are published or unpublished.
    */
   def resync(datasetInfo: DatasetInfo, copyInfo: CopyInfo, schema: ColumnIdMap[ColumnInfo[CT]], cookie: Cookie,
-             rows: Managed[Iterator[ColumnIdMap[CV]]], rollups: Seq[RollupInfo], indexDirectives: Seq[IndexDirective[CT]],
+             rows: Managed[Iterator[ColumnIdMap[CV]]], rollups: Seq[RollupInfo],
+             indexDirectives: Seq[IndexDirective[CT]], indexes: Seq[IndexInfo],
              isLatestLivingCopy: Boolean): Cookie
 
   /**

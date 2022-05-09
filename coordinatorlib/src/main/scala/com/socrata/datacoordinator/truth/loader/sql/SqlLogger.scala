@@ -108,6 +108,8 @@ object SqlLogger {
   val SecondaryReindex = "secreidx"
   val IndexDirectiveCreatedOrUpdated = "idxdicr"
   val IndexDirectiveDropped = "idxdidr"
+  val IndexCreatedOrUpdated = "idxcr"
+  val IndexDropped = "idxdr"
 
   val allEvents = for {
     method <- getClass.getDeclaredMethods

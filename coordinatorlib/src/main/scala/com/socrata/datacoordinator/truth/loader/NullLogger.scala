@@ -2,8 +2,8 @@ package com.socrata.datacoordinator
 package truth.loader
 
 import com.rojoma.json.v3.ast.JObject
-import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, ComputationStrategyInfo, CopyInfo, RollupInfo}
-import com.socrata.datacoordinator.id.RowId
+import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, ComputationStrategyInfo, CopyInfo, IndexInfo, RollupInfo}
+import com.socrata.datacoordinator.id.{IndexName, RowId}
 import com.socrata.soql.environment.ColumnName
 import org.joda.time.DateTime
 
@@ -39,6 +39,10 @@ class NullLogger[CT, CV] extends Logger[CT, CV] {
   def indexDirectiveCreatedOrUpdated(info: ColumnInfo[CT], directive: JObject): Unit = {}
 
   def indexDirectiveDropped(info: ColumnInfo[CT]): Unit = {}
+
+  def indexCreatedOrUpdated(info: IndexInfo): Unit = {}
+
+  def indexDropped(name: IndexName): Unit = {}
 
   def endTransaction() = None
 

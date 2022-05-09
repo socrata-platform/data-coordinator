@@ -73,4 +73,21 @@ package object sql {
       else Some(v)
     }
   }
+
+  implicit class IndexIdSetter(val __underlying: PreparedStatement) extends AnyVal {
+    def setIndexId(idx: Int, value: IndexId): Unit = {
+      val x: Long = value.underlying
+      __underlying.setObject(idx, x, Types.OTHER)
+    }
+  }
+
+  implicit class IndexIdGetter(val __underlying: ResultSet) extends AnyVal {
+    private def IndexIdify(x: Long) =
+      if(__underlying.wasNull) IndexId.Invalid
+      else new IndexId(x)
+    def getIndexId(col: String): IndexId =
+      IndexIdify(__underlying.getLong(col))
+    def getIndexId(idx: Int): IndexId =
+      IndexIdify(__underlying.getLong(idx))
+  }
 }

@@ -2,7 +2,7 @@ package com.socrata.datacoordinator.truth.metadata
 package `-impl`
 
 import com.rojoma.json.v3.ast.JObject
-import com.socrata.datacoordinator.id.{DatasetId, RollupName}
+import com.socrata.datacoordinator.id.{DatasetId, IndexId, IndexName, RollupName}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.soql.environment.ColumnName
 import org.joda.time.DateTime
@@ -58,6 +58,9 @@ trait BaseDatasetMapReader[CT] {
     * Returns all index directives for this dataset
     */
   def indexDirectives(copyInfo: CopyInfo): Seq[IndexDirective[CT]]
+
+  def indexes(copyInfo: CopyInfo): Iterable[IndexInfo]
+  def index(copyInfo: CopyInfo, name: IndexName): Option[IndexInfo]
 
   /** Gets the current time.
    */
@@ -149,4 +152,8 @@ trait BaseDatasetMapWriter[CT] extends BaseDatasetMapReader[CT] {
   def createOrUpdateIndexDirective(columnInfo: ColumnInfo[CT], directive: JObject): Unit
 
   def dropIndexDirective(columnInfo: ColumnInfo[CT]): Unit
+
+  def createOrUpdateIndex(copyInfo: CopyInfo, name: IndexName, expressions: String, filter: Option[String]): IndexInfo
+
+  def dropIndex(copyInfo: CopyInfo, name: Option[IndexName])
 }

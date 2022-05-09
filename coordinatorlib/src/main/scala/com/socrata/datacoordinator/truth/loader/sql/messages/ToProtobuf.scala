@@ -62,6 +62,14 @@ object ToProtobuf {
       soql = ri.soql
     )
 
+  def convert(ii: metadata.UnanchoredIndexInfo): LogData.UnanchoredIndexInfo =
+    LogData.UnanchoredIndexInfo(
+      systemId = ii.systemId.underlying,
+      name = ii.name.underlying,
+      expressions = ii.expressions,
+      filter = ii.filter
+    )
+
   def convert(columnName: ColumnName): String =
     columnName.name
 

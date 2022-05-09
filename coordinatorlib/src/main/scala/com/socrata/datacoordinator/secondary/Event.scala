@@ -1,6 +1,7 @@
 package com.socrata.datacoordinator.secondary
 
 import com.rojoma.json.v3.ast.JObject
+import com.socrata.datacoordinator.id.IndexName
 import com.socrata.soql.environment.ColumnName
 import org.joda.time.DateTime
 
@@ -29,3 +30,5 @@ case class RowDataUpdated[CV](operations: Seq[Operation[CV]]) extends Event[Noth
 case object SecondaryReindex extends Event[Nothing, Nothing]
 case class IndexDirectiveCreatedOrUpdated[CT](info: ColumnInfo[CT], directive: JObject) extends Event[CT, Nothing]
 case class IndexDirectiveDropped[CT](info: ColumnInfo[CT]) extends Event[CT, Nothing]
+case class IndexCreatedOrUpdated(info: IndexInfo) extends Event[Nothing, Nothing]
+case class IndexDropped(name: IndexName) extends Event[Nothing, Nothing]

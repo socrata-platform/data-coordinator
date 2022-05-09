@@ -192,6 +192,8 @@ trait DatasetMutator[CT, CV] {
     def secondaryReindex(): Unit
     def createOrUpdateIndexDirective(column: ColumnInfo[CT], directive: JObject): Unit
     def dropIndexDirective(column: ColumnInfo[CT]): Unit
+    def createOrUpdateIndex(name: IndexName, expressions: String, filter: Option[String]): Either[Exception, IndexInfo]
+    def dropIndex(name: IndexName): Option[IndexInfo]
   }
 
   type TrueMutationContext <: MutationContext
@@ -569,6 +571,29 @@ object DatasetMutator {
       def dropIndexDirective(column: ColumnInfo[CT]): Unit = {
         datasetMap.dropIndexDirective(column)
         logger.indexDirectiveDropped(column)
+      }
+
+      def createOrUpdateIndex(name: IndexName, expressions: String, filter: Option[String]): Either[Exception, IndexInfo] = {
+        val info: IndexInfo = datasetMap.createOrUpdateIndex(copyInfo, name, expressions, filter)
+        try {
+          logger.indexCreatedOrUpdated(info)
+          Right(info)
+        } catch {
+          case ex: Exception =>
+            log.info(s"create index failed ${name.underlying} ${ex.getMessage}")
+            Left(ex)
+        }
+      }
+
+      def dropIndex(name: IndexName): Option[IndexInfo] = {
+        datasetMap.index(copyInfo, name) match {
+          case i@Some(idx) =>
+            datasetMap.dropIndex(copyInfo, Some(idx.name))
+            logger.indexDropped(idx.name)
+            i
+          case None =>
+            None
+        }
       }
     }
 

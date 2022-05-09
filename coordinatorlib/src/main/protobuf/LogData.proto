@@ -142,5 +142,20 @@ message IndexDirectiveDropped {
   required UnanchoredColumnInfo columnInfo = 1;
 }
 
+message UnanchoredIndexInfo {
+  required int64 systemId = 1;
+  required string name = 2;
+  required string expressions = 3;
+  optional string filter = 4;
+}
+
+message IndexCreatedOrUpdated {
+  required UnanchoredIndexInfo indexInfo = 1;
+}
+
+message IndexDropped {
+  required string name = 1;
+}
+
 message EndTransaction {
 }
