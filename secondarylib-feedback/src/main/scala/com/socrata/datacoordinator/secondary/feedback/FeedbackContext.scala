@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator.secondary.feedback
 
-import com.rojoma.json.io.JsonLexException
-import com.rojoma.json.util.JsonArrayIterator.ElementDecodeException
+import com.rojoma.json.v3.io.JsonLexException
+import com.rojoma.json.v3.util.JsonArrayIterator.ElementDecodeException
 import com.rojoma.json.v3.ast._
 import com.rojoma.json.v3.codec.JsonEncode
 import com.rojoma.json.v3.interpolation._

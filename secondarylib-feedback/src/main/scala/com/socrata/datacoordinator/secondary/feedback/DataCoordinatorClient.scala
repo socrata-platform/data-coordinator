@@ -2,7 +2,7 @@ package com.socrata.datacoordinator.secondary.feedback
 
 import java.io.IOException
 
-import com.rojoma.json.util.JsonArrayIterator.ElementDecodeException
+import com.rojoma.json.v3.util.JsonArrayIterator.ElementDecodeException
 import com.rojoma.json.v3.ast.{JArray, JObject, JString, JValue}
 import com.rojoma.json.v3.codec.{DecodeError, JsonDecode}
 import com.rojoma.json.v3.io.{JValueEventIterator, JsonLexException, JsonReaderException}

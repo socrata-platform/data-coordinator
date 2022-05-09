@@ -3,7 +3,7 @@ package com.socrata.datacoordinator.resources.collocation
 import java.io.IOException
 import java.util.UUID
 
-import com.rojoma.json.io.JsonParseException
+import com.rojoma.json.v3.io.JsonParseException
 import com.rojoma.json.v3.ast.{JObject, JString}
 import com.rojoma.json.v3.util.{AutomaticJsonCodecBuilder, JsonKeyStrategy, JsonUtil, Strategy}
 import com.socrata.datacoordinator.external.CollocationError
