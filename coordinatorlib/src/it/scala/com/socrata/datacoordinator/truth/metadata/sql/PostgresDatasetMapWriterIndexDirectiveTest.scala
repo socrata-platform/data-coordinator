@@ -1,11 +1,12 @@
 package com.socrata.datacoordinator.truth.metadata.sql
 
-import com.rojoma.json.v3.ast.{JObject, JBoolean}
+import com.rojoma.json.v3.ast.{JBoolean, JObject}
+import com.socrata.datacoordinator.truth.metadata.CopyPair
 import com.socrata.datacoordinator.util.NoopTimingReport
 
 trait PostgresDatasetMapWriterIndexDirectiveTest { this: PostgresDatasetMapWriterTest =>
 
-  test("Can create, update and delete index directive") {
+  test("Can create, update and delete index directive and survive publication") {
     withDb() { conn =>
       val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID, ZeroVersion)
       val vi1 = tables.create("en_US", resourcName)
@@ -28,8 +29,16 @@ trait PostgresDatasetMapWriterIndexDirectiveTest { this: PostgresDatasetMapWrite
       index.columnInfo must equal (index.columnInfo)
       indexUpdated.directive must equal (directiveDisabled)
 
-      tables.dropIndexDirective(ci1)
-      tables.indexDirectives(vi1) must equal (Seq.empty)
+      // run publication cycle and re-check index
+      val (vi1p, _) =tables.publish(vi1)
+      val Right(CopyPair(_, vi2u)) = tables.ensureUnpublishedCopy(vi1p.datasetInfo)
+      val (vi2p, _) = tables.publish(vi2u)
+      val c2i = tables.indexDirectives(vi2p).head
+      c2i.copyInfo must equal (vi2p)
+      c2i.directive must equal (indexUpdated.directive)
+
+      tables.dropIndexDirective(c2i.columnInfo)
+      tables.indexDirectives(vi2p) must equal (Seq.empty)
     }
   }
 
