@@ -13,14 +13,14 @@ object MigrateSchema extends App {
   private lazy val databaseTree = s"${Main.configRoot}.database"
 
   private def exitWithArgumentUsageHelp() = {
-    println(s"Incorrect arguments! usage: migrate|undo|redo [$$numChanges] [--dry_run]")
+    println(s"Incorrect arguments! usage: migrate|undo|redo [$$numChanges] [--dry-run]")
     exit(-1)
   }
 
   // Verify that one argument was passed
   val (argsMinusDryRun, dryRun) = args.foldLeft((Seq.empty[String], false)) { (acc, a) =>
     val (aa, dryRun) = acc
-    if (a == "--dry_run") (aa, true)
+    if (a == "--dry-run") (aa, true)
     else (aa :+ a, dryRun)
   }
 
