@@ -4,21 +4,33 @@ import java.util.NoSuchElementException
 import com.socrata.datacoordinator.service.Main
 import com.socrata.datacoordinator.truth.migration.Migration.MigrationOperation
 
+import scala.sys.exit
+
 /**
  * This object takes Liquibase operations and performs according migrations to the truth store schema.
  */
 object MigrateSchema extends App {
   private lazy val databaseTree = s"${Main.configRoot}.database"
 
-  // Verify that one argument was passed
-  if(args.length < 1 || args.length > 2) {
-    throw new IllegalArgumentException(
-      s"Incorrect number of arguments - expected 1 or 2 but received ${args.length}")
+  private def exitWithArgumentUsageHelp() = {
+    println(s"Incorrect arguments! usage: migrate|undo|redo [$$numChanges] [--dry_run]")
+    exit(-1)
   }
 
-  val numChanges = args.length match {
+  // Verify that one argument was passed
+  val (argsMinusDryRun, dryRun) = args.foldLeft((Seq.empty[String], false)) { (acc, a) =>
+    val (aa, dryRun) = acc
+    if (a == "--dry_run") (aa, true)
+    else (aa :+ a, dryRun)
+  }
+
+  if(argsMinusDryRun.length < 1 || argsMinusDryRun.length > 2) {
+    exitWithArgumentUsageHelp()
+  }
+
+  val numChanges = argsMinusDryRun.length match {
     case 1 => 1
-    case 2 => args(1).toInt
+    case 2 => try { argsMinusDryRun(1).toInt } catch { case _: NumberFormatException => exitWithArgumentUsageHelp() }
   }
 
   // Verify that the argument provided is actually a valid operation
@@ -33,5 +45,5 @@ object MigrateSchema extends App {
     }
   }
 
-  SchemaMigrator(databaseTree, operation, numChanges)
+  SchemaMigrator(databaseTree, operation, numChanges, dryRun)
 }

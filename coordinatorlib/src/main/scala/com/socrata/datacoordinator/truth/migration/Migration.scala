@@ -3,6 +3,8 @@ package com.socrata.datacoordinator.truth.migration
 import liquibase.Liquibase
 import liquibase.lockservice.LockService
 import liquibase.resource.ClassLoaderResourceAccessor
+
+import java.io.OutputStreamWriter
 import java.sql.Connection
 
 
@@ -23,7 +25,8 @@ object Migration {
   def migrateDb(conn: Connection,
                 operation: MigrationOperation = MigrationOperation.Migrate,
                 numChanges: Int = 1,
-                changeLogPath: String = MigrationScriptPath) {
+                changeLogPath: String = MigrationScriptPath,
+                dryRun: Boolean = false ) {
     val jdbc = new NonCommmittingJdbcConnenction(conn)
     val liquibase = new Liquibase(changeLogPath, new ClassLoaderResourceAccessor, jdbc)
     val lockService = LockService.getInstance(liquibase.getDatabase)
@@ -31,7 +34,9 @@ object Migration {
     val database = conn.getCatalog
 
     operation match {
-      case Migrate => liquibase.update(database)
+      case Migrate =>
+        if (dryRun) liquibase.update(database, new OutputStreamWriter(System.out))
+        else liquibase.update(database)
       case Undo => liquibase.rollback(numChanges, database)
       case Redo => { liquibase.rollback(numChanges, database); liquibase.update(database) }
     }
