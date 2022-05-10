@@ -658,6 +658,15 @@ object Main extends DynamicPortMap {
         }
       }
 
+      def getIndexes(datasetId: DatasetId) = {
+        for(u <- common.universe) {
+          for(dsInfo <- u.datasetMapReader.datasetInfo(datasetId)) yield {
+            val latest = u.datasetMapReader.latest(dsInfo)
+            u.datasetMapReader.indexes(latest).toSeq
+          }
+        }
+      }
+
       def getSnapshottedDatasets() = {
         for(u <- common.universe) {
           u.datasetMapReader.snapshottedDatasets()
@@ -673,6 +682,7 @@ object Main extends DynamicPortMap {
       val datasetSnapshotResource = DatasetSnapshotResource(_: DatasetId, _: Long, deleteSnapshot, common.internalNameFromDatasetId)
       val datasetLogResource = DatasetLogResource[common.CV](_: DatasetId, _: Long, getLog, common.internalNameFromDatasetId)
       val datasetRollupResource = DatasetRollupResource(_: DatasetId, getRollups, common.internalNameFromDatasetId)
+      val datasetIndexResource = DatasetIndexResource(_: DatasetId, getIndexes, common.internalNameFromDatasetId)
       val snapshottedResource = SnapshottedResource(getSnapshottedDatasets _, common.internalNameFromDatasetId)
       val secondaryManifestsResource = SecondaryManifestsResource(_: Option[String], secondaries,
         operations.datasetsInStore, common.internalNameFromDatasetId)
@@ -786,6 +796,7 @@ object Main extends DynamicPortMap {
         datasetSnapshotResource = datasetSnapshotResource,
         datasetLogResource = datasetLogResource,
         datasetRollupResource = datasetRollupResource,
+        datasetIndexResource = datasetIndexResource,
         snapshottedResource = snapshottedResource,
         secondaryManifestsResource = secondaryManifestsResource,
         secondaryManifestsCollocateResource = secondaryManifestsCollocateResource,
