@@ -421,10 +421,20 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
 
   private def indexDirectivesQuery =
     "SELECT column_system_id, directive FROM index_directive_map WHERE copy_system_id = ? AND deleted_at is null"
-  def indexDirectives(copyInfo: CopyInfo): Seq[IndexDirective[CT]] = {
+  private def indexDirectiveQuery =
+    """SELECT column_system_id, directive FROM index_directive_map idm
+         JOIN column_map cm ON cm.copy_system_id=idm.copy_system_id AND cm.system_id=idm.column_system_id
+        WHERE idm.copy_system_id = ?
+          AND cm.field_name = ?
+          AND idm.deleted_at is null"""
+  def indexDirectives(copyInfo: CopyInfo, fieldName: Option[ColumnName]): Seq[IndexDirective[CT]] = {
     val columnIdMap = schema(copyInfo)
-    using(conn.prepareStatement(indexDirectivesQuery)) { stmt =>
+    val query = if (fieldName.isDefined) indexDirectiveQuery else indexDirectivesQuery
+    using(conn.prepareStatement(query)) { stmt =>
       stmt.setLong(1, copyInfo.systemId.underlying)
+      for (name <- fieldName) {
+        stmt.setString(2, name.name)
+      }
       using(stmt.executeQuery()) { rs =>
         val res = new VectorBuilder[IndexDirective[CT]]
         while(rs.next()) {
