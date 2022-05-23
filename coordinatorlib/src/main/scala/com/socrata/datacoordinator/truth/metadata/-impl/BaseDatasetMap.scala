@@ -55,9 +55,9 @@ trait BaseDatasetMapReader[CT] {
   def rollup(copyInfo: CopyInfo, name: RollupName): Option[RollupInfo]
 
   /**
-    * Returns all index directives for this dataset
+    * Returns all index directives for this dataset optionally associated with one specific column name.
     */
-  def indexDirectives(copyInfo: CopyInfo): Seq[IndexDirective[CT]]
+  def indexDirectives(copyInfo: CopyInfo, fieldName: Option[ColumnName]): Seq[IndexDirective[CT]]
 
   def indexes(copyInfo: CopyInfo): Iterable[IndexInfo]
   def index(copyInfo: CopyInfo, name: IndexName): Option[IndexInfo]

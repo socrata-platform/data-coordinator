@@ -737,7 +737,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
           }
           val rollups: Seq[RollupInfo] = u.datasetMapReader.rollups(copyInfo).toSeq.map(makeSecondaryRollupInfo)
           val indexes: Seq[IndexInfo] = u.datasetMapReader.indexes(copyInfo).toSeq.map(makeSecondaryIndexInfo)
-          val indexDirectives = u.datasetMapReader.indexDirectives(copyInfo)
+          val indexDirectives = u.datasetMapReader.indexDirectives(copyInfo, None)
 
           currentCookie = secondary.store.resync(secondaryDatasetInfo,
                                                  secondaryCopyInfo,
