@@ -17,7 +17,7 @@ trait PostgresDatasetMapWriterIndexDirectiveTest { this: PostgresDatasetMapWrite
       val indexes  = tables.indexDirectives(vi1, None)
       indexes.size must equal (1)
       val index = indexes.head
-      index.columnInfo must equal (index.columnInfo)
+      index.columnInfo must equal (ci1)
       index.directive must equal (directiveEnabled)
 
       val directiveDisabled = JObject(Map("enabled" -> JBoolean.canonicalFalse))
@@ -42,4 +42,23 @@ trait PostgresDatasetMapWriterIndexDirectiveTest { this: PostgresDatasetMapWrite
     }
   }
 
+  test("Get directive of a specific column") {
+    withDb() { conn =>
+      val tables = new PostgresDatasetMapWriter(conn, noopTypeNamespace, NoopTimingReport, noopKeyGen, ZeroID, ZeroVersion)
+      val vi1 = tables.create("en_US", resourcName)
+      val ci1 = tables.addColumn(vi1, c("col1"), fn("field1"), t("typ1"), "pcol1")
+      val ci2 = tables.addColumn(vi1, c("col2"), fn("field2"), t("typ1"), "pcol2")
+      val directiveEnabled = JObject(Map("enabled" -> JBoolean.canonicalTrue))
+      tables.createOrUpdateIndexDirective(ci1, directiveEnabled)
+      tables.createOrUpdateIndexDirective(ci2, directiveEnabled)
+
+      val allIndexes  = tables.indexDirectives(vi1, None)
+      val ci2Index  = tables.indexDirectives(vi1, ci2.fieldName)
+      allIndexes.size must equal (2)
+      ci2Index.size must equal (1)
+      val index = ci2Index.head
+      index.columnInfo must equal (ci2)
+      index.directive must equal (directiveEnabled)
+    }
+  }
 }
