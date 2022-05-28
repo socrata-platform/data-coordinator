@@ -353,7 +353,11 @@ class SqlDelogger[CV](connection: Connection,
 
     def decodeIndexDirectiveCreatedOrUpdated(aux: Array[Byte]) = {
       val msg = LogData.IndexDirectiveCreatedOrUpdated.parseFrom(aux)
-      val directive = JObject(Map("enabled" -> JBoolean(msg.enabled)))
+      val enabled = Map("enabled" -> JBoolean(msg.enabled))
+      val directive = JObject(msg.search match {
+        case Some(b) => enabled ++ Map("search" -> JBoolean(b))
+        case None => enabled
+      })
       Delogger.IndexDirectiveCreatedOrUpdated(convert(msg.columnInfo), directive)
     }
 
