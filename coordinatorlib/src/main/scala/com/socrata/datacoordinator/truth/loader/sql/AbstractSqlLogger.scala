@@ -181,7 +181,11 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
       case Some(JBoolean(b)) => b
       case _ => false
     }
-    logLine(IndexDirectiveCreatedOrUpdated, LogData.IndexDirectiveCreatedOrUpdated(convert(info.unanchored), enabled))
+    val search = directive.get("search") match {
+      case Some(JBoolean(b)) => Some(b)
+      case _ => Some(true)
+    }
+    logLine(IndexDirectiveCreatedOrUpdated, LogData.IndexDirectiveCreatedOrUpdated(convert(info.unanchored), enabled, search))
   }
 
   def indexDirectiveDropped(info: ColumnInfo[CT]) = {
