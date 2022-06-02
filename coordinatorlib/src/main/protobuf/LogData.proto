@@ -136,6 +136,7 @@ message SecondaryReindex {
 message IndexDirectiveCreatedOrUpdated {
   required UnanchoredColumnInfo columnInfo = 1;
   required bool enabled = 2;
+  optional bool search = 3;
 }
 
 message IndexDirectiveDropped {
