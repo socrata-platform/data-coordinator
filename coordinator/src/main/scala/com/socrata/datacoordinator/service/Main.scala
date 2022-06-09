@@ -506,7 +506,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
     val preferredSecondaries = secondariesLike match {
       case Some(datasetInternalName) =>
         val candidateSecondariesInGroup = secondaryGroup.instances.filter(_._2.acceptingNewDatasets).keySet
-        val secs = collocationProvider.collocator.secondariesOfDataset(datasetInternalName)
+        val secs = collocationProvider.collocator.secondariesOfDataset(datasetInternalName).filter(secondaryGroup.instances.keySet)
         secs.find(!candidateSecondariesInGroup.contains(_)) match {
           case Some(sec) =>
             throw new Exception(s"Secondary ${sec} like ${datasetInternalName.underlying} is no longer accepting datasets" )
