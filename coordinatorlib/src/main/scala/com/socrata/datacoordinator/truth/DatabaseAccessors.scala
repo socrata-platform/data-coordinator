@@ -3,9 +3,8 @@ package truth
 
 import com.rojoma.json.v3.ast.{JNumber, JObject, JString, JValue}
 import com.rojoma.json.v3.codec.JsonEncode
-import com.rojoma.json.v3.util.JsonUtil
 import com.socrata.datacoordinator.util.CopyContextResult
-import com.socrata.soql.environment.{ColumnName, ResourceName, TableName}
+import com.socrata.soql.environment.{ColumnName, TableName}
 import org.joda.time.DateTime
 import com.rojoma.simplearm.v2._
 import com.socrata.datacoordinator.truth.metadata._
@@ -18,8 +17,7 @@ import com.socrata.datacoordinator.truth.metadata.CopyInfo
 import com.socrata.datacoordinator.id._
 import com.socrata.soql.ast.{JoinFunc, JoinQuery, JoinTable, Select}
 import com.socrata.soql.{BinaryTree, Compound, Leaf, SoQLAnalyzer}
-import com.socrata.soql.collection.OrderedMap
-import com.socrata.soql.exceptions.{NoSuchColumn, SoQLException}
+import com.socrata.soql.exceptions.SoQLException
 import com.socrata.soql.parsing.{AbstractParser, Parser}
 
 import scala.concurrent.duration.Duration
@@ -441,43 +439,14 @@ object DatasetMutator {
         }
       }
 
-      private def getPrefixedDsContext(copyInfo: CopyInfo): com.socrata.soql.environment.DatasetContext[CT] = {
-        val prefixedSchema: Seq[(ColumnName, CT)] = datasetMap.schema(copyInfo).values.map { colInfo =>
-          val prefix = if (colInfo.userColumnId.underlying.startsWith(":")) "" else "_"
-          (new ColumnName(prefix + colInfo.userColumnId.underlying), colInfo.typ)
-        }(collection.breakOut)
-        val prefixedDsContext = new com.socrata.soql.environment.DatasetContext[CT] {
-          val schema: OrderedMap[ColumnName, CT] = OrderedMap(prefixedSchema: _*)
-        }
-        prefixedDsContext
-      }
-
+      // Only perform syntax validation.
+      // Analysis validation is performed in Soda Fountain because SF has all datasets
+      // while DC would need to handle datasets that live in different truth-stores.
       def validateRollup(ru: RollupInfo): Unit = {
-        val prefixedDsContext = getPrefixedDsContext(ru.copyInfo)
         val analyzer = soqlAnalyzer
         try {
-          val parsed = new Parser(AbstractParser.defaultParameters).binaryTreeSelect(ru.soql)
-          val tableNames = collectTableNames(parsed)
-          val initContext = Map(TableName.PrimaryTable.qualifier -> prefixedDsContext)
-          val contexts = tableNames.foldLeft(initContext) { (acc, tn) =>
-            val tableName = TableName(tn)
-            val ctx = for {
-              dsInfo <- datasetMapReader.datasetInfoByResourceName(ResourceName(tableName.nameWithSodaFountainPrefix))
-              copyInfo <- datasetMap.published(dsInfo)
-            } yield {
-              getPrefixedDsContext(copyInfo)
-            }
-            ctx match {
-              case Some(context) =>
-                acc + (tn -> context)
-              case None =>
-                acc
-            }
-          }
-          analyzer.analyzeBinary(parsed)(contexts)
+          new Parser(AbstractParser.defaultParameters).binaryTreeSelect(ru.soql)
         } catch {
-          case ex: NoSuchColumn =>
-            throw RollupValidationException(ru, ex.getMessage)
           case ex: SoQLException =>
             throw RollupValidationException(ru, ex.getMessage)
         }
