@@ -216,7 +216,7 @@ trait DatasetMutator[CT, CV] {
 }
 
 object DatasetMutator {
-  private class Impl[CT, CV](val databaseMutator: LowLevelDatabaseMutator[CT, CV], lockTimeout: Duration, soqlAnalyzer: => SoQLAnalyzer[CT]) extends DatasetMutator[CT, CV] {
+  private class Impl[CT, CV](val databaseMutator: LowLevelDatabaseMutator[CT, CV], lockTimeout: Duration, soqlAnalyzer: => SoQLAnalyzer[CT, CV]) extends DatasetMutator[CT, CV] {
     type TrueMutationContext = S
 
     private val log = org.slf4j.LoggerFactory.getLogger(classOf[Impl[_, _]])
@@ -674,6 +674,6 @@ object DatasetMutator {
     }
   }
 
-  def apply[CT, CV](lowLevelMutator: LowLevelDatabaseMutator[CT, CV], lockTimeout: Duration, soqlAnalyzer: => SoQLAnalyzer[CT]): DatasetMutator[CT, CV] =
+  def apply[CT, CV](lowLevelMutator: LowLevelDatabaseMutator[CT, CV], lockTimeout: Duration, soqlAnalyzer: => SoQLAnalyzer[CT, CV]): DatasetMutator[CT, CV] =
     new Impl(lowLevelMutator, lockTimeout, soqlAnalyzer)
 }
