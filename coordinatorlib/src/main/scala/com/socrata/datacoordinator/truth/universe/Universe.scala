@@ -149,5 +149,5 @@ trait SchemaFinderProvider { this: TypeUniverse =>
 }
 
 trait SoQLAnalyzerProvider { this: TypeUniverse =>
-  def soqlAnalyzer: SoQLAnalyzer[CT]
+  def soqlAnalyzer: SoQLAnalyzer[CT, CV]
 }

@@ -31,7 +31,7 @@ import com.socrata.soql.typechecker.FunctionInfo
 
 trait PostgresCommonSupport[CT, CV] {
 
-  def soqlAnalyzer: SoQLAnalyzer[CT]
+  def soqlAnalyzer: SoQLAnalyzer[CT, CV]
   val executor: ExecutorService
   val typeContext: TypeContext[CT, CV]
   def repFor: ColumnInfo[CT] => SqlColumnRep[CT, CV]
@@ -226,5 +226,5 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
   lazy val logTableCleanup: LogTableCleanup =
     new SqlLogTableCleanup(conn, logTableCleanupDeleteOlderThan, logTableCleanupDeleteEvery)
 
-  def soqlAnalyzer: SoQLAnalyzer[CT] = commonSupport.soqlAnalyzer
+  def soqlAnalyzer: SoQLAnalyzer[CT, CV] = commonSupport.soqlAnalyzer
 }

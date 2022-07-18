@@ -224,7 +224,7 @@ class SoQLCommon(dataSource: DataSource,
     val copyInProvider: (Connection, String, OutputStream => Unit) => Long = common.copyInProvider
     val timingReport = common.timingReport
 
-    def soqlAnalyzer: SoQLAnalyzer[SoQLType] = new SoQLAnalyzer(SoQLTypeInfo, SoQLFunctionInfo)
+    def soqlAnalyzer: SoQLAnalyzer[SoQLType, SoQLValue] = new SoQLAnalyzer(SoQLTypeInfo, SoQLFunctionInfo)
   }
 
   object Mutator extends MutatorCommon[CT, CV] {
