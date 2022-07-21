@@ -21,6 +21,7 @@ import com.socrata.datacoordinator.util.collection.{ColumnIdMap, MutableColumnId
 import com.socrata.datacoordinator.truth.metadata.`-impl`._
 import scala.concurrent.duration.Duration
 import com.socrata.datacoordinator.id.sql._
+import com.socrata.datacoordinator.secondary.DatasetCopyLessThanDataVersionNotFound
 import scala.Array
 import scala.collection.mutable
 import org.joda.time.DateTime
@@ -85,8 +86,7 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
       stmt.setDatasetId(1, datasetInfo.systemId)
       stmt.setLong(2, dataVersion.getOrElse(Long.MaxValue))
       using(t("latest-copy", "dataset_id" -> datasetInfo.systemId)(stmt.executeQuery())) { rs =>
-        if(!rs.next()) sys.error("Looked up a table for " + datasetInfo.systemId +
-          " < version " + dataVersion.getOrElse(Long.MaxValue) + " but didn't find any copy info?")
+        if(!rs.next()) throw new DatasetCopyLessThanDataVersionNotFound(datasetInfo.systemId, dataVersion)
         CopyInfo(
           datasetInfo,
           new CopyId(rs.getLong("system_id")),

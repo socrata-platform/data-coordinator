@@ -169,6 +169,8 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
             endingMillis = System.currentTimeMillis()
           )
         } catch {
+          case e: DatasetCopyLessThanDataVersionNotFound =>
+            log.warn(s"Metrics send message: ${e.getMessage} Continuing regardless...")
           case e: Exception =>
             log.error("Unexpected exception sending message! Continuing regardless...", e)
         }
