@@ -35,7 +35,7 @@ class SqlTableCleanup(conn: Connection, daysDelay: Int = 1) extends TableCleanup
     val PurgedDatasets = """SELECT sm.dataset_system_id from secondary_manifest sm
                               LEFT OUTER JOIN dataset_map dm on dm.system_id = sm.dataset_system_id
                              WHERE dm.system_id is null"""
-    val PurgedDatasetsExcludeOrphanCleanupInSecondary = PurgedDatasets + " AND coalesce(cookie, '') <> '{}'"
+    val PurgedDatasetsExcludeOrphanCleanupInSecondary = PurgedDatasets + " AND went_out_of_sync_at < now()"
 
     using(conn.createStatement()) { stmt =>
       stmt.execute(s"DELETE FROM collocation_manifest WHERE deleted_at < now() - ('$daysDelay day' :: INTERVAL)")
