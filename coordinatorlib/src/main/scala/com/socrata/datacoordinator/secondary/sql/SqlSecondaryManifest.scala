@@ -120,13 +120,6 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
 
   def claimDatasetNeedingReplication(storeId: String, claimantId: UUID, claimTimeout: FiniteDuration):
       Option[SecondaryRecord] = {
-    // EN-5687 and http://dba.stackexchange.com/questions/83171/how-many-rows-will-be-locked-by-select-order-by-xxx-limit-1-for-update
-    // the two WHERE clauses below should be the same (wtb named params so we don't have to set them twice)
-    // also if we ever get to where everything is on 9.5, we may be able to use
-    // https://wiki.postgresql.org/wiki/What's_new_in_PostgreSQL_9.5#SKIP_LOCKED instead
-    // but in any case:
-    // we're doing the subquery so that we only potentially lock one row instead of hundreds/thousands
-    // and we re-assert the filters because things may have changed between the inner and outer queries
     val job = using(conn.prepareStatement(
       """SELECT dataset_system_id
         |  ,latest_secondary_data_version
@@ -137,29 +130,18 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
         |  ,pending_drop
         |FROM secondary_manifest
         |WHERE store_id = ?
-        |  AND dataset_system_id = (SELECT dataset_system_id
-        |                           FROM secondary_manifest
-        |                           WHERE store_id = ?
-        |                             AND broken_at IS NULL
-        |                             AND next_retry <= now()
-        |                             AND (latest_data_version > latest_secondary_data_version
-        |                               OR pending_drop = TRUE)
-        |                             AND (claimant_id is NULL
-        |                               OR claimed_at < (CURRENT_TIMESTAMP - CAST (? AS INTERVAL)))
-        |                           ORDER BY went_out_of_sync_at
-        |                           LIMIT 1)
         |  AND broken_at IS NULL
         |  AND next_retry <= now()
         |  AND (latest_data_version > latest_secondary_data_version
         |    OR pending_drop = TRUE)
         |  AND (claimant_id is NULL
         |    OR claimed_at < (CURRENT_TIMESTAMP - CAST (? AS INTERVAL)))
-        |FOR UPDATE""".stripMargin)) { stmt =>
+        |ORDER BY went_out_of_sync_at
+        |LIMIT 1
+        |FOR UPDATE SKIP LOCKED""".stripMargin)) { stmt =>
       val claimTimeoutMillisStr = claimTimeout.toMillis + " milliseconds"
       stmt.setString(1, storeId)
-      stmt.setString(2, storeId)
-      stmt.setString(3, claimTimeoutMillisStr)
-      stmt.setString(4, claimTimeoutMillisStr)
+      stmt.setString(2, claimTimeoutMillisStr)
       using(stmt.executeQuery()) { rs =>
         if(rs.next()) {
           val j = SecondaryRecord(
