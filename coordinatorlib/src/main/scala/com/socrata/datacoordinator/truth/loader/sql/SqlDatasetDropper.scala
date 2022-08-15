@@ -49,7 +49,7 @@ class SqlDatasetDropper[CT](conn: Connection, writeLockTimeout: Duration, datase
     using(conn.prepareStatement(
       s"""UPDATE secondary_manifest
          |SET latest_data_version = ?,
-         |    went_out_of_sync_at = now() + interval '1 day'
+         |    went_out_of_sync_at = now() + interval '3 days'
          |WHERE (dataset_system_id, store_id) IN (
          |  SELECT dataset_system_id, store_id FROM secondary_manifest
          |  WHERE dataset_system_id = ? ORDER BY store_id FOR UPDATE
