@@ -40,7 +40,7 @@ class SqlDatasetDropper[CT](conn: Connection, writeLockTimeout: Duration, datase
   }
 
   /**
-    * went_out_of_sync is set one day ahead of now so that the secondary_manifest record will not be prematurely
+    * went_out_of_sync is set three days ahead of now so that the secondary_manifest record will not be prematurely
     * deleted by SqlTableCleanup before it is processed by secondary watcher.
     */
   protected def updateSecondaryAndBackupInfo(datasetId: DatasetId, fakeVersion: Long) {
