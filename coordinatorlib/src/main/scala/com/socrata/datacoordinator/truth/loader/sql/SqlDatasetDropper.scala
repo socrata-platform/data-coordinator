@@ -39,12 +39,17 @@ class SqlDatasetDropper[CT](conn: Connection, writeLockTimeout: Duration, datase
     }
   }
 
+  /**
+    * went_out_of_sync is set three days ahead of now so that the secondary_manifest record will not be prematurely
+    * deleted by SqlTableCleanup before it is processed by secondary watcher.
+    */
   protected def updateSecondaryAndBackupInfo(datasetId: DatasetId, fakeVersion: Long) {
     // EN-12729 Note: Ordering by store_id to avoid deadlocks here should not be necessary,
     // but we are going to do it just in case and for consistency.
     using(conn.prepareStatement(
       s"""UPDATE secondary_manifest
-         |SET latest_data_version = ?
+         |SET latest_data_version = ?,
+         |    went_out_of_sync_at = now() + interval '3 days'
          |WHERE (dataset_system_id, store_id) IN (
          |  SELECT dataset_system_id, store_id FROM secondary_manifest
          |  WHERE dataset_system_id = ? ORDER BY store_id FOR UPDATE
