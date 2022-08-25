@@ -28,7 +28,8 @@ case class Router(parseDatasetId: String => Option[DatasetId],
                   secondariesOfDatasetResource: DatasetId => SodaResource,
                   collocationManifestsResource: (Option[String], Option[String]) => SodaResource,
                   resyncResource: (DatasetId, String) => SodaResource,
-                  versionResource: SodaResource) {
+                  versionResource: SodaResource,
+                  debugResource: SodaResource) {
 
   type OptString = Option[String]
 
@@ -90,7 +91,8 @@ case class Router(parseDatasetId: String => Option[DatasetId],
 
       Route("/resync/{DatasetId}/{String}", resyncResource),
 
-      Route("/version", versionResource)
+      Route("/version", versionResource),
+      Route("/debug", debugResource)
     )
   }
 

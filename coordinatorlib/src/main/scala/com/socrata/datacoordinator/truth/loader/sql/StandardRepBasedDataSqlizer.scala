@@ -2,7 +2,7 @@ package com.socrata.datacoordinator
 package truth.loader.sql
 
 import java.io.Closeable
-import java.sql.Connection
+import java.sql.{Connection, PreparedStatement}
 
 import com.rojoma.simplearm.v2._
 
@@ -19,6 +19,9 @@ class StandardRepBasedDataSqlizer[CT, CV](tableName: String,
       val fResult = f(inserter)
       (inserter.stmt.executeBatch().foldLeft(0L)(_+_), fResult)
     }
+  }
+
+  def doExplain(conn: Connection, sql: String, filler: PreparedStatement => Unit, idempotent: Boolean): Unit = {
   }
 
   val bulkInsertStatement =

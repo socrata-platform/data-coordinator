@@ -287,7 +287,8 @@ class Service(serviceConfig: ServiceConfig,
     datasetSecondaryStatusResource = datasetSecondaryStatusResource,
     secondariesOfDatasetResource = secondariesOfDatasetResource,
     resyncResource = resyncResource,
-    versionResource = VersionResource)
+    versionResource = VersionResource,
+    debugResource = DebugResource)
 
   private val errorHandlingHandler = new ErrorAdapter(router.handler) {
     type Tag = String
