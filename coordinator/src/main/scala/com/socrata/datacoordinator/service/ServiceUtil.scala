@@ -1,6 +1,6 @@
 package com.socrata.datacoordinator.service
 
-import java.io.{OutputStream, Reader}
+import java.io.{OutputStream, Reader, InputStream}
 import java.nio.charset.StandardCharsets._
 
 import com.rojoma.json.v3.ast.JValue
@@ -31,6 +31,33 @@ class BoundedReader(underlying: Reader, bound: Long) extends Reader {
     }
 
   def close(): Unit = {
+    underlying.close()
+  }
+
+  def resetCount(): Unit = {
+    count = 0
+  }
+}
+class BoundedInputStream(underlying: InputStream, bound: Long) extends InputStream {
+  private var count = 0L
+  private def inc(n: Int) {
+    count += n
+    if(count > bound) throw new ReaderExceededBound(count)
+  }
+
+  override def read() =
+    underlying.read() match {
+      case -1 => -1
+      case n => inc(1); n
+    }
+
+  override def read(cbuf: Array[Byte], off: Int, len: Int): Int =
+    underlying.read(cbuf, off, len) match {
+      case -1 => -1
+      case n => inc(n); n
+    }
+
+  override def close(): Unit = {
     underlying.close()
   }
 

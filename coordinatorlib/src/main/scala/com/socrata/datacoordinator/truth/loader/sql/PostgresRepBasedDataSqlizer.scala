@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator
 package truth.loader.sql
 
-import java.sql.Connection
+import java.sql.{Connection, PreparedStatement}
 
 import org.postgresql.PGConnection
 
@@ -10,12 +10,15 @@ import java.io.{OutputStreamWriter, BufferedWriter, OutputStream}
 import java.nio.charset.StandardCharsets
 import org.postgresql.copy.CopyIn
 import com.rojoma.simplearm.v2._
+import org.slf4j.LoggerFactory
 
 class PostgresRepBasedDataSqlizer[CT, CV](tableName: String,
                                           datasetContext: RepBasedSqlDatasetContext[CT, CV],
                                           copyIn: (Connection, String, OutputStream => Unit) => Long = PostgresRepBasedDataSqlizer.pgCopyManager)
   extends AbstractRepBasedDataSqlizer(tableName, datasetContext)
 {
+  import PostgresRepBasedDataSqlizer.log
+
   val bulkInsertStatement =
     "COPY " + dataTableName + " (" + repSchema.values.flatMap(_.physColumns).mkString(",") + ") from stdin with (format csv, encoding 'utf-8')"
 
@@ -30,6 +33,34 @@ class PostgresRepBasedDataSqlizer[CT, CV](tableName: String,
 
     val count = copyIn(conn, bulkInsertStatement, writeF)
     (count, result)
+  }
+
+  def doExplain(conn: Connection, sql: String, filler: PreparedStatement => Unit, idempotent: Boolean): Unit = {
+    val savepoint =
+      if(!idempotent) {
+        Some(conn.setSavepoint())
+      } else {
+        None
+      }
+
+    using(conn.prepareStatement("EXPLAIN ANALYZE " + sql)) { stmt =>
+      filler(stmt)
+      using(stmt.executeQuery()) { rs =>
+        val result = Vector.newBuilder[String]
+        while(rs.next()) {
+          for {
+            row <- Option(rs.getString(1))
+            line <- row.split("\n", -1)
+          } result += "  " + line
+        }
+        log.info(result.result().mkString(s"EXPLAIN ANALYZE $sql:\n", "\n", ""))
+      }
+    }
+
+    savepoint.foreach { sp =>
+      conn.rollback(sp)
+      conn.releaseSavepoint(sp)
+    }
   }
 
   class InserterImpl(out: OutputStream) extends Inserter {
@@ -83,6 +114,7 @@ class PostgresRepBasedDataSqlizer[CT, CV](tableName: String,
     val totalDeleted = preload.deleted + rowsDeleted
     if (totalAdded + totalDeleted >= Math.max(10000, preload.pgCount / 4)) {
       val cols = (sidRep.physColumns ++ pkRep(bySystemIdForced = false).physColumns).toSet
+      log.info("ANALYZEing {} on {}", tableName:Any, cols)
       using(conn.prepareStatement("ANALYZE " + tableName + " (" + cols.mkString(",") + ")")) { stmt =>
         stmt.execute()
       }
@@ -94,6 +126,8 @@ class PostgresRepBasedDataSqlizer[CT, CV](tableName: String,
 }
 
 object PostgresRepBasedDataSqlizer {
+  private val log = LoggerFactory.getLogger(classOf[PostgresRepBasedDataSqlizer[_, _]])
+
   def pgCopyManager(conn: Connection, sql: String, output: OutputStream => Unit): Long = {
     val copyIn = conn.asInstanceOf[PGConnection].getCopyAPI.copyIn(sql)
     try {

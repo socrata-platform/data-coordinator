@@ -14,7 +14,7 @@ trait ReadDataSqlizer[CT, CV] {
 
   def dataTableName: String
 
-  def findRows(conn: Connection, bySystemId: Boolean, ids: Iterator[CV]): CloseableIterator[Seq[InspectedRow[CV]]]
+  def findRows(conn: Connection, bySystemId: Boolean, ids: Iterator[CV], explain: Boolean = false): CloseableIterator[Seq[InspectedRow[CV]]]
   // When finding rows, it will be performed (and returned) in chunks
   // of this size (note that if you ask for rows that don't exist or
   // provide duplicate IDs, the produced chunks may be smaller than
@@ -38,10 +38,12 @@ trait DataSqlizer[CT, CV] extends ReadDataSqlizer[CT, CV] {
     def insert(row: Row[CV])
   }
 
-  def deleteBatch[T](conn: Connection)(f: Deleter => T): (Long, T)
+  def deleteBatch[T](conn: Connection, explain: Boolean = false)(f: Deleter => T): (Long, T)
   trait Deleter {
     def delete(sid: RowId)
   }
+
+  def doExplain(conn: Connection, sql: String, sqlFiller: PreparedStatement => Unit, idempotent: Boolean): Unit
 
   def prepareSystemIdUpdateStatement: String
   def prepareSystemIdUpdate(stmt: PreparedStatement, sid: RowId, row: Row[CV])

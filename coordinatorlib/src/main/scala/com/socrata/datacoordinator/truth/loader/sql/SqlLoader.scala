@@ -37,6 +37,7 @@ final class SqlLoader[CT, CV](val connection: Connection,
 {
   require(!connection.getAutoCommit, "Connection is in auto-commit mode")
 
+  val threadId = Thread.currentThread.getId()
   val log = org.slf4j.LoggerFactory.getLogger(classOf[SqlLoader[_, _]])
   val typeContext = sqlizer.typeContext
   val datasetContext = sqlizer.datasetContext
@@ -332,6 +333,14 @@ final class SqlLoader[CT, CV](val connection: Connection,
 
   private def doUpdates(updates: Seq[SqlLoader.DecoratedRow[CV]], bySystemIdForced: Boolean): Long = {
     if(updates.nonEmpty) {
+      if(DebugState.isUpsertExplanationRequested(threadId)) {
+        sqlizer.doExplain(
+          connection,
+          sqlizer.prepareSystemIdUpdateStatement,
+          sqlizer.prepareSystemIdUpdate(_, updates.head.rowId, updates.head.newRow),
+          idempotent = false
+        )
+      }
       using(connection.prepareStatement(sqlizer.prepareSystemIdUpdateStatement)) { stmt =>
         for(update <- updates) {
           sqlizer.prepareSystemIdUpdate(stmt, update.rowId, update.newRow)
@@ -353,7 +362,7 @@ final class SqlLoader[CT, CV](val connection: Connection,
 
   private def lookupRows(bySystemIdForced: Boolean, ids: Iterator[CV]): RowUserIdMap[CV, InspectedRow[CV]] =
     timingReport("lookup-rows") {
-      using(sqlizer.findRows(connection, bySystemIdForced, ids)) { it =>
+      using(sqlizer.findRows(connection, bySystemIdForced, ids, explain = DebugState.isUpsertExplanationRequested(threadId))) { it =>
         val result = datasetContext.makeIdMap[InspectedRow[CV]]()
         for(row <- it.flatten) result.put(row.id, row)
         result
@@ -366,7 +375,7 @@ final class SqlLoader[CT, CV](val connection: Connection,
       for(deleteChunk <- deletes.grouped(sqlizer.findRowsBlockSize)) {
         val existingRows = lookupRows(bySystemIdForced = bySystemIdForced, deleteChunk.iterator.map(_.id))
         val completedDeletions = new mutable.ArrayBuffer[(RowId, Int, CV, Row[CV])](deleteChunk.size)
-        val (chunkDeletedCount, ()) = sqlizer.deleteBatch(connection) { deleter =>
+        val (chunkDeletedCount, ()) = sqlizer.deleteBatch(connection, explain = DebugState.isUpsertExplanationRequested(threadId)) { deleter =>
           for(delete <- deleteChunk) {
             existingRows.get(delete.id) match {
               case Some(InspectedRow(_, sid, version, oldRow)) =>

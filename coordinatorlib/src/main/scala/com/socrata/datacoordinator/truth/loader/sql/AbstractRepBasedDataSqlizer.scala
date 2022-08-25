@@ -53,14 +53,14 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
     total
   }
 
-  def deleteBatch[T](conn: Connection)(f: Deleter => T): (Long, T) = {
-    using(new DeleterImpl(conn)) { deleter =>
+  def deleteBatch[T](conn: Connection, explain: Boolean)(f: Deleter => T): (Long, T) = {
+    using(new DeleterImpl(conn, explain)) { deleter =>
       val fResult = f(deleter)
       (deleter.finish(), fResult)
     }
   }
 
-  class DeleterImpl(conn: Connection) extends Deleter with Closeable {
+  class DeleterImpl(conn: Connection, private var explain: Boolean) extends Deleter with Closeable {
     private val rowSet = MutableRowIdSet()
     private var count = 0L
     private val batchSize = 100
@@ -68,24 +68,42 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
 
     private def deleteSql(n: Int) = "DELETE FROM " + dataTableName + " WHERE " + sidRep.templateForMultiLookup(n)
 
+    lazy val fullSql = deleteSql(batchSize)
     private def fullStmt = {
-      if(_fullStmt == null) _fullStmt = conn.prepareStatement(deleteSql(batchSize))
+      if(_fullStmt == null) _fullStmt = conn.prepareStatement(fullSql)
       _fullStmt
     }
 
     private def doFlush(stmt: PreparedStatement) {
+      fill(stmt)
+      count += stmt.executeUpdate()
+    }
+
+    private def fill(stmt: PreparedStatement) {
       var i = 1
       for(sid <- rowSet) {
         stmt.setLong(i, sid.underlying)
         i += 1
       }
-      count += stmt.executeUpdate()
+    }
+
+    private def explain(sql: String) {
+      if(explain) {
+        explain = false
+        doExplain(conn, sql, fill _, idempotent = false)
+      }
     }
 
     private def flush() {
-      if(rowSet.size == batchSize) doFlush(fullStmt)
-      else using(conn.prepareStatement(deleteSql(rowSet.size))) { stmt =>
-        doFlush(stmt)
+      if(rowSet.size == batchSize) {
+        explain(fullSql)
+        doFlush(fullStmt)
+      } else {
+        val sql = deleteSql(rowSet.size)
+        explain(sql)
+        using(conn.prepareStatement(sql)) { stmt =>
+          doFlush(stmt)
+        }
       }
       rowSet.clear()
     }
@@ -122,16 +140,21 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
     bySystemId: Boolean,
     ids: Iterator[CV],
     selectReps: Iterable[SqlColumnRep[CT, CV]],
-    dataTableName: String)
+    dataTableName: String,
+    explainFirst: Boolean)
       (decode: ResultSet => T): CloseableIterator[Seq[T]] = {
 
     class ResultIterator extends CloseableIterator[Seq[T]] {
       val grouped = new FastGroupedIterator(ids, findRowsBlockSize)
       val prefix = s"SELECT ${selectReps.map(_.selectList).mkString(",")} FROM $dataTableName WHERE "
       var _fullStmt: PreparedStatement = null
+      var explain = explainFirst
 
+      lazy val fullStmtSql: String = prefix + pkRep(bySystemId).templateForMultiLookup(findRowsBlockSize)
       def fullStmt = {
-        if(_fullStmt == null) _fullStmt = conn.prepareStatement(prefix + pkRep(bySystemId).templateForMultiLookup(findRowsBlockSize))
+        if(_fullStmt == null) {
+          _fullStmt = conn.prepareStatement(fullStmtSql)
+        }
         _fullStmt
       }
 
@@ -144,19 +167,33 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
       def next(): Seq[T] = {
         val block = grouped.next()
         if(block.size != findRowsBlockSize) {
-          using(conn.prepareStatement(prefix + pkRep(bySystemId).templateForMultiLookup(block.size))) { stmt2 =>
+          val sql = prefix + pkRep(bySystemId).templateForMultiLookup(block.size)
+          explain(sql, block)
+          using(conn.prepareStatement(sql)) { stmt2 =>
             fillAndResult(stmt2, block)
           }
         } else {
+          explain(fullStmtSql, block)
           fillAndResult(fullStmt, block)
         }
       }
 
-      def fillAndResult(stmt: PreparedStatement, block: Seq[CV]): Seq[T] = {
+      def explain(sql: String, block: Seq[CV]) {
+        if(explain) {
+          explain = false
+          doExplain(conn, sql, fill(_, block), idempotent = true)
+        }
+      }
+
+      def fill(stmt: PreparedStatement, block: Seq[CV]) {
         var i = 1
         for(cv <- block) {
           i = pkRep(bySystemId).prepareMultiLookup(stmt, cv, i)
         }
+      }
+
+      def fillAndResult(stmt: PreparedStatement, block: Seq[CV]): Seq[T] = {
+        fill(stmt, block)
         using(stmt.executeQuery()) { rs =>
           val result = new scala.collection.mutable.ArrayBuffer[T](block.length)
           while(rs.next()) {
@@ -171,8 +208,8 @@ abstract class AbstractRepBasedDataSqlizer[CT, CV](val dataTableName: String,
 
   val findRowsBlockSize = 100
 
-  def findRows(conn: Connection, bySystemId: Boolean, ids: Iterator[CV]): CloseableIterator[Seq[InspectedRow[CV]]] =
-    blockQueryById(conn, bySystemId, ids, repSchema.values, dataTableName) { rs =>
+  def findRows(conn: Connection, bySystemId: Boolean, ids: Iterator[CV], explain: Boolean): CloseableIterator[Seq[InspectedRow[CV]]] =
+    blockQueryById(conn, bySystemId, ids, repSchema.values, dataTableName, explain) { rs =>
       val row = new MutableRow[CV]
       var i = 1
       repSchema.foreach { (cid, rep) =>
