@@ -133,6 +133,8 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
 
   def transactionStart = txnStart
 
+  def unsafeRawConnection = conn
+
   lazy val playbackToSecondary: PlaybackToSecondary[CT, CV] =
     new PlaybackToSecondary(this, repFor, typeContext.typeNamespace.typeForUserType, datasetIdFormatter, timingReport)
 

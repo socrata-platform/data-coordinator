@@ -30,6 +30,9 @@ val dummySecondary = (project in file("dummy-secondary")).
 val secondarylibFeedback = (project in file("secondarylib-feedback")).
   dependsOn(secondarylib)
 
+val datasetMover = (project in file("dataset-mover")).
+  dependsOn(coordinator)
+
 publish / skip := true
 
 releaseProcess -= ReleaseTransformations.publishArtifacts

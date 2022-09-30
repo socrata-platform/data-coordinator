@@ -18,7 +18,7 @@ object Dependencies {
     val opencsv         = "2.3"
     val postgresql      = "42.2.5"
     val rojomaJson      = "3.10.0"
-    val rojomaSimpleArm = "2.1.0"
+    val rojomaSimpleArm = "2.3.2"
     val scalaCheck      = "1.14.0"
     val scalaMock       = "3.6.0"
     val scalaTest       = "3.0.8"
