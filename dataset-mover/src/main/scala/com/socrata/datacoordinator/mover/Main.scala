@@ -51,6 +51,14 @@ object Main extends App {
   def isPgSecondary(store: String): Boolean =
     store.startsWith("pg") || store == "read"
 
+  if(serviceConfig.from.dataSource.poolOptions.isDefined) {
+    throw new Exception("`from` must not be a c3p0 data source")
+  }
+
+  if(serviceConfig.to.dataSource.poolOptions.isDefined) {
+    throw new Exception("`to` must not be a c3p0 data source")
+  }
+
   using(new ResourceScope) { rs =>
     val fromDsInfo = DataSourceFromConfig(serviceConfig.from.dataSource, rs)
     val toDsInfo = DataSourceFromConfig(serviceConfig.to.dataSource, rs)
