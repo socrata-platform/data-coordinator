@@ -84,4 +84,7 @@ object DataSourceFromConfig {
         }
       }
     }
+
+  def apply(config: DataSourceConfig, rs: ResourceScope): DSInfo =
+    rs.open(unmanaged(config))
 }

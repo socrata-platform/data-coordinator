@@ -19,6 +19,7 @@ import com.socrata.datacoordinator.common.{DataSourceFromConfig, SoQLCommon}
 import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.service.{Main => ServiceMain}
 import com.socrata.datacoordinator.util.{NoopTimingReport, NullCache}
+import com.socrata.datacoordinator.secondary.SecondaryManifest
 import com.socrata.datacoordinator.truth.metadata.sql.PostgresDatasetMapWriter
 import com.socrata.datacoordinator.truth.metadata.LifecycleStage
 
@@ -41,13 +42,25 @@ object Main extends App {
 
   implicit val executorShutdown = Resource.executorShutdownNoTimeout
 
-  for {
-    fromDsInfo <- DataSourceFromConfig(serviceConfig.from.dataSource)
-    toDsInfo <- DataSourceFromConfig(serviceConfig.to.dataSource)
-    executorService <- managed(Executors.newCachedThreadPool)
-    httpClient <- managed(new HttpClientHttpClient(executorService))
-    tmpDir <- ResourceUtil.Temporary.Directory.managed[File]()
-  } {
+  def fullyReplicated(datasetId: DatasetId, manifest: SecondaryManifest, targetVersion: Long): Boolean = {
+    manifest.stores(datasetId).values.forall(_ == targetVersion)
+  }
+
+  def isPgSecondary(store: String): Boolean =
+    store.startsWith("pg") || store == "read"
+
+  using(new ResourceScope) { rs =>
+    val fromDsInfo = DataSourceFromConfig(serviceConfig.from.dataSource, rs)
+    val toDsInfo = DataSourceFromConfig(serviceConfig.to.dataSource, rs)
+    val executorService = rs.open(Executors.newCachedThreadPool)
+    val httpClient = rs.open(new HttpClientHttpClient(executorService))
+    val tmpDir = ResourceUtil.Temporary.Directory.scoped[File](rs)
+
+    val sodaFountain = DataSourceFromConfig(serviceConfig.sodaFountain, rs)
+    val secondaries = serviceConfig.secondaries.iterator.map { case (k, v) =>
+      k -> DataSourceFromConfig(v, rs)
+    }.toMap
+
     val fromCommon = new SoQLCommon(
       fromDsInfo.dataSource,
       fromDsInfo.copyIn,
@@ -88,23 +101,45 @@ object Main extends App {
       }
 
       val fromMapReader = fromUniverse.datasetMapReader
-      val fromDsInfo = fromMapReader.datasetInfo(fromDatasetId).getOrElse {
-        throw new Exception("Can't find dataset")
+      val fromDsInfo = locally {
+        var dsInfo = fromMapReader.datasetInfo(fromDatasetId).getOrElse {
+          throw new Exception("Can't find dataset")
+        }
+        while(!fullyReplicated(dsInfo.systemId, fromUniverse.secondaryManifest, dsInfo.latestDataVersion)) {
+          fromUniverse.rollback()
+          log.info("zzzzzzz....")
+          Thread.sleep(10000)
+          dsInfo = fromMapReader.datasetInfo(fromDatasetId).getOrElse {
+            throw new Exception("Can't find dataset")
+          }
+        }
+        dsInfo
       }
 
-      log.info("Found source dataset {}", fromDsInfo.systemId)
+      val stores = fromUniverse.secondaryManifest.stores(fromDsInfo.systemId).keySet
+      if(stores.isEmpty) {
+        throw new Exception("Refusing to move dataset that lives in no stores")
+      }
+      val invalidSecondaries = stores -- serviceConfig.acceptableSecondaries
+      if(invalidSecondaries.nonEmpty) {
+        throw new Exception("Refusing to move dataset that lives in " + invalidSecondaries)
+      }
+
+      val fromInternalName = fromCommon.internalNameFromDatasetId(fromDsInfo.systemId)
+      log.info("Found source dataset {}", fromInternalName)
 
       val toMapWriter = toUniverse.datasetMapWriter.asInstanceOf[PostgresDatasetMapWriter[SoQLType]]
       var toDsInfo = toMapWriter.create(fromDsInfo.localeName, fromDsInfo.resourceName).datasetInfo
       // wow, glad we never killed this code when the backup sytem went away...
       toDsInfo = toMapWriter.unsafeReloadDataset(toDsInfo, fromDsInfo.nextCounterValue, fromDsInfo.latestDataVersion, fromDsInfo.localeName, fromDsInfo.obfuscationKey, fromDsInfo.resourceName)
 
-      log.info("Created target dataset {}", toDsInfo.systemId)
+      val toInternalName = toCommon.internalNameFromDatasetId(toDsInfo.systemId)
+
+      log.info("Created target dataset {}", toInternalName)
 
       val fromCopies = fromMapReader.allCopies(fromDsInfo)
 
       log.info("There are {} copies to move", fromCopies.size)
-
       val toCopies = fromCopies.iterator.map { fromCopy =>
         log.info("Creating metadata for copy {}", fromCopy.copyNumber)
 
@@ -155,7 +190,7 @@ object Main extends App {
           val toTable = toCopy.dataTableName
           log.info("Copying rows from {} to {}", fromTable:Any, toTable:Any)
 
-          val fromColumns = toUniverse.datasetMapReader.schema(toCopy).iterator.map(_._2).toVector.sortBy(_.systemId)
+          val fromColumns = toUniverse.datasetMapReader.schema(fromCopy).iterator.map(_._2).toVector.sortBy(_.systemId)
           val toColumns = toUniverse.datasetMapReader.schema(toCopy).iterator.map(_._2).toVector.sortBy(_.systemId)
 
           log.info("Creating {}", toTable)
@@ -168,26 +203,53 @@ object Main extends App {
           val fromConn = fromUniverse.unsafeRawConnection
           val toConn = toUniverse.unsafeRawConnection
 
-          val fromCopyOutSql = fromColumns.flatMap(fromCommon.sqlRepFor(_).physColumns).mkString(s"COPY $fromTable (", ",", ") TO STDOUT WITH (format csv, header true)")
-          val toCopyInSql = toColumns.flatMap(toCommon.sqlRepFor(_).physColumns).mkString(s"COPY $toTable (", ",", ") FROM STDOUT WITH (format csv, header true)")
+          val fromCopyOutSql = fromColumns.flatMap(fromCommon.sqlRepFor(_).physColumns).mkString(s"COPY $fromTable (", ",", ") TO STDOUT WITH (format binary)")
+          val toCopyInSql = toColumns.flatMap(toCommon.sqlRepFor(_).physColumns).mkString(s"COPY $toTable (", ",", ") FROM STDIN WITH (format binary)")
           val fromCopyOut = fromConn.asInstanceOf[PGConnection].getCopyAPI.copyOut(fromCopyOutSql)
           try {
             val toCopyIn = toConn.asInstanceOf[PGConnection].getCopyAPI.copyIn(toCopyInSql)
             try {
+              // This buffering is WAY faster than just writing the chunks we get straight back out
+              val buffer = new Array[Byte](1024*1024)
+              var bufferEnd = 0
+
               @tailrec
-              def loop(total: Long) {
+              def loop(total: Long, lastWrote: Long) {
                 val chunk = fromCopyOut.readFromCopy()
                 if(chunk ne null) {
-                  toCopyIn.writeToCopy(chunk, 0, chunk.length)
-                  val newTotal = total + chunk.length
-                  print(s"\r$newTotal")
-                  System.out.flush()
-                  loop(newTotal)
+                  var written = 0L
+                  if(chunk.length + bufferEnd > buffer.length && bufferEnd != 0) {
+                    toCopyIn.writeToCopy(buffer, 0, bufferEnd)
+                    written += bufferEnd
+                    bufferEnd = 0
+                  }
+                  if(chunk.length > buffer.length) {
+                    toCopyIn.writeToCopy(chunk, 0, chunk.length)
+                    written += chunk.length
+                  } else {
+                    System.arraycopy(chunk, 0, buffer, bufferEnd, chunk.length)
+                    bufferEnd += chunk.length
+                  }
+                  val newTotal = total + written
+                  val now = System.nanoTime()
+                  if(now - lastWrote > 1000000000L) {
+                    print(s"\r$newTotal")
+                    System.out.flush()
+                    loop(newTotal, now)
+                  } else {
+                    loop(newTotal, lastWrote)
+                  }
+                } else if(bufferEnd != 0) {
+                  toCopyIn.writeToCopy(buffer, 0, bufferEnd)
+                  val newTotal = total + bufferEnd
+                  bufferEnd = 0
+                  println("\r" + newTotal)
+                } else {
+                  println("\r" + total)
                 }
               }
-              loop(0)
+              loop(0, System.nanoTime() - 1000000001L)
               toCopyIn.endCopy()
-              println()
             } finally {
               if(toCopyIn.isActive) toCopyIn.cancelCopy()
             }
@@ -197,15 +259,27 @@ object Main extends App {
 
           for(mutationContext <- toUniverse.datasetMutator.databaseMutator.openDatabase) {
             val loader = mutationContext.schemaLoader(new com.socrata.datacoordinator.truth.loader.NullLogger)
-            for(column <- toColumns) {
-              if(column.isSystemPrimaryKey) {
-                log.info("Making {} the system PK", column.systemId)
-                loader.makeSystemPrimaryKey(column)
+            for((fromColumn, toColumn) <- fromColumns.zip(toColumns)) {
+              if(fromColumn.isVersion) {
+                log.info("Making {} the version", toColumn.systemId)
+                toMapWriter.setVersion(toColumn)
               }
-              if(column.isUserPrimaryKey) {
-                log.info("Making {} the user PK", column.systemId)
-                loader.makePrimaryKey(column)
+              if(fromColumn.isSystemPrimaryKey) {
+                log.info("Making {} the system PK", toColumn.systemId)
+                loader.makeSystemPrimaryKey(toColumn)
+                toMapWriter.setSystemPrimaryKey(toColumn)
               }
+              if(fromColumn.isUserPrimaryKey) {
+                log.info("Making {} the user PK", toColumn.systemId)
+                loader.makePrimaryKey(toColumn)
+                toMapWriter.setUserPrimaryKey(toColumn)
+              }
+            }
+            val newTo = toUniverse.datasetMapReader.schema(toCopy).iterator.map(_._2.unanchored).toVector.sortBy(_.systemId)
+            if(newTo != fromColumns.map(_.unanchored)) {
+              System.err.println(newTo)
+              System.err.println(fromColumns.map(_.unanchored))
+              throw new Exception("Schema mismatch post update")
             }
           }
         }
@@ -215,9 +289,114 @@ object Main extends App {
       // now we need to inform the secondaries that the data have
       // moved...
 
-      println("Moved " + fromCommon.internalNameFromDatasetId(fromDsInfo.systemId) + " to " + toCommon.internalNameFromDatasetId(toDsInfo.systemId))
+      // sadness; updating the secondary-manifest is a little more
+      // fragile than I'd like.
+      log.info("Copying secondary_manifest records to the new truth...")
+      for {
+        fromStmt <- managed(fromUniverse.unsafeRawConnection.prepareStatement("select store_id, latest_secondary_data_version, latest_data_version, went_out_of_sync_at, cookie, broken_at, broken_acknowledged_at, claimant_id, pending_drop from secondary_manifest where dataset_system_id = ?")).
+          and { stmt =>
+            stmt.setLong(1, fromDsInfo.systemId.underlying)
+          }
+        toStmt <- managed(toUniverse.unsafeRawConnection.prepareStatement("insert into secondary_manifest (dataset_system_id, store_id, latest_secondary_data_version, latest_data_version, went_out_of_sync_at, cookie, broken_at, broken_acknowledged_at) values (?, ?, ?, ?, ?, ?, ?, ?)"))
+        rs <- managed(fromStmt.executeQuery())
+      } {
+        while(rs.next()) {
+          val storeId = rs.getString(1)
+          val latestSecondaryDataVersion = rs.getLong(2)
+          val latestDataVersion = rs.getLong(3)
+          val wentOutOfSyncAt = rs.getTimestamp(4)
+          val cookie = Option(rs.getString(5))
+          val brokenAt = Option(rs.getTimestamp(6))
+          val brokenAcknowledgedAt = Option(rs.getTimestamp(7))
+          val claimantId = Option(rs.getString(8))
+          val pendingDrop = rs.getBoolean(9)
 
-      toUniverse.rollback()
+          if(!serviceConfig.acceptableSecondaries(storeId)) {
+            throw new Exception("Secondary is in an unsupported store!!!  After we checked that it wasn't?!?!?")
+          }
+
+          if(claimantId.isDefined) {
+            throw new Exception("Secondary manifest record is claimed?")
+          }
+
+          if(pendingDrop) {
+            throw new Exception("Pending drop?")
+          }
+
+          if(latestDataVersion != fromDsInfo.latestDataVersion) {
+            throw new Exception("Dataset not actually up to date?")
+          }
+
+          if(latestSecondaryDataVersion != fromDsInfo.latestDataVersion) {
+            throw new Exception("Dataset not fully replicated after we checked that it was?")
+          }
+
+          toStmt.setLong(1, toDsInfo.systemId.underlying)
+          toStmt.setString(2, storeId)
+          toStmt.setLong(3, latestSecondaryDataVersion)
+          toStmt.setLong(4, latestDataVersion)
+          toStmt.setTimestamp(5, wentOutOfSyncAt)
+          toStmt.setString(6, cookie.orNull)
+          toStmt.setTimestamp(7, brokenAt.orNull)
+          toStmt.setTimestamp(8, brokenAcknowledgedAt.orNull)
+
+          toStmt.executeUpdate()
+        }
+      }
+
+      log.info("Adding the new name to the PG secondary stores...")
+      for(store <- stores if isPgSecondary(store)) {
+        for {
+          conn <- managed(secondaries(store).dataSource.getConnection())
+          stmt <- managed(conn.prepareStatement("insert into dataset_internal_name_map (dataset_internal_name, dataset_system_id, disabled) select ?, dataset_system_id, disabled from dataset_internal_name_map where dataset_internal_name = ?")).
+            and { stmt =>
+              stmt.setString(1, toInternalName)
+              stmt.setString(2, fromInternalName)
+            }
+        } {
+          stmt.executeUpdate()
+        }
+      }
+
+      // And now we commit the change into the target truth...
+      toUniverse.commit()
+      fromUniverse.rollback()
+
+      log.info("Informing soda-fountain of the internal name change...")
+      for {
+        conn <- managed(sodaFountain.dataSource.getConnection())
+        stmt <- managed(conn.prepareStatement("update datasets set dataset_system_id = ? where dataset_system_id = ?")).
+          and { stmt =>
+            stmt.setString(1, toInternalName)
+            stmt.setString(2, fromInternalName)
+          }
+      } {
+        stmt.executeUpdate()
+      }
+
+      log.info("Pausing to let everything work through...")
+      Thread.sleep(6000)
+
+      log.info("Remvoing secondary_manifest records on the old store...")
+      for(store <- stores) {
+        fromUniverse.secondaryMetrics.dropDataset(store, fromDsInfo.systemId)
+        fromUniverse.secondaryManifest.dropDataset(store, fromDsInfo.systemId)
+      }
+
+      log.info("Removing the ex-name from pg secondaries...")
+      for(store <- stores if isPgSecondary(store)) {
+        for {
+          conn <- managed(secondaries(store).dataSource.getConnection())
+          stmt <- managed(conn.prepareStatement("delete from dataset_internal_name_map where dataset_internal_name = ?")).
+            and { stmt =>
+              stmt.setString(1, fromInternalName)
+            }
+        } {
+          stmt.executeUpdate()
+        }
+      }
+
+      println("Moved " + fromInternalName + " to " + toInternalName)
     }
   }
 }
