@@ -178,7 +178,6 @@ object Main extends App {
       }.toVector
 
       fromUniverse.rollback() // release any locks on the maps we were holding
-      // toUniverse.commit()
 
       // ok, we've created and populated our maps, now let's copy the data...
       for((fromCopy, toCopy) <- fromCopies.zip(toCopies)) {
@@ -190,7 +189,7 @@ object Main extends App {
           val toTable = toCopy.dataTableName
           log.info("Copying rows from {} to {}", fromTable:Any, toTable:Any)
 
-          val fromColumns = toUniverse.datasetMapReader.schema(fromCopy).iterator.map(_._2).toVector.sortBy(_.systemId)
+          val fromColumns = fromUniverse.datasetMapReader.schema(fromCopy).iterator.map(_._2).toVector.sortBy(_.systemId)
           val toColumns = toUniverse.datasetMapReader.schema(toCopy).iterator.map(_._2).toVector.sortBy(_.systemId)
 
           log.info("Creating {}", toTable)
@@ -366,12 +365,20 @@ object Main extends App {
       for {
         conn <- managed(sodaFountain.dataSource.getConnection())
         stmt <- managed(conn.prepareStatement("update datasets set dataset_system_id = ? where dataset_system_id = ?")).
+        datasetStmt <- managed(conn.prepareStatement("update datasets set dataset_system_id = ? where dataset_system_id = ?")).
+          and { stmt =>
+            stmt.setString(1, toInternalName)
+            stmt.setString(2, fromInternalName)
+          }
+        // Turns out dataset_copies doesn't have a FK on datasets.  Lucky us.
+        copyStmt <- managed(conn.prepareStatement("update dataset_copies set dataset_system_id = ? where dataset_system_id = ?")).
           and { stmt =>
             stmt.setString(1, toInternalName)
             stmt.setString(2, fromInternalName)
           }
       } {
-        stmt.executeUpdate()
+        datasetStmt.executeUpdate()
+        copyStmt.executeUpdate()
       }
 
       log.info("Pausing to let everything work through...")
