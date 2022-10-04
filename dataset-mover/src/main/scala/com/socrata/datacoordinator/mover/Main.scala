@@ -26,6 +26,8 @@ import com.socrata.datacoordinator.truth.metadata.LifecycleStage
 sealed abstract class Main
 
 object Main extends App {
+  val dryRun = sys.env.get("SOCRATA_COMMIT_MOVE").isEmpty
+
   val fromDatasetId = new DatasetId(args(0).toLong)
 
   val serviceConfig = try {
@@ -346,7 +348,8 @@ object Main extends App {
       log.info("Adding the new name to the PG secondary stores...")
       for(store <- stores if isPgSecondary(store)) {
         for {
-          conn <- managed(secondaries(store).dataSource.getConnection())
+          conn <- managed(secondaries(store).dataSource.getConnection()).
+            and(_.setAutoCommit(false))
           stmt <- managed(conn.prepareStatement("insert into dataset_internal_name_map (dataset_internal_name, dataset_system_id, disabled) select ?, dataset_system_id, disabled from dataset_internal_name_map where dataset_internal_name = ?")).
             and { stmt =>
               stmt.setString(1, toInternalName)
@@ -354,17 +357,20 @@ object Main extends App {
             }
         } {
           stmt.executeUpdate()
+          if(dryRun) conn.rollback()
+          else conn.commit()
         }
       }
 
       // And now we commit the change into the target truth...
-      toUniverse.commit()
+      if(dryRun) toUniverse.rollback()
+      else toUniverse.commit()
       fromUniverse.rollback()
 
       log.info("Informing soda-fountain of the internal name change...")
       for {
-        conn <- managed(sodaFountain.dataSource.getConnection())
-        stmt <- managed(conn.prepareStatement("update datasets set dataset_system_id = ? where dataset_system_id = ?")).
+        conn <- managed(sodaFountain.dataSource.getConnection()).
+          and(_.setAutoCommit(false))
         datasetStmt <- managed(conn.prepareStatement("update datasets set dataset_system_id = ? where dataset_system_id = ?")).
           and { stmt =>
             stmt.setString(1, toInternalName)
@@ -379,6 +385,8 @@ object Main extends App {
       } {
         datasetStmt.executeUpdate()
         copyStmt.executeUpdate()
+        if(dryRun) conn.rollback()
+        else conn.commit()
       }
 
       log.info("Pausing to let everything work through...")
@@ -393,14 +401,22 @@ object Main extends App {
       log.info("Removing the ex-name from pg secondaries...")
       for(store <- stores if isPgSecondary(store)) {
         for {
-          conn <- managed(secondaries(store).dataSource.getConnection())
+          conn <- managed(secondaries(store).dataSource.getConnection()).
+            and(_.setAutoCommit(false))
           stmt <- managed(conn.prepareStatement("delete from dataset_internal_name_map where dataset_internal_name = ?")).
             and { stmt =>
               stmt.setString(1, fromInternalName)
             }
         } {
           stmt.executeUpdate()
+          if(dryRun) conn.rollback()
+          else conn.commit()
         }
+      }
+
+      if(dryRun) {
+        toUniverse.rollback()
+        fromUniverse.rollback()
       }
 
       println("Moved " + fromInternalName + " to " + toInternalName)
