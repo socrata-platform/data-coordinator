@@ -16,7 +16,7 @@ import com.socrata.soql.types.SoQLType
 import com.socrata.thirdparty.typesafeconfig.Propertizer
 
 import com.socrata.datacoordinator.common.{DataSourceFromConfig, SoQLCommon}
-import com.socrata.datacoordinator.id.DatasetId
+import com.socrata.datacoordinator.id.{DatasetId, DatasetInternalName}
 import com.socrata.datacoordinator.service.{Main => ServiceMain}
 import com.socrata.datacoordinator.util.{NoopTimingReport, NullCache}
 import com.socrata.datacoordinator.secondary.SecondaryManifest
@@ -28,7 +28,12 @@ sealed abstract class Main
 object Main extends App {
   val dryRun = sys.env.get("SOCRATA_COMMIT_MOVE").isEmpty
 
-  val fromDatasetId = new DatasetId(args(0).toLong)
+  val fromInternalName = DatasetInternalName(args(0)).getOrElse {
+    throw new Exception("Illegal dataset internal name")
+  }
+  val fromDatasetId = fromInternalName.datasetId
+
+  val toInstance = args(1)
 
   val serviceConfig = try {
     new MoverConfig(ConfigFactory.load(), "com.socrata.coordinator.datasetmover", identity)
@@ -51,25 +56,25 @@ object Main extends App {
   def isPgSecondary(store: String): Boolean =
     store.startsWith("pg") || store == "read"
 
-  if(serviceConfig.from.dataSource.poolOptions.isDefined) {
-    throw new Exception("`from` must not be a c3p0 data source")
-  }
-
-  if(serviceConfig.to.dataSource.poolOptions.isDefined) {
-    throw new Exception("`to` must not be a c3p0 data source")
+  if(serviceConfig.truths.values.exists(_.poolOptions.isDefined)) {
+    throw new Exception("truths must not a c3p0 data sources")
   }
 
   using(new ResourceScope) { rs =>
-    val fromDsInfo = DataSourceFromConfig(serviceConfig.from.dataSource, rs)
-    val toDsInfo = DataSourceFromConfig(serviceConfig.to.dataSource, rs)
     val executorService = rs.open(Executors.newCachedThreadPool)
     val httpClient = rs.open(new HttpClientHttpClient(executorService))
     val tmpDir = ResourceUtil.Temporary.Directory.scoped[File](rs)
 
-    val sodaFountain = DataSourceFromConfig(serviceConfig.sodaFountain, rs)
+    val truths = serviceConfig.truths.iterator.map { case (k, v) =>
+      k -> DataSourceFromConfig(v, rs)
+    }.toMap
     val secondaries = serviceConfig.secondaries.iterator.map { case (k, v) =>
       k -> DataSourceFromConfig(v, rs)
     }.toMap
+    val sodaFountain = DataSourceFromConfig(serviceConfig.sodaFountain, rs)
+
+    val fromDsInfo = truths(fromInternalName.instance)
+    val toDsInfo = truths(toInstance)
 
     val fromCommon = new SoQLCommon(
       fromDsInfo.dataSource,
@@ -79,7 +84,7 @@ object Main extends App {
       NoopTimingReport,
       allowDdlOnPublishedCopies = true,
       serviceConfig.writeLockTimeout,
-      serviceConfig.from.instance,
+      fromInternalName.instance,
       tmpDir,
       10000.days,
       10000.days,
@@ -94,7 +99,7 @@ object Main extends App {
       NoopTimingReport,
       allowDdlOnPublishedCopies = true,
       serviceConfig.writeLockTimeout,
-      serviceConfig.to.instance,
+      toInstance,
       tmpDir,
       10000.days,
       10000.days,
@@ -135,7 +140,6 @@ object Main extends App {
         throw new Exception("Refusing to move dataset that lives in " + invalidSecondaries)
       }
 
-      val fromInternalName = fromCommon.internalNameFromDatasetId(fromDsInfo.systemId)
       log.info("Found source dataset {}", fromInternalName)
 
       val toMapWriter = toUniverse.datasetMapWriter.asInstanceOf[PostgresDatasetMapWriter[SoQLType]]
@@ -143,7 +147,7 @@ object Main extends App {
       // wow, glad we never killed this code when the backup sytem went away...
       toDsInfo = toMapWriter.unsafeReloadDataset(toDsInfo, fromDsInfo.nextCounterValue, fromDsInfo.latestDataVersion, fromDsInfo.localeName, fromDsInfo.obfuscationKey, fromDsInfo.resourceName)
 
-      val toInternalName = toCommon.internalNameFromDatasetId(toDsInfo.systemId)
+      val toInternalName = toCommon.datasetInternalNameFromDatasetId(toDsInfo.systemId)
 
       log.info("Created target dataset {}", toInternalName)
 
@@ -360,8 +364,8 @@ object Main extends App {
             and(_.setAutoCommit(false))
           stmt <- managed(conn.prepareStatement("insert into dataset_internal_name_map (dataset_internal_name, dataset_system_id, disabled) select ?, dataset_system_id, disabled from dataset_internal_name_map where dataset_internal_name = ?")).
             and { stmt =>
-              stmt.setString(1, toInternalName)
-              stmt.setString(2, fromInternalName)
+              stmt.setString(1, toInternalName.underlying)
+              stmt.setString(2, fromInternalName.underlying)
             }
         } {
           stmt.executeUpdate()
@@ -381,14 +385,14 @@ object Main extends App {
           and(_.setAutoCommit(false))
         datasetStmt <- managed(conn.prepareStatement("update datasets set dataset_system_id = ? where dataset_system_id = ?")).
           and { stmt =>
-            stmt.setString(1, toInternalName)
-            stmt.setString(2, fromInternalName)
+            stmt.setString(1, toInternalName.underlying)
+            stmt.setString(2, fromInternalName.underlying)
           }
         // Turns out dataset_copies doesn't have a FK on datasets.  Lucky us.
         copyStmt <- managed(conn.prepareStatement("update dataset_copies set dataset_system_id = ? where dataset_system_id = ?")).
           and { stmt =>
-            stmt.setString(1, toInternalName)
-            stmt.setString(2, fromInternalName)
+            stmt.setString(1, toInternalName.underlying)
+            stmt.setString(2, fromInternalName.underlying)
           }
       } {
         datasetStmt.executeUpdate()
@@ -413,7 +417,7 @@ object Main extends App {
             and(_.setAutoCommit(false))
           stmt <- managed(conn.prepareStatement("delete from dataset_internal_name_map where dataset_internal_name = ?")).
             and { stmt =>
-              stmt.setString(1, fromInternalName)
+              stmt.setString(1, fromInternalName.underlying)
             }
         } {
           stmt.executeUpdate()
