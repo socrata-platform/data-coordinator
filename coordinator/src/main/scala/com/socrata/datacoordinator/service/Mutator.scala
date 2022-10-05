@@ -19,6 +19,7 @@ import java.nio.charset.StandardCharsets.UTF_8
 import scala.collection.immutable.{NumericRange, VectorBuilder}
 import scala.collection.mutable
 import com.socrata.datacoordinator.util.jsoncodecs._
+import org.slf4j.LoggerFactory
 
 sealed trait MutationScriptCommandResult
 object MutationScriptCommandResult {
@@ -28,6 +29,8 @@ object MutationScriptCommandResult {
 }
 
 object Mutator {
+  private val log = LoggerFactory.getLogger(classOf[Mutator[_, _]])
+
   sealed abstract class StreamType {
     def index: Long
   }
@@ -433,6 +436,10 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
     @volatile var firstError: Option[Failure[CV]] = None
     var jobLimit = firstJob - 1
 
+    var insertedRows = 0
+    var updatedRows = 0
+    var deletedRows = 0
+
     def jsonifyId(id: CV, bySystemIdForced: Boolean) = rowIdRep(bySystemIdForced).toJValue(id)
     def jsonifyVersion(v: RowVersion) =
       verRep.toJValue(typeContext.makeValueFromRowVersion(v))
@@ -500,14 +507,17 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
 
     def inserted(job: Int, result: IdAndVersion[CV]) {
       writeJson(job, jsonifyUpsert(result, "insert"))
+      insertedRows += 1
     }
 
     def updated(job: Int, result: IdAndVersion[CV]) {
       writeJson(job, jsonifyUpsert(result, "update"))
+      updatedRows += 1
     }
 
     def deleted(job: Int, result: CV) {
       writeJson(job, jsonifyDelete(result))
+      deletedRows += 1
     }
 
     def error(job: Int, result: Failure[CV]) {
@@ -902,9 +912,14 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
             }
           }
         }
+        val start = System.nanoTime()
         mutator.upsert(it, reportWriter, replaceUpdatedRows = mergeReplace == Replace, updateOnly = updateOnly, bySystemId = bySystemId)
         if(rows.hasNext && JNull == rows.head) rows.next()
         checkForError()
+
+        val duration = (System.nanoTime() - start) / 1000000
+        log.info("Upsert completed: {} inserted, {} updated, {} deleted; {}ms", reportWriter.insertedRows.asInstanceOf[AnyRef], reportWriter.updatedRows.asInstanceOf[AnyRef], reportWriter.deletedRows.asInstanceOf[AnyRef], duration.asInstanceOf[AnyRef])
+
         reportWriter
       } catch {
         case e: plan.BadDataException => e match {
