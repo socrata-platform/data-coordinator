@@ -36,7 +36,7 @@ object Main extends App {
   val toInstance = args(1)
 
   val serviceConfig = try {
-    new MoverConfig(ConfigFactory.load(), "com.socrata.coordinator.datasetmover", identity)
+    new MoverConfig(ConfigFactory.load(), "com.socrata.coordinator.datasetmover")
   } catch {
     case e: Exception =>
       Console.err.println(e)
@@ -54,11 +54,13 @@ object Main extends App {
   }
 
   def isPgSecondary(store: String): Boolean =
-    store.startsWith("pg") || store == "read"
+    serviceConfig.pgSecondaries.contains(store)
 
   if(serviceConfig.truths.values.exists(_.poolOptions.isDefined)) {
     throw new Exception("truths must not a c3p0 data sources")
   }
+
+  val acceptableSecondaries = serviceConfig.pgSecondaries.keySet ++ serviceConfig.additionalAcceptableSecondaries
 
   using(new ResourceScope) { rs =>
     val executorService = rs.open(Executors.newCachedThreadPool)
@@ -68,7 +70,7 @@ object Main extends App {
     val truths = serviceConfig.truths.iterator.map { case (k, v) =>
       k -> DataSourceFromConfig(v, rs)
     }.toMap
-    val secondaries = serviceConfig.secondaries.iterator.map { case (k, v) =>
+    val secondaries = serviceConfig.pgSecondaries.iterator.map { case (k, v) =>
       k -> DataSourceFromConfig(v, rs)
     }.toMap
     val sodaFountain = DataSourceFromConfig(serviceConfig.sodaFountain, rs)
@@ -135,7 +137,7 @@ object Main extends App {
       if(stores.isEmpty) {
         throw new Exception("Refusing to move dataset that lives in no stores")
       }
-      val invalidSecondaries = stores -- serviceConfig.acceptableSecondaries
+      val invalidSecondaries = stores -- acceptableSecondaries
       if(invalidSecondaries.nonEmpty) {
         throw new Exception("Refusing to move dataset that lives in " + invalidSecondaries)
       }
@@ -324,7 +326,7 @@ object Main extends App {
           val claimantId = Option(rs.getString(8))
           val pendingDrop = rs.getBoolean(9)
 
-          if(!serviceConfig.acceptableSecondaries(storeId)) {
+          if(!acceptableSecondaries(storeId)) {
             throw new Exception("Secondary is in an unsupported store!!!  After we checked that it wasn't?!?!?")
           }
 

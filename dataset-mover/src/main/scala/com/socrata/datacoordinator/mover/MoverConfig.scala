@@ -15,23 +15,20 @@ import com.socrata.datacoordinator.service.ReportsConfig
 import com.socrata.thirdparty.typesafeconfig.ConfigClass
 import com.socrata.thirdparty.metrics.MetricsOptions
 
-class MoverConfig(val config: Config, root: String, hostPort: Int => Int) extends ConfigClass(config, root) {
-  val truths = locally {
-    val secondaries = getRawConfig("truths")
-    secondaries.root.entrySet.iterator.asScala.foldLeft(Map.empty[String, DataSourceConfig]) { (acc, ent) =>
-      acc + (ent.getKey -> new DataSourceConfig(config, root + "." + ConfigUtil.joinPath("truths", ent.getKey)))
+class MoverConfig(val config: Config, root: String) extends ConfigClass(config, root) {
+  private def confMap[T](subpath: String, extractor: (Config, String) => T): Map[String, T] = {
+    val raw = getRawConfig(subpath)
+    raw.root.entrySet.iterator.asScala.foldLeft(Map.empty[String, T]) { (acc, ent) =>
+      acc + (ent.getKey -> extractor(config, root + "." + ConfigUtil.joinPath(subpath, ent.getKey)))
     }
   }
-  val secondaries = locally {
-    val secondaries = getRawConfig("secondaries")
-    secondaries.root.entrySet.iterator.asScala.foldLeft(Map.empty[String, DataSourceConfig]) { (acc, ent) =>
-      acc + (ent.getKey -> new DataSourceConfig(config, root + "." + ConfigUtil.joinPath("secondaries", ent.getKey)))
-    }
-  }
+
+  val truths = confMap("truths", new DataSourceConfig(_, _))
+  val pgSecondaries = confMap("pg-secondaries", new DataSourceConfig(_, _))
   val sodaFountain = getConfig("soda-fountain", new DataSourceConfig(_, _))
 
   val logProperties = getRawConfig("log4j")
   val tablespace = getString("tablespace")
   val writeLockTimeout = getDuration("write-lock-timeout")
-  val acceptableSecondaries = getStringList("acceptable-secondaries").toSet
+  val additionalAcceptableSecondaries = getStringList("additional-acceptable-secondaries").toSet
 }
