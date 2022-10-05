@@ -31,4 +31,5 @@ class MoverConfig(val config: Config, root: String) extends ConfigClass(config, 
   val tablespace = getString("tablespace")
   val writeLockTimeout = getDuration("write-lock-timeout")
   val additionalAcceptableSecondaries = getStringList("additional-acceptable-secondaries").toSet
+  val postSodaFountainUpdatePause = getDuration("post-soda-fountain-update-pause")
 }
