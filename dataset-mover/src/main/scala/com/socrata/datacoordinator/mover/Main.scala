@@ -4,12 +4,14 @@ import scala.annotation.tailrec
 import scala.concurrent.duration._
 
 import java.io.File
+import java.sql.Connection
 import java.util.concurrent.Executors
 
 import com.rojoma.simplearm.v2._
 import com.typesafe.config.ConfigFactory
 import org.apache.log4j.PropertyConfigurator
 import org.postgresql.PGConnection
+import org.postgresql.copy.{CopyIn,CopyOut}
 
 import com.socrata.http.client.HttpClientHttpClient
 import com.socrata.soql.types.SoQLType
@@ -71,6 +73,62 @@ object Main extends App {
   if(serviceConfig.truths.values.exists(_.poolOptions.isDefined)) {
     System.err.println("truths must not be c3p0 data sources")
     sys.exit(1)
+  }
+
+  def doCopy(fromConn: Connection, copyOutSql: String, toConn: Connection, copyInSql: String) {
+    log.info("Copy from: {}", copyOutSql)
+    log.info("Copy to: {}", copyInSql)
+    val fromCopyOut = fromConn.asInstanceOf[PGConnection].getCopyAPI.copyOut(copyOutSql)
+    try {
+      val toCopyIn = toConn.asInstanceOf[PGConnection].getCopyAPI.copyIn(copyInSql)
+      try {
+        // This buffering is WAY faster than just writing the chunks we get straight back out
+        val buffer = new Array[Byte](1024*1024)
+        var bufferEnd = 0
+
+        @tailrec
+        def loop(total: Long, lastWrote: Long) {
+          val chunk = fromCopyOut.readFromCopy()
+          if(chunk ne null) {
+            var written = 0L
+            if(chunk.length + bufferEnd > buffer.length && bufferEnd != 0) {
+              toCopyIn.writeToCopy(buffer, 0, bufferEnd)
+              written += bufferEnd
+              bufferEnd = 0
+            }
+            if(chunk.length > buffer.length) {
+              toCopyIn.writeToCopy(chunk, 0, chunk.length)
+              written += chunk.length
+            } else {
+              System.arraycopy(chunk, 0, buffer, bufferEnd, chunk.length)
+              bufferEnd += chunk.length
+            }
+            val newTotal = total + written
+            val now = System.nanoTime()
+            if(now - lastWrote > 1000000000L) {
+              print(s"\r$newTotal")
+              System.out.flush()
+              loop(newTotal, now)
+            } else {
+              loop(newTotal, lastWrote)
+            }
+          } else if(bufferEnd != 0) {
+            toCopyIn.writeToCopy(buffer, 0, bufferEnd)
+            val newTotal = total + bufferEnd
+            bufferEnd = 0
+            println("\r" + newTotal)
+          } else {
+            println("\r" + total)
+          }
+        }
+        loop(0, System.nanoTime() - 1000000001L)
+        toCopyIn.endCopy()
+      } finally {
+        if(toCopyIn.isActive) toCopyIn.cancelCopy()
+      }
+    } finally {
+      if(fromCopyOut.isActive) fromCopyOut.cancelCopy()
+    }
   }
 
   val acceptableSecondaries = serviceConfig.pgSecondaries.keySet ++ serviceConfig.additionalAcceptableSecondaries
@@ -235,59 +293,12 @@ object Main extends App {
             val fromConn = fromUniverse.unsafeRawConnection
             val toConn = toUniverse.unsafeRawConnection
 
-            val fromCopyOutSql = fromColumns.flatMap(fromCommon.sqlRepFor(_).physColumns).mkString(s"COPY $fromTable (", ",", ") TO STDOUT WITH (format binary)")
-            val toCopyInSql = toColumns.flatMap(toCommon.sqlRepFor(_).physColumns).mkString(s"COPY $toTable (", ",", ") FROM STDIN WITH (format binary)")
-            val fromCopyOut = fromConn.asInstanceOf[PGConnection].getCopyAPI.copyOut(fromCopyOutSql)
-            try {
-              val toCopyIn = toConn.asInstanceOf[PGConnection].getCopyAPI.copyIn(toCopyInSql)
-              try {
-                // This buffering is WAY faster than just writing the chunks we get straight back out
-                val buffer = new Array[Byte](1024*1024)
-                var bufferEnd = 0
-
-                @tailrec
-                def loop(total: Long, lastWrote: Long) {
-                  val chunk = fromCopyOut.readFromCopy()
-                  if(chunk ne null) {
-                    var written = 0L
-                    if(chunk.length + bufferEnd > buffer.length && bufferEnd != 0) {
-                      toCopyIn.writeToCopy(buffer, 0, bufferEnd)
-                      written += bufferEnd
-                      bufferEnd = 0
-                    }
-                    if(chunk.length > buffer.length) {
-                      toCopyIn.writeToCopy(chunk, 0, chunk.length)
-                      written += chunk.length
-                    } else {
-                      System.arraycopy(chunk, 0, buffer, bufferEnd, chunk.length)
-                      bufferEnd += chunk.length
-                    }
-                    val newTotal = total + written
-                    val now = System.nanoTime()
-                    if(now - lastWrote > 1000000000L) {
-                      print(s"\r$newTotal")
-                      System.out.flush()
-                      loop(newTotal, now)
-                    } else {
-                      loop(newTotal, lastWrote)
-                    }
-                  } else if(bufferEnd != 0) {
-                    toCopyIn.writeToCopy(buffer, 0, bufferEnd)
-                    val newTotal = total + bufferEnd
-                    bufferEnd = 0
-                    println("\r" + newTotal)
-                  } else {
-                    println("\r" + total)
-                  }
-                }
-                loop(0, System.nanoTime() - 1000000001L)
-                toCopyIn.endCopy()
-              } finally {
-                if(toCopyIn.isActive) toCopyIn.cancelCopy()
-              }
-            } finally {
-              if(fromCopyOut.isActive) fromCopyOut.cancelCopy()
-            }
+            doCopy(
+              fromConn,
+              fromColumns.flatMap(fromCommon.sqlRepFor(_).physColumns).mkString(s"COPY $fromTable (", ",", ") TO STDOUT WITH (format binary)"),
+              toConn,
+              toColumns.flatMap(toCommon.sqlRepFor(_).physColumns).mkString(s"COPY $toTable (", ",", ") FROM STDIN WITH (format binary)")
+            )
 
             for(mutationContext <- toUniverse.datasetMutator.databaseMutator.openDatabase) {
               val loader = mutationContext.schemaLoader(new com.socrata.datacoordinator.truth.loader.NullLogger)
@@ -316,6 +327,13 @@ object Main extends App {
             }
           }
         }
+
+        doCopy(
+          fromUniverse.unsafeRawConnection,
+          s"COPY ${fromDsInfo.auditTableName} (version, who, at_time) TO STDOUT WITH (format binary)",
+          toUniverse.unsafeRawConnection,
+          s"COPY ${toDsInfo.auditTableName} (version, who, at_time) FROM STDIN WITH (format binary)"
+        )
 
         // Ok at this point we've updated the maps and copied the data,
         // now we need to inform the secondaries that the data have
@@ -448,6 +466,14 @@ object Main extends App {
         if(dryRun) {
           toUniverse.rollback()
           fromUniverse.rollback()
+        }
+
+        log.info("Deleting ex-dataset")
+        fromLockUniverse.datasetDropper.dropDataset(fromDatasetId) // need to do this on the connection where we have the dataset_map lock
+        if(dryRun) {
+          fromLockUniverse.rollback()
+        } else {
+          fromLockUniverse.commit()
         }
 
         println("Moved " + fromInternalName + " to " + toInternalName)
