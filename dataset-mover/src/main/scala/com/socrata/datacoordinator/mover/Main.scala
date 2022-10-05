@@ -188,7 +188,7 @@ object Main extends App {
         fromUniverse <- fromCommon.universe
         toUniverse <- toCommon.universe
       } {
-        fromLockUniverse.datasetMapWriter.datasetInfo(fromDatasetId, serviceConfig.writeLockTimeout, true).getOrElse {
+        fromLockUniverse.datasetMapWriter.datasetInfo(fromDatasetId, serviceConfig.writeLockTimeout, false).getOrElse {
           bail("Can't find dataset")
         }
 
@@ -438,10 +438,10 @@ object Main extends App {
           else conn.commit()
         }
 
-        log.info("Pausing to let everything work through...")
+        log.info("Pausing {} to let everything work through...", serviceConfig.postSodaFountainUpdatePause)
         Thread.sleep(serviceConfig.postSodaFountainUpdatePause.toMillis)
 
-        log.info("Remvoing secondary_manifest records on the old store...")
+        log.info("Removing secondary_manifest records on the old store...")
         for(store <- stores) {
           fromUniverse.secondaryMetrics.dropDataset(store, fromDsInfo.systemId)
           fromUniverse.secondaryManifest.dropDataset(store, fromDsInfo.systemId)
@@ -466,6 +466,9 @@ object Main extends App {
         if(dryRun) {
           toUniverse.rollback()
           fromUniverse.rollback()
+        } else {
+          toUniverse.commit();
+          fromUniverse.commit()
         }
 
         log.info("Deleting ex-dataset")
