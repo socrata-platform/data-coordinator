@@ -587,6 +587,8 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
   def deleteQuery_indexMap = "DELETE FROM index_map WHERE copy_system_id IN (SELECT system_id FROM copy_map WHERE dataset_system_id = ?)"
   def deleteQuery_columnMap = "DELETE FROM column_map WHERE copy_system_id IN (SELECT system_id FROM copy_map WHERE dataset_system_id = ?)"
   def deleteQuery_rollupMap = "DELETE FROM rollup_map WHERE copy_system_id IN (SELECT system_id FROM copy_map WHERE dataset_system_id = ?)"
+  def deleteQuery_rollupRelationshipMapPrimary = "DELETE FROM rollup_relationship_map where rollup_system_id IN (SELECT system_id FROM rollup_map WHERE copy_system_id IN (SELECT system_id FROM copy_map WHERE dataset_system_id = ?))"
+  def deleteQuery_rollupRelationshipMapSecondary = "DELETE FROM rollup_relationship_map where referenced_copy_system_id IN (SELECT system_id FROM copy_map WHERE dataset_system_id = ?)"
   def deleteQuery_copyMap = "DELETE FROM copy_map WHERE dataset_system_id = ?"
   def deleteQuery_copyMapTableModifiers = "DELETE FROM copy_map_table_modifiers WHERE copy_system_id in (SELECT system_id FROM copy_map WHERE dataset_system_id = ?)"
   def deleteQuery_secondaryMoveJobs = "DELETE FROM secondary_move_jobs WHERE dataset_system_id = ?"
@@ -626,6 +628,10 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
       stmt.setDatasetId(1, datasetInfo.systemId)
       t("delete-dataset-columns", "dataset_id" -> datasetInfo.systemId)(stmt.executeUpdate())
     }
+    using(conn.prepareStatement(deleteQuery_rollupRelationshipMapPrimary)) { stmt =>
+      stmt.setDatasetId(1, datasetInfo.systemId)
+      t("delete-dataset-rollup-relationship-primary", "dataset_id" -> datasetInfo.systemId)(stmt.executeUpdate())
+    }
     using(conn.prepareStatement(deleteQuery_rollupMap)) { stmt =>
       stmt.setDatasetId(1, datasetInfo.systemId)
       t("delete-dataset-rollups", "dataset_id" -> datasetInfo.systemId)(stmt.executeUpdate())
@@ -633,6 +639,10 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
     using(conn.prepareStatement(deleteQuery_copyMapTableModifiers)) { stmt =>
       stmt.setDatasetId(1, datasetInfo.systemId)
       t("delete-dataset-copies", "dataset_id" -> datasetInfo.systemId)(stmt.executeUpdate())
+    }
+    using(conn.prepareStatement(deleteQuery_rollupRelationshipMapSecondary)) { stmt =>
+      stmt.setDatasetId(1, datasetInfo.systemId)
+      t("delete-dataset-rollup-relationship-secondary", "dataset_id" -> datasetInfo.systemId)(stmt.executeUpdate())
     }
     using(conn.prepareStatement(deleteQuery_copyMap)) { stmt =>
       stmt.setDatasetId(1, datasetInfo.systemId)
