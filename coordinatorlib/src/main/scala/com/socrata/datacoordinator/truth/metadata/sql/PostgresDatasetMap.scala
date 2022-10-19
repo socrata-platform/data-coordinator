@@ -806,10 +806,10 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
     using(conn.prepareStatement(unsafeReloadDatasetQuery)) { stmt =>
       stmt.setLong(1, newDatasetInfo.nextCounterValue)
       stmt.setLong(2, newDatasetInfo.latestDataVersion)
-      stmt.setDatasetId(3, newDatasetInfo.systemId)
-      stmt.setString(4, newDatasetInfo.localeName)
-      stmt.setBytes(5, newDatasetInfo.obfuscationKey)
-      stmt.setString(6, newDatasetInfo.resourceName.orNull) // resource_name is a nullable column
+      stmt.setString(3, newDatasetInfo.localeName)
+      stmt.setBytes(4, newDatasetInfo.obfuscationKey)
+      stmt.setString(5, newDatasetInfo.resourceName.orNull) // resource_name is a nullable column
+      stmt.setDatasetId(6, newDatasetInfo.systemId)
       val updated = t("unsafe-reload-dataset", "dataset_id" -> datasetInfo.systemId)(stmt.executeUpdate())
       assert(updated == 1, s"Dataset ${datasetInfo.systemId.underlying} does not exist?")
     }
@@ -845,6 +845,35 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
     }
 
     newCopy
+  }
+
+  def unsafeCreateCopyAllocatingSystemIdQuery = "INSERT INTO copy_map (dataset_system_id, copy_number, lifecycle_stage, data_version, data_shape_version, last_modified) values (?, ?, CAST(? AS dataset_lifecycle_stage), ?, ?, ?) RETURNING system_id"
+  def unsafeCreateCopyAllocatingSystemId(datasetInfo: DatasetInfo,
+                                         copyNumber: Long,
+                                         lifecycleStage: LifecycleStage,
+                                         dataVersion: Long,
+                                         dataShapeVersion: Long,
+                                         lastModified: DateTime): CopyInfo = {
+    using(conn.prepareStatement(unsafeCreateCopyAllocatingSystemIdQuery)) { stmt =>
+      stmt.setDatasetId(1, datasetInfo.systemId)
+      stmt.setLong(2, copyNumber)
+      stmt.setString(3, lifecycleStage.name)
+      stmt.setLong(4, dataVersion)
+      stmt.setLong(5, dataShapeVersion)
+      stmt.setTimestamp(6, toTimestamp(lastModified))
+      try {
+        using(t("unsafe-create-copy-allocating-system-id") { stmt.executeQuery() }) { rs =>
+          val returnedSomething = rs.next()
+          assert(returnedSomething, "INSERT didn't return a system ID?")
+          val systemId = rs.getCopyId(1)
+          CopyInfo(datasetInfo, systemId, copyNumber, lifecycleStage, dataVersion, dataShapeVersion, DateTime.now, None)
+        }
+      } catch {
+        case e: PSQLException if isReadOnlyTransaction(e) =>
+          BasePostgresDatasetMapWriter.log.trace("Create dataset failed due to read-only txn; abandoning")
+          throw new DatabaseInReadOnlyMode(e)
+      }
+    }
   }
 
   def dropColumnQuery = "DELETE FROM column_map WHERE copy_system_id = ? AND system_id = ?"

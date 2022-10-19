@@ -566,29 +566,12 @@ object Main extends DynamicPortMap {
       executorService <- managed(Executors.newCachedThreadPool)
       httpClient <- managed(new HttpClientHttpClient(executorService))
     } {
-      val common = locally {
-        // force RT to be initialized to avoid circular-dependency NPE
-        // Merely putting a reference to T is sufficient; the call to hashCode
-        // is to silence a compiler warning about ignoring a pure value
-        clojure.lang.RT.T.hashCode
-
-        // serviceConfig.tablespace must be an expression with the free variable
-        // table-name which should return either `nil' or a valid Postgresql tablespace
-        // name.
-        //
-        // I wish there were an obvious way to read the expression separately and then
-        // splice it in knowing that it's well-formed.
-        val iFn = clojure.lang.Compiler.load(new java.io.StringReader(s"""(let [op (fn [^String table-name] ${serviceConfig.tablespace})]
-                                                                            (fn [^String table-name]
-                                                                              (let [result (op table-name)]
-                                                                                (if result
-                                                                                    (scala.Some. result)
-                                                                                    (scala.Option/empty)))))""")).asInstanceOf[clojure.lang.IFn]
+      val common =
         new SoQLCommon(
           dsInfo.dataSource,
           dsInfo.copyIn,
           executorService,
-          { t => iFn.invoke(t).asInstanceOf[Option[String]] },
+          Main.tablespaceFinder(serviceConfig.tablespace),
           new DebugLoggedTimingReport(org.slf4j.LoggerFactory.getLogger("timing-report")) with StackedTimingReport,
           allowDdlOnPublishedCopies = serviceConfig.allowDdlOnPublishedCopies,
           serviceConfig.writeLockTimeout,
@@ -599,7 +582,6 @@ object Main extends DynamicPortMap {
           //serviceConfig.tableCleanupDelay,
           NullCache
         )
-      }
 
       val operations = new Main(common, serviceConfig)
 
@@ -918,5 +900,28 @@ object Main extends DynamicPortMap {
     log.info(s"Dataset $datasetId should also be on $newSecondaries")
 
     newSecondaries
+  }
+
+  def tablespaceFinder(tablespaceClojure: String) = {
+    // force RT to be initialized to avoid circular-dependency NPE
+    // Merely putting a reference to T is sufficient; the call to hashCode
+    // is to silence a compiler warning about ignoring a pure value
+    clojure.lang.RT.T.hashCode
+
+    // serviceConfig.tablespace must be an expression with the free variable
+    // table-name which should return either `nil' or a valid Postgresql tablespace
+    // name.
+    //
+    // I wish there were an obvious way to read the expression separately and then
+    // splice it in knowing that it's well-formed.
+    val iFn = clojure.lang.Compiler.load(new java.io.StringReader(s"""(let [op (fn [^String table-name] ${tablespaceClojure})]
+                                                                            (fn [^String table-name]
+                                                                              (let [result (op table-name)]
+                                                                                (if result
+                                                                                    (scala.Some. result)
+                                                                                    (scala.Option/empty)))))""")).asInstanceOf[clojure.lang.IFn]
+
+
+    { (t: String) => iFn.invoke(t).asInstanceOf[Option[String]] }
   }
 }
