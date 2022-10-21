@@ -313,13 +313,15 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
     using(conn.prepareStatement(
       """UPDATE secondary_manifest
         |SET retry_num = ?
+        |  ,replay_num = ?
         |  ,next_retry = CURRENT_TIMESTAMP + (? :: INTERVAL)
         |WHERE store_id = ?
         |  AND dataset_system_id = ?""".stripMargin)) { stmt =>
       stmt.setInt(1, retryNum)
-      stmt.setString(2, "%s seconds".format(nextRetryDelaySecs))
-      stmt.setString(3, storeId)
-      stmt.setDatasetId(4, datasetId)
+      stmt.setInt(2, 0) // start with fresh replay limit
+      stmt.setString(3, "%s seconds".format(nextRetryDelaySecs))
+      stmt.setString(4, storeId)
+      stmt.setDatasetId(5, datasetId)
       stmt.executeUpdate()
     }
   }
