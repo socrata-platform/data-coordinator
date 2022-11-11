@@ -4,6 +4,7 @@ import scala.annotation.tailrec
 import scala.concurrent.duration._
 
 import java.io.File
+import java.net.URL
 import java.sql.Connection
 import java.util.concurrent.Executors
 
@@ -131,7 +132,10 @@ object Main extends App {
     }
   }
 
-  val acceptableSecondaries = serviceConfig.pgSecondaries.keySet ++ serviceConfig.additionalAcceptableSecondaries
+  val acceptableSecondaries =
+    serviceConfig.pgSecondaries.keySet ++
+      serviceConfig.archivalUrl.map(_ => "archival") ++
+      serviceConfig.additionalAcceptableSecondaries
 
   class Bail(msg: String) extends Exception(msg)
   def bail(msg: String): Nothing = throw new Bail(msg)
@@ -149,6 +153,11 @@ object Main extends App {
         k -> DataSourceFromConfig(v, rs)
       }.toMap
       val sodaFountain = DataSourceFromConfig(serviceConfig.sodaFountain, rs)
+
+      val archivalSecondaryClient = serviceConfig.archivalUrl.map { url =>
+        new ArchivalSecondaryClient(httpClient, new URL(url))
+      }
+      archivalSecondaryClient.foreach(_.check())
 
       val fromDsInfo = truths(fromInternalName.instance)
       val toDsInfo = truths(toInstance)
@@ -411,35 +420,107 @@ object Main extends App {
           }
         }
 
+        // Current state of the world:
+        //   * PG secondaries know about the dataset under its old AND
+        //     new names
+        //   * The old truth and the new truth have copies of the
+        //     dataset (the new one is uncommitted)
+        //   * Both truths have secondary_manifest records
+        //   * Archival secondary and soda-fountain know only the old
+        //     name
+        //   * The dataset is locked against writes
+
+        // First, _before_ committing to the new truth, update the
+        // archival secondary.  This is because when we commit the
+        // truth change, the archival secondary will see its
+        // secondary_manifest record and try to create the dataset, so
+        // we need to tell it exists before that happens.
+        for(asc <- archivalSecondaryClient if stores.contains("archival")) {
+          log.info("Informing archival secondary of the internal name change...")
+          if(dryRun) {
+            log.info("(not really)")
+          } else {
+            // If this fails, then we're in a world where the old
+            // dataset still exists in the original truth and is still
+            // accessible under that name in the PG secondaries.
+            // There'll be some manual cleanup to do (namely, undoing
+            // the changes to the secondaries' dataset internal name
+            // maps and dropping the new copy in truth) but that's
+            // fiddly enough that I want a human to do it.
+            asc.addName(fromInternalName, toInternalName)
+          }
+        }
+
+        def rollbackArchivalSecondary(e: Exception): Nothing = {
+          for(asc <- archivalSecondaryClient if stores.contains("archival")) {
+            log.info("Soda-fountain update failed; undoing the archival secondary rename")
+            try {
+              if(dryRun) {
+                log.info("(not really)")
+              } else {
+                // Now, if _this_ fails, we're in a genuinely weird
+                // state!  Specifically we're in the state described
+                // above PLUS the fact that the archival secondary
+                // is now watching the NEW truth name for updates
+                // instead of the OLD truth name.
+                asc.removeName(fromInternalName, toInternalName)
+              }
+            } catch {
+              case e2: Exception =>
+                log.error("Failed to roll back archival secondary change", e2)
+            }
+          }
+          throw e
+        }
+
         // And now we commit the change into the target truth...
-        if(dryRun) toUniverse.rollback()
-        else toUniverse.commit()
+        try {
+          if(dryRun) toUniverse.rollback()
+          else toUniverse.commit()
+        } catch {
+          case e: Exception =>
+            rollbackArchivalSecondary(e)
+        }
+
         fromUniverse.rollback()
 
         log.info("Informing soda-fountain of the internal name change...")
-        for {
-          conn <- managed(sodaFountain.dataSource.getConnection()).
+        // Same comment as a above re: what happens if this fails
+        try {
+          for {
+            conn <- managed(sodaFountain.dataSource.getConnection()).
             and(_.setAutoCommit(false))
-          datasetStmt <- managed(conn.prepareStatement("update datasets set dataset_system_id = ? where dataset_system_id = ?")).
+            datasetStmt <- managed(conn.prepareStatement("update datasets set dataset_system_id = ? where dataset_system_id = ?")).
             and { stmt =>
               stmt.setString(1, toInternalName.underlying)
               stmt.setString(2, fromInternalName.underlying)
             }
-          // Turns out dataset_copies doesn't have a FK on datasets.  Lucky us.
-          copyStmt <- managed(conn.prepareStatement("update dataset_copies set dataset_system_id = ? where dataset_system_id = ?")).
+            // Turns out dataset_copies doesn't have a FK on datasets.  Lucky us.
+            copyStmt <- managed(conn.prepareStatement("update dataset_copies set dataset_system_id = ? where dataset_system_id = ?")).
             and { stmt =>
               stmt.setString(1, toInternalName.underlying)
               stmt.setString(2, fromInternalName.underlying)
             }
-        } {
-          datasetStmt.executeUpdate()
-          copyStmt.executeUpdate()
-          if(dryRun) conn.rollback()
-          else conn.commit()
+          } {
+            datasetStmt.executeUpdate()
+            copyStmt.executeUpdate()
+            if(dryRun) conn.rollback()
+            else conn.commit()
+          }
+        } catch {
+          case e: Exception =>
+            // This will now be an _especially_ weird state!  Specifically, th
+            rollbackArchivalSecondary(e)
         }
 
         log.info("Pausing {} to let everything work through...", serviceConfig.postSodaFountainUpdatePause)
         Thread.sleep(serviceConfig.postSodaFountainUpdatePause.toMillis)
+
+        // Current state of the world:
+        //   * PG secondaries know about the dataset under its old AND new names
+        //   * The old truth and the new truth have copies of the dataset
+        //   * Archival secondary and soda-fountain know only the NEW name
+        //   * The dataset is locked against writes
 
         log.info("Removing secondary_manifest records on the old store...")
         for(store <- stores) {
@@ -461,6 +542,11 @@ object Main extends App {
             if(dryRun) conn.rollback()
             else conn.commit()
           }
+        }
+
+        log.info("Removing the ex-name from archival secondary...")
+        for(asc <- archivalSecondaryClient if stores.contains("archival")) {
+          asc.removeName(toInternalName, fromInternalName)
         }
 
         if(dryRun) {

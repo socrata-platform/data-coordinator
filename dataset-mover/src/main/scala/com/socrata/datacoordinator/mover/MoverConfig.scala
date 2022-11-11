@@ -27,6 +27,8 @@ class MoverConfig(val config: Config, root: String) extends ConfigClass(config, 
   val pgSecondaries = confMap("pg-secondaries", new DataSourceConfig(_, _))
   val sodaFountain = getConfig("soda-fountain", new DataSourceConfig(_, _))
 
+  val archivalUrl = optionally(getString("archival-url"))
+
   val logProperties = getRawConfig("log4j")
   val tablespace = getString("tablespace")
   val writeLockTimeout = getDuration("write-lock-timeout")
