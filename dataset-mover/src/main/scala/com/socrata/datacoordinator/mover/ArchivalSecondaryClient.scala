@@ -36,7 +36,7 @@ class ArchivalSecondaryClient(httpClient: HttpClient, url: URL) {
   def removeName(from: DatasetInternalName, exName: DatasetInternalName): Unit = {
     for(resp <- httpClient.execute(RequestBuilder(url).p("archival", "alias", from.underlying, exName.underlying).method("DELETE").form(Nil))) {
       if(resp.resultCode != 200) {
-        throw new Exception(s"Non-200 result from removing name ${from} frp, the archival secondary!")
+        throw new Exception(s"Non-200 result from removing name ${exName} from ${from} in the archival secondary!")
       }
     }
   }
