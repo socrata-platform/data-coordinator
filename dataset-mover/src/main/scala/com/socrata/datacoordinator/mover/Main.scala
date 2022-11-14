@@ -344,6 +344,13 @@ object Main extends App {
           s"COPY ${toDsInfo.auditTableName} (version, who, at_time) FROM STDIN WITH (format binary)"
         )
 
+        doCopy(
+          fromUniverse.unsafeRawConnection,
+          s"COPY ${fromDsInfo.logTableName} (version, subversion, what, aux) TO STDOUT WITH (format binary)",
+          toUniverse.unsafeRawConnection,
+          s"COPY ${toDsInfo.logTableName} (version, subversion, what, aux) FROM STDIN WITH (format binary)"
+        )
+
         // Ok at this point we've updated the maps and copied the data,
         // now we need to inform the secondaries that the data have
         // moved...
