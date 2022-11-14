@@ -496,18 +496,18 @@ object Main extends App {
         try {
           for {
             conn <- managed(sodaFountain.dataSource.getConnection()).
-            and(_.setAutoCommit(false))
+              and(_.setAutoCommit(false))
             datasetStmt <- managed(conn.prepareStatement("update datasets set dataset_system_id = ? where dataset_system_id = ?")).
-            and { stmt =>
-              stmt.setString(1, toInternalName.underlying)
-              stmt.setString(2, fromInternalName.underlying)
-            }
+              and { stmt =>
+                stmt.setString(1, toInternalName.underlying)
+                stmt.setString(2, fromInternalName.underlying)
+              }
             // Turns out dataset_copies doesn't have a FK on datasets.  Lucky us.
             copyStmt <- managed(conn.prepareStatement("update dataset_copies set dataset_system_id = ? where dataset_system_id = ?")).
-            and { stmt =>
-              stmt.setString(1, toInternalName.underlying)
-              stmt.setString(2, fromInternalName.underlying)
-            }
+              and { stmt =>
+                stmt.setString(1, toInternalName.underlying)
+                stmt.setString(2, fromInternalName.underlying)
+              }
           } {
             datasetStmt.executeUpdate()
             copyStmt.executeUpdate()
