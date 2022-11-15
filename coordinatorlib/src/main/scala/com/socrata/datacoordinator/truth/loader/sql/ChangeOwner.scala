@@ -10,7 +10,7 @@ import java.sql.Connection
 object ChangeOwner {
 
   def sql(conn: Connection, tableName: String): String = {
-    "ALTER TABLE %s OWNER TO %s;".format(tableName, canonicalUser(conn))
+    "ALTER TABLE \"%s\" OWNER TO %s;".format(tableName, canonicalUser(conn))
   }
 
   def canonicalUser(conn: Connection): String = {
