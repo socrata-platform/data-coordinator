@@ -458,7 +458,30 @@ object Main extends App {
           }
         }
 
-        def rollbackArchivalSecondary(e: Exception): Nothing = {
+        def rollbackPGSecondary(): Unit = {
+          log.info("Rolling back PG secondaries due to exception updating soda-fountain");
+          try {
+            for(store <- stores if isPgSecondary(store)) {
+              for {
+                conn <- managed(secondaries(store).dataSource.getConnection()).
+                  and(_.setAutoCommit(false))
+                stmt <- managed(conn.prepareStatement("delete from dataset_internal_name_map where dataset_internal_name = ?")).
+                  and { stmt =>
+                    stmt.setString(1, toInternalName.underlying)
+                  }
+              } {
+                stmt.executeUpdate()
+                if(dryRun) conn.rollback()
+                else conn.commit()
+              }
+            }
+          } catch {
+            case e2: Exception =>
+              log.error("Failed to roll back PG secondary change", e2)
+          }
+        }
+
+        def rollbackArchivalSecondary(): Unit = {
           for(asc <- archivalSecondaryClient if stores.contains("archival")) {
             log.info("Soda-fountain update failed; undoing the archival secondary rename")
             try {
@@ -466,10 +489,7 @@ object Main extends App {
                 log.info("(not really)")
               } else {
                 // Now, if _this_ fails, we're in a genuinely weird
-                // state!  Specifically we're in the state described
-                // above PLUS the fact that the archival secondary
-                // is now watching the NEW truth name for updates
-                // instead of the OLD truth name.
+                // state!
                 asc.removeName(fromInternalName, toInternalName)
               }
             } catch {
@@ -477,7 +497,6 @@ object Main extends App {
                 log.error("Failed to roll back archival secondary change", e2)
             }
           }
-          throw e
         }
 
         // And now we commit the change into the target truth...
@@ -486,7 +505,8 @@ object Main extends App {
           else toUniverse.commit()
         } catch {
           case e: Exception =>
-            rollbackArchivalSecondary(e)
+            rollbackArchivalSecondary()
+            throw e
         }
 
         fromUniverse.rollback()
@@ -516,8 +536,18 @@ object Main extends App {
           }
         } catch {
           case e: Exception =>
-            // This will now be an _especially_ weird state!  Specifically, th
-            rollbackArchivalSecondary(e)
+            // Current state of the world:
+            //  * Updating soda-fountain has failed, so it's still
+            //    pointing at the old name
+            //  * The pg and archive secondaries know about
+            //    both the old and the new copies.
+            //
+            // So we'll try to roll those back.  If this fails, we'll
+            // be be in an _especially_ weird state, and will likely
+            // require human intervension to fix.
+            rollbackPGSecondary()
+            rollbackArchivalSecondary()
+            throw e
         }
 
         log.info("Pausing {} to let everything work through...", serviceConfig.postSodaFountainUpdatePause)
