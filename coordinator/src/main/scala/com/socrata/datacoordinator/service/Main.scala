@@ -10,7 +10,7 @@ import com.socrata.datacoordinator.common.collocation.{CollocationLock, CuratedC
 import com.socrata.datacoordinator.common.{DataSourceFromConfig, SoQLCommon}
 import com.socrata.datacoordinator.id.{ColumnId, DatasetId, DatasetInternalName, UserColumnId}
 import com.socrata.datacoordinator.resources._
-import com.socrata.datacoordinator.secondary.{DatasetAlreadyInSecondary, SecondaryMetric}
+import com.socrata.datacoordinator.secondary.{DatasetAlreadyInSecondary, SecondaryMetric, BrokenSecondaryRecord}
 import com.socrata.datacoordinator.secondary.config.SecondaryGroupConfig
 import com.socrata.datacoordinator.truth.CopySelector
 import com.socrata.datacoordinator.truth.loader.{Delogger, NullLogger}
@@ -41,6 +41,27 @@ import scala.util.Random
 
 class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Main])
+
+  def allBrokenDatasets: Map[String, Map[DatasetId, BrokenSecondaryRecord]] =
+    for(u <- common.universe) {
+      u.secondaryManifest.allBrokenDatasets
+    }
+
+  def brokenDatasetsIn(storeId: String): Map[DatasetId, BrokenSecondaryRecord] =
+    allBrokenDatasets.getOrElse(storeId, Map.empty)
+
+  def brokenDataset(storeId: String, datasetId: DatasetId): Option[BrokenSecondaryRecord] =
+    brokenDatasetsIn(storeId).get(datasetId)
+
+  def unbreakDataset(storeId: String, datasetId: DatasetId): Boolean =
+    for(u <- common.universe) {
+      u.secondaryManifest.unbreakDataset(storeId, datasetId)
+    }
+
+  def acknowledgeBroken(storeId: String, datasetId: DatasetId): Boolean =
+    for(u <- common.universe) {
+      u.secondaryManifest.acknowledgeBroken(storeId, datasetId)
+    }
 
   def ensureInSecondary(coordinator: Coordinator)(storeId: String, datasetId: DatasetId): Boolean = {
     val remote = Set.newBuilder[DatasetInternalName]
@@ -765,6 +786,12 @@ object Main extends DynamicPortMap {
                                        secondariesNotAcceptingNewDatasets, operations.versionInStore, serviceConfig, operations.ensureInSecondary(httpCoordinator(hostAndPort)),
                                        operations.ensureInSecondaryGroup(httpCoordinator(hostAndPort), collocationProvider(hostAndPort, NoOPCollocationLock)), operations.deleteFromSecondary, common.internalNameFromDatasetId)
 
+      def datasetSecondaryBreakageResource =
+        DatasetSecondaryBreakageResource(_: Option[String], _: Option[DatasetId],
+                                         () => operations.allBrokenDatasets, operations.brokenDatasetsIn, operations.brokenDataset,
+                                         operations.unbreakDataset, operations.acknowledgeBroken,
+                                         common.internalNameFromDatasetId)
+
       val secondariesOfDatasetResource = SecondariesOfDatasetResource(_: DatasetId, operations.secondariesOfDataset,
         common.internalNameFromDatasetId)
 
@@ -789,6 +816,7 @@ object Main extends DynamicPortMap {
         collocationManifestsResource = collocationManifestsResource,
         resyncResource = resyncResource,
         datasetSecondaryStatusResource = datasetSecondaryStatusResource,
+        datasetSecondaryBreakageResource = datasetSecondaryBreakageResource,
         secondariesOfDatasetResource = secondariesOfDatasetResource) _
 
       val finished = new CountDownLatch(1)
