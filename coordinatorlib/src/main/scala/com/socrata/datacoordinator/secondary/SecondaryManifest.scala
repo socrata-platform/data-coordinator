@@ -22,6 +22,18 @@ case class SecondaryRecord(storeId: String,
 
 class DatasetAlreadyInSecondary(val storeId: String, val DatasetId: DatasetId) extends Exception
 
+// Secondary.  Secondary.  Secondary.  Secondary.  Secondary.
+// Secondary.  Secondary.  Secondary.  Secondary.  Secondary.
+// Secondary.  Secondary.  Secondary.  Secondary.  Secondary.
+case class BrokenSecondaryRecord(
+  storeId: String,
+  datasetId: DatasetId,
+  brokenAt: DateTime,
+  brokenAcknowledgedAt: Option[DateTime],
+  retryNum: Long,
+  replayNum: Long
+)
+
 /**
  * Manages the manifest of replications to secondaries, persisted in a database.
  */
@@ -34,6 +46,10 @@ trait SecondaryManifest {
   def datasets(storeId: String): Map[DatasetId, Long]
   def stores(datasetId: DatasetId): Map[String, Long]
   def brokenAts(datasetId: DatasetId): Map[String, DateTime]
+
+  def allBrokenDatasets: Map[String, Map[DatasetId, BrokenSecondaryRecord]]
+  def unbreakDataset(storeId: String, datasetId: DatasetId): Boolean
+  def acknowledgeBroken(storeId: String, datasetId: DatasetId): Boolean
 
   def cleanOrphanedClaimedDatasets(storeId: String, claimantId: UUID): Unit
   def claimDatasetNeedingReplication(storeId: String,

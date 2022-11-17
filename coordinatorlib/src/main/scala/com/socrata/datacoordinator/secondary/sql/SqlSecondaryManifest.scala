@@ -118,6 +118,44 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
     }
   }
 
+  def allBrokenDatasets: Map[String, Map[DatasetId, BrokenSecondaryRecord]] = {
+    for {
+      stmt <- managed(conn.prepareStatement("SELECT store_id, dataset_system_id, broken_at, broken_acknowledged_at, retry_num, replay_num FROM secondary_manifest WHERE broken_at IS NOT NULL"))
+      rs <- managed(stmt.executeQuery)
+    } {
+      var result = Map.empty[String, Map[DatasetId, BrokenSecondaryRecord]]
+      while(rs.next()) {
+        val storeId = rs.getString("store_id")
+        val datasetSystemId = rs.getDatasetId("dataset_system_id")
+        val brokenAt = new DateTime(rs.getTimestamp("broken_at"))
+        val brokenAcknowledgedAt = Option(rs.getTimestamp("broken_acknowledged_at")).map(new DateTime(_))
+        val retryNum = rs.getLong("retry_num")
+        val replayNum = rs.getLong("replay_num")
+
+        var submap = result.getOrElse(storeId, Map.empty)
+        submap += datasetSystemId -> BrokenSecondaryRecord(storeId, datasetSystemId, brokenAt, brokenAcknowledgedAt, retryNum, replayNum)
+        result += storeId -> submap
+      }
+      result
+    }
+  }
+
+  def unbreakDataset(storeId: String, datasetId: DatasetId): Boolean = {
+    using(conn.prepareStatement("UPDATE secondary_manifest SET broken_at = NULL, broken_acknowledged_at = NULL, replay_num = 0, retry_num = 0 WHERE store_id = ? AND dataset_system_id = ? AND broken_at IS NOT NULL")) { stmt =>
+      stmt.setString(1, storeId)
+      stmt.setDatasetId(2, datasetId)
+      stmt.executeUpdate() != 0
+    }
+  }
+
+  def acknowledgeBroken(storeId: String, datasetId: DatasetId): Boolean = {
+    using(conn.prepareStatement("UPDATE secondary_manifest SET broken_acknowledged_at = now() WHERE store_id = ? AND dataset_system_id = ? and broken_at IS NOT NULL")) { stmt =>
+      stmt.setString(1, storeId)
+      stmt.setDatasetId(2, datasetId)
+      stmt.executeUpdate() != 0
+    }
+  }
+
   def claimDatasetNeedingReplication(storeId: String, claimantId: UUID, claimTimeout: FiniteDuration):
       Option[SecondaryRecord] = {
     val job = using(conn.prepareStatement(
