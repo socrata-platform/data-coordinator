@@ -114,12 +114,28 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
     }
   }
 
+  class DeactivateAutoCommit extends AutoCloseable {
+    private var done = false
+    override def close() {
+      if(!done) {
+        u.autoCommit(false)
+        done = true
+      }
+    }
+  }
+
   def apply(secondary: NamedSecondary[CT, CV], job: SecondaryRecord): Unit = {
-    if (job.pendingDrop) {
-      logger.info("Executing pending drop of dataset {} from store {}.", job.datasetId : Any, job.storeId)
-      new UpdateOp(secondary, job).drop()
-    } else {
-      new UpdateOp(secondary, job).go()
+    logger.info("Ending current transaction and switching to auto-commit mode")
+    u.commit()
+
+    using(new DeactivateAutoCommit) { dac =>
+      u.autoCommit(true)
+      if (job.pendingDrop) {
+        logger.info("Executing pending drop of dataset {} from store {}.", job.datasetId : Any, job.storeId)
+        new UpdateOp(secondary, job, dac).drop()
+      } else {
+        new UpdateOp(secondary, job, dac).go()
+      }
     }
   }
 
@@ -159,7 +175,8 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
     IndexInfo(indexInfo.systemId, indexInfo.name.underlying, indexInfo.expressions, indexInfo.filter)
 
   private class UpdateOp(secondary: NamedSecondary[CT, CV],
-                         job: SecondaryRecord)
+                         job: SecondaryRecord,
+                         deactivateAutoCommit: DeactivateAutoCommit)
   {
     private val datasetId = job.datasetId
     private val claimantId = job.claimantId
@@ -175,9 +192,11 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
           } catch {
             case e: MissingVersion =>
               logger.info("Couldn't find version {} in log; resyncing", e.version.toString)
+              deactivateAutoCommit.close()
               resyncSerially()
             case ResyncSecondaryException(reason) =>
               logger.info("Incremental update requested full resync: {}", reason)
+              deactivateAutoCommit.close()
               resyncSerially()
           }
 
@@ -601,7 +620,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
     def drop(): Unit = {
       timingReport("drop", "dataset" -> datasetId) {
         secondary.store.dropDataset(datasetIdFormatter(datasetId), currentCookie)
-        dropFromSecondaryMap()
+        dropFromSecondaryMap(deactivateAutoCommit)
       }
     }
 
@@ -759,16 +778,17 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
       //
       // The activity in the current transaction (before committing) should all
       // be _reads_ from metadata tables and the dataset's log table.
-      u.commit()
+      if(!u.isAutoCommit) u.commit()
       u.secondaryManifest.completedReplicationTo(secondary.storeId,
                                                  claimantId,
                                                  datasetId,
                                                  newLastDataVersion,
                                                  currentCookie)
-      u.commit()
+      if(!u.isAutoCommit) u.commit()
     }
 
-    def dropFromSecondaryMap(): Unit = {
+    def dropFromSecondaryMap(deactivateAutoCommit: DeactivateAutoCommit): Unit = {
+      deactivateAutoCommit.close()
       u.secondaryMetrics.dropDataset(secondary.storeId, datasetId)
       u.secondaryManifest.dropDataset(secondary.storeId, datasetId)
       u.commit()
