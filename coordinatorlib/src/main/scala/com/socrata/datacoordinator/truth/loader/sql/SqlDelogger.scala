@@ -10,6 +10,7 @@ import com.socrata.datacoordinator.truth.RowLogCodec
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.datacoordinator.util.{CloseableIterator, LeakDetect}
 import com.socrata.soql.environment.ColumnName
+import org.slf4j.{Logger, LoggerFactory}
 import messages.LogData
 
 class SqlDelogger[CV](connection: Connection,
@@ -19,24 +20,20 @@ class SqlDelogger[CV](connection: Connection,
 {
   import messages.FromProtobuf._
 
-  require(!connection.getAutoCommit, "connection is in auto-commit mode") // need non-AC in order to do streaming reads
-
   private val rs = new ResourceScope
   var _queryStmt: PreparedStatement = null
   var _queryTypesStmt: PreparedStatement = null
 
   def queryStmt = {
     if(_queryStmt == null) {
-      _queryStmt = rs.open(connection.prepareStatement("select subversion, what, aux from " + logTableName + " where version = ? order by subversion"))
-      _queryStmt.setFetchSize(1)
+      _queryStmt = rs.open(connection.prepareStatement("select subversion, what, aux from " + logTableName + " where version = ? and subversion = ? + 1"))
     }
     _queryStmt
   }
 
   def queryTypesStmt = {
     if(_queryTypesStmt == null) {
-      _queryTypesStmt = rs.open(connection.prepareStatement("select subversion, what from " + logTableName + " where version = ? order by subversion"))
-      _queryTypesStmt.setFetchSize(1000)
+      _queryTypesStmt = rs.open(connection.prepareStatement("select subversion, what from " + logTableName + " where version = ? and subversion > ? order by subversion limit 1000"))
     }
     _queryTypesStmt
   }
@@ -101,6 +98,8 @@ class SqlDelogger[CV](connection: Connection,
     var lastSubversion = 0L
     var nextResult: Option[T] = None
     var done = false
+    val log: Logger
+
     val UTF8 = Codec.UTF8.charSet
 
     def errMsg(m: String) = m + " in version " + version + " of log " + logTableName
@@ -116,11 +115,30 @@ class SqlDelogger[CV](connection: Connection,
 
     def advance() {
       nextResult = None
+
       if(rs == null) {
+        log.debug("Reading rows in version {} starting from subversion {}", version, lastSubversion+1)
         stmt.setLong(1, version)
+        stmt.setLong(2, lastSubversion)
         rs = stmt.executeQuery()
       }
-      decodeNext()
+
+      if(!rs.next()) {
+        log.debug("Didn't find any rows, perhaps end of chunk?  Looking up rows in version {} starting from subversion {}", version, lastSubversion+1)
+        rs.close()
+        rs = null
+
+        stmt.setLong(1, version)
+        stmt.setLong(2, lastSubversion)
+        rs = stmt.executeQuery()
+
+        if(!rs.next()) {
+          log.debug("Still didn't find any rows, and we haven't decoded an end of txn event!")
+          throw new NoEndOfTransactionMarker(version, errMsg("No end of transaction"))
+        }
+      }
+
+      decodeCurrent()
       done = nextResult == None
     }
 
@@ -148,8 +166,9 @@ class SqlDelogger[CV](connection: Connection,
       }
     }
 
-    def decodeNext() {
-      if(!rs.next()) throw new NoEndOfTransactionMarker(version, errMsg("No end of transaction"))
+    def decodeCurrent() {
+      // Precondition: rs is positioned on the row to be decoded
+
       val subversion = rs.getLong("subversion")
       if(subversion != lastSubversion + 1)
         throw new SkippedSubversion(version, lastSubversion + 1, subversion,
@@ -165,6 +184,8 @@ class SqlDelogger[CV](connection: Connection,
   }
 
   class LogTypesIterator(version: Long) extends AbstractLogIterator[Delogger.LogEventCompanion]("LogTypesIterator", queryTypesStmt, version) {
+    override val log = LoggerFactory.getLogger(classOf[LogTypesIterator])
+
     def decode(op: String, rs: ResultSet) =
       op match {
         case SqlLogger.RowDataUpdated => Some(Delogger.RowDataUpdated)
@@ -202,6 +223,8 @@ class SqlDelogger[CV](connection: Connection,
   }
 
   class LogIterator(version: Long) extends AbstractLogIterator[Delogger.LogEvent[CV]]("LogIterator", queryStmt, version) {
+    override val log = LoggerFactory.getLogger(classOf[LogIterator])
+
     override def decode(op: String, rs: ResultSet) = {
       val aux = rs.getBytes("aux")
       op match {

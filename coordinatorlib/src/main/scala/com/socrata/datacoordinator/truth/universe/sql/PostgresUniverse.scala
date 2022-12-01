@@ -110,6 +110,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
 
   private var loggerCache = Map.empty[String, Logger[CT, CV]]
   private var txnStart = DateTime.now()
+  private var isAutoCommit_ = false
 
   private def finish(op: Connection => Unit) {
     loggerCache.values.foreach(_.close())
@@ -130,6 +131,13 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
   def rollback() {
     finish(_.rollback())
   }
+
+  def autoCommit(on: Boolean) {
+    conn.setAutoCommit(on)
+    isAutoCommit_ = on
+  }
+
+  def isAutoCommit = isAutoCommit_
 
   def transactionStart = txnStart
 

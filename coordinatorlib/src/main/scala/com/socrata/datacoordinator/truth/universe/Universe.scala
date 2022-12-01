@@ -50,6 +50,9 @@ trait Commitable {
     */
   def commit()
   def rollback()
+
+  def autoCommit(on: Boolean)
+  def isAutoCommit: Boolean
 }
 
 trait LoggerProvider { this: TypeUniverse =>
