@@ -26,7 +26,7 @@ case class SecondariesOfDatasetResult(truthInstance: String,
                                       unpublishedVersion: Option[Long], // TODO: Remove once soda-fountain no longer uses it
                                       publishedVersions: Option[VersionSpec],
                                       unpublishedVersions: Option[VersionSpec],
-                                      secondaries: Map[String, Long],
+                                      secondaries: Map[String, (Long, Boolean)],
                                       feedbackSecondaries: Set[String],
                                       groups: Map[String, Set[String]],
                                       brokenSecondaries: Map[String, DateTime]

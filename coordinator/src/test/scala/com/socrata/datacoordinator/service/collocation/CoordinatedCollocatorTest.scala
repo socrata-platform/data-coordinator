@@ -268,7 +268,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
   val moveJobResultEmpty = Right(SecondaryMoveJobsResult(Seq.empty))
 
   def secondariesFromSeq(instances: Seq[String]) = {
-    val s = instances.map { instance => (instance, 0L) }.toMap
+    val s = instances.map { instance => (instance, (0L, false)) }.toMap
     Right(Some(SecondariesOfDatasetResult("alpha", 0L, 0L, 0L, Some(0L), Some(0L), Some(VersionSpec(0,0)), Some(VersionSpec(0, 0)), s, Set.empty[String], Map.empty, Map.empty)))
   }
 

@@ -44,7 +44,7 @@ trait SecondaryManifest {
   def dropDataset(storeId: String, datasetId: DatasetId): Unit
 
   def datasets(storeId: String): Map[DatasetId, Long]
-  def stores(datasetId: DatasetId): Map[String, Long]
+  def stores(datasetId: DatasetId): Map[String, (Long, Boolean)]
   def brokenAts(datasetId: DatasetId): Map[String, DateTime]
 
   def allBrokenDatasets: Map[String, Map[DatasetId, BrokenSecondaryRecord]]
