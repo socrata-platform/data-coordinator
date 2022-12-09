@@ -45,11 +45,12 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
       stmt.setDatasetId(1, datasetId)
       using(stmt.executeQuery()) { rs =>
         if(rs.next()) {
-          using(conn.prepareStatement("INSERT INTO secondary_manifest (store_id, dataset_system_id, latest_data_version, pending_drop) VALUES (?, ?, ?, false) ON CONFLICT DO NOTHING")) { insertStmt =>
+          using(conn.prepareStatement("INSERT INTO secondary_manifest (store_id, dataset_system_id, latest_data_version) VALUES (?, ?, ?) ON CONFLICT DO NOTHING")) { insertStmt =>
             insertStmt.setString(1, storeId)
             insertStmt.setDatasetId(2, datasetId)
             insertStmt.setLong(3, rs.getLong("data_version"))
             if(insertStmt.executeUpdate() != 1) {
+              unMarkDatasetForDrop(storeId, datasetId)
               throw new DatasetAlreadyInSecondary(storeId, datasetId)
             }
           }
@@ -390,6 +391,18 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
     using(conn.prepareStatement(
     """UPDATE secondary_manifest
       |SET pending_drop = TRUE
+      |WHERE store_id = ?
+      |  AND dataset_system_id = ?""".stripMargin)) { stmt =>
+      stmt.setString(1, storeId)
+      stmt.setDatasetId(2, datasetId)
+      stmt.executeUpdate() != 0
+    }
+  }
+
+  def unMarkDatasetForDrop(storeId: String, datasetId: DatasetId): Boolean = {
+    using(conn.prepareStatement(
+    """UPDATE secondary_manifest
+      |SET pending_drop = false
       |WHERE store_id = ?
       |  AND dataset_system_id = ?""".stripMargin)) { stmt =>
       stmt.setString(1, storeId)
