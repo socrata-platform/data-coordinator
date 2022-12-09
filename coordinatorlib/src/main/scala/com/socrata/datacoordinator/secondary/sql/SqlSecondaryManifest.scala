@@ -45,7 +45,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
       stmt.setDatasetId(1, datasetId)
       using(stmt.executeQuery()) { rs =>
         if(rs.next()) {
-          using(conn.prepareStatement("INSERT INTO secondary_manifest (store_id, dataset_system_id, latest_data_version) VALUES (?, ?, ?) ON CONFLICT DO NOTHING")) { insertStmt =>
+          using(conn.prepareStatement("INSERT INTO secondary_manifest (store_id, dataset_system_id, latest_data_version, pending_drop) VALUES (?, ?, ?, false) ON CONFLICT DO NOTHING")) { insertStmt =>
             insertStmt.setString(1, storeId)
             insertStmt.setDatasetId(2, datasetId)
             insertStmt.setLong(3, rs.getLong("data_version"))
