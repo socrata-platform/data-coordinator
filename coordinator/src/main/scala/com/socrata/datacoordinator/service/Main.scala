@@ -181,7 +181,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
         val unpublishedCopy = copies.find { _.lifecycleStage == LifecycleStage.Unpublished }
 
 
-        val secondaries = secondaryManifest.stores(datasetId)
+        val secondaries = secondaryManifest.stores(datasetId).mapValues((SecondaryValue.apply _).tupled)
         val feedbackSecondaries = secondaryManifest.feedbackSecondaries(datasetId)
         val brokenSecondaries = secondaryManifest.brokenAts(datasetId)
 
