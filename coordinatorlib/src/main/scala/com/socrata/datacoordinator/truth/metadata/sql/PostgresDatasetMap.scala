@@ -7,21 +7,22 @@ import com.rojoma.json.v3.codec.JsonDecode
 import com.rojoma.json.v3.io.{CompactJsonWriter, JsonReaderException}
 import com.rojoma.json.v3.util.JsonUtil
 import com.socrata.soql.environment.{ColumnName, ResourceName}
+
 import scala.collection.immutable.VectorBuilder
-
 import java.sql._
-
 import org.postgresql.util.PSQLException
 import com.rojoma.simplearm.v2.using
-
 import com.socrata.datacoordinator.truth.{DatabaseInReadOnlyMode, DatasetIdInUseByWriterException}
 import com.socrata.datacoordinator.id._
-import com.socrata.datacoordinator.util.{TimingReport, PostgresUniqueViolation}
+import com.socrata.datacoordinator.util.{PostgresUniqueViolation, TimingReport}
 import com.socrata.datacoordinator.util.collection.{ColumnIdMap, MutableColumnIdMap}
 import com.socrata.datacoordinator.truth.metadata.`-impl`._
+
 import scala.concurrent.duration.Duration
 import com.socrata.datacoordinator.id.sql._
 import com.socrata.datacoordinator.secondary.DatasetCopyLessThanDataVersionNotFound
+import com.socrata.datacoordinator.truth.metadata.sql.BasePostgresDatasetMapWriter.log
+
 import scala.Array
 import scala.collection.mutable
 import org.joda.time.DateTime
@@ -332,28 +333,28 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
     }
   }
 
-  def rollupsQuery = "SELECT name, soql, raw_soql FROM rollup_map WHERE copy_system_id = ?"
+  def rollupsQuery = "SELECT name, soql, raw_soql, system_id FROM rollup_map WHERE copy_system_id = ?"
   def rollups(copyInfo: CopyInfo): Seq[RollupInfo] = {
     using(conn.prepareStatement(rollupsQuery)) { stmt =>
       stmt.setLong(1, copyInfo.systemId.underlying)
       using(t("rollups", "copy_id" -> copyInfo.systemId)(stmt.executeQuery())) { rs =>
         val res = new VectorBuilder[RollupInfo]
         while(rs.next()) {
-          res += RollupInfo(copyInfo, new RollupName(rs.getString("name")), rs.getString("soql"), Option(rs.getString("soql")))
+          res += RollupInfo(copyInfo, new RollupName(rs.getString("name")), rs.getString("soql"), Option(rs.getString("raw_soql")),RollupId(rs.getLong("system_id")))
         }
         res.result()
       }
     }
   }
 
-  def rollupQuery = "SELECT soql, raw_soql FROM rollup_map WHERE copy_system_id = ? AND name = ?"
+  def rollupQuery = "SELECT soql, raw_soql, system_id FROM rollup_map WHERE copy_system_id = ? AND name = ?"
   def rollup(copyInfo: CopyInfo, name: RollupName): Option[RollupInfo] = {
     using(conn.prepareStatement(rollupQuery)) { stmt =>
       stmt.setLong(1, copyInfo.systemId.underlying)
       stmt.setString(2, name.underlying)
       using(t("rollup", "copy_id" -> copyInfo.systemId,"name" -> name)(stmt.executeQuery())) { rs =>
         if(rs.next()) {
-          Some(RollupInfo(copyInfo, name, rs.getString("soql"), Option(rs.getString("raw_soql"))))
+          Some(RollupInfo(copyInfo, name, rs.getString("soql"), Option(rs.getString("raw_soql")),RollupId(rs.getLong("system_id"))))
         } else {
           None
         }
@@ -449,6 +450,24 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
       }
     }
   }
+
+  def datasetInfoByResourceNameQuery = "SELECT system_id, next_counter_value, latest_data_version, locale_name, obfuscation_key, resource_name FROM dataset_map WHERE resource_name = ?"
+
+  def datasetInfoByResourceName(resourceName: ResourceName, repeatableRead: Boolean = false) = {
+    if (repeatableRead) {
+      conn.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ)
+    }
+    using(conn.prepareStatement(datasetInfoByResourceNameQuery)) { stmt =>
+      stmt.setString(1, resourceName.name)
+      using(t("lookup-dataset", "resource_name" -> resourceName)(stmt.executeQuery())) { rs =>
+        if (rs.next()) {
+          Some(DatasetInfo(rs.getDatasetId("system_id"), rs.getLong("next_counter_value"), rs.getLong("latest_data_version"), rs.getString("locale_name"), rs.getBytes("obfuscation_key"), Option(rs.getString("resource_name"))))
+        } else {
+          None
+        }
+      }
+    }
+  }
 }
 
 class PostgresDatasetMapReader[CT](val conn: Connection, tns: TypeNamespace[CT], timingReport: TimingReport) extends DatasetMapReader[CT] with BasePostgresDatasetMapReader[CT] {
@@ -467,25 +486,6 @@ class PostgresDatasetMapReader[CT](val conn: Connection, tns: TypeNamespace[CT],
     using(conn.prepareStatement(datasetInfoBySystemIdQuery)) { stmt =>
       stmt.setDatasetId(1, datasetId)
       using(t("lookup-dataset", "dataset_id" -> datasetId)(stmt.executeQuery())) { rs =>
-        if (rs.next()) {
-          Some(DatasetInfo(rs.getDatasetId("system_id"), rs.getLong("next_counter_value"), rs.getLong("latest_data_version"), rs.getString("locale_name"), rs.getBytes("obfuscation_key"), Option(rs.getString("resource_name"))))
-        } else {
-          None
-        }
-      }
-    }
-  }
-
-  def datasetInfoByResourceNameQuery = "SELECT system_id, next_counter_value, latest_data_version, locale_name, obfuscation_key, resource_name FROM dataset_map WHERE resource_name = ?"
-  def datasetInfoByResourceName(resourceName: ResourceName, repeatableRead: Boolean = false) = {
-    if (repeatableRead) {
-      log.info("Attempting to change transaction isolation level...")
-      conn.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ)
-      log.info("Changed transaction isolation level to REPEATABLE READ")
-    }
-    using(conn.prepareStatement(datasetInfoByResourceNameQuery)) { stmt =>
-      stmt.setString(1, resourceName.name)
-      using(t("lookup-dataset", "resource_name" -> resourceName)(stmt.executeQuery())) { rs =>
         if (rs.next()) {
           Some(DatasetInfo(rs.getDatasetId("system_id"), rs.getLong("next_counter_value"), rs.getLong("latest_data_version"), rs.getString("locale_name"), rs.getBytes("obfuscation_key"), Option(rs.getString("resource_name"))))
         } else {
@@ -1076,7 +1076,8 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
     if(copyInfo.lifecycleStage == LifecycleStage.Unpublished && copyInfo.copyNumber == 1) {
       throw new CannotDropInitialWorkingCopyException(copyInfo)
     }
-
+    deleteRollupRelationships(copyInfo)
+    deleteRollupRelationshipByRollupMapCopyInfo(copyInfo)
     dropRollup(copyInfo, None)
     using(conn.prepareStatement(dropCopyQuery)) { stmt =>
       stmt.setLong(1, copyInfo.systemId.underlying)
@@ -1217,9 +1218,9 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
     }
   }
 
-  def insertRollupQuery = "INSERT INTO rollup_map (name, copy_system_id, soql, raw_soql) VALUES (?, ?, ?, ?)"
-  def updateRollupQuery = "UPDATE rollup_map SET soql = ?, raw_soql = ? WHERE name = ? AND copy_system_id = ?"
-  def createOrUpdateRollup(copyInfo: CopyInfo, name: RollupName, soql: String, rawSoql: Option[String]): RollupInfo = {
+  def insertRollupQuery = "INSERT INTO rollup_map (name, copy_system_id, soql, raw_soql) VALUES (?, ?, ?, ?) returning system_id"
+  def updateRollupQuery = "UPDATE rollup_map SET soql = ?, raw_soql = ? WHERE name = ? AND copy_system_id = ? returning system_id"
+  def createOrUpdateRollup(copyInfo: CopyInfo, name: RollupName, soql: String, rawSoql: Option[String]): Option[RollupInfo] = {
     rollup(copyInfo, name) match {
       case Some(_) =>
         using(conn.prepareStatement(updateRollupQuery)) { stmt =>
@@ -1227,7 +1228,13 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
           stmt.setString(2, rawSoql.orNull)
           stmt.setString(3, name.underlying)
           stmt.setLong(4, copyInfo.systemId.underlying)
-          t("create-or-update-rollup", "action" -> "update", "copy-id" -> copyInfo.systemId, "name" -> name)(stmt.executeUpdate())
+          t("create-or-update-rollup", "action" -> "update", "copy-id" -> copyInfo.systemId, "name" -> name)(
+            using(stmt.executeQuery()){resultSet=>
+              if (resultSet.next()) {
+                Some(new RollupInfo(copyInfo, name, soql, rawSoql, RollupId(resultSet.getLong("system_id"))))
+              } else None
+            }
+          )
         }
       case None =>
         using(conn.prepareStatement(insertRollupQuery)) { stmt =>
@@ -1235,10 +1242,15 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
           stmt.setLong(2, copyInfo.systemId.underlying)
           stmt.setString(3, soql)
           stmt.setString(4, rawSoql.orNull)
-          t("create-or-update-rollup", "action" -> "insert", "copy-id" -> copyInfo.systemId, "name" -> name)(stmt.executeUpdate())
+          t("create-or-update-rollup", "action" -> "insert", "copy-id" -> copyInfo.systemId, "name" -> name)(
+            using(stmt.executeQuery()) { resultSet =>
+              if (resultSet.next()) {
+                Some(new RollupInfo(copyInfo, name, soql, rawSoql, RollupId(resultSet.getLong("system_id"))))
+              } else None
+            }
+          )
         }
     }
-    RollupInfo(copyInfo, name, soql, rawSoql)
   }
 
   private val DropRollupsQuery = "DELETE FROM rollup_map WHERE copy_system_id = ?"
@@ -1314,6 +1326,56 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
           stmt.setLong(1, copyInfo.systemId.underlying)
           t("drop-indexes", "copy-id" -> copyInfo.systemId)(stmt.executeUpdate())
         }
+    }
+  }
+  def createRollupRelationship = "insert into rollup_relationship_map (rollup_system_id, referenced_copy_system_id) values (?,?) on conflict do nothing returning *"
+
+  def createRollupRelationship(rollupInfo: RollupInfo, relatedCopyInfo: CopyInfo): Set[RollupRelationship] = {
+    using(conn.prepareStatement(createRollupRelationship)) { stmt =>
+      stmt.setLong(1, rollupInfo.systemId.underlying)
+      stmt.setLong(2, relatedCopyInfo.systemId.underlying)
+      t("create-rollup-relationship", "rollupInfo" -> rollupInfo.systemId, "referencedCopyId" -> relatedCopyInfo.systemId.underlying)(
+        using(stmt.executeQuery()){
+          Iterator.continually(_)
+            .takeWhile(_.next())
+            .map(rs =>
+              RollupRelationship(RollupId(rs.getLong("rollup_system_id")),new CopyId(rs.getLong("referenced_copy_system_id")))
+            ).toList.toSet
+        }
+      )
+    }
+  }
+
+  def deleteRollupRelationshipsRollupQuery = "delete from rollup_relationship_map where rollup_system_id = ?"
+
+  def deleteRollupRelationships(rollupInfo: RollupInfo): Unit = {
+    using(conn.prepareStatement(deleteRollupRelationshipsRollupQuery)) { stmt =>
+      stmt.setLong(1, rollupInfo.systemId.underlying)
+      t("delete-rollup-relationship", "rollupInfo" -> rollupInfo.systemId)(
+        stmt.executeUpdate()
+      )
+    }
+  }
+
+  def deleteRollupRelationshipsCopyQuery = "delete from rollup_relationship_map where referenced_copy_system_id = ?"
+
+  def deleteRollupRelationships(copyInfo: CopyInfo): Unit = {
+    using(conn.prepareStatement(deleteRollupRelationshipsCopyQuery)) { stmt =>
+      stmt.setLong(1, copyInfo.systemId.underlying)
+      t("delete-rollup-relationship", "copyInfo" -> copyInfo.systemId)(
+        stmt.executeUpdate()
+      )
+    }
+  }
+
+  def deleteRollupRelationshipByRollupMapCopyInfoQuery = "delete from rollup_relationship_map where rollup_system_id in (select system_id from rollup_map where copy_system_id=?)"
+
+  def deleteRollupRelationshipByRollupMapCopyInfo(copyInfo: CopyInfo): Unit = {
+    using(conn.prepareStatement(deleteRollupRelationshipByRollupMapCopyInfoQuery)) { stmt =>
+      stmt.setLong(1, copyInfo.systemId.underlying)
+      t("delete-rollup-relationship-by-rollup-map-copy-info", "copyInfo" -> copyInfo.systemId)(
+        stmt.executeUpdate()
+      )
     }
   }
 

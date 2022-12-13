@@ -22,6 +22,6 @@ object UnanchoredRollupInfo extends ((RollupName, String) => UnanchoredRollupInf
   * or [[com.socrata.datacoordinator.truth.metadata.DatasetMapWriter]].
   * @param tag Guard against a non-map accidentially instantiating this.
   */
-case class RollupInfo(copyInfo: CopyInfo, name: RollupName, soql: String, rawSoql: Option[String])(implicit tag: com.socrata.datacoordinator.truth.metadata.`-impl`.Tag) extends RollupInfoLike {
+case class RollupInfo(copyInfo: CopyInfo, name: RollupName, soql: String, rawSoql: Option[String],systemId: RollupId)(implicit tag: com.socrata.datacoordinator.truth.metadata.`-impl`.Tag) extends RollupInfoLike {
   def unanchored: UnanchoredRollupInfo = UnanchoredRollupInfo(name, soql)
 }

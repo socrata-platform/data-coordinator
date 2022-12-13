@@ -3,7 +3,7 @@ package truth
 
 import com.rojoma.json.v3.ast.{JNumber, JObject, JString, JValue}
 import com.rojoma.json.v3.codec.JsonEncode
-import com.socrata.datacoordinator.util.CopyContextResult
+import com.socrata.datacoordinator.util.{CopyContextResult, Rollup}
 import com.socrata.soql.environment.{ColumnName, TableName}
 import org.joda.time.DateTime
 import com.rojoma.simplearm.v2._
@@ -15,6 +15,7 @@ import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.metadata.CopyPair
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
 import com.socrata.datacoordinator.id._
+import com.socrata.datacoordinator.util.Rollup.RollupCollocationException
 import com.socrata.soql.ast.{JoinFunc, JoinQuery, JoinTable, Select}
 import com.socrata.soql.{BinaryTree, Compound, Leaf, SoQLAnalyzer}
 import com.socrata.soql.exceptions.SoQLException
@@ -487,21 +488,30 @@ object DatasetMutator {
       }
 
       def createOrUpdateRollup(name: RollupName, soql: String, rawSoql: Option[String]): Either[Exception, RollupInfo] = {
-        val info: RollupInfo = datasetMap.createOrUpdateRollup(copyInfo, name, soql, rawSoql)
-        try {
-          validateRollup(info)
-          logger.rollupCreatedOrUpdated(info)
-          Right(info)
-        } catch {
-          case ex: RollupValidationException =>
-            log.info(s"create rollup failed ${name.underlying} ${ex.getMessage}")
-            Left(ex)
+        datasetMap.createOrUpdateRollup(copyInfo, name, soql, rawSoql) match{
+          case Some(info)=>
+            try {
+              Rollup.updateRollupRelationships(info)(datasetMap,datasetMapReader)
+              validateRollup(info)
+              logger.rollupCreatedOrUpdated(info)
+              Right(info)
+            } catch {
+              case ex: RollupValidationException =>
+                log.info(s"create rollup failed ${name.underlying} ${ex.getMessage}")
+                Left(ex)
+              case ex: RollupCollocationException =>
+                log.info(s"rollup '${name.underlying}' is missing a collocation. ${ex.getMessage}.")
+                Left(ex)
+            }
+          case None =>
+            Left(new IllegalStateException(s"could not save rollup ${name.underlying}"))
         }
       }
 
       def dropRollup(name: RollupName): Option[RollupInfo] = {
         datasetMap.rollup(copyInfo, name) match {
           case r@Some(ru) =>
+            datasetMap.deleteRollupRelationships(ru)
             datasetMap.dropRollup(copyInfo, Some(ru.name))
             logger.rollupDropped(ru)
             r

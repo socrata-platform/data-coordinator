@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
+    <changeSet author="Paul Maksimovich" id="20221013-rollup-map-drop-primary-constraint">
+        <sql splitStatements="false">
+            do
+            $$
+                declare
+                 c_name text;
+                begin
+                    select constraint_name
+                    into c_name
+                    from information_schema.table_constraints
+                    where table_name = 'rollup_map'
+                      and constraint_type = 'PRIMARY KEY';
+
+                    execute format('alter table %I drop constraint %I', 'rollup_map', c_name);
+                end;
+            $$
+        </sql>
+        <rollback>
+            <sql>
+                alter table rollup_map
+                add constraint rollup_pk primary key (copy_system_id, name);
+            </sql>
+        </rollback>
+    </changeSet>
+
+    <changeSet author="Paul Maksimovich" id="20220907-rollup-map-replace-pk-with-unique">
+        <sql>
+            alter table rollup_map
+            add constraint u_copy_system_id_name unique (copy_system_id, name);
+        </sql>
+        <rollback>
+            <sql splitStatements="false">
+                do
+                $$
+                    declare
+                      c_name text;
+                    begin
+                        select constraint_name
+                        into c_name
+                        from information_schema.table_constraints
+                        where table_name = 'rollup_map'
+                        and constraint_type = 'UNIQUE';
+
+                        execute format('alter table %I drop constraint %I', 'rollup_map', c_name);
+                    end;
+                $$;
+            </sql>
+        </rollback>
+    </changeSet>
+
+    <changeSet author="Paul Maksimovich" id="20220907-rollup-map-create-new-pk">
+        <sql>
+            alter table rollup_map
+            add column system_id bigserial primary key;
+        </sql>
+        <rollback>
+            <sql splitStatements="false">
+                do
+                $$
+                    declare
+                       c_name text;
+                    begin
+                        select constraint_name
+                        into c_name
+                        from information_schema.table_constraints
+                        where table_name = 'rollup_map'
+                        and constraint_type = 'PRIMARY KEY';
+
+                        execute format('alter table %I drop constraint %I', 'rollup_map', c_name);
+                    end;
+                $$;
+            </sql>
+            <sql>
+                alter table rollup_map
+                drop column system_id;
+            </sql>
+        </rollback>
+    </changeSet>
+
+    <changeSet author="Paul Maksimovich" id="20220907-create-rollup-relationship-map">
+        <sql>
+            create table rollup_relationship_map
+            (
+                rollup_system_id          bigint                                 not null references rollup_map (system_id),
+                referenced_copy_system_id bigint references copy_map (system_id) not null,
+                unique (rollup_system_id, referenced_copy_system_id)
+            );
+        </sql>
+        <rollback>
+            <sql>
+                drop table rollup_relationship_map;
+            </sql>
+        </rollback>
+    </changeSet>
+</databaseChangeLog>

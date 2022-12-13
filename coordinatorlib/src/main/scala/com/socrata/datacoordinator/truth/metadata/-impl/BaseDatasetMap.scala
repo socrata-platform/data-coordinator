@@ -4,7 +4,7 @@ package `-impl`
 import com.rojoma.json.v3.ast.JObject
 import com.socrata.datacoordinator.id.{DatasetId, IndexId, IndexName, RollupName}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
-import com.socrata.soql.environment.ColumnName
+import com.socrata.soql.environment.{ColumnName, ResourceName}
 import org.joda.time.DateTime
 
 trait BaseDatasetMapReader[CT] {
@@ -65,6 +65,8 @@ trait BaseDatasetMapReader[CT] {
   /** Gets the current time.
    */
   def currentTime(): DateTime
+
+  def datasetInfoByResourceName(resourceName: ResourceName, repeatableRead: Boolean = false):Option[DatasetInfo]
 }
 
 trait BaseDatasetMapWriter[CT] extends BaseDatasetMapReader[CT] {
@@ -143,7 +145,9 @@ trait BaseDatasetMapWriter[CT] extends BaseDatasetMapReader[CT] {
   /** Creates or updates the metadata about the given rollup based on name and
     * given soql query.
     */
-  def createOrUpdateRollup(copyInfo: CopyInfo, name: RollupName, soql: String, rawSoql: Option[String]): RollupInfo
+  def createOrUpdateRollup(copyInfo: CopyInfo, name: RollupName, soql: String, rawSoql: Option[String]): Option[RollupInfo]
+
+  def createRollupRelationship(rollupInfo: RollupInfo, relatedCopyInfo: CopyInfo): Set[RollupRelationship]
 
   /** Drops the given rollup.
     */
@@ -156,4 +160,10 @@ trait BaseDatasetMapWriter[CT] extends BaseDatasetMapReader[CT] {
   def createOrUpdateIndex(copyInfo: CopyInfo, name: IndexName, expressions: String, filter: Option[String]): IndexInfo
 
   def dropIndex(copyInfo: CopyInfo, name: Option[IndexName])
+
+  def deleteRollupRelationships(rollupInfo: RollupInfo): Unit
+
+  def deleteRollupRelationships(copyInfo: CopyInfo): Unit
+
+  def deleteRollupRelationshipByRollupMapCopyInfo(copyInfo: CopyInfo): Unit
 }
