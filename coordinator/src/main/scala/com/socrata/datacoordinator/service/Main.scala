@@ -1,16 +1,15 @@
 package com.socrata.datacoordinator.service
 
 import java.util.UUID
-
 import com.rojoma.json.v3.ast.{JString, JValue}
 import com.rojoma.simplearm.v2._
 import com.rojoma.simplearm.v2.conversions._
 import com.socrata.datacoordinator.common.soql.SoQLRep
 import com.socrata.datacoordinator.common.collocation.{CollocationLock, CuratedCollocationLock, NoOPCollocationLock}
 import com.socrata.datacoordinator.common.{DataSourceFromConfig, SoQLCommon}
-import com.socrata.datacoordinator.id.{ColumnId, DatasetId, DatasetInternalName, UserColumnId}
+import com.socrata.datacoordinator.id.{ColumnId, DatasetId, DatasetInternalName, RollupName, UserColumnId}
 import com.socrata.datacoordinator.resources._
-import com.socrata.datacoordinator.secondary.{DatasetAlreadyInSecondary, SecondaryMetric, BrokenSecondaryRecord}
+import com.socrata.datacoordinator.secondary.{BrokenSecondaryRecord, DatasetAlreadyInSecondary, SecondaryMetric}
 import com.socrata.datacoordinator.secondary.config.SecondaryGroupConfig
 import com.socrata.datacoordinator.truth.CopySelector
 import com.socrata.datacoordinator.truth.loader.{Delogger, NullLogger}
@@ -24,6 +23,7 @@ import com.socrata.http.server.curator.CuratorBroker
 import com.socrata.http.server.livenesscheck.LivenessCheckResponder
 import com.socrata.http.server.util.{EntityTag, Precondition}
 import com.socrata.curator.{CuratorFromConfig, DiscoveryFromConfig, ProviderCache}
+import com.socrata.datacoordinator.resources.RelationSide.{From, To}
 import com.socrata.soql.types.{SoQLType, SoQLValue}
 import com.socrata.thirdparty.typesafeconfig.Propertizer
 import com.typesafe.config.{Config, ConfigFactory}
@@ -33,6 +33,7 @@ import com.socrata.datacoordinator.resources.collocation._
 import com.socrata.datacoordinator.service.Main.log
 import com.socrata.datacoordinator.service.collocation.{MetricProvider, _}
 import com.socrata.http.client.HttpClientHttpClient
+import com.socrata.soql.environment.ResourceName
 import org.apache.curator.x.discovery.{ServiceInstanceBuilder, strategies}
 import org.apache.log4j.PropertyConfigurator
 import org.joda.time.DateTime
@@ -661,6 +662,22 @@ object Main extends DynamicPortMap {
         }
       }
 
+      def getRollupRelationsPrimary(datasetId:DatasetId) = {
+        for(u<-common.universe){
+          for (dsInfo <- u.datasetMapReader.datasetInfo(datasetId)) yield {
+            u.datasetMapReader.rollupDatasetRelationByPrimaryDataset(ResourceName(dsInfo.resourceName.get))
+          }
+        }
+      }
+
+      def getRollupRelationsSecondary(datasetId: DatasetId) = {
+        for (u <- common.universe) {
+          for (dsInfo <- u.datasetMapReader.datasetInfo(datasetId)) yield {
+            u.datasetMapReader.rollupDatasetRelationBySecondaryDataset(ResourceName(dsInfo.resourceName.get))
+          }
+        }
+      }
+
       def getIndexes(datasetId: DatasetId) = {
         for(u <- common.universe) {
           for(dsInfo <- u.datasetMapReader.datasetInfo(datasetId)) yield {
@@ -685,6 +702,8 @@ object Main extends DynamicPortMap {
       val datasetSnapshotResource = DatasetSnapshotResource(_: DatasetId, _: Long, deleteSnapshot, common.internalNameFromDatasetId)
       val datasetLogResource = DatasetLogResource[common.CV](_: DatasetId, _: Long, getLog, common.internalNameFromDatasetId)
       val datasetRollupResource = DatasetRollupResource(_: DatasetId, getRollups, common.internalNameFromDatasetId)
+      val datasetRollupToResource = DatasetRollupRelationResource(_:DatasetId,getRollupRelationsPrimary,To,common.internalNameFromDatasetId)
+      val datasetRollupFromResource = DatasetRollupRelationResource(_:DatasetId,getRollupRelationsSecondary,From,common.internalNameFromDatasetId)
       val datasetIndexResource = DatasetIndexResource(_: DatasetId, getIndexes, common.internalNameFromDatasetId)
       val snapshottedResource = SnapshottedResource(getSnapshottedDatasets _, common.internalNameFromDatasetId)
       val secondaryManifestsResource = SecondaryManifestsResource(_: Option[String], secondaries,
@@ -805,6 +824,8 @@ object Main extends DynamicPortMap {
         datasetSnapshotResource = datasetSnapshotResource,
         datasetLogResource = datasetLogResource,
         datasetRollupResource = datasetRollupResource,
+        datasetRollupToResource = datasetRollupToResource,
+        datasetRollupFromResource = datasetRollupFromResource,
         datasetIndexResource = datasetIndexResource,
         snapshottedResource = snapshottedResource,
         secondaryManifestsResource = secondaryManifestsResource,

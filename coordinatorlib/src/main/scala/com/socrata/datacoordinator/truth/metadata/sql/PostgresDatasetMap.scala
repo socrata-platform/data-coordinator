@@ -12,6 +12,7 @@ import scala.collection.immutable.VectorBuilder
 import java.sql._
 import org.postgresql.util.PSQLException
 import com.rojoma.simplearm.v2.using
+import com.socrata.datacoordinator.common.util.SqlExtractor.extractSeqRollupDatasetRelation
 import com.socrata.datacoordinator.truth.{DatabaseInReadOnlyMode, DatasetIdInUseByWriterException}
 import com.socrata.datacoordinator.id._
 import com.socrata.datacoordinator.util.{PostgresUniqueViolation, TimingReport}
@@ -466,6 +467,30 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
           None
         }
       }
+    }
+  }
+
+  def rollupDatasetRelationByPrimaryDatasetQuery = "select * from rollup_dataset_relations where primary_dataset = ?"
+  def rollupDatasetRelationByPrimaryDataset(primaryDataset: ResourceName): Set[RollupDatasetRelation]={
+    using(conn.prepareStatement(rollupDatasetRelationByPrimaryDatasetQuery)) { stmt =>
+      stmt.setString(1, primaryDataset.name)
+      t("rollup-dataset-relation-by-primary-dataset", "dataset" -> primaryDataset.name)(
+        using(stmt.executeQuery()) {
+          extractSeqRollupDatasetRelation
+        }
+      )
+    }
+  }
+
+  def rollupDatasetRelationBySecondaryDatasetQuery = "select * from rollup_dataset_relations where ? =Any(secondary_datasets)"
+  def rollupDatasetRelationBySecondaryDataset(secondaryDataset: ResourceName): Set[RollupDatasetRelation]={
+    using(conn.prepareStatement(rollupDatasetRelationBySecondaryDatasetQuery)) { stmt =>
+      stmt.setString(1, secondaryDataset.name)
+      t("rollup-dataset-relation-by-secondary-dataset", "secondaryDataset" -> secondaryDataset.name)(
+        using(stmt.executeQuery()) {
+          extractSeqRollupDatasetRelation
+        }
+      )
     }
   }
 }

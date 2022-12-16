@@ -141,3 +141,7 @@ object RowIdentifierUpdateError{
   val NOT_ROW_IDENTIFIER = "update.row-identifier.not-row-identifier"
   val DELETE = "update.row-identifier.delete"
 }
+
+object RollupError{
+  val NO_FOUND_RELATIONS = "query.rollup-relations.not-found"
+}

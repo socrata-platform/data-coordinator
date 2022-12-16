@@ -3,7 +3,7 @@ package com.socrata.datacoordinator.service
 import com.rojoma.json.v3.ast._
 import com.rojoma.json.v3.codec.JsonEncode
 import com.rojoma.json.v3.io._
-import com.socrata.datacoordinator.id.DatasetId
+import com.socrata.datacoordinator.id.{DatasetId, RollupName}
 import com.socrata.datacoordinator.resources._
 import com.socrata.datacoordinator.truth.loader._
 import com.socrata.http.server.responses._
@@ -11,8 +11,8 @@ import com.socrata.http.server.util.handlers.{LoggingOptions, NewLoggingHandler,
 import com.socrata.http.server.util.ErrorAdapter
 import com.socrata.http.server.util.RequestId.ReqIdHeader
 import com.socrata.thirdparty.metrics.{MetricsReporter, SocrataHttpSupport}
-import java.util.concurrent.atomic.AtomicInteger
 
+import java.util.concurrent.atomic.AtomicInteger
 import com.socrata.datacoordinator.service.ServiceUtil._
 import com.socrata.http.server._
 import com.socrata.http.server.implicits._
@@ -36,6 +36,8 @@ class Service(serviceConfig: ServiceConfig,
               datasetSnapshotResource: (DatasetId, Long) => DatasetSnapshotResource,
               datasetLogResource: (DatasetId, Long) => SodaResource,
               datasetRollupResource: DatasetId => DatasetRollupResource,
+              datasetRollupToResource: DatasetId=>DatasetRollupRelationResource,
+              datasetRollupFromResource: DatasetId=>DatasetRollupRelationResource,
               datasetIndexResource: DatasetId => DatasetIndexResource,
               snapshottedResource: SodaResource,
               secondaryManifestsResource: Option[String] => SecondaryManifestsResource,
@@ -276,6 +278,8 @@ class Service(serviceConfig: ServiceConfig,
     datasetSnapshotResource = datasetSnapshotResource,
     datasetLogResource = datasetLogResource,
     datasetRollupResource = datasetRollupResource,
+    datasetRollupToResource = datasetRollupToResource,
+    datasetRollupFromResource = datasetRollupFromResource,
     datasetIndexResource = datasetIndexResource,
     snapshottedResource = snapshottedResource,
     secondaryManifestsResource = secondaryManifestsResource,
@@ -339,6 +343,8 @@ object Service {
             datasetSnapshotResource: (DatasetId, Long) => DatasetSnapshotResource,
             datasetLogResource: (DatasetId, Long) => SodaResource,
             datasetRollupResource: DatasetId => DatasetRollupResource,
+            datasetRollupToResource: DatasetId=>DatasetRollupRelationResource,
+            datasetRollupFromResource: DatasetId=>DatasetRollupRelationResource,
             datasetIndexResource: DatasetId => DatasetIndexResource,
             snapshottedResource: SodaResource,
             secondaryManifestsResource: Option[String] => SecondaryManifestsResource,
@@ -364,6 +370,8 @@ object Service {
       datasetSnapshotResource,
       datasetLogResource,
       datasetRollupResource,
+      datasetRollupToResource,
+      datasetRollupFromResource,
       datasetIndexResource,
       snapshottedResource,
       secondaryManifestsResource,

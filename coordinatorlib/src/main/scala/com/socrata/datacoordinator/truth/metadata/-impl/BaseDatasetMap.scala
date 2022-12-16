@@ -67,6 +67,10 @@ trait BaseDatasetMapReader[CT] {
   def currentTime(): DateTime
 
   def datasetInfoByResourceName(resourceName: ResourceName, repeatableRead: Boolean = false):Option[DatasetInfo]
+
+  def rollupDatasetRelationByPrimaryDataset(primaryDataset:ResourceName):Set[RollupDatasetRelation]
+
+  def rollupDatasetRelationBySecondaryDataset(secondaryDataset:ResourceName):Set[RollupDatasetRelation]
 }
 
 trait BaseDatasetMapWriter[CT] extends BaseDatasetMapReader[CT] {

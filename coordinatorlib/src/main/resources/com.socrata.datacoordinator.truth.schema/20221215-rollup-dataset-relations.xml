@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
+    <changeSet author="Paul Maksimovich" id="20221215-create-rollup-dataset-relation-view">
+        <sql>
+            create or replace view rollup_dataset_relations as
+            select d1.resource_name as primary_dataset, rm1.name as name, rm1.soql as soql, (select array_agg(d2.resource_name) secondary_datasets
+                                                                                             from rollup_relationship_map rrm2
+                                                                                                      join copy_map c2 on rrm2.referenced_copy_system_id = c2.system_id
+                                                                                                      join dataset_map d2 on c2.dataset_system_id = d2.system_id
+                                                                                             where rrm2.rollup_system_id = rm1.system_id)
+            from rollup_map rm1
+                     join copy_map c1 on rm1.copy_system_id = c1.system_id
+                     join dataset_map d1 on c1.dataset_system_id = d1.system_id;
+        </sql>
+        <rollback>
+            <sql>
+                drop view rollup_dataset_relations;
+            </sql>
+        </rollback>
+    </changeSet>
+</databaseChangeLog>

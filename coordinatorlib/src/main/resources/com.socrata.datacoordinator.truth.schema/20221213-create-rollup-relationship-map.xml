@@ -3,7 +3,7 @@
                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
                    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
     http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
-    <changeSet author="Paul Maksimovich" id="20221013-rollup-map-drop-primary-constraint">
+    <changeSet author="Paul Maksimovich" id="20221213-rollup-map-drop-primary-constraint">
         <sql splitStatements="false">
             do
             $$
@@ -28,7 +28,7 @@
         </rollback>
     </changeSet>
 
-    <changeSet author="Paul Maksimovich" id="20220907-rollup-map-replace-pk-with-unique">
+    <changeSet author="Paul Maksimovich" id="20221213-rollup-map-replace-pk-with-unique">
         <sql>
             alter table rollup_map
             add constraint u_copy_system_id_name unique (copy_system_id, name);
@@ -53,7 +53,7 @@
         </rollback>
     </changeSet>
 
-    <changeSet author="Paul Maksimovich" id="20220907-rollup-map-create-new-pk">
+    <changeSet author="Paul Maksimovich" id="20221213-rollup-map-create-new-pk">
         <sql>
             alter table rollup_map
             add column system_id bigserial primary key;
@@ -82,7 +82,7 @@
         </rollback>
     </changeSet>
 
-    <changeSet author="Paul Maksimovich" id="20220907-create-rollup-relationship-map">
+    <changeSet author="Paul Maksimovich" id="20221213-create-rollup-relationship-map">
         <sql>
             create table rollup_relationship_map
             (
