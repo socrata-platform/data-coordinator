@@ -50,7 +50,7 @@ trait LowLevelDatabaseMutator[CT, CV] {
     def datasetContentsCopier(logger: Logger[CT, CV]): DatasetContentsCopier[CT]
     def withDataLoader[A](copyCtx: DatasetCopyContext[CT], logger: Logger[CT, CV], reportWriter: ReportWriter[CV],
                           replaceUpdatedRows: Boolean, updateOnly: Boolean)(f: Loader[CV] => A): (Long, A)
-    def truncate(table: CopyInfo, logger: Logger[CT, CV]): Unit
+    def truncate(table: CopyInfo, logger: Logger[CT, CV]): Int
 
     def finishDatasetTransaction(username: String, copyInfo: CopyInfo, updateLastUpdated: Boolean, dataShapeUpdated: Boolean): Unit
 
@@ -175,7 +175,7 @@ trait DatasetMutator[CT, CV] {
     def dropComputationStrategy(column: ColumnInfo[CT]): Unit
 
     def updateFieldName(column: ColumnInfo[CT], newName: ColumnName): Unit
-    def truncate(): Unit
+    def truncate(): Int
 
     sealed trait RowDataUpdateJob {
       def jobNumber: Int
@@ -452,10 +452,11 @@ object DatasetMutator {
         }
       }
 
-      def truncate(): Unit = {
+      def truncate(): Int = {
         checkDoingRows()
-        llCtx.truncate(copyInfo, logger)
+        val result = llCtx.truncate(copyInfo, logger)
         dataShapeUpdated = true
+        result
       }
 
       def upsert(inputGenerator: Iterator[RowDataUpdateJob], reportWriter: ReportWriter[CV],

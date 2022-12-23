@@ -831,9 +831,25 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
             case None => throw NoSuchRollup(name)(idx)
           }
         case RowData(idx, truncate, mergeReplace, nonFatalRowErrors, updateOnly, bySystemId) =>
-          if(truncate) mutator.truncate()
-          val data = processRowData(idx, commands.rawCommandStream, nonFatalRowErrors, updateOnly = updateOnly, bySystemId = bySystemId, mutator, mergeReplace)
-          Seq(MutationScriptCommandResult.RowData(data.toJobRange))
+          val start = System.nanoTime()
+          val truncateCount = if(truncate) mutator.truncate() else 0
+          val mid = System.nanoTime()
+          val reportWriter = processRowData(idx, commands.rawCommandStream, nonFatalRowErrors, updateOnly = updateOnly, bySystemId = bySystemId, mutator, mergeReplace)
+          val end = System.nanoTime()
+
+          val truncateDuration = (mid - start) / 1000000
+          val upsertDuration = (end - mid) / 1000000
+          val totalDuration = (end - start) / 1000000
+          log.info("Upsert completed: {} inserted, {} updated, {} deleted, {} truncated ({}ms truncation, {}ms upsert, {}ms total)",
+                   reportWriter.insertedRows.asInstanceOf[AnyRef],
+                   reportWriter.updatedRows.asInstanceOf[AnyRef],
+                   reportWriter.deletedRows.asInstanceOf[AnyRef],
+                   truncateCount.asInstanceOf[AnyRef],
+                   truncateDuration.asInstanceOf[AnyRef],
+                   upsertDuration.asInstanceOf[AnyRef],
+                   totalDuration.asInstanceOf[AnyRef])
+
+          Seq(MutationScriptCommandResult.RowData(reportWriter.toJobRange))
         case SecondaryReindex(_) =>
           mutator.secondaryReindex()
           Seq(MutationScriptCommandResult.Uninteresting)
@@ -912,13 +928,9 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
             }
           }
         }
-        val start = System.nanoTime()
         mutator.upsert(it, reportWriter, replaceUpdatedRows = mergeReplace == Replace, updateOnly = updateOnly, bySystemId = bySystemId)
         if(rows.hasNext && JNull == rows.head) rows.next()
         checkForError()
-
-        val duration = (System.nanoTime() - start) / 1000000
-        log.info("Upsert completed: {} inserted, {} updated, {} deleted; {}ms", reportWriter.insertedRows.asInstanceOf[AnyRef], reportWriter.updatedRows.asInstanceOf[AnyRef], reportWriter.deletedRows.asInstanceOf[AnyRef], duration.asInstanceOf[AnyRef])
 
         reportWriter
       } catch {
