@@ -236,7 +236,7 @@ class FeedbackSecondaryTest extends WordSpec with Matchers with MockFactory {
         }
         caught.reason should be("test")
         // for this the data-coordinator retries should be decremented
-        val expectedCookie = FeedbackCookie.encode(TestCookie.v2.get.copyCurrent(dataCoordinatorRetriesLeft = 4, errorMessage = Some("test")))
+        val expectedCookie = FeedbackCookie.encode(TestCookie.v2.get.copyCurrent(errorMessage = Some("test")))
         caught.cookie should be(expectedCookie)
       }
     }

@@ -44,8 +44,6 @@ class CookieOperatorTest extends FunSuite with Matchers {
     columnIdMap = columns,
     strategyMap = computedColumns,
     obfuscationKey = Array(),
-    computationRetriesLeft = 5,
-    dataCoordinatorRetriesLeft = 5,
     resync = false
   )
 

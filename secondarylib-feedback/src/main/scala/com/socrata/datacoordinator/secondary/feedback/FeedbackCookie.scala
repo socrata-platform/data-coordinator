@@ -12,14 +12,10 @@ case class DataVersion(underlying: Long)
 case class FeedbackCookie(current: CookieSchema, previous: Option[CookieSchema], errorMessage: Option[String] = None) {
 
   def copyCurrent(current: CookieSchema = this.current,
-                  computationRetriesLeft: Int = this.current.computationRetriesLeft,
-                  dataCoordinatorRetriesLeft: Int = this.current.dataCoordinatorRetriesLeft,
                   resync: Boolean = this.current.resync,
                   errorMessage: Option[String] = this.errorMessage): FeedbackCookie = {
     this.copy(
       current = current.copy(
-        computationRetriesLeft = computationRetriesLeft,
-        dataCoordinatorRetriesLeft = dataCoordinatorRetriesLeft,
         resync = resync),
       errorMessage = errorMessage
     )
@@ -55,8 +51,6 @@ case class CookieSchema(dataVersion: DataVersion,
                         columnIdMap: Map[UserColumnId, ColumnId],
                         strategyMap: Map[UserColumnId, ComputationStrategyInfo],
                         obfuscationKey: Array[Byte],
-                        computationRetriesLeft: Int,
-                        dataCoordinatorRetriesLeft: Int,
                         resync: Boolean) {
 
   override def equals(any: Any): Boolean = {
@@ -68,8 +62,6 @@ case class CookieSchema(dataVersion: DataVersion,
           this.columnIdMap == other.columnIdMap &&
           this.strategyMap == other.strategyMap &&
           java.util.Arrays.equals(this.obfuscationKey, other.obfuscationKey) && // stupid arrays
-          this.computationRetriesLeft == other.computationRetriesLeft &&
-          this.dataCoordinatorRetriesLeft == other.dataCoordinatorRetriesLeft &&
           this.resync == other.resync
       case _ => false
     }
@@ -83,8 +75,6 @@ case class CookieSchema(dataVersion: DataVersion,
     code = code * 41 + (if (columnIdMap == null) 0 else columnIdMap.hashCode)
     code = code * 41 + (if (strategyMap == null) 0 else strategyMap.hashCode)
     code = code * 41 + java.util.Arrays.hashCode(obfuscationKey)
-    code = code * 41 + computationRetriesLeft.hashCode
-    code = code * 41 + dataCoordinatorRetriesLeft.hashCode
     code = code * 41 + resync.hashCode
     code
   }

@@ -111,7 +111,7 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
           manifest(u).markSecondaryDatasetBroken(job, cookie.orElse(job.initialCookie))
         case rlse@ReplayLaterSecondaryException(reason, cookie) =>
           if (job.replayNum < maxReplays) {
-            val replayAfter = Math.min(replayWait.toSeconds * Math.log(job.replayNum + 2), maxReplayWait.toSeconds)
+            val replayAfter = Math.min(replayWait.toSeconds * Math.pow(2, job.replayNum), maxReplayWait.toSeconds)
             log.info("Replay later requested while updating dataset {} in secondary {}, replaying in {}...",
               job.datasetId.asInstanceOf[AnyRef], secondary.storeId, replayAfter.toString, rlse)
             manifest(u).updateReplayInfo(secondary.storeId, job.datasetId, cookie, job.replayNum + 1,

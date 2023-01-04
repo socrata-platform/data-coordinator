@@ -63,8 +63,6 @@ class FeedbackContext[CT,CV](user: String,
   private def success(current: CookieSchema): Success = {
     Success(currentCookie.copyCurrent(
       current = current,
-      computationRetriesLeft = computationRetryLimit,
-      dataCoordinatorRetriesLeft = dataCoordinatorRetryLimit,
       resync = false,
       errorMessage = None
     ))
@@ -77,8 +75,6 @@ class FeedbackContext[CT,CV](user: String,
   private def replayComputation(reason: String, resync: Boolean): ReplayLater = {
     ReplayLater(reason, { feedbackCookie =>
       feedbackCookie.copyCurrent(
-        computationRetriesLeft = feedbackCookie.current.computationRetriesLeft - 1,
-        dataCoordinatorRetriesLeft = dataCoordinatorRetryLimit,
         resync = resync,
         errorMessage = Some(reason))
     })
@@ -87,8 +83,6 @@ class FeedbackContext[CT,CV](user: String,
   private def replayDataCoordinator(reason: String, resync: Boolean): ReplayLater = {
     ReplayLater(reason, { feedbackCookie =>
       feedbackCookie.copyCurrent(
-        computationRetriesLeft = computationRetryLimit,
-        dataCoordinatorRetriesLeft = feedbackCookie.current.dataCoordinatorRetriesLeft - 1,
         resync = resync,
         errorMessage = Some(reason))
     })
