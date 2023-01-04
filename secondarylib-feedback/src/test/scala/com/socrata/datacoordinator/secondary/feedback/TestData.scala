@@ -170,8 +170,6 @@ object TestData {
                    columnIdMap = columnIdMap,
                    strategyMap = strategyMap,
                    obfuscationKey = "magicmagic".getBytes,
-                   computationRetriesLeft = 5,
-                   dataCoordinatorRetriesLeft = 5,
                    resync = false)
 
     // note: we are not always accounting for versions of feedback row data

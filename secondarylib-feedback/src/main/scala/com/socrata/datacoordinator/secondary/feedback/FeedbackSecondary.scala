@@ -150,13 +150,6 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
     }
   }
 
-  private def checkRetriesLeft(cookie: FeedbackCookie, retriesLeft: Long, cause: String): Unit = {
-    if (retriesLeft == 0) {
-      val reason = s"Gave up replaying updates after too many failed $cause attempts"
-      throw BrokenDatasetSecondaryException(reason, FeedbackCookie.encode(cookie.copyCurrent(errorMessage = Some(reason))))
-    }
-  }
-
   private def handleFeedbackResult[T](originalCookie: Option[FeedbackCookie],
                                       feedbackResult: FeedbackResult)(f: FeedbackCookie => T): T = {
     def encodeCookie(reason: String, f: FeedbackCookie => FeedbackCookie): Cookie =
@@ -192,8 +185,6 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
           columnIdMap = Map.empty,
           strategyMap = Map.empty,
           obfuscationKey = datasetInfo.obfuscationKey,
-          computationRetriesLeft = computationRetryLimit,
-          dataCoordinatorRetriesLeft = dataCoordinatorRetryLimit,
           resync = false
         )
         FeedbackCookie(current = schema, previous = None)
@@ -207,10 +198,6 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
       log.info("Cookie for dataset {} for version {}/{} specified to resync.", datasetInternalName, initialDataVersion.asInstanceOf[AnyRef], finalDataVersion.asInstanceOf[AnyRef])
       throw ResyncSecondaryException("My cookie specified to resync!")
     }
-
-    // mark the dataset as broken if we have run out of retries
-    checkRetriesLeft(oldCookie, oldCookie.current.computationRetriesLeft, "computation")
-    checkRetriesLeft(oldCookie, oldCookie.current.dataCoordinatorRetriesLeft, "data-coordinator")
 
     val expectedDataVersion = oldCookie.current.dataVersion.underlying + 1
     if (finalDataVersion < expectedDataVersion) {
@@ -435,8 +422,6 @@ abstract class FeedbackSecondary[CT,CV] extends Secondary[CT,CV] {
         systemId = systemId,
         columnIdMap = columnIdMap,
         strategyMap = strategyMap,
-        computationRetriesLeft = computationRetryLimit,
-        dataCoordinatorRetriesLeft = dataCoordinatorRetryLimit,
         obfuscationKey = datasetInfo.obfuscationKey,
         resync = false
       )
