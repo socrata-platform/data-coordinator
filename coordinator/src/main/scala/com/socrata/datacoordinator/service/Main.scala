@@ -19,6 +19,7 @@ import com.socrata.datacoordinator.truth.metadata._
 import com.socrata.datacoordinator.util.collection.UserColumnIdSet
 import com.socrata.datacoordinator.util._
 import com.socrata.http.common.AuxiliaryData
+import com.socrata.http.common.livenesscheck.LivenessCheckInfo
 import com.socrata.http.server._
 import com.socrata.http.server.curator.CuratorBroker
 import com.socrata.http.server.livenesscheck.LivenessCheckResponder
@@ -863,6 +864,10 @@ object Main extends DynamicPortMap {
         tableDropper.start()
         logTableCleanup.start()
         val address = serviceConfig.discovery.address
+
+        def remapLivenessCheckInfo(lci: LivenessCheckInfo): LivenessCheckInfo =
+          new LivenessCheckInfo(hostPort(lci.port), lci.response)
+
         for {
           curator <- CuratorFromConfig(serviceConfig.curator)
           discovery <- DiscoveryFromConfig(classOf[AuxiliaryData], curator, serviceConfig.discovery)
@@ -870,7 +875,7 @@ object Main extends DynamicPortMap {
           provider <- managed(new ProviderCache(discovery, new strategies.RoundRobinStrategy, serviceConfig.discovery.name))
         } {
           pong.start()
-          val auxData = new AuxiliaryData(livenessCheckInfo = Some(pong.livenessCheckInfo))
+          val auxData = new AuxiliaryData(livenessCheckInfo = Some(remapLivenessCheckInfo(pong.livenessCheckInfo)))
 
           def hostAndPort(instanceName: String): Option[(String, Int)] = {
             Option(provider(instanceName).getInstance()).map[(String, Int)](instance => (instance.getAddress, instance.getPort))
