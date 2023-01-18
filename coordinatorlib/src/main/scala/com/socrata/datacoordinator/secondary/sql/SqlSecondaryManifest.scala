@@ -50,6 +50,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
             insertStmt.setDatasetId(2, datasetId)
             insertStmt.setLong(3, rs.getLong("data_version"))
             if(insertStmt.executeUpdate() != 1) {
+              unMarkDatasetForDrop(storeId, datasetId)
               throw new DatasetAlreadyInSecondary(storeId, datasetId)
             }
           }
@@ -92,13 +93,13 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
     }
   }
 
-  def stores(datasetId: DatasetId): Map[String, Long] = {
-    using(conn.prepareStatement("SELECT store_id, latest_secondary_data_version FROM secondary_manifest WHERE dataset_system_id = ?")) { stmt =>
+  def stores(datasetId: DatasetId): Map[String, (Long, Boolean)] = {
+    using(conn.prepareStatement("SELECT store_id, latest_secondary_data_version, pending_drop FROM secondary_manifest WHERE dataset_system_id = ?")) { stmt =>
       stmt.setDatasetId(1, datasetId)
       using(stmt.executeQuery()) { rs =>
-        val result = Map.newBuilder[String, Long]
+        val result = Map.newBuilder[String, (Long, Boolean)]
         while(rs.next()) {
-          result += rs.getString("store_id") -> rs.getLong("latest_secondary_data_version")
+          result += rs.getString("store_id") -> (rs.getLong("latest_secondary_data_version") -> rs.getBoolean("pending_drop"))
         }
         result.result()
       }
@@ -390,6 +391,18 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
     using(conn.prepareStatement(
     """UPDATE secondary_manifest
       |SET pending_drop = TRUE
+      |WHERE store_id = ?
+      |  AND dataset_system_id = ?""".stripMargin)) { stmt =>
+      stmt.setString(1, storeId)
+      stmt.setDatasetId(2, datasetId)
+      stmt.executeUpdate() != 0
+    }
+  }
+
+  def unMarkDatasetForDrop(storeId: String, datasetId: DatasetId): Boolean = {
+    using(conn.prepareStatement(
+    """UPDATE secondary_manifest
+      |SET pending_drop = false
       |WHERE store_id = ?
       |  AND dataset_system_id = ?""".stripMargin)) { stmt =>
       stmt.setString(1, storeId)

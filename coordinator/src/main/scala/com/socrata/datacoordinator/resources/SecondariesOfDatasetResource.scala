@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator.resources
 
 import com.rojoma.json.v3.ast.{JObject, Json}
-import com.rojoma.json.v3.util.{AutomaticJsonCodecBuilder, Strategy, JsonKeyStrategy}
+import com.rojoma.json.v3.util._
 import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.thirdparty.json.AdditionalJsonCodecs._
 import com.socrata.http.server._
@@ -16,6 +16,12 @@ object VersionSpec {
   implicit val codec = AutomaticJsonCodecBuilder[VersionSpec]
 }
 
+@JsonKeyStrategy(Strategy.Underscore)
+case class SecondaryValue(version: Long, pendingDrop: Boolean)
+object SecondaryValue {
+    implicit val codec = AutomaticJsonCodecBuilder[SecondaryValue]
+}
+
 
 @JsonKeyStrategy(Strategy.Underscore)
 case class SecondariesOfDatasetResult(truthInstance: String,
@@ -26,7 +32,7 @@ case class SecondariesOfDatasetResult(truthInstance: String,
                                       unpublishedVersion: Option[Long], // TODO: Remove once soda-fountain no longer uses it
                                       publishedVersions: Option[VersionSpec],
                                       unpublishedVersions: Option[VersionSpec],
-                                      secondaries: Map[String, Long],
+                                      secondaries: Map[String, SecondaryValue],
                                       feedbackSecondaries: Set[String],
                                       groups: Map[String, Set[String]],
                                       brokenSecondaries: Map[String, DateTime]

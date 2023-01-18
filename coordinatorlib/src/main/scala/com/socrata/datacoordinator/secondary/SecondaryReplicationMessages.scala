@@ -35,7 +35,7 @@ class SecondaryReplicationMessages[CT, CV](u: SecondaryReplicationMessages.Super
         storeId => u.secondaryStoresConfig.group(storeId) == Some(groupName)
       }
 
-      if (stores.forall { case (_, version) => version >= endingDataVersion}) {
+      if (stores.forall { case (_, (version, _)) => version >= endingDataVersion}) {
         // it's okay if the others are ahead
         producer.send(GroupReplicationComplete(uid, groupName, stores.keySet,
           newDataVersion = endingDataVersion,

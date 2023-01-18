@@ -44,7 +44,7 @@ trait SecondaryManifest {
   def dropDataset(storeId: String, datasetId: DatasetId): Unit
 
   def datasets(storeId: String): Map[DatasetId, Long]
-  def stores(datasetId: DatasetId): Map[String, Long]
+  def stores(datasetId: DatasetId): Map[String, (Long, Boolean)]
   def brokenAts(datasetId: DatasetId): Map[String, DateTime]
 
   def allBrokenDatasets: Map[String, Map[DatasetId, BrokenSecondaryRecord]]
@@ -67,6 +67,7 @@ trait SecondaryManifest {
   def updateReplayInfo(storeId: String, datasetId: DatasetId, cookie: Secondary.Cookie, replayNum: Int, nextReplayDelaySecs: Int): Unit
 
   def markDatasetForDrop(storeId: String, datasetId: DatasetId): Boolean
+  def unMarkDatasetForDrop(storeId: String, datasetId: DatasetId): Boolean
 
   def feedbackSecondaries(datasetId: DatasetId): Set[String] // store IDs
   def outOfDateFeedbackSecondaries(datasetId: DatasetId): Set[String] // store IDs

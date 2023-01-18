@@ -6,7 +6,7 @@ import com.socrata.datacoordinator.common.collocation.CollocationLockTimeout
 import com.socrata.datacoordinator.collocation.TestData
 import com.socrata.datacoordinator.common.collocation.CollocationLock
 import com.socrata.datacoordinator.id.DatasetInternalName
-import com.socrata.datacoordinator.resources.{SecondariesOfDatasetResult,VersionSpec}
+import com.socrata.datacoordinator.resources.{SecondariesOfDatasetResult, VersionSpec, SecondaryValue}
 import com.socrata.datacoordinator.resources.collocation.{CollocatedDatasetsResult, SecondaryMoveJobsResult}
 import com.socrata.datacoordinator.secondary.SecondaryMetric
 import com.socrata.datacoordinator.secondary.config.mock.{SecondaryGroupConfig, StoreConfig}
@@ -268,7 +268,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
   val moveJobResultEmpty = Right(SecondaryMoveJobsResult(Seq.empty))
 
   def secondariesFromSeq(instances: Seq[String]) = {
-    val s = instances.map { instance => (instance, 0L) }.toMap
+    val s = instances.map { instance => (instance, SecondaryValue(0L, false)) }.toMap
     Right(Some(SecondariesOfDatasetResult("alpha", 0L, 0L, 0L, Some(0L), Some(0L), Some(VersionSpec(0,0)), Some(VersionSpec(0, 0)), s, Set.empty[String], Map.empty, Map.empty)))
   }
 
