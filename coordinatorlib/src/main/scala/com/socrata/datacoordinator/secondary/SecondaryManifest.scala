@@ -67,7 +67,6 @@ trait SecondaryManifest {
   def updateReplayInfo(storeId: String, datasetId: DatasetId, cookie: Secondary.Cookie, replayNum: Int, nextReplayDelaySecs: Int): Unit
 
   def markDatasetForDrop(storeId: String, datasetId: DatasetId): Boolean
-  def unMarkDatasetForDrop(storeId: String, datasetId: DatasetId): Boolean
 
   def feedbackSecondaries(datasetId: DatasetId): Set[String] // store IDs
   def outOfDateFeedbackSecondaries(datasetId: DatasetId): Set[String] // store IDs
