@@ -17,9 +17,7 @@ class ServiceConfig(val config: Config, root: String, hostPort: Int => Int) exte
   val network = getConfig("network", new NetworkConfig(_, _))
   val curator = getConfig("curator", new CuratorConfig(_, _))
   val discovery = getConfig("service-advertisement", new DiscoveryConfig(_, _))
-  val livenessCheck = getConfig("liveness-check", new LivenessCheckConfig(_, _) {
-                                  override val port = optionally(getInt("port")).map(hostPort)
-                                })
+  val livenessCheck = getConfig("liveness-check", new LivenessCheckConfig(_, _))
   val dataSource = getConfig("database", new DataSourceConfig(_, _))
   val logProperties = getRawConfig("log4j")
   val commandReadLimit = getBytes("command-read-limit")
