@@ -9,7 +9,7 @@ object ResourceNameCodec {
     def encode(resourceName: ResourceName) = JString(resourceName.name)
 
     def decode(v: JValue): Either[DecodeError, ResourceName] = v match {
-      case n: JString => Right(ResourceName(n.toString))
+      case n: JString => Right(ResourceName(n.string))
       case other => Left(DecodeError.InvalidType(JString, other.jsonType))
     }
   }

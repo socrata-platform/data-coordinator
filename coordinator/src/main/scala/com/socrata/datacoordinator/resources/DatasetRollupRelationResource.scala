@@ -27,7 +27,7 @@ case class DatasetRollupRelationResource(datasetId: DatasetId,
         OK ~> Write(JsonContentType) { w =>
           JsonUtil.writeJson(w, relations)
         }
-      case _ =>datasetErrorResponse(NotFound,NO_FOUND_RELATIONS,"dataset"->JNumber(datasetId.underlying),"side"->JString(side.toString))
+      case _ =>datasetErrorResponse(NotFound,NO_FOUND_RELATIONS,"dataset"->JString(formatDatasetId(datasetId)),"side"->JString(side.toString))
     }
   }
 
