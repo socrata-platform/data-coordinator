@@ -361,13 +361,13 @@ class PostgresDatasetMapWriterTest extends FunSuite
       def rollupCount = count(conn, "rollup_map", s"name = '${rollupName.underlying}' AND copy_system_id=${vi1.systemId.underlying}")
 
       rollupCount must be (0)
-      val createdRollup = tables.createOrUpdateRollup(vi1, rollupName, rollupSoql, None)
+      val createdRollup = tables.createOrUpdateRollup(vi1, rollupName, rollupSoql, None).get
       createdRollup.copyInfo must equal (vi1)
       createdRollup.name must equal (rollupName)
       createdRollup.soql must equal (rollupSoql)
       rollupCount must be (1)
 
-      val updatedRollup = tables.createOrUpdateRollup(vi1, rollupName, rollupSoql2, Some(rollupSoql2))
+      val updatedRollup = tables.createOrUpdateRollup(vi1, rollupName, rollupSoql2, Some(rollupSoql2)).get
       updatedRollup.copyInfo must equal (vi1)
       updatedRollup.name must equal (rollupName)
       updatedRollup.soql must equal (rollupSoql2)
