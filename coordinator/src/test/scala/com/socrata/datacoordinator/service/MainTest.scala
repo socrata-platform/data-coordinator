@@ -5,9 +5,9 @@ import com.socrata.datacoordinator.id.DatasetId
 import org.scalatest.{FunSuite, MustMatchers}
 
 class MainTest extends FunSuite with MustMatchers {
-  private val sg1 = SecondaryGroupConfig(2, Map("pg1" -> StoreConfig(1000, true), "pg2" -> StoreConfig(1000, true), "pg3" -> StoreConfig(1000, true)))
-  private val sg2 = SecondaryGroupConfig(2, Map("pg1" -> StoreConfig(1000, true), "pg2" -> StoreConfig(1000, false), "pg3" -> StoreConfig(1000, true)))
-  private val sg3 = SecondaryGroupConfig(2, Map("pg1" -> StoreConfig(1000, true), "pg2" -> StoreConfig(1000, false), "pg3" -> StoreConfig(1000, false)))
+  private val sg1 = SecondaryGroupConfig(2, Map("pg1" -> StoreConfig(1000, true), "pg2" -> StoreConfig(1000, true), "pg3" -> StoreConfig(1000, true)), true)
+  private val sg2 = SecondaryGroupConfig(2, Map("pg1" -> StoreConfig(1000, true), "pg2" -> StoreConfig(1000, false), "pg3" -> StoreConfig(1000, true)), true)
+  private val sg3 = SecondaryGroupConfig(2, Map("pg1" -> StoreConfig(1000, true), "pg2" -> StoreConfig(1000, false), "pg3" -> StoreConfig(1000, false)), true)
   private val ds = new DatasetId(1234)
 
   test("do nothing if already have sufficient") {
