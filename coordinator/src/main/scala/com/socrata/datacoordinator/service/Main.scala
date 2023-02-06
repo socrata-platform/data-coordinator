@@ -89,8 +89,6 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
                     u.collocationManifest.collocatedDatasets(Set(common.internalNameFromDatasetId(datasetId)))
                   else Set.empty
 
-                println(storeGroup, storeId, coordinator.secondaryGroupConfigs(storeGroup).respectsCollocation)
-
                 for(otherInternalName <- collocatedDatasets) {
                   common.datasetIdFromInternalName(otherInternalName) match {
                     case Some(otherDatasetId) =>
