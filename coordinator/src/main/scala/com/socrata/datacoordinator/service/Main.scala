@@ -89,6 +89,8 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
                     u.collocationManifest.collocatedDatasets(Set(common.internalNameFromDatasetId(datasetId)))
                   else Set.empty
 
+                println(storeGroup, storeId, coordinator.secondaryGroupConfigs(storeGroup).respectsCollocation)
+
                 for(otherInternalName <- collocatedDatasets) {
                   common.datasetIdFromInternalName(otherInternalName) match {
                     case Some(otherDatasetId) =>
@@ -575,7 +577,7 @@ object Main extends DynamicPortMap {
 
     PropertyConfigurator.configure(Propertizer("log4j", serviceConfig.logProperties))
 
-    val secondaries: Map[String, String] = serviceConfig.secondary.groups.flatMap { case (name, group) => group.instances.key.map(_ -> name) }
+    val secondaries: Map[String, String] = serviceConfig.secondary.groups.flatMap { case (name, group) => group.instances.key.map(instance => instance -> name) }
     // TODO: remove this
     val secondariesNotAcceptingNewDatasets: Set[String] =
       serviceConfig.secondary.groups.flatMap { case (_, group) =>
