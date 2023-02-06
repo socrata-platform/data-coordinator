@@ -577,7 +577,7 @@ object Main extends DynamicPortMap {
 
     PropertyConfigurator.configure(Propertizer("log4j", serviceConfig.logProperties))
 
-    val secondaries: Map[String, String] = serviceConfig.secondary.groups.flatMap { case (name, group) => group.instances.keys.map(instance => instance -> name) }
+    val secondaries: Map[String, String] = serviceConfig.secondary.groups.flatMap { case (name, group) => group.instances.keys.map(_ -> name) }
     // TODO: remove this
     val secondariesNotAcceptingNewDatasets: Set[String] =
       serviceConfig.secondary.groups.flatMap { case (_, group) =>
