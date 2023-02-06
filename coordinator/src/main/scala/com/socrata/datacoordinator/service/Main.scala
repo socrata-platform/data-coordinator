@@ -64,7 +64,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
       u.secondaryManifest.acknowledgeBroken(storeId, datasetId)
     }
 
-  def ensureInSecondary(coordinator: Coordinator)(storeId: String, datasetId: DatasetId): Boolean = {
+  def ensureInSecondary(coordinator: Coordinator)(storeGroup: String, storeId: String, datasetId: DatasetId): Boolean = {
     val remote = Set.newBuilder[DatasetInternalName]
 
     val result =
@@ -85,7 +85,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
                 u.secondaryManifest.addDataset(storeId, datasetId)
                 // great, now do collocation stuff...
                 val collocatedDatasets =
-                  if (coordinator.secondaryGroupConfigs(storeId).respectsCollocation)
+                  if (coordinator.secondaryGroupConfigs(storeGroup).respectsCollocation)
                     u.collocationManifest.collocatedDatasets(Set(common.internalNameFromDatasetId(datasetId)))
                   else Set.empty
 
@@ -118,7 +118,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
       }
 
     for(remoteDataset <- remote.result()) {
-      coordinator.ensureInSecondary(storeId, remoteDataset)
+      coordinator.ensureInSecondary(storeGroup, storeId, remoteDataset)
     }
 
     result
@@ -140,7 +140,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
         secondaryGroupStr,
         secondariesLike)
 
-      newSecondaries.toVector.map(ensureInSecondary(coordinator)(_, datasetId)).forall(identity) // no side effects in forall
+      newSecondaries.toVector.map(ensureInSecondary(coordinator)(secondaryGroupStr, _, datasetId)).forall(identity) // no side effects in forall
     }
   }
 
@@ -296,7 +296,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
                   // so we should add a new move job
 
                   try {
-                    ensureInSecondary(coordinator)(toStoreId, datasetId)
+                    ensureInSecondary(coordinator)(storeGroup, toStoreId, datasetId)
                   } catch {
                     case _: DatasetAlreadyInSecondary => ???
                   }
@@ -575,7 +575,7 @@ object Main extends DynamicPortMap {
 
     PropertyConfigurator.configure(Propertizer("log4j", serviceConfig.logProperties))
 
-    val secondaries: Set[String] = serviceConfig.secondary.groups.flatMap(_._2.instances.keySet).toSet
+    val secondaries: Map[String, String] = serviceConfig.secondary.groups.flatMap { case (name, group) => group.instances.key.map(_ -> name) }
     // TODO: remove this
     val secondariesNotAcceptingNewDatasets: Set[String] =
       serviceConfig.secondary.groups.flatMap { case (_, group) =>
@@ -694,7 +694,7 @@ object Main extends DynamicPortMap {
       val datasetRollupResource = DatasetRollupResource(_: DatasetId, getRollups, common.internalNameFromDatasetId)
       val datasetIndexResource = DatasetIndexResource(_: DatasetId, getIndexes, common.internalNameFromDatasetId)
       val snapshottedResource = SnapshottedResource(getSnapshottedDatasets _, common.internalNameFromDatasetId)
-      val secondaryManifestsResource = SecondaryManifestsResource(_: Option[String], secondaries,
+      val secondaryManifestsResource = SecondaryManifestsResource(_: Option[String], secondaries.keySet,
         operations.datasetsInStore, common.internalNameFromDatasetId)
 
       implicit val weightedCostOrdering: Ordering[Cost] = WeightedCostOrdering(
