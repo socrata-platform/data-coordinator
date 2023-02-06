@@ -4,5 +4,5 @@ import com.socrata.datacoordinator.secondary.config.{SecondaryGroupConfig => ISe
 
 case class StoreConfig(storeCapacityMB: Long, acceptingNewDatasets: Boolean) extends IStoreConfig
 
-case class SecondaryGroupConfig(numReplicas: Int, instances: Map[String, StoreConfig]) extends ISecondaryGroupConfig
+case class SecondaryGroupConfig(numReplicas: Int, instances: Map[String, StoreConfig], respectsCollocation: Boolean) extends ISecondaryGroupConfig
 

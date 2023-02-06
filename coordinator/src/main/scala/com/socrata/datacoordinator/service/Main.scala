@@ -80,9 +80,15 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
                 // datasets.  There's no danger of loops because this
                 // "add dataset" step will fail and we'll just say "ok
                 // all is well" if it's already here.
+                // We only want to respect collocation for those secondaries
+                // where collocation matters (i.e. not archival, not spandex, etc..)
                 u.secondaryManifest.addDataset(storeId, datasetId)
                 // great, now do collocation stuff...
-                val collocatedDatasets = u.collocationManifest.collocatedDatasets(Set(common.internalNameFromDatasetId(datasetId)))
+                val collocatedDatasets =
+                  if (coordinator.secondaryGroupConfigs(storeId).respectsCollocation)
+                    u.collocationManifest.collocatedDatasets(Set(common.internalNameFromDatasetId(datasetId)))
+                  else Set.empty
+
                 for(otherInternalName <- collocatedDatasets) {
                   common.datasetIdFromInternalName(otherInternalName) match {
                     case Some(otherDatasetId) =>

@@ -101,7 +101,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
       (instance, config)
     }.toMap
 
-    SecondaryGroupConfig(numReplicas, instanceMap)
+    SecondaryGroupConfig(numReplicas, instanceMap, true)
   }
 
   val datasetsEmpty = Set.empty[DatasetInternalName]
