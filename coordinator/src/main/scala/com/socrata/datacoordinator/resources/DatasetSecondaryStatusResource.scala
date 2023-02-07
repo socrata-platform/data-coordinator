@@ -9,11 +9,11 @@ import com.socrata.http.server.implicits._
 
 case class DatasetSecondaryStatusResource(storeIdOpt: Option[String],
                                           datasetId: DatasetId,
-                                          secondaries: Set[String],
+                                          secondaries: Map[String, String],
                                           secondariesNotAcceptingNewDatasets: Set[String],
                                           versionInStore: (String, DatasetId) => Option[Long],
                                           serviceConfig: ServiceConfig,
-                                          ensureInSecondary: (String, DatasetId) => Boolean,
+                                          ensureInSecondary: (String, String, DatasetId) => Boolean,
                                           ensureInSecondaryGroup: (String, DatasetId, Option[DatasetInternalName]) => Boolean,
                                           deleteFromSecondary: (String, DatasetId) => Boolean,
                                           formatDatasetId: DatasetId => String) extends ErrorHandlingSodaResource(formatDatasetId) {
@@ -37,7 +37,7 @@ case class DatasetSecondaryStatusResource(storeIdOpt: Option[String],
   }
 
   private def doGetDataVersionInSecondary(req: HttpRequest)(storeId: String): HttpResponse = {
-    if(!secondaries(storeId))
+    if(!secondaries.contains(storeId))
       return NotFound
 
     versionInStore(storeId, datasetId) match {
@@ -55,7 +55,7 @@ case class DatasetSecondaryStatusResource(storeIdOpt: Option[String],
         defaultSecondaryGroups.toVector.map(ensureInSecondaryGroup(_, datasetId, secondariesLike)).forall(identity) // no side effects in forall
       case groupRe(g) if serviceConfig.secondary.groups.contains(g) => ensureInSecondaryGroup(g, datasetId, secondariesLike)
       case _ if secondariesNotAcceptingNewDatasets(storeId) => return Forbidden
-      case secondary if secondaries(storeId) => ensureInSecondary(secondary, datasetId)
+      case secondary if secondaries.contains(storeId) => ensureInSecondary(secondaries(storeId), secondary, datasetId)
       case _ => false
     }
     if (found) OK else NotFound
@@ -63,7 +63,7 @@ case class DatasetSecondaryStatusResource(storeIdOpt: Option[String],
 
   private def doDeleteInSecondary(req: HttpRequest, storeId: String): HttpResponse =
     storeId match {
-      case secondary if secondaries(storeId) =>
+      case secondary if secondaries.contains(storeId) =>
         if (deleteFromSecondary(secondary, datasetId)) OK else NotFound
       case _ => NotFound
     }

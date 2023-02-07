@@ -48,7 +48,7 @@ trait Coordinator {
   def collocatedDatasetsOnInstance(instance: String, datasets: Set[DatasetInternalName]): Either[RequestError, CollocatedDatasetsResult]
   def dropCollocationsOnInstance(instance: String, internalName: DatasetInternalName): Option[ErrorResult]
   def secondariesOfDataset(internalName: DatasetInternalName): Either[RequestError, Option[SecondariesOfDatasetResult]]
-  def ensureInSecondary(storeId: String, internalName: DatasetInternalName): Option[ErrorResult]
+  def ensureInSecondary(storeGroup: String, storeId: String, internalName: DatasetInternalName): Option[ErrorResult]
   def secondaryMetrics(storeId: String, instance: String): Either[ErrorResult, SecondaryMetric]
   def secondaryMetrics(storeId: String, internalName: DatasetInternalName): Either[ErrorResult, Option[SecondaryMetric]]
   def secondaryMoveJobs(instance: String, jobId: UUID): Either[RequestError, SecondaryMoveJobsResult]
@@ -67,7 +67,7 @@ class HttpCoordinator(isThisInstance: String => Boolean,
                       collocatedDatasets: Set[DatasetInternalName] => CollocatedDatasetsResult,
                       dropCollocations: DatasetInternalName => Unit,
                       secondariesOfDataset: DatasetId => Option[SecondariesOfDatasetResult],
-                      ensureInSecondary: Coordinator => (String, DatasetId) => Boolean,
+                      ensureInSecondary: Coordinator => (String, String, DatasetId) => Boolean,
                       secondaryMetrics: (String, Option[DatasetId]) => Either[ResourceNotFound, Option[SecondaryMetric]],
                       secondaryMoveJobsByJob: UUID => SecondaryMoveJobsResult,
                       secondaryMoveJobs: (String, DatasetId) => Either[ResourceNotFound, SecondaryMoveJobsResult],
@@ -169,9 +169,9 @@ class HttpCoordinator(isThisInstance: String => Boolean,
     }
   }
 
-  override def ensureInSecondary(storeId: String, internalName: DatasetInternalName) =
+  override def ensureInSecondary(storeGroup: String, storeId: String, internalName: DatasetInternalName) =
     if(isThisInstance(internalName.instance)) {
-      ensureInSecondary(this)(storeId, internalName.datasetId)
+      ensureInSecondary(this)(storeGroup, storeId, internalName.datasetId)
       None
     } else {
       val route = routeInternalName(s"/secondary-manifest/$storeId", internalName)
