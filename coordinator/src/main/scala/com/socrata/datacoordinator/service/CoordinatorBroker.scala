@@ -6,6 +6,7 @@ import java.util.IdentityHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
 import org.apache.curator.x.discovery.{ServiceDiscovery, ServiceInstance}
+import org.slf4j.LoggerFactory
 import com.rojoma.json.v3.codec.JsonEncode
 import com.rojoma.json.v3.util.{AutomaticJsonCodecBuilder, AllowMissing}
 
@@ -21,6 +22,8 @@ class CoordinatorBroker(
   serviceName: String,
   baseLCI: LivenessCheckInfo
 ) extends ServerBroker {
+  private val log = LoggerFactory.getLogger(classOf[CoordinatorBroker])
+
   private val remappedLCI = new LivenessCheckInfo(portMapper(baseLCI.port), baseLCI.response)
 
   class WrappedCookie private[CoordinatorBroker] (
@@ -70,6 +73,11 @@ class CoordinatorBroker(
       synchronized {
         if(mutationEnabled.getAndSet(enable) == enable) return enable
 
+        if(!enable) {
+          log.warn("Disabling mutation registration")
+        } else {
+          log.warn("Re-enabling mutation registration")
+        }
         for(cookie <- issuedCookies.keySet.asScala) {
           if(enable) {
             cookie.mutation = Some(mutationBroker.register(cookie.port))
