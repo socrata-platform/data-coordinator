@@ -30,7 +30,13 @@ class ServiceConfig(val config: Config, root: String, hostPort: Int => Int) exte
   val logTableCleanupSleepTime = getDuration("log-table-cleanup-sleep-time")
   val logTableCleanupDeleteOlderThan = getDuration("log-table-cleanup-delete-older-than")
   val logTableCleanupDeleteEvery = getDuration("log-table-cleanup-delete-every")
-  val maxMutationThreads = getInt("max-mutation-threads")
+
+  // if the thread count reaches this number, the mutation
+  // registration will be removed.
+  val maxMutationThreadsHighWater = getInt("max-mutation-threads-high-water")
+  // ..and when it drops below this level, it will be re-enabled.
+  val maxMutationThreadsLowWater = getInt("max-mutation-threads-low-water")
+
   val mutationResourceTimeout = getDuration("mutation-resource-timeout")
   val jettyThreadpool = getRawConfig("jetty-threadpool") // TODO make that a ConfigClass
 

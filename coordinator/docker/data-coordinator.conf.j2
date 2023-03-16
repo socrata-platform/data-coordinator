@@ -5,6 +5,8 @@ com.socrata.coordinator.service {
   liveness-check.port = 6021
 
   instance = "{{ DATA_COORDINATOR_INSTANCE }}"
+  max-mutation-threads-high-water = {{ DATA_COORDINATOR_MAX_MUTATION_THREADS_HIGH_WATER }}
+  max-mutation-threads-low-water = {{ DATA_COORDINATOR_MAX_MUTATION_THREADS_LOW_WATER }}
 
   database {
     host = "{{ DATA_COORDINATOR_DB_HOST }}"
