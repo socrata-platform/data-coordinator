@@ -48,225 +48,203 @@ class Service(serviceConfig: ServiceConfig,
               datasetSecondaryBreakageResource: (Option[String], Option[DatasetId]) => DatasetSecondaryBreakageResource,
               collocationManifestsResource: (Option[String], Option[String]) => CollocationManifestsResource,
               resyncResource: (DatasetId, String) => ResyncResource,
-              secondariesOfDatasetResource: DatasetId => SecondariesOfDatasetResource
+              secondariesOfDatasetResource: DatasetId => SecondariesOfDatasetResource,
+              enableMutation: Boolean => Unit
              ) extends CoordinatorErrorsAndMetrics(formatDatasetId)
 {
   override val log = org.slf4j.LoggerFactory.getLogger(classOf[Service])
 
-
-  // Repeatedly tries to get a new thread by bumping numThreads, using
-  // compareAndSet to make sure our value is valid
-  @annotation.tailrec
-  private def tryGetMutationThread(timeoutMs: Long, waitInterval: Int = 100): Boolean = {
-    if (timeoutMs <= 0) {
-      log.info("tryGetMutationThread: timed out")
-      false
-    } else {
-      val currThreads = numThreads.get()
-      if (currThreads >= serviceConfig.maxMutationThreads ||
-          !numThreads.compareAndSet(currThreads, currThreads + 1)) {
-        if (currThreads >= serviceConfig.maxMutationThreads)
-          log.info(s"tryGetMutationThread: too many threads ($currThreads), waiting for some to finish")
-        Thread sleep waitInterval
-        tryGetMutationThread(timeoutMs - waitInterval, waitInterval)
-      } else {
-        true
-      }
-    }
-  }
-
   def withMutationScriptResults[T](f: => HttpResponse): HttpResponse = {
-    if (!tryGetMutationThread(serviceConfig.mutationResourceTimeout.toMillis)) {
-      datasetErrorResponse(ServiceUnavailable, ThreadsMutationError.MAXED_OUT)
-    } else {
-      try {
-        f
-      } catch {
-        case e: ReaderExceededBound =>
-          datasetErrorResponse(RequestEntityTooLarge, BodyRequestError.COMMAND_TOO_LARGE,
-            "bytes-without-full-datum" -> JNumber(e.bytesRead))
-        case r: JsonReaderException =>
-          datasetBadRequest(BodyRequestError.MALFORMED_JSON,
-            "row" -> JNumber(r.row),
-            "column" -> JNumber(r.column))
-        case em: Mutator.RowDataException =>  // subclass of MutationException; these have a command subindex to indicate progress
-          em match {
-            case Mutator.InvalidValue(datasetName, userColumnId, typeName, value) =>
-              datasetBadRequest(RowUpdateError.UNPARSABLE_VALUE,
-                "commandIndex" -> JNumber(em.index),
-                "commandSubIndex" -> JNumber(em.subindex),
-                "dataset" -> JString(formatDatasetId(datasetName)),
-                "column" -> JsonEncode.toJValue(userColumnId),
-                "type" -> JString(typeName.name),
-                "value" -> value)
-            case Mutator.InvalidUpsertCommand(datasetName, value) =>
-              datasetBadRequest(ScriptRowDataUpdateError.INVALID_VALUE,
-                "commandIndex" -> JNumber(em.index),
-                "commandSubIndex" -> JNumber(em.subindex),
-                "dataset" -> JString(formatDatasetId(datasetName)),
-                "value" -> value)
-            case Mutator.UnknownColumnId(datasetName, cid) =>
-              datasetBadRequest(RowUpdateError.UNKNOWN_COLUMN,
-                "commandIndex" -> JNumber(em.index),
-                "commandSubIndex" -> JNumber(em.subindex),
-                "dataset" -> JString(formatDatasetId(datasetName)),
-                "column" -> JsonEncode.toJValue(cid))
-            case _ => // if we're not handling something, don't just eat it
-              datasetBadRequest(RequestError.UNHANDLED_ERROR,
-                "error" -> JString(em.getMessage))
-          }
-        case em: Mutator.MutationException =>
-          em match {
-            case Mutator.EmptyCommandStream() =>
-              datasetBadRequest(ScriptHeaderRequestError.MISSING,
+    if(numThreads.incrementAndGet() >= serviceConfig.maxMutationThreadsHighWater) {
+      enableMutation(false)
+    }
+    try {
+      f
+    } catch {
+      case e: ReaderExceededBound =>
+        datasetErrorResponse(RequestEntityTooLarge, BodyRequestError.COMMAND_TOO_LARGE,
+          "bytes-without-full-datum" -> JNumber(e.bytesRead))
+      case r: JsonReaderException =>
+        datasetBadRequest(BodyRequestError.MALFORMED_JSON,
+          "row" -> JNumber(r.row),
+          "column" -> JNumber(r.column))
+      case em: Mutator.RowDataException =>  // subclass of MutationException; these have a command subindex to indicate progress
+        em match {
+          case Mutator.InvalidValue(datasetName, userColumnId, typeName, value) =>
+            datasetBadRequest(RowUpdateError.UNPARSABLE_VALUE,
+              "commandIndex" -> JNumber(em.index),
+              "commandSubIndex" -> JNumber(em.subindex),
+              "dataset" -> JString(formatDatasetId(datasetName)),
+              "column" -> JsonEncode.toJValue(userColumnId),
+              "type" -> JString(typeName.name),
+              "value" -> value)
+          case Mutator.InvalidUpsertCommand(datasetName, value) =>
+            datasetBadRequest(ScriptRowDataUpdateError.INVALID_VALUE,
+              "commandIndex" -> JNumber(em.index),
+              "commandSubIndex" -> JNumber(em.subindex),
+              "dataset" -> JString(formatDatasetId(datasetName)),
+              "value" -> value)
+          case Mutator.UnknownColumnId(datasetName, cid) =>
+            datasetBadRequest(RowUpdateError.UNKNOWN_COLUMN,
+              "commandIndex" -> JNumber(em.index),
+              "commandSubIndex" -> JNumber(em.subindex),
+              "dataset" -> JString(formatDatasetId(datasetName)),
+              "column" -> JsonEncode.toJValue(cid))
+          case _ => // if we're not handling something, don't just eat it
+            datasetBadRequest(RequestError.UNHANDLED_ERROR,
+              "error" -> JString(em.getMessage))
+        }
+      case em: Mutator.MutationException =>
+        em match {
+          case Mutator.EmptyCommandStream() =>
+            datasetBadRequest(ScriptHeaderRequestError.MISSING,
+            "commandIndex" -> JNumber(em.index))
+          case Mutator.CommandIsNotAnObject(value) =>
+            datasetBadRequest(ScriptCommandRequestError.NON_OBJECT,
+              "commandIndex" -> JNumber(em.index),
+              "value" -> value)
+          case Mutator.MissingCommandField(obj, field) =>
+            datasetBadRequest(ScriptCommandRequestError.MISSING_FIELD,
+              "commandIndex" -> JNumber(em.index),
+              "object" -> obj,
+              "field" -> JString(field))
+          case Mutator.MismatchedSchemaHash(name, schema) =>
+            mismatchedSchema(ScriptHeaderRequestError.MISMATCHED_SCHEMA, name, schema,
               "commandIndex" -> JNumber(em.index))
-            case Mutator.CommandIsNotAnObject(value) =>
-              datasetBadRequest(ScriptCommandRequestError.NON_OBJECT,
-                "commandIndex" -> JNumber(em.index),
-                "value" -> value)
-            case Mutator.MissingCommandField(obj, field) =>
-              datasetBadRequest(ScriptCommandRequestError.MISSING_FIELD,
-                "commandIndex" -> JNumber(em.index),
-                "object" -> obj,
-                "field" -> JString(field))
-            case Mutator.MismatchedSchemaHash(name, schema) =>
-              mismatchedSchema(ScriptHeaderRequestError.MISMATCHED_SCHEMA, name, schema,
-                "commandIndex" -> JNumber(em.index))
-            case Mutator.MismatchedDataVersion(name, version) =>
-              mismatchedDataVersion(ScriptHeaderRequestError.MISMATCHED_DATA_VERSION, name, version,
-                "commandIndex" -> JNumber(em.index))
-            case Mutator.NoSuchColumnLabel(name, label) =>
-              noSuchColumnLabel(ScriptCommandRequestError.UNKNOWN_LABEL, name,
-                "commandIndex" -> JNumber(em.index),
-                "label" -> JString(label))
-            case Mutator.InvalidCommandFieldValue(obj, field, value) =>
-              datasetBadRequest(ScriptCommandRequestError.INVALID_FIELD,
-                "commandIndex" -> JNumber(em.index),
-                "object" -> obj,
-                "field" -> JString(field),
-                "value" -> value)
-            case Mutator.NoSuchDataset(name) =>
-              notFoundError(name, "commandIndex" -> JNumber(em.index))
-            case Mutator.SecondaryStoresNotUpToDate(name, stores) =>
-              datasetErrorResponse(Conflict, DatasetUpdateError.SECONDARIES_OUT_OF_DATE,
-                "commandIndex" -> JNumber(em.index),
-                "dataset" -> JString(formatDatasetId(name)),
-                "stores" -> JsonEncode.toJValue(stores))
-            case Mutator.NoSuchRollup(name) =>
-              datasetErrorResponse(NotFound, RollupDeleteError.DOES_NOT_EXIST,
-                "commandIndex" -> JNumber(em.index),
-                "rollup" -> JString(name.underlying))
-            case Mutator.InvalidRollup(name) =>
-              datasetErrorResponse(BadRequest, RollupCreateError.INVALID,
-                "commandIndex" -> JNumber(em.index),
-                "rollup" -> JString(name.underlying))
-            case Mutator.NoSuchIndex(name) =>
-              datasetErrorResponse(NotFound, IndexDeleteError.DOES_NOT_EXIST,
-                "commandIndex" -> JNumber(em.index),
-                "index" -> JString(name.underlying))
-            case Mutator.InvalidIndex(name) =>
-              datasetErrorResponse(BadRequest, IndexCreateError.INVALID,
-                "commandIndex" -> JNumber(em.index),
-                "index" -> JString(name.underlying))
-            case Mutator.CannotAcquireDatasetWriteLock(name) =>
-              writeLockError(name, "commandIndex" -> JNumber(em.index))
-            case Mutator.SystemInReadOnlyMode() =>
-              datasetErrorResponse(ServiceUnavailable, UpdateError.READ_ONLY_MODE,
-                "commandIndex" -> JNumber(em.index))
-            case Mutator.InvalidLocale(locale) =>
-              datasetBadRequest(DatasetCreateError.INVALID_LOCALE,
-                "commandIndex" -> JNumber(em.index),
-                "locale" -> JString(locale))
-            case Mutator.IncorrectLifecycleStage(name, currentStage, expectedStage) =>
-              datasetErrorResponse(Conflict, DatasetUpdateError.INVALID_STATE,
-                "commandIndex" -> JNumber(em.index),
-                "dataset" -> JString(formatDatasetId(name)),
-                "actual-state" -> JString(currentStage.name),
-                "expected-state" -> JArray(expectedStage.toSeq.map(_.name).map(JString)))
-            case Mutator.InitialCopyDrop(name) =>
-              datasetErrorResponse(Conflict, DatasetUpdateError.INITIAL_COPY_DROP,
-                "commandIndex" -> JNumber(em.index),
-                "dataset" -> JString(formatDatasetId(name)))
-            case Mutator.OperationAfterDrop(name) =>
-              datasetBadRequest(DatasetUpdateError.OPERATION_AFTER_DROP,
-                "commandIndex" -> JNumber(em.index),
-                "dataset" -> JString(formatDatasetId(name)))
-            case Mutator.ColumnAlreadyExists(dataset, name) =>
-              columnErrorResponse(ColumnUpdateError.EXISTS, em.index, dataset, name, Conflict)
-            case Mutator.FieldNameAlreadyExists(dataset, name) =>
-              fieldNameErrorResponse(ColumnUpdateError.EXISTS, em.index, dataset, name, Conflict)  // TODO : something different?
-            case Mutator.IllegalColumnId(id) =>
-              datasetBadRequest(ColumnUpdateError.ILLEGAL_ID,
-                "commandIndex" -> JNumber(em.index),
-                "id" -> JsonEncode.toJValue(id))
-            case Mutator.NoSuchType(typeName) =>
-              datasetBadRequest(UpdateError.TYPE_UNKNOWN,
-                "commandIndex" -> JNumber(em.index),
-                "type" -> JString(typeName.name))
-            case Mutator.NoSuchColumn(dataset, name) =>
-              columnErrorResponse(ColumnUpdateError.NOT_FOUND, em.index, dataset, name)
-            case Mutator.InvalidSystemColumnOperation(dataset, name, _) =>
-              columnErrorResponse(ColumnUpdateError.SYSTEM, em.index, dataset, name)
-            case Mutator.PrimaryKeyAlreadyExists(datasetName, userColumnId, existingColumn) =>
-              datasetBadRequest(RowIdentifierUpdateError.ALREADY_SET,
-                "commandIndex" -> JNumber(em.index),
-                "dataset" -> JString(formatDatasetId(datasetName)),
-                "column" -> JsonEncode.toJValue(userColumnId),
-                "existing-column" -> JsonEncode.toJValue(userColumnId))
-            case Mutator.InvalidTypeForPrimaryKey(datasetName, userColumnId, typeName) =>
-              datasetBadRequest(RowIdentifierUpdateError.INVALID_TYPE,
-                "commandIndex" -> JNumber(em.index),
-                "dataset" -> JString(formatDatasetId(datasetName)),
-                "column" -> JsonEncode.toJValue(userColumnId),
-                "type" -> JString(typeName.name))
-            case Mutator.DuplicateValuesInColumn(dataset, name) =>
-              columnErrorResponse(RowIdentifierUpdateError.DUPLICATE_VALUES, em.index, dataset, name)
-            case Mutator.NullsInColumn(dataset, name) =>
-              columnErrorResponse(RowIdentifierUpdateError.NULL_VALUES, em.index, dataset, name)
-            case Mutator.NotPrimaryKey(dataset, name) =>
-              columnErrorResponse(RowIdentifierUpdateError.NOT_ROW_IDENTIFIER, em.index, dataset, name)
-            case Mutator.UpsertError(datasetName, NoPrimaryKey, _)=>
-              datasetBadRequest(RowUpdateError.PRIMARY_KEY_NONEXISTENT_OR_NULL,
-                "commandIndex" -> JNumber(em.index),
-                "dataset" -> JString(formatDatasetId(datasetName)))
-            case Mutator.UpsertError(datasetName, NoSuchRowToDelete(id), _) =>
-              datasetBadRequest(RowUpdateError.NO_SUCH_ID,
-                "commandIndex" -> JNumber(em.index),
-                "dataset" -> JString(formatDatasetId(datasetName)),
-                "value" -> id)
-            case Mutator.UpsertError(datasetName, NoSuchRowToUpdate(id, _), _) =>
-              datasetBadRequest(RowUpdateError.NO_SUCH_ID,
-                "commandIndex" -> JNumber(em.index),
-                "dataset" -> JString(formatDatasetId(datasetName)),
-                "value" -> id)
-            case Mutator.UpsertError(datasetName, VersionMismatch(id, expected, actual, _), rowVersionToJson) =>
-              datasetBadRequest(UpdateError.ROW_VERSION_MISMATCH,
-                "commandIndex" -> JNumber(em.index),
-                "dataset" -> JString(formatDatasetId(datasetName)),
-                "value" -> id,
-                "expected" -> expected.map(rowVersionToJson).getOrElse(JNull),
-                "actual" -> actual.map(rowVersionToJson).getOrElse(JNull))
-            case Mutator.UpsertError(datasetName, VersionOnNewRow, _) =>
-              datasetBadRequest(UpdateError.VERSION_ON_NEW_ROW,
-                "commandIndex" -> JNumber(em.index),
-                "dataset" -> JString(formatDatasetId(datasetName)))
-            case Mutator.UpsertError(datasetName, InsertInUpdateOnly(id, _), _) =>
-              datasetBadRequest(UpdateError.INSERT_IN_UPDATE_ONLY,
-                "commandIndex" -> JNumber(em.index),
-                "dataset" -> JString(formatDatasetId(datasetName)),
-                "id" -> id)
-            case _ => // if we're not handling something, don't just eat it
-              datasetBadRequest(RequestError.UNHANDLED_ERROR,
-                "error" -> JString(Option(em.getMessage).getOrElse(em.getClass.getName)))
-          }
-      } finally {
-        // Decrease the thread count
-        numThreads.decrementAndGet()
+          case Mutator.MismatchedDataVersion(name, version) =>
+            mismatchedDataVersion(ScriptHeaderRequestError.MISMATCHED_DATA_VERSION, name, version,
+              "commandIndex" -> JNumber(em.index))
+          case Mutator.NoSuchColumnLabel(name, label) =>
+            noSuchColumnLabel(ScriptCommandRequestError.UNKNOWN_LABEL, name,
+              "commandIndex" -> JNumber(em.index),
+              "label" -> JString(label))
+          case Mutator.InvalidCommandFieldValue(obj, field, value) =>
+            datasetBadRequest(ScriptCommandRequestError.INVALID_FIELD,
+              "commandIndex" -> JNumber(em.index),
+              "object" -> obj,
+              "field" -> JString(field),
+              "value" -> value)
+          case Mutator.NoSuchDataset(name) =>
+            notFoundError(name, "commandIndex" -> JNumber(em.index))
+          case Mutator.SecondaryStoresNotUpToDate(name, stores) =>
+            datasetErrorResponse(Conflict, DatasetUpdateError.SECONDARIES_OUT_OF_DATE,
+              "commandIndex" -> JNumber(em.index),
+              "dataset" -> JString(formatDatasetId(name)),
+              "stores" -> JsonEncode.toJValue(stores))
+          case Mutator.NoSuchRollup(name) =>
+            datasetErrorResponse(NotFound, RollupDeleteError.DOES_NOT_EXIST,
+              "commandIndex" -> JNumber(em.index),
+              "rollup" -> JString(name.underlying))
+          case Mutator.InvalidRollup(name) =>
+            datasetErrorResponse(BadRequest, RollupCreateError.INVALID,
+              "commandIndex" -> JNumber(em.index),
+              "rollup" -> JString(name.underlying))
+          case Mutator.NoSuchIndex(name) =>
+            datasetErrorResponse(NotFound, IndexDeleteError.DOES_NOT_EXIST,
+              "commandIndex" -> JNumber(em.index),
+              "index" -> JString(name.underlying))
+          case Mutator.InvalidIndex(name) =>
+            datasetErrorResponse(BadRequest, IndexCreateError.INVALID,
+              "commandIndex" -> JNumber(em.index),
+              "index" -> JString(name.underlying))
+          case Mutator.CannotAcquireDatasetWriteLock(name) =>
+            writeLockError(name, "commandIndex" -> JNumber(em.index))
+          case Mutator.SystemInReadOnlyMode() =>
+            datasetErrorResponse(ServiceUnavailable, UpdateError.READ_ONLY_MODE,
+              "commandIndex" -> JNumber(em.index))
+          case Mutator.InvalidLocale(locale) =>
+            datasetBadRequest(DatasetCreateError.INVALID_LOCALE,
+              "commandIndex" -> JNumber(em.index),
+              "locale" -> JString(locale))
+          case Mutator.IncorrectLifecycleStage(name, currentStage, expectedStage) =>
+            datasetErrorResponse(Conflict, DatasetUpdateError.INVALID_STATE,
+              "commandIndex" -> JNumber(em.index),
+              "dataset" -> JString(formatDatasetId(name)),
+              "actual-state" -> JString(currentStage.name),
+              "expected-state" -> JArray(expectedStage.toSeq.map(_.name).map(JString)))
+          case Mutator.InitialCopyDrop(name) =>
+            datasetErrorResponse(Conflict, DatasetUpdateError.INITIAL_COPY_DROP,
+              "commandIndex" -> JNumber(em.index),
+              "dataset" -> JString(formatDatasetId(name)))
+          case Mutator.OperationAfterDrop(name) =>
+            datasetBadRequest(DatasetUpdateError.OPERATION_AFTER_DROP,
+              "commandIndex" -> JNumber(em.index),
+              "dataset" -> JString(formatDatasetId(name)))
+          case Mutator.ColumnAlreadyExists(dataset, name) =>
+            columnErrorResponse(ColumnUpdateError.EXISTS, em.index, dataset, name, Conflict)
+          case Mutator.FieldNameAlreadyExists(dataset, name) =>
+            fieldNameErrorResponse(ColumnUpdateError.EXISTS, em.index, dataset, name, Conflict)  // TODO : something different?
+          case Mutator.IllegalColumnId(id) =>
+            datasetBadRequest(ColumnUpdateError.ILLEGAL_ID,
+              "commandIndex" -> JNumber(em.index),
+              "id" -> JsonEncode.toJValue(id))
+          case Mutator.NoSuchType(typeName) =>
+            datasetBadRequest(UpdateError.TYPE_UNKNOWN,
+              "commandIndex" -> JNumber(em.index),
+              "type" -> JString(typeName.name))
+          case Mutator.NoSuchColumn(dataset, name) =>
+            columnErrorResponse(ColumnUpdateError.NOT_FOUND, em.index, dataset, name)
+          case Mutator.InvalidSystemColumnOperation(dataset, name, _) =>
+            columnErrorResponse(ColumnUpdateError.SYSTEM, em.index, dataset, name)
+          case Mutator.PrimaryKeyAlreadyExists(datasetName, userColumnId, existingColumn) =>
+            datasetBadRequest(RowIdentifierUpdateError.ALREADY_SET,
+              "commandIndex" -> JNumber(em.index),
+              "dataset" -> JString(formatDatasetId(datasetName)),
+              "column" -> JsonEncode.toJValue(userColumnId),
+              "existing-column" -> JsonEncode.toJValue(userColumnId))
+          case Mutator.InvalidTypeForPrimaryKey(datasetName, userColumnId, typeName) =>
+            datasetBadRequest(RowIdentifierUpdateError.INVALID_TYPE,
+              "commandIndex" -> JNumber(em.index),
+              "dataset" -> JString(formatDatasetId(datasetName)),
+              "column" -> JsonEncode.toJValue(userColumnId),
+              "type" -> JString(typeName.name))
+          case Mutator.DuplicateValuesInColumn(dataset, name) =>
+            columnErrorResponse(RowIdentifierUpdateError.DUPLICATE_VALUES, em.index, dataset, name)
+          case Mutator.NullsInColumn(dataset, name) =>
+            columnErrorResponse(RowIdentifierUpdateError.NULL_VALUES, em.index, dataset, name)
+          case Mutator.NotPrimaryKey(dataset, name) =>
+            columnErrorResponse(RowIdentifierUpdateError.NOT_ROW_IDENTIFIER, em.index, dataset, name)
+          case Mutator.UpsertError(datasetName, NoPrimaryKey, _)=>
+            datasetBadRequest(RowUpdateError.PRIMARY_KEY_NONEXISTENT_OR_NULL,
+              "commandIndex" -> JNumber(em.index),
+              "dataset" -> JString(formatDatasetId(datasetName)))
+          case Mutator.UpsertError(datasetName, NoSuchRowToDelete(id), _) =>
+            datasetBadRequest(RowUpdateError.NO_SUCH_ID,
+              "commandIndex" -> JNumber(em.index),
+              "dataset" -> JString(formatDatasetId(datasetName)),
+              "value" -> id)
+          case Mutator.UpsertError(datasetName, NoSuchRowToUpdate(id, _), _) =>
+            datasetBadRequest(RowUpdateError.NO_SUCH_ID,
+              "commandIndex" -> JNumber(em.index),
+              "dataset" -> JString(formatDatasetId(datasetName)),
+              "value" -> id)
+          case Mutator.UpsertError(datasetName, VersionMismatch(id, expected, actual, _), rowVersionToJson) =>
+            datasetBadRequest(UpdateError.ROW_VERSION_MISMATCH,
+              "commandIndex" -> JNumber(em.index),
+              "dataset" -> JString(formatDatasetId(datasetName)),
+              "value" -> id,
+              "expected" -> expected.map(rowVersionToJson).getOrElse(JNull),
+              "actual" -> actual.map(rowVersionToJson).getOrElse(JNull))
+          case Mutator.UpsertError(datasetName, VersionOnNewRow, _) =>
+            datasetBadRequest(UpdateError.VERSION_ON_NEW_ROW,
+              "commandIndex" -> JNumber(em.index),
+              "dataset" -> JString(formatDatasetId(datasetName)))
+          case Mutator.UpsertError(datasetName, InsertInUpdateOnly(id, _), _) =>
+            datasetBadRequest(UpdateError.INSERT_IN_UPDATE_ONLY,
+              "commandIndex" -> JNumber(em.index),
+              "dataset" -> JString(formatDatasetId(datasetName)),
+              "id" -> id)
+          case _ => // if we're not handling something, don't just eat it
+            datasetBadRequest(RequestError.UNHANDLED_ERROR,
+              "error" -> JString(Option(em.getMessage).getOrElse(em.getClass.getName)))
+        }
+    } finally {
+      // Decrease the thread count
+      if(numThreads.decrementAndGet() < serviceConfig.maxMutationThreadsLowWater) {
+        enableMutation(true)
       }
     }
   }
-
-
 
   val router: Router = Router(parseDatasetId,
     notFoundDatasetResource = notFoundDatasetResource(_, withMutationScriptResults),
@@ -351,7 +329,8 @@ object Service {
             datasetSecondaryBreakageResource: (Option[String], Option[DatasetId]) => DatasetSecondaryBreakageResource,
             collocationManifestsResource: CollocationLock => HostAndPort => (Option[String], Option[String]) => CollocationManifestsResource,
             resyncResource: (DatasetId, String) => ResyncResource,
-            secondariesOfDatasetResource: DatasetId => SecondariesOfDatasetResource
+            secondariesOfDatasetResource: DatasetId => SecondariesOfDatasetResource,
+            enableMutation: Boolean => Unit
            )(collocationLock: CollocationLock, hostAndPort: HostAndPort): Service = {
     new Service(
       serviceConfig,
@@ -376,7 +355,8 @@ object Service {
       datasetSecondaryBreakageResource,
       collocationManifestsResource(collocationLock)(hostAndPort),
       resyncResource,
-      secondariesOfDatasetResource
+      secondariesOfDatasetResource,
+      enableMutation
     )
   }
 }

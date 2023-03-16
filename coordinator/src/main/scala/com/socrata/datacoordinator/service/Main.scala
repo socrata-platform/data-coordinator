@@ -802,30 +802,6 @@ object Main extends DynamicPortMap {
       val secondariesOfDatasetResource = SecondariesOfDatasetResource(_: DatasetId, operations.secondariesOfDataset,
         common.internalNameFromDatasetId)
 
-      val serv = Service(serviceConfig = serviceConfig,
-        formatDatasetId = common.internalNameFromDatasetId,
-        parseDatasetId = common.datasetIdFromInternalName,
-        notFoundDatasetResource = notFoundDatasetResource,
-        datasetResource = datasetResource,
-        datasetSchemaResource = datasetSchemaResource,
-        datasetSnapshotsResource = datasetSnapshotsResource,
-        datasetSnapshotResource = datasetSnapshotResource,
-        datasetLogResource = datasetLogResource,
-        datasetRollupResource = datasetRollupResource,
-        datasetIndexResource = datasetIndexResource,
-        snapshottedResource = snapshottedResource,
-        secondaryManifestsResource = secondaryManifestsResource,
-        secondaryManifestsCollocateResource = secondaryManifestsCollocateResource,
-        secondaryManifestsMetricsResource = secondaryManifestsMetricsResource,
-        secondaryManifestsMoveResource = secondaryManifestsMoveResource,
-        secondaryManifestsMoveJobResource = secondaryManifestsMoveJobResource,
-        secondaryMoveJobsJobResource = secondaryMoveJobsJobResource,
-        collocationManifestsResource = collocationManifestsResource,
-        resyncResource = resyncResource,
-        datasetSecondaryStatusResource = datasetSecondaryStatusResource,
-        datasetSecondaryBreakageResource = datasetSecondaryBreakageResource,
-        secondariesOfDatasetResource = secondariesOfDatasetResource) _
-
       val finished = new CountDownLatch(1)
       val tableDropper = new Thread() {
         setName("table dropper")
@@ -871,9 +847,6 @@ object Main extends DynamicPortMap {
         logTableCleanup.start()
         val address = serviceConfig.discovery.address
 
-        def remapLivenessCheckInfo(lci: LivenessCheckInfo): LivenessCheckInfo =
-          new LivenessCheckInfo(hostPort(lci.port), lci.response)
-
         for {
           curator <- CuratorFromConfig(serviceConfig.curator)
           discovery <- DiscoveryFromConfig(classOf[AuxiliaryData], curator, serviceConfig.discovery)
@@ -881,7 +854,6 @@ object Main extends DynamicPortMap {
           provider <- managed(new ProviderCache(discovery, new strategies.RoundRobinStrategy, serviceConfig.discovery.name))
         } {
           pong.start()
-          val auxData = new AuxiliaryData(livenessCheckInfo = Some(remapLivenessCheckInfo(pong.livenessCheckInfo)))
 
           def hostAndPort(instanceName: String): Option[(String, Int)] = {
             Option(provider(instanceName).getInstance()).map[(String, Int)](instance => (instance.getAddress, instance.getPort))
@@ -889,16 +861,46 @@ object Main extends DynamicPortMap {
 
           val collocationLockPath =  s"/${serviceConfig.discovery.name}/${serviceConfig.collocation.lockPath}"
           val collocationLock = new CuratedCollocationLock(curator, collocationLockPath)
-          serv(collocationLock, hostAndPort).run(serviceConfig.network.port,
-                   new CuratorBroker(discovery,
-                                     address,
-                                     serviceConfig.discovery.name + "." + serviceConfig.instance,
-                                     Some(auxData)) {
-                     override def register(port: Int): Cookie = {
-                       super.register(hostPort(port))
-                     }
-                   }
-                  )
+          val broker =
+            new CoordinatorBroker(
+              hostPort _,
+              discovery,
+              address,
+              serviceConfig.discovery.name + "." + serviceConfig.instance,
+              pong.livenessCheckInfo
+            )
+
+          val serv = Service(
+            serviceConfig = serviceConfig,
+            formatDatasetId = common.internalNameFromDatasetId,
+            parseDatasetId = common.datasetIdFromInternalName,
+            notFoundDatasetResource = notFoundDatasetResource,
+            datasetResource = datasetResource,
+            datasetSchemaResource = datasetSchemaResource,
+            datasetSnapshotsResource = datasetSnapshotsResource,
+            datasetSnapshotResource = datasetSnapshotResource,
+            datasetLogResource = datasetLogResource,
+            datasetRollupResource = datasetRollupResource,
+            datasetIndexResource = datasetIndexResource,
+            snapshottedResource = snapshottedResource,
+            secondaryManifestsResource = secondaryManifestsResource,
+            secondaryManifestsCollocateResource = secondaryManifestsCollocateResource,
+            secondaryManifestsMetricsResource = secondaryManifestsMetricsResource,
+            secondaryManifestsMoveResource = secondaryManifestsMoveResource,
+            secondaryManifestsMoveJobResource = secondaryManifestsMoveJobResource,
+            secondaryMoveJobsJobResource = secondaryMoveJobsJobResource,
+            collocationManifestsResource = collocationManifestsResource,
+            resyncResource = resyncResource,
+            datasetSecondaryStatusResource = datasetSecondaryStatusResource,
+            datasetSecondaryBreakageResource = datasetSecondaryBreakageResource,
+            secondariesOfDatasetResource = secondariesOfDatasetResource,
+            enableMutation = broker.allowMutation _
+          ) _
+
+          serv(collocationLock, hostAndPort).run(
+            serviceConfig.network.port,
+            broker
+          )
         }
       } finally {
         finished.countDown()

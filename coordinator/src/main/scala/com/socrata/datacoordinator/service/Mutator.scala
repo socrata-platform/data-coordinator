@@ -201,6 +201,7 @@ object Mutator {
   case class DropIndexDirective(index: Long, id: ColumnIdSpec) extends Command
   case class CreateOrUpdateIndex(index: Long, name: IndexName, expressions: String, filter: Option[String]) extends Command
   case class DropIndex(index: Long, name: IndexName) extends Command
+  case class Sleep(index: Long, ms: Int) extends Command
 
   val AddColumnOp = "add column"
   val DropColumnOp = "drop column"
@@ -217,6 +218,7 @@ object Mutator {
   val DropIndexDirectiveOp = "drop index directive"
   val CreateOrUpdateIndexOp = "create or update index"
   val DropIndexOp = "drop index"
+  val SleepOp = "sleep"
 }
 
 class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT, CV]) {
@@ -302,6 +304,9 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
           case DropIndexOp =>
             val name = get[IndexName]("name")
             DropIndex(index, name)
+          case SleepOp =>
+            val ms = get[Int]("ms")
+            Sleep(index, ms)
           case other =>
             throw InvalidCommandFieldValue(originalObject, "c", JString(other))(index)
         }
@@ -881,6 +886,9 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
             case Some(_) => Seq(MutationScriptCommandResult.Uninteresting)
             case None => throw NoSuchIndex(name)(idx)
           }
+        case Sleep(idx, ms) =>
+          Thread.sleep(ms)
+          Seq()
       }
 
       val newResults = processCommand(cmd)
