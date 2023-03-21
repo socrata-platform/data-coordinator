@@ -54,6 +54,8 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
   protected def replicationMessages(u: Universe[CT, CV] with SecondaryReplicationMessagesProvider):
       SecondaryReplicationMessages[CT, CV] = u.secondaryReplicationMessages(messageProducer)
 
+  private[secondary] val inProgress = new SecondaryWatcher.InProgress
+
   def run(u: Universe[CT, CV] with Commitable with PlaybackToSecondaryProvider with SecondaryManifestProvider with SecondaryReplicationMessagesProvider with SecondaryMoveJobsProvider,
           secondary: NamedSecondary[CT, CV]): Boolean = {
     import u._
@@ -75,7 +77,14 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
         if(job.replayNum > 0) log.info("Replay #{} of {}", job.replayNum, maxReplays)
         if(job.retryNum > 0) log.info("Retry #{} of {}", job.retryNum, maxRetries)
         val startingMillis = System.currentTimeMillis()
+
+        // this exists so that if two threads try to replicate the
+        // same dataset (which shouldn't happen) we don't want the
+        // inProgress object to get confused
+        val disambiguate = new Object
+
         try {
+          inProgress.put((disambiguate, secondary.storeId, job.datasetId), ())
           playbackToSecondary(secondary, job)
           manifest(u).updateRetryInfo(job.storeId, job.datasetId, 0, 0) // done with the job, reset the retry counter
           log.info("<< Sync done for {} into {}", job.datasetId, secondary.storeId)
@@ -91,6 +100,8 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
             } finally {
               unclaimDataset(u, secondary, job, sendMessage = false, startingMillis)
             }
+        } finally {
+          inProgress.remove((disambiguate, secondary.storeId, job.datasetId))
         }
       }
     }
@@ -346,7 +357,7 @@ object SecondaryWatcherClaimManager {
   }
 }
 
-class SecondaryWatcherClaimManager(dsInfo: DSInfo, claimantId: UUID, claimTimeout: FiniteDuration) {
+class SecondaryWatcherClaimManager(dsInfo: DSInfo, claimantId: UUID, claimTimeout: FiniteDuration, inProgress: SecondaryWatcher.InProgress) {
   val log = LoggerFactory.getLogger(classOf[SecondaryWatcherClaimManager])
 
   // A claim on a dataset on the secondary manifest expires after claimTimeout.
@@ -419,16 +430,19 @@ class SecondaryWatcherClaimManager(dsInfo: DSInfo, claimantId: UUID, claimTimeou
     // concurrency.  We could potentially have a separate pool for the claim manager.
     using(dsInfo.dataSource.getConnection()) { conn =>
       using(conn.prepareStatement(
-        s"""UPDATE secondary_manifest
-           |SET claimed_at = CURRENT_TIMESTAMP
-           |WHERE claimant_id = ? AND (dataset_system_id, store_id) IN (
-           |  SELECT dataset_system_id, store_id FROM secondary_manifest
-           |  WHERE claimant_id = ?${SecondaryWatcherClaimManager.andInWorkingSetSQL}
-           |  ORDER BY dataset_system_id, store_id FOR UPDATE
-           |)""".stripMargin)) { stmt =>
-        stmt.setObject(1, claimantId)
-        stmt.setObject(2, claimantId)
-        stmt.executeUpdate()
+              s"""UPDATE secondary_manifest
+                 |SET claimed_at = CURRENT_TIMESTAMP
+                 |WHERE claimant_id = ? AND store_id = ? AND dataset_system_id = ?
+                 |""".stripMargin)) { stmt =>
+        var didOne = false;
+        for((_, storeId, datasetId) <- inProgress.keys.asScala) {
+          didOne = true
+          stmt.setObject(1, claimantId)
+          stmt.setString(2, storeId)
+          stmt.setLong(3, datasetId.underlying)
+          stmt.addBatch()
+        }
+        if(didOne) stmt.executeBatch()
       }
     }
   }
@@ -478,6 +492,8 @@ object SecondaryWatcher {
                                                     SecondaryMoveJobsProvider with
                                                     SecondaryReplicationMessagesProvider with
                                                     SecondaryStoresConfigProvider
+
+  type InProgress = ConcurrentHashMap[(Object, String, DatasetId), Unit]
 }
 
 object SecondaryWatcherApp {
@@ -534,7 +550,7 @@ object SecondaryWatcherApp {
                                    config.replayWait, config.maxReplayWait, config.maxRetries,
                                    config.maxReplays.getOrElse(Integer.MAX_VALUE), common.timingReport,
                                    messageProducer, collocationLock, config.collocation.lockTimeout)
-      val cm = new SecondaryWatcherClaimManager(dsInfo, config.watcherId, config.claimTimeout)
+      val cm = new SecondaryWatcherClaimManager(dsInfo, config.watcherId, config.claimTimeout, w.inProgress)
 
       val SIGTERM = new Signal("TERM")
       val SIGINT = new Signal("INT")
@@ -568,6 +584,7 @@ object SecondaryWatcherApp {
           }
         }
 
+        val inProgress = new SecondaryWatcher.InProgress
         val workerThreads =
           using(dsInfo.dataSource.getConnection()) { conn =>
             val cfg = new SqlSecondaryStoresConfig(conn, common.timingReport)
