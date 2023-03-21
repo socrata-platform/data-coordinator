@@ -1,0 +1,16 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="data-coordinator" type="Application" factoryName="Application">
+    <option name="MAIN_CLASS_NAME" value="com.socrata.datacoordinator.service.Main" />
+    <module name="coordinator" />
+    <option name="VM_PARAMETERS" value="-Dconfig.file=configs/application.conf" />
+    <extension name="coverage">
+      <pattern>
+        <option name="PATTERN" value="com.socrata.datacoordinator.service.*" />
+        <option name="ENABLED" value="true" />
+      </pattern>
+    </extension>
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>
