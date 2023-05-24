@@ -1,190 +1,136 @@
 // Set up the libraries
 @Library('socrata-pipeline-library')
 
-
 // set up service and project variables
-def service = "data-coordinator"
-def project_wd = "coordinator"
-def deploy_service_pattern = "data-coordinator*"
-def deploy_environment = "staging"
-def default_branch_specifier = "origin/main"
-def scala_version = "2.12"
-
-def service_sha = env.GIT_COMMIT
-
-// variables that determine which stages we run based on what triggered the job
-def boolean stage_cut = false
-def boolean stage_build = false
-def boolean stage_dockerize = false
-def boolean stage_deploy = false
+def service = 'data-coordinator'
+def project_wd = 'coordinator'
+def isPr = env.CHANGE_ID != null;
+def publishStage = false;
 
 // instanciate libraries
 def sbtbuild = new com.socrata.SBTBuild(steps, service, project_wd)
 def dockerize = new com.socrata.Dockerize(steps, service, BUILD_NUMBER)
-def deploy = new com.socrata.MarathonDeploy(steps)
 
 pipeline {
   options {
     ansiColor('xterm')
   }
   parameters {
-    booleanParam(name: 'RELEASE_CUT', defaultValue: false, description: 'Are we cutting a new release candidate?')
-    booleanParam(name: 'FORCE_BUILD', defaultValue: false, description: 'Force build from latest tag if sbt release needed to be run between cuts')
+    booleanParam(name: 'RELEASE_BUILD', defaultValue: false, description: 'Are we building a release candidate?')
+    booleanParam(name: 'RELEASE_DRY_RUN', defaultValue: false, description: 'To test out the release build without creating a new tag.')
     string(name: 'AGENT', defaultValue: 'build-worker', description: 'Which build agent to use?')
-    string(name: 'BRANCH_SPECIFIER', defaultValue: default_branch_specifier, description: 'Use this branch for building the artifact.')
+    string(name: 'BRANCH_SPECIFIER', defaultValue: 'origin/main', description: 'Use this branch for building the artifact.')
   }
   agent {
     label params.AGENT
   }
   environment {
-    PATH = "${WORKER_PATH}"
+    SCALA_VERSION = '2.12'
+    DEPLOY_PATTERN = "data-coordinator*"
   }
-
   stages {
-    stage('Setup') {
-      steps {
-        script {
-          // check to see if we want to use a non-standard branch and check out the repo
-          if (params.BRANCH_SPECIFIER == default_branch_specifier) {
-            checkout scm
-          } else {
-            def scmRepoUrl = scm.getUserRemoteConfigs()[0].getUrl()
-            checkout ([
-              $class: 'GitSCM',
-              branches: [[name: params.BRANCH_SPECIFIER ]],
-              userRemoteConfigs: [[ url: scmRepoUrl ]]
-            ])
-          }
-
-          // set the service sha to what was checked out (GIT_COMMIT isn't always set)
-          service_sha = sh(returnStdout: true, script: "git rev-parse HEAD").trim()
-
-          // determine what triggered the build and what stages need to be run
-
-          if (params.RELEASE_CUT == true) { // RELEASE_CUT parameter was set by a cut job
-            stage_cut = true  // other stages will be turned on in the cut step as needed
-            deploy_environment = "rc"
-          }
-          else if (env.CHANGE_ID != null) { // we're running a PR builder
-            stage_build = true
-            // Query-coordinator just uses sbt clean/compile/test for testing (these are the default sbt build operations)
-            // If your service has additional testing, you may want to use the Test stage to implement that and uncomment the next line:
-            // stage_test = true
-          }
-          else if (BRANCH_NAME == "main") { // we're running a build on main branch to deploy to staging
-            stage_build = true
-            stage_dockerize = true
-            stage_deploy = true
-          }
-          else {
-            // we're not sure what we're doing...
-            echo "Unknown build trigger - Exiting as Failure"
-            currentBuild.result = 'FAILURE'
-            return
-          }
-        }
+    stage('Release Tag') {
+      when {
+        expression { return params.RELEASE_BUILD }
       }
-    }
-    stage('Cut') {
-      when { expression { stage_cut } }
       steps {
         script {
-          def cutNeeded = false
-
-          // get a list of all files changes since the last tag
-          files = sh(returnStdout: true, script: "git diff --name-only HEAD `git describe --match \"v*\" --abbrev=0`").trim()
-          echo "Files changed:\n${files}"
-
-          if (files == 'version.sbt') {
-            // Build anyway using latest tag - needed if sbt release had to be run between cuts
-            // This parameter will need to be set by the cut job in Jenkins
-            if(params.FORCE_BUILD) {
-              cutNeeded = true
-            }
-            else {
-              echo "No build needed, skipping subsequent steps"
-            }
+          if (params.RELEASE_DRY_RUN) {
+            echo 'DRY RUN: Skipping release tag creation and possible publish'
           }
           else {
-            echo 'Running sbt-release'
+            // get a list of all files changes since the last tag
+            files = sh(returnStdout: true, script: "git diff --name-only HEAD `git describe --match \"v*\" --abbrev=0`").trim()
+            echo "Files changed:\n${files}"
 
-            // The git config setup required for your project prior to running 'sbt release with-defaults' may vary:
-            sh(returnStdout: true, script: "git config remote.origin.fetch +refs/heads/*:refs/remotes/origin/*")
-            sh(returnStdout: true, script: "git config branch.main.remote origin")
-            sh(returnStdout: true, script: "git config branch.main.merge refs/heads/main")
+            // the release build process changes the version file, so it will always be changed
+            // if there are other files changed, then increment the version, create a new tag and publish the changes
+            if (files != 'version.sbt') {
+              publishStage = true
 
-            // increasing meta space size to avoid build errors during release step
-            javaopts = "JAVA_OPTS=-XX:MaxMetaspaceSize=512m"
+              echo 'Running sbt-release'
 
-            withEnv([javaopts]) {
-              echo sh(returnStdout: true, script: "echo y | sbt \"release with-defaults\"")
+              // The git config setup required for your project prior to running 'sbt release with-defaults' may vary:
+              sh(returnStdout: true, script: "git config remote.origin.fetch +refs/heads/*:refs/remotes/origin/*")
+              sh(returnStdout: true, script: "git config branch.main.remote origin")
+              sh(returnStdout: true, script: "git config branch.main.merge refs/heads/main")
+
+              // increasing meta space size to avoid build errors during release step
+              javaopts = "JAVA_OPTS=-XX:MaxMetaspaceSize=512m"
+
+              withEnv([javaopts]) {
+                echo sh(returnStdout: true, script: "echo y | sbt \"release with-defaults\"")
+              }
             }
-
-            cutNeeded = true
           }
+          echo 'Getting release tag'
+          release_tag = sh(returnStdout: true, script: "git describe --abbrev=0 --match \"v*\"").trim()
+          branchSpecifier = "refs/tags/${release_tag}"
+          echo branchSpecifier
 
-          if(cutNeeded == true) {
-            echo 'Getting release tag'
-            release_tag = sh(returnStdout: true, script: "git describe --abbrev=0 --match \"v*\"").trim()
-            branchSpecifier = "refs/tags/${release_tag}"
-            echo branchSpecifier
-
-            // checkout the tag so we're performing subsequent actions on it
-            sh "git checkout ${branchSpecifier}"
-
-            // set the service_sha to the current tag because it might not be the same as env.GIT_COMMIT
-            service_sha = sh(returnStdout: true, script: "git rev-parse HEAD").trim()
-
-            // set later stages to run since we're cutting
-            stage_build = true
-            stage_dockerize = true
-            stage_deploy = true
-          }
+          // checkout the tag so we're performing subsequent actions on it
+          sh "git checkout ${branchSpecifier}"
         }
       }
     }
     stage('Build') {
-      when { expression { stage_build } }
       steps {
         script {
           // perform any needed modifiers on the build parameters here
           sbtbuild.setRunITTest(true)
           sbtbuild.setNoSubproject(true)
-          sbtbuild.setScalaVersion(scala_version)
+          sbtbuild.setScalaVersion(env.SCALA_VERSION)
 
           // build
           echo "Building sbt project..."
           sbtbuild.build()
 
-          // If we're cutting, also publish libraries if they haven't already been published for this version
-          if(stage_cut == true) {
-            result = sh(returnStdout: true, script: "#!/bin/sh -e\ncurl -s -o /dev/null -w \"%{http_code}\" -u ${ARTIFACTORY_USER}:${ARTIFACTORY_PASSWORD} https://repo.socrata.com/artifactory/libs-release/com/socrata/coordinatorlib_${scala_version}/${sbtbuild.getServiceVersion()}/coordinatorlib_${scala_version}-${sbtbuild.getServiceVersion()}.pom").trim()
-            echo "Check for published artifact result: [${result}]"
-            if(result == "404") {
-              echo sh(returnStdout: true, script: "sbt +publish")
+          // set build description
+          env.SERVICE_VERSION = sbtbuild.getServiceVersion()
+          currentBuild.description = "${env.SERVICE}:${env.SERVICE_VERSION}_${env.BUILD_NUMBER}_${env.GIT_COMMIT.take(8)}"
+        }
+      }
+    }
+    stage('Publish') {
+      when {
+        expression { publishStage }
+      }
+      steps {
+        script {
+          echo sh(returnStdout: true, script: "sbt +publish")
+        }
+      }
+    }
+    stage('Dockerize') {
+      when {
+        not { expression { isPr } }
+      }
+      steps {
+        script {
+          echo "Building docker container..."
+          dockerize.docker_build(sbtbuild.getServiceVersion(), env.GIT_COMMIT, sbtbuild.getDockerPath(), sbtbuild.getDockerArtifact())
+          env.DOCKER_TAG = dockerize.getDeployTag()
+        }
+      }
+      post {
+        success {
+          script {
+            if (params.RELEASE_BUILD){
+              echo env.DOCKER_TAG // For now, just print the deploy tag in the console output -- later, communicate to release metadata service
             }
           }
         }
       }
     }
-    stage('Dockerize') {
-      when { expression { stage_dockerize } }
-      steps {
-        script {
-          echo "Building docker container..."
-          dockerize.docker_build(sbtbuild.getServiceVersion(), service_sha, sbtbuild.getDockerPath(), sbtbuild.getDockerArtifact())
-        }
-      }
-    }
     stage('Deploy') {
-      when { expression { stage_deploy } }
+      when {
+        not { expression { isPr } }
+        not { expression { return params.RELEASE_BUILD } }
+      }
       steps {
         script {
-          // Checkout and run bundle install in the apps-marathon repo
-          deploy.checkoutAndInstall()
-
-          // deploy the service to the specified environment
-          deploy.deploy(deploy_service_pattern, deploy_environment, dockerize.getDeployTag())
+          // uses env.DOCKER_TAG and deploys to staging by default
+          marathonDeploy(serviceName: env.DEPLOY_PATTERN)
         }
       }
     }
