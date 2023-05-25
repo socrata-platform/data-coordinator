@@ -26,7 +26,8 @@ pipeline {
   }
   environment {
     SCALA_VERSION = '2.12'
-    DEPLOY_PATTERN = "data-coordinator*"
+    DEPLOY_PATTERN = 'data-coordinator*'
+    SERVICE = 'data-coordinator'
     SERVICE_SHA = "${env.GIT_COMMIT}"
   }
   stages {
