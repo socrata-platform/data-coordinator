@@ -44,7 +44,6 @@ object Mutator {
                                        expectedDataVersion: Option[Long]) extends StreamType
   case class PublishWorkingCopyMutation(index: Long,
                                         datasetId: DatasetId,
-                                        keepSnapshot: Boolean,
                                         schemaHash: Option[String],
                                         expectedDataVersion: Option[Long]) extends StreamType
   case class DropWorkingCopyMutation(index: Long,
@@ -352,9 +351,8 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
           CreateWorkingCopyMutation(index, datasetId, copyData, schemaHash, dataVersion)
         case "publish" =>
           val schemaHash = getOption[String]("schema")
-          val keepSnapshot = getWithStrictDefault("keep_snapshot", true)
           val dataVersion = getOption[Long]("data_version")
-          PublishWorkingCopyMutation(index, datasetId, keepSnapshot, schemaHash, dataVersion)
+          PublishWorkingCopyMutation(index, datasetId, schemaHash, dataVersion)
         case "drop" =>
           val schemaHash = getOption[String]("schema")
           val dataVersion = getOption[Long]("data_version")
@@ -601,8 +599,8 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
         case CreateWorkingCopyMutation(idx, datasetId, copyData, schemaHash, expectedDataVersion) =>
           mutator.createCopy(user)(datasetId, copyData = copyData,
                                    checkDatasetState(idx, schemaHash, expectedDataVersion, _)).run(process(idx, datasetId, mutator))
-        case PublishWorkingCopyMutation(idx, datasetId, keepSnapshot, schemaHash, expectedDataVersion) =>
-          mutator.publishCopy(user)(datasetId, keepSnapshot, checkDatasetState(idx, schemaHash, expectedDataVersion, _)).run(process(idx, datasetId, mutator))
+        case PublishWorkingCopyMutation(idx, datasetId, schemaHash, expectedDataVersion) =>
+          mutator.publishCopy(user)(datasetId, checkDatasetState(idx, schemaHash, expectedDataVersion, _)).run(process(idx, datasetId, mutator))
         case DropWorkingCopyMutation(idx, datasetId, schemaHash, expectedDataVersion) =>
           mutator.dropCopy(user)(datasetId, checkDatasetState(idx, schemaHash, expectedDataVersion, _)).run {
             case cc: mutator.CopyContextError =>
