@@ -211,7 +211,7 @@ trait DatasetMutator[CT, CV] {
   case object DropComplete extends DropCopyContext
 
   def createCopy(as: String)(datasetId: DatasetId, copyData: Boolean, check: DatasetCopyContext[CT] => Unit): Managed[CopyContext]
-  def publishCopy(as: String)(datasetId: DatasetId, keepSnapshot: Boolean, check: DatasetCopyContext[CT] => Unit): Managed[CopyContext]
+  def publishCopy(as: String)(datasetId: DatasetId, check: DatasetCopyContext[CT] => Unit): Managed[CopyContext]
   def dropCopy(as: String)(datasetId: DatasetId, check: DatasetCopyContext[CT] => Unit): Managed[DropCopyContext]
 }
 
@@ -406,17 +406,13 @@ object DatasetMutator {
         }
       }
 
-      def publish(keepSnapshot: Boolean): Either[CopyContextError, CopyInfo] = {
+      def publish(): Either[CopyContextError, CopyInfo] = {
         checkFeedbackSecondaries().toLeft {
           val (newCi, snapshotCI) = datasetMap.publish(copyInfo)
           logger.workingCopyPublished()
           snapshotCI.foreach { sci =>
-            if(keepSnapshot) {
-              logger.snapshotDropped(sci) // no matter what, tell the secondaries the snapshot was dropped
-            } else {
-              datasetMap.dropCopy(sci)
-              schemaLoader.drop(sci)
-            }
+            datasetMap.dropCopy(sci)
+            schemaLoader.drop(sci)
           }
           copyCtx = new DatasetCopyContext(newCi, datasetMap.schema(newCi)).thaw()
           dropInvalidRollups(newCi)
@@ -637,10 +633,10 @@ object DatasetMutator {
                                check: DatasetCopyContext[CT] => Unit): Managed[CopyContext] =
       firstOp(as, datasetId, LifecycleStage.Published, _.makeWorkingCopy(copyData), check)
 
-    def publishCopy(as: String)(datasetId: DatasetId, keepSnapshot: Boolean, check: DatasetCopyContext[CT] => Unit): Managed[CopyContext] =
+    def publishCopy(as: String)(datasetId: DatasetId, check: DatasetCopyContext[CT] => Unit): Managed[CopyContext] =
       new Managed[CopyContext] {
         def run[B](f: CopyContext => B): B = {
-          firstOp(as, datasetId, LifecycleStage.Unpublished, _.publish(keepSnapshot), check).run {
+          firstOp(as, datasetId, LifecycleStage.Unpublished, _.publish(), check).run {
             case good@CopyOperationComplete(ctx) =>
               f(good)
             case noGood =>
