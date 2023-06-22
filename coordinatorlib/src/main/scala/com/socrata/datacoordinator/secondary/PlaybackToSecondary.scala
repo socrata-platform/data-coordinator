@@ -216,7 +216,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
             // We'll scan over the range of versions, eliminating
             // possibilities for consolidation until there's nothing
             // left, and then play them all back together.
-            (job.startingDataVersion to job.endingDataVersion).iterator.scanLeft((-1L, Consolidatable.all)) { (dvAcc, dv) =>
+            (dataVersion to job.endingDataVersion).iterator.scanLeft((-1L, Consolidatable.all)) { (dvAcc, dv) =>
               val (_, acc) = dvAcc
               using(delogger.delogOnlyTypes(dv)) { it =>
                 (dv, acc.intersect(consolidatable(it.buffered)))
