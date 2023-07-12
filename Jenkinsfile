@@ -112,6 +112,7 @@ pipeline {
           env.SERVICE_VERSION = sbtbuild.getServiceVersion()
           // set the SERVICE_SHA to the current head because it might not be the same as env.GIT_COMMIT
           env.SERVICE_SHA = sh(returnStdout: true, script: "git rev-parse HEAD").trim()
+          echo "Building docker container..."
           env.DOCKER_TAG = dockerize.docker_build(env.SERVICE_VERSION, env.SERVICE_SHA, sbtbuild.getDockerPath(), sbtbuild.getDockerArtifact(), env.REGISTRY_PUSH)
           currentBuild.description = env.DOCKER_TAG
         }
