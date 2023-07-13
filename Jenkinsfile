@@ -104,11 +104,7 @@ pipeline {
       }
       steps {
         script {
-          if (params.RELEASE_BUILD) {
-            env.REGISTRY_PUSH = 'all'
-          } else {
-            env.REGISTRY_PUSH = 'internal'
-          }
+          env.REGISTRY_PUSH = (params.RELEASE_BUILD) ? 'all' : 'internal'
           env.SERVICE_VERSION = sbtbuild.getServiceVersion()
           // set the SERVICE_SHA to the current head because it might not be the same as env.GIT_COMMIT
           env.SERVICE_SHA = sh(returnStdout: true, script: "git rev-parse HEAD").trim()
