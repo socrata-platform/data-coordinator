@@ -46,6 +46,22 @@ class SqlDelogger[CV](connection: Connection,
       using(stmt.executeQuery())(versionFromResultSet)
     }
 
+  def findCreateRollupEvents(fromVersion: Long, toVersion: Long): Seq[Delogger.RollupCreatedOrUpdated] =
+    using(connection.prepareStatement("select aux from " + logTableName + " where version >= ? and version <= ? and what = ? order by version, subversion")) { stmt =>
+      stmt.setLong(1, fromVersion)
+      stmt.setLong(2, toVersion)
+      stmt.setString(3, SqlLogger.RollupCreatedOrUpdated)
+      using(stmt.executeQuery()) { rs =>
+        val result = Vector.newBuilder[Delogger.RollupCreatedOrUpdated]
+        while(rs.next()) {
+          val aux = rs.getBytes(1)
+          result += decodeRollupCreatedOrUpdated(aux)
+        }
+        result.result()
+      }
+    }
+
+
   def versionFromResultSet(rs: ResultSet) =
     if(rs.next()) Some(rs.getLong("version"))
     else None
@@ -287,117 +303,117 @@ class SqlDelogger[CV](connection: Connection,
           throw new UnknownEvent(version, op, errMsg(s"Unknown event $op"))
       }
     }
+  }
 
-    def decodeRowDataUpdated(aux: Array[Byte]) =
-      Delogger.RowDataUpdated(aux)(rowCodecFactory())
+  private def decodeRowDataUpdated(aux: Array[Byte]) =
+    Delogger.RowDataUpdated(aux)(rowCodecFactory())
 
-    def decodeCounterUpdated(aux: Array[Byte]) = {
-      val msg = LogData.CounterUpdated.parseFrom(aux)
-      Delogger.CounterUpdated(msg.nextCounter)
-    }
+  private def decodeCounterUpdated(aux: Array[Byte]) = {
+    val msg = LogData.CounterUpdated.parseFrom(aux)
+    Delogger.CounterUpdated(msg.nextCounter)
+  }
 
-    def decodeColumnCreated(aux: Array[Byte]) = {
-      val msg = LogData.ColumnCreated.parseFrom(aux)
-      Delogger.ColumnCreated(convert(msg.columnInfo))
-    }
+  private def decodeColumnCreated(aux: Array[Byte]) = {
+    val msg = LogData.ColumnCreated.parseFrom(aux)
+    Delogger.ColumnCreated(convert(msg.columnInfo))
+  }
 
-    def decodeColumnRemoved(aux: Array[Byte]) = {
-      val msg = LogData.ColumnRemoved.parseFrom(aux)
-      Delogger.ColumnRemoved(convert(msg.columnInfo))
-    }
+  private def decodeColumnRemoved(aux: Array[Byte]) = {
+    val msg = LogData.ColumnRemoved.parseFrom(aux)
+    Delogger.ColumnRemoved(convert(msg.columnInfo))
+  }
 
-    def decodeComputationStrategyCreated(aux: Array[Byte]) = {
-      val msg = LogData.ComputationStrategyCreated.parseFrom(aux)
-      Delogger.ComputationStrategyCreated(convert(msg.columnInfo))
-    }
+  private def decodeComputationStrategyCreated(aux: Array[Byte]) = {
+    val msg = LogData.ComputationStrategyCreated.parseFrom(aux)
+    Delogger.ComputationStrategyCreated(convert(msg.columnInfo))
+  }
 
-    def decodeComputationStrategyRemoved(aux: Array[Byte]) = {
-      val msg = LogData.ComputationStrategyRemoved.parseFrom(aux)
-      Delogger.ComputationStrategyRemoved(convert(msg.columnInfo))
-    }
+  private def decodeComputationStrategyRemoved(aux: Array[Byte]) = {
+    val msg = LogData.ComputationStrategyRemoved.parseFrom(aux)
+    Delogger.ComputationStrategyRemoved(convert(msg.columnInfo))
+  }
 
-    def decodeFieldNameUpdated(aux: Array[Byte]) = {
-      val msg = LogData.FieldNameUpdated.parseFrom(aux)
-      Delogger.FieldNameUpdated(convert(msg.columnInfo))
-    }
+  private def decodeFieldNameUpdated(aux: Array[Byte]) = {
+    val msg = LogData.FieldNameUpdated.parseFrom(aux)
+    Delogger.FieldNameUpdated(convert(msg.columnInfo))
+  }
 
-    def decodeRowIdentifierSet(aux: Array[Byte]) = {
-      val msg = LogData.RowIdentifierSet.parseFrom(aux)
-      Delogger.RowIdentifierSet(convert(msg.columnInfo))
-    }
+  private def decodeRowIdentifierSet(aux: Array[Byte]) = {
+    val msg = LogData.RowIdentifierSet.parseFrom(aux)
+    Delogger.RowIdentifierSet(convert(msg.columnInfo))
+  }
 
-    def decodeLastModifiedChanged(aux: Array[Byte]) = {
-      val msg = LogData.LastModifiedChanged.parseFrom(aux)
-      Delogger.LastModifiedChanged(convert(msg.lastModified))
-    }
+  private def decodeLastModifiedChanged(aux: Array[Byte]) = {
+    val msg = LogData.LastModifiedChanged.parseFrom(aux)
+    Delogger.LastModifiedChanged(convert(msg.lastModified))
+  }
 
-    def decodeRowIdentifierCleared(aux: Array[Byte]) = {
-      val msg = LogData.RowIdentifierCleared.parseFrom(aux)
-      Delogger.RowIdentifierCleared(convert(msg.columnInfo))
-    }
+  private def decodeRowIdentifierCleared(aux: Array[Byte]) = {
+    val msg = LogData.RowIdentifierCleared.parseFrom(aux)
+    Delogger.RowIdentifierCleared(convert(msg.columnInfo))
+  }
 
-    def decodeSystemRowIdentifierChanged(aux: Array[Byte]) = {
-      val msg = LogData.SystemIdColumnSet.parseFrom(aux)
-      Delogger.SystemRowIdentifierChanged(convert(msg.columnInfo))
-    }
+  private def decodeSystemRowIdentifierChanged(aux: Array[Byte]) = {
+    val msg = LogData.SystemIdColumnSet.parseFrom(aux)
+    Delogger.SystemRowIdentifierChanged(convert(msg.columnInfo))
+  }
 
-    def decodeVersionColumnChanged(aux: Array[Byte]) = {
-      val msg = LogData.VersionColumnSet.parseFrom(aux)
-      Delogger.VersionColumnChanged(convert(msg.columnInfo))
-    }
+  private def decodeVersionColumnChanged(aux: Array[Byte]) = {
+    val msg = LogData.VersionColumnSet.parseFrom(aux)
+    Delogger.VersionColumnChanged(convert(msg.columnInfo))
+  }
 
-    def decodeWorkingCopyCreated(aux: Array[Byte]) = {
-      val msg = LogData.WorkingCopyCreated.parseFrom(aux)
-      Delogger.WorkingCopyCreated(
-        convert(msg.datasetInfo),
-        convert(msg.copyInfo)
-      )
-    }
+  private def decodeWorkingCopyCreated(aux: Array[Byte]) = {
+    val msg = LogData.WorkingCopyCreated.parseFrom(aux)
+    Delogger.WorkingCopyCreated(
+      convert(msg.datasetInfo),
+      convert(msg.copyInfo)
+    )
+  }
 
-    def decodeSnapshotDropped(aux: Array[Byte]) = {
-      val msg = LogData.SnapshotDropped.parseFrom(aux)
-      Delogger.SnapshotDropped(convert(msg.copyInfo))
-    }
+  private def decodeSnapshotDropped(aux: Array[Byte]) = {
+    val msg = LogData.SnapshotDropped.parseFrom(aux)
+    Delogger.SnapshotDropped(convert(msg.copyInfo))
+  }
 
-    def decodeRollupCreatedOrUpdated(aux: Array[Byte]) = {
-      val msg = LogData.RollupCreatedOrUpdated.parseFrom(aux)
-      Delogger.RollupCreatedOrUpdated(convert(msg.rollupInfo))
-    }
+  private def decodeRollupCreatedOrUpdated(aux: Array[Byte]) = {
+    val msg = LogData.RollupCreatedOrUpdated.parseFrom(aux)
+    Delogger.RollupCreatedOrUpdated(convert(msg.rollupInfo))
+  }
 
-    def decodeRollupDropped(aux: Array[Byte]) = {
-      val msg = LogData.RollupDropped.parseFrom(aux)
-      Delogger.RollupDropped(convert(msg.rollupInfo))
-    }
+  private def decodeRollupDropped(aux: Array[Byte]) = {
+    val msg = LogData.RollupDropped.parseFrom(aux)
+    Delogger.RollupDropped(convert(msg.rollupInfo))
+  }
 
-    def decodeRowsChangedPreview(aux: Array[Byte]) = {
-      val msg = LogData.RowsChangedPreview.parseFrom(aux)
-      Delogger.RowsChangedPreview(msg.rowsInserted, msg.rowsUpdated, msg.rowsDeleted, msg.truncated)
-    }
+  private def decodeRowsChangedPreview(aux: Array[Byte]) = {
+    val msg = LogData.RowsChangedPreview.parseFrom(aux)
+    Delogger.RowsChangedPreview(msg.rowsInserted, msg.rowsUpdated, msg.rowsDeleted, msg.truncated)
+  }
 
-    def decodeIndexDirectiveCreatedOrUpdated(aux: Array[Byte]) = {
-      val msg = LogData.IndexDirectiveCreatedOrUpdated.parseFrom(aux)
-      val enabled = Map("enabled" -> JBoolean(msg.enabled))
-      val directive = JObject(msg.search match {
-        case Some(b) => enabled ++ Map("search" -> JBoolean(b))
-        case None => enabled
-      })
-      Delogger.IndexDirectiveCreatedOrUpdated(convert(msg.columnInfo), directive)
-    }
+  private def decodeIndexDirectiveCreatedOrUpdated(aux: Array[Byte]) = {
+    val msg = LogData.IndexDirectiveCreatedOrUpdated.parseFrom(aux)
+    val enabled = Map("enabled" -> JBoolean(msg.enabled))
+    val directive = JObject(msg.search match {
+      case Some(b) => enabled ++ Map("search" -> JBoolean(b))
+      case None => enabled
+    })
+    Delogger.IndexDirectiveCreatedOrUpdated(convert(msg.columnInfo), directive)
+  }
 
-    def decodeIndexDirectiveDropped(aux: Array[Byte]) = {
-      val msg = LogData.IndexDirectiveDropped.parseFrom(aux)
-      Delogger.IndexDirectiveDropped(convert(msg.columnInfo))
-    }
+  private def decodeIndexDirectiveDropped(aux: Array[Byte]) = {
+    val msg = LogData.IndexDirectiveDropped.parseFrom(aux)
+    Delogger.IndexDirectiveDropped(convert(msg.columnInfo))
+  }
 
-    def decodeIndexCreatedOrUpdated(aux: Array[Byte]) = {
-      val msg = LogData.IndexCreatedOrUpdated.parseFrom(aux)
-      Delogger.IndexCreatedOrUpdated(convert(msg.indexInfo))
-    }
+  private def decodeIndexCreatedOrUpdated(aux: Array[Byte]) = {
+    val msg = LogData.IndexCreatedOrUpdated.parseFrom(aux)
+    Delogger.IndexCreatedOrUpdated(convert(msg.indexInfo))
+  }
 
-    def decodeIndexDropped(aux: Array[Byte]) = {
-      val msg = LogData.IndexDropped.parseFrom(aux)
-      Delogger.IndexDropped(new IndexName(msg.name))
-    }
+  private def decodeIndexDropped(aux: Array[Byte]) = {
+    val msg = LogData.IndexDropped.parseFrom(aux)
+    Delogger.IndexDropped(new IndexName(msg.name))
   }
 
   def close() {

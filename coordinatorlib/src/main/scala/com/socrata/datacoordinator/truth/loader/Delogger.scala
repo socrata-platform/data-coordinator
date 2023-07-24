@@ -25,6 +25,7 @@ trait Delogger[CV] extends Closeable {
   def delog(version: Long): CloseableIterator[Delogger.LogEvent[CV]]
   def delogOnlyTypes(version: Long): CloseableIterator[Delogger.LogEventCompanion]
   def findPublishEvent(fromVersion: Long, toVersion: Long): Option[Long]
+  def findCreateRollupEvents(fromVersion: Long, toVersion: Long): Seq[Delogger.RollupCreatedOrUpdated]
   def lastWorkingCopyCreatedVersion: Option[Long]
   def lastWorkingCopyDroppedOrPublishedVersion: Option[Long]
   def lastVersion: Option[Long]
