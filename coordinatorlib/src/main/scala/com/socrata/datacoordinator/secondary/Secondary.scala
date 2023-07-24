@@ -4,6 +4,15 @@ import com.rojoma.simplearm.v2._
 import com.socrata.datacoordinator.truth.metadata.IndexDirective
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 
+trait VersionInfo[CT, CV] {
+  val datasetInfo: DatasetInfo
+  val initialDataVersion: Long
+  val finalDataVersion: Long
+  val cookie: Secondary.Cookie
+  val createdOrUpdatedRollups: Seq[RollupInfo]
+  val events: Iterator[Event[CT, CV]]
+}
+
 trait Secondary[CT, CV] {
   import Secondary.Cookie
 
@@ -28,7 +37,7 @@ trait Secondary[CT, CV] {
     * already has this dataVersion.
     * @return a new cookie to store in the secondary map
     */
-  def version(datasetInfo: DatasetInfo, initialDataVersion: Long, finalDataVersion: Long, cookie: Cookie, events: Iterator[Event[CT, CV]]): Cookie
+  def version(info: VersionInfo[CT, CV]): Cookie
 
   /**
    * Resyncs a copy of a dataset as part of the resync path.

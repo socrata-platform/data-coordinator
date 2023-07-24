@@ -227,14 +227,16 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
             case Some(n) if n > dataVersion =>
               // at least two versions can be consolidated into one
               logger.info("Consolidating data versions {} through {} into a single thing", dataVersion, n)
+              val rollups = extractRollups(delogger, dataVersion, n)
               using(consolidate(delogger, dataVersion, n)) { it =>
-                playbackLog(datasetInfo, it, dataVersion, n)
+                playbackLog(datasetInfo, it, dataVersion, n, rollups)
               }
               dataVersion = n
             case _ =>
               // Zero or one version can be consolidated into one
+              val rollups = extractRollups(delogger, dataVersion, dataVersion)
               using(delogger.delog(dataVersion)) { it =>
-                playbackLog(datasetInfo, it, dataVersion, dataVersion)
+                playbackLog(datasetInfo, it, dataVersion, dataVersion, rollups)
               }
           }
         }
@@ -538,13 +540,35 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
       }
     }
 
-    def playbackLog(datasetInfo: metadata.DatasetInfo, it: Iterator[Delogger.LogEvent[CV]], initialDataVersion: Long, finalDataVersion: Long) {
+    def extractRollups(
+      delogger: Delogger[CV],
+      startDataVersion: Long,
+      endDataVersion: Long
+    ): Seq[RollupInfo] = {
+      Nil
+    }
+
+    def playbackLog(
+      datasetInfo: metadata.DatasetInfo,
+      it: Iterator[Delogger.LogEvent[CV]],
+      startDataVersion: Long,
+      endDataVersion: Long,
+      newRollups: Seq[RollupInfo]
+    ) {
       val secondaryDatasetInfo = makeSecondaryDatasetInfo(datasetInfo)
       val instrumentedIt = new InstrumentedIterator("playback-log-throughput",
                                                     datasetInfo.systemId.toString,
                                                     it)
-      currentCookie = secondary.store.version(secondaryDatasetInfo, initialDataVersion, finalDataVersion,
-                                              currentCookie, instrumentedIt.flatMap(convertEvent))
+      currentCookie = secondary.store.version(
+        new VersionInfo[CT, CV] {
+          override val datasetInfo = secondaryDatasetInfo
+          override val initialDataVersion = startDataVersion
+          override val finalDataVersion = endDataVersion
+          override val cookie = currentCookie
+          override val createdOrUpdatedRollups = newRollups
+          override val events = instrumentedIt.flatMap(convertEvent)
+        }
+      )
     }
 
     def convertOp(op: truth.loader.Operation[CV]): Operation[CV] = op match {
