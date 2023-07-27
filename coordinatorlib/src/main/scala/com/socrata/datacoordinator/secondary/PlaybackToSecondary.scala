@@ -545,7 +545,9 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
       startDataVersion: Long,
       endDataVersion: Long
     ): Seq[RollupInfo] = {
-      Nil
+      delogger.findCreateRollupEvents(startDataVersion, endDataVersion).map { ev =>
+        makeSecondaryRollupInfo(ev.info)
+      }
     }
 
     def playbackLog(
