@@ -81,6 +81,7 @@ pipeline {
           sbtbuild.setRunITTest(true)
           sbtbuild.setNoSubproject(true)
           sbtbuild.setScalaVersion(env.SCALA_VERSION)
+          sbtbuild.setSrcJar("coordinator/target/coordinator-assembly.jar")
 
           // build
           echo "Building sbt project..."
