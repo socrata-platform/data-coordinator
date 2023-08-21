@@ -40,7 +40,7 @@ pipeline {
       steps {
         script {
           if (params.RELEASE_DRY_RUN) {
-            echo 'DRY RUN: Skipping release tag creation and possible publish'
+            echo 'DRY RUN: Skipping release tag creation'
           }
           else {
             releaseTag.create(params.RELEASE_NAME)
