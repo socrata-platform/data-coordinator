@@ -19,6 +19,10 @@ assembly/test := {}
 
 assembly/mainClass := Some("com.socrata.datacoordinator.Launch")
 
+assembly/assemblyJarName := s"${name.value}-assembly.jar"
+
+assembly/assemblyOutputPath := target.value / (assembly/assemblyJarName).value
+
 // not setting "publish / skip" because soql-postgres-adapter uses this package in its tests.
 
 enablePlugins(BuildInfoPlugin)
