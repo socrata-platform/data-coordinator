@@ -49,6 +49,9 @@ pipeline {
       }
     }
     stage('Build') {
+      when {
+        not { expression { return params.PUBLISH } }
+      }
       steps {
         script {
           // perform any needed modifiers on the build parameters here
@@ -75,7 +78,15 @@ pipeline {
             submoduleCfg: [],
             userRemoteConfigs: [[credentialsId: 'a3959698-3d22-43b9-95b1-1957f93e5a11', url: 'https://github.com/socrata-platform/data-coordinator.git']]
           ])
-          echo sh(returnStdout: true, script: "sbt +publish")
+
+          sbtbuild.setRunITTest(true)
+          sbtbuild.setNoSubproject(true)
+          sbtbuild.setScalaVersion(env.SCALA_VERSION)
+          sbtbuild.setPublish(true)
+          sbtbuild.setBuildType("library")
+
+          echo "Publishing library"
+          sbtbuild.build()
         }
       }
     }
