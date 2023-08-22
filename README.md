@@ -1,11 +1,13 @@
+# Data Coordinator
+
 **data-coordinator** is a set of related services, libraries, and scripts that takes SoQL upserts, inserts them to the truth store, watches truth store logs and writes the data to the secondary stores.
 
 ## Projects
 
 * coordinator - contains the REST service for the data coordinator, as well as services for secondary watchers, various scripts including backup
 * coordinatorlib
-    - common utilities and data structures for working with truth store and secondaries, at a lower level
-    - database migrations are in src/main/resources
+  * common utilities and data structures for working with truth store and secondaries, at a lower level
+  * database migrations are in src/main/resources
 * coordinatorlib-soql - en/decoders between SoQL and JSON, CSV, and SQL
 * dummy-secondary - a dummy secondary store implementation for testing only
 * secondarylib - trait for Secondary store
@@ -14,12 +16,16 @@
 
 To run the tests, from the SBT shell:
 
+```sh
     project data-coordinator
     test:test it:test
+```
 
 To run the data coordinator, from the regular Linux/OSX shell prompt:
 
+```sh
     bin/start_dc.sh
+```
 
 The above scripts builds the assembly if its not present and runs the fat jar on the command line, which is much more memory efficient than running it from sbt.  If you need to force a rebuild, simply run `sbt clean` beforehand.
 
@@ -51,10 +57,13 @@ java -Djava.net.preferIPv4Stack=true -Dconfig.file=/etc/pg-secondary.conf -jar s
 ### Migrations
 
 To run migrations in this project from SBT:
+
 ```sh
 sbt -Dconfig.file=/etc/soda2.conf "coordinator/run-main com.socrata.datacoordinator.primary.MigrateSchema migrate"
 ```
+
 Alternatively, to build from scratch and run migrations:
+
 ```sh
 sbt clean
 bin/run_migrations.sh
@@ -62,10 +71,10 @@ bin/run_migrations.sh
 
 To run migrations without building from scratch: `bin/run_migrations.sh`
 
-The command is one of `migrate`, `undo`, `redo`, and there is a second optional paramter for undo for the number of changes to roll back.
+The command is one of `migrate`, `undo`, `redo`, and there is a second optional parameter for undo for the number of changes to roll back.
 
 Running from sbt is recommended in a development environment because
-it ensures you are running the latest migrations without having to build a 
+it ensures you are running the latest migrations without having to build a
 new assembly.
 
 ## Notes
@@ -74,7 +83,7 @@ Below is a copy of the email distributed to engineering when breaking changes we
 
 >Hi All,
 >The secondary architecture has been inverted (thank you @robert.macomber).
->The secondaries (`pg`, `spandex`, `geocoding`) are no longer dynamically 
+>The secondaries (`pg`, `spandex`, `geocoding`) are no longer dynamically
 >loaded as jar files in `secondary-watcher`. But, instead are now their own
 >executable and `secondary-watcher` is now a library that they use.
 
@@ -94,10 +103,17 @@ Below is a copy of the email distributed to engineering when breaking changes we
 
 >   If you want to use the geocoding secondary you will need to add a MapQuest app-token to the config and add it to the
 >      `secondary_stores_config` table in `datacoordinator` (truth).
->       
+>
 >       INSERT INTO secondary_stores_config (store_id, next_run_time, interval_in_seconds, is_feedback_secondary) VALUES( 'geocoding', now(), 5, true);
-       
+
 > - You can now run the secondary stores as their own executable. (See `docs/onramp/start.sh for specifics)
 > - You can delete your `~/secondary-stores` directory :tada:
 
 >Thanks, Alexa
+
+## Publishing
+
+To publish the library:
+
+1. update the version.sbt file, create a PR and merge to main
+1. build the [data-coordinator-branch](https://jenkins-build.socrata.com/job/data-coordinator-branch/) job: check PUBLISH and enter the SHA from the version update commit in PUBLISH_SHA
