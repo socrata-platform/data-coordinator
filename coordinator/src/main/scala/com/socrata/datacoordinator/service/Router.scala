@@ -5,19 +5,15 @@ import com.socrata.datacoordinator.resources.SodaResource
 import com.socrata.http.server._
 import com.socrata.http.server.responses._
 import com.socrata.http.server.routing.{Extractor, SimpleRouteContext}
-import com.socrata.http.server.routing.SimpleRouteContext._
 import com.socrata.datacoordinator.common.util.DatasetIdNormalizer._
 
 case class Router(parseDatasetId: String => Option[DatasetId],
                   notFoundDatasetResource: Option[String] => SodaResource,
                   datasetResource: DatasetId => SodaResource,
                   datasetSchemaResource: DatasetId => SodaResource,
-                  datasetSnapshotsResource: DatasetId => SodaResource,
-                  datasetSnapshotResource: (DatasetId, Long) => SodaResource,
                   datasetLogResource: (DatasetId, Long) => SodaResource,
                   datasetRollupResource: DatasetId => SodaResource,
                   datasetIndexResource: DatasetId => SodaResource,
-                  snapshottedResource: SodaResource,
                   secondaryManifestsResource: Option[String] => SodaResource,
                   secondaryManifestsCollocateResource: String => SodaResource,
                   secondaryManifestsMetricsResource: (String, Option[DatasetId]) => SodaResource,
@@ -60,13 +56,10 @@ case class Router(parseDatasetId: String => Option[DatasetId],
       Route("/dataset/{OptString}", notFoundDatasetResource),
       Route("/dataset/{DatasetId}", datasetResource),
       Route("/dataset/{DatasetId}/schema", datasetSchemaResource),
-      Route("/dataset/{DatasetId}/snapshots", datasetSnapshotsResource),
-      Route("/dataset/{DatasetId}/snapshots/{Long}", datasetSnapshotResource),
       Route("/dataset/{DatasetId}/log/{Long}", datasetLogResource),
 
       Route("/dataset-rollup/{DatasetId}", datasetRollupResource),
       Route("/dataset-index/{DatasetId}", datasetIndexResource),
-      Route("/snapshotted", snapshottedResource),
 
       Route("/secondary-manifest", secondaryManifestsResource(None)),
       Route("/secondary-manifest/{OptString}", secondaryManifestsResource),

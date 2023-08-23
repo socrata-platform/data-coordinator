@@ -624,30 +624,6 @@ object Main extends DynamicPortMap {
         }
       }
 
-      def getSnapshots(datasetId: DatasetId) = {
-        for(u <- common.universe) {
-          for(dsInfo <- u.datasetMapReader.datasetInfo(datasetId)) yield {
-            u.datasetMapReader.snapshots(dsInfo).map(_.unanchored).toVector
-          }
-        }
-      }
-
-      def deleteSnapshot(datasetId: DatasetId, copyNum: Long): CopyContextResult[UnanchoredCopyInfo] = {
-        for(u <- common.universe) {
-          val dsInfo = u.datasetMapWriter.datasetInfo(datasetId, common.PostgresUniverseCommon.writeLockTimeout).getOrElse {
-            return CopyContextResult.NoSuchDataset
-          }
-          u.datasetMapWriter.snapshots(dsInfo).find(_.copyNumber == copyNum) match {
-            case None =>
-              CopyContextResult.NoSuchCopy
-            case Some(snapshot) =>
-              u.schemaLoader(NullLogger[u.CT, u.CV]).drop(snapshot) // NullLogger because DropSnapshot is no longer a visible thing
-              u.datasetMapWriter.dropCopy(snapshot)
-              CopyContextResult.CopyInfo(snapshot.unanchored)
-          }
-        }
-      }
-
       def getLog(datasetId: DatasetId, version: Long)(f: Iterator[Delogger.LogEvent[common.CV]] => Unit) = {
         for {
           u <- common.universe
@@ -677,23 +653,13 @@ object Main extends DynamicPortMap {
         }
       }
 
-      def getSnapshottedDatasets() = {
-        for(u <- common.universe) {
-          u.datasetMapReader.snapshottedDatasets()
-        }
-      }
-
-
       val notFoundDatasetResource = NotFoundDatasetResource(_: Option[String], common.internalNameFromDatasetId,
         operations.makeReportTemporaryFile _, operations.processCreation,
         operations.listDatasets _, _: (=> HttpResponse) => HttpResponse, serviceConfig.commandReadLimit)
       val datasetSchemaResource = DatasetSchemaResource(_: DatasetId, getSchema, common.internalNameFromDatasetId)
-      val datasetSnapshotsResource = DatasetSnapshotsResource(_: DatasetId, getSnapshots, common.internalNameFromDatasetId)
-      val datasetSnapshotResource = DatasetSnapshotResource(_: DatasetId, _: Long, deleteSnapshot, common.internalNameFromDatasetId)
       val datasetLogResource = DatasetLogResource[common.CV](_: DatasetId, _: Long, getLog, common.internalNameFromDatasetId)
       val datasetRollupResource = DatasetRollupResource(_: DatasetId, getRollups, common.internalNameFromDatasetId)
       val datasetIndexResource = DatasetIndexResource(_: DatasetId, getIndexes, common.internalNameFromDatasetId)
-      val snapshottedResource = SnapshottedResource(getSnapshottedDatasets _, common.internalNameFromDatasetId)
       val secondaryManifestsResource = SecondaryManifestsResource(_: Option[String], secondaries.keySet,
         operations.datasetsInStore, common.internalNameFromDatasetId)
 
@@ -877,12 +843,9 @@ object Main extends DynamicPortMap {
             notFoundDatasetResource = notFoundDatasetResource,
             datasetResource = datasetResource,
             datasetSchemaResource = datasetSchemaResource,
-            datasetSnapshotsResource = datasetSnapshotsResource,
-            datasetSnapshotResource = datasetSnapshotResource,
             datasetLogResource = datasetLogResource,
             datasetRollupResource = datasetRollupResource,
             datasetIndexResource = datasetIndexResource,
-            snapshottedResource = snapshottedResource,
             secondaryManifestsResource = secondaryManifestsResource,
             secondaryManifestsCollocateResource = secondaryManifestsCollocateResource,
             secondaryManifestsMetricsResource = secondaryManifestsMetricsResource,

@@ -165,12 +165,7 @@ case class DatasetResource(datasetId: DatasetId,
       case COPY_LATEST => LatestCopy
       case COPY_PUBLISHED => PublishedCopy
       case COPY_WORKING => WorkingCopy
-      case other =>
-        try {
-          Snapshot(other.toLong)
-        } catch {
-          case _: NumberFormatException => return contentTypeBadRequest("Bad copy selector")
-        }
+      case _ => return contentTypeBadRequest("Bad copy selector")
     }
     val sorted = Option(servReq.getParameter("sorted")).getOrElse("true").toLowerCase match {
       case "true" => true
