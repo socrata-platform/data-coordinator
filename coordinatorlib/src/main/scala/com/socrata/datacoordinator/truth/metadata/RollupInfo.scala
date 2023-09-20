@@ -7,6 +7,8 @@ import com.socrata.datacoordinator.id.RollupName
 sealed trait RollupInfoLike extends Product {
   val name: RollupName
   val soql: String
+
+  def isNewAnalyzer = soql.startsWith("{")
 }
 
 case class UnanchoredRollupInfo(@JsonKey("name") name: RollupName,
