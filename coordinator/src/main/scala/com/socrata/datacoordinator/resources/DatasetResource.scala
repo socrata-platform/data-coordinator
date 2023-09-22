@@ -115,8 +115,8 @@ case class DatasetResource(datasetId: DatasetId,
         // Attempt to drop entries from the collocation manifest. If this fails it's okay since datasets on the
         // collocation manifest that don't actually exist will be filtered out / ignored in collocation logic.
         try {
+          collocator.lockCollocation()
           try {
-            collocator.lockCollocation()
             collocator.dropDataset(DatasetInternalName(formatDatasetId(datasetId)).get)
           } finally {
             collocator.unlockCollocation()

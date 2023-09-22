@@ -393,6 +393,7 @@ class CoordinatedCollocator(collocationGroup: Set[String],
     } catch {
       case error: CollocationLockError =>
         log.error("Error while releasing collocation lock", error)
+        throw error
     }
   }
 
