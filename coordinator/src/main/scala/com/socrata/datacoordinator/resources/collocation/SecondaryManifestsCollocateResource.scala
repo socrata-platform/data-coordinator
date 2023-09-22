@@ -21,21 +21,22 @@ case class SecondaryManifestsCollocateResource(storeGroup: String,
           try {
             log.info("Beginning collocation request for job {}", jobId)
             collocator.lockCollocation()
+            try {
+              val storeGroups = coordinator.secondaryGroups(storeGroup)
 
-            val storeGroups = coordinator.secondaryGroups(storeGroup)
-
-            doCollocationJob(jobId, storeGroups, request, explain) match {
-              case Right(result) => responseOK(result)
-              case Left(StoreGroupNotFound(group)) => storeGroupNotFound(group)
-              case Left(DatasetNotFound(dataset)) => datasetNotFound(dataset, BadRequest)
-              case Left(other) =>
-                log.error("Internal error when doing collocation job: {}", other)
-                InternalServerError
+              doCollocationJob(jobId, storeGroups, request, explain) match {
+                case Right(result) => responseOK(result)
+                case Left(StoreGroupNotFound(group)) => storeGroupNotFound(group)
+                case Left(DatasetNotFound(dataset)) => datasetNotFound(dataset, BadRequest)
+                case Left(other) =>
+                  log.error("Internal error when doing collocation job: {}", other)
+                  InternalServerError
+              }
+            } finally {
+              collocator.unlockCollocation()
             }
           } catch {
             case _: CollocationLockTimeout => Conflict
-          } finally {
-            collocator.unlockCollocation()
           }
         }
       }
