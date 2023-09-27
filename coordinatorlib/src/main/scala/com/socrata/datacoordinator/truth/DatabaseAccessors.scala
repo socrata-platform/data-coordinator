@@ -1,8 +1,9 @@
 package com.socrata.datacoordinator
 package truth
 
-import com.rojoma.json.v3.ast.{JNumber, JObject, JString, JValue}
+import com.rojoma.json.v3.ast.{JNumber, JObject, JString, JValue, JNull}
 import com.rojoma.json.v3.codec.JsonEncode
+import com.rojoma.json.v3.util.{AutomaticJsonDecodeBuilder, JsonUtil, AllowMissing}
 import com.socrata.datacoordinator.util.CopyContextResult
 import com.socrata.soql.environment.{ColumnName, TableName}
 import org.joda.time.DateTime
@@ -439,12 +440,39 @@ object DatasetMutator {
       // Analysis validation is performed in Soda Fountain because SF has all datasets
       // while DC would need to handle datasets that live in different truth-stores.
       def validateRollup(ru: RollupInfo): Unit = {
-        val analyzer = soqlAnalyzer
-        try {
-          new Parser(AbstractParser.defaultParameters).binaryTreeSelect(ru.soql)
-        } catch {
-          case ex: SoQLException =>
-            throw RollupValidationException(ru, ex.getMessage)
+        if(ru.isNewAnalyzer) {
+          import com.socrata.soql.analyzer2._
+          import com.socrata.soql.stdlib.analyzer2.UserParameters
+
+          case class RollupShape(
+            foundTables: FoundTables[UnstagedDataCoordinatorMetaTypes],
+            @AllowMissing("Map.empty") locationSubcolumns: Map[
+              types.DatabaseTableName[UnstagedDataCoordinatorMetaTypes],
+              Map[
+                types.DatabaseColumnName[UnstagedDataCoordinatorMetaTypes],
+                Seq[
+                  Either[JNull, types.DatabaseColumnName[DataCoordinatorMetaTypes]]
+                ]
+              ]
+            ],
+            @AllowMissing("Nil") rewritePasses: Seq[Seq[rewrite.Pass]],
+            @AllowMissing("UserParameters.empty") userParameters: UserParameters
+          )
+
+          implicit val decode = AutomaticJsonDecodeBuilder[RollupShape]
+
+          JsonUtil.parseJson[RollupShape](ru.soql) match {
+            case Right(_) => // ok
+            case Left(err) => throw RollupValidationException(ru, err.english)
+          }
+        } else {
+          val analyzer = soqlAnalyzer
+          try {
+            new Parser(AbstractParser.defaultParameters).binaryTreeSelect(ru.soql)
+          } catch {
+            case ex: SoQLException =>
+              throw RollupValidationException(ru, ex.getMessage)
+          }
         }
       }
 
