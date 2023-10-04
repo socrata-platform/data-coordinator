@@ -11,6 +11,13 @@ import com.mchange.v2.c3p0.DataSources
 import com.rojoma.simplearm.v2._
 
 class DataSourceConfig(config: Config, root: String) extends ConfigClass(config, root) {
+  val dbType  = optionally(getString("db-type"))
+    .map(choice =>
+      DbType
+        .parse(choice)
+        .getOrElse(throw new IllegalArgumentException(s"Illegal choice for db-type: $choice"))
+    ).getOrElse(Postgres)
+
   val host = getString("host")
   val port = getInt("port")
   val database = getString("database")
