@@ -1,6 +1,7 @@
 package com.socrata.datacoordinator.secondary
 
 import scala.collection.JavaConverters._
+import com.socrata.datacoordinator.secondary.messaging.eurybates.MessageProducerConfig
 
 import java.lang.Runnable
 import java.util.UUID
@@ -14,7 +15,8 @@ import scala.collection.mutable
 import scala.concurrent.duration._
 import scala.util.Random
 import com.rojoma.simplearm.v2._
-import com.socrata.curator.CuratorFromConfig
+import com.socrata.curator.{CuratorFromConfig}
+import org.apache.curator.framework.{CuratorFramework}
 import com.socrata.datacoordinator.common.{DataSourceFromConfig, SoQLCommon}
 import com.socrata.datacoordinator.common.DataSourceFromConfig.DSInfo
 import com.socrata.datacoordinator.secondary.sql.SqlSecondaryStoresConfig
@@ -22,7 +24,7 @@ import com.socrata.datacoordinator.common.collocation.{CollocationLock, Collocat
 import com.socrata.datacoordinator.truth.universe._
 import com.socrata.datacoordinator.util._
 import com.socrata.soql.types.{SoQLType, SoQLValue}
-import com.socrata.thirdparty.metrics.MetricsReporter
+import com.socrata.thirdparty.metrics.{MetricsReporter, MetricsOptions}
 import com.socrata.thirdparty.typesafeconfig.Propertizer
 import com.typesafe.config.{Config, ConfigFactory}
 import org.apache.log4j.PropertyConfigurator
@@ -497,15 +499,31 @@ object SecondaryWatcher {
 }
 
 object SecondaryWatcherApp {
-  def apply(secondaryProvider: Config => Secondary[SoQLType, SoQLValue]) {
-    val rootConfig = ConfigFactory.load()
-    val config = new SecondaryWatcherConfig(rootConfig, "com.socrata.coordinator.secondary-watcher")
-    PropertyConfigurator.configure(Propertizer("log4j", config.log4j))
-
+  type NumWorkers = Int
+  def apply
+  // resouces
+    (dsInfo: Managed[DSInfo],
+      reporter: Managed[MetricsReporter],
+      curator: Managed[CuratorFramework])
+  // secondary config values
+    (watcherId: UUID,
+      metricsOptions: MetricsOptions,
+      collocationLockPath: String,
+      instance: String,
+      tmpDir: java.io.File)
+ // secondary watcher config values
+    (messageProducerConfig: Option[MessageProducerConfig],
+      claimTimeout: FiniteDuration,
+      backoffInterval: FiniteDuration,
+      replayWait: FiniteDuration,
+      maxReplayWait: FiniteDuration,
+      maxRetries: Int,
+      maxReplays: Option[Int],
+      collocationLockTimeout: FiniteDuration)
+    (secondaries: Map[String, (Secondary[SoQLType, SoQLValue], NumWorkers)]
+    ): Unit =  {
     val log = LoggerFactory.getLogger(classOf[SecondaryWatcher[_,_]])
-    log.info(s"Starting secondary watcher with watcher claim uuid of ${config.watcherId}")
-
-    val metricsOptions = config.metrics
+    log.info(s"Starting secondary watcher with watcher claim uuid of ${watcherId}")
 
     Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
       def uncaughtException(t: Thread, e: Throwable): Unit = {
@@ -514,17 +532,12 @@ object SecondaryWatcherApp {
       }
     })
 
-    for { dsInfo <- DataSourceFromConfig(config.database)
-          reporter <- MetricsReporter.managed(metricsOptions)
-          curator <- CuratorFromConfig(config.curator)
+    for { dsInfo <- dsInfo
+      reporter <- reporter
+      curator <- curator
     } {
-      val secondaries = config.secondaryConfig.instances.keysIterator.map { instanceName =>
-        instanceName -> secondaryProvider(config.secondaryConfig.instances(instanceName).config)
-      }.toMap
-
       val executor = Executors.newCachedThreadPool()
 
-      val collocationLockPath =  s"/${config.discovery.name}/${config.collocation.lockPath}"
       val collocationLock = new CuratedCollocationLock(curator, collocationLockPath)
 
       val common = new SoQLCommon(
@@ -535,22 +548,22 @@ object SecondaryWatcherApp {
         new LoggedTimingReport(log) with StackedTimingReport with MetricsTimingReport with TaggableTimingReport,
         allowDdlOnPublishedCopies = false, // don't care,
         Duration.fromNanos(1L), // don't care
-        config.instance,
-        config.tmpdir,
+        instance,
+        tmpDir,
         Duration.fromNanos(1L), // don't care
         Duration.fromNanos(1L), // don't care
-        //Duration.fromNanos(1L),
+                                //Duration.fromNanos(1L),
         NullCache
       )
       val messageProducerExecutor = Executors.newCachedThreadPool()
-      val messageProducer = MessageProducerFromConfig(config.watcherId, messageProducerExecutor, config.messageProducerConfig)
+      val messageProducer = MessageProducerFromConfig(watcherId, messageProducerExecutor, messageProducerConfig)
       messageProducer.start()
 
-      val w = new SecondaryWatcher(common.universe, config.watcherId, config.claimTimeout, config.backoffInterval,
-                                   config.replayWait, config.maxReplayWait, config.maxRetries,
-                                   config.maxReplays.getOrElse(Integer.MAX_VALUE), common.timingReport,
-                                   messageProducer, collocationLock, config.collocation.lockTimeout)
-      val cm = new SecondaryWatcherClaimManager(dsInfo, config.watcherId, config.claimTimeout, w.inProgress)
+      val w = new SecondaryWatcher(common.universe, watcherId, claimTimeout, backoffInterval,
+        replayWait, maxReplayWait, maxRetries,
+        maxReplays.getOrElse(Integer.MAX_VALUE), common.timingReport,
+        messageProducer, collocationLock, collocationLockTimeout)
+      val cm = new SecondaryWatcherClaimManager(dsInfo, watcherId, claimTimeout, w.inProgress)
 
       val SIGTERM = new Signal("TERM")
       val SIGINT = new Signal("INT")
@@ -589,11 +602,11 @@ object SecondaryWatcherApp {
           using(dsInfo.dataSource.getConnection()) { conn =>
             val cfg = new SqlSecondaryStoresConfig(conn, common.timingReport)
 
-            secondaries.iterator.flatMap { case (name, secondary) =>
+            secondaries.iterator.flatMap { case (name, (secondary, numWorkers)) =>
               cfg.lookup(name).map { info =>
                 w.cleanOrphanedJobs(info)
 
-                1 to config.secondaryConfig.instances(name).numWorkers map { n =>
+                1 to numWorkers map { n =>
                   new Thread {
                     setName(s"Worker $n for secondary $name")
 
@@ -635,8 +648,28 @@ object SecondaryWatcherApp {
         if(oldSIGTERM != null) Signal.handle(SIGINT, oldSIGINT)
       }
 
-      secondaries.values.foreach(_.shutdown())
+      secondaries.values.foreach { case (secondary, _) => secondary.shutdown()}
       executor.shutdown()
     }
+  }
+
+
+  def apply(secondaryProvider: Config => Secondary[SoQLType, SoQLValue]): Unit = {
+    val rootConfig = ConfigFactory.load()
+    val config = new SecondaryWatcherConfig(rootConfig, "com.socrata.coordinator.secondary-watcher")
+
+
+    val secondaries: Map[String, (Secondary[SoQLType, SoQLValue], NumWorkers)] =
+      config.secondaryConfig.instances.keysIterator.map { instanceName =>
+        instanceName -> {
+          val cfg = config.secondaryConfig.instances(instanceName)
+          secondaryProvider(cfg.config) -> cfg.numWorkers
+        }
+      }.toMap
+
+    apply(DataSourceFromConfig(config.database), MetricsReporter.managed(config.metrics), CuratorFromConfig(config.curator))(
+      config.watcherId, config.metrics, s"/${config.discovery.name}/${config.collocation.lockPath}", config.instance, config.tmpdir)(
+      config.messageProducerConfig, config.claimTimeout, config.backoffInterval, config.replayWait, config.maxReplayWait, config.maxRetries, config.maxReplays, config.collocation.lockTimeout
+    )(secondaries)
   }
 }
