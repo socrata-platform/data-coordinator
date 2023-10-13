@@ -515,7 +515,8 @@ object SecondaryWatcherApp {
       }
     })
 
-    for { dsInfo <- dsInfo
+    for {
+      dsInfo <- dsInfo
       reporter <- reporter
       curator <- curator
     } {
