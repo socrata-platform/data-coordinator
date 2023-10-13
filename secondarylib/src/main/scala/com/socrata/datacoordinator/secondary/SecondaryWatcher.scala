@@ -501,29 +501,13 @@ object SecondaryWatcher {
 object SecondaryWatcherApp {
   type NumWorkers = Int
   def apply
-  // resouces
-    (dsInfo: Managed[DSInfo],
-      reporter: Managed[MetricsReporter],
-      curator: Managed[CuratorFramework])
-  // secondary config values
-    (watcherId: UUID,
-      metricsOptions: MetricsOptions,
-      collocationLockPath: String,
-      instance: String,
-      tmpDir: java.io.File)
- // secondary watcher config values
-    (messageProducerConfig: Option[MessageProducerConfig],
-      claimTimeout: FiniteDuration,
-      backoffInterval: FiniteDuration,
-      replayWait: FiniteDuration,
-      maxReplayWait: FiniteDuration,
-      maxRetries: Int,
-      maxReplays: Option[Int],
-      collocationLockTimeout: FiniteDuration)
+    (dsInfo: Managed[DSInfo], reporter: Managed[MetricsReporter], curator: Managed[CuratorFramework])
+    (secondaryConfig: SecondaryConfig)
+    (secondaryWatcherConfig: SecondaryWatcherConfig)
     (secondaries: Map[String, (Secondary[SoQLType, SoQLValue], NumWorkers)]
     ): Unit =  {
     val log = LoggerFactory.getLogger(classOf[SecondaryWatcher[_,_]])
-    log.info(s"Starting secondary watcher with watcher claim uuid of ${watcherId}")
+    log.info(s"Starting secondary watcher with watcher claim uuid of ${secondaryConfig.watcherId}")
 
     Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
       def uncaughtException(t: Thread, e: Throwable): Unit = {
@@ -538,7 +522,7 @@ object SecondaryWatcherApp {
     } {
       val executor = Executors.newCachedThreadPool()
 
-      val collocationLock = new CuratedCollocationLock(curator, collocationLockPath)
+      val collocationLock = new CuratedCollocationLock(curator, secondaryConfig.collocationLockPath)
 
       val common = new SoQLCommon(
         dsInfo.dataSource,
@@ -548,22 +532,22 @@ object SecondaryWatcherApp {
         new LoggedTimingReport(log) with StackedTimingReport with MetricsTimingReport with TaggableTimingReport,
         allowDdlOnPublishedCopies = false, // don't care,
         Duration.fromNanos(1L), // don't care
-        instance,
-        tmpDir,
+        secondaryConfig.instance,
+        secondaryConfig.tmpdir,
         Duration.fromNanos(1L), // don't care
         Duration.fromNanos(1L), // don't care
                                 //Duration.fromNanos(1L),
         NullCache
       )
       val messageProducerExecutor = Executors.newCachedThreadPool()
-      val messageProducer = MessageProducerFromConfig(watcherId, messageProducerExecutor, messageProducerConfig)
+      val messageProducer = MessageProducerFromConfig(secondaryConfig.watcherId, messageProducerExecutor, secondaryWatcherConfig.messageProducerConfig)
       messageProducer.start()
 
-      val w = new SecondaryWatcher(common.universe, watcherId, claimTimeout, backoffInterval,
-        replayWait, maxReplayWait, maxRetries,
-        maxReplays.getOrElse(Integer.MAX_VALUE), common.timingReport,
-        messageProducer, collocationLock, collocationLockTimeout)
-      val cm = new SecondaryWatcherClaimManager(dsInfo, watcherId, claimTimeout, w.inProgress)
+      val w = new SecondaryWatcher(common.universe, secondaryConfig.watcherId, secondaryWatcherConfig.claimTimeout, secondaryWatcherConfig.backoffInterval,
+        secondaryWatcherConfig.replayWait, secondaryWatcherConfig.maxReplayWait, secondaryWatcherConfig.maxRetries,
+        secondaryWatcherConfig.maxReplays.getOrElse(Integer.MAX_VALUE), common.timingReport,
+        messageProducer, collocationLock, secondaryWatcherConfig.collocationLockTimeout)
+      val cm = new SecondaryWatcherClaimManager(dsInfo, secondaryConfig.watcherId, secondaryWatcherConfig.claimTimeout, w.inProgress)
 
       val SIGTERM = new Signal("TERM")
       val SIGINT = new Signal("INT")
@@ -667,9 +651,10 @@ object SecondaryWatcherApp {
         }
       }.toMap
 
-    apply(DataSourceFromConfig(config.database), MetricsReporter.managed(config.metrics), CuratorFromConfig(config.curator))(
-      config.watcherId, config.metrics, s"/${config.discovery.name}/${config.collocation.lockPath}", config.instance, config.tmpdir)(
-      config.messageProducerConfig, config.claimTimeout, config.backoffInterval, config.replayWait, config.maxReplayWait, config.maxRetries, config.maxReplays, config.collocation.lockTimeout
-    )(secondaries)
+    apply(
+      DataSourceFromConfig(config.database),
+      MetricsReporter.managed(config.metrics),
+      CuratorFromConfig(config.curator)
+    )(config)(config)(secondaries)
   }
 }
