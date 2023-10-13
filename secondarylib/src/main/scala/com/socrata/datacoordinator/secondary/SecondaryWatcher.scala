@@ -536,7 +536,6 @@ object SecondaryWatcherApp {
         secondaryWatcherConfig.tmpdir,
         Duration.fromNanos(1L), // don't care
         Duration.fromNanos(1L), // don't care
-                                //Duration.fromNanos(1L),
         NullCache
       )
       val messageProducerExecutor = Executors.newCachedThreadPool()
