@@ -502,7 +502,6 @@ object SecondaryWatcherApp {
   type NumWorkers = Int
   def apply
     (dsInfo: Managed[DSInfo], reporter: Managed[MetricsReporter], curator: Managed[CuratorFramework])
-    (secondaryConfig: SecondaryConfig)
     (secondaryWatcherConfig: SecondaryWatcherAppConfig)
     (secondaries: Map[String, (Secondary[SoQLType, SoQLValue], NumWorkers)]
     ): Unit =  {
@@ -540,14 +539,14 @@ object SecondaryWatcherApp {
         NullCache
       )
       val messageProducerExecutor = Executors.newCachedThreadPool()
-      val messageProducer = MessageProducerFromConfig(secondaryWatcherConfig.watcherId, messageProducerExecutor, secondaryConfig.messageProducerConfig)
+      val messageProducer = MessageProducerFromConfig(secondaryWatcherConfig.watcherId, messageProducerExecutor, secondaryWatcherConfig.messageProducerConfig)
       messageProducer.start()
 
-      val w = new SecondaryWatcher(common.universe, secondaryWatcherConfig.watcherId, secondaryConfig.claimTimeout, secondaryConfig.backoffInterval,
-        secondaryConfig.replayWait, secondaryConfig.maxReplayWait, secondaryConfig.maxRetries,
-        secondaryConfig.maxReplays.getOrElse(Integer.MAX_VALUE), common.timingReport,
-        messageProducer, collocationLock, secondaryConfig.collocationLockTimeout)
-      val cm = new SecondaryWatcherClaimManager(dsInfo, secondaryWatcherConfig.watcherId, secondaryConfig.claimTimeout, w.inProgress)
+      val w = new SecondaryWatcher(common.universe, secondaryWatcherConfig.watcherId, secondaryWatcherConfig.claimTimeout, secondaryWatcherConfig.backoffInterval,
+        secondaryWatcherConfig.replayWait, secondaryWatcherConfig.maxReplayWait, secondaryWatcherConfig.maxRetries,
+        secondaryWatcherConfig.maxReplays.getOrElse(Integer.MAX_VALUE), common.timingReport,
+        messageProducer, collocationLock, secondaryWatcherConfig.collocationLockTimeout)
+      val cm = new SecondaryWatcherClaimManager(dsInfo, secondaryWatcherConfig.watcherId, secondaryWatcherConfig.claimTimeout, w.inProgress)
 
       val SIGTERM = new Signal("TERM")
       val SIGINT = new Signal("INT")
@@ -655,6 +654,6 @@ object SecondaryWatcherApp {
       DataSourceFromConfig(config.database),
       MetricsReporter.managed(config.metrics),
       CuratorFromConfig(config.curator)
-    )(config)(config)(secondaries)
+    )(config)(secondaries)
   }
 }
