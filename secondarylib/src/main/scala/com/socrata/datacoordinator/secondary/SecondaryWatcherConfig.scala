@@ -12,24 +12,45 @@ import com.socrata.datacoordinator.common.collocation.CollocationConfig
 import com.socrata.thirdparty.typesafeconfig.ConfigClass
 import com.socrata.thirdparty.metrics.MetricsOptions
 
-class SecondaryWatcherConfig(config: Config, root: String) extends ConfigClass(config, root) {
-  val log4j = getRawConfig("log4j")
-  val database = getConfig("database", new DataSourceConfig(_, _))
-  val curator = getConfig("curator", new CuratorConfig(_, _))
-  val discovery = getConfig("service-advertisement", new DiscoveryConfig(_, _))
-  val secondaryConfig = getConfig("secondary", new ServiceSecondaryConfig(_, _))
-  val instance = getString("instance")
+import scala.concurrent.duration._
+
+trait SecondaryWatcherAppConfig {
+  val backoffInterval: FiniteDuration
+  val claimTimeout: FiniteDuration
+  val collocationLockPath: String
+  val collocationLockTimeout: FiniteDuration
+  val instance: String
+  val maxReplayWait: FiniteDuration
+  val maxReplays: Option[Int]
+  val maxRetries: Int
+  val messageProducerConfig: Option[MessageProducerConfig]
+  val metrics: MetricsOptions
+  val replayWait: FiniteDuration
+  val tmpdir: java.io.File
+  val watcherId: UUID
+
+}
+
+class SecondaryWatcherConfig(config: Config, root: String) extends ConfigClass(config, root) with SecondaryWatcherAppConfig {
   val collocation = getConfig("collocation", new CollocationConfig(_, _))
-  val metrics = MetricsOptions(getRawConfig("metrics")) // TODO: make this a ConfigClass
-  val watcherId = UUID.fromString(getString("watcher-id"))
-  val claimTimeout = getDuration("claim-timeout")
-  val maxRetries = getInt("max-retries")
-  val maxReplays = optionally(getInt("max-replays"))
-  val backoffInterval = getDuration("backoff-interval")
-  val maxReplayWait = getDuration("max-replay-wait")
-  val replayWait = getDuration("replay-wait")
-  val tmpdir = new java.io.File(getString("tmpdir")).getAbsoluteFile
-  val messageProducerConfig = optionally(getRawConfig("message-producer")).map { _ =>
-    getConfig("message-producer", new MessageProducerConfig(_, _))
-  }
+  val curator = getConfig("curator", new CuratorConfig(_, _))
+  val database = getConfig("database", new DataSourceConfig(_, _))
+  val discovery = getConfig("service-advertisement", new DiscoveryConfig(_, _))
+  val log4j = getRawConfig("log4j")
+  val secondaryConfig = getConfig("secondary", new ServiceSecondaryConfig(_, _))
+
+  override val backoffInterval = getDuration("backoff-interval")
+  override val claimTimeout = getDuration("claim-timeout")
+  override val collocationLockPath = collocation.lockPath
+  override val collocationLockTimeout = collocation.lockTimeout
+  override val instance = getString("instance")
+  override val maxReplayWait = getDuration("max-replay-wait")
+  override val maxReplays = optionally(getInt("max-replays"))
+  override val maxRetries = getInt("max-retries")
+  override val messageProducerConfig = optionally(getRawConfig("message-producer")).map { _ => getConfig("message-producer", new MessageProducerConfig(_, _))}
+  override val metrics = MetricsOptions(getRawConfig("metrics")) // TODO: make this a ConfigClass
+  override val replayWait = getDuration("replay-wait")
+  override val tmpdir = new java.io.File(getString("tmpdir")).getAbsoluteFile
+  override val watcherId = UUID.fromString(getString("watcher-id"))
+
 }

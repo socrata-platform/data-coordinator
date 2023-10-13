@@ -1,6 +1,7 @@
 package com.socrata.datacoordinator.secondary
 
 import scala.collection.JavaConverters._
+import com.socrata.datacoordinator.secondary.messaging.eurybates.MessageProducerConfig
 
 import java.lang.Runnable
 import java.util.UUID
@@ -14,7 +15,8 @@ import scala.collection.mutable
 import scala.concurrent.duration._
 import scala.util.Random
 import com.rojoma.simplearm.v2._
-import com.socrata.curator.CuratorFromConfig
+import com.socrata.curator.{CuratorFromConfig}
+import org.apache.curator.framework.{CuratorFramework}
 import com.socrata.datacoordinator.common.{DataSourceFromConfig, SoQLCommon}
 import com.socrata.datacoordinator.common.DataSourceFromConfig.DSInfo
 import com.socrata.datacoordinator.secondary.sql.SqlSecondaryStoresConfig
@@ -22,7 +24,7 @@ import com.socrata.datacoordinator.common.collocation.{CollocationLock, Collocat
 import com.socrata.datacoordinator.truth.universe._
 import com.socrata.datacoordinator.util._
 import com.socrata.soql.types.{SoQLType, SoQLValue}
-import com.socrata.thirdparty.metrics.MetricsReporter
+import com.socrata.thirdparty.metrics.{MetricsReporter, MetricsOptions}
 import com.socrata.thirdparty.typesafeconfig.Propertizer
 import com.typesafe.config.{Config, ConfigFactory}
 import org.apache.log4j.PropertyConfigurator
@@ -497,15 +499,14 @@ object SecondaryWatcher {
 }
 
 object SecondaryWatcherApp {
-  def apply(secondaryProvider: Config => Secondary[SoQLType, SoQLValue]) {
-    val rootConfig = ConfigFactory.load()
-    val config = new SecondaryWatcherConfig(rootConfig, "com.socrata.coordinator.secondary-watcher")
-    PropertyConfigurator.configure(Propertizer("log4j", config.log4j))
-
+  type NumWorkers = Int
+  def apply
+    (dsInfo: DSInfo, reporter: MetricsReporter, curator: CuratorFramework)
+    (secondaryWatcherConfig: SecondaryWatcherAppConfig)
+    (secondaries: Map[String, (Secondary[SoQLType, SoQLValue], NumWorkers)]
+    ): Unit =  {
     val log = LoggerFactory.getLogger(classOf[SecondaryWatcher[_,_]])
-    log.info(s"Starting secondary watcher with watcher claim uuid of ${config.watcherId}")
-
-    val metricsOptions = config.metrics
+    log.info(s"Starting secondary watcher with watcher claim uuid of ${secondaryWatcherConfig.watcherId}")
 
     Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
       def uncaughtException(t: Thread, e: Throwable): Unit = {
@@ -514,129 +515,142 @@ object SecondaryWatcherApp {
       }
     })
 
-    for { dsInfo <- DataSourceFromConfig(config.database)
-          reporter <- MetricsReporter.managed(metricsOptions)
-          curator <- CuratorFromConfig(config.curator)
-    } {
-      val secondaries = config.secondaryConfig.instances.keysIterator.map { instanceName =>
-        instanceName -> secondaryProvider(config.secondaryConfig.instances(instanceName).config)
-      }.toMap
 
-      val executor = Executors.newCachedThreadPool()
+    val executor = Executors.newCachedThreadPool()
 
-      val collocationLockPath =  s"/${config.discovery.name}/${config.collocation.lockPath}"
-      val collocationLock = new CuratedCollocationLock(curator, collocationLockPath)
+    val collocationLock = new CuratedCollocationLock(curator, secondaryWatcherConfig.collocationLockPath)
 
-      val common = new SoQLCommon(
-        dsInfo.dataSource,
-        dsInfo.copyIn,
-        executor,
-        _ => None,
-        new LoggedTimingReport(log) with StackedTimingReport with MetricsTimingReport with TaggableTimingReport,
-        allowDdlOnPublishedCopies = false, // don't care,
-        Duration.fromNanos(1L), // don't care
-        config.instance,
-        config.tmpdir,
-        Duration.fromNanos(1L), // don't care
-        Duration.fromNanos(1L), // don't care
-        //Duration.fromNanos(1L),
-        NullCache
-      )
-      val messageProducerExecutor = Executors.newCachedThreadPool()
-      val messageProducer = MessageProducerFromConfig(config.watcherId, messageProducerExecutor, config.messageProducerConfig)
-      messageProducer.start()
+    val common = new SoQLCommon(
+      dsInfo.dataSource,
+      dsInfo.copyIn,
+      executor,
+      _ => None,
+      new LoggedTimingReport(log) with StackedTimingReport with MetricsTimingReport with TaggableTimingReport,
+      allowDdlOnPublishedCopies = false, // don't care,
+      Duration.fromNanos(1L), // don't care
+      secondaryWatcherConfig.instance,
+      secondaryWatcherConfig.tmpdir,
+      Duration.fromNanos(1L), // don't care
+      Duration.fromNanos(1L), // don't care
+      NullCache
+    )
+    val messageProducerExecutor = Executors.newCachedThreadPool()
+    val messageProducer = MessageProducerFromConfig(secondaryWatcherConfig.watcherId, messageProducerExecutor, secondaryWatcherConfig.messageProducerConfig)
+    messageProducer.start()
 
-      val w = new SecondaryWatcher(common.universe, config.watcherId, config.claimTimeout, config.backoffInterval,
-                                   config.replayWait, config.maxReplayWait, config.maxRetries,
-                                   config.maxReplays.getOrElse(Integer.MAX_VALUE), common.timingReport,
-                                   messageProducer, collocationLock, config.collocation.lockTimeout)
-      val cm = new SecondaryWatcherClaimManager(dsInfo, config.watcherId, config.claimTimeout, w.inProgress)
+    val w = new SecondaryWatcher(common.universe, secondaryWatcherConfig.watcherId, secondaryWatcherConfig.claimTimeout, secondaryWatcherConfig.backoffInterval,
+      secondaryWatcherConfig.replayWait, secondaryWatcherConfig.maxReplayWait, secondaryWatcherConfig.maxRetries,
+      secondaryWatcherConfig.maxReplays.getOrElse(Integer.MAX_VALUE), common.timingReport,
+      messageProducer, collocationLock, secondaryWatcherConfig.collocationLockTimeout)
+    val cm = new SecondaryWatcherClaimManager(dsInfo, secondaryWatcherConfig.watcherId, secondaryWatcherConfig.claimTimeout, w.inProgress)
 
-      val SIGTERM = new Signal("TERM")
-      val SIGINT = new Signal("INT")
+    val SIGTERM = new Signal("TERM")
+    val SIGINT = new Signal("INT")
 
-      /** Flags when we want to start shutting down, don't process new work */
-      val initiateShutdown = new CountDownLatch(1)
-      /** Flags when we have stopped processing work and are ready to actually shutdown */
-      val completeShutdown = new CountDownLatch(1)
+    /** Flags when we want to start shutting down, don't process new work */
+    val initiateShutdown = new CountDownLatch(1)
+    /** Flags when we have stopped processing work and are ready to actually shutdown */
+    val completeShutdown = new CountDownLatch(1)
 
-      val signalHandler = new SignalHandler {
-        val firstSignal = new java.util.concurrent.atomic.AtomicBoolean(true)
-        def handle(signal: Signal): Unit = {
-          log.info("Signalling shutdown")
-          initiateShutdown.countDown()
+    val signalHandler = new SignalHandler {
+      val firstSignal = new java.util.concurrent.atomic.AtomicBoolean(true)
+      def handle(signal: Signal): Unit = {
+        log.info("Signalling shutdown")
+        initiateShutdown.countDown()
+      }
+    }
+
+    var oldSIGTERM: SignalHandler = null
+    var oldSIGINT: SignalHandler = null
+    try {
+      log.info("Hooking SIGTERM and SIGINT")
+      oldSIGTERM = Signal.handle(SIGTERM, signalHandler)
+      oldSIGINT = Signal.handle(SIGINT, signalHandler)
+
+      val claimTimeManagerThread = new Thread {
+        setName("SecondaryWatcher claim time manager")
+
+        override def run(): Unit = {
+          cm.scheduleHealthCheck(completeShutdown)
+          cm.mainloop(completeShutdown)
         }
       }
 
-      var oldSIGTERM: SignalHandler = null
-      var oldSIGINT: SignalHandler = null
-      try {
-        log.info("Hooking SIGTERM and SIGINT")
-        oldSIGTERM = Signal.handle(SIGTERM, signalHandler)
-        oldSIGINT = Signal.handle(SIGINT, signalHandler)
+      val inProgress = new SecondaryWatcher.InProgress
+      val workerThreads =
+        using(dsInfo.dataSource.getConnection()) { conn =>
+          val cfg = new SqlSecondaryStoresConfig(conn, common.timingReport)
 
-        val claimTimeManagerThread = new Thread {
-          setName("SecondaryWatcher claim time manager")
+          secondaries.iterator.flatMap { case (name, (secondary, numWorkers)) =>
+            cfg.lookup(name).map { info =>
+              w.cleanOrphanedJobs(info)
 
-          override def run(): Unit = {
-            cm.scheduleHealthCheck(completeShutdown)
-            cm.mainloop(completeShutdown)
-          }
-        }
+              1 to numWorkers map { n =>
+                new Thread {
+                  setName(s"Worker $n for secondary $name")
 
-        val inProgress = new SecondaryWatcher.InProgress
-        val workerThreads =
-          using(dsInfo.dataSource.getConnection()) { conn =>
-            val cfg = new SqlSecondaryStoresConfig(conn, common.timingReport)
-
-            secondaries.iterator.flatMap { case (name, secondary) =>
-              cfg.lookup(name).map { info =>
-                w.cleanOrphanedJobs(info)
-
-                1 to config.secondaryConfig.instances(name).numWorkers map { n =>
-                  new Thread {
-                    setName(s"Worker $n for secondary $name")
-
-                    override def run(): Unit = {
-                      w.mainloop(info, secondary, initiateShutdown)
-                    }
+                  override def run(): Unit = {
+                    w.mainloop(info, secondary, initiateShutdown)
                   }
                 }
-              }.orElse {
-                log.warn("Secondary {} is defined, but there is no record in the secondary config table", name)
-                None
               }
-            }.toList.flatten
-          }
+            }.orElse {
+              log.warn("Secondary {} is defined, but there is no record in the secondary config table", name)
+              None
+            }
+          }.toList.flatten
+        }
 
-        claimTimeManagerThread.start()
-        workerThreads.foreach(_.start())
+      claimTimeManagerThread.start()
+      workerThreads.foreach(_.start())
 
-        log.info("Going to sleep...")
-        initiateShutdown.await()
+      log.info("Going to sleep...")
+      initiateShutdown.await()
 
-        log.info("Waiting for worker threads to stop...")
-        workerThreads.foreach(_.join())
+      log.info("Waiting for worker threads to stop...")
+      workerThreads.foreach(_.join())
 
-        // Can't shutdown claim time manager until workers stop or their jobs might be stolen
-        log.info("Shutting down claim time manager...")
-        completeShutdown.countDown()
-        claimTimeManagerThread.join()
+      // Can't shutdown claim time manager until workers stop or their jobs might be stolen
+      log.info("Shutting down claim time manager...")
+      completeShutdown.countDown()
+      claimTimeManagerThread.join()
 
-        log.info("Shutting down scheduled health checker...")
-        SecondaryWatcherScheduledExecutor.shutdown()
-      } finally {
-        log.info("Shutting down message producer...")
-        messageProducer.shutdown()
-        messageProducerExecutor.shutdown()
+      log.info("Shutting down scheduled health checker...")
+      SecondaryWatcherScheduledExecutor.shutdown()
+    } finally {
+      log.info("Shutting down message producer...")
+      messageProducer.shutdown()
+      messageProducerExecutor.shutdown()
 
-        log.info("Un-hooking SIGTERM and SIGINT")
-        if(oldSIGTERM != null) Signal.handle(SIGTERM, oldSIGTERM)
-        if(oldSIGTERM != null) Signal.handle(SIGINT, oldSIGINT)
-      }
+      log.info("Un-hooking SIGTERM and SIGINT")
+      if(oldSIGTERM != null) Signal.handle(SIGTERM, oldSIGTERM)
+      if(oldSIGTERM != null) Signal.handle(SIGINT, oldSIGINT)
+    }
 
-      secondaries.values.foreach(_.shutdown())
-      executor.shutdown()
+    secondaries.values.foreach { case (secondary, _) => secondary.shutdown()}
+    executor.shutdown()
+  }
+
+
+  def apply(secondaryProvider: Config => Secondary[SoQLType, SoQLValue]): Unit = {
+    val rootConfig = ConfigFactory.load()
+    val config = new SecondaryWatcherConfig(rootConfig, "com.socrata.coordinator.secondary-watcher")
+
+
+    val secondaries: Map[String, (Secondary[SoQLType, SoQLValue], NumWorkers)] =
+      config.secondaryConfig.instances.keysIterator.map { instanceName =>
+        instanceName -> {
+          val cfg = config.secondaryConfig.instances(instanceName)
+          secondaryProvider(cfg.config) -> cfg.numWorkers
+        }
+      }.toMap
+
+    for {
+      dsInfo <- DataSourceFromConfig(config.database)
+      reporter <- MetricsReporter.managed(config.metrics)
+      curator <- CuratorFromConfig(config.curator)
+    } yield {
+    apply(dsInfo, reporter, curator)(config)(secondaries)
     }
   }
 }
