@@ -503,11 +503,11 @@ object SecondaryWatcherApp {
   def apply
     (dsInfo: Managed[DSInfo], reporter: Managed[MetricsReporter], curator: Managed[CuratorFramework])
     (secondaryConfig: SecondaryConfig)
-    (secondaryWatcherConfig: SecondaryWatcherConfig)
+    (secondaryWatcherConfig: SecondaryWatcherAppConfig)
     (secondaries: Map[String, (Secondary[SoQLType, SoQLValue], NumWorkers)]
     ): Unit =  {
     val log = LoggerFactory.getLogger(classOf[SecondaryWatcher[_,_]])
-    log.info(s"Starting secondary watcher with watcher claim uuid of ${secondaryConfig.watcherId}")
+    log.info(s"Starting secondary watcher with watcher claim uuid of ${secondaryWatcherConfig.watcherId}")
 
     Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
       def uncaughtException(t: Thread, e: Throwable): Unit = {
@@ -522,7 +522,7 @@ object SecondaryWatcherApp {
     } {
       val executor = Executors.newCachedThreadPool()
 
-      val collocationLock = new CuratedCollocationLock(curator, secondaryConfig.collocationLockPath)
+      val collocationLock = new CuratedCollocationLock(curator, secondaryWatcherConfig.collocationLockPath)
 
       val common = new SoQLCommon(
         dsInfo.dataSource,
@@ -532,22 +532,22 @@ object SecondaryWatcherApp {
         new LoggedTimingReport(log) with StackedTimingReport with MetricsTimingReport with TaggableTimingReport,
         allowDdlOnPublishedCopies = false, // don't care,
         Duration.fromNanos(1L), // don't care
-        secondaryConfig.instance,
-        secondaryConfig.tmpdir,
+        secondaryWatcherConfig.instance,
+        secondaryWatcherConfig.tmpdir,
         Duration.fromNanos(1L), // don't care
         Duration.fromNanos(1L), // don't care
                                 //Duration.fromNanos(1L),
         NullCache
       )
       val messageProducerExecutor = Executors.newCachedThreadPool()
-      val messageProducer = MessageProducerFromConfig(secondaryConfig.watcherId, messageProducerExecutor, secondaryWatcherConfig.messageProducerConfig)
+      val messageProducer = MessageProducerFromConfig(secondaryWatcherConfig.watcherId, messageProducerExecutor, secondaryConfig.messageProducerConfig)
       messageProducer.start()
 
-      val w = new SecondaryWatcher(common.universe, secondaryConfig.watcherId, secondaryWatcherConfig.claimTimeout, secondaryWatcherConfig.backoffInterval,
-        secondaryWatcherConfig.replayWait, secondaryWatcherConfig.maxReplayWait, secondaryWatcherConfig.maxRetries,
-        secondaryWatcherConfig.maxReplays.getOrElse(Integer.MAX_VALUE), common.timingReport,
-        messageProducer, collocationLock, secondaryWatcherConfig.collocationLockTimeout)
-      val cm = new SecondaryWatcherClaimManager(dsInfo, secondaryConfig.watcherId, secondaryWatcherConfig.claimTimeout, w.inProgress)
+      val w = new SecondaryWatcher(common.universe, secondaryWatcherConfig.watcherId, secondaryConfig.claimTimeout, secondaryConfig.backoffInterval,
+        secondaryConfig.replayWait, secondaryConfig.maxReplayWait, secondaryConfig.maxRetries,
+        secondaryConfig.maxReplays.getOrElse(Integer.MAX_VALUE), common.timingReport,
+        messageProducer, collocationLock, secondaryConfig.collocationLockTimeout)
+      val cm = new SecondaryWatcherClaimManager(dsInfo, secondaryWatcherConfig.watcherId, secondaryConfig.claimTimeout, w.inProgress)
 
       val SIGTERM = new Signal("TERM")
       val SIGINT = new Signal("INT")

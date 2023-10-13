@@ -14,7 +14,7 @@ import com.socrata.thirdparty.metrics.MetricsOptions
 
 import scala.concurrent.duration._
 
-trait SecondaryConfig {
+trait SecondaryWatcherAppConfig {
   val watcherId: UUID
   val metrics: MetricsOptions
   val collocationLockPath: String
@@ -22,7 +22,7 @@ trait SecondaryConfig {
   val tmpdir: java.io.File
 }
 
-trait SecondaryWatcherAppConfig {
+trait SecondaryConfig {
   val messageProducerConfig: Option[MessageProducerConfig]
   val claimTimeout: FiniteDuration
   val backoffInterval: FiniteDuration
