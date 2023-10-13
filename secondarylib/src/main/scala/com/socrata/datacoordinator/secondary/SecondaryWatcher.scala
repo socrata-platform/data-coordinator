@@ -629,7 +629,6 @@ object SecondaryWatcherApp {
 
     secondaries.values.foreach { case (secondary, _) => secondary.shutdown()}
     executor.shutdown()
-    
   }
 
 
