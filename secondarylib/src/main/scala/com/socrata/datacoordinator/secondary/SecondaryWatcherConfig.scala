@@ -20,6 +20,7 @@ trait SecondaryWatcherAppConfig {
   val collocationLockPath: String
   val collocationLockTimeout: FiniteDuration
   val instance: String
+  val log4j: java.util.Properties
   val maxReplayWait: FiniteDuration
   val maxReplays: Option[Int]
   val maxRetries: Int
@@ -27,7 +28,6 @@ trait SecondaryWatcherAppConfig {
   val replayWait: FiniteDuration
   val tmpdir: java.io.File
   val watcherId: UUID
-  val log4j: java.util.Properties
 }
 
 class SecondaryWatcherConfig(config: Config, root: String) extends ConfigClass(config, root) with SecondaryWatcherAppConfig {
