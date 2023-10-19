@@ -505,7 +505,10 @@ object SecondaryWatcherApp {
     (secondaryWatcherConfig: SecondaryWatcherAppConfig)
     (secondaries: Map[String, (Secondary[SoQLType, SoQLValue], NumWorkers)]
     ): Unit =  {
+
+    PropertyConfigurator.configure(secondaryWatcherConfig.log4j)
     val log = LoggerFactory.getLogger(classOf[SecondaryWatcher[_,_]])
+
     log.info(s"Starting secondary watcher with watcher claim uuid of ${secondaryWatcherConfig.watcherId}")
 
     Thread.setDefaultUncaughtExceptionHandler(new Thread.UncaughtExceptionHandler() {
@@ -649,8 +652,8 @@ object SecondaryWatcherApp {
       dsInfo <- DataSourceFromConfig(config.database)
       reporter <- MetricsReporter.managed(config.metrics)
       curator <- CuratorFromConfig(config.curator)
-    } yield {
-    apply(dsInfo, reporter, curator)(config)(secondaries)
+    } {
+      apply(dsInfo, reporter, curator)(config)(secondaries)
     }
   }
 }
