@@ -2,7 +2,7 @@ package com.socrata.datacoordinator.secondary
 
 import com.socrata.datacoordinator.common.DataSourceConfig
 import com.socrata.datacoordinator.secondary.config.{SecondaryConfig => ServiceSecondaryConfig}
-import com.socrata.datacoordinator.secondary.messaging.eurybates.MessageProducerConfig
+import com.socrata.datacoordinator.secondary.messaging.eurybates.{MessageProducerConfig, MessageProducerConfigImpl}
 import com.typesafe.config.Config
 import java.util.UUID
 
@@ -47,7 +47,7 @@ class SecondaryWatcherConfig(config: Config, root: String) extends ConfigClass(c
   override val maxReplayWait = getDuration("max-replay-wait")
   override val maxReplays = optionally(getInt("max-replays"))
   override val maxRetries = getInt("max-retries")
-  override val messageProducerConfig = optionally(getRawConfig("message-producer")).map { _ => getConfig("message-producer", new MessageProducerConfig(_, _))}
+  override val messageProducerConfig = optionally(getRawConfig("message-producer")).map { _ => getConfig("message-producer", new MessageProducerConfigImpl(_, _))}
   override val replayWait = getDuration("replay-wait")
   override val tmpdir = new java.io.File(getString("tmpdir")).getAbsoluteFile
   override val watcherId = UUID.fromString(getString("watcher-id"))

@@ -2,6 +2,7 @@ package com.socrata.datacoordinator.secondary.messaging.eurybates
 
 import java.util.{Properties, UUID}
 import java.util.concurrent.Executor
+import scala.concurrent.duration.FiniteDuration
 
 import com.rojoma.json.v3.codec.JsonEncode
 import com.socrata.datacoordinator.secondary.messaging.{NoOpMessageProducer, Message, MessageProducer}
@@ -45,20 +46,36 @@ class EurybatesMessageProducer(sourceId: String,
   }
 }
 
-class MessageProducerConfig(config: Config, root: String) extends ConfigClass(config, root) {
+trait MessageProducerConfig {
+  val eurybates: EurybatesConfig
+  val zookeeper: ZookeeperConfig
+}
+
+trait EurybatesConfig {
+  val producers: String
+  val activemqConnStr: String
+}
+
+trait ZookeeperConfig {
+  val connSpec: String
+  val sessionTimeout: Int
+}
+
+
+class MessageProducerConfigImpl(config: Config, root: String) extends ConfigClass(config, root) with MessageProducerConfig {
   def p(path: String) = root + "." + path // TODO: something better?
-  val eurybates = new EurybatesConfig(config, p("eurybates"))
-  val zookeeper = new ZookeeperConfig(config, p("zookeeper"))
+  override val eurybates = new EurybatesConfigImpl(config, p("eurybates"))
+  override val zookeeper = new ZookeeperConfigImpl(config, p("zookeeper"))
 }
 
-class EurybatesConfig(config: Config, root: String) extends ConfigClass(config, root) {
-  val producers = getString("producers")
-  val activemqConnStr = getRawConfig("activemq").getString("connection-string")
+class EurybatesConfigImpl(config: Config, root: String) extends ConfigClass(config, root) with EurybatesConfig {
+  override val producers = getString("producers")
+  override val activemqConnStr = getRawConfig("activemq").getString("connection-string")
 }
 
-class ZookeeperConfig(config: Config, root: String) extends ConfigClass(config, root) {
-  val connSpec = getString("conn-spec")
-  val sessionTimeout = getDuration("session-timeout").toMillis.toInt
+class ZookeeperConfigImpl(config: Config, root: String) extends ConfigClass(config, root) with ZookeeperConfig {
+  override val connSpec = getString("conn-spec")
+  override val sessionTimeout = getDuration("session-timeout").toMillis.toInt
 }
 
 object MessageProducerFromConfig {
