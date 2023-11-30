@@ -4,7 +4,8 @@
 // set up service and project variables
 def service = 'data-coordinator'
 def project_wd = 'coordinator'
-def isPr = env.CHANGE_ID != null;
+def isPr = env.CHANGE_ID != null
+def lastStage
 
 // instanciate libraries
 def sbtbuild = new com.socrata.SBTBuild(steps, service, project_wd)
@@ -31,6 +32,7 @@ pipeline {
     SCALA_VERSION = '2.12'
     DEPLOY_PATTERN = 'data-coordinator*'
     SERVICE = 'data-coordinator'
+    WEBHOOK_ID = 'WEBHOOK_IQ'
   }
   stages {
     stage('Release Tag') {
@@ -39,6 +41,7 @@ pipeline {
       }
       steps {
         script {
+          lastStage = env.STAGE_NAME
           if (params.RELEASE_DRY_RUN) {
             echo 'DRY RUN: Skipping release tag creation'
           }
@@ -54,6 +57,7 @@ pipeline {
       }
       steps {
         script {
+          lastStage = env.STAGE_NAME
           // perform any needed modifiers on the build parameters here
           sbtbuild.setRunITTest(true)
           sbtbuild.setNoSubproject(true)
@@ -72,6 +76,7 @@ pipeline {
       }
       steps {
         script {
+          lastStage = env.STAGE_NAME
           checkout([$class: 'GitSCM',
             branches: [[name: params.PUBLISH_SHA]],
             doGenerateSubmoduleConfigurations: false,
@@ -100,6 +105,7 @@ pipeline {
       }
       steps {
         script {
+          lastStage = env.STAGE_NAME
           if (params.RELEASE_BUILD) {
             env.REGISTRY_PUSH = (params.RELEASE_DRY_RUN) ? 'none' : 'all'
             env.DOCKER_TAG = dockerize.docker_build_specify_tag_and_push(params.RELEASE_NAME, sbtbuild.getDockerPath(), sbtbuild.getDockerArtifact(), env.REGISTRY_PUSH)
@@ -128,8 +134,18 @@ pipeline {
       }
       steps {
         script {
+          lastStage = env.STAGE_NAME
           // uses env.DOCKER_TAG and deploys to staging by default
           marathonDeploy(serviceName: env.DEPLOY_PATTERN)
+        }
+      }
+    }
+  }
+  post {
+    failure {
+      script {
+        if (!isPr) {
+          teamsMessage(message: "Build [${currentBuild.fullDisplayName}](${env.BUILD_URL}) has failed in stage ${lastStage}", webhookCredentialID: WEBHOOK_ID)
         }
       }
     }
