@@ -362,11 +362,14 @@ object DatasetMutator {
 
               // Great.  Now we can actually do the data loading.
               schemaLoader.create(newCopy)
+
+              val oldSchema = datasetMap.schema(oldCopy)
               val newSchema = datasetMap.schema(newCopy)
               schemaLoader.addColumns(newSchema.values)
 
+              val oldCopyContext = new DatasetCopyContext(oldCopy, oldSchema)
               val newFrozenCopyContext = new DatasetCopyContext(newCopy, newSchema)
-              dataCopier.foreach(_.copy(oldCopy, newFrozenCopyContext))
+              dataCopier.foreach(_.copy(oldCopyContext, newFrozenCopyContext))
               val newCopyCtx = newFrozenCopyContext.thaw()
 
               for(ci <- newCopyCtx.currentColumns) {
