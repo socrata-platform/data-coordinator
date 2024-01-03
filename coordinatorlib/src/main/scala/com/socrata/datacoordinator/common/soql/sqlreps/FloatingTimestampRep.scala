@@ -57,9 +57,15 @@ class FloatingTimestampRep(val base: String) extends RepUtils with SqlPKableColu
   val sqlTypes: Array[String] = Array(timestampType)
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue) {
-    if(SoQLNull == v) { /* pass */ }
+    csvescape(sb, csvifyForInsert(v))
+  }
+
+  def csvifyForInsert(v: SoQLValue) = {
+    if(SoQLNull == v) Seq(None)
     else {
+      val sb = new StringBuilder
       printer.printTo(sb, v.asInstanceOf[SoQLFloatingTimestamp].value)
+      Seq(Some(sb.toString))
     }
   }
 

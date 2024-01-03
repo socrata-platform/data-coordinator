@@ -43,8 +43,12 @@ class IDRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType,
   val sqlTypes: Array[String] = Array("BIGINT")
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue): Unit = {
-    if(SoQLNull == v) { /* pass */ }
-    else sb.append(v.asInstanceOf[SoQLID].value)
+    csvescape(sb, csvifyForInsert(v))
+  }
+
+  def csvifyForInsert(v: SoQLValue) = {
+    if(SoQLNull == v) Seq(None)
+    else Seq(Some(v.asInstanceOf[SoQLID].value.toString))
   }
 
   def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {

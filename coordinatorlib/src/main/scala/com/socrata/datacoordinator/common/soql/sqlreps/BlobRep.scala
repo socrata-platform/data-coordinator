@@ -14,8 +14,12 @@ class BlobRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType, SoQ
   val sqlTypes: Array[String] = Array("TEXT")
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue): Unit = {
-    if(SoQLNull == v) { /* pass */ }
-    else csvescape(sb, v.asInstanceOf[SoQLBlob].value)
+    csvescape(sb, csvifyForInsert(v))
+  }
+
+  def csvifyForInsert(v: SoQLValue): Seq[Option[String]] = {
+    if(SoQLNull == v) Seq(None)
+    else Seq(Some(v.asInstanceOf[SoQLBlob].value))
   }
 
   def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {

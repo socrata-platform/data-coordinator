@@ -20,10 +20,15 @@ class JsonRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType, SoQ
   override def templateForInsert: String = physColumns.map(_ => "?::JSONB").mkString(",")
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue): Unit = {
+    csvescape(sb, csvifyForInsert(v))
+  }
+
+  def csvifyForInsert(v: SoQLValue) = {
     v match {
       case SoQLJson(x) =>
-        csvescape(sb, JsonUtil.renderJson(x))
+        Seq(Some(JsonUtil.renderJson(x)))
       case SoQLNull =>
+        Seq(None)
       case unknown =>
         throw new Exception("unknown SoQLValue")
     }

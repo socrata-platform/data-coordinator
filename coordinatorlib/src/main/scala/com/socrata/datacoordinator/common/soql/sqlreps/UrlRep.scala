@@ -71,13 +71,15 @@ class UrlRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLType
   }
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue): Unit = {
+    csvescape(sb, csvifyForInsert(v))
+  }
+
+  def csvifyForInsert(v: SoQLValue) = {
     v match {
       case SoQLUrl(url, description) =>
-        url.foreach(csvescape(sb, _))
-        sb.append(",")
-        description.foreach(x => csvescape(sb, x))
+        Seq(url, description)
       case SoQLNull =>
-        sb.append(",") // null, null for two sub-columns
+        Seq(None, None)
       case unknown =>
         throw new Exception("unknown SoQLValue")
     }

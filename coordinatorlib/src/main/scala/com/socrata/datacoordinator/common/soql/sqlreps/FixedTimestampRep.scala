@@ -72,8 +72,16 @@ class FixedTimestampRep(val base: String) extends RepUtils with SqlPKableColumnR
   val sqlTypes: Array[String] = Array(timestampType)
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue) {
-    if(SoQLNull == v) { /* pass */ }
-    else printer.printTo(sb, v.asInstanceOf[SoQLFixedTimestamp].value)
+    csvescape(sb, csvifyForInsert(v))
+  }
+
+  def csvifyForInsert(v: SoQLValue) = {
+    if(SoQLNull == v) Seq(None)
+    else {
+      val sb = new StringBuilder
+      printer.printTo(sb, v.asInstanceOf[SoQLFixedTimestamp].value)
+      Seq(Some(sb.toString))
+    }
   }
 
   def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {

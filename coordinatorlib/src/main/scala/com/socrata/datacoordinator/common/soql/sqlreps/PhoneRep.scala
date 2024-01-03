@@ -27,13 +27,15 @@ class PhoneRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType, So
     s"${physColumns(typeOffset)}=?").mkString(",")
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue): Unit = {
+    csvescape(sb, csvifyForInsert(v))
+  }
+
+  def csvifyForInsert(v: SoQLValue) = {
     v match {
       case SoQLPhone(phoneNumber, phoneType) =>
-        phoneNumber.foreach(csvescape(sb, _))
-        sb.append(",")
-        phoneType.foreach(x => csvescape(sb, camelCase(x))) // normalize phone type
+        Seq(phoneNumber, phoneType.map(camelCase))
       case SoQLNull =>
-        sb.append(",") // null, null for two sub-columns
+        Seq(None, None)
       case unknown =>
         throw new Exception("unknown SoQLValue")
     }

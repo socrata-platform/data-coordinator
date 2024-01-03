@@ -59,6 +59,7 @@ trait SqlColumnWriteRep[Type, Value] extends SqlColumnCommonRep[Type] {
     * @param v The value to add; its type must be compatible with `representedType`.
     */
   def csvifyForInsert(sb: java.lang.StringBuilder, v: Value)
+  def csvifyForInsert(v: Value): Seq[Option[String]]
 
   /** Produce a prepared statement fragment which can be filled in by `prepareInsert`.
     * It will contain one "?" for each value in `physColumns`, in that same order.

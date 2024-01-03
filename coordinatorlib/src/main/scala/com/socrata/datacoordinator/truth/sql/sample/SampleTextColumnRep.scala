@@ -3,7 +3,7 @@ package sample
 
 import java.sql.{ResultSet, PreparedStatement}
 
-class SampleTextColumnRep(val base: String) extends SqlPKableColumnRep[SampleType, SampleValue] {
+class SampleTextColumnRep(val base: String) extends SampleRepUtils with SqlPKableColumnRep[SampleType, SampleValue] {
   def representedType = SampleTextColumn
 
   val sqlTypes = Array("TEXT")
@@ -36,9 +36,13 @@ class SampleTextColumnRep(val base: String) extends SqlPKableColumnRep[SampleTyp
   def prepareSingleLookup(stmt: PreparedStatement, v: SampleValue, n: Int) = prepareMultiLookup(stmt, v, n)
 
   def csvifyForInsert(sb: java.lang.StringBuilder, v: SampleValue) {
+    csvescape(sb, csvifyForInsert(v))
+  }
+
+  def csvifyForInsert(v: SampleValue) = {
     v match {
-      case SampleText(text) => appendDoubling(sb, text, '"')
-      case SampleNull => // do nothing
+      case SampleText(text) => Seq(Some(text))
+      case SampleNull => Seq(None)
       case _ => sys.error("Illegal value for text column")
     }
   }

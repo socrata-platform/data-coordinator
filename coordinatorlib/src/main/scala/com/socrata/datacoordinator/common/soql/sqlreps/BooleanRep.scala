@@ -47,8 +47,12 @@ class BooleanRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQL
   val sqlTypes: Array[String] = Array("BOOLEAN")
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue): Unit = {
-    if(SoQLNull == v) { /* pass */ }
-    else sb.append(v.asInstanceOf[SoQLBoolean].value)
+    csvescape(sb, csvifyForInsert(v))
+  }
+
+  def csvifyForInsert(v: SoQLValue): Seq[Option[String]] = {
+    if(SoQLNull == v) Seq(None)
+    else Seq(Some(if(v.asInstanceOf[SoQLBoolean].value) "true" else "false"))
   }
 
   def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {

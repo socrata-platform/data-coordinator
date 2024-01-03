@@ -40,8 +40,12 @@ class DoubleRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLT
   val sqlTypes: Array[String] = Array("DOUBLE PRECISION")
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue): Unit = {
-    if(SoQLNull == v) { /* pass */ }
-    else sb.append(dbl(v))
+    csvescape(sb, csvifyForInsert(v))
+  }
+
+  def csvifyForInsert(v: SoQLValue) = {
+    if(SoQLNull == v) Seq(None)
+    else Seq(Some(dbl(v).toString))
   }
 
   def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {

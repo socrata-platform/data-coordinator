@@ -14,6 +14,16 @@ abstract class RepUtils {
   def sqlescape(sb: StringBuilder, s: String): StringBuilder =
     doubler('\'', sb, s)
 
+  def csvescape(sb: StringBuilder, s: Seq[Option[String]]): StringBuilder = {
+    var didOne = false
+    for(item <- s) {
+      if(didOne) sb.append(',')
+      else didOne = true
+      item.foreach(csvescape(sb, _))
+    }
+    sb
+  }
+
   def csvescape(sb: StringBuilder, s: String): StringBuilder =
     doubler('"', sb, s)
 

@@ -27,6 +27,24 @@ abstract class TestColumnRep(val columnId: ColumnId) extends SqlPKableColumnRep[
   val base = "c_" + columnId.underlying
 
   val physColumns = Array(base)
+
+  def csvifyForInsert(sb: StringBuilder, v: TestColumnValue) {
+    csvifyForInsert(v).map(_.map(escape('"', _)).getOrElse("")).mkString(",")
+  }
+
+  def escape(q: Char, s: String): String = {
+    val sb = new StringBuilder
+    sb.append(q)
+    var i = 0
+    while(i != s.length) {
+      val c = s.charAt(i)
+      if(c == q) sb.append(c)
+      sb.append(c)
+      i += 1
+    }
+    sb.append(q)
+    sb.toString
+  }
 }
 
 class LongRep(columnId: ColumnId) extends TestColumnRep(columnId) {
@@ -55,8 +73,9 @@ class LongRep(columnId: ColumnId) extends TestColumnRep(columnId) {
 
   val sqlTypes = Array("BIGINT")
 
-  def csvifyForInsert(sb: StringBuilder, v: TestColumnValue) {
-    if(v != NullValue) sb.append(v.asInstanceOf[LongValue].value)
+  def csvifyForInsert(v: TestColumnValue) = {
+    if(v == NullValue) Seq(None)
+    else Seq(Some(v.asInstanceOf[LongValue].value.toString))
   }
 
   def prepareInsert(stmt: PreparedStatement, v: TestColumnValue, start: Int) = {
@@ -102,8 +121,9 @@ class StringRep(columnId: ColumnId) extends TestColumnRep(columnId) {
 
   val sqlTypes = Array("VARCHAR(255)")
 
-  def csvifyForInsert(sb: StringBuilder, v: TestColumnValue) {
-    if(v != NullValue) sb.append(escape('"', v.asInstanceOf[StringValue].value))
+  def csvifyForInsert(v: TestColumnValue) = {
+    if(v == NullValue) Seq(None)
+    else Seq(Some(v.asInstanceOf[StringValue].value))
   }
 
   def prepareInsert(stmt: PreparedStatement, v: TestColumnValue, start: Int) = {
@@ -120,19 +140,5 @@ class StringRep(columnId: ColumnId) extends TestColumnRep(columnId) {
     val s = rs.getString(start)
     if(s eq null) NullValue
     else StringValue(s)
-  }
-
-  def escape(q: Char, s: String): String = {
-    val sb = new StringBuilder
-    sb.append(q)
-    var i = 0
-    while(i != s.length) {
-      val c = s.charAt(i)
-      if(c == q) sb.append(c)
-      sb.append(c)
-      i += 1
-    }
-    sb.append(q)
-    sb.toString
   }
 }
