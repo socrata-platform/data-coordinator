@@ -17,8 +17,12 @@ class ArrayRep (val base: String) extends RepUtils with SqlColumnRep[SoQLType, S
   val sqlTypes: Array[String] = Array("TEXT")
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue): Unit = {
-    if(SoQLNull == v) { /* pass */ }
-    else csvescape(sb, string(v))
+    csvescape(sb, csvifyForInsert(v))
+  }
+
+  def csvifyForInsert(v: SoQLValue): Seq[Option[String]] = {
+    if(SoQLNull == v) Seq(None)
+    else Seq(Some(string(v)))
   }
 
   def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {

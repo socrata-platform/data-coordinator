@@ -3,7 +3,7 @@ package sample
 
 import java.sql.{ResultSet, PreparedStatement}
 
-class SampleSidColumnRep(val base: String) extends SqlPKableColumnRep[SampleType, SampleValue] {
+class SampleSidColumnRep(val base: String) extends SampleRepUtils with SqlPKableColumnRep[SampleType, SampleValue] {
   def representedType = SampleSidColumn
 
   val sqlTypes = Array("BIGINT")
@@ -31,7 +31,11 @@ class SampleSidColumnRep(val base: String) extends SqlPKableColumnRep[SampleType
   def prepareSingleLookup(stmt: PreparedStatement, v: SampleValue, start: Int): Int = prepareMultiLookup(stmt, v, start)
 
   def csvifyForInsert(sb: java.lang.StringBuilder, v: SampleValue) {
-    sb.append(extract(v))
+    csvescape(sb, csvifyForInsert(v))
+  }
+
+  def csvifyForInsert(v: SampleValue) = {
+    Seq(Some(extract(v).toString))
   }
 
   def prepareInsert(stmt: PreparedStatement, v: SampleValue, start: Int): Int = prepareMultiLookup(stmt, v, start)

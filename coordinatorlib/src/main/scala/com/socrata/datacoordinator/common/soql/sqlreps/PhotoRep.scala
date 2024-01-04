@@ -14,8 +14,12 @@ class PhotoRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType, So
   val sqlTypes: Array[String] = Array("TEXT")
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue): Unit = {
-    if(SoQLNull == v) { /* pass */ }
-    else csvescape(sb, v.asInstanceOf[SoQLPhoto].value)
+    csvescape(sb, csvifyForInsert(v))
+  }
+
+  def csvifyForInsert(v: SoQLValue) = {
+    if(SoQLNull == v) Seq(None)
+    else Seq(Some(v.asInstanceOf[SoQLPhoto].value))
   }
 
   def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {

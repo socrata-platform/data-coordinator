@@ -62,8 +62,16 @@ class TimeRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
   val sqlTypes: Array[String] = Array(timeType)
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue): Unit = {
-    if(SoQLNull == v) { /* pass */ }
-    else printer.printTo(sb, v.asInstanceOf[SoQLTime].value)
+    csvescape(sb, csvifyForInsert(v))
+  }
+
+  def csvifyForInsert(v: SoQLValue) = {
+    if(SoQLNull == v) Seq(None)
+    else {
+      val sb = new StringBuilder
+      printer.printTo(sb, v.asInstanceOf[SoQLTime].value)
+      Seq(Some(sb.toString))
+    }
   }
 
   def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {

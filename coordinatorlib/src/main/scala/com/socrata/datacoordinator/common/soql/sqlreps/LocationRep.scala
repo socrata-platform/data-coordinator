@@ -32,15 +32,22 @@ class LocationRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType,
     s"${physColumns(addressOffset)}=?").mkString(",")
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue): Unit = {
+    csvescape(sb, csvifyForInsert(v))
+  }
+
+  def csvifyForInsert(v: SoQLValue) = {
     v match {
       case loc@SoQLLocation(lat, lng, address) =>
-        if (lat.isDefined && lng.isDefined) {
-          sb.append(toEWkt(loc, WGS84SRID))
-        }
-        sb.append(",")
-        address.foreach(csvescape(sb, _))
+        Seq(
+          if (lat.isDefined && lng.isDefined) {
+            Some(toEWkt(loc, WGS84SRID))
+          } else {
+            None
+          },
+          address
+        )
       case SoQLNull =>
-        sb.append(",") // null, null
+        Seq(None, None)
       case unknown =>
         throw new Exception("unknown SoQLValue")
     }

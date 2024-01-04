@@ -24,10 +24,15 @@ class DocumentRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQ
     (1 to n).map { _ => templateForSingleLookup }.mkString("(", " OR ", ")")
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue): Unit = {
+    csvescape(sb, csvifyForInsert(v))
+  }
+
+  def csvifyForInsert(v: SoQLValue) = {
     v match {
       case x: SoQLDocument =>
-        csvescape(sb, JsonUtil.renderJson(x))
+        Seq(Some(JsonUtil.renderJson(x)))
       case SoQLNull =>
+        Seq(None)
       case unknown =>
         throw new Exception("unknown SoQLValue")
     }

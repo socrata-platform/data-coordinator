@@ -39,8 +39,12 @@ class NumberLikeRep(repType: SoQLType, num: SoQLValue => java.math.BigDecimal, v
   val sqlTypes: Array[String] = Array("NUMERIC")
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue): Unit = {
-    if(SoQLNull == v) { /* pass */ }
-    else sb.append(num(v))
+    csvescape(sb, csvifyForInsert(v))
+  }
+
+  def csvifyForInsert(v: SoQLValue) = {
+    if(SoQLNull == v) Seq(None)
+    else Seq(Some(num(v).toString))
   }
 
   def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {

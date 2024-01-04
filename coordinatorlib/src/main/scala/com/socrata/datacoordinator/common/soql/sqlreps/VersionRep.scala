@@ -16,8 +16,12 @@ class VersionRep(val base: String) extends RepUtils with SqlColumnRep[SoQLType, 
   val sqlTypes: Array[String] = Array("BIGINT")
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue): Unit = {
-    if(SoQLNull == v) { /* pass */ }
-    else sb.append(v.asInstanceOf[SoQLVersion].value)
+    csvescape(sb, csvifyForInsert(v))
+  }
+
+  def csvifyForInsert(v: SoQLValue) = {
+    if(SoQLNull == v) Seq(None)
+    else Seq(Some(v.asInstanceOf[SoQLVersion].value.toString))
   }
 
   def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {

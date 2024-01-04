@@ -48,8 +48,12 @@ class GeometryLikeRep[T<:Geometry](
   override def templateForUpdate: String = base + "=ST_GeomFromEWKT(?)"
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue): Unit = {
-    if(SoQLNull == v) { /* pass */ }
-    else csvescape(sb, toEWkt(v))
+    csvescape(sb, csvifyForInsert(v))
+  }
+
+  def csvifyForInsert(v: SoQLValue) = {
+    if(SoQLNull == v) Seq(None)
+    else Seq(Some(toEWkt(v)))
   }
 
   def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {

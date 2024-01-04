@@ -3,7 +3,7 @@ package sample
 
 import java.sql.{Types, PreparedStatement, ResultSet}
 
-class SamplePointColumnRep(val base: String) extends SqlColumnRep[SampleType, SampleValue] {
+class SamplePointColumnRep(val base: String) extends SampleRepUtils with SqlColumnRep[SampleType, SampleValue] {
   def representedType = SamplePointColumn
 
   val sqlTypes = Array("DOUBLE PRECISION", "DOUBLE PRECISION")
@@ -12,11 +12,15 @@ class SamplePointColumnRep(val base: String) extends SqlColumnRep[SampleType, Sa
   val physColumns = Array(x, y)
 
   def csvifyForInsert(sb: java.lang.StringBuilder, v: SampleValue) {
+    csvescape(sb, csvifyForInsert(v))
+  }
+
+  def csvifyForInsert(v: SampleValue) = {
     v match {
       case SamplePoint(vx, vy) =>
-        sb.append(vx).append(",").append(vy)
+        Seq(Some(vx.toString), Some(vy.toString))
       case SampleNull =>
-        sb.append(",")
+        Seq(None, None)
       case _ =>
         sys.error("Illegal value for point column")
     }

@@ -47,8 +47,12 @@ class TextRep(val base: String) extends RepUtils with SqlPKableColumnRep[SoQLTyp
   val sqlTypes: Array[String] = Array("TEXT")
 
   def csvifyForInsert(sb: StringBuilder, v: SoQLValue) {
-    if(SoQLNull == v) { /* pass */ }
-    else csvescape(sb, v.asInstanceOf[SoQLText].value.replace("\u0000", ""))
+    csvescape(sb, csvifyForInsert(v))
+  }
+
+  def csvifyForInsert(v: SoQLValue) = {
+    if(SoQLNull == v) Seq(None)
+    else Seq(Some(v.asInstanceOf[SoQLText].value.replace("\u0000", "")))
   }
 
   def prepareInsert(stmt: PreparedStatement, v: SoQLValue, start: Int): Int = {
