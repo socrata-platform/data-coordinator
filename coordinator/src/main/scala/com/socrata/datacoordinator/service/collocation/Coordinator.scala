@@ -276,6 +276,8 @@ class HttpCoordinator(isThisInstance: String => Boolean,
             case 400 => response.value[CoordinatorError]() match {
               case Right(CoordinatorError(CollocationError.STORE_NOT_ACCEPTING_NEW_DATASETS, _)) =>
                 Right(Right(Left(StoreNotAcceptingDatasets)))
+              case Right(CoordinatorError(CollocationError.STORE_DOES_NOT_SUPPORT_COLLOCATION, _)) =>
+                Right(Right(Left(StoreDisallowsCollocation)))
               case Right(CoordinatorError(CollocationError.DATASET_NOT_FOUND_IN_STORE, _)) =>
                 Right(Right(Left(DatasetNotInStore)))
               case Right(error) => Left(UnexpectedError(s"Unexpected error of type ${error.getClass.getName}"))

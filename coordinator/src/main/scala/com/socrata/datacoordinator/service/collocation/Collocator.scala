@@ -330,6 +330,10 @@ class CoordinatedCollocator(collocationGroup: Set[String],
                 log.error(s"Attempted to move dataset ${move.datasetInternalName} to store {} not accepting datasets!",
                   move.storeIdTo)
                 Left(UnexpectedError("Attempted to move dataset to store not accepting new datasets during collocation!"))
+              case Right(Left(StoreDisallowsCollocation)) =>
+                log.error(s"Attempted to move dataset ${move.datasetInternalName} to store {} which disallows collocation!",
+                  move.storeIdTo)
+                Left(UnexpectedError("Attempted to move dataset to store not accepting new datasets during collocation!"))
               case Right(Left(DatasetNotInStore)) =>
                 log.error(s"Attempted to move dataset ${move.datasetInternalName} from store {} that it is not in!",
                   move.storeIdFrom)
