@@ -1,25 +1,24 @@
 package com.socrata.datacoordinator.common.soql.jsonreps
 
-import com.rojoma.json.v3.codec.JsonDecode
+import com.rojoma.json.v3.codec.{JsonDecode, DecodeError}
 import com.rojoma.json.v3.ast._
-import com.rojoma.json.v3.util.JsonUtil
+import com.rojoma.json.v3.interpolation._
 
 import org.scalatest.FunSuite
 import org.scalatest.MustMatchers
 import com.socrata.soql.types.SoQLJson
 import com.socrata.soql.types.SoQLNull
 
-class SoQJsonRepTest extends FunSuite with MustMatchers {
+class SoQLJsonRepTest extends FunSuite with MustMatchers {
   test("parse json") {
-    JsonRep.fromJValue(JsonUtil.parseJson[JValue]("{}").right.get) must equal(None)
-    JsonRep.fromJValue(JsonUtil.parseJson[JValue]("{\"json\": 7}").right.get).get must equal(SoQLJson(JNumber(7)))
-    JsonRep.fromJValue(JsonUtil.parseJson[JValue]("{\"json\": null}").right.get).get must equal(SoQLJson(JNull))
-    JsonRep.fromJValue(JNull).get must equal(SoQLNull)
+    SoQLJson.cjsonRep.fromJValue(j"{}") must equal(Left(DecodeError.MissingField("json")))
+    SoQLJson.cjsonRep.fromJValue(j"""{"json": 7}""") must equal(Right(Some(SoQLJson(JNumber(7)))))
+    SoQLJson.cjsonRep.fromJValue(j"""{"json": null}""") must equal(Right(Some(SoQLJson(JNull))))
+    SoQLJson.cjsonRep.fromJValue(JNull) must equal(Right(None))
   }
 
   test("write json") {
-    JsonUtil.renderJson(JsonRep.toJValue(SoQLJson(JNull))) must equal("{\"json\":null}")
-    JsonUtil.renderJson(JsonRep.toJValue(SoQLJson(JNumber(7)))) must equal("{\"json\":7}")
-    JsonUtil.renderJson(JsonRep.toJValue(SoQLNull)) must equal("null")
+    SoQLJson.cjsonRep.toJValue(SoQLJson(JNull)) must equal(j"""{"json":null}""")
+    SoQLJson.cjsonRep.toJValue(SoQLJson(JNumber(7))) must equal(j"""{"json":7}""")
   }
 }

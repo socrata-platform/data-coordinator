@@ -4,7 +4,6 @@ import com.socrata.datacoordinator.common.soql.sqlreps._
 import com.socrata.soql.types._
 import com.socrata.datacoordinator.truth.sql.SqlColumnRep
 import com.socrata.datacoordinator.truth.csv.CsvColumnRep
-import com.socrata.datacoordinator.truth.json.JsonColumnRep
 import com.socrata.datacoordinator.id.{RowId, RowVersion}
 import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, DatasetInfo}
 import com.vividsolutions.jts.geom._
@@ -105,32 +104,10 @@ object SoQLRep {
   def csvRep(typ: SoQLType): CsvColumnRep[SoQLType, SoQLValue] =
     csvReps(typ)
 
-  val jsonRepsMinusIdAndVersion = Map[SoQLType, JsonColumnRep[SoQLType, SoQLValue]](
-    SoQLText -> jsonreps.TextRep,
-    SoQLBoolean -> jsonreps.BooleanRep,
-    SoQLNumber -> new jsonreps.NumberLikeRep(SoQLNumber, _.asInstanceOf[SoQLNumber].value, SoQLNumber(_)),
-    SoQLMoney -> new jsonreps.NumberLikeRep(SoQLMoney, _.asInstanceOf[SoQLMoney].value, SoQLMoney(_)),
-    SoQLFixedTimestamp -> jsonreps.FixedTimestampRep,
-    SoQLFloatingTimestamp -> jsonreps.FloatingTimestampRep,
-    SoQLDate -> jsonreps.DateRep,
-    SoQLTime -> jsonreps.TimeRep,
-    SoQLDouble -> jsonreps.DoubleRep,
-    SoQLArray -> jsonreps.ArrayRep,
-    SoQLObject -> jsonreps.ObjectRep,
-    SoQLPoint -> new jsonreps.GeometryLikeRep[Point](SoQLPoint, _.asInstanceOf[SoQLPoint].value, SoQLPoint(_)),
-    SoQLMultiPoint -> new jsonreps.GeometryLikeRep[MultiPoint](SoQLMultiPoint, _.asInstanceOf[SoQLMultiPoint].value, SoQLMultiPoint(_)),
-    SoQLLine -> new jsonreps.GeometryLikeRep[LineString](SoQLLine, _.asInstanceOf[SoQLLine].value, SoQLLine(_)),
-    SoQLMultiLine -> new jsonreps.GeometryLikeRep[MultiLineString](SoQLMultiLine, _.asInstanceOf[SoQLMultiLine].value, SoQLMultiLine(_)),
-    SoQLPolygon -> new jsonreps.GeometryLikeRep[Polygon](SoQLPolygon, _.asInstanceOf[SoQLPolygon].value, SoQLPolygon(_)),
-    SoQLMultiPolygon -> new jsonreps.GeometryLikeRep[MultiPolygon](SoQLMultiPolygon, _.asInstanceOf[SoQLMultiPolygon].value, SoQLMultiPolygon(_)),
-    SoQLLocation -> jsonreps.LocationRep,
-    SoQLPhone -> jsonreps.PhoneRep,
-    SoQLUrl -> jsonreps.UrlRep,
-    SoQLDocument -> jsonreps.DocumentRep,
-    SoQLPhoto -> jsonreps.PhotoRep,
-    SoQLBlob -> jsonreps.BlobRep,
-    SoQLJson -> jsonreps.JsonRep
-  )
+  val jsonRepsMinusIdAndVersion: Map[SoQLType, ErasedCJsonRep[SoQLValue]] =
+    SoQLType.allTypes.iterator.collect {
+      case t: SoQLType with NonObfuscatedType => t -> t.cjsonRep.asErasedCJsonRep
+    }.toMap
 
   trait IdObfuscationContext {
     def obfuscate(rowId: RowId): String
@@ -142,12 +119,12 @@ object SoQLRep {
     def deobfuscate(obfuscatedRowVersion: String): Option[RowVersion]
   }
 
-  private def jsonRepFactories(idStringRep: SoQLID.StringRep, versionStringRep: SoQLVersion.StringRep) =
+  private def jsonRepFactories(cryptProvider: obfuscation.CryptProvider, obfuscateIds: Boolean) =
     jsonRepsMinusIdAndVersion ++ Seq(
-      SoQLID -> new jsonreps.IDRep(idStringRep),
-      SoQLVersion -> new jsonreps.VersionRep(versionStringRep)
+      SoQLID -> SoQLID.cjsonRep(cryptProvider, obfuscateIds).asErasedCJsonRep,
+      SoQLVersion -> SoQLVersion.cjsonRep(cryptProvider).asErasedCJsonRep
     )
 
-  def jsonRep(idStringRep: SoQLID.StringRep, versionStringRep: SoQLVersion.StringRep): (SoQLType => JsonColumnRep[SoQLType, SoQLValue]) =
-    jsonRepFactories(idStringRep, versionStringRep)
+  def jsonRep(cryptProvider: obfuscation.CryptProvider, obfuscateIds: Boolean): (SoQLType => ErasedCJsonRep[SoQLValue]) =
+    jsonRepFactories(cryptProvider, obfuscateIds)
 }

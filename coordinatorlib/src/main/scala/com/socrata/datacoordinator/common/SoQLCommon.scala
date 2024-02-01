@@ -3,7 +3,6 @@ package com.socrata.datacoordinator.common
 import com.rojoma.simplearm.v2._
 import com.socrata.datacoordinator.common.soql.{SoQLRep, SoQLRowLogCodec, SoQLTypeContext}
 import com.socrata.datacoordinator.id._
-import com.socrata.datacoordinator.truth.json.{JsonColumnReadRep, JsonColumnRep, JsonColumnWriteRep}
 import com.socrata.datacoordinator.truth.loader.RowPreparer
 import com.socrata.datacoordinator.truth.metadata.{AbstractColumnInfoLike, ColumnInfo, DatasetCopyContext, DatasetInfo}
 import com.socrata.datacoordinator.truth.universe.sql.{PostgresCommonSupport, PostgresUniverse}
@@ -99,9 +98,10 @@ class SoQLCommon(dataSource: DataSource,
   val initialLatestDataVersion = 0L
 
   val sqlRepFor = SoQLRep.sqlRep _
-  def jsonReps(datasetInfo: DatasetInfo): (SoQLType => JsonColumnRep[SoQLType, SoQLValue]) = {
+  def jsonReps(datasetInfo: DatasetInfo): (SoQLType => ErasedCJsonRep[SoQLValue]) = {
     val cp = new CryptProvider(datasetInfo.obfuscationKey)
-    SoQLRep.jsonRep(idObfuscationContextFor(cp), versionObfuscationContextFor(cp))
+
+    { typ => typ.cjsonRep(cp, true).asErasedCJsonRep }
   }
 
   def newRowLogCodec() = SoQLRowLogCodec
@@ -240,7 +240,7 @@ class SoQLCommon(dataSource: DataSource,
 
     val versionColumnId = SystemColumns.version
 
-    def jsonReps(di: DatasetInfo): CT => JsonColumnRep[CT, CV] = common.jsonReps(di)
+    def jsonReps(di: DatasetInfo): CT => ErasedCJsonRep[CV] = common.jsonReps(di)
 
     val typeContext = common.typeContext
 

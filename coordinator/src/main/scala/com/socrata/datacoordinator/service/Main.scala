@@ -514,7 +514,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
                  .getOrElse(Left(Exporter.InvalidRowId))
              case None => // no customer row identifier.  Use system row identifier.
                val rowIdRep = common.jsonReps(ctx.copyCtx.datasetInfo)(ctx.copyCtx.pkCol_!.typ)
-               rowIdRep.fromJValue(JString(rid)).map(x => Right(Some(x))).getOrElse(Left(Exporter.InvalidRowId))
+               rowIdRep.fromJValue(JString(rid)).toOption.map(x => Right(Some(x))).getOrElse(Left(Exporter.InvalidRowId))
            }
          }
        }

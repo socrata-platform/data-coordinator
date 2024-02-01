@@ -3,13 +3,13 @@ package service
 
 import com.rojoma.json.v3.ast.{JArray, JBoolean, JObject, JValue}
 import com.socrata.datacoordinator.id.{UserColumnId, RowVersion, ColumnId}
-import com.socrata.datacoordinator.truth.json.JsonColumnReadRep
 import com.socrata.datacoordinator.truth.metadata.{ColumnInfo, AbstractColumnInfoLike}
 import com.socrata.datacoordinator.util.collection.{MutableUserColumnIdMap, UserColumnIdMap, ColumnIdMap}
 import com.socrata.soql.environment.{TypeName, ColumnName}
+import com.socrata.soql.types.ErasedCJsonReadRep
 
 class RowDecodePlan[CT, CV](schema: ColumnIdMap[ColumnInfo[CT]],
-                            repFor: CT => JsonColumnReadRep[CT, CV],
+                            repFor: CT => ErasedCJsonReadRep[CV],
                             typeNameFor: CT => TypeName,
                             versionOf: CV => Option[RowVersion],
                             onUnknownColumn: UserColumnId => Unit)
@@ -31,9 +31,9 @@ class RowDecodePlan[CT, CV](schema: ColumnIdMap[ColumnInfo[CT]],
   }
   val versionRep = repFor(versionCol.typ)
   val cookedSchema = locally {
-    val res = MutableUserColumnIdMap[(ColumnId, JsonColumnReadRep[CT, CV])]()
+    val res = MutableUserColumnIdMap[(ColumnId, CT, ErasedCJsonReadRep[CV])]()
     schema.foreach { (systemId, ci) =>
-      res(ci.userColumnId) = (systemId, repFor(ci.typ))
+      res(ci.userColumnId) = (systemId, ci.typ, repFor(ci.typ))
     }
     res.freeze()
   }
@@ -73,12 +73,12 @@ class RowDecodePlan[CT, CV](schema: ColumnIdMap[ColumnInfo[CT]],
       val result = new MutableRow[CV]
       row.foreach { (cid, value) =>
         cookedSchema.get(cid) match {
-          case Some((sid, rep)) =>
+          case Some((sid, typ, rep)) =>
             rep.fromJValue(value) match {
-              case Some(trueValue) =>
+              case Right(trueValue) =>
                 result(sid) = trueValue
-              case None =>
-                throw new UninterpretableFieldValue(cid, value, rep.representedType)
+              case Left(_) =>
+                throw new UninterpretableFieldValue(cid, value, typ)
             }
           case None =>
             onUnknownColumn(cid)
@@ -88,24 +88,24 @@ class RowDecodePlan[CT, CV](schema: ColumnIdMap[ColumnInfo[CT]],
 
     case JArray(Seq(value)) =>
       pkRep.fromJValue(value) match {
-        case Some(trueValue) =>
+        case Right(trueValue) =>
           Left((trueValue, None))
-        case None =>
-          throw new UninterpretableFieldValue(pkCol.userColumnId, value, pkRep.representedType)
+        case Left(_) =>
+          throw new UninterpretableFieldValue(pkCol.userColumnId, value, pkCol.typ)
       }
 
     case JArray(Seq(value, version)) =>
       val id = pkRep.fromJValue(value) match {
-        case Some(trueValue) =>
+        case Right(trueValue) =>
           trueValue
-        case None =>
-          throw new UninterpretableFieldValue(pkCol.userColumnId, value, pkRep.representedType)
+        case Left(_) =>
+          throw new UninterpretableFieldValue(pkCol.userColumnId, value, pkCol.typ)
       }
       val v = versionRep.fromJValue(version) match {
-        case Some(trueVersion) =>
+        case Right(trueVersion) =>
           trueVersion
-        case None =>
-          throw new UninterpretableFieldValue(versionCol.userColumnId, value, versionRep.representedType)
+        case Left(_) =>
+          throw new UninterpretableFieldValue(versionCol.userColumnId, value, versionCol.typ)
       }
       Left((id, Some(versionOf(v))))
 
