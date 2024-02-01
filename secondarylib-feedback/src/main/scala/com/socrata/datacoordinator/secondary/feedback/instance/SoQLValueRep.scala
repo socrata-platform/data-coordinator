@@ -12,7 +12,7 @@ object SoQLValueRepFor extends (Array[Byte] => SoQLType => SoQLValue => JValue) 
 
   def apply(obfuscationKey: Array[Byte]): (SoQLType => SoQLValue => JValue) = {
     val cryptCipher = new CryptProvider(obfuscationKey)
-    val rep = SoQLRep.jsonRep(new SoQLID.StringRep(cryptCipher), new SoQLVersion.StringRep(cryptCipher))
+    val rep = SoQLRep.jsonRep(cryptCipher, true)
 
     { typ: SoQLType =>
       { value: SoQLValue =>
@@ -27,11 +27,11 @@ object SoQLValueRepFrom extends (Array[Byte] => SoQLType => JValue => Option[SoQ
 
   def apply(obfuscationKey: Array[Byte]): (SoQLType => JValue => Option[SoQLValue]) = {
     val cryptCipher = new CryptProvider(obfuscationKey)
-    val rep = SoQLRep.jsonRep(new SoQLID.StringRep(cryptCipher), new SoQLVersion.StringRep(cryptCipher))
+    val rep = SoQLRep.jsonRep(cryptCipher, true)
 
     { typ: SoQLType =>
       { value: JValue =>
-        rep(typ).fromJValue(value)
+        rep(typ).fromJValue(value).toOption
       }
     }
   }

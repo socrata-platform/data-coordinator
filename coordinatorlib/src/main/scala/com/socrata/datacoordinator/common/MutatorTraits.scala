@@ -1,7 +1,7 @@
 package com.socrata.datacoordinator.common
 
 import com.socrata.soql.environment.{TypeName, ColumnName}
-import com.socrata.datacoordinator.truth.json.JsonColumnRep
+import com.socrata.soql.types.ErasedCJsonRep
 import com.socrata.datacoordinator.util.collection.UserColumnIdMap
 import com.socrata.datacoordinator.id._
 import com.socrata.datacoordinator.truth.metadata._
@@ -13,7 +13,7 @@ trait MutatorCommon[CT, CV] {
   def systemSchema: UserColumnIdMap[MutatorColumnInfo[CT]]
   def systemIdColumnId: UserColumnId
   def versionColumnId: UserColumnId
-  def jsonReps(di: DatasetInfo): CT => JsonColumnRep[CT, CV]
+  def jsonReps(di: DatasetInfo): CT => ErasedCJsonRep[CV]
   def allowDdlOnPublishedCopies: Boolean
   def typeContext: TypeContext[CT, CV]
   def genUserColumnId(): UserColumnId

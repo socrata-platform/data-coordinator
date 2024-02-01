@@ -10,7 +10,6 @@ import com.socrata.datacoordinator.truth.loader.Delogger.RowDataUpdated
 import com.socrata.datacoordinator.Row
 import com.rojoma.json.v3.ast._
 import scala.collection.immutable.SortedMap
-import com.socrata.datacoordinator.truth.json.JsonColumnWriteRep
 
 object LogViewer extends App {
   val cfg = new DataSourceConfig(ConfigFactory.load(), "com.socrata.coordinator.utils")
@@ -18,23 +17,34 @@ object LogViewer extends App {
   val from = args(1).toLong
   val to = args(2).toLong
 
-  val idRep = new JsonColumnWriteRep[SoQLType, SoQLValue] {
-    def toJValue(value: SoQLValue): JValue = {
-      if(SoQLNull == value) JNull
-      else JString("sid-" + value.asInstanceOf[SoQLID].value)
-    }
-    val representedType: SoQLType = SoQLID
+  trait Rep[T <: SoQLValue] extends CJsonWriteRep[T] with AsErasedCJsonWriteRep[T, SoQLValue] {
+    def isNull(v: SoQLValue) = v == SoQLNull
+    def mkNull = SoQLNull
   }
-  val versionRep = new JsonColumnWriteRep[SoQLType, SoQLValue] {
-    def toJValue(value: SoQLValue): JValue = {
-      if(SoQLNull == value) JNull
-      else JString("ver-" + value.asInstanceOf[SoQLVersion].value)
+
+  val idRep = new Rep[SoQLID] {
+    def toJValue(value: SoQLID): JValue = {
+      JString("sid-" + value.value)
     }
-    val representedType: SoQLType = SoQLVersion
+    def downcast(v: SoQLValue) =
+      v match {
+        case id: SoQLID => Some(id)
+        case _ => None
+      }
+  }
+  val versionRep = new Rep[SoQLVersion] {
+    def toJValue(value: SoQLVersion): JValue = {
+      JString("ver-" + value.value)
+    }
+    def downcast(v: SoQLValue) =
+      v match {
+        case id: SoQLVersion => Some(id)
+        case _ => None
+      }
   }
   val jsonReps = SoQLRep.jsonRepsMinusIdAndVersion ++ Map(
-    SoQLID -> idRep,
-    SoQLVersion -> versionRep
+    SoQLID -> idRep.asErasedCJsonWriteRep,
+    SoQLVersion -> versionRep.asErasedCJsonWriteRep
   )
 
   def jsonify(row: Row[SoQLValue]): JObject =
