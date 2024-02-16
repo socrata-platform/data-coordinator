@@ -5,6 +5,7 @@ import com.rojoma.json.v3.util.{JsonKey, AutomaticJsonCodecBuilder}
 import com.socrata.datacoordinator.id.DatasetId
 import com.rojoma.json.v3.codec.{DecodeError, JsonDecode, JsonEncode}
 import com.rojoma.json.v3.ast.{JString, JValue}
+import com.socrata.soql.types.obfuscation.CryptProvider
 
 trait DatasetInfoLike extends Product {
   val systemId: DatasetId
@@ -16,6 +17,7 @@ trait DatasetInfoLike extends Product {
   lazy val tableBase = "t" + systemId.underlying
   lazy val auditTableName = tableBase + "_audit"
   lazy val logTableName = tableBase + "_log"
+  lazy val cryptProvider = new CryptProvider(obfuscationKey)
 }
 
 case class UnanchoredDatasetInfo(@JsonKey("sid") systemId: DatasetId,
