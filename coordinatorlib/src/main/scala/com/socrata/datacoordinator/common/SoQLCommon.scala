@@ -99,7 +99,7 @@ class SoQLCommon(dataSource: DataSource,
 
   val sqlRepFor = SoQLRep.sqlRep _
   def jsonReps(datasetInfo: DatasetInfo): (SoQLType => ErasedCJsonRep[SoQLValue]) = {
-    val cp = new CryptProvider(datasetInfo.obfuscationKey)
+    val cp = datasetInfo.cryptProvider
 
     { typ => typ.cjsonRep(cp, true).asErasedCJsonRep }
   }
