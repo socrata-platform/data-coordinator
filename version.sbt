@@ -1,1 +1,1 @@
-ThisBuild / version := "zlef_verbose_staging"
+ThisBuild / version := "4.2.22-VERBOSE"
