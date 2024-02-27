@@ -504,7 +504,7 @@ object SecondaryWatcherApp {
     (dsInfo: DSInfo, reporter: MetricsReporter, curator: CuratorFramework)
     (secondaryWatcherConfig: SecondaryWatcherAppConfig)
     (secondaries: Map[String, (Secondary[SoQLType, SoQLValue], NumWorkers)]
-    ): Unit =  {
+    ): Unit =  try {
 
     PropertyConfigurator.configure(secondaryWatcherConfig.log4j)
     val log = LoggerFactory.getLogger(classOf[SecondaryWatcher[_,_]])
@@ -518,10 +518,15 @@ object SecondaryWatcherApp {
       }
     })
 
+    log.info(s"Constructing executor")
 
     val executor = Executors.newCachedThreadPool()
 
+    log.info(s"Constructing collocationLock")
+
     val collocationLock = new CuratedCollocationLock(curator, secondaryWatcherConfig.collocationLockPath)
+
+    log.info(s"Constructing soqlCommon")
 
     val common = new SoQLCommon(
       dsInfo.dataSource,
@@ -541,10 +546,13 @@ object SecondaryWatcherApp {
     val messageProducer = MessageProducerFromConfig(secondaryWatcherConfig.watcherId, messageProducerExecutor, secondaryWatcherConfig.messageProducerConfig)
     messageProducer.start()
 
+    log.info(s"Constructing secondary watcher")
     val w = new SecondaryWatcher(common.universe, secondaryWatcherConfig.watcherId, secondaryWatcherConfig.claimTimeout, secondaryWatcherConfig.backoffInterval,
       secondaryWatcherConfig.replayWait, secondaryWatcherConfig.maxReplayWait, secondaryWatcherConfig.maxRetries,
       secondaryWatcherConfig.maxReplays.getOrElse(Integer.MAX_VALUE), common.timingReport,
       messageProducer, collocationLock, secondaryWatcherConfig.collocationLockTimeout)
+
+    log.info(s"Constructing secondary claim manager")
     val cm = new SecondaryWatcherClaimManager(dsInfo, secondaryWatcherConfig.watcherId, secondaryWatcherConfig.claimTimeout, w.inProgress)
 
     val SIGTERM = new Signal("TERM")
@@ -632,6 +640,10 @@ object SecondaryWatcherApp {
 
     secondaries.values.foreach { case (secondary, _) => secondary.shutdown()}
     executor.shutdown()
+  } catch {
+    case error: Throwable =>
+      println(error)
+      throw error
   }
 
 
