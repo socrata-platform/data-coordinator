@@ -543,7 +543,7 @@ object SecondaryWatcherApp {
       NullCache
     )
     log.info("Constructing message producer")
-    log.info(secondaryWatcherConfig.messageProducerConfig)
+    log.info(secondaryWatcherConfig.messageProducerConfig.toString)
     val messageProducerExecutor = Executors.newCachedThreadPool()
     val messageProducer = MessageProducerFromConfig(secondaryWatcherConfig.watcherId, messageProducerExecutor, secondaryWatcherConfig.messageProducerConfig)
     messageProducer.start()
