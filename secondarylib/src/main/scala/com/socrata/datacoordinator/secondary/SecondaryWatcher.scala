@@ -642,7 +642,9 @@ object SecondaryWatcherApp {
     executor.shutdown()
   } catch {
     case error: Throwable =>
+      println("Uncaught error:")
       println(error)
+      error.printStackTrace
       throw error
   }
 
