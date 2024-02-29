@@ -80,7 +80,7 @@ case class SecondaryManifestsMoveResource(storeGroup: Option[String],
             case Right(Left(StoreDisallowsCollocation)) =>
               errorResponse(
                 BadRequest,
-                CollocationError.STORE_DOES_NOT_SUPPORT_COLLOCATION
+                CollocationError.STORE_DOES_NOT_SUPPORT_COLLOCATION,
                 "store" -> JString(request.toStoreId)
               )
             case Right(Left(DatasetNotInStore)) =>

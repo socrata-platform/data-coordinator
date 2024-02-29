@@ -1,12 +1,11 @@
 package com.socrata.datacoordinator.service.collocation
 
 import java.util.UUID
-
 import com.rojoma.json.v3.codec.JsonEncode
 import com.rojoma.json.v3.util._
 import com.socrata.datacoordinator.common.collocation.{CollocationLock, CollocationLockError, CollocationLockTimeout}
 import com.socrata.datacoordinator.id.DatasetInternalName
-import com.socrata.datacoordinator.resources.collocation.{CollocatedDatasetsResult, DatasetNotInStore, SecondaryMoveJobRequest, StoreNotAcceptingDatasets}
+import com.socrata.datacoordinator.resources.collocation.{CollocatedDatasetsResult, DatasetNotInStore, SecondaryMoveJobRequest, StoreDisallowsCollocation, StoreNotAcceptingDatasets}
 import com.socrata.datacoordinator.service.collocation.secondary.stores.SecondaryStoreSelector
 import org.joda.time.DateTime
 

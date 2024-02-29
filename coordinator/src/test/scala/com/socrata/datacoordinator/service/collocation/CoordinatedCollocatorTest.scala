@@ -1,15 +1,15 @@
 package com.socrata.datacoordinator.service.collocation
 
 import java.util.UUID
-
 import com.socrata.datacoordinator.common.collocation.CollocationLockTimeout
 import com.socrata.datacoordinator.collocation.TestData
 import com.socrata.datacoordinator.common.collocation.CollocationLock
 import com.socrata.datacoordinator.id.DatasetInternalName
-import com.socrata.datacoordinator.resources.{SecondariesOfDatasetResult, VersionSpec, SecondaryValue}
+import com.socrata.datacoordinator.resources.{SecondariesOfDatasetResult, SecondaryValue, VersionSpec}
 import com.socrata.datacoordinator.resources.collocation.{CollocatedDatasetsResult, SecondaryMoveJobsResult}
 import com.socrata.datacoordinator.secondary.SecondaryMetric
 import com.socrata.datacoordinator.secondary.config.mock.{SecondaryGroupConfig, StoreConfig}
+import org.scalacheck.Prop.True
 import org.scalamock.scalatest.MockFactory
 import org.scalatest.{FunSuite, Matchers}
 
@@ -95,13 +95,14 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
 
   def groupConfig(numReplicas: Int,
                   instances: Set[String],
+                  groupAcceptingCollocation: Boolean = true,
                   instancesNotAcceptingNewDatasets: Set[String] = Set.empty) = {
     val instanceMap = instances.map { instance =>
       val config = StoreConfig(1000, !instancesNotAcceptingNewDatasets(instance))
       (instance, config)
     }.toMap
 
-    SecondaryGroupConfig(numReplicas, instanceMap, true)
+    SecondaryGroupConfig(numReplicas, instanceMap, groupAcceptingCollocation)
   }
 
   val datasetsEmpty = Set.empty[DatasetInternalName]
@@ -376,6 +377,27 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
       }
     }
   }
+
+  testExplainAndExecuteCollocation(
+    "should return an error for disallowing collocation",
+    { coordinator =>
+      (coordinator.secondaryGroupConfigs _).expects().returns(Map(storeGroupA -> groupConfig(2, storesGroupA, false)))
+    })(
+
+    requestEmpty,
+
+    { commonResult => },
+
+    { explainResult =>
+
+      explainResult should be(resultApprovedEmpty)
+
+    }, { (_, executeResult, moves) =>
+
+      executeResult should be(resultCompleted)
+      moves should be(Seq.empty)
+    }
+  )
 
   testExplainAndExecuteCollocation(
     "should return the canonical empty result for an empty request",
@@ -713,6 +735,14 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
       collocator.commitCollocation(UUID.randomUUID(), request(Seq((alpha1, bravo1))))
 
       manifest.get should be (Set((alpha1, bravo1)))
+    }
+  }
+
+  test("test disallowing collocation if the seconadry doesn't support collocation") {
+    withMocks(defaultStoreGroups) { (collocator, manifest) =>
+      collocator.commitCollocation(UUID.randomUUID(), request(Seq((alpha1, bravo1))))
+
+      manifest.get should be(Set((alpha1, bravo1)))
     }
   }
 
