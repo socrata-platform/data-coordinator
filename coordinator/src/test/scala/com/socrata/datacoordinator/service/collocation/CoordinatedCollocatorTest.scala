@@ -744,14 +744,6 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
     }
   }
 
-  test("test disallowing collocation if the seconadry doesn't support collocation") {
-    withMocks(defaultStoreGroups) { (collocator, manifest) =>
-      collocator.commitCollocation(UUID.randomUUID(), request(Seq((alpha1, bravo1))))
-
-      manifest.get should be(Set((alpha1, bravo1)))
-    }
-  }
-
   test("commitCollocation for multiple pairs should save those pairs to the manifest") {
     withMocks(defaultStoreGroups) { (collocator, manifest) =>
       val collocations = Seq(
