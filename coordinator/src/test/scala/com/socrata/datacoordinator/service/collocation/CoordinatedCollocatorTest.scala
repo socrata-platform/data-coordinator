@@ -383,7 +383,6 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
     withMocks(Set(storeGroupA), { coordinator =>
       (coordinator.secondaryGroupConfigs _).expects().returns(Map(storeGroupA -> groupConfig(2, storesGroupA, false)))
     }) { case (collocator, _) =>
-        val jobId = UUID.randomUUID()
         val result = collocator.explainCollocation(storeGroupA, requestEmpty)
     }
   }
