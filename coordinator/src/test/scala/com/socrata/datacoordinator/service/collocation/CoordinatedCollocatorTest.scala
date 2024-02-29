@@ -379,11 +379,29 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
   }
 
 
-  test("should return an error for disallowing collocation") {
+  test("should return an error for disallowing collocation when collocating in a disallowed group") {
     withMocks(Set(storeGroupA), { coordinator =>
-      (coordinator.secondaryGroupConfigs _).expects().returns(Map(storeGroupA -> groupConfig(2, storesGroupA, false)))
+      (coordinator.secondaryGroupConfigs _)
+        .expects()
+        .returns(Map(
+          storeGroupB -> groupConfig(2, storesGroupB, true),
+          storeGroupA -> groupConfig(2, storesGroupA, false)))
     }) { case (collocator, _) =>
         val result = collocator.explainCollocation(storeGroupA, requestEmpty)
+        println(result)
+    }
+  }
+
+  test("should return allow collocation when collocating in an allowed group, but is also in a disallowed group") {
+    withMocks(Set(storeGroupA), { coordinator =>
+      (coordinator.secondaryGroupConfigs _)
+        .expects()
+        .returns(Map(
+          storeGroupB -> groupConfig(2, storesGroupB, true),
+          storeGroupA -> groupConfig(2, storesGroupA, false)))
+    }) { case (collocator, _) =>
+        val result = collocator.explainCollocation(storeGroupB, requestEmpty)
+        println(result)
     }
   }
 
