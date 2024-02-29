@@ -388,7 +388,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
           storeGroupA -> groupConfig(2, storesGroupA, false)))
     }) { case (collocator, _) =>
         val result = collocator.explainCollocation(storeGroupA, requestEmpty)
-        println(result)
+        println(result) // should be error
     }
   }
 
@@ -401,7 +401,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
           storeGroupA -> groupConfig(2, storesGroupA, false)))
     }) { case (collocator, _) =>
         val result = collocator.explainCollocation(storeGroupB, requestEmpty)
-        println(result)
+        println(result) // should not be error
     }
   }
 
