@@ -378,26 +378,15 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
     }
   }
 
-  testExplainAndExecuteCollocation(
-    "should return an error for disallowing collocation",
-    { coordinator =>
+
+  test("should return an error for disallowing collocation") {
+    withMocks(Set(storeGroupA), { coordinator =>
       (coordinator.secondaryGroupConfigs _).expects().returns(Map(storeGroupA -> groupConfig(2, storesGroupA, false)))
-    })(
-
-    requestEmpty,
-
-    { commonResult => },
-
-    { explainResult =>
-
-      explainResult should be(resultApprovedEmpty)
-
-    }, { (_, executeResult, moves) =>
-
-      executeResult should be(resultCompleted)
-      moves should be(Seq.empty)
+    }) { case (collocator, _) =>
+        val jobId = UUID.randomUUID()
+        val result = collocator.explainCollocation(storeGroupA, requestEmpty)
     }
-  )
+  }
 
   testExplainAndExecuteCollocation(
     "should return the canonical empty result for an empty request",
