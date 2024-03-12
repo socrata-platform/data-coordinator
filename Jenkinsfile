@@ -1,11 +1,14 @@
 // Set up the libraries
 @Library('socrata-pipeline-library')
 
+import com.socrata.ReleaseMetadataService
+def rmsSupportedEnvironment = com.socrata.ReleaseMetadataService.SupportedEnvironment
+
 // set up service and project variables
-def service = 'data-coordinator'
-def project_wd = 'coordinator'
-def isPr = env.CHANGE_ID != null
-def lastStage
+String service = 'data-coordinator'
+String project_wd = 'coordinator'
+boolean isPr = env.CHANGE_ID != null
+String lastStage
 
 // instanciate libraries
 def sbtbuild = new com.socrata.SBTBuild(steps, service, project_wd)
@@ -30,8 +33,7 @@ pipeline {
   }
   environment {
     SCALA_VERSION = '2.12'
-    DEPLOY_PATTERN = 'data-coordinator*'
-    SERVICE = 'data-coordinator'
+    DEPLOY_PATTERN = "${service}*"
     WEBHOOK_ID = 'WEBHOOK_IQ'
   }
   stages {
@@ -46,7 +48,7 @@ pipeline {
             echo 'DRY RUN: Skipping release tag creation'
           }
           else {
-            releaseTag.create(params.RELEASE_NAME)
+            env.GIT_TAG = releaseTag.create(params.RELEASE_NAME)
           }
         }
       }
@@ -120,7 +122,16 @@ pipeline {
         success {
           script {
             if (params.RELEASE_BUILD && !params.RELEASE_DRY_RUN) {
-              echo env.DOCKER_TAG // For now, just print the deploy tag in the console output -- later, communicate to release metadata service
+              Map buildInfo = [
+                "project_id": service,
+                "build_id": env.DOCKER_TAG,
+                "release_id": params.RELEASE_NAME,
+                "git_tag": env.GIT_TAG,
+              ]
+              createBuild(
+                buildInfo,
+                rmsSupportedEnvironment.production
+              )
             }
           }
         }
