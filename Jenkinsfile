@@ -130,7 +130,7 @@ pipeline {
               ]
               createBuild(
                 buildInfo,
-                rmsSupportedEnvironment.staging // change to production before merging
+                rmsSupportedEnvironment.production
               )
             }
           }
