@@ -267,7 +267,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
               if (!groupConfig.instances.keySet(toStoreId)) return Left(StoreNotFound(toStoreId))
 
               if (!groupConfig.respectsCollocation) {
-                return Right(Left(StoreDisallowsCollocation))
+                return Right(Left(StoreDisallowsCollocationMoveJob))
               }
 
               if (!groupConfig.instances(toStoreId).acceptingNewDatasets) {

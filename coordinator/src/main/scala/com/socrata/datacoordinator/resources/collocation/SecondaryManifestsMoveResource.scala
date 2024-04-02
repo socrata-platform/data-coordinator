@@ -30,7 +30,7 @@ object SecondaryMoveJobRequest {
 sealed abstract class InvalidMoveJob
 
 case object StoreNotAcceptingDatasets extends InvalidMoveJob
-case object StoreDisallowsCollocation extends InvalidMoveJob
+case object StoreDisallowsCollocationMoveJob extends InvalidMoveJob
 case object DatasetNotInStore extends InvalidMoveJob
 
 case class SecondaryManifestsMoveResource(storeGroup: Option[String],
@@ -77,7 +77,7 @@ case class SecondaryManifestsMoveResource(storeGroup: Option[String],
                 CollocationError.STORE_NOT_ACCEPTING_NEW_DATASETS,
                 "store" -> JString(request.toStoreId)
               )
-            case Right(Left(StoreDisallowsCollocation)) =>
+            case Right(Left(StoreDisallowsCollocationMoveJob)) =>
               errorResponse(
                 BadRequest,
                 CollocationError.STORE_DOES_NOT_SUPPORT_COLLOCATION,

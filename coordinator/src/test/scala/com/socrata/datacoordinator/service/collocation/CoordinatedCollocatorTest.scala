@@ -387,12 +387,17 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
           storeGroupB -> groupConfig(2, storesGroupB, true),
           storeGroupA -> groupConfig(2, storesGroupA, false)))
     }) { case (collocator, _) =>
-        val result = collocator.explainCollocation(storeGroupA, requestEmpty)
-        println(result) // should be error
+        val (result, _) = collocator.executeCollocation(UUID.randomUUID(), storeGroupA, requestEmpty)
+
+        println(result)
+        result match {
+          case Left(_) =>
+          case Right(_) => fail()
+        }
     }
   }
 
-  test("should return allow collocation when collocating in an allowed group, but is also in a disallowed group") {
+  test("should allow collocation when collocating in an allowed group, but is also in a disallowed group") {
     withMocks(Set(storeGroupA), { coordinator =>
       (coordinator.secondaryGroupConfigs _)
         .expects()
@@ -401,7 +406,11 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
           storeGroupA -> groupConfig(2, storesGroupA, false)))
     }) { case (collocator, _) =>
         val result = collocator.explainCollocation(storeGroupB, requestEmpty)
-        println(result) // should not be error
+
+        result match {
+          case Right(_) =>
+          case Left(_) => fail()
+        }
     }
   }
 
