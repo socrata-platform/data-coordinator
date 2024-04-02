@@ -81,7 +81,7 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
                 // "add dataset" step will fail and we'll just say "ok
                 // all is well" if it's already here.
                 // We only want to respect collocation for those secondaries
-                // where collocation matters (i.e. not archival, not spandex, etc..)
+                // where collocation matters (i.e. not archival, etc..)
                 u.secondaryManifest.addDataset(storeId, datasetId)
                 // great, now do collocation stuff...
                 val collocatedDatasets =
