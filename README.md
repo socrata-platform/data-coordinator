@@ -83,7 +83,7 @@ Below is a copy of the email distributed to engineering when breaking changes we
 
 >Hi All,
 >The secondary architecture has been inverted (thank you @robert.macomber).
->The secondaries (`pg`, `spandex`, `geocoding`) are no longer dynamically
+>The secondaries (`pg`, `geocoding`) are no longer dynamically
 >loaded as jar files in `secondary-watcher`. But, instead are now their own
 >executable and `secondary-watcher` is now a library that they use.
 
@@ -91,13 +91,12 @@ Below is a copy of the email distributed to engineering when breaking changes we
 
 >How to update your stack:
 > - Pull main of `data-coordinator`, `soql-postgres-adapter`, and `geocoding-secondary` (if you wish)
-> - Fetch `spandex` and `docs` and check-out branches `en-7807` and `aerust/en-7807` respectively (branches aren't quite merged but functioning).
+> - Fetch `docs` and check-out branches `en-7807` and `aerust/en-7807` respectively (branches aren't quite merged but functioning).
 > - Run `sbt assembly` for all of the above scala projects.
 > - Update your `/etc/soda2.conf` file; `com.socrata.coordinator.common.secondary.instances` should be empty (but still needs to be there :( ). Copy the new config files for the secondaries over to `/etc`:
 
 >```sh
 >sudo cp $DEV_DIR/docs/onramp/services/pg-secondary.conf /etc/
->sudo cp $DEV_DIR/docs/onramp/services/spandex-secondary.conf /etc/
 >sudo cp $DEV_DIR/docs/onramp/services/geocoding-secondary.conf /etc/
 >```
 
