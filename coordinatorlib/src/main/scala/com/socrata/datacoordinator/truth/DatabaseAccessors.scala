@@ -458,7 +458,7 @@ object DatasetMutator {
                 ]
               ]
             ],
-            @AllowMissing("Nil") rewritePasses: Seq[Seq[rewrite.Pass]],
+            @AllowMissing("Nil") rewritePasses: Seq[Seq[rewrite.AnyPass]],
             @AllowMissing("UserParameters.empty") userParameters: UserParameters
           )
 
