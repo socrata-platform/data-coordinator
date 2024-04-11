@@ -20,11 +20,11 @@ pipeline {
     ansiColor('xterm')
   }
   parameters {
-    booleanParam(name: 'RELEASE_BUILD', defaultValue: false, description: 'Are we building a release candidate?')
-    booleanParam(name: 'RELEASE_DRY_RUN', defaultValue: false, description: 'To test out the release build without creating a new tag.')
-    string(name: 'RELEASE_NAME', defaultValue: '', description: 'For release builds, the release name which is used for the git tag and the deploy tag.')
     string(name: 'AGENT', defaultValue: 'build-worker', description: 'Which build agent to use?')
     string(name: 'BRANCH_SPECIFIER', defaultValue: 'origin/main', description: 'Use this branch for building the artifact.')
+    string(name: 'RELEASE_NAME', defaultValue: '', description: 'For release builds, the release name which is used for the git tag and the deploy tag.')
+    booleanParam(name: 'RELEASE_BUILD', defaultValue: false, description: 'Are we building a release candidate?')
+    booleanParam(name: 'RELEASE_DRY_RUN', defaultValue: false, description: 'To test out the release build without creating a new tag.')
     booleanParam(name: 'PUBLISH', defaultValue: false, description: 'Set to true to manually initiate a publish build - you must also specify PUBLISH_SHA')
     string(name: 'PUBLISH_SHA', defaultValue: '', description: 'For publish builds, the git commit SHA or branch to build from')
   }
@@ -37,42 +37,7 @@ pipeline {
     WEBHOOK_ID = 'WEBHOOK_IQ'
   }
   stages {
-    stage('Release Tag') {
-      when {
-        expression { return params.RELEASE_BUILD }
-      }
-      steps {
-        script {
-          lastStage = env.STAGE_NAME
-          if (params.RELEASE_DRY_RUN) {
-            echo 'DRY RUN: Skipping release tag creation'
-          }
-          else {
-            env.GIT_TAG = releaseTag.create(params.RELEASE_NAME)
-          }
-        }
-      }
-    }
-    stage('Build') {
-      when {
-        not { expression { return params.PUBLISH } }
-      }
-      steps {
-        script {
-          lastStage = env.STAGE_NAME
-          // perform any needed modifiers on the build parameters here
-          sbtbuild.setRunITTest(true)
-          sbtbuild.setNoSubproject(true)
-          sbtbuild.setScalaVersion(env.SCALA_VERSION)
-          sbtbuild.setSrcJar("coordinator/target/coordinator-assembly.jar")
-
-          // build
-          echo "Building sbt project..."
-          sbtbuild.build()
-        }
-      }
-    }
-    stage('Publish') {
+    stage('Publish Library') {
       when {
         expression { return params.PUBLISH }
       }
@@ -98,7 +63,26 @@ pipeline {
         }
       }
     }
-    stage('Dockerize') {
+    stage('Build') {
+      when {
+        not { expression { return params.PUBLISH } }
+      }
+      steps {
+        script {
+          lastStage = env.STAGE_NAME
+          // perform any needed modifiers on the build parameters here
+          sbtbuild.setRunITTest(true)
+          sbtbuild.setNoSubproject(true)
+          sbtbuild.setScalaVersion(env.SCALA_VERSION)
+          sbtbuild.setSrcJar("coordinator/target/coordinator-assembly.jar")
+
+          // build
+          echo "Building sbt project..."
+          sbtbuild.build()
+        }
+      }
+    }
+    stage('Docker Build') {
       when {
         allOf {
           not { expression { isPr } }
@@ -109,11 +93,9 @@ pipeline {
         script {
           lastStage = env.STAGE_NAME
           if (params.RELEASE_BUILD) {
-            env.REGISTRY_PUSH = (params.RELEASE_DRY_RUN) ? 'none' : 'all'
-            env.DOCKER_TAG = dockerize.docker_build_specify_tag_and_push(params.RELEASE_NAME, sbtbuild.getDockerPath(), sbtbuild.getDockerArtifact(), env.REGISTRY_PUSH)
+            env.DOCKER_TAG = dockerize.dockerBuildWithSpecificTag(tag: params.RELEASE_NAME, path: sbtbuild.getDockerPath(), artifacts: [sbtbuild.getDockerArtifact()])
           } else {
-            env.REGISTRY_PUSH = 'internal'
-            env.DOCKER_TAG = dockerize.docker_build('STAGING', env.GIT_COMMIT, sbtbuild.getDockerPath(), sbtbuild.getDockerArtifact(), env.REGISTRY_PUSH)
+            env.DOCKER_TAG = dockerize.dockerBuildWithDefaultTag(version: 'STAGING', sha: env.GIT_COMMIT, path: sbtbuild.getDockerPath(), artifacts: [sbtbuild.getDockerArtifact()])
           }
           currentBuild.description = env.DOCKER_TAG
         }
@@ -121,7 +103,42 @@ pipeline {
       post {
         success {
           script {
-            if (params.RELEASE_BUILD && !params.RELEASE_DRY_RUN) {
+            if (params.RELEASE_BUILD && !params.RELEASE_DRY_RUN){
+              env.GIT_TAG = releaseTag.getFormattedTag(params.RELEASE_NAME)
+              if (releaseTag.doesReleaseTagExist(params.RELEASE_NAME)) {
+                echo "REBUILD: Tag ${env.GIT_TAG} already exists"
+                return
+              }
+              if (params.RELEASE_DRY_RUN) {
+                echo "DRY RUN: Would have created ${env.GIT_TAG} and pushed it to the repo"
+                return
+              }
+              releaseTag.create(params.RELEASE_NAME)
+            }
+          }
+        }
+      }
+    }
+    stage('Publish Image') {
+      when {
+        allOf {
+          not { expression { isPr } }
+          not { expression { return params.PUBLISH } }
+          not { expression { return params.RELEASE_BUILD && params.RELEASE_DRY_RUN } }
+        }
+      }
+      steps {
+        script {
+          lastStage = env.STAGE_NAME
+          // Passing [] to overrideEnvironments will not override the environments, so the docker image will be published to all environments
+          Set environments = (params.RELEASE_BUILD) ? [] : ['internal']
+          dockerize.publish(sourceImage: env.DOCKER_TAG, overrideEnvironments: environments)
+        }
+      }
+      post {
+        success {
+          script {
+            if (params.RELEASE_BUILD) {
               Map buildInfo = [
                 "project_id": service,
                 "build_id": env.DOCKER_TAG,
@@ -130,7 +147,7 @@ pipeline {
               ]
               createBuild(
                 buildInfo,
-                rmsSupportedEnvironment.production
+                rmsSupportedEnvironment.staging //production
               )
             }
           }
@@ -146,8 +163,7 @@ pipeline {
       steps {
         script {
           lastStage = env.STAGE_NAME
-          // uses env.DOCKER_TAG and deploys to staging by default
-          marathonDeploy(serviceName: env.DEPLOY_PATTERN)
+          marathonDeploy(serviceName: env.DEPLOY_PATTERN, tag: env.DOCKER_TAG, environment: 'staging')
         }
       }
     }
@@ -155,7 +171,7 @@ pipeline {
   post {
     failure {
       script {
-        if (!isPr) {
+        if (env.JOB_NAME == "${service}/main") {
           teamsMessage(message: "Build [${currentBuild.fullDisplayName}](${env.BUILD_URL}) has failed in stage ${lastStage}", webhookCredentialID: WEBHOOK_ID)
         }
       }
