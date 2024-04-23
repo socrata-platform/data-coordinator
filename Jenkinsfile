@@ -163,7 +163,7 @@ pipeline {
               ]
               createBuild(
                 buildInfo,
-                rmsSupportedEnvironment.staging //production
+                rmsSupportedEnvironment.production
               )
             }
           }
