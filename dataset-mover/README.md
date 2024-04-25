@@ -1,3 +1,17 @@
+To move a dataset from one truth to another:
+
+1- in data-coordinator run `sbt datasetMover/assembly` to build the dataset-mover subproject
+
+2- create the config file according to the template below
+
+3- ssh into a node with java that truth will accept connections from e.g. a core node (in the same environment as the truth)
+
+4- run the following command for a dry run `java -Dconfig.file=<config-file> -jar <jar-file> <dataset_system_id> <truth to be moved to>`
+
+to get the dataset_system_id run the following query on soda-fountain: `select dataset_system_id from datasets where resource_name = '_<fxf>';`
+
+5- for the actual execution run `SOCRATA_COMMIT_MOVE=1 java -Dconfig.file=<config-file> -jar <jar-file> <dataset_system_id> <truth to be moved to>`
+
 Here is a sample dataset-mover configuration file actual connection
 information removed (search for `XXXX` to find all the bits that need
 to be filled in)
