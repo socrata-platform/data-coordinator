@@ -1,6 +1,6 @@
 To move a dataset from one truth to another:
 
-1- in data-coordinator run `sbt datasetMover/assembly to build the dataset-mover subproject`
+1- in data-coordinator run `sbt datasetMover/assembly` to build the dataset-mover subproject
 
 2- create the config file according to the template below
 
