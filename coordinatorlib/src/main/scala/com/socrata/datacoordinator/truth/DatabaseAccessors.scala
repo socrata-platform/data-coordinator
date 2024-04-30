@@ -444,26 +444,6 @@ object DatasetMutator {
       // while DC would need to handle datasets that live in different truth-stores.
       def validateRollup(ru: RollupInfo): Unit = {
         if(ru.isNewAnalyzer) {
-          import com.socrata.soql.analyzer2._
-          import com.socrata.soql.stdlib.analyzer2.UserParameters
-
-          case class RollupShape(
-            foundTables: FoundTables[UnstagedDataCoordinatorMetaTypes],
-            @AllowMissing("Map.empty") locationSubcolumns: Map[
-              types.DatabaseTableName[UnstagedDataCoordinatorMetaTypes],
-              Map[
-                types.DatabaseColumnName[UnstagedDataCoordinatorMetaTypes],
-                Seq[
-                  Either[JNull, types.DatabaseColumnName[DataCoordinatorMetaTypes]]
-                ]
-              ]
-            ],
-            @AllowMissing("Nil") rewritePasses: Seq[Seq[rewrite.AnyPass]],
-            @AllowMissing("UserParameters.empty") userParameters: UserParameters
-          )
-
-          implicit val decode = AutomaticJsonDecodeBuilder[RollupShape]
-
           JsonUtil.parseJson[RollupShape](ru.soql) match {
             case Right(_) => // ok
             case Left(err) => throw RollupValidationException(ru, err.english)

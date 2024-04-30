@@ -2,7 +2,7 @@ package com.socrata.datacoordinator.truth.metadata
 package `-impl`
 
 import com.rojoma.json.v3.ast.JObject
-import com.socrata.datacoordinator.id.{DatasetId, IndexId, IndexName, RollupName}
+import com.socrata.datacoordinator.id.{DatasetInternalName, DatasetId, IndexId, IndexName, RollupName}
 import com.socrata.datacoordinator.util.collection.ColumnIdMap
 import com.socrata.soql.environment.ColumnName
 import org.joda.time.DateTime
@@ -49,6 +49,8 @@ trait BaseDatasetMapReader[CT] {
   /** Returns all rollups for the given dataset copy.
    */
   def rollups(copyInfo: CopyInfo): Iterable[RollupInfo]
+
+  def allRollupsReferencing(internalName: DatasetInternalName): Iterable[RollupInfo]
 
   /** Returns the RollupInfo for the specified rollup.
     */

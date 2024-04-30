@@ -30,6 +30,8 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
   implicit def typeNamespace: TypeNamespace[CT]
   implicit def tag: Tag = null
 
+  protected val log = org.slf4j.LoggerFactory.getLogger(classOf[BasePostgresDatasetMapReader[_]])
+
   val conn: Connection
   def t: TimingReport
 
@@ -41,6 +43,20 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
       using(stmt.executeQuery()) { rs =>
         rs.next()
         toDateTime(rs.getTimestamp(1))
+      }
+    }
+  }
+
+  private def datasetInfoBySystemIdQuery = "SELECT system_id, next_counter_value, latest_data_version, locale_name, obfuscation_key, resource_name FROM dataset_map WHERE system_id = ?"
+  private def datasetInfo(datasetId: DatasetId) = {
+    using(conn.prepareStatement(datasetInfoBySystemIdQuery)) { stmt =>
+      stmt.setDatasetId(1, datasetId)
+      using(t("lookup-dataset", "dataset_id" -> datasetId)(stmt.executeQuery())) { rs =>
+        if (rs.next()) {
+          Some(DatasetInfo(rs.getDatasetId("system_id"), rs.getLong("next_counter_value"), rs.getLong("latest_data_version"), rs.getString("locale_name"), rs.getBytes("obfuscation_key"), Option(rs.getString("resource_name"))))
+        } else {
+          None
+        }
       }
     }
   }
@@ -178,6 +194,29 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
       using(t("lookup-copy","dataset_id" -> datasetInfo.systemId,"copy_number"->copyNumber)(stmt.executeQuery())) { rs =>
         if(rs.next()) {
           Some(CopyInfo(datasetInfo, new CopyId(rs.getLong("system_id")), rs.getLong("copy_number"), rs.getLifecycleStage("lifecycle_stage"), rs.getLong("data_version"), getDataShapeVersion(rs), toDateTime(rs.getTimestamp("last_modified")), rs.getNullableLong("table_modifier")))
+        } else {
+          None
+        }
+      }
+    }
+  }
+
+  def lookupCopyByIdQuery =
+    """SELECT
+      |  copy_number, lifecycle_stage, data_version, data_shape_version, last_modified, table_modifier
+      |FROM
+      |  copy_map
+      |  LEFT OUTER JOIN copy_map_table_modifiers ON copy_map.system_id = copy_map_table_modifiers.copy_system_id
+      |WHERE
+      |  dataset_system_id = ?
+      |  AND system_id = ?""".stripMargin
+  def lookupCopyById(datasetInfo: DatasetInfo, copyId: CopyId): Option[CopyInfo] = {
+    using(conn.prepareStatement(lookupCopyByIdQuery)) { stmt =>
+      stmt.setDatasetId(1, datasetInfo.systemId)
+      stmt.setCopyId(2, copyId)
+      using(t("lookup-copy","dataset_id" -> datasetInfo.systemId,"copy_id"->copyId)(stmt.executeQuery())) { rs =>
+        if(rs.next()) {
+          Some(CopyInfo(datasetInfo, copyId, rs.getLong("copy_number"), rs.getLifecycleStage("lifecycle_stage"), rs.getLong("data_version"), getDataShapeVersion(rs), toDateTime(rs.getTimestamp("last_modified")), rs.getNullableLong("table_modifier")))
         } else {
           None
         }
@@ -346,6 +385,48 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
     }
   }
 
+  def rollupsReferencingQuery = """SELECT cm.dataset_system_id, rm.copy_system_id, rm.name, rm.soql, rm.raw_soql FROM rollup_map rm JOIN copy_map cm ON rm.copy_system_id = cm.id WHERE rm.soql LIKE '{%' AND jsonb_path_query_array(rm.soql::jsonb, '$.foundTables.tableMap[*][1].* ?? (@.type == "dataset").name') ?? ?"""
+  def allRollupsReferencing(internalName: DatasetInternalName): Iterable[RollupInfo] = {
+    case class RawRollupInfo(dsId: DatasetId, copyId: CopyId, name: RollupName, soql: String, rawSoql: Option[String])
+    val rawRollups =
+      using(conn.prepareStatement(rollupsReferencingQuery)) { stmt =>
+        stmt.setString(1, internalName.underlying)
+        using(t("rollups_referencing", "internal_name" -> internalName.underlying)(stmt.executeQuery())) { rs =>
+          val res = new VectorBuilder[RawRollupInfo]
+          while(rs.next()) {
+            res += RawRollupInfo(
+              rs.getDatasetId("dataset_system_id"),
+              rs.getCopyId("copy_system_id"),
+              new RollupName(rs.getString("name")),
+              rs.getString("soql"),
+              Option(rs.getString("raw_soql"))
+            )
+          }
+          res.result()
+        }
+      }
+
+    val datasets = rawRollups.iterator.map(_.dsId).toSet.iterator.map { (id: DatasetId) =>
+      id -> datasetInfo(id).getOrElse {
+        ???
+      }
+    }.toMap
+    val copies = rawRollups.foldLeft(Map.empty[(DatasetId, CopyId), CopyInfo]) { (acc, rollup) =>
+      if(acc.contains((rollup.dsId, rollup.copyId))) {
+        acc
+      } else {
+        val copy = lookupCopyById(datasets(rollup.dsId), rollup.copyId).getOrElse {
+          ???
+        }
+        acc + ((rollup.dsId, rollup.copyId) -> copy)
+      }
+    }
+
+    rawRollups.map { rri =>
+      RollupInfo(copies((rri.dsId, rri.copyId)), rri.name, rri.soql, rri.rawSoql)
+    }
+  }
+
   def rollupQuery = "SELECT soql, raw_soql FROM rollup_map WHERE copy_system_id = ? AND name = ?"
   def rollup(copyInfo: CopyInfo, name: RollupName): Option[RollupInfo] = {
     using(conn.prepareStatement(rollupQuery)) { stmt =>
@@ -452,8 +533,6 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
 }
 
 class PostgresDatasetMapReader[CT](val conn: Connection, tns: TypeNamespace[CT], timingReport: TimingReport) extends DatasetMapReader[CT] with BasePostgresDatasetMapReader[CT] {
-  private val log = org.slf4j.LoggerFactory.getLogger(classOf[BasePostgresDatasetMapReader[_]])
-
   implicit def typeNamespace = tns
   def t = timingReport
 
