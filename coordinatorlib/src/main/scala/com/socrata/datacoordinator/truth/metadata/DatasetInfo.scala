@@ -2,7 +2,7 @@ package com.socrata.datacoordinator
 package truth.metadata
 
 import com.rojoma.json.v3.util.{JsonKey, AutomaticJsonCodecBuilder}
-import com.socrata.datacoordinator.id.DatasetId
+import com.socrata.datacoordinator.id.{DatasetId, DatasetResourceName}
 import com.rojoma.json.v3.codec.{DecodeError, JsonDecode, JsonEncode}
 import com.rojoma.json.v3.ast.{JString, JValue}
 import com.socrata.soql.types.obfuscation.CryptProvider
@@ -12,7 +12,7 @@ trait DatasetInfoLike extends Product {
   val nextCounterValue: Long
   val localeName: String
   val obfuscationKey: Array[Byte]
-  val resourceName: Option[String]
+  val resourceName: DatasetResourceName
 
   lazy val tableBase = "t" + systemId.underlying
   lazy val auditTableName = tableBase + "_audit"
@@ -24,9 +24,9 @@ case class UnanchoredDatasetInfo(@JsonKey("sid") systemId: DatasetId,
                                  @JsonKey("ctr") nextCounterValue: Long,
                                  @JsonKey("locale") localeName: String,
                                  @JsonKey("obfkey") obfuscationKey: Array[Byte],
-                                 @JsonKey("resource") resourceName: Option[String]) extends DatasetInfoLike
+                                 @JsonKey("resource") resourceName: DatasetResourceName) extends DatasetInfoLike
 
-object UnanchoredDatasetInfo extends ((DatasetId, Long, String, Array[Byte], Option[String]) => UnanchoredDatasetInfo) {
+object UnanchoredDatasetInfo extends ((DatasetId, Long, String, Array[Byte], DatasetResourceName) => UnanchoredDatasetInfo) {
   override def toString = "DatasetInfo"
   private implicit val byteCodec = new JsonDecode[Array[Byte]] with JsonEncode[Array[Byte]] {
     def encode(x: Array[Byte]): JValue =
@@ -47,7 +47,7 @@ object UnanchoredDatasetInfo extends ((DatasetId, Long, String, Array[Byte], Opt
   * or [[com.socrata.datacoordinator.truth.metadata.DatasetMapWriter]].
   * @param tag Guard against a non-map accidentially instantiating this.
   */
-case class DatasetInfo(systemId: DatasetId, nextCounterValue: Long, val latestDataVersion: Long, localeName: String, obfuscationKey: Array[Byte], resourceName: Option[String])(implicit tag: com.socrata.datacoordinator.truth.metadata.`-impl`.Tag) extends DatasetInfoLike {
+case class DatasetInfo(systemId: DatasetId, nextCounterValue: Long, val latestDataVersion: Long, localeName: String, obfuscationKey: Array[Byte], resourceName: DatasetResourceName)(implicit tag: com.socrata.datacoordinator.truth.metadata.`-impl`.Tag) extends DatasetInfoLike {
   def unanchored: UnanchoredDatasetInfo = UnanchoredDatasetInfo(systemId, nextCounterValue, localeName, obfuscationKey, resourceName)
 
   override def equals(o: Any) = o match {

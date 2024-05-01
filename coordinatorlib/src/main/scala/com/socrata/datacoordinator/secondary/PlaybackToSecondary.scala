@@ -140,7 +140,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
   }
 
   def makeSecondaryDatasetInfo(dsInfo: metadata.DatasetInfoLike) =
-    DatasetInfo(datasetIdFormatter(dsInfo.systemId), dsInfo.localeName, dsInfo.obfuscationKey.clone(), dsInfo.resourceName)
+    DatasetInfo(datasetIdFormatter(dsInfo.systemId), dsInfo.localeName, dsInfo.obfuscationKey.clone(), dsInfo.resourceName.underlying)
 
   def makeSecondaryCopyInfo(copyInfo: metadata.CopyInfoLike) =
     CopyInfo(copyInfo.systemId,

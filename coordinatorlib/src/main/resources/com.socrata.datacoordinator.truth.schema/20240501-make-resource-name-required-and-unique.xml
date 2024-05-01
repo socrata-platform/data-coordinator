@@ -1,0 +1,15 @@
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
+    <changeSet author="setzer" id="20240501-make-resource-name-required-and-unique" runOnChange="true">
+        <sql><![CDATA[
+          alter table dataset_map alter column resource_name set not null, add constraint dataset_map_resource_name_unique unique (resource_name);
+        ]]></sql>
+        <rollback>
+            <sql><![CDATA[
+              alter table dataset_map alter column resource_name drop not null, drop constraint dataset_map_resource_name_unique;
+            ]]></sql>
+        </rollback>
+    </changeSet>
+</databaseChangeLog>

@@ -12,7 +12,7 @@ import com.socrata.soql.types._
 import org.joda.time.DateTime
 
 object TestData {
-  val datasetInfo = DatasetInfo("test", "en_us", "magicmagic".getBytes, Some("test"))
+  val datasetInfo = DatasetInfo("test", "en_us", "magicmagic".getBytes, "test")
 
   val systemId = ColumnInfo[SoQLType](new ColumnId(1), new UserColumnId(":id"), Some(ColumnName(":id")), SoQLID,
     isSystemPrimaryKey = true, isUserPrimaryKey = false, isVersion = false, None)

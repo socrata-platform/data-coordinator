@@ -3,6 +3,7 @@ package com.socrata.datacoordinator.secondary.messaging
 import com.rojoma.json.v3.ast.JString
 import com.rojoma.json.v3.codec.JsonEncode
 import com.rojoma.json.v3.util._
+import com.socrata.datacoordinator.id.DatasetResourceName
 import com.socrata.datacoordinator.truth.metadata.LifecycleStage
 
 case class ViewUid(uid: String)
@@ -15,7 +16,7 @@ object ViewUid {
 
 object ToViewUid {
   // drop the leading '_' on resource_name to convert to view uid
-  def apply(resourceName: String): ViewUid = ViewUid(resourceName.drop(1))
+  def apply(resourceName: DatasetResourceName): ViewUid = ViewUid(resourceName.underlying.drop(1))
 }
 
 sealed abstract class Message

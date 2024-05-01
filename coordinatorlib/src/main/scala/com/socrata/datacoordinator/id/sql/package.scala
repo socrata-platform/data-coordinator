@@ -10,6 +10,9 @@ package object sql {
       val x: Long = value.underlying
       __underlying.setObject(idx, x, Types.OTHER)
     }
+    def setDatasetResourceName(idx: Int, value: DatasetResourceName): Unit = {
+      __underlying.setString(idx, value.underlying)
+    }
     def setLifecycleStage(idx: Int, value: LifecycleStage): Unit = {
       val x = value.name()
       __underlying.setString(idx, x)
@@ -58,6 +61,14 @@ package object sql {
       datasetIdify(__underlying.getLong(col))
     def getDatasetId(idx: Int): DatasetId =
       datasetIdify(__underlying.getLong(idx))
+
+    private def datasetResourceNameify(s: String) =
+      if(s == null) null
+      else DatasetResourceName(s)
+    def getDatasetResourceName(col: String): DatasetResourceName =
+      datasetResourceNameify(__underlying.getString(col))
+    def getDatasetResourceName(idx: Int): DatasetResourceName =
+      datasetResourceNameify(__underlying.getString(idx))
 
     private def lifecycleStageify(x: String) =
       if(x == null) null

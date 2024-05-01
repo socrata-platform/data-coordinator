@@ -36,7 +36,7 @@ object Mutator {
   }
 
   case class NormalMutation(index: Long, datasetId: DatasetId, schemaHash: Option[String], expectedDataVersion: Option[Long]) extends StreamType
-  case class CreateDatasetMutation(index: Long, localeName: String, resourceName: Option[String]) extends StreamType
+  case class CreateDatasetMutation(index: Long, localeName: String, resourceName: DatasetResourceName) extends StreamType
   case class CreateWorkingCopyMutation(index: Long,
                                        datasetId: DatasetId,
                                        copyData: Boolean,
@@ -330,7 +330,7 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
           val rawLocale = getWithStrictDefault("locale", "en_US")
           val locale = ULocale.createCanonical(rawLocale)
           if(locale.getName != "en_US") throw InvalidLocale(rawLocale)(index) // for now, we only allow en_US
-          CreateDatasetMutation(index, locale.getName, getOption[String]("resource"))
+          CreateDatasetMutation(index, locale.getName, get[DatasetResourceName]("resource"))
         case other =>
           throw InvalidCommandFieldValue(originalObject, "c", JString(other))(index)
       }

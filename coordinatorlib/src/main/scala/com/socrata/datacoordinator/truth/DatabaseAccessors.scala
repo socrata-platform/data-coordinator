@@ -197,7 +197,7 @@ trait DatasetMutator[CT, CV] {
 
   type TrueMutationContext <: MutationContext
 
-  def createDataset(as: String)(localeName: String, resourceName: Option[String]): Managed[TrueMutationContext]
+  def createDataset(as: String)(localeName: String, resourceName: DatasetResourceName): Managed[TrueMutationContext]
 
   def openDataset(as: String)(datasetId: DatasetId, check: DatasetCopyContext[CT] => Unit): Managed[Option[TrueMutationContext]]
 
@@ -624,7 +624,7 @@ object DatasetMutator {
         })
     }
 
-    def createDataset(as: String)(localeName: String, resourceName: Option[String]) = new Managed[S] {
+    def createDataset(as: String)(localeName: String, resourceName: DatasetResourceName) = new Managed[S] {
       def run[A](f: S => A): A =
         for { llCtx <- databaseMutator.openDatabase } {
           val m = llCtx.datasetMap
