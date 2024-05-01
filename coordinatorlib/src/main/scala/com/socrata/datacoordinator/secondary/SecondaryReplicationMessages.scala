@@ -25,10 +25,9 @@ class SecondaryReplicationMessages[CT, CV](u: SecondaryReplicationMessages.Super
     for {
       datasetInfo <- reader.datasetInfo(datasetId)
       copyInfo <- Some(reader.latestUpTo(datasetInfo, Some(endingDataVersion)))
-      resourceName <- datasetInfo.resourceName
       groupName <- u.secondaryStoresConfig.group(storeId)
     } {
-      val uid = ToViewUid(resourceName)
+      val uid = ToViewUid(datasetInfo.resourceName)
 
       // if the store has a group, send a replication event message for the whole group
       val stores = u.secondaryManifest.stores(datasetId).filterKeys {

@@ -3,7 +3,7 @@ package com.socrata.datacoordinator.truth.metadata.sql
 import java.sql.{Connection, DriverManager, SQLException}
 
 import com.rojoma.simplearm.v2._
-import com.socrata.datacoordinator.id.{ColumnId, RollupName, UserColumnId}
+import com.socrata.datacoordinator.id.{ColumnId, RollupName, UserColumnId, DatasetResourceName}
 import com.socrata.datacoordinator.truth.metadata.{CopyPair, _}
 import com.socrata.datacoordinator.truth.migration.Migration
 import com.socrata.datacoordinator.util.NoopTimingReport
@@ -59,7 +59,7 @@ class PostgresDatasetMapWriterTest extends FunSuite
   val ZeroID = 0L
   val ZeroVersion = 0L
 
-  val resourcName = Some("_abcd-1234")
+  val resourcName = DatasetResourceName("_abcd-1234")
 
   val dbName = "datacoordinator_test"
 

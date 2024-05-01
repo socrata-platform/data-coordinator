@@ -35,7 +35,7 @@ trait DatasetMapWriter[CT] extends DatasetMapBase[CT] with `-impl`.BaseDatasetMa
   /** Creates a new dataset in the truthstore.
     * @note Does not actually create any tables; this just updates the bookkeeping.
     * @return A `CopyInfo` that refers to an unpublished copy. */
-  def create(localeName: String, resourceName: Option[String]): CopyInfo
+  def create(localeName: String, resourceName: DatasetResourceName): CopyInfo
 
   /** Ensures that an "unpublished" table exists, creating it if necessary.
     * @note Does not copy the actual tables; this just updates the bookkeeping.
@@ -64,7 +64,7 @@ trait BackupDatasetMap[CT] extends DatasetMapWriter[CT] with `-impl`.BaseDataset
     * @note Does not actually create any tables; this just updates the bookkeeping.
     * @throws DatasetSystemIdAlreadyInUse if `systemId` is already in use.
     * @return A `CopyInfo` that refers to an unpublished copy with system id `systemId`. */
-  def createWithId(systemId: DatasetId, initialCopySystemId: CopyId, localeName: String, obfuscationKey: Array[Byte], resourceName: Option[String]): CopyInfo
+  def createWithId(systemId: DatasetId, initialCopySystemId: CopyId, localeName: String, obfuscationKey: Array[Byte], resourceName: DatasetResourceName): CopyInfo
 
   /** Ensures that an "unpublished" table exists, creating it if necessary.
     * @note Does not copy the actual tables; this just updates the bookkeeping.
@@ -94,14 +94,14 @@ trait BackupDatasetMap[CT] extends DatasetMapWriter[CT] with `-impl`.BaseDataset
                           latestDataVersion: Long,
                           localeName: String,
                           obfuscationKey: Array[Byte],
-                          resourceName: Option[String]): DatasetInfo
+                          resourceName: DatasetResourceName): DatasetInfo
 
   /** Creates a dataset with the specified attributes
     * @note Using this carelessly can get you into trouble.  In particular, this
     *       newly created dataset will have NO copies attached. */
   def unsafeCreateDatasetAllocatingSystemId(localeName: String,
                                             obfuscationKey: Array[Byte],
-                                            resourceName: Option[String]): DatasetInfo
+                                            resourceName: DatasetResourceName): DatasetInfo
 
   /** Reloads a dataset with the specified attributes, including CLEARING ALL COPIES.
     * @note Using this carelessly can get you into trouble.  It is intended to be used
@@ -111,7 +111,7 @@ trait BackupDatasetMap[CT] extends DatasetMapWriter[CT] with `-impl`.BaseDataset
                           latestDataVersion: Long,
                           localeName: String,
                           obfuscationKey: Array[Byte],
-                          resourceName: Option[String]): DatasetInfo
+                          resourceName: DatasetResourceName): DatasetInfo
 
   /** Creates a copy with the specified attributes.
     * @note Using this carelessly can get you into trouble.  It is intended to be used

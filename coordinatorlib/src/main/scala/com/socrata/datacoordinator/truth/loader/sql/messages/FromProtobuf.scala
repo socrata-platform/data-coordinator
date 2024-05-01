@@ -55,7 +55,7 @@ object FromProtobuf {
        nextCounterValue = di.nextCounterValue,
        localeName = di.localeName,
        obfuscationKey = di.obfuscationKey.toByteArray,
-       resourceName = di.resourceName
+       resourceName = DatasetResourceName(di.resourceName.getOrElse(sys.error("Dataset info without resource name")))
      )
 
   def convert(ri: LogData.UnanchoredRollupInfo): metadata.UnanchoredRollupInfo =
