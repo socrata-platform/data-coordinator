@@ -477,14 +477,14 @@ class PostgresDatasetMapReader[CT](val conn: Connection, tns: TypeNamespace[CT],
   }
 
   def datasetInfoByResourceNameQuery = "SELECT system_id, next_counter_value, latest_data_version, locale_name, obfuscation_key, resource_name FROM dataset_map WHERE resource_name = ?"
-  def datasetInfoByResourceName(resourceName: ResourceName, repeatableRead: Boolean = false) = {
+  def datasetInfoByResourceName(resourceName: DatasetResourceName, repeatableRead: Boolean = false) = {
     if (repeatableRead) {
       log.info("Attempting to change transaction isolation level...")
       conn.setTransactionIsolation(Connection.TRANSACTION_REPEATABLE_READ)
       log.info("Changed transaction isolation level to REPEATABLE READ")
     }
     using(conn.prepareStatement(datasetInfoByResourceNameQuery)) { stmt =>
-      stmt.setString(1, resourceName.name)
+      stmt.setDatasetResourceName(1, resourceName)
       using(t("lookup-dataset", "resource_name" -> resourceName)(stmt.executeQuery())) { rs =>
         if (rs.next()) {
           Some(DatasetInfo(rs.getDatasetId("system_id"), rs.getLong("next_counter_value"), rs.getLong("latest_data_version"), rs.getString("locale_name"), rs.getBytes("obfuscation_key"), rs.getDatasetResourceName("resource_name")))
