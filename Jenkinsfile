@@ -28,8 +28,8 @@ pipeline {
     string(name: 'AGENT', defaultValue: 'build-worker', description: 'Which build agent to use?')
     string(name: 'BRANCH_SPECIFIER', defaultValue: 'origin/main', description: 'Use this branch for building the artifact.')
     booleanParam(name: 'RELEASE_BUILD', defaultValue: false, description: 'Are we building a release candidate?')
-    booleanParam(name: 'RELEASE_DRY_RUN', defaultValue: false, description: 'To test out the release build without creating a new tag.')
-    string(name: 'RELEASE_NAME', defaultValue: '', description: 'For release builds, the release name which is used for the git tag and the deploy tag.')
+    booleanParam(name: 'RELEASE_DRY_RUN', defaultValue: false, description: 'To test out the release build.')
+    string(name: 'RELEASE_NAME', description: 'For release builds, the release name which is used in the git tag and the build id.')
     booleanParam(name: 'PUBLISH', defaultValue: false, description: 'Set to true to manually initiate a publish build - you must also specify PUBLISH_SHA')
     string(name: 'PUBLISH_SHA', defaultValue: '', description: 'For publish builds, the git commit SHA or branch to build from')
   }
@@ -62,8 +62,6 @@ pipeline {
           sbtbuild.setScalaVersion(env.SCALA_VERSION)
           sbtbuild.setPublish(true)
           sbtbuild.setBuildType("library")
-
-          echo "Publishing library"
           sbtbuild.build()
         }
       }
@@ -78,10 +76,10 @@ pipeline {
           if (releaseTag.noCommitsOnHotfixBranch(env.BRANCH_NAME)) {
             skip = true
             echo "SKIP: Skipping the rest of the build because there are no commits on the hotfix branch yet"
-            return
+          } else {
+            env.CURRENT_RELEASE_NAME = releaseTag.getReleaseName(env.BRANCH_NAME)
+            env.HOTFIX_NAME = releaseTag.getHotfixName(env.CURRENT_RELEASE_NAME)
           }
-          env.CURRENT_RELEASE_NAME = releaseTag.getReleaseName(env.BRANCH_NAME)
-          env.HOTFIX_NAME = releaseTag.getHotfixName(env.CURRENT_RELEASE_NAME)
         }
       }
     }
@@ -191,7 +189,7 @@ pipeline {
               ]
               createBuild(
                 buildInfo,
-                rmsSupportedEnvironment.staging //production
+                rmsSupportedEnvironment.production
               )
             }
           }
@@ -226,7 +224,7 @@ pipeline {
               ]
               createDeployment(
                 deployInfo,
-                rmsSupportedEnvironment.staging //production
+                rmsSupportedEnvironment.production
               )
             }
           }
