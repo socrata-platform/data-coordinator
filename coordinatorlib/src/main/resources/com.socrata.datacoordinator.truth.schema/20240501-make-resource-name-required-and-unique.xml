@@ -3,6 +3,11 @@
                    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
     http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
     <changeSet author="setzer" id="20240501-make-resource-name-required-and-unique" runOnChange="true">
+        <preConditions onFail="MARK_RAN">
+           <sqlCheck expectedResult="0">
+             select count(*) from information_schema.table_constraints where constraint_name = 'dataset_map_resource_name_unique';
+           </sqlCheck>
+        </preConditions>
         <sql><![CDATA[
           alter table dataset_map alter column resource_name set not null, add constraint dataset_map_resource_name_unique unique (resource_name);
         ]]></sql>
