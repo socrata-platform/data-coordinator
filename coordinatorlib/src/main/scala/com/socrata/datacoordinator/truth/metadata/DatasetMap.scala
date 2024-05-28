@@ -121,7 +121,8 @@ trait BackupDatasetMap[CT] extends DatasetMapWriter[CT] with `-impl`.BaseDataset
                        copyNumber: Long,
                        lifecycleStage: LifecycleStage,
                        dataVersion: Long,
-                       dataShapeVersion: Long): CopyInfo
+                       dataShapeVersion: Long,
+                       tableModifier: Option[Long]): CopyInfo
 }
 
 case class CopyPair[A <: CopyInfo](oldCopyInfo: A, newCopyInfo: A)
