@@ -825,8 +825,9 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
                        copyNumber: Long,
                        lifecycleStage: LifecycleStage,
                        dataVersion: Long,
-                       dataShapeVersion: Long): CopyInfo = {
-    val newCopy = CopyInfo(datasetInfo, systemId, copyNumber, lifecycleStage, dataVersion, dataShapeVersion, DateTime.now, None)
+                       dataShapeVersion: Long,
+                       tableModifier: Option[Long]): CopyInfo = {
+    val newCopy = CopyInfo(datasetInfo, systemId, copyNumber, lifecycleStage, dataVersion, dataShapeVersion, DateTime.now, tableModifier)
 
     using(conn.prepareStatement(unsafeCreateCopyQuery)) { stmt =>
       stmt.setLong(1, newCopy.systemId.underlying)
@@ -841,6 +842,13 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
       } catch {
         case PostgresUniqueViolation("system_id") =>
           throw new CopySystemIdAlreadyInUse(systemId)
+      }
+    }
+    for(m <- tableModifier) {
+      using(conn.prepareStatement(createTableModifierQuery)) { stmt =>
+        stmt.setLong(1, newCopy.systemId.underlying)
+        stmt.setLong(2, m)
+        t("unsafe-create-copy-modifier", "table_modifier" -> m)(stmt.execute())
       }
     }
 
@@ -1038,7 +1046,7 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
   // would prefer to use postgres upsert for this, but we're not on a new enough pg everywhere yet
   val findTableModifierQuery = "SELECT table_modifier FROM copy_map_table_modifiers WHERE copy_system_id = ? FOR UPDATE"
   val updateTableModifierQuery = "UPDATE copy_map_table_modifiers SET table_modifier = ? WHERE copy_system_id = ?"
-  val createTableModifierQuery = "INSERT INTO copy_map_table_modifiers (copy_system_id, table_modifier) VALUES (?, ?)"
+  val createTableModifierQuery = "INSERT INTO copy_map_table_modifiers (copy_system_id, table_modifier) VALUES (?, ?)" // also used in unsafeCreateCopy
   def newTableModifier(copyInfo: CopyInfo): CopyInfo = {
     val oldTableModifier =
       using(conn.prepareStatement(findTableModifierQuery)) { stmt =>
@@ -1145,7 +1153,9 @@ trait BasePostgresDatasetMapWriter[CT] extends BasePostgresDatasetMapReader[CT] 
                   newCopyNumber,
                   LifecycleStage.Unpublished,
                   publishedCopy.dataVersion,
-                  publishedCopy.dataShapeVersion)
+                  publishedCopy.dataShapeVersion,
+                  None
+                )
             }
 
             Right(CopyPair(publishedCopy, newCopy))
