@@ -166,6 +166,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
         |  ,replay_num
         |  ,cookie
         |  ,pending_drop
+        |  ,next_retry
         |FROM secondary_manifest
         |WHERE store_id = ?
         |  AND broken_at IS NULL
@@ -191,7 +192,8 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
             retryNum = rs.getInt("retry_num"),
             replayNum = rs.getInt("replay_num"),
             initialCookie = Option(rs.getString("cookie")),
-            pendingDrop = rs.getBoolean("pending_drop"))
+            pendingDrop = rs.getBoolean("pending_drop"),
+            nextRetry = new DateTime(rs.getTimestamp("next_retry")))
           markDatasetClaimedForReplication(j)
           Some(j)
         }
@@ -211,6 +213,7 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
         |  ,replay_num
         |  ,cookie
         |  ,pending_drop
+        |  ,next_retry
         |FROM secondary_manifest
         |WHERE claimant_id = ?
         |  AND store_id = ?""".stripMargin)) {stmt =>
@@ -227,7 +230,8 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
             retryNum = rs.getInt("retry_num"),
             replayNum = rs.getInt("replay_num"),
             initialCookie = Option(rs.getString("cookie")),
-            pendingDrop = rs.getBoolean("pending_drop"))
+            pendingDrop = rs.getBoolean("pending_drop"),
+            nextRetry = new DateTime(rs.getTimestamp("next_retry")))
           releaseClaimedDataset(j)
         }
       }

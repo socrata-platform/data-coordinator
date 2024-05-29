@@ -28,7 +28,7 @@ import com.socrata.thirdparty.metrics.{MetricsReporter, MetricsOptions}
 import com.socrata.thirdparty.typesafeconfig.Propertizer
 import com.typesafe.config.{Config, ConfigFactory}
 import org.apache.log4j.PropertyConfigurator
-import org.joda.time.{DateTime, Seconds}
+import org.joda.time.{DateTime, Seconds, Duration => JTDuration}
 import org.slf4j.LoggerFactory
 import sun.misc.{Signal, SignalHandler}
 
@@ -75,7 +75,7 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
         // This dataset _should_ not already be in the working set... if it is, this exits.
         SecondaryWatcherClaimManager.workingOn(secondary.storeId, job.datasetId)
 
-        log.info(">> Syncing {} into {}", job.datasetId, secondary.storeId)
+        log.info(">> Syncing {} into {} ({} after ideal)", job.datasetId.asInstanceOf[AnyRef], secondary.storeId, new JTDuration(job.nextRetry, new DateTime()))
         if(job.replayNum > 0) log.info("Replay #{} of {}", job.replayNum, maxReplays)
         if(job.retryNum > 0) log.info("Retry #{} of {}", job.retryNum, maxRetries)
         val startingMillis = System.currentTimeMillis()

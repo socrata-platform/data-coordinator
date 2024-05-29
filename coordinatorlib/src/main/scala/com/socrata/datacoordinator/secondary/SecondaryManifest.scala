@@ -18,7 +18,8 @@ case class SecondaryRecord(storeId: String,
                            retryNum: Int,
                            replayNum: Int,
                            initialCookie: Option[String],
-                           pendingDrop: Boolean)
+                           pendingDrop: Boolean,
+                           nextRetry: DateTime)
 
 class DatasetAlreadyInSecondary(val storeId: String, val DatasetId: DatasetId) extends Exception
 
