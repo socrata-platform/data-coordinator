@@ -11,6 +11,7 @@ import org.h2.jdbcx.JdbcDataSource
 import org.scalamock.scalatest.MockFactory
 import org.scalatest.{FunSuite, MustMatchers}
 import org.slf4j.LoggerFactory
+import org.joda.time.DateTime
 
 import scala.concurrent.duration._
 import com.socrata.datacoordinator.common.SoQLCommon
@@ -65,7 +66,8 @@ class SecondaryWatcherTest extends FunSuite with MustMatchers with MockFactory {
     for { u <- common.universe } {
       val job = SecondaryRecord(testStoreId, watcherId, new DatasetId(10),
                                 startingDataVersion = 2L, endingDataVersion = 2L,
-                                retryNum = 2, replayNum = 10, initialCookie = None, pendingDrop = false)
+                                retryNum = 2, replayNum = 10, initialCookie = None, pendingDrop = false,
+                                new DateTime(0))
       (testManifest.claimDatasetNeedingReplication _).expects(testStoreId, watcherId, claimTimeout).
                                                       returns(Some(job))
 
@@ -98,7 +100,8 @@ class SecondaryWatcherTest extends FunSuite with MustMatchers with MockFactory {
     for { u <- common.universe } {
       val job = SecondaryRecord(testStoreId, watcherId, datasetId,
                                 startingDataVersion = 2L, endingDataVersion = 2L,
-                                retryNum = 0, replayNum = 0, initialCookie = None, pendingDrop = false)
+                                retryNum = 0, replayNum = 0, initialCookie = None, pendingDrop = false,
+                                nextRetry = new DateTime(0))
       (testManifest.claimDatasetNeedingReplication _).expects(testStoreId, watcherId, claimTimeout).
                                                       returns(Some(job))
 

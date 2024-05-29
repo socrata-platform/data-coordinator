@@ -16,7 +16,10 @@
             CREATE OR REPLACE FUNCTION update_backup_log() RETURNS trigger as $update_backup_log$
               BEGIN
                 UPDATE secondary_manifest
-                  SET went_out_of_sync_at = CURRENT_TIMESTAMP
+                  SET went_out_of_sync_at = CURRENT_TIMESTAMP,
+                      -- clock_timestamp returns the _actual_ current time, rather than the
+                      -- start of the transaction
+                      next_retry = greatest(next_retry, clock_timestamp())
                   WHERE (secondary_manifest.dataset_system_id, store_id) IN (
                     SELECT dataset_system_id, store_id FROM secondary_manifest
                     WHERE secondary_manifest.dataset_system_id = NEW.dataset_system_id
