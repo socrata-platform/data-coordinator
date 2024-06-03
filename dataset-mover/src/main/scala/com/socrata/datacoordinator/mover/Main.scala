@@ -162,35 +162,29 @@ object Main extends App {
       val fromDsInfo = truths(fromInternalName.instance)
       val toDsInfo = truths(toInstance)
 
-      val fromCommon = new SoQLCommon(
-        fromDsInfo.dataSource,
-        fromDsInfo.copyIn,
-        executorService,
-        ServiceMain.tablespaceFinder(serviceConfig.tablespace),
-        NoopTimingReport,
-        allowDdlOnPublishedCopies = true,
-        serviceConfig.writeLockTimeout,
-        fromInternalName.instance,
-        tmpDir,
-        10000.days,
-        10000.days,
-        NullCache
-      )
+      val commons = truths.iterator.map { case (instance, dsInfo) =>
+        instance -> new SoQLCommon(
+          dsInfo.dataSource,
+          dsInfo.copyIn,
+          executorService,
+          ServiceMain.tablespaceFinder(serviceConfig.tablespace),
+          NoopTimingReport,
+          allowDdlOnPublishedCopies = true,
+          serviceConfig.writeLockTimeout,
+          instance,
+          tmpDir,
+          10000.days,
+          10000.days,
+          NullCache
+        )
+      }.toMap
 
-      val toCommon = new SoQLCommon(
-        toDsInfo.dataSource,
-        toDsInfo.copyIn,
-        executorService,
-        ServiceMain.tablespaceFinder(serviceConfig.tablespace),
-        NoopTimingReport,
-        allowDdlOnPublishedCopies = true,
-        serviceConfig.writeLockTimeout,
-        toInstance,
-        tmpDir,
-        10000.days,
-        10000.days,
-        NullCache
-      )
+      val fromCommon = commons(fromInternalName.instance)
+      val toCommon = commons(toInstance)
+
+      val otherTruthUniverses = (commons -- Seq(fromInternalName.instance, toInstance)).iterator.map { case (instance, common) =>
+        instance -> common.scopedUniverse(rs)
+      }.toMap
 
       for {
         fromLockUniverse <- fromCommon.universe
@@ -410,6 +404,55 @@ object Main extends App {
           }
         }
 
+        log.info("Copying collocation_manifest records to the new truth...")
+        // Any secondary_manifest records held in _this_ truth need to
+        // be put in the other truth and have their reference changed
+        // from the old internal name to the new internal name.
+        for {
+          fromStmt <- managed(fromUniverse.unsafeRawConnection.prepareStatement("select dataset_internal_name_left, dataset_internal_name_right, created_at, updated_at from collocation_manifest where dataset_internal_name_left = ? or dataset_internal_name_right = ?"))
+            .and { stmt =>
+              stmt.setString(1, fromInternalName.underlying)
+              stmt.setString(2, fromInternalName.underlying)
+            }
+          fromResults <- managed(fromStmt.executeQuery())
+          toStmt <- managed(toUniverse.unsafeRawConnection.prepareStatement("insert into collocation_manifest(dataset_internal_name_left, dataset_internal_name_right, created_at, updated_at) values (?, ?, ?, ?)"))
+        } {
+          def switchName(s: String) =
+            if(s == fromInternalName.underlying) toInternalName.underlying else s
+
+          while(fromResults.next()) {
+            log.info(" - {}/{} => {}/{}", fromResults.getString(1), fromResults.getString(2), switchName(fromResults.getString(1)), switchName(fromResults.getString(2)))
+            toStmt.setString(1, switchName(fromResults.getString(1)))
+            toStmt.setString(2, switchName(fromResults.getString(2)))
+            toStmt.setTimestamp(3, fromResults.getTimestamp(3))
+            toStmt.setTimestamp(4, fromResults.getTimestamp(4))
+            toStmt.executeUpdate()
+          }
+        }
+        // and for all other truths, we want to simply add a new
+        // record to this truth's manifest table to say "if you were
+        // collocated with old-dataset before, now you're also
+        // collocated with new-dataset"
+        for((truth, universe) <- otherTruthUniverses ++ Map(toInternalName.instance -> toUniverse)) {
+          val count1 =
+            managed(universe.unsafeRawConnection.prepareStatement("insert into collocation_manifest (dataset_internal_name_left, dataset_internal_name_right, created_at, updated_at) select ?, dataset_internal_name_right, created_at, updated_at from collocation_manifest where dataset_internal_name_left = ?"))
+              .and { stmt =>
+                stmt.setString(1, toInternalName.underlying)
+                stmt.setString(2, fromInternalName.underlying)
+              }
+              .run(_.executeUpdate())
+          log.info(" - Created {} records on {} where the old name was left", count1, truth)
+
+          val count2 =
+            managed(universe.unsafeRawConnection.prepareStatement("insert into collocation_manifest (dataset_internal_name_left, dataset_internal_name_right, created_at, updated_at) select dataset_internal_name_left, ?, created_at, updated_at from collocation_manifest where dataset_internal_name_right = ?"))
+              .and { stmt =>
+                stmt.setString(1, toInternalName.underlying)
+                stmt.setString(2, fromInternalName.underlying)
+              }
+              .run(_.executeUpdate())
+          log.info(" - Created {} records on {} where the old name was right", count2, truth)
+        }
+
         log.info("Adding the new name to the PG secondary stores...")
         for(store <- stores if isPgSecondary(store)) {
           for {
@@ -500,16 +543,33 @@ object Main extends App {
         }
 
         // And now we commit the change into the target truth...
+        log.info("Committing target truth")
         try {
           if(dryRun) toUniverse.rollback()
           else toUniverse.commit()
         } catch {
           case e: Exception =>
+            rollbackPGSecondary()
             rollbackArchivalSecondary()
             throw e
         }
 
         fromUniverse.rollback()
+
+        log.info("Committing collocation_manifest changes to other truths")
+        // Same comment as a above re: what happens if this fails
+        try {
+          for((instance, universe) <- otherTruthUniverses) {
+            log.info("..{}", instance)
+            if(dryRun) universe.commit()
+            else universe.rollback()
+          }
+        } catch {
+          case e: Exception =>
+            rollbackPGSecondary()
+            rollbackArchivalSecondary()
+            throw e
+        }
 
         log.info("Informing soda-fountain of the internal name change...")
         // Same comment as a above re: what happens if this fails

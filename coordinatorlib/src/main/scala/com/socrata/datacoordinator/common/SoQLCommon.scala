@@ -137,6 +137,37 @@ class SoQLCommon(dataSource: DataSource,
     }
   }
 
+  // Note this has slightly different semantics from `universe` - in
+  // particular, normal non-lexical returns that close a resourceScope
+  // are considered a "normal" return, and hence the transaction will
+  // be _committed_, whereas the `Managed` block returned from
+  // `universe` treats them as abnormal and hence roll back.
+  def scopedUniverse(rs: ResourceScope): PostgresUniverse[CT, CV] with SchemaFinderProvider = {
+    var success = false
+    val conn = rs.open(dataSource.getConnection)
+    var result: PostgresUniverse[CT, CV] with SchemaFinderProvider = null
+    try {
+      conn.setAutoCommit(false)
+      result = new PostgresUniverse(conn, PostgresUniverseCommon) with SchemaFinderProvider {
+        lazy val cache: Cache = common.cache
+        lazy val schemaFinder = new SchemaFinder(common.typeContext.typeNamespace.userTypeForType, cache)
+      }
+      rs.open(result, transitiveClose = List(conn))(
+        new Resource[PostgresUniverse[CT, CV] with SchemaFinderProvider] {
+          override def close(u: PostgresUniverse[CT, CV] with SchemaFinderProvider) =
+            u.commit()
+          override def closeAbnormally(u: PostgresUniverse[CT, CV] with SchemaFinderProvider, e: Throwable) {
+            u.rollback()
+          }
+        }
+      )
+      success = true
+    } finally {
+      if(!success) rs.close(conn)
+    }
+    result
+  }
+
   object PostgresUniverseCommon extends PostgresCommonSupport[SoQLType, SoQLValue] {
     val typeContext = common.typeContext
 
