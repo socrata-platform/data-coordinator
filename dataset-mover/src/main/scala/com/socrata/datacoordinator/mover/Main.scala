@@ -65,7 +65,7 @@ object Main extends App {
   implicit val executorShutdown = Resource.executorShutdownNoTimeout
 
   def fullyReplicated(datasetId: DatasetId, manifest: SecondaryManifest, targetVersion: Long): Boolean = {
-    manifest.stores(datasetId).values.forall{ case (version: Long, _) => version == targetVersion }
+    manifest.stores(datasetId).values.forall{ case (version: Long, _) => version >= targetVersion }
   }
 
   def isPgSecondary(store: String): Boolean =
@@ -387,7 +387,7 @@ object Main extends App {
               bail("Dataset not actually up to date?")
             }
 
-            if(latestSecondaryDataVersion != fromDsInfo.latestDataVersion) {
+            if(latestSecondaryDataVersion < fromDsInfo.latestDataVersion) {
               bail("Dataset not fully replicated after we checked that it was?")
             }
 
@@ -561,8 +561,8 @@ object Main extends App {
         try {
           for((instance, universe) <- otherTruthUniverses) {
             log.info("..{}", instance)
-            if(dryRun) universe.commit()
-            else universe.rollback()
+            if(dryRun) universe.rollback()
+            else universe.commit()
           }
         } catch {
           case e: Exception =>

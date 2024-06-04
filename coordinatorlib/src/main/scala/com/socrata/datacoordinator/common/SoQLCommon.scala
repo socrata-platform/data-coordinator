@@ -115,15 +115,17 @@ class SoQLCommon(dataSource: DataSource,
   def isSystemColumnId(name: UserColumnId): Boolean =
     SoQLSystemColumns.isSystemColumnId(name)
 
-  val universe: Managed[PostgresUniverse[CT, CV] with SchemaFinderProvider] = new Managed[PostgresUniverse[CT, CV] with SchemaFinderProvider] {
-    def run[B](f: PostgresUniverse[CT, CV] with SchemaFinderProvider => B): B = {
+  private class Universe(conn: Connection) extends PostgresUniverse[CT, CV](conn, PostgresUniverseCommon) with SchemaFinderProvider {
+    lazy val cache: Cache = common.cache
+    lazy val schemaFinder = new SchemaFinder(common.typeContext.typeNamespace.userTypeForType, cache)
+  }
+
+  val universe: Managed[PostgresUniverse[CT, CV] with SchemaFinderProvider] = new Managed[Universe] {
+    def run[B](f: Universe => B): B = {
       val conn = dataSource.getConnection()
       try {
         conn.setAutoCommit(false)
-        val u = new PostgresUniverse(conn, PostgresUniverseCommon) with SchemaFinderProvider {
-          lazy val cache: Cache = common.cache
-          lazy val schemaFinder = new SchemaFinder(common.typeContext.typeNamespace.userTypeForType, cache)
-        }
+        val u = new Universe(conn)
         try {
           val result = f(u)
           u.commit()
@@ -143,29 +145,17 @@ class SoQLCommon(dataSource: DataSource,
   // be _committed_, whereas the `Managed` block returned from
   // `universe` treats them as abnormal and hence roll back.
   def scopedUniverse(rs: ResourceScope): PostgresUniverse[CT, CV] with SchemaFinderProvider = {
-    var success = false
-    val conn = rs.open(dataSource.getConnection)
-    var result: PostgresUniverse[CT, CV] with SchemaFinderProvider = null
-    try {
-      conn.setAutoCommit(false)
-      result = new PostgresUniverse(conn, PostgresUniverseCommon) with SchemaFinderProvider {
-        lazy val cache: Cache = common.cache
-        lazy val schemaFinder = new SchemaFinder(common.typeContext.typeNamespace.userTypeForType, cache)
-      }
-      rs.open(result, transitiveClose = List(conn))(
-        new Resource[PostgresUniverse[CT, CV] with SchemaFinderProvider] {
-          override def close(u: PostgresUniverse[CT, CV] with SchemaFinderProvider) =
-            u.commit()
-          override def closeAbnormally(u: PostgresUniverse[CT, CV] with SchemaFinderProvider, e: Throwable) {
-            u.rollback()
-          }
+    val conn = rs.open(dataSource.getConnection())
+    conn.setAutoCommit(false)
+    rs.open(new Universe(conn), transitiveClose = List(conn))(
+      new Resource[Universe] {
+        override def close(u: Universe) =
+          u.commit()
+        override def closeAbnormally(u: Universe, e: Throwable) {
+          u.rollback()
         }
-      )
-      success = true
-    } finally {
-      if(!success) rs.close(conn)
-    }
-    result
+      }
+    )
   }
 
   object PostgresUniverseCommon extends PostgresCommonSupport[SoQLType, SoQLValue] {
