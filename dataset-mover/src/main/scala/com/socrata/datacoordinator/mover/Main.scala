@@ -212,9 +212,6 @@ object Main extends App {
         }
 
         val stores = fromUniverse.secondaryManifest.stores(fromDsInfo.systemId).keySet
-        if(stores.isEmpty) {
-          bail("Refusing to move dataset that lives in no stores")
-        }
         val invalidSecondaries = stores -- acceptableSecondaries
         if(invalidSecondaries.nonEmpty) {
           bail("Refusing to move dataset that lives in " + invalidSecondaries)
