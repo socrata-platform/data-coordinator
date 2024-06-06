@@ -29,27 +29,28 @@ import com.socrata.datacoordinator.truth.metadata.LifecycleStage
 sealed abstract class Main
 
 object Main extends App {
-  if(args.length != 2) {
-    System.err.println("Usage: dataset-mover.jar INTERNAL_NAME TARGET_TRUTH")
-    System.err.println()
-    System.err.println("  INTERNAL_NAME   internal name (e.g., alpha.1234) of the dataset to move")
-    System.err.println("  TARGET_TRUTH    truthstore in which to move it (e.g., bravo)")
-    System.err.println()
-    System.err.println("Unless the SOCRATA_COMMIT_MOVE environment variable is set, all changes")
-    System.err.println("will be rolled back rather than committed.")
-    sys.exit(1)
-  }
-
-  val fromInternalName = DatasetInternalName(args(0)).getOrElse {
-    System.err.println("Illegal dataset internal name")
-    sys.exit(1)
-  }
-  val fromDatasetId = fromInternalName.datasetId
-
-  val toInstance = args(1)
-
   val dryRun = sys.env.get("SOCRATA_COMMIT_MOVE").isEmpty
 
+  args match {
+    case Array(internalNameRaw, targetTruthRaw) =>
+      DoSingleMove(dryRun, internalNameRaw, targetTruthRaw)
+    case Array(sourceTruthRaw, targetTruthRaw, trackerFile, systemIdListFile, parallelism) =>
+      DoManagedMoves(dryRun, sourceTruthRaw, targetTruthRaw, trackerFile, systemIdListFile, parallelism)
+    case _ =>
+      System.err.println("Usage:")
+      System.err.println("  dataset-mover.jar INTERNAL_NAME TARGET_TRUTH")
+      System.err.println("  dataset-mover.jar SOURCE_TRUTH TARGET_TRUTH TRACKER_FILE SYSTEM_ID_LIST_FILE PARALLELISM")
+      System.err.println()
+      System.err.println("  INTERNAL_NAME   internal name (e.g., alpha.1234) of the dataset to move")
+      System.err.println("  TARGET_TRUTH    truthstore in which to move it (e.g., bravo)")
+      System.err.println()
+      System.err.println("Unless the SOCRATA_COMMIT_MOVE environment variable is set, all changes")
+      System.err.println("will be rolled back rather than committed.")
+      sys.exit(1)
+  }
+}
+
+case class DoSingleMove(dryRun: Boolean, fromInternalNameRaw: String, toInstance: String) {
   val serviceConfig = try {
     new MoverConfig(ConfigFactory.load(), "com.socrata.coordinator.datasetmover")
   } catch {
@@ -61,6 +62,14 @@ object Main extends App {
   PropertyConfigurator.configure(Propertizer("log4j", serviceConfig.logProperties))
 
   val log = org.slf4j.LoggerFactory.getLogger(classOf[Main])
+
+  log.info("Moving {} to {}", fromInternalNameRaw:Any, toInstance)
+
+  val fromInternalName = DatasetInternalName(fromInternalNameRaw).getOrElse {
+    System.err.println("Illegal dataset internal name")
+    sys.exit(1)
+  }
+  val fromDatasetId = fromInternalName.datasetId
 
   implicit val executorShutdown = Resource.executorShutdownNoTimeout
 
