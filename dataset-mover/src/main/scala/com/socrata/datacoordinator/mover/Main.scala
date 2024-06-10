@@ -6,7 +6,8 @@ import scala.concurrent.duration._
 import java.io.File
 import java.net.URL
 import java.sql.Connection
-import java.util.concurrent.Executors
+import java.time.Instant
+import java.util.concurrent.{Executors, ExecutorService}
 
 import com.rojoma.simplearm.v2._
 import com.typesafe.config.ConfigFactory
@@ -14,7 +15,7 @@ import org.apache.log4j.PropertyConfigurator
 import org.postgresql.PGConnection
 import org.postgresql.copy.{CopyIn,CopyOut}
 
-import com.socrata.http.client.HttpClientHttpClient
+import com.socrata.http.client.{HttpClient, HttpClientHttpClient}
 import com.socrata.soql.types.SoQLType
 import com.socrata.thirdparty.typesafeconfig.Propertizer
 
@@ -31,11 +32,25 @@ sealed abstract class Main
 object Main extends App {
   val dryRun = sys.env.get("SOCRATA_COMMIT_MOVE").isEmpty
 
+  def setup(): MoverConfig = {
+    val serviceConfig = try {
+      new MoverConfig(ConfigFactory.load(), "com.socrata.coordinator.datasetmover")
+    } catch {
+      case e: Exception =>
+        Console.err.println(e)
+        sys.exit(1)
+    }
+
+    PropertyConfigurator.configure(Propertizer("log4j", serviceConfig.logProperties))
+
+    serviceConfig
+  }
+
   args match {
     case Array(internalNameRaw, targetTruthRaw) =>
-      DoSingleMove(dryRun, internalNameRaw, targetTruthRaw)
+      DoSingleMove(setup(), dryRun, internalNameRaw, targetTruthRaw)
     case Array(sourceTruthRaw, targetTruthRaw, trackerFile, systemIdListFile, parallelism) =>
-      DoManagedMoves(dryRun, sourceTruthRaw, targetTruthRaw, trackerFile, systemIdListFile, parallelism)
+      DoManagedMoves(setup(), dryRun, sourceTruthRaw, targetTruthRaw, trackerFile, systemIdListFile, parallelism)
     case _ =>
       System.err.println("Usage:")
       System.err.println("  dataset-mover.jar INTERNAL_NAME TARGET_TRUTH")
@@ -50,28 +65,38 @@ object Main extends App {
   }
 }
 
-case class DoSingleMove(dryRun: Boolean, fromInternalNameRaw: String, toInstance: String) {
-  val serviceConfig = try {
-    new MoverConfig(ConfigFactory.load(), "com.socrata.coordinator.datasetmover")
+case class DoSingleMove(serviceConfig: MoverConfig, dryRun: Boolean, fromInternalNameRaw: String, toInstance: String) {
+  try {
+    val fromInternalName = DatasetInternalName(fromInternalNameRaw).getOrElse {
+      System.err.println("Illegal dataset internal name")
+      sys.exit(1)
+    }
+
+    using(new ResourceScope) { rs =>
+      implicit val executorShutdown = Resource.executorShutdownNoTimeout
+      val executorService = rs.open(Executors.newCachedThreadPool)
+      val httpClient = rs.open(new HttpClientHttpClient(executorService))
+      new SingleMover(serviceConfig, dryRun, executorService, httpClient).apply(fromInternalName, toInstance)
+    }
   } catch {
-    case e: Exception =>
-      Console.err.println(e)
+    case e: SingleMover.Bail =>
+      System.err.println(e.getMessage)
       sys.exit(1)
   }
+}
 
-  PropertyConfigurator.configure(Propertizer("log4j", serviceConfig.logProperties))
+object SingleMover {
+  val log = org.slf4j.LoggerFactory.getLogger(classOf[SingleMover])
+  case class Bail(msg: String) extends Exception(msg)
+  def bail(msg: String): Nothing = throw new Bail(msg)
+}
 
-  val log = org.slf4j.LoggerFactory.getLogger(classOf[Main])
+class SingleMover(serviceConfig: MoverConfig, dryRun: Boolean, executorService: ExecutorService, httpClient: HttpClient) extends ((DatasetInternalName, String) => Unit) {
+  import SingleMover._
 
-  log.info("Moving {} to {}", fromInternalNameRaw:Any, toInstance)
-
-  val fromInternalName = DatasetInternalName(fromInternalNameRaw).getOrElse {
-    System.err.println("Illegal dataset internal name")
-    sys.exit(1)
+  if(serviceConfig.truths.values.exists(_.poolOptions.isDefined)) {
+    bail("truths must not be c3p0 data sources")
   }
-  val fromDatasetId = fromInternalName.datasetId
-
-  implicit val executorShutdown = Resource.executorShutdownNoTimeout
 
   def fullyReplicated(datasetId: DatasetId, manifest: SecondaryManifest, targetVersion: Long): Boolean = {
     manifest.stores(datasetId).values.forall{ case (version: Long, _) => version >= targetVersion }
@@ -79,11 +104,6 @@ case class DoSingleMove(dryRun: Boolean, fromInternalNameRaw: String, toInstance
 
   def isPgSecondary(store: String): Boolean =
     serviceConfig.pgSecondaries.contains(store)
-
-  if(serviceConfig.truths.values.exists(_.poolOptions.isDefined)) {
-    System.err.println("truths must not be c3p0 data sources")
-    sys.exit(1)
-  }
 
   def doCopy(fromConn: Connection, copyOutSql: String, toConn: Connection, copyInSql: String) {
     log.info("Copy from: {}", copyOutSql)
@@ -146,13 +166,12 @@ case class DoSingleMove(dryRun: Boolean, fromInternalNameRaw: String, toInstance
       serviceConfig.archivalUrl.map(_ => "archival") ++
       serviceConfig.additionalAcceptableSecondaries
 
-  class Bail(msg: String) extends Exception(msg)
-  def bail(msg: String): Nothing = throw new Bail(msg)
+  def apply(fromInternalName: DatasetInternalName, toInstance: String): Unit = {
+    log.info("Moving {} to {}", fromInternalName: Any, toInstance)
 
-  try {
+    val fromDatasetId = fromInternalName.datasetId
+
     using(new ResourceScope) { rs =>
-      val executorService = rs.open(Executors.newCachedThreadPool)
-      val httpClient = rs.open(new HttpClientHttpClient(executorService))
       val tmpDir = ResourceUtil.Temporary.Directory.scoped[File](rs)
 
       val truths = serviceConfig.truths.iterator.map { case (k, v) =>
@@ -671,9 +690,5 @@ case class DoSingleMove(dryRun: Boolean, fromInternalNameRaw: String, toInstance
         println("Moved " + fromInternalName + " to " + toInternalName)
       }
     }
-  } catch {
-    case e: Bail =>
-      System.err.println(e.getMessage)
-      sys.exit(1)
   }
 }
