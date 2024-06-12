@@ -655,7 +655,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
         return actions
       } catch {
         case e: Throwable =>
-          logger.info("Rolling back to end transaction due to thrown exception: {}", e.getMessage)
+          logger.info("Rolling back to end transaction due to thrown exception:", e)
           u.rollback()
           // transaction isolation level is now reset to READ COMMITTED
           filter(e)
