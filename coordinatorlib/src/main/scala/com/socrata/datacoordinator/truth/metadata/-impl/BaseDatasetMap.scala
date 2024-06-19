@@ -18,6 +18,14 @@ trait BaseDatasetMapReader[CT] {
     * results are guaranteed to be ordered by copy number. */
   def allCopies(datasetInfo: DatasetInfo): Iterable[CopyInfo]
 
+  /** Returns all copies for this dataset, EXCLUDING DISCARDED ONES.  The
+    * results are guaranteed to be ordered by copy number. */
+  def allActiveCopies(datasetInfo: DatasetInfo): Iterable[CopyInfo]
+
+  /** Returns the copy with the most recent data version, even if it's discarded.
+    * This will only return None if a dataset has no copies at all. */
+  def mostRecentlyChangedCopy(datasetInfo: DatasetInfo): Option[CopyInfo]
+
   /** Returns the number of snapshots attached to this dataset. */
   def snapshotCount(datasetInfo: DatasetInfo): Int
 
