@@ -118,6 +118,46 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
       using(t("all-copies", "dataset_id" -> datasetInfo.systemId)(stmt.executeQuery()))(readCopies(datasetInfo))
     }
 
+  def allActiveCopiesQuery =
+    """SELECT
+      |  system_id, copy_number, lifecycle_stage :: TEXT, data_version, data_shape_version, last_modified, table_modifier
+      |FROM
+      |  copy_map
+      |  LEFT OUTER JOIN copy_map_table_modifiers ON copy_map.system_id = copy_map_table_modifiers.copy_system_id
+      |WHERE
+      |  dataset_system_id = ?
+      |  AND lifecycle_stage <> 'Discarded'
+      |ORDER BY
+      |  copy_number""".stripMargin
+  def allActiveCopies(datasetInfo: DatasetInfo): Vector[CopyInfo] =
+    using(conn.prepareStatement(allActiveCopiesQuery)) { stmt =>
+      stmt.setDatasetId(1, datasetInfo.systemId)
+      using(t("all-active-copies", "dataset_id" -> datasetInfo.systemId)(stmt.executeQuery()))(readCopies(datasetInfo))
+    }
+
+  def mostRecentlyChangedQuery =
+    """SELECT
+      |  system_id, copy_number, lifecycle_stage :: TEXT, data_version, data_shape_version, last_modified, table_modifier
+      |FROM
+      |  copy_map
+      |  LEFT OUTER JOIN copy_map_table_modifiers ON copy_map.system_id = copy_map_table_modifiers.copy_system_id
+      |WHERE
+      |  dataset_system_id = ?
+      |ORDER BY
+      |  data_version DESC
+      |LIMIT 1""".stripMargin
+  def mostRecentlyChangedCopy(datasetInfo: DatasetInfo): Option[CopyInfo] =
+    using(conn.prepareStatement(mostRecentlyChangedQuery)) { stmt =>
+      stmt.setDatasetId(1, datasetInfo.systemId)
+      using(t("most-recently-changed-copy", "dataset_id" -> datasetInfo.systemId)(stmt.executeQuery())) { rs =>
+        if(rs.next()) {
+          Some(CopyInfo(datasetInfo, new CopyId(rs.getLong("system_id")), rs.getLong("copy_number"), LifecycleStage.valueOf(rs.getString("lifecycle_stage")), rs.getLong("data_version"), getDataShapeVersion(rs), toDateTime(rs.getTimestamp("last_modified")), rs.getNullableLong("table_modifier")))
+        } else {
+          None
+        }
+      }
+    }
+
   private def readCopies(datasetInfo: DatasetInfo)(rs: ResultSet): Vector[CopyInfo] = {
     val result = new VectorBuilder[CopyInfo]
     while(rs.next()) {
