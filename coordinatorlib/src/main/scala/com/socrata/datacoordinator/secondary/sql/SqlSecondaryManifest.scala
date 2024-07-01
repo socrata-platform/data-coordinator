@@ -393,7 +393,8 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
   def markDatasetForDrop(storeId: String, datasetId: DatasetId): Boolean = {
     using(conn.prepareStatement(
     """UPDATE secondary_manifest
-      |SET pending_drop = TRUE
+      |SET pending_drop = TRUE,
+      |    next_retry = clock_timestamp()
       |WHERE store_id = ?
       |  AND dataset_system_id = ?""".stripMargin)) { stmt =>
       stmt.setString(1, storeId)
