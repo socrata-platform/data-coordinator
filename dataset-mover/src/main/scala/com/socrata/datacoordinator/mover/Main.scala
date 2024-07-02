@@ -6,7 +6,8 @@ import scala.concurrent.duration._
 import java.io.File
 import java.net.URL
 import java.sql.Connection
-import java.util.concurrent.Executors
+import java.time.Instant
+import java.util.concurrent.{Executors, ExecutorService}
 
 import com.rojoma.simplearm.v2._
 import com.typesafe.config.ConfigFactory
@@ -14,7 +15,7 @@ import org.apache.log4j.PropertyConfigurator
 import org.postgresql.PGConnection
 import org.postgresql.copy.{CopyIn,CopyOut}
 
-import com.socrata.http.client.HttpClientHttpClient
+import com.socrata.http.client.{HttpClient, HttpClientHttpClient}
 import com.socrata.soql.types.SoQLType
 import com.socrata.thirdparty.typesafeconfig.Propertizer
 
@@ -29,52 +30,80 @@ import com.socrata.datacoordinator.truth.metadata.LifecycleStage
 sealed abstract class Main
 
 object Main extends App {
-  if(args.length != 2) {
-    System.err.println("Usage: dataset-mover.jar INTERNAL_NAME TARGET_TRUTH")
-    System.err.println()
-    System.err.println("  INTERNAL_NAME   internal name (e.g., alpha.1234) of the dataset to move")
-    System.err.println("  TARGET_TRUTH    truthstore in which to move it (e.g., bravo)")
-    System.err.println()
-    System.err.println("Unless the SOCRATA_COMMIT_MOVE environment variable is set, all changes")
-    System.err.println("will be rolled back rather than committed.")
-    sys.exit(1)
-  }
-
-  val fromInternalName = DatasetInternalName(args(0)).getOrElse {
-    System.err.println("Illegal dataset internal name")
-    sys.exit(1)
-  }
-  val fromDatasetId = fromInternalName.datasetId
-
-  val toInstance = args(1)
-
   val dryRun = sys.env.get("SOCRATA_COMMIT_MOVE").isEmpty
 
-  val serviceConfig = try {
-    new MoverConfig(ConfigFactory.load(), "com.socrata.coordinator.datasetmover")
-  } catch {
-    case e: Exception =>
-      Console.err.println(e)
-      sys.exit(1)
+  def setup(): MoverConfig = {
+    val serviceConfig = try {
+      new MoverConfig(ConfigFactory.load(), "com.socrata.coordinator.datasetmover")
+    } catch {
+      case e: Exception =>
+        Console.err.println(e)
+        sys.exit(1)
+    }
+
+    PropertyConfigurator.configure(Propertizer("log4j", serviceConfig.logProperties))
+
+    serviceConfig
   }
 
-  PropertyConfigurator.configure(Propertizer("log4j", serviceConfig.logProperties))
+  args match {
+    case Array(internalNameRaw, targetTruthRaw) =>
+      DoSingleMove(setup(), dryRun, internalNameRaw, targetTruthRaw)
+    case Array(sourceTruthRaw, targetTruthRaw, trackerFile, systemIdListFile, parallelism) =>
+      DoManagedMoves(setup(), dryRun, sourceTruthRaw, targetTruthRaw, trackerFile, systemIdListFile, parallelism)
+    case _ =>
+      System.err.println("Usage:")
+      System.err.println("  dataset-mover.jar INTERNAL_NAME TARGET_TRUTH")
+      System.err.println("  dataset-mover.jar SOURCE_TRUTH TARGET_TRUTH TRACKER_FILE SYSTEM_ID_LIST_FILE PARALLELISM")
+      System.err.println()
+      System.err.println("  INTERNAL_NAME   internal name (e.g., alpha.1234) of the dataset to move")
+      System.err.println("  TARGET_TRUTH    truthstore in which to move it (e.g., bravo)")
+      System.err.println()
+      System.err.println("Unless the SOCRATA_COMMIT_MOVE environment variable is set, all changes")
+      System.err.println("will be rolled back rather than committed.")
+      sys.exit(1)
+  }
+}
 
-  val log = org.slf4j.LoggerFactory.getLogger(classOf[Main])
+case class DoSingleMove(serviceConfig: MoverConfig, dryRun: Boolean, fromInternalNameRaw: String, toInstance: String) {
+  try {
+    val fromInternalName = DatasetInternalName(fromInternalNameRaw).getOrElse {
+      System.err.println("Illegal dataset internal name")
+      sys.exit(1)
+    }
 
-  implicit val executorShutdown = Resource.executorShutdownNoTimeout
+    using(new ResourceScope) { rs =>
+      implicit val executorShutdown = Resource.executorShutdownNoTimeout
+      val executorService = rs.open(Executors.newCachedThreadPool)
+      val httpClient = rs.open(new HttpClientHttpClient(executorService))
+      new SingleMover(serviceConfig, dryRun, executorService, httpClient).apply(fromInternalName, toInstance)
+    }
+  } catch {
+    case e: SingleMover.Bail =>
+      System.err.println(e.getMessage)
+      sys.exit(1)
+  }
+}
+
+object SingleMover {
+  val log = org.slf4j.LoggerFactory.getLogger(classOf[SingleMover])
+  case class Bail(msg: String) extends Exception(msg)
+  def bail(msg: String): Nothing = throw new Bail(msg)
+}
+
+class SingleMover(serviceConfig: MoverConfig, dryRun: Boolean, executorService: ExecutorService, httpClient: HttpClient) extends ((DatasetInternalName, String) => Unit) {
+  import SingleMover._
+
+  if(serviceConfig.truths.values.exists(_.poolOptions.isDefined)) {
+    bail("truths must not be c3p0 data sources")
+  }
 
   def fullyReplicated(datasetId: DatasetId, manifest: SecondaryManifest, targetVersion: Long): Boolean = {
-    manifest.stores(datasetId).values.forall{ case (version: Long, _) => version == targetVersion }
+    manifest.stores(datasetId).values.forall{ case (version: Long, _) => version >= targetVersion }
   }
 
   def isPgSecondary(store: String): Boolean =
     serviceConfig.pgSecondaries.contains(store)
-
-  if(serviceConfig.truths.values.exists(_.poolOptions.isDefined)) {
-    System.err.println("truths must not be c3p0 data sources")
-    sys.exit(1)
-  }
 
   def doCopy(fromConn: Connection, copyOutSql: String, toConn: Connection, copyInSql: String) {
     log.info("Copy from: {}", copyOutSql)
@@ -137,13 +166,12 @@ object Main extends App {
       serviceConfig.archivalUrl.map(_ => "archival") ++
       serviceConfig.additionalAcceptableSecondaries
 
-  class Bail(msg: String) extends Exception(msg)
-  def bail(msg: String): Nothing = throw new Bail(msg)
+  def apply(fromInternalName: DatasetInternalName, toInstance: String): Unit = {
+    log.info("Moving {} to {}", fromInternalName: Any, toInstance)
 
-  try {
+    val fromDatasetId = fromInternalName.datasetId
+
     using(new ResourceScope) { rs =>
-      val executorService = rs.open(Executors.newCachedThreadPool)
-      val httpClient = rs.open(new HttpClientHttpClient(executorService))
       val tmpDir = ResourceUtil.Temporary.Directory.scoped[File](rs)
 
       val truths = serviceConfig.truths.iterator.map { case (k, v) =>
@@ -162,35 +190,29 @@ object Main extends App {
       val fromDsInfo = truths(fromInternalName.instance)
       val toDsInfo = truths(toInstance)
 
-      val fromCommon = new SoQLCommon(
-        fromDsInfo.dataSource,
-        fromDsInfo.copyIn,
-        executorService,
-        ServiceMain.tablespaceFinder(serviceConfig.tablespace),
-        NoopTimingReport,
-        allowDdlOnPublishedCopies = true,
-        serviceConfig.writeLockTimeout,
-        fromInternalName.instance,
-        tmpDir,
-        10000.days,
-        10000.days,
-        NullCache
-      )
+      val commons = truths.iterator.map { case (instance, dsInfo) =>
+        instance -> new SoQLCommon(
+          dsInfo.dataSource,
+          dsInfo.copyIn,
+          executorService,
+          ServiceMain.tablespaceFinder(serviceConfig.tablespace),
+          NoopTimingReport,
+          allowDdlOnPublishedCopies = true,
+          serviceConfig.writeLockTimeout,
+          instance,
+          tmpDir,
+          10000.days,
+          10000.days,
+          NullCache
+        )
+      }.toMap
 
-      val toCommon = new SoQLCommon(
-        toDsInfo.dataSource,
-        toDsInfo.copyIn,
-        executorService,
-        ServiceMain.tablespaceFinder(serviceConfig.tablespace),
-        NoopTimingReport,
-        allowDdlOnPublishedCopies = true,
-        serviceConfig.writeLockTimeout,
-        toInstance,
-        tmpDir,
-        10000.days,
-        10000.days,
-        NullCache
-      )
+      val fromCommon = commons(fromInternalName.instance)
+      val toCommon = commons(toInstance)
+
+      val otherTruthUniverses = (commons -- Seq(fromInternalName.instance, toInstance)).iterator.map { case (instance, common) =>
+        instance -> common.scopedUniverse(rs)
+      }.toMap
 
       for {
         fromLockUniverse <- fromCommon.universe
@@ -218,9 +240,6 @@ object Main extends App {
         }
 
         val stores = fromUniverse.secondaryManifest.stores(fromDsInfo.systemId).keySet
-        if(stores.isEmpty) {
-          bail("Refusing to move dataset that lives in no stores")
-        }
         val invalidSecondaries = stores -- acceptableSecondaries
         if(invalidSecondaries.nonEmpty) {
           bail("Refusing to move dataset that lives in " + invalidSecondaries)
@@ -393,7 +412,7 @@ object Main extends App {
               bail("Dataset not actually up to date?")
             }
 
-            if(latestSecondaryDataVersion != fromDsInfo.latestDataVersion) {
+            if(latestSecondaryDataVersion < fromDsInfo.latestDataVersion) {
               bail("Dataset not fully replicated after we checked that it was?")
             }
 
@@ -408,6 +427,55 @@ object Main extends App {
 
             toStmt.executeUpdate()
           }
+        }
+
+        log.info("Copying collocation_manifest records to the new truth...")
+        // Any secondary_manifest records held in _this_ truth need to
+        // be put in the other truth and have their reference changed
+        // from the old internal name to the new internal name.
+        for {
+          fromStmt <- managed(fromUniverse.unsafeRawConnection.prepareStatement("select dataset_internal_name_left, dataset_internal_name_right, created_at, updated_at from collocation_manifest where dataset_internal_name_left = ? or dataset_internal_name_right = ?"))
+            .and { stmt =>
+              stmt.setString(1, fromInternalName.underlying)
+              stmt.setString(2, fromInternalName.underlying)
+            }
+          fromResults <- managed(fromStmt.executeQuery())
+          toStmt <- managed(toUniverse.unsafeRawConnection.prepareStatement("insert into collocation_manifest(dataset_internal_name_left, dataset_internal_name_right, created_at, updated_at) values (?, ?, ?, ?)"))
+        } {
+          def switchName(s: String) =
+            if(s == fromInternalName.underlying) toInternalName.underlying else s
+
+          while(fromResults.next()) {
+            log.info(" - {}/{} => {}/{}", fromResults.getString(1), fromResults.getString(2), switchName(fromResults.getString(1)), switchName(fromResults.getString(2)))
+            toStmt.setString(1, switchName(fromResults.getString(1)))
+            toStmt.setString(2, switchName(fromResults.getString(2)))
+            toStmt.setTimestamp(3, fromResults.getTimestamp(3))
+            toStmt.setTimestamp(4, fromResults.getTimestamp(4))
+            toStmt.executeUpdate()
+          }
+        }
+        // and for all other truths, we want to simply add a new
+        // record to this truth's manifest table to say "if you were
+        // collocated with old-dataset before, now you're also
+        // collocated with new-dataset"
+        for((truth, universe) <- otherTruthUniverses ++ Map(toInternalName.instance -> toUniverse)) {
+          val count1 =
+            managed(universe.unsafeRawConnection.prepareStatement("insert into collocation_manifest (dataset_internal_name_left, dataset_internal_name_right, created_at, updated_at) select ?, dataset_internal_name_right, created_at, updated_at from collocation_manifest where dataset_internal_name_left = ?"))
+              .and { stmt =>
+                stmt.setString(1, toInternalName.underlying)
+                stmt.setString(2, fromInternalName.underlying)
+              }
+              .run(_.executeUpdate())
+          log.info(" - Created {} records on {} where the old name was left", count1, truth)
+
+          val count2 =
+            managed(universe.unsafeRawConnection.prepareStatement("insert into collocation_manifest (dataset_internal_name_left, dataset_internal_name_right, created_at, updated_at) select dataset_internal_name_left, ?, created_at, updated_at from collocation_manifest where dataset_internal_name_right = ?"))
+              .and { stmt =>
+                stmt.setString(1, toInternalName.underlying)
+                stmt.setString(2, fromInternalName.underlying)
+              }
+              .run(_.executeUpdate())
+          log.info(" - Created {} records on {} where the old name was right", count2, truth)
         }
 
         log.info("Adding the new name to the PG secondary stores...")
@@ -500,16 +568,33 @@ object Main extends App {
         }
 
         // And now we commit the change into the target truth...
+        log.info("Committing target truth")
         try {
           if(dryRun) toUniverse.rollback()
           else toUniverse.commit()
         } catch {
           case e: Exception =>
+            rollbackPGSecondary()
             rollbackArchivalSecondary()
             throw e
         }
 
         fromUniverse.rollback()
+
+        log.info("Committing collocation_manifest changes to other truths")
+        // Same comment as a above re: what happens if this fails
+        try {
+          for((instance, universe) <- otherTruthUniverses) {
+            log.info("..{}", instance)
+            if(dryRun) universe.rollback()
+            else universe.commit()
+          }
+        } catch {
+          case e: Exception =>
+            rollbackPGSecondary()
+            rollbackArchivalSecondary()
+            throw e
+        }
 
         log.info("Informing soda-fountain of the internal name change...")
         // Same comment as a above re: what happens if this fails
@@ -605,9 +690,5 @@ object Main extends App {
         println("Moved " + fromInternalName + " to " + toInternalName)
       }
     }
-  } catch {
-    case e: Bail =>
-      System.err.println(e.getMessage)
-      sys.exit(1)
   }
 }
