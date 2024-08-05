@@ -27,14 +27,8 @@ case class DoManagedMoves(serviceConfig: MoverConfig, dryRun: Boolean, fromInsta
   val SIGINT = new Signal("INT")
   val shutdownSignalled = new AtomicBoolean(false)
   val shutdownSignalHandler = new SignalHandler {
-    private val firstSignal = new AtomicBoolean(false)
     def handle(signal: Signal) {
-      if (firstSignal.getAndSet(false)) {
-        log.info("Signalling main thread to stop adding jobs")
-        shutdownSignalled.set(true)
-      } else {
-        log.info("Shutdown already in progress")
-      }
+      shutdownSignalled.set(true)
     }
   }
 
@@ -99,7 +93,10 @@ case class DoManagedMoves(serviceConfig: MoverConfig, dryRun: Boolean, fromInsta
       val break = new Breaks
       break.breakable {
         for(line <- file) {
-          if(shutdownSignalled.get) break.break()
+          if(shutdownSignalled.get) {
+            log.info("Stopping because of signal")
+            break.break()
+          }
 
           val id = line.toLong
 
