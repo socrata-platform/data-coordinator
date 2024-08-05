@@ -41,12 +41,21 @@ class SqlPrevettedLoader[CT, CV](val conn: Connection, sqlizer: DataSqlizer[CT, 
   def flushUpdates() {
     if(updateBatch.nonEmpty) {
       try {
-        for(stmt <- managed(conn.prepareStatement(sqlizer.prepareSystemIdUpdateStatement))) {
-          for(update <- updateBatch) {
-            sqlizer.prepareSystemIdUpdate(stmt, update.systemId, update.data)
-            stmt.addBatch()
+        // if multiple updates occurred to the same row, discard all
+        // but the last
+        val updates = new mutable.LinkedHashMap[RowId, Update[CV]]()
+        for(update <- updateBatch) { updates += update.systemId -> update }
+
+        // Delete all affected rows...
+        val (deleted, ()) = sqlizer.deleteBatch(conn) { deleter =>
+          for(rowId <- updates.keysIterator) { deleter.delete(rowId) }
+        }
+        assert(deleted == updates.size, "Expected " + updates.size + " rows to be deleted, but only found " + deleted)
+        // ...and then re-insert them
+        sqlizer.insertBatch(conn) { inserter =>
+          for(update <- updates.valuesIterator) {
+            inserter.insert(update.data)
           }
-          checkResults(stmt.executeBatch(), 1)
         }
       } finally {
         updateBatch.clear()
