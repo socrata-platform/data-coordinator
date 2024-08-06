@@ -3,6 +3,7 @@ import Dependencies._
 name := "dataset-mover"
 
 libraryDependencies ++= Seq(
+  "org.xerial" % "sqlite-jdbc" % "3.46.0.0"
 )
 
 assembly/test := {}
