@@ -32,6 +32,8 @@ sealed abstract class Main
 object Main extends App {
   val dryRun = sys.env.get("SOCRATA_COMMIT_MOVE").isEmpty
 
+  val ignoreReplication = sys.env.get("SOCRATA_IGNORE_REPLICATION").isDefined
+
   def setup(): MoverConfig = {
     val serviceConfig = try {
       new MoverConfig(ConfigFactory.load(), "com.socrata.coordinator.datasetmover")
@@ -48,9 +50,9 @@ object Main extends App {
 
   args match {
     case Array(internalNameRaw, targetTruthRaw) =>
-      DoSingleMove(setup(), dryRun, internalNameRaw, targetTruthRaw)
+      DoSingleMove(setup(), dryRun, ignoreReplication, internalNameRaw, targetTruthRaw)
     case Array(sourceTruthRaw, targetTruthRaw, trackerFile, systemIdListFile, parallelism) =>
-      DoManagedMoves(setup(), dryRun, sourceTruthRaw, targetTruthRaw, trackerFile, systemIdListFile, parallelism)
+      DoManagedMoves(setup(), dryRun, ignoreReplication, sourceTruthRaw, targetTruthRaw, trackerFile, systemIdListFile, parallelism)
     case _ =>
       System.err.println("Usage:")
       System.err.println("  dataset-mover.jar INTERNAL_NAME TARGET_TRUTH")
@@ -61,11 +63,15 @@ object Main extends App {
       System.err.println()
       System.err.println("Unless the SOCRATA_COMMIT_MOVE environment variable is set, all changes")
       System.err.println("will be rolled back rather than committed.")
+      System.err.println()
+      System.err.println("If the SOCRATA_IGNORE_REPLICATION environment variable is set, the mover")
+      System.err.println("will NOT wait for replication to complete before moving the dataset.  This")
+      System.err.println("option is dangerous; it may require a resync after the move completes.")
       sys.exit(1)
   }
 }
 
-case class DoSingleMove(serviceConfig: MoverConfig, dryRun: Boolean, fromInternalNameRaw: String, toInstance: String) {
+case class DoSingleMove(serviceConfig: MoverConfig, dryRun: Boolean, ignoreReplication: Boolean, fromInternalNameRaw: String, toInstance: String) {
   try {
     val fromInternalName = DatasetInternalName(fromInternalNameRaw).getOrElse {
       System.err.println("Illegal dataset internal name")
@@ -76,7 +82,7 @@ case class DoSingleMove(serviceConfig: MoverConfig, dryRun: Boolean, fromInterna
       implicit val executorShutdown = Resource.executorShutdownNoTimeout
       val executorService = rs.open(Executors.newCachedThreadPool)
       val httpClient = rs.open(new HttpClientHttpClient(executorService))
-      new SingleMover(serviceConfig, dryRun, executorService, httpClient).apply(fromInternalName, toInstance)
+      new SingleMover(serviceConfig, dryRun, ignoreReplication, executorService, httpClient).apply(fromInternalName, toInstance)
     }
   } catch {
     case e: SingleMover.Bail =>
@@ -91,7 +97,7 @@ object SingleMover {
   def bail(msg: String): Nothing = throw new Bail(msg)
 }
 
-class SingleMover(serviceConfig: MoverConfig, dryRun: Boolean, executorService: ExecutorService, httpClient: HttpClient) extends ((DatasetInternalName, String) => Unit) {
+class SingleMover(serviceConfig: MoverConfig, dryRun: Boolean, ignoreReplication: Boolean, executorService: ExecutorService, httpClient: HttpClient) extends ((DatasetInternalName, String) => Unit) {
   import SingleMover._
 
   if(serviceConfig.truths.values.exists(_.poolOptions.isDefined)) {
@@ -228,12 +234,14 @@ class SingleMover(serviceConfig: MoverConfig, dryRun: Boolean, executorService: 
           var dsInfo = fromMapReader.datasetInfo(fromDatasetId).getOrElse {
             bail("Can't find dataset")
           }
-          while(!fullyReplicated(dsInfo.systemId, fromUniverse.secondaryManifest, dsInfo.latestDataVersion)) {
-            fromUniverse.rollback()
-            log.info("zzzzzzz....")
-            Thread.sleep(10000)
-            dsInfo = fromMapReader.datasetInfo(fromDatasetId).getOrElse {
-              bail("Can't find dataset")
+          if(!ignoreReplication) {
+            while(!fullyReplicated(dsInfo.systemId, fromUniverse.secondaryManifest, dsInfo.latestDataVersion)) {
+              fromUniverse.rollback()
+              log.info("zzzzzzz....")
+              Thread.sleep(10000)
+              dsInfo = fromMapReader.datasetInfo(fromDatasetId).getOrElse {
+                bail("Can't find dataset")
+              }
             }
           }
           dsInfo
@@ -400,7 +408,7 @@ class SingleMover(serviceConfig: MoverConfig, dryRun: Boolean, executorService: 
               bail("Secondary is in an unsupported store!!!  After we checked that it wasn't?!?!?")
             }
 
-            if(claimantId.isDefined) {
+            if(claimantId.isDefined && !ignoreReplication) {
               bail("Secondary manifest record is claimed?")
             }
 
@@ -412,7 +420,7 @@ class SingleMover(serviceConfig: MoverConfig, dryRun: Boolean, executorService: 
               bail("Dataset not actually up to date?")
             }
 
-            if(latestSecondaryDataVersion < fromDsInfo.latestDataVersion) {
+            if(latestSecondaryDataVersion < fromDsInfo.latestDataVersion && !ignoreReplication) {
               bail("Dataset not fully replicated after we checked that it was?")
             }
 

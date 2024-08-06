@@ -18,7 +18,7 @@ import org.slf4j.LoggerFactory
 import com.socrata.http.client.HttpClientHttpClient
 import com.socrata.thirdparty.typesafeconfig.Propertizer
 
-case class DoManagedMoves(serviceConfig: MoverConfig, dryRun: Boolean, fromInstance: String, toInstance: String, trackerFile: String, systemIdListFile: String, parallelismRaw: String) {
+case class DoManagedMoves(serviceConfig: MoverConfig, dryRun: Boolean, ignoreReplication: Boolean, fromInstance: String, toInstance: String, trackerFile: String, systemIdListFile: String, parallelismRaw: String) {
   val parallelism = parallelismRaw.toInt
 
   val log = LoggerFactory.getLogger(classOf[DoManagedMoves])
@@ -44,7 +44,7 @@ case class DoManagedMoves(serviceConfig: MoverConfig, dryRun: Boolean, fromInsta
       val executorService = rs.open(Executors.newCachedThreadPool)
       val httpClient = rs.open(new HttpClientHttpClient(executorService))
 
-      val singleMover = new SingleMover(serviceConfig, dryRun, executorService, httpClient)
+      val singleMover = new SingleMover(serviceConfig, dryRun, ignoreReplication, executorService, httpClient)
 
       val conn = DriverManager.getConnection("jdbc:sqlite:" + (if(dryRun) ":memory:" else trackerFile))
       conn.setAutoCommit(true)
