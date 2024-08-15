@@ -58,6 +58,9 @@ com.socrata.coordinator.datasetmover {
 
   additional-acceptable-secondaries = [ "geocoding" ]
 
+  # This is optional, but without it datasets in the archival secondary can't be moved
+  archival-url = "http://archival-server.app.marathon.ENV.socrata.net/"
+
   soda-fountain = ${common-database} {
     host = "XXXX"
     database = "XXXX"
