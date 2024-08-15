@@ -928,7 +928,7 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
           def next() = {
             if(!hasNext) throw new NoSuchElementException
             checkForError()
-            plan(rows.next()) match {
+            plan(removeNuls(rows.next())) match {
               case Right(row) => UpsertJob(jobCounter(), row)
               case Left((id, version)) => DeleteJob(jobCounter(), id, version)
             }
@@ -950,6 +950,20 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
         case e: UnknownCid =>
           throw UnknownColumnId(mutator.copyInfo.datasetInfo.systemId, e.cid)(idx, e.job)
       }
+    }
+  }
+
+  private def removeNuls(v: JValue): JValue = {
+    v match {
+      case jstr@JString(s) =>
+        if(s.indexOf('\u0000') == -1) jstr
+        else JString(s.replace("\u0000", ""))
+      case JArray(elems) =>
+        JArray(elems.map(removeNuls))
+      case JObject(map) =>
+        JObject(map.mapValues(removeNuls))
+      case other =>
+        other
     }
   }
 }
