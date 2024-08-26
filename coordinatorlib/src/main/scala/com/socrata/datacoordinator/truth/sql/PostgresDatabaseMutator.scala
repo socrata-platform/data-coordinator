@@ -25,6 +25,7 @@ class PostgresDatabaseMutator[CT, CV](universe: Managed[Universe[CT, CV] with Lo
     final def loadLatestVersionOfDataset(datasetId: DatasetId, lockTimeout: Duration): Option[DatasetCopyContext[CT]] = {
       val map = datasetMap
       map.datasetInfo(datasetId, lockTimeout) map { datasetInfo =>
+        map.replicationLock(datasetInfo)
         val latest = map.latest(datasetInfo)
         val schema = map.schema(latest)
         new DatasetCopyContext(latest, schema)
