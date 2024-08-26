@@ -12,7 +12,7 @@ import scala.collection.immutable.VectorBuilder
 import java.sql._
 
 import org.postgresql.util.PSQLException
-import com.rojoma.simplearm.v2.using
+import com.rojoma.simplearm.v2.{using, managed}
 
 import com.socrata.datacoordinator.truth.{DatabaseInReadOnlyMode, DatasetIdInUseByWriterException}
 import com.socrata.datacoordinator.id._
@@ -1461,6 +1461,18 @@ class PostgresDatasetMapWriter[CT](val conn: Connection, tns: TypeNamespace[CT],
           // this method is exiting normally, but in that case whatever we do next
           // will fail so meh.  Just log it and continue.
           log.warn("Unexpected exception while releasing savepoint", e)
+      }
+    }
+  }
+
+  def replicationLock(datasetInfo: DatasetInfo) {
+    for {
+      stmt <- managed(conn.prepareStatement("select store_id from secondary_manifest where dataset_system_id = ? order by store_id for update"))
+        .and(_.setDatasetId(1, datasetInfo.systemId))
+      rs <- managed(stmt.executeQuery())
+    } {
+      while(rs.next()) {
+        // nothing, we're just reading the rows
       }
     }
   }
