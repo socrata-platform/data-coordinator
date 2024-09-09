@@ -76,6 +76,7 @@ object CollocationError {
   val STORE_GROUP_DOES_NOT_EXIST = "collocation.secondary.store-group-does-not-exist"
   val STORE_DOES_NOT_EXIST = "collocation.secondary.store-does-not-exist"
   val DATASET_DOES_NOT_EXIST = "collocation.datataset.does-not-exist"
+  val LOCK_TIMEOUT = "collocation.lock-timeout"
 
   val STORE_NOT_ACCEPTING_NEW_DATASETS = "collocation.secondary.store-not-accepting-new-datasets"
   val DATASET_NOT_FOUND_IN_STORE = "collocation.secondary.dataset-not-found-in-store"

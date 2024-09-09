@@ -27,6 +27,9 @@ abstract class CollocationSodaResource extends BasicSodaResource {
   def datasetNotFound(datasetInternalName: DatasetInternalName, resp: HttpResponse = NotFound): HttpResponse =
     errorResponse(resp, CollocationError.DATASET_DOES_NOT_EXIST, "dataset" -> JString(datasetInternalName.underlying))
 
+  def collocateLockTimeout(resp: HttpResponse = Conflict): HttpResponse =
+    errorResponse(resp, CollocationError.LOCK_TIMEOUT)
+
   def withTypedParam[T](name: String, req: HttpRequest, defaultValue: T, transformer: String => T)(handleRequest: T => HttpResponse): HttpResponse = {
     val param = Option(req.servletRequest.getParameter(name)).getOrElse(defaultValue.toString)
     try {

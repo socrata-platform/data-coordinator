@@ -36,7 +36,7 @@ case class SecondaryManifestsCollocateResource(storeGroup: String,
               collocator.unlockCollocation()
             }
           } catch {
-            case _: CollocationLockTimeout => Conflict
+            case _: CollocationLockTimeout => collocateLockTimeout()
           }
         }
       }
