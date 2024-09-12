@@ -114,5 +114,5 @@ Below is a copy of the email distributed to engineering when breaking changes we
 
 To publish the library:
 
-1. update the version.sbt file, create a PR and merge to main
-1. build the [data-coordinator-branch](https://jenkins-build.socrata.com/job/data-coordinator-branch/) job: check PUBLISH and enter the SHA from the version update commit in PUBLISH_SHA. leave the rest of the parameters unused.
+1. Update the version.sbt file, create a PR and merge to main
+1. The Jenkins job for the main branch will build the stages "Check for Version Change" and "Publish Library"
