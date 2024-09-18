@@ -55,6 +55,7 @@ pipeline {
       when {
         branch 'main'
         expression { publishLibrary }
+        not { expression { params.RELEASE_BUILD } }
       }
       steps {
         script {
@@ -97,6 +98,7 @@ pipeline {
           lastStage = env.STAGE_NAME
           sbtbuild.setRunITTest(true)
           sbtbuild.setNoSubproject(true)
+          sbtbuild.setPublish(false)
           sbtbuild.setScalaVersion(env.SCALA_VERSION)
           sbtbuild.setSrcJar("coordinator/target/coordinator-assembly.jar")
           sbtbuild.build()
