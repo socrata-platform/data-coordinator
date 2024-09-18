@@ -55,6 +55,7 @@ pipeline {
       when {
         branch 'main'
         expression { publishLibrary }
+        not { expression { params.RELEASE_BUILD } }
       }
       steps {
         script {
