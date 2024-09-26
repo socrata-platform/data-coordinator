@@ -17,6 +17,7 @@ boolean publishLibrary = false
 def sbtbuild = new com.socrata.SBTBuild(steps, service, project_wd)
 def dockerize = new com.socrata.Dockerize(steps, service, BUILD_NUMBER)
 def releaseTag = new com.socrata.ReleaseTag(steps, service)
+def semVerTag = new com.socrata.SemVerTag(steps)
 
 pipeline {
   options {
@@ -43,10 +44,14 @@ pipeline {
     stage('Check for Version Change') {
       when {
         branch 'main'
+        not { expression { params.RELEASE_BUILD } }
       }
       steps {
         script {
           lastStage = env.STAGE_NAME
+         // Checkout to fetch tags because the default checkout does not include tags
+          // Fetching the tags without uisng checkout will confuse Jenkins about the git branch
+          semVerTag.checkout('main')
           publishLibrary = haveCertainFilesChanged(filePaths: ['version.sbt'])
         }
       }
@@ -54,12 +59,15 @@ pipeline {
     stage('Publish Library') {
       when {
         branch 'main'
-        expression { publishLibrary }
         not { expression { params.RELEASE_BUILD } }
+        expression { publishLibrary }
       }
       steps {
         script {
           lastStage = env.STAGE_NAME
+          skip = true
+          semVerTag.checkoutClosestTag()
+          // Build & Publish
           sbtbuild.setRunITTest(true)
           sbtbuild.setNoSubproject(true)
           sbtbuild.setScalaVersion(env.SCALA_VERSION)
