@@ -110,9 +110,11 @@ Below is a copy of the email distributed to engineering when breaking changes we
 
 >Thanks, Alexa
 
-## Publishing
+## Publishing the Library
 
-To publish the library:
+To update the library:
 
-1. Update the version.sbt file, create a PR and merge to main
-1. The Jenkins job for the main branch will build the stages "Check for Version Change" and "Publish Library"
+1. Make a PR, get it approved and merge your commits into main.
+1. From main, make a branch and run `sbt release`. This will create two commits to bump the version and create a git tag for the release version.
+1. Create a PR on the branch, get it approved and merged to main.
+1. Following the merge of the release commits to main, the Jenkins job for the main branch will build the stages "Check for Version Change" and "Publish Library" to publish the library.
