@@ -10,7 +10,7 @@ import com.socrata.datacoordinator.common.collocation.{CollocationLock, CuratedC
 import com.socrata.datacoordinator.common.{DataSourceFromConfig, SoQLCommon}
 import com.socrata.datacoordinator.id.{ColumnId, DatasetId, DatasetInternalName, UserColumnId}
 import com.socrata.datacoordinator.resources._
-import com.socrata.datacoordinator.secondary.{DatasetAlreadyInSecondary, SecondaryMetric, BrokenSecondaryRecord}
+import com.socrata.datacoordinator.secondary.{DatasetAlreadyInSecondary, SecondaryMetric, BrokenSecondaryRecord, SecondaryManifest}
 import com.socrata.datacoordinator.secondary.config.SecondaryGroupConfig
 import com.socrata.datacoordinator.truth.CopySelector
 import com.socrata.datacoordinator.truth.loader.{Delogger, NullLogger}
@@ -178,23 +178,23 @@ class Main(common: SoQLCommon, serviceConfig: ServiceConfig) {
       val datasetMapReader = u.datasetMapReader
       datasetMapReader.datasetInfo(datasetId).map { datasetInfo =>
         val secondaryManifest = u.secondaryManifest
-        val secondaryStoresConfig = u.secondaryStoresConfig
-        val copyInfo = datasetMapReader.latest(datasetInfo)
-        val latestVersion = copyInfo.dataVersion
-        val latestShapeVersion = copyInfo.dataShapeVersion
 
-        val copies = datasetMapReader.allCopies(datasetInfo)
+        val copies = datasetMapReader.allActiveCopies(datasetInfo)
         val publishedCopy = copies.find { _.lifecycleStage == LifecycleStage.Published }
         val unpublishedCopy = copies.find { _.lifecycleStage == LifecycleStage.Unpublished }
 
+        val latestCopyInfo = copies.maxBy { c => (c.dataVersion, c.copyNumber) }
+        val latestVersion = latestCopyInfo.dataVersion
+        val latestShapeVersion = latestCopyInfo.dataShapeVersion
 
-        val secondaries = secondaryManifest.stores(datasetId).mapValues((SecondaryValue.apply _).tupled)
-        val feedbackSecondaries = secondaryManifest.feedbackSecondaries(datasetId)
-        val brokenSecondaries = secondaryManifest.brokenAts(datasetId)
+        val rawSecondaries = secondaryManifest.stores(datasetId)
+        val secondaries = rawSecondaries.mapValues { v => SecondaryValue(v.latestSecondaryDataVersion, v.pendingDrop) }
+        val feedbackSecondaries = rawSecondaries.iterator.collect { case (store, v) if v.isFeedback => store }.toSet
+        val brokenSecondaries = rawSecondaries.iterator.collect { case (store, SecondaryManifest.StoreInfo(_, _, Some(brokenAt), _, _)) => store -> brokenAt }.toMap
 
         val groups = scala.collection.mutable.HashMap[String, Set[String]]()
-        secondaries.keys.foreach { storeId =>
-          secondaryStoresConfig.group(storeId).foreach { group =>
+        rawSecondaries.foreach { case (storeId, v) =>
+          v.secondaryGroup.foreach { group =>
             groups += ((group, groups.getOrElse(group, Set.empty) ++ Set(storeId)))
           }
         }
