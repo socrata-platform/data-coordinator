@@ -183,8 +183,6 @@ class CoordinatedCollocator(collocationGroup: Set[String],
               }.toMap // datasetStoreMap: key = dataset, values = set of secondary_instances the dataset lives
               log.info("Dataset stores map: {}", JsonEncode.toJValue(datasetStoresMap))
 
-              // Calculation of this requires recursive database sql calls.
-              // TODO: Consider to use recursive sql to speed up this.
               val datasetGroupMap: Map[DatasetInternalName, Set[DatasetInternalName]] = inputDatasets.map { dataset =>
                 val collocateDatasetsResult: Set[DatasetInternalName] =
                   logTime(s"collocatedDatasets $dataset")(collocatedDatasets(Set(dataset)).fold(throw _, _.datasets))
