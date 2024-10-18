@@ -527,7 +527,6 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
       expectStoreMetrics(storesGroupA)
 
       expectDatasetMaxCostAlpha1WithCollocationsComplex
-      expectDatasetMaxCostAlpha1WithCollocationsComplex // this confuses me
 
     }) (
 
