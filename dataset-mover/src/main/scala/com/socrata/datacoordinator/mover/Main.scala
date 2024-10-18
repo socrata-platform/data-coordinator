@@ -65,7 +65,7 @@ object Main extends App {
   implicit val executorShutdown = Resource.executorShutdownNoTimeout
 
   def fullyReplicated(datasetId: DatasetId, manifest: SecondaryManifest, targetVersion: Long): Boolean = {
-    manifest.stores(datasetId).values.forall{ case (version: Long, _) => version == targetVersion }
+    manifest.stores(datasetId).values.forall{ case v => v.latestSecondaryDataVersion == targetVersion }
   }
 
   def isPgSecondary(store: String): Boolean =

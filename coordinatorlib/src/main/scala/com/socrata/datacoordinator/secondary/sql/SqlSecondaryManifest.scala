@@ -92,13 +92,19 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
     }
   }
 
-  def stores(datasetId: DatasetId): Map[String, (Long, Boolean)] = {
-    using(conn.prepareStatement("SELECT store_id, latest_secondary_data_version, pending_drop FROM secondary_manifest WHERE dataset_system_id = ?")) { stmt =>
+  def stores(datasetId: DatasetId): Map[String, SecondaryManifest.StoreInfo] = {
+    using(conn.prepareStatement("SELECT sm.store_id, sm.latest_secondary_data_version, sm.pending_drop, sm.broken_at, ssc.is_feedback_secondary, ssc.group_name FROM secondary_manifest sm join secondary_stores_config ssc on sm.store_id = ssc.store_id WHERE dataset_system_id = ?")) { stmt =>
       stmt.setDatasetId(1, datasetId)
       using(stmt.executeQuery()) { rs =>
-        val result = Map.newBuilder[String, (Long, Boolean)]
+        val result = Map.newBuilder[String, SecondaryManifest.StoreInfo]
         while(rs.next()) {
-          result += rs.getString("store_id") -> (rs.getLong("latest_secondary_data_version") -> rs.getBoolean("pending_drop"))
+          result += rs.getString("store_id") -> SecondaryManifest.StoreInfo(
+            latestSecondaryDataVersion = rs.getLong("latest_secondary_data_version"),
+            pendingDrop = rs.getBoolean("pending_drop"),
+            brokenAt = Option(rs.getTimestamp("broken_at")).map(new DateTime(_)),
+            isFeedback = rs.getBoolean("is_feedback_secondary"),
+            secondaryGroup = Option(rs.getString("group_name")),
+          )
         }
         result.result()
       }

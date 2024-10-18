@@ -45,7 +45,7 @@ trait SecondaryManifest {
   def dropDataset(storeId: String, datasetId: DatasetId): Unit
 
   def datasets(storeId: String): Map[DatasetId, Long]
-  def stores(datasetId: DatasetId): Map[String, (Long, Boolean)]
+  def stores(datasetId: DatasetId): Map[String, SecondaryManifest.StoreInfo]
   def brokenAts(datasetId: DatasetId): Map[String, DateTime]
 
   def allBrokenDatasets: Map[String, Map[DatasetId, BrokenSecondaryRecord]]
@@ -77,6 +77,16 @@ trait SecondaryManifest {
   def performResync(datasetId: DatasetId, storeId: String): Unit
   def lockResync(datasetId: DatasetId, storeId: String, groupName: String): Unit
   def unlockResync(datasetId: DatasetId, storeId: String, groupName: String): Unit
+}
+
+object SecondaryManifest {
+  case class StoreInfo(
+    latestSecondaryDataVersion: Long,
+    pendingDrop: Boolean,
+    brokenAt: Option[DateTime],
+    isFeedback: Boolean,
+    secondaryGroup: Option[String],
+  )
 }
 
 case class NamedSecondary[CT, CV](storeId: String, store: Secondary[CT, CV], groupName: String)
