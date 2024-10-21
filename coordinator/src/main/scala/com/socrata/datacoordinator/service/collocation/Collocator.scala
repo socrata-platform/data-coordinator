@@ -7,6 +7,7 @@ import com.rojoma.json.v3.util._
 import com.socrata.datacoordinator.common.collocation.{CollocationLock, CollocationLockError, CollocationLockTimeout}
 import com.socrata.datacoordinator.id.DatasetInternalName
 import com.socrata.datacoordinator.resources.collocation.{CollocatedDatasetsResult, DatasetNotInStore, SecondaryMoveJobRequest, StoreNotAcceptingDatasets}
+import com.socrata.datacoordinator.secondary.SecondaryMetric
 import com.socrata.datacoordinator.service.collocation.secondary.stores.SecondaryStoreSelector
 import org.joda.time.DateTime
 
@@ -166,13 +167,13 @@ class CoordinatedCollocator(collocationGroup: Set[String],
                 Set(collocation._1, collocation._2)
               }.toSet
 
-              val inputDatasets = collocationEdges.flatten // example: Set(alpha.1, alpha.2)
+              val inputDatasets: Set[DatasetInternalName] = collocationEdges.flatten // example: Set(alpha.1, alpha.2)
 
               // we will 404 if we get a 404 projected stores for one of the input datasets
               // example: Set(alpha.1 -> Set(pg1, pg2), alpha.2 -> Set(pg3, pg4))
               // It needs to look up data from secondary_manifest and secondary_move_jobs to consider future location.
               // TODO: Make sure we are cleaning up secondary_move_jobs table
-              val datasetStoresMap = inputDatasets.map { dataset =>
+              val datasetStoresMap: Map[DatasetInternalName, Set[String]] = inputDatasets.map { dataset =>
                 if (collocationGroup(dataset.instance)) {
                   (dataset, stores(storeGroup, dataset, instances, replicationFactor))
                 } else {
@@ -182,17 +183,33 @@ class CoordinatedCollocator(collocationGroup: Set[String],
               }.toMap // datasetStoreMap: key = dataset, values = set of secondary_instances the dataset lives
               log.info("Dataset stores map: {}", JsonEncode.toJValue(datasetStoresMap))
 
-              // Calculation of this requires recursive database sql calls.
-              // TODO: Consider to use recursive sql to speed up this.
-              val datasetGroupMap = inputDatasets.map { dataset =>
-                val collocateDatasetsResult: Set[DatasetInternalName] =
-                  logTime(s"collocatedDatasets $dataset")(collocatedDatasets(Set(dataset)).fold(throw _, _.datasets))
-                (dataset, collocateDatasetsResult)
-              }.toMap // datasetGroupMap: key = dataset, value = set of all related datasets in the collocation_manifest table.
+              val datasetGroupMap: Map[DatasetInternalName, Set[DatasetInternalName]] = inputDatasets.foldLeft(Map.empty[DatasetInternalName, Set[DatasetInternalName]]) { (acc, dataset) =>
+                // if a dataset's colloc group is already known due to
+                // being collocated with an earlier group, we don't
+                // have do actually find the collocation group now.
+                // So what we're doing here is saying "for each input
+                // dataset, if we haven't already found it in a
+                // collocation group, look up its colloc group and
+                // associate it with every dataset in that colloc
+                // group".  In the best case, this means we're only
+                // doing the lookup call once.
+                acc.get(dataset) match {
+                  case Some(_) =>
+                    acc
+                  case None =>
+                    val collocateDatasetsResult: Set[DatasetInternalName] =
+                      logTime(s"collocatedDatasets $dataset")(collocatedDatasets(Set(dataset)).fold(throw _, _.datasets))
+
+                    acc ++ inputDatasets.iterator.flatMap { input =>
+                      if(collocateDatasetsResult(input)) Some(input -> collocateDatasetsResult)
+                      else None
+                    }
+                }
+              } // datasetGroupMap: key = dataset, value = set of all related datasets in the collocation_manifest table.
               log.info("Dataset group map: {}", JsonEncode.toJValue(datasetGroupMap))
 
               // cost of _all_ datasets in question, not just the input datasets
-              val datasetCostMap = datasetGroupMap.flatMap(_._2).map { dataset =>
+              val datasetCostMap: Map[DatasetInternalName, Cost] = datasetGroupMap.flatMap(_._2).toSet[DatasetInternalName].map { dataset =>
                 logTime(s"metric.datasetMaxCost $dataset")((dataset, metric.datasetMaxCost(storeGroup, dataset).fold(throw _, identity)))
               }.toMap
               log.info("Dataset cost map: {}", JsonEncode.toJValue(datasetCostMap))
@@ -200,7 +217,7 @@ class CoordinatedCollocator(collocationGroup: Set[String],
               // If there are 12 secondaries, 8s on each secondary will add up to 1.5min
               // Use parallel map to speed up store metric calculation within each group, i.e. alpha, beta.
               // To further increase parallelism, update the map inside metric.storeMetrics function.
-              val storeMetricsMap = instances.par.map { instance =>
+              val storeMetricsMap: Map[String, SecondaryMetric] = instances.par.map { instance =>
                 logTime(s"metric.storeMetrics $instance")((instance, metric.storeMetrics(instance).fold(throw _, identity)))
               }.seq.toMap
               log.info("Store metrics map: {}", JsonEncode.toJValue(storeMetricsMap))
