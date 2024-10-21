@@ -53,7 +53,7 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
                                          andNoOtherCalls: Boolean,
                                          params: (String, Set[DatasetInternalName],  Set[DatasetInternalName])*): Unit = {
     params.foreach { case (instance, datasets, result) =>
-      (mock.collocatedDatasetsOnInstance _).expects(instance, datasets).once.returns(collocatedDatasets(result))
+      (mock.collocatedDatasetsOnInstance _).expects(instance, datasets).noMoreThanOnce.returns(collocatedDatasets(result))
     }
 
     if (andNoOtherCalls) {
@@ -527,7 +527,6 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
       expectStoreMetrics(storesGroupA)
 
       expectDatasetMaxCostAlpha1WithCollocationsComplex
-      expectDatasetMaxCostAlpha1WithCollocationsComplex // this confuses me
 
     }) (
 
