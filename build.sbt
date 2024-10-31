@@ -8,7 +8,7 @@ ThisBuild / resolvers += "socrata maven" at "https://repo.socrata.com/artifactor
 
 ThisBuild / scalacOptions ++= Seq("-deprecation", "-feature")
 
-// ThisBuild / evictionErrorLevel := Level.Warn
+ThisBuild / evictionErrorLevel := Level.Warn
 
 val coordinatorExternal = (project in file("coordinator-external")).
   configs(IntegrationTest).
