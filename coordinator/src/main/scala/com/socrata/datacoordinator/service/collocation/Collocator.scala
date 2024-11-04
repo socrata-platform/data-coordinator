@@ -183,12 +183,12 @@ class CoordinatedCollocator(collocationGroup: Set[String],
               }.toMap // datasetStoreMap: key = dataset, values = set of secondary_instances the dataset lives
               log.info("Dataset stores map: {}", JsonEncode.toJValue(datasetStoresMap))
 
-              if(datasetStoresMap.valuesIterator.foldLeft(Set.empty[String])(_ intersect _) == datasetStoresMap.valuesIterator.foldLeft(Set.empty[String])(_ union _)) {
+              if(datasetStoresMap.nonEmpty && datasetStoresMap.valuesIterator.reduceLeft(_ intersect _) == datasetStoresMap.valuesIterator.reduceLeft(_ union _)) {
                 log.info("Short circuiting explain: all input datasets are already in the same secondaries!")
                 return Right(CollocationResult(
                   id = None,
-                  status = Approved,
-                  message = Approved.message,
+                  status = Completed,
+                  message = Completed.message,
                   cost = Cost.Zero,
                   moves = Nil
                 ))

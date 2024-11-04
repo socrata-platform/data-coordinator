@@ -322,12 +322,12 @@ class CoordinatedCollocatorTest extends FunSuite with Matchers with MockFactory 
 
   def expectStoreMetrics(storeGroup: Set[String])(implicit metric: Metric): Unit = {
     storeGroup.foreach { storeId =>
-      (metric.storeMetrics _).expects(storeId).once.returns(Right(SecondaryMetric(700L))) // 1000L max capacity in config
+      (metric.storeMetrics _).expects(storeId).noMoreThanOnce.returns(Right(SecondaryMetric(700L))) // 1000L max capacity in config
     }
   }
 
   def expectDatasetMaxCost(storeGroup: String, datasetId: DatasetInternalName, totalSizeBytes: Long)(implicit metric: Metric): Unit = {
-    (metric.datasetMaxCost _).expects(storeGroup, datasetId).once.returns(Right(Cost(1, totalSizeBytes)))
+    (metric.datasetMaxCost _).expects(storeGroup, datasetId).noMoreThanOnce.returns(Right(Cost(1, totalSizeBytes)))
   }
 
   def expectDatasetMaxCostAlpha1WithCollocationsComplex(implicit metric: Metric): Unit = {
