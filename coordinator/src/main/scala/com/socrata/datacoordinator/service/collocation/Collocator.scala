@@ -183,6 +183,17 @@ class CoordinatedCollocator(collocationGroup: Set[String],
               }.toMap // datasetStoreMap: key = dataset, values = set of secondary_instances the dataset lives
               log.info("Dataset stores map: {}", JsonEncode.toJValue(datasetStoresMap))
 
+              if(datasetStoresMap.nonEmpty && datasetStoresMap.valuesIterator.reduceLeft(_ intersect _) == datasetStoresMap.valuesIterator.reduceLeft(_ union _)) {
+                log.info("Short circuiting explain: all input datasets are already in the same secondaries!")
+                return Right(CollocationResult(
+                  id = None,
+                  status = Completed,
+                  message = Completed.message,
+                  cost = Cost.Zero,
+                  moves = Nil
+                ))
+              }
+
               val datasetGroupMap: Map[DatasetInternalName, Set[DatasetInternalName]] = inputDatasets.foldLeft(Map.empty[DatasetInternalName, Set[DatasetInternalName]]) { (acc, dataset) =>
                 // if a dataset's colloc group is already known due to
                 // being collocated with an earlier group, we don't
