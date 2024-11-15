@@ -3,7 +3,7 @@ import sbt._
 object Dependencies {
   object versions {
     val activemq        = "5.15.16"
-    val c3po            = "0.9.5-pre9"
+    val c3po            = "0.9.5.4"
     val clojure         = "1.5.1"
     val commonsCodec    = "1.8"
     val eurybates       = "2.1.0"
@@ -16,7 +16,7 @@ object Dependencies {
     val metrics         = "4.1.2"
     val metricsScala    = "4.1.1"
     val opencsv         = "2.3"
-    val postgresql      = "42.2.5"
+    val postgresql      = "42.6.1"
     val rojomaJson      = "3.15.0"
     val rojomaSimpleArm = "2.3.2"
     val scalaCheck      = "1.14.0"
@@ -24,7 +24,7 @@ object Dependencies {
     val scalaTest       = "3.0.8"
     val slf4j           = "1.7.5"
     val snappyIq80      = "0.3"
-    val snappyXerial    = "1.1.0-M3"
+    val snappyXerial    = "1.1.10.4"
     val socrataCuratorUtils = "1.2.0"
     val socrataHttp     = "3.13.3"
     val socrataThirdPartyUtils = "5.0.0"
