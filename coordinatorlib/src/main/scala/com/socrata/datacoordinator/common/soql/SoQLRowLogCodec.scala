@@ -24,9 +24,7 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[SoQLValue] {
       case SoQLNumber(bd) =>
         target.writeRawByte(2)
         target.writeStringNoTag(bd.toString)
-      case SoQLMoney(bd) =>
-        target.writeRawByte(3)
-        target.writeStringNoTag(bd.toString)
+      // 3 used to be SoQLMoney
       case SoQLBoolean(b) =>
         target.writeRawByte(4)
         target.writeBoolNoTag(b)
@@ -43,18 +41,14 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[SoQLValue] {
       case SoQLTime(ts) =>
         target.writeRawByte(9)
         target.writeStringNoTag(SoQLTime.StringRep(ts))
-      case SoQLArray(xs) =>
-        target.writeRawByte(10)
-        target.writeStringNoTag(CompactJsonWriter.toString(xs))
+      // 10 used to be SoQLArray
       case SoQLDouble(x) =>
         target.writeRawByte(11)
         target.writeDoubleNoTag(x)
       case SoQLJson(j) =>
         target.writeRawByte(12)
         target.writeStringNoTag(CompactJsonWriter.toString(j))
-      case SoQLObject(j) =>
-        target.writeRawByte(13)
-        target.writeStringNoTag(CompactJsonWriter.toString(j))
+      // 13 used to be SoQLObject
       case SoQLVersion(ver) =>
         target.writeRawByte(14)
         target.writeInt64NoTag(ver)
@@ -90,16 +84,7 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[SoQLValue] {
         if (address.isDefined) {
           target.writeStringNoTag(address.get)
         }
-      case SoQLPhone(phoneNumber, phoneType) =>
-        target.writeRawByte(23)
-        target.writeBoolNoTag(phoneNumber.isDefined)
-        if (phoneNumber.isDefined) {
-          target.writeStringNoTag(phoneNumber.get)
-        }
-        target.writeBoolNoTag(phoneType.isDefined)
-        if (phoneType.isDefined) {
-          target.writeStringNoTag(phoneType.get)
-        }
+      // 23 used to be SoQLPhone
       case SoQLUrl(url, description) =>
         target.writeRawByte(24)
         target.writeBoolNoTag(url.isDefined)
@@ -131,8 +116,7 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[SoQLValue] {
         SoQLText(source.readString())
       case 2 =>
         SoQLNumber(new java.math.BigDecimal(source.readString()))
-      case 3 =>
-        SoQLMoney(new java.math.BigDecimal(source.readString()))
+      // 3 used to be SoQLMoney
       case 4 =>
         SoQLBoolean.canonicalValue(source.readBool())
       case 5 =>
@@ -152,18 +136,12 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[SoQLValue] {
         SoQLTime(SoQLTime.StringRep.unapply(source.readString()).getOrElse {
           sys.error("Unable to parse time from log!")
         })
-      case 10 =>
-        SoQLArray(JsonUtil.parseJson[JArray](source.readString()).right.toOption.getOrElse {
-          sys.error("Unable to parse array from log!")
-        })
+      // 10 used to be SoQLArray
       case 11 =>
         SoQLDouble(source.readDouble())
       case 12 =>
         SoQLJson(JsonReader.fromString(source.readString()))
-      case 13 =>
-        SoQLObject(JsonUtil.parseJson[JObject](source.readString()).right.toOption.getOrElse {
-          sys.error("Unable to parse object from log!")
-        })
+      // 13 used to be SoQLObject
       case 14 =>
         SoQLVersion(source.readInt64())
       case 15 =>
@@ -210,14 +188,7 @@ object SoQLRowLogCodec extends SimpleRowLogCodec[SoQLValue] {
           if (source.readBool()) Option(source.readString())
           else None
         SoQLLocation(lat, lng, address)
-      case 23 =>
-        val phoneNumber =
-          if (source.readBool()) { Option(source.readString()) }
-          else { None }
-        val phoneType =
-          if (source.readBool()) { Option(source.readString()) }
-          else { None }
-        SoQLPhone(phoneNumber, phoneType)
+      // 23 used to be SoQLPhone
       case 24 =>
         val url =
           if (source.readBool()) { Option(source.readString()) }
