@@ -39,8 +39,8 @@ object DataSourceFromConfig {
 
   private def pgDataSource(config: DataSourceConfig): PGSimpleDataSource = {
     val dataSource = new PGSimpleDataSource
-    dataSource.setServerName(config.host)
-    dataSource.setPortNumber(config.port)
+    dataSource.setServerNames(Array(config.host))
+    dataSource.setPortNumbers(Array(config.port))
     dataSource.setDatabaseName(config.database)
     dataSource.setUser(config.username)
     dataSource.setPassword(config.password)
