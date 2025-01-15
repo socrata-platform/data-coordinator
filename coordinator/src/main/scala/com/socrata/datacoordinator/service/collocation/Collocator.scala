@@ -116,9 +116,10 @@ class CoordinatedCollocator(collocationGroup: Set[String],
 
     val storesInGroup = instances.intersect(futureStores)
     if (replicationFactor > storesInGroup.size) {
-      log.error("Dataset {}'s current replication factor {} is smaller than the expected replication factor {} for the group {}",
-        dataset.toString, storesInGroup.size.toString, replicationFactor.toString, storeGroup)
-      throw new Exception("Dataset replicated to stores in an unexpected state!")
+      // This is not unexpected anymore, so commenting it out
+//      log.error("Dataset {}'s current replication factor {} is smaller than the expected replication factor {} for the group {}",
+//        dataset.toString, storesInGroup.size.toString, replicationFactor.toString, storeGroup)
+//      throw new Exception("Dataset replicated to stores in an unexpected state!")
     }
 
     storesInGroup
@@ -185,6 +186,18 @@ class CoordinatedCollocator(collocationGroup: Set[String],
 
               if(datasetStoresMap.nonEmpty && datasetStoresMap.valuesIterator.reduceLeft(_ intersect _) == datasetStoresMap.valuesIterator.reduceLeft(_ union _)) {
                 log.info("Short circuiting explain: all input datasets are already in the same secondaries!")
+                return Right(CollocationResult(
+                  id = None,
+                  status = Completed,
+                  message = Completed.message,
+                  cost = Cost.Zero,
+                  moves = Nil
+                ))
+              }
+
+              if(datasetStoresMap.isEmpty) {
+                // TODO: confirm that
+                log.info("Short circuiting explain: skipping this group!")
                 return Right(CollocationResult(
                   id = None,
                   status = Completed,
