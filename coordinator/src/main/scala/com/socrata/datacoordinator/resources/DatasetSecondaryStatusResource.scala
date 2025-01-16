@@ -10,7 +10,6 @@ import com.socrata.http.server.implicits._
 case class DatasetSecondaryStatusResource(storeIdOpt: Option[String],
                                           datasetId: DatasetId,
                                           secondaries: Map[String, String],
-                                          secondariesNotAcceptingNewDatasets: Set[String],
                                           versionInStore: (String, DatasetId) => Option[Long],
                                           serviceConfig: ServiceConfig,
                                           ensureInSecondary: (String, String, DatasetId) => Boolean,
@@ -54,7 +53,6 @@ case class DatasetSecondaryStatusResource(storeIdOpt: Option[String],
       case "_DEFAULT_" =>
         defaultSecondaryGroups.toVector.map(ensureInSecondaryGroup(_, datasetId, secondariesLike)).forall(identity) // no side effects in forall
       case groupRe(g) if serviceConfig.secondary.groups.contains(g) => ensureInSecondaryGroup(g, datasetId, secondariesLike)
-      case _ if secondariesNotAcceptingNewDatasets(storeId) => return Forbidden
       case secondary if secondaries.contains(storeId) => ensureInSecondary(secondaries(storeId), secondary, datasetId)
       case _ => false
     }

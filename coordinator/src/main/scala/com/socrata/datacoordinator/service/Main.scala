@@ -576,11 +576,6 @@ object Main extends DynamicPortMap {
     PropertyConfigurator.configure(Propertizer("log4j", serviceConfig.logProperties))
 
     val secondaries: Map[String, String] = serviceConfig.secondary.groups.flatMap { case (name, group) => group.instances.keys.map(_ -> name) }
-    // TODO: remove this
-    val secondariesNotAcceptingNewDatasets: Set[String] =
-      serviceConfig.secondary.groups.flatMap { case (_, group) =>
-        group.instances.filter { case (_, instance) => !instance.acceptingNewDatasets }.keySet
-      }.toSet
 
     val collocationGroup: Set[String] = serviceConfig.collocation.group
     if (collocationGroup.nonEmpty && !collocationGroup.contains(serviceConfig.instance)) {
@@ -755,8 +750,7 @@ object Main extends DynamicPortMap {
       def resyncResource = ResyncResource(common.internalNameFromDatasetId, operations.isInSecondary, operations.performResync) _
 
       def datasetSecondaryStatusResource(hostAndPort: HostAndPort) =
-        DatasetSecondaryStatusResource(_: Option[String], _:DatasetId, secondaries,
-                                       secondariesNotAcceptingNewDatasets, operations.versionInStore, serviceConfig, operations.ensureInSecondary(httpCoordinator(hostAndPort)),
+        DatasetSecondaryStatusResource(_: Option[String], _:DatasetId, secondaries, operations.versionInStore, serviceConfig, operations.ensureInSecondary(httpCoordinator(hostAndPort)),
                                        operations.ensureInSecondaryGroup(httpCoordinator(hostAndPort), collocationProvider(hostAndPort, NoOPCollocationLock)), operations.deleteFromSecondary, common.internalNameFromDatasetId)
 
       def datasetSecondaryBreakageResource =
