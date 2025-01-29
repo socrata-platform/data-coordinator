@@ -18,7 +18,7 @@ class SqlLogTableCleanup(conn: Connection, deleteOlderThan: FiniteDuration, dele
             |    FROM dataset_map
             |   WHERE latest_data_version <> log_last_cleaned_data_version AND log_last_cleaned < NOW() - ('${deleteEvery.toSeconds} second' :: INTERVAL)
             |   ORDER BY log_last_cleaned
-            |   LIMIT 1) FOR UPDATE
+            |   LIMIT 1) FOR UPDATE SKIP LOCKED
             """.stripMargin)) {
           rs =>
             if(rs.next()) {
