@@ -13,7 +13,7 @@ class SqlTableCleanup(conn: Connection, daysDelay: Int = 1) extends TableCleanup
     cleanupDeleteds()
 
     using(conn.createStatement()) { stmt =>
-      using(stmt.executeQuery(s"SELECT id, table_name FROM pending_table_drops WHERE queued_at < now() - ('$daysDelay day' :: INTERVAL) ORDER BY id LIMIT 1 FOR UPDATE")) { rs =>
+      using(stmt.executeQuery(s"SELECT id, table_name FROM pending_table_drops WHERE queued_at < now() - ('$daysDelay day' :: INTERVAL) ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED")) { rs =>
         if(rs.next()) {
           val id = rs.getLong("id")
           val tableName = rs.getString("table_name")
