@@ -10,6 +10,9 @@ libraryDependencies ++= Seq(
   jna,
   opencsv,
   clojure,
+  metricsJetty9,
+  metricsGraphite,
+  metricsJmx,
 
   TestDeps.scalaCheck % "test",
   TestDeps.scalaMock  % "test"
