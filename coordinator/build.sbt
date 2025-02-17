@@ -12,6 +12,9 @@ libraryDependencies ++= Seq(
   clojure,
   metricsJetty9,
   metricsGraphite,
+  socrataHttpClient,
+  socrataHttpCuratorBroker,
+
   metricsJmx,
 
   TestDeps.scalaCheck % "test",

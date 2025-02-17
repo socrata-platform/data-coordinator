@@ -6,6 +6,7 @@ object Dependencies {
     val c3po            = "0.9.5.4"
     val clojure         = "1.5.1"
     val commonsCodec    = "1.8"
+    val curator = "2.6.0"
     val eurybates       = "2.1.0"
     val h2              = "1.3.166"
     val jna             = "3.0.9"
@@ -42,6 +43,8 @@ object Dependencies {
 
   val commonsCodec = "commons-codec" % "commons-codec" % versions.commonsCodec
 
+  val curator = "org.apache.curator" % "curator-x-discovery" % versions.curator
+
   val eurybates = "com.socrata" %% "eurybates" % versions.eurybates
 
   val jna = "com.sun.jna" % "jna" % versions.jna
@@ -72,7 +75,8 @@ object Dependencies {
 
   val socrataCuratorUtils = "com.socrata" %% "socrata-curator-utils" % versions.socrataCuratorUtils
   val socrataHttpCuratorBroker = "com.socrata"    %% "socrata-http-curator-broker" % versions.socrataHttp // brings in org.apache.curator
-  val socrataHttpClient = "com.socrata"    %% "socrata-http-client" % versions.socrataHttp // brings in org.apache.curator
+  val socrataHttpClient = "com.socrata"    %% "socrata-http-client" % versions.socrataHttp
+
   val socrataThirdPartyUtils = "com.socrata" %% "socrata-thirdparty-utils" % versions.socrataThirdPartyUtils
 
   val soqlBrita = "com.socrata" %% "soql-brita" % versions.soqlBrita
