@@ -67,7 +67,7 @@ public class SnappyInputStream
     }
 
     @Override
-    protected FrameMetaData getFrameMetaData(byte[] frameHeader)
+    protected AbstractSnappyInputStream.FrameMetaData getFrameMetaData(byte[] frameHeader)
             throws IOException
     {
         int x = frameHeader[0] & 0xFF;
@@ -103,7 +103,7 @@ public class SnappyInputStream
     }
 
     @Override
-    protected FrameData getFrameData(byte[] frameHeader, byte[] content, int length)
+    protected AbstractSnappyInputStream.FrameData getFrameData(byte[] frameHeader, byte[] content, int length)
     {
         // crc is contained in the frame header
         int crc32c = (frameHeader[3] & 0xFF) << 24 |
