@@ -24,7 +24,7 @@ object Dependencies {
     val scalaMock       = "3.6.0"
     val scalaTest       = "3.0.8"
     val slf4j           = "1.7.5"
-    val snappyIq80      = "0.3"
+    val snappyIq80      = "0.5"
     val snappyXerial    = "1.1.10.4"
     val socrataCuratorUtils = "1.2.0"
     val socrataHttp     = "3.13.3"
