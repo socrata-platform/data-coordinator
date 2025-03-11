@@ -42,7 +42,7 @@ final class SnappyInternalUtils
         // work efficiently on big endian machines.
         if (ByteOrder.nativeOrder() == ByteOrder.LITTLE_ENDIAN) {
             try {
-                Class<? extends Memory> unsafeMemoryClass = SnappyInternalUtils.class.getClassLoader().loadClass("org.iq80.snappy.UnsafeMemory").asSubclass(Memory.class);
+                Class<? extends Memory> unsafeMemoryClass = SnappyInternalUtils.class.getClassLoader().loadClass("com.socrata.datacoordinator.truth.loader.snappy.UnsafeMemory").asSubclass(Memory.class);
                 Memory unsafeMemory = unsafeMemoryClass.newInstance();
                 if (unsafeMemory.loadInt(new byte[4], 0) == 0) {
                     memoryInstance = unsafeMemory;
@@ -53,7 +53,7 @@ final class SnappyInternalUtils
         }
         if (memoryInstance == null) {
             try {
-                Class<? extends Memory> slowMemoryClass = SnappyInternalUtils.class.getClassLoader().loadClass("org.iq80.snappy.SlowMemory").asSubclass(Memory.class);
+                Class<? extends Memory> slowMemoryClass = SnappyInternalUtils.class.getClassLoader().loadClass("com.socrata.datacoordinator.truth.loader.snappy.SlowMemory").asSubclass(Memory.class);
                 Memory slowMemory = slowMemoryClass.newInstance();
                 if (slowMemory.loadInt(new byte[4], 0) == 0) {
                     memoryInstance = slowMemory;
