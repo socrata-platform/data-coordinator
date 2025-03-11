@@ -265,7 +265,12 @@ abstract class AbstractSqlLogger[CT, CV](val connection: Connection,
     */
 
     baos.write(3) // "pure java snappy"
-    underlyingOutputStream = new org.iq80.snappy.SnappyOutputStream(baos)
+    underlyingOutputStream = new snappy.SnappyOutputStream(baos)
+
+    /*
+    baos.write(4) // "pure java snappy with framing"
+    underlyingOutputStream = new snappy.SnappyFramedOutputStream(baos)
+    */
 
     out = com.google.protobuf.CodedOutputStream.newInstance(underlyingOutputStream)
 

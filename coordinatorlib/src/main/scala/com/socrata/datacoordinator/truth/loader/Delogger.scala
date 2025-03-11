@@ -128,7 +128,9 @@ object Delogger {
         case 2 => // deflate
           new InflaterInputStream(bais)
         case 3 => // pure java Snappy
-          new org.iq80.snappy.SnappyInputStream(bais)
+          new snappy.SnappyInputStream(bais)
+        case 4 => // pure java Snappy with framing
+          new org.iq80.snappy.SnappyFramedInputStream(bais)
         case -1 => sys.error("Empty row data")
         case other => sys.error("Using an unknown compressiong format " + other)
       }
