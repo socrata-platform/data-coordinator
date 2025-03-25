@@ -24,7 +24,7 @@ su socrata -c '/usr/bin/java \
     com.socrata.datacoordinator.primary.MigrateSchema migrate \
     '
 
-exec su socrata -c '/usr/bin/java \
+exec su socrata -c 'exec /usr/bin/java \
     -Xmx${JAVA_XMX} \
     -Xms${JAVA_XMX} \
     -Dconfig.file=${SERVER_CONFIG} \
