@@ -4,10 +4,10 @@
     http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
 
     <changeSet id="20250408-create-purge_copy_map-function" author="mtaylor">
-        <sql>
+        <sql splitStatements="false">
             CREATE OR REPLACE FUNCTION purge_copy_map() RETURNS TRIGGER
-    LANGUAGE plpgsql AS
-$$
+                LANGUAGE plpgsql AS
+            $$
             BEGIN
                 WITH to_delete AS (SELECT cm1.system_id
                                    FROM copy_map cm1
@@ -18,25 +18,25 @@ $$
                                                   AND cm2.lifecycle_stage = 'Published'
                                                   AND cm2.copy_number > cm1.copy_number)),
                      d1 AS (
-                DELETE FROM computation_strategy_map WHERE copy_system_id IN (SELECT system_id FROM to_delete)),
-             d2 AS (
-                 DELETE FROM column_map_geo_modifiers WHERE copy_system_id IN (SELECT system_id FROM to_delete)),
-             d3 AS (
-                 DELETE FROM column_map WHERE copy_system_id IN (SELECT system_id FROM to_delete)),
-             d4 AS (
-                 DELETE FROM index_directive_map WHERE copy_system_id IN (SELECT system_id FROM to_delete)),
-             d5 AS (
-                 DELETE FROM index_map WHERE copy_system_id IN (SELECT system_id FROM to_delete)),
-             d6 AS (
-                 DELETE FROM copy_map_table_modifiers WHERE copy_system_id IN (SELECT system_id FROM to_delete)),
-             d7 AS (
-                 DELETE FROM rollup_map WHERE copy_system_id IN (SELECT system_id FROM to_delete))
+                        DELETE FROM computation_strategy_map WHERE copy_system_id IN (SELECT system_id FROM to_delete)),
+                     d2 AS (
+                         DELETE FROM column_map_geo_modifiers WHERE copy_system_id IN (SELECT system_id FROM to_delete)),
+                     d3 AS (
+                         DELETE FROM column_map WHERE copy_system_id IN (SELECT system_id FROM to_delete)),
+                     d4 AS (
+                         DELETE FROM index_directive_map WHERE copy_system_id IN (SELECT system_id FROM to_delete)),
+                     d5 AS (
+                         DELETE FROM index_map WHERE copy_system_id IN (SELECT system_id FROM to_delete)),
+                     d6 AS (
+                         DELETE FROM copy_map_table_modifiers WHERE copy_system_id IN (SELECT system_id FROM to_delete)),
+                     d7 AS (
+                         DELETE FROM rollup_map WHERE copy_system_id IN (SELECT system_id FROM to_delete))
                 DELETE
                 FROM copy_map
                 WHERE system_id IN (SELECT system_id FROM to_delete);
                 RETURN NULL;
             END;
-$$;
+            $$;
         </sql>
 
         <rollback>
