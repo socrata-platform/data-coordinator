@@ -48,7 +48,8 @@
 
     <changeSet id="20250408-create-purge_copy_map-trigger" author="mtaylor">
         <sql>
-            CREATE OR REPLACE TRIGGER purge_copy_map_trigger
+            DROP TRIGGER IF EXISTS purge_copy_map_trigger ON copy_map;
+            CREATE TRIGGER purge_copy_map_trigger
             AFTER INSERT OR UPDATE
                 ON copy_map
                 FOR EACH STATEMENT
