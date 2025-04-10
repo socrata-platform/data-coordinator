@@ -1,0 +1,75 @@
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
+
+    <changeSet id="20250410-create-purge_copies-delete-helper-function" author="mtaylor">
+        <sql splitStatements="false">
+            CREATE OR REPLACE FUNCTION purge_copies(copy_ids bigint[]) RETURNS VOID AS
+            $$
+                BEGIN
+                DELETE FROM computation_strategy_map WHERE copy_system_id = ANY (copy_ids);
+                DELETE FROM column_map_geo_modifiers WHERE copy_system_id = ANY (copy_ids);
+                DELETE FROM column_map WHERE copy_system_id = ANY (copy_ids);
+                DELETE FROM index_directive_map WHERE copy_system_id = ANY (copy_ids);
+                DELETE FROM copy_map_table_modifiers WHERE copy_system_id = ANY (copy_ids);
+                DELETE FROM rollup_map WHERE copy_system_id = ANY (copy_ids);
+                DELETE FROM copy_map WHERE system_id = ANY (copy_ids);
+                END;
+            $$ LANGUAGE plpgsql;
+        </sql>
+
+        <rollback>
+            <sql>
+                DROP FUNCTION IF EXISTS purge_copies;
+            </sql>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="20250410-create-purge_copy_map-function" author="mtaylor">
+        <sql splitStatements="false">
+            CREATE OR REPLACE FUNCTION purge_copy_map() RETURNS TRIGGER AS
+            $$
+            DECLARE
+                copy_ids BIGINT[];
+            BEGIN
+                IF OLD.dataset_system_id = NEW.dataset_system_id AND OLD.system_id = NEW.system_id AND
+                   OLD.lifecycle_stage = 'Unpublished' AND NEW.lifecycle_stage = 'Published' THEN
+                        SELECT array_agg(system_id)
+                        INTO STRICT copy_ids
+                        FROM copy_map
+                        WHERE dataset_system_id = NEW.dataset_system_id
+                          AND lifecycle_stage = 'Discarded'
+                          AND copy_number &lt; NEW.copy_number;
+                    PERFORM purge_copies(copy_ids);
+                END IF;
+                RETURN NULL;
+            END;
+            $$ LANGUAGE plpgsql;
+        </sql>
+
+        <rollback>
+            <sql>
+                DROP FUNCTION IF EXISTS purge_copy_map;
+            </sql>
+        </rollback>
+    </changeSet>
+
+    <changeSet id="20250410-create-purge_copy_map-trigger" author="mtaylor">
+        <sql>
+            DROP TRIGGER IF EXISTS purge_copy_map_trigger ON copy_map;
+            CREATE TRIGGER purge_copy_map_trigger
+            AFTER UPDATE
+                ON copy_map
+                FOR EACH ROW
+            EXECUTE FUNCTION purge_copy_map();
+        </sql>
+
+        <rollback>
+            <sql>
+                DROP TRIGGER IF EXISTS purge_copy_map_trigger ON copy_map;
+            </sql>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>
