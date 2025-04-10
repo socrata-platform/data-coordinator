@@ -42,6 +42,7 @@
     <include file="com.socrata.datacoordinator.truth.schema/20220415-add-column-rollup-raw-soql.xml"/>
     <include file="com.socrata.datacoordinator.truth.schema/20220502-create-index-map.xml"/>
     <include file="com.socrata.datacoordinator.truth.schema/20240501-make-resource-name-required-and-unique.xml"/>
+    <include file="com.socrata.datacoordinator.truth.schema/20250410-create-purge_copy_map-function-trigger.xml"/>
     <!-- run-on-change migrations: recreation of triggers typically comes after other changes that they may depend on -->
     <include file="com.socrata.datacoordinator.truth.schema/triggers/update-dataset-log-trigger.xml"/>
 
