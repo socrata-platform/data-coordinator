@@ -1,5 +1,6 @@
-#!/bin/sh
+#!/bin/bash
 set -ev
+set -o pipefail
 
 if [ -d /mnt/mesos/sandbox ]; then
     export HEAPDUMP="-XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/mnt/mesos/sandbox"
@@ -10,7 +11,12 @@ else
     export HEAPDUMP=""
 fi
 
-if [ -z "$MARATHON_APP_ID" ]; then
+if [ -n "$ECS_CONTAINER_METADATA_URI_V4" ]; then
+    ARK_HOST="$(curl -sf "$ECS_CONTAINER_METADATA_URI_V4" | jq -r '.Networks[0].IPv4Addresses[0]')"
+    export ARK_HOST
+fi
+
+if [ -z "$MARATHON_APP_ID" ] && [ -z "$ECS_CONTAINER_METADATA_URI_V4" ]; then
   echo "Not running in marathon, so I will not compile the config template."
   echo "To force config template compilation, set \$MARATHON_APP_ID."
 else

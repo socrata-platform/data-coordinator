@@ -5,6 +5,8 @@ EXPOSE 6021/udp
 
 ENV JMX_PORT 6029
 
+RUN apt-get -y update && apt-get -y install jq
+
 ENV SERVER_ROOT /srv/data-coordinator
 ENV SERVER_ARTIFACT coordinator-assembly.jar
 ENV SERVER_CONFIG data-coordinator.conf
