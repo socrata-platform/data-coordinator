@@ -365,6 +365,9 @@ object DatasetMutator {
 
               val oldSchema = datasetMap.schema(oldCopy)
               val newSchema = datasetMap.schema(newCopy)
+
+              // If we want to backfill system columns, this is where we'd do it.
+
               schemaLoader.addColumns(newSchema.values)
 
               val oldCopyContext = new DatasetCopyContext(oldCopy, oldSchema)
