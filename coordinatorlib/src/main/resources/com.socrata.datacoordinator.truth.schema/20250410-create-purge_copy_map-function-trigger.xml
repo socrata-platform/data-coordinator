@@ -3,7 +3,7 @@
                    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
     http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
 
-    <changeSet id="20250410-create-purge_copies-delete-helper-function" author="mtaylor">
+    <changeSet id="20250410-create-purge_copies-delete-helper-function" author="mtaylor" runOnChange="true">
         <sql splitStatements="false">
             CREATE OR REPLACE FUNCTION purge_copies(copy_ids bigint[]) RETURNS VOID AS
             $$
@@ -12,6 +12,7 @@
                 DELETE FROM column_map_geo_modifiers WHERE copy_system_id = ANY (copy_ids);
                 DELETE FROM column_map WHERE copy_system_id = ANY (copy_ids);
                 DELETE FROM index_directive_map WHERE copy_system_id = ANY (copy_ids);
+                DELETE FROM index_map WHERE copy_system_id = ANY (copy_ids);
                 DELETE FROM copy_map_table_modifiers WHERE copy_system_id = ANY (copy_ids);
                 DELETE FROM rollup_map WHERE copy_system_id = ANY (copy_ids);
                 DELETE FROM copy_map WHERE system_id = ANY (copy_ids);
