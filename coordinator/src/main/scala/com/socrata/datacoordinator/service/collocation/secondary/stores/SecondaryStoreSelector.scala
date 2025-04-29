@@ -1,5 +1,7 @@
 package com.socrata.datacoordinator.service.collocation.secondary.stores
 
+import org.slf4j.LoggerFactory
+
 import com.socrata.datacoordinator.secondary.SecondaryMetric
 import com.socrata.datacoordinator.secondary.config.SecondaryGroupConfig
 import com.socrata.datacoordinator.service.collocation.Cost
@@ -12,6 +14,7 @@ case class NotEnoughInstancesInSecondaryGroup(name: String, count: Int)
 class SecondaryStoreSelector(groupName: String,
                              storesFreeSpaceMap: Map[String, Long],
                              replicationFactor: Int)(implicit costOrdering: Ordering[Cost]) {
+  import SecondaryStoreSelector.log
 
   def maxCostKey[T](costMap: Map[T, Cost]): Option[T] =
     if (costMap.nonEmpty) Some(costMap.maxBy(_._2)._1) // max by Cost and return key
@@ -46,7 +49,9 @@ class SecondaryStoreSelector(groupName: String,
         val totalCost = costMap.values.fold(Cost.Zero)(_ + _)
         randomStore(allStores -- (unavailableStores(totalCost) ++ seen)) match {
           case Some(selected) => (selected, seen + selected)
-          case None =>  throw NotEnoughInstancesInSecondaryGroup(groupName, replicationFactor)
+          case None =>
+            log.info("Total cost: {}, all unchosen stores: {}", totalCost:Any, storesFreeSpaceMap -- seen)
+            throw NotEnoughInstancesInSecondaryGroup(groupName, replicationFactor)
         }
       }
     }
@@ -68,6 +73,8 @@ class SecondaryStoreSelector(groupName: String,
 }
 
 object SecondaryStoreSelector {
+  val log = LoggerFactory.getLogger(classOf[SecondaryStoreSelector])
+
   def apply(groupName: String,
             groupConfig: SecondaryGroupConfig,
             storeMetrics: Map[String, SecondaryMetric])(implicit costOrdering: Ordering[Cost]): SecondaryStoreSelector = {
