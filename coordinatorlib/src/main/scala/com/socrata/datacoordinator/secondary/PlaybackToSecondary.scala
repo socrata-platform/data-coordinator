@@ -114,6 +114,25 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
     }
   }
 
+  // This will call `onDone` as soon as the "no more rows" condition
+  // is detected, once.
+  class FinishingIterator[T](underlying: Iterator[T], onDone: () => Unit) extends Iterator[T] {
+    private var finished = false
+
+    override def next() =
+      if(hasNext) underlying.next()
+      else Iterator.empty.next()
+
+    override def hasNext =
+      if(finished) false
+      else if(underlying.hasNext) true
+      else {
+        finished = true
+        onDone()
+        false
+      }
+  }
+
   class DeactivateAutoCommit extends AutoCloseable {
     private var done = false
     override def close() {
@@ -704,7 +723,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
                         secondary.store.dropCopy(secondaryDatasetInfo, secondaryCopyInfo, currentCookie,
                           isLatestCopy = copy.copyNumber == latestCopy.copyNumber)
                       } else
-                        syncCopy(copy, isLatestLivingCopy = copy.copyNumber == latestLiving.copyNumber)
+                        syncCopy(copy, isLatestLivingCopy = copy.copyNumber == latestLiving.copyNumber, () => u.commit())
                     }
                   }
                   Some(allCopies.last)
@@ -758,7 +777,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
       None
     }
 
-    def syncCopy(copyInfo: metadata.CopyInfo, isLatestLivingCopy: Boolean): Unit = {
+    def syncCopy(copyInfo: metadata.CopyInfo, isLatestLivingCopy: Boolean, afterReadingRows: () => Unit): Unit = {
       timingReport("sync-copy",
                    "secondary" -> secondary.storeId,
                    "dataset" -> copyInfo.datasetInfo.systemId,
@@ -774,9 +793,12 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
           val wrappedRows = new Managed[Iterator[ColumnIdMap[CV]]] {
             def run[A](f: Iterator[ColumnIdMap[CV]] => A): A = {
               itRows.run { it: Iterator[ColumnIdMap[CV]] =>
-                f(new InstrumentedIterator("sync-copy-throughput",
-                                           copyInfo.datasetInfo.systemId.toString,
-                                           it))
+                f(new FinishingIterator(
+                    new InstrumentedIterator("sync-copy-throughput",
+                                             copyInfo.datasetInfo.systemId.toString,
+                                             it),
+                    afterReadingRows
+                  ))
               }
             }
           }
