@@ -31,14 +31,28 @@ trait LowLevelDatabaseReader[CT, CV] {
     def loadDataset(latest: CopyInfo): DatasetCopyContext[CT]
 
     def approximateRowCount(copyCtx: DatasetCopyContext[CT]): Long
-    def rows(copyCtx: DatasetCopyContext[CT],
-             sidCol: ColumnId,
-             limit: Option[Long],
-             offset: Option[Long], sorted: Boolean,
-             rowId: Option[CV] = None): Managed[Iterator[ColumnIdMap[CV]]]
+
+    def rowsScoped(rs: ResourceScope,
+                   copyCtx: DatasetCopyContext[CT],
+                   sidCol: ColumnId,
+                   limit: Option[Long],
+                   offset: Option[Long], sorted: Boolean,
+                   rowId: Option[CV] = None): Iterator[ColumnIdMap[CV]]
+
+    final def rows(copyCtx: DatasetCopyContext[CT],
+                   sidCol: ColumnId,
+                   limit: Option[Long],
+                   offset: Option[Long], sorted: Boolean,
+                   rowId: Option[CV] = None): Managed[Iterator[ColumnIdMap[CV]]] =
+      new Managed[Iterator[ColumnIdMap[CV]]] {
+        override def run[T](f: Iterator[ColumnIdMap[CV]] => T) =
+          using(new ResourceScope) { rs =>
+            f(rowsScoped(rs, copyCtx, sidCol, limit, offset, sorted, rowId))
+          }
+      }
   }
 
-  def openDatabase: Managed[ReadContext]
+  def openDatabase(rs: ResourceScope): ReadContext
 }
 
 trait LowLevelDatabaseMutator[CT, CV] {
@@ -87,15 +101,44 @@ trait DatasetReader[CT, CV] {
     def copyInfo: CopyInfo = copyCtx.copyInfo
     def schema: ColumnIdMap[ColumnInfo[CT]] = copyCtx.schema
     def approximateRowCount: Long
-    def rows(cids: ColumnIdSet = schema.keySet,
-             limit: Option[Long] = None,
-             offset: Option[Long] = None,
-             sorted: Boolean = true,
-             rowId: Option[CV] = None): Managed[Iterator[ColumnIdMap[CV]]]
+
+    def rowsScoped(rs: ResourceScope,
+                   cids: ColumnIdSet = schema.keySet,
+                   limit: Option[Long] = None,
+                   offset: Option[Long] = None,
+                   sorted: Boolean = true,
+                   rowId: Option[CV] = None): Iterator[ColumnIdMap[CV]]
+
+    final def rows(cids: ColumnIdSet = schema.keySet,
+                   limit: Option[Long] = None,
+                   offset: Option[Long] = None,
+                   sorted: Boolean = true,
+                   rowId: Option[CV] = None): Managed[Iterator[ColumnIdMap[CV]]] =
+      new Managed[Iterator[ColumnIdMap[CV]]] {
+        override def run[T](f: Iterator[ColumnIdMap[CV]] => T): T =
+          using(new ResourceScope) { rs =>
+            f(rowsScoped(rs, cids, limit, offset, sorted, rowId))
+          }
+      }
   }
 
-  def openDataset(datasetId: DatasetId, copy: CopySelector): Managed[CopyContextResult[ReadContext]]
-  def openDataset(copy: CopyInfo): Managed[ReadContext]
+  def openDataset(datasetId: DatasetId, copy: CopySelector, rs: ResourceScope): CopyContextResult[ReadContext]
+  def openDataset(datasetId: DatasetId, copy: CopySelector): Managed[CopyContextResult[ReadContext]] =
+    new Managed[CopyContextResult[ReadContext]] {
+      override def run[T](f: CopyContextResult[ReadContext] => T) =
+        using(new ResourceScope) { rs =>
+          f(openDataset(datasetId, copy, rs))
+        }
+    }
+
+  def openDataset(copy: CopyInfo, rs: ResourceScope): ReadContext
+  def openDataset(copy: CopyInfo): Managed[ReadContext] =
+    new Managed[ReadContext] {
+      override def run[T](f: ReadContext => T) =
+        using(new ResourceScope) { rs =>
+          f(openDataset(copy, rs))
+        }
+    }
 }
 
 object DatasetReader {
@@ -103,38 +146,32 @@ object DatasetReader {
     class S(val copyCtx: DatasetCopyContext[CT], llCtx: databaseReader.ReadContext) extends ReadContext {
       def approximateRowCount: Long = llCtx.approximateRowCount(copyCtx)
 
-      def rows(keySet: ColumnIdSet,
-               limit: Option[Long],
-               offset: Option[Long],
-               sorted: Boolean,
-               rowId: Option[CV]): Managed[Iterator[ColumnIdMap[CV]]] =
-        llCtx.rows(copyCtx.verticalSlice { col => keySet.contains(col.systemId) },
-                   copyCtx.pkCol_!.systemId,
-                   limit = limit,
-                   offset = offset,
-                   sorted = sorted,
-                   rowId = rowId)
+      def rowsScoped(rs: ResourceScope,
+                     keySet: ColumnIdSet,
+                     limit: Option[Long],
+                     offset: Option[Long],
+                     sorted: Boolean,
+                     rowId: Option[CV]): Iterator[ColumnIdMap[CV]] =
+        llCtx.rowsScoped(rs,
+                         copyCtx.verticalSlice { col => keySet.contains(col.systemId) },
+                         copyCtx.pkCol_!.systemId,
+                         limit = limit,
+                         offset = offset,
+                         sorted = sorted,
+                         rowId = rowId)
     }
 
-    def openDataset(datasetId: DatasetId, copySelector: CopySelector): Managed[CopyContextResult[ReadContext]] =
-      new Managed[CopyContextResult[ReadContext]] {
-        def run[A](f: CopyContextResult[ReadContext] => A): A = for {
-          llCtx <- databaseReader.openDatabase
-        } {
-          val ctxOpt = llCtx.loadDataset(datasetId, copySelector).map(new S(_, llCtx))
-          f(ctxOpt)
-        }
-      }
+    def openDataset(datasetId: DatasetId, copySelector: CopySelector, rs: ResourceScope): CopyContextResult[ReadContext] = {
+      val llCtx = databaseReader.openDatabase(rs)
+      val ctxOpt = llCtx.loadDataset(datasetId, copySelector).map(new S(_, llCtx))
+      rs.openUnmanaged(ctxOpt, transitiveClose = List(llCtx))
+    }
 
-    def openDataset(copyInfo: CopyInfo): Managed[ReadContext] =
-      new Managed[ReadContext] {
-        def run[A](f: ReadContext => A): A = for {
-          llCtx <- databaseReader.openDatabase
-        } {
-          val ctx = new S(llCtx.loadDataset(copyInfo), llCtx)
-          f(ctx)
-        }
-      }
+    def openDataset(copyInfo: CopyInfo, rs: ResourceScope): ReadContext = {
+      val llCtx = databaseReader.openDatabase(rs)
+      val ctx = new S(llCtx.loadDataset(copyInfo), llCtx)
+      rs.openUnmanaged(ctx, transitiveClose = List(llCtx))
+    }
   }
 
   def apply[CT, CV](lowLevelReader: LowLevelDatabaseReader[CT, CV]): DatasetReader[CT, CV] = new Impl(lowLevelReader)

@@ -133,6 +133,11 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
       }
   }
 
+  object FinishingIterator {
+    def apply[T](underlying: Iterator[T])(onDone: => Unit): Iterator[T] =
+      new FinishingIterator(underlying, () => onDone)
+  }
+
   class DeactivateAutoCommit extends AutoCloseable {
     private var done = false
     override def close() {
@@ -723,7 +728,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
                         secondary.store.dropCopy(secondaryDatasetInfo, secondaryCopyInfo, currentCookie,
                           isLatestCopy = copy.copyNumber == latestCopy.copyNumber)
                       } else
-                        syncCopy(copy, isLatestLivingCopy = copy.copyNumber == latestLiving.copyNumber, () => u.commit())
+                        syncCopy(copy, isLatestLivingCopy = copy.copyNumber == latestLiving.copyNumber)
                     }
                   }
                   Some(allCopies.last)
@@ -777,31 +782,36 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
       None
     }
 
-    def syncCopy(copyInfo: metadata.CopyInfo, isLatestLivingCopy: Boolean, afterReadingRows: () => Unit): Unit = {
+    def syncCopy(copyInfo: metadata.CopyInfo, isLatestLivingCopy: Boolean): Unit = {
       timingReport("sync-copy",
                    "secondary" -> secondary.storeId,
                    "dataset" -> copyInfo.datasetInfo.systemId,
                    "copy" -> copyInfo.copyNumber) {
-        for(reader <- u.datasetReader.openDataset(copyInfo)) {
+        using(new ResourceScope) { rs =>
+          val reader = u.datasetReader.openDataset(copyInfo, rs)
           val copyCtx = new DatasetCopyContext(reader.copyInfo, reader.schema)
           val secondaryDatasetInfo = makeSecondaryDatasetInfo(copyCtx.datasetInfo)
           val secondaryCopyInfo = makeSecondaryCopyInfo(copyCtx.copyInfo)
           val secondarySchema = copyCtx.schema.mapValuesStrict(makeSecondaryColumnInfo)
-          val itRows = reader.rows(sorted=false)
-          // Sigh. itRows is a simple-arm v1 Managed.  v2 has a monad map() which makes the code below
-          // much, much shorter.
+
           val wrappedRows = new Managed[Iterator[ColumnIdMap[CV]]] {
-            def run[A](f: Iterator[ColumnIdMap[CV]] => A): A = {
-              itRows.run { it: Iterator[ColumnIdMap[CV]] =>
-                f(new FinishingIterator(
-                    new InstrumentedIterator("sync-copy-throughput",
-                                             copyInfo.datasetInfo.systemId.toString,
-                                             it),
-                    afterReadingRows
-                  ))
+            override def run[T](f: Iterator[ColumnIdMap[CV]] => T): T = {
+              val rows = reader.rowsScoped(rs, sorted=false)
+              val instrumented =
+                new InstrumentedIterator("sync-copy-throughput",
+                                         copyInfo.datasetInfo.systemId.toString,
+                                         rows)
+
+              val finished = FinishingIterator(instrumented) {
+                rs.close(rows)
+                rs.close(reader)
+                u.commit()
               }
+
+              f(finished)
             }
           }
+
           val rollups: Seq[RollupInfo] = u.datasetMapReader.rollups(copyInfo).toSeq.map(makeSecondaryRollupInfo)
           val indexes: Seq[IndexInfo] = u.datasetMapReader.indexes(copyInfo).toSeq.map(makeSecondaryIndexInfo)
           val indexDirectives = u.datasetMapReader.indexDirectives(copyInfo, None)
