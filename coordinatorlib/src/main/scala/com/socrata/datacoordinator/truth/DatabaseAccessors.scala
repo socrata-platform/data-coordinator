@@ -123,7 +123,7 @@ trait DatasetReader[CT, CV] {
   }
 
   def openDataset(datasetId: DatasetId, copy: CopySelector, rs: ResourceScope): CopyContextResult[ReadContext]
-  def openDataset(datasetId: DatasetId, copy: CopySelector): Managed[CopyContextResult[ReadContext]] =
+  final def openDataset(datasetId: DatasetId, copy: CopySelector): Managed[CopyContextResult[ReadContext]] =
     new Managed[CopyContextResult[ReadContext]] {
       override def run[T](f: CopyContextResult[ReadContext] => T) =
         using(new ResourceScope) { rs =>
@@ -132,7 +132,7 @@ trait DatasetReader[CT, CV] {
     }
 
   def openDataset(copy: CopyInfo, rs: ResourceScope): ReadContext
-  def openDataset(copy: CopyInfo): Managed[ReadContext] =
+  final def openDataset(copy: CopyInfo): Managed[ReadContext] =
     new Managed[ReadContext] {
       override def run[T](f: ReadContext => T) =
         using(new ResourceScope) { rs =>
