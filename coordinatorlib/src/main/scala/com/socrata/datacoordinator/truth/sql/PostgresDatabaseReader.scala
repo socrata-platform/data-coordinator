@@ -67,21 +67,20 @@ class PostgresDatabaseReader[CT, CV](conn: Connection,
       }
     }
 
-    def rows(copyCtx: DatasetCopyContext[CT],
-             sidCol: ColumnId,
-             limit: Option[Long],
-             offset: Option[Long],
-             sorted: Boolean,
-             rowId: Option[CV] = None): Managed[Iterator[ColumnIdMap[CV]]] =
+    def rowsScoped(rs: ResourceScope,
+                   copyCtx: DatasetCopyContext[CT],
+                   sidCol: ColumnId,
+                   limit: Option[Long],
+                   offset: Option[Long],
+                   sorted: Boolean,
+                   rowId: Option[CV] = None): Iterator[ColumnIdMap[CV]] =
       new RepBasedDatasetExtractor(
         conn,
         copyCtx.copyInfo.dataTableName,
         repFor(copyCtx.schema(sidCol)).asPKableRep,
-        copyCtx.schema.mapValuesStrict(repFor)).allRows(limit, offset, sorted, rowId)
+        copyCtx.schema.mapValuesStrict(repFor)).allRows(limit, offset, sorted, rowId, rs)
   }
 
-  def openDatabase: Managed[ReadContext] = new Managed[ReadContext] {
-    def run[A](f: ReadContext => A): A =
-      f(new S(conn))
-  }
+  def openDatabase(rs: ResourceScope): ReadContext =
+    rs.openUnmanaged(new S(conn))
 }
