@@ -1,6 +1,6 @@
 # Data Coordinator
 
-**data-coordinator** is a set of related services, libraries, and scripts that takes SoQL upserts, inserts them to the truth store, watches truth store logs and writes the data to the secondary stores.
+**data-coordinator** is a set of related services, libraries, and scripts that takes data upserts, inserts them to the truth store, watches truth store logs and writes the data to the secondary stores.
 
 ## Projects
 
@@ -8,7 +8,6 @@
 * coordinatorlib
   * common utilities and data structures for working with truth store and secondaries, at a lower level
   * database migrations are in src/main/resources
-* coordinatorlib-soql - en/decoders between SoQL and JSON, CSV, and SQL
 * dummy-secondary - a dummy secondary store implementation for testing only
 * secondarylib - trait for Secondary store
 

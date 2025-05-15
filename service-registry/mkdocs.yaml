@@ -1,0 +1,6 @@
+site_name: 'data-coordinator'
+docs_dir: '.'
+nav:
+  - Home: README.md
+  - Dataset Mover: dataset-mover/README.md
+  - Docker: coordinator/docker/README.md
