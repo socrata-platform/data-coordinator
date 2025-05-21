@@ -1,0 +1,21 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: data-coordinator
+  description: |
+    The data-coordinator service takes data upserts, inserts them to the truth
+    store, watches truth store logs, and writes the data to postgres tables (in
+    truth) that function as the secondary store event queues. These queues are
+    monitored by secondary-watchers, which then write that data to their
+    associated data store.
+  links:
+    - title: "Ops Doc"
+      url: "https://socrata.atlassian.net/wiki/spaces/ONCALL/pages/2158657785/OpsDoc+-+delta-importer-2"
+  annotations:
+    github.com/project-slug: socrata-platform/data-coordinator
+    backstage.io/techdocs-ref: dir:.
+    infrastructure: apps-marathon
+spec:
+  type: service
+  owner: egress
+  lifecycle: production

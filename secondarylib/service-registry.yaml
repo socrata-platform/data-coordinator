@@ -1,0 +1,19 @@
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: secondarylib
+  description: |
+    This library provides a Secondary trait as well as Event types. This trait
+    provides functions to ingest these Events. All secondary-watcher
+    applications use this Secondary trait and these Event types to maintain an
+    accurate and up-to-date secondary data store.
+  links:
+    - title: "Ops Doc - SODA Server (aka NBE)"
+      url: "https://socrata.atlassian.net/wiki/spaces/ONCALL/pages/2158985270/OpsDoc+-+SODA+Server+aka+NBE"
+  annotations:
+    github.com/project-slug: socrata-platform/data-coordinator
+    backstage.io/entity-ref: component:data-coordinator
+spec:
+  type: library
+  owner: egress
+  lifecycle: production
