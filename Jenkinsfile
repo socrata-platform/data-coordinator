@@ -1,5 +1,5 @@
 // Set up the libraries
-@Library('socrata-pipeline-library')
+@Library('socrata-pipeline-library@sarahs/EN-78944/automate-hotfix-branch-creation-and-cleanup')
 
 import com.socrata.ReleaseMetadataService
 def rmsSupportedEnvironment = com.socrata.ReleaseMetadataService.SupportedEnvironment
@@ -150,14 +150,16 @@ pipeline {
               env.GIT_TAG = releaseTag.getFormattedTag(params.RELEASE_NAME)
               if (releaseTag.doesReleaseTagExist(params.RELEASE_NAME)) {
                 echo "REBUILD: Tag ${env.GIT_TAG} already exists"
-                return
               }
               if (params.RELEASE_DRY_RUN) {
                 echo "DRY RUN: Would have created ${env.GIT_TAG} and pushed it to the repo"
                 currentBuild.description = "${service}:${params.RELEASE_NAME} - DRY RUN"
-                return
               }
               releaseTag.create(params.RELEASE_NAME)
+            }
+            if (params.RELEASE_BUILD) {
+              releaseTag.createHotfixBranch(service, params.RELEASE_NAME, params.RELEASE_DRY_RUN)
+              releaseTag.cleanUpHotfixBranch(service, params.RELEASE_NAME, params.RELEASE_DRY_RUN)
             }
           }
         }
