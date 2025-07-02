@@ -1,4 +1,4 @@
-@Library('socrata-pipeline-library@9.0.0')
+@Library('socrata-pipeline-library@9.3.0')
 
 import com.socrata.ReleaseMetadataService
 def rmsSupportedEnvironment = com.socrata.ReleaseMetadataService.SupportedEnvironment
@@ -160,20 +160,20 @@ pipeline {
       post {
         success {
           script {
-            if (isHotfix) {
-              env.GIT_TAG = releaseTag.create(env.HOTFIX_NAME)
-            } else if (params.RELEASE_BUILD) {
-              env.GIT_TAG = releaseTag.getFormattedTag(params.RELEASE_NAME)
-              if (releaseTag.doesReleaseTagExist(params.RELEASE_NAME)) {
-                echo "REBUILD: Tag ${env.GIT_TAG} already exists"
-                return
-              }
-              if (params.RELEASE_DRY_RUN) {
-                echo "DRY RUN: Would have created ${env.GIT_TAG} and pushed it to the repo"
-                currentBuild.description = "${service}:${params.RELEASE_NAME} - DRY RUN"
-                return
-              }
-              releaseTag.create(params.RELEASE_NAME)
+            if (isHotfix || params.RELEASE_BUILD) {
+              String version = (isHotfix) ? env.HOTFIX_NAME : params.RELEASE_NAME
+              String branchName = (isHotfix) ? env.BRANCH_NAME : params.BRANCH_SPECIFIER
+              env.GIT_TAG = releaseTag.createWithCheckout(version, branchName, params.RELEASE_DRY_RUN)
+            }
+            if (params.RELEASE_BUILD) {
+              def releaseHelper = new com.socrata.ReleaseHelper(steps)
+              String previousPreviousRelease = releaseHelper.previous(
+                releaseHelper.previous(
+                  releaseHelper.getMostRecentReleaseID()
+                )
+              )
+              releaseTag.createHotfixBranch(params.RELEASE_NAME, params.RELEASE_DRY_RUN)
+              releaseTag.cleanUpHotfixBranch(previousPreviousRelease, params.RELEASE_DRY_RUN)
             }
           }
         }
