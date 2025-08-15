@@ -10,15 +10,17 @@ ThisBuild / scalacOptions ++= Seq("-deprecation", "-feature")
 
 ThisBuild / evictionErrorLevel := Level.Warn
 
-val coordinatorExternal = (project in file("coordinator-external"))
+val `coordinator-external` = (project in file("coordinator-external")).
+  configs(IntegrationTest).
+  settings(Defaults.itSettings)
 
 val coordinatorlib = (project in file("coordinatorlib"))
 
 val coordinatorlibIntegration = (project in file("coordinatorlib-integration")).
   dependsOn(coordinatorlib)
 
-val coordinator = (project in file("coordinator")).
-  dependsOn(coordinatorlib, coordinatorExternal)
+val `data-coordinator` = (project in file("coordinator")).
+  dependsOn(coordinatorlib, `coordinator-external`)
 
 val secondarylib = (project in file("secondarylib")).
   dependsOn(coordinatorlib)
@@ -30,7 +32,7 @@ val secondarylibFeedback = (project in file("secondarylib-feedback")).
   dependsOn(secondarylib)
 
 val datasetMover = (project in file("dataset-mover")).
-  dependsOn(coordinator)
+  dependsOn(`data-coordinator`)
 
 publish / skip := true
 

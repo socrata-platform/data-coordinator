@@ -1,7 +1,6 @@
 # Docker support
 
-The files in this directory allow you to build a docker image.  The data coordinator assembly must be 
-copied to `coordinator-assembly.jar` in this directory before building.
+The files in this directory allow you to build a docker image.  The data coordinator assembly must be copied to `data-coordinator-assembly.jar` in this directory before building.
 
 ## Required Runtime Variables
 
