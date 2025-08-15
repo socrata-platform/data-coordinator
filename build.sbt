@@ -10,7 +10,7 @@ ThisBuild / scalacOptions ++= Seq("-deprecation", "-feature")
 
 ThisBuild / evictionErrorLevel := Level.Warn
 
-val coordinatorExternal = (project in file("coordinator-external")).
+val `coordinator-external` = (project in file("coordinator-external")).
   configs(IntegrationTest).
   settings(Defaults.itSettings)
 
@@ -19,7 +19,7 @@ val coordinatorlib = (project in file("coordinatorlib")).
   settings(Defaults.itSettings)
 
 val coordinator = (project in file("coordinator")).
-  dependsOn(coordinatorlib, coordinatorExternal)
+  dependsOn(coordinatorlib, `coordinator-external`)
 
 val secondarylib = (project in file("secondarylib")).
   dependsOn(coordinatorlib)
