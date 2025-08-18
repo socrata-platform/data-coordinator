@@ -5,13 +5,16 @@ commonPipeline(
   defaultBuildWorker: 'build-worker-pg13',
   jobName: 'data-coordinator',
   language: 'scala',
+/*
   languageOptions: [
     isMultiProjectRepository: true,
   ],
+*/
   numberOfBuildsToKeep: 50,
   projects: [
+/*
     [
-      name: 'data-coordinator',
+      name: 'data-coordinator', //TODO: project and folder need to be renamed
       compiled: true,
       deploymentEcosystem: 'marathon-mesos',
       marathonInstanceNamePattern: 'data-coordinator*',
@@ -20,6 +23,7 @@ commonPipeline(
       ],
       type: 'service',
     ],
+*/
     [
       name: 'coordinator-external',
       paths: [
