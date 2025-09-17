@@ -1,4 +1,4 @@
-@Library('socrata-pipeline-library@9.3.0')
+@Library('socrata-pipeline-library@9.6.1')
 
 import com.socrata.ReleaseMetadataService
 def rmsSupportedEnvironment = com.socrata.ReleaseMetadataService.SupportedEnvironment
