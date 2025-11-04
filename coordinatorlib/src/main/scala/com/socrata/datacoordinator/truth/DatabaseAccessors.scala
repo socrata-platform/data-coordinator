@@ -16,6 +16,7 @@ import com.socrata.datacoordinator.truth.metadata.ColumnInfo
 import com.socrata.datacoordinator.truth.metadata.CopyPair
 import com.socrata.datacoordinator.truth.metadata.CopyInfo
 import com.socrata.datacoordinator.id._
+import com.socrata.soql.ast
 import com.socrata.soql.ast.{JoinFunc, JoinQuery, JoinTable, Select}
 import com.socrata.soql.{BinaryTree, Compound, Leaf, SoQLAnalyzer}
 import com.socrata.soql.exceptions.SoQLException
@@ -230,6 +231,7 @@ trait DatasetMutator[CT, CV] {
     def dropIndexDirective(column: ColumnInfo[CT]): Unit
     def createOrUpdateIndex(name: IndexName, expressions: String, filter: Option[String]): Either[Exception, IndexInfo]
     def dropIndex(name: IndexName): Option[IndexInfo]
+    def indexesReferencing(column: ColumnInfo[CT]): Seq[IndexInfo]
   }
 
   type TrueMutationContext <: MutationContext
@@ -476,6 +478,8 @@ object DatasetMutator {
         }
       }
 
+      private def makeParser() = new Parser(AbstractParser.defaultParameters)
+
       // Only perform syntax validation.
       // Analysis validation is performed in Soda Fountain because SF has all datasets
       // while DC would need to handle datasets that live in different truth-stores.
@@ -488,7 +492,7 @@ object DatasetMutator {
         } else {
           val analyzer = soqlAnalyzer
           try {
-            new Parser(AbstractParser.defaultParameters).binaryTreeSelect(ru.soql)
+            makeParser().binaryTreeSelect(ru.soql)
           } catch {
             case ex: SoQLException =>
               throw RollupValidationException(ru, ex.getMessage)
@@ -608,6 +612,49 @@ object DatasetMutator {
           case None =>
             None
         }
+      }
+
+      def indexesReferencing(column: ColumnInfo[CT]): Seq[IndexInfo] = {
+        val columnName = column.fieldName.getOrElse {
+          // very _very_ old columns might not have field names tracked.  These also can't have indexes made
+          return Nil
+        }
+        val parser = makeParser()
+
+        def references(e: ast.Expression): Boolean = {
+          e match {
+            case ast.ColumnOrAliasRef(None, name) => name == columnName
+            case ast.ColumnOrAliasRef(Some(_), _) => false
+            case ast.FunctionCall(_name, params, filter, _window) =>
+              // even if we grow real window specs, we won't have to
+              // look at _window because you can't use window
+              // functions in an index.
+              params.exists(references) || filter.exists(references)
+            case _ : ast.Literal => false
+            case _: ast.Hole => false
+          }
+        }
+
+        datasetMap.indexes(column.copyInfo).filter { i =>
+          val orderings =
+            try { parser.orderings(i.expressions) }
+            catch { case e: SoQLException => Nil }
+
+          if(orderings.exists { ob => references(ob.expression) }) {
+            true
+          } else {
+            val filter = i.filter.flatMap { exprSoql =>
+              try { Some(parser.expression(exprSoql)) }
+              catch { case e: SoQLException => None }
+            }
+            filter match {
+              case Some(expr) =>
+                references(expr)
+              case None =>
+                false
+            }
+          }
+        }.toSeq
       }
     }
 

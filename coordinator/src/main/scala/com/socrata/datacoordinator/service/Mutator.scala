@@ -752,7 +752,12 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
         case DropColumn(idx, Right(id)) =>
           if(!isExistingColumn(id)) throw NoSuchColumn(datasetId, id)(idx)
           if(isSystemColumnId(id)) throw InvalidSystemColumnOperation(datasetId, id, DropColumnOp)(idx)
-          if(mutator.columnInfo(id).get.isUserPrimaryKey) {
+          val columnInfo = mutator.columnInfo(id).get
+          val Seq(MutationScriptCommandResult.Uninteresting) = processCommand(DropIndexDirective(idx, Right(id)))
+          for(i <- mutator.indexesReferencing(columnInfo)) {
+            val Seq(MutationScriptCommandResult.Uninteresting) = processCommand(DropIndex(idx, i.name))
+          }
+          if(columnInfo.isUserPrimaryKey) {
             val Seq(MutationScriptCommandResult.Uninteresting) = processCommand(DropRowId(idx, Right(id)))
           }
           checkDDL(idx)
@@ -779,10 +784,21 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
           processCommand(ufn.copy(id = Right(idFor(idx, label))))
         case UpdateFieldName(idx, Right(id), fieldName) =>
           if(!isExistingColumn(id)) throw NoSuchColumn(datasetId, id)(idx)
+          val oldCol = mutator.columnInfo(id).getOrElse { sys.error("I just verified column " + id + " existed?") }
           if(isSystemColumnId(id)) throw InvalidSystemColumnOperation(datasetId, id, UpdateColumnNameOp)(idx)
           if(isExistingFieldName(fieldName, Some(id))) throw FieldNameAlreadyExists(datasetId, fieldName)(idx) // can update a column to have the same field name as before
 
+          val oldIdxes = mutator.indexesReferencing(oldCol)
           mutator.updateFieldName(mutator.columnInfo(id).getOrElse(sys.error("I just verified column " + id + " existed?")), fieldName)
+
+          for {
+            oldName <- oldCol.fieldName
+            oldIdx <- oldIdxes
+          } {
+            val newIdx = oldIdx.replaceFieldName(oldName, fieldName)
+            val Seq(MutationScriptCommandResult.Uninteresting) = processCommand(CreateOrUpdateIndex(idx, newIdx.name, newIdx.expressions, newIdx.filter))
+          }
+
           Seq(MutationScriptCommandResult.Uninteresting)
         case sri@SetRowId(idx, Left(label)) =>
           processCommand(sri.copy(id = Right(idFor(idx, label))))
