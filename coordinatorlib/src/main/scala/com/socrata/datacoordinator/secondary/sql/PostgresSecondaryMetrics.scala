@@ -8,7 +8,7 @@ import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.id.sql._
 import com.socrata.datacoordinator.secondary.SecondaryMetric
 import com.socrata.datacoordinator.util.PostgresUniqueViolation
-import org.apache.commons.lang.time.DateUtils
+import org.apache.commons.lang3.time.DateUtils
 
 class PostgresSecondaryMetrics(conn: Connection) extends SqlSecondaryMetrics(conn) {
 
