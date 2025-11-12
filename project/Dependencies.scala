@@ -27,7 +27,7 @@ object Dependencies {
     val snappyIq80      = "0.5"
     val snappyXerial    = "1.1.10.4"
     val socrataCuratorUtils = "1.2.0"
-    val socrataHttp     = "3.13.3"
+    val socrataHttp     = "3.16.4"
     val socrataThirdPartyUtils = "5.0.0"
     val soqlBrita       = "1.4.1"
     val soqlReference   = "4.14.68"
