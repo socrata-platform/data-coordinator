@@ -9,22 +9,21 @@ commonPipeline(
     ],
     numberOfBuildsToKeep: 50,
     projects: [
-  /*
         [
-            name: 'data-coordinator', //TODO: project and folder need to be renamed
+            name: 'data-coordinator',
             compiled: true,
             deploymentEcosystem: 'marathon-mesos',
             docker: [
-                buildContext: 'coordinator/docker'
+                buildContext: 'coordinator/docker',
             ],
             marathonInstanceNamePattern: 'data-coordinator*',
             type: 'service',
         ],
-  */
         [
             name: 'coordinator-external',
+            compiled: true,
             paths: [
-                buildContext: 'coordinator-external',
+                buildContext: '.',
                 version: 'version.sbt',
             ],
             type: 'library',

@@ -18,7 +18,7 @@ val coordinatorlib = (project in file("coordinatorlib")).
   configs(IntegrationTest).
   settings(Defaults.itSettings)
 
-val coordinator = (project in file("coordinator")).
+val `data-coordinator` = (project in file("coordinator")).
   dependsOn(coordinatorlib, `coordinator-external`)
 
 val secondarylib = (project in file("secondarylib")).
@@ -31,7 +31,7 @@ val secondarylibFeedback = (project in file("secondarylib-feedback")).
   dependsOn(secondarylib)
 
 val datasetMover = (project in file("dataset-mover")).
-  dependsOn(coordinator)
+  dependsOn(`data-coordinator`)
 
 publish / skip := true
 
