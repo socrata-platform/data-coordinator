@@ -1,6 +1,6 @@
 import Dependencies._
 
-name := "coordinator"
+name := "data-coordinator"
 
 libraryDependencies ++= Seq(
   c3po,
