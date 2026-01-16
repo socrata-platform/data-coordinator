@@ -1,7 +1,7 @@
 <component name="ProjectRunConfigurationManager">
   <configuration default="false" name="data-coordinator" type="Application" factoryName="Application">
     <option name="MAIN_CLASS_NAME" value="com.socrata.datacoordinator.service.Main" />
-    <module name="data-coordinator.coordinator.main" />
+    <module name="coordinator" />
     <option name="VM_PARAMETERS" value="-Dconfig.file=configs/application.conf" />
     <extension name="coverage">
       <pattern>
