@@ -25,9 +25,7 @@ class EurybatesMessageProducer(sourceId: String,
   val log = LoggerFactory.getLogger(classOf[EurybatesMessageProducer])
 
   log.info(s"Initializing eurybates message producer with connection string: ${connectionString} with username: ${user.isDefined} and password: ${password.isDefined}")
-  val monitor = new ConnectionStateMonitor
   val connFactory = new ActiveMQConnectionFactory(connectionString)
-  connFactory.setTransportListener(monitor)
   user.foreach(connFactory.setUserName)
   password.foreach(connFactory.setPassword)
   val connection = connFactory.createConnection
@@ -115,14 +113,4 @@ object MessageProducerFromConfig {
       new EurybatesMessageProducer(watcherId.toString, zkp, executor, conf.eurybates.activemqConnStr, conf.eurybates.activemqUser, conf.eurybates.activemqPassword)
     case None => NoOpMessageProducer
   }
-}
-
-class ConnectionStateMonitor extends TransportListener {
-  val logger = LoggerFactory.getLogger(getClass)
-  var connected = false
-
-  override def onCommand(command: Object): Unit = {}
-  override def onException(exception: IOException): Unit = {}
-  override def transportInterupted(): Unit = connected = false
-  override def transportResumed(): Unit = connected = true
 }
