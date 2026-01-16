@@ -2,24 +2,37 @@ package com.socrata.datacoordinator.secondary.messaging.eurybates
 
 import java.util.{Properties, UUID}
 import java.util.concurrent.Executor
-import scala.concurrent.duration.FiniteDuration
-
 import com.rojoma.json.v3.codec.JsonEncode
-import com.socrata.datacoordinator.secondary.messaging.{NoOpMessageProducer, Message, MessageProducer}
+import com.socrata.datacoordinator.secondary.messaging.{Message, MessageProducer, NoOpMessageProducer}
 import com.socrata.eurybates
+import com.socrata.eurybates.activemq.ActiveMQServiceProducer
 import com.socrata.eurybates.zookeeper.ServiceConfiguration
 import com.socrata.thirdparty.typesafeconfig.ConfigClass
 import com.socrata.zookeeper.ZooKeeperProvider
-import com.typesafe.config.Config
+import com.typesafe.config.{Config, ConfigException}
+import org.apache.activemq.ActiveMQConnectionFactory
+import org.apache.activemq.transport.TransportListener
 import org.slf4j.LoggerFactory
+
+import java.io.IOException
 
 class EurybatesMessageProducer(sourceId: String,
                         zkp: ZooKeeperProvider,
                         executor: Executor,
-                        properties: Properties) extends MessageProducer {
+                        connectionString: String,
+                        user: Option[String],
+                        password: Option[String]) extends MessageProducer {
   val log = LoggerFactory.getLogger(classOf[EurybatesMessageProducer])
 
-  private val producer = eurybates.Producer(sourceId, properties)
+  log.info(s"Initializing eurybates message producer with connection string: ${connectionString} with username: ${user.isDefined} and password: ${password.isDefined}")
+  val monitor = new ConnectionStateMonitor
+  val connFactory = new ActiveMQConnectionFactory(connectionString)
+  connFactory.setTransportListener(monitor)
+  user.foreach(connFactory.setUserName)
+  password.foreach(connFactory.setPassword)
+  val connection = connFactory.createConnection
+
+  private val producer = new ActiveMQServiceProducer(connection, sourceId, false, false)
   private val serviceConfiguration = new ServiceConfiguration(zkp, executor, setServiceNames)
 
   def start(): Unit = {
@@ -52,8 +65,9 @@ trait MessageProducerConfig {
 }
 
 trait EurybatesConfig {
-  val producers: String
   val activemqConnStr: String
+  val activemqUser: Option[String]
+  val activemqPassword: Option[String]
 }
 
 trait ZookeeperConfig {
@@ -69,8 +83,24 @@ class MessageProducerConfigImpl(config: Config, root: String) extends ConfigClas
 }
 
 class EurybatesConfigImpl(config: Config, root: String) extends ConfigClass(config, root) with EurybatesConfig {
-  override val producers = getString("producers")
-  override val activemqConnStr = getRawConfig("activemq").getString("connection-string")
+  val log = LoggerFactory.getLogger(classOf[EurybatesConfigImpl])
+
+  val activemqConfig = getRawConfig("activemq")
+  override val activemqConnStr = activemqConfig.getString("connection-string")
+  override val activemqUser: Option[String] = maybeGetString(activemqConfig, "user")
+  override val activemqPassword: Option[String] = maybeGetString(activemqConfig, "password")
+
+  def maybeGetString(config: Config, key: String): Option[String] = {
+    try {
+      val value = config.getString(key)
+      Some(value)
+    } catch {
+      case e: ConfigException.Missing => {
+        log.info(s"ActiveMQ ${key} not specified in configuration")
+        None
+      }
+    }
+  }
 }
 
 class ZookeeperConfigImpl(config: Config, root: String) extends ConfigClass(config, root) with ZookeeperConfig {
@@ -81,11 +111,18 @@ class ZookeeperConfigImpl(config: Config, root: String) extends ConfigClass(conf
 object MessageProducerFromConfig {
   def apply(watcherId: UUID, executor: Executor, config: Option[MessageProducerConfig]): MessageProducer = config match {
     case Some(conf) =>
-      val properties = new Properties()
-      properties.setProperty("eurybates.producers", conf.eurybates.producers)
-      properties.setProperty("eurybates.activemq.connection_string", conf.eurybates.activemqConnStr)
       val zkp = new ZooKeeperProvider(conf.zookeeper.connSpec, conf.zookeeper.sessionTimeout, executor)
-      new EurybatesMessageProducer(watcherId.toString, zkp, executor, properties)
+      new EurybatesMessageProducer(watcherId.toString, zkp, executor, conf.eurybates.activemqConnStr, conf.eurybates.activemqUser, conf.eurybates.activemqPassword)
     case None => NoOpMessageProducer
   }
+}
+
+class ConnectionStateMonitor extends TransportListener {
+  val logger = LoggerFactory.getLogger(getClass)
+  var connected = false
+
+  override def onCommand(command: Object): Unit = {}
+  override def onException(exception: IOException): Unit = {}
+  override def transportInterupted(): Unit = connected = false
+  override def transportResumed(): Unit = connected = true
 }
