@@ -13,9 +13,9 @@ class RepBasedSqlDatasetContentsCopier[CT, CV](conn: Connection, logger: Logger[
   def copy(from: DatasetCopyContext[CT], to: DatasetCopyContext[CT]) {
     require(from.datasetInfo == to.datasetInfo, "Cannot copy across datasets")
     if(to.schema.nonEmpty) {
-      val toPhysCols = to.schema.values.flatMap(repFor(_).physColumns).mkString(",")
+      val toPhysCols = from.schema.keys.flatMap { k => to.schema.get(k) }.flatMap(repFor(_).physColumns).mkString(",")
       // Same columns in the same order...
-      val fromPhysCols = to.schema.keys.flatMap { cid =>
+      val fromPhysCols = from.schema.keys.filter { k => to.schema.contains(k) }.flatMap { cid =>
         repFor(from.schema(cid)).physColumns
       }.mkString(",")
 
