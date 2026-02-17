@@ -21,6 +21,27 @@ import scala.concurrent.duration.FiniteDuration
 class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
   private val log = org.slf4j.LoggerFactory.getLogger(classOf[SqlSecondaryManifest])
 
+  private def ensuringTransaction[T](f: => T): T = {
+    if(conn.getAutoCommit) {
+      conn.setAutoCommit(false)
+      val result =
+        try {
+          val result = f
+          conn.commit()
+          result
+        } catch {
+          case e: Exception =>
+            conn.rollback()
+            throw e
+        } finally {
+          conn.setAutoCommit(true)
+        }
+      result
+    } else {
+      f
+    }
+  }
+
   def readLastDatasetInfo(storeId: String, datasetId: DatasetId): Option[(Long, Option[String])] =
     using(conn.prepareStatement("SELECT latest_secondary_data_version, cookie FROM secondary_manifest WHERE store_id = ? AND dataset_system_id = ?")) { stmt =>
       stmt.setString(1, storeId)
@@ -59,10 +80,23 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
   }
 
   def dropDataset(storeId: String, datasetId: DatasetId): Unit = {
-    using(conn.prepareStatement("DELETE FROM secondary_manifest WHERE store_id = ? AND dataset_system_id = ?")) { stmt =>
-      stmt.setString(1, storeId)
-      stmt.setDatasetId(2, datasetId)
-      stmt.execute()
+    // Take the write-lock on the row before deleting the corresponding row form secondary_manifest_claims
+    ensuringTransaction {
+      using(conn.prepareStatement("SELECT * FROM secondary_manifest WHERE store_id = ? AND dataset_system_id = ? FOR UPDATE")) { stmt =>
+        stmt.setString(1, storeId)
+        stmt.setDatasetId(2, datasetId)
+        stmt.executeQuery().close()
+      }
+      using(conn.prepareStatement("DELETE FROM secondary_manifest_claims WHERE store_id = ? AND dataset_system_id = ?")) { stmt =>
+        stmt.setString(1, storeId)
+        stmt.setDatasetId(2, datasetId)
+        stmt.execute()
+      }
+      using(conn.prepareStatement("DELETE FROM secondary_manifest WHERE store_id = ? AND dataset_system_id = ?")) { stmt =>
+        stmt.setString(1, storeId)
+        stmt.setDatasetId(2, datasetId)
+        stmt.execute()
+      }
     }
   }
 
@@ -173,14 +207,14 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
         |  ,cookie
         |  ,pending_drop
         |  ,next_retry
-        |FROM secondary_manifest
+        |FROM secondary_manifest sm
         |WHERE store_id = ?
         |  AND broken_at IS NULL
         |  AND next_retry <= now()
         |  AND (latest_data_version > latest_secondary_data_version
         |    OR pending_drop = TRUE)
         |  AND (claimant_id is NULL
-        |    OR claimed_at < (CURRENT_TIMESTAMP - CAST (? AS INTERVAL)))
+        |    OR exists (select 1 from secondary_manifest_claims where store_id = sm.store_id and dataset_system_id = sm.dataset_system_id and claimant_id = sm.claimant_id and claimed_at < (CURRENT_TIMESTAMP - CAST (? AS INTERVAL))))
         |ORDER BY went_out_of_sync_at
         |LIMIT 1
         |FOR UPDATE SKIP LOCKED""".stripMargin)) { stmt =>
@@ -246,17 +280,29 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
 
   // NOTE: claimed_at is updated in SecondaryWatcherClaimManager.  initially_claimed_at is not.
   def markDatasetClaimedForReplication(job: SecondaryRecord): Unit = {
-    using(conn.prepareStatement(
-      """UPDATE secondary_manifest
-        |SET claimed_at = CURRENT_TIMESTAMP
-        |  ,initially_claimed_at = CURRENT_TIMESTAMP
-        |  ,claimant_id = ?
-        |WHERE store_id = ?
-        |  AND dataset_system_id = ?""".stripMargin)) { stmt =>
-      stmt.setObject(1, job.claimantId)
-      stmt.setString(2, job.storeId)
-      stmt.setLong(3, job.datasetId.underlying)
-      stmt.executeUpdate()
+    ensuringTransaction {
+      using(conn.prepareStatement(
+        """UPDATE secondary_manifest
+          |SET initially_claimed_at = CURRENT_TIMESTAMP
+          |  ,claimant_id = ?
+          |WHERE store_id = ?
+          |  AND dataset_system_id = ?""".stripMargin)) { stmt =>
+        stmt.setObject(1, job.claimantId)
+        stmt.setString(2, job.storeId)
+        stmt.setLong(3, job.datasetId.underlying)
+        stmt.executeUpdate()
+      }
+
+      using(conn.prepareStatement(
+        """INSERT INTO secondary_manifest_claims (store_id, dataset_system_id, claimant_id, claimed_at)
+          |VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+          |ON CONFLICT (store_id, dataset_system_id) DO
+          |  UPDATE SET claimant_id = excluded.claimant_id, claimed_at = excluded.claimed_at""".stripMargin)) { stmt =>
+        stmt.setString(1, job.storeId)
+        stmt.setLong(2, job.datasetId.underlying)
+        stmt.setObject(3, job.claimantId)
+        stmt.executeUpdate()
+      }
     }
   }
 
@@ -304,17 +350,32 @@ class SqlSecondaryManifest(conn: Connection) extends SecondaryManifest {
   }
 
   private def releaseClaimedDatasetUnsafe(job: SecondaryRecord): Unit = {
-    using(conn.prepareStatement(
-      """UPDATE secondary_manifest
-        |SET claimed_at = NULL
-        |  ,claimant_id = NULL
-        |WHERE claimant_id = ?
-        |  AND store_id = ?
-        |  AND dataset_system_id = ?""".stripMargin)) { stmt =>
-      stmt.setObject(1, job.claimantId)
-      stmt.setString(2, job.storeId)
-      stmt.setLong(3, job.datasetId.underlying)
-      stmt.executeUpdate()
+    ensuringTransaction {
+      val count = using(conn.prepareStatement(
+        """UPDATE secondary_manifest
+          |SET claimant_id = NULL
+          |  ,initially_claimed_at = NULL
+          |WHERE claimant_id = ?
+          |  AND store_id = ?
+          |  AND dataset_system_id = ?""".stripMargin)) { stmt =>
+        stmt.setObject(1, job.claimantId)
+        stmt.setString(2, job.storeId)
+        stmt.setLong(3, job.datasetId.underlying)
+        stmt.executeUpdate()
+      }
+
+      using(conn.prepareStatement(
+        """UPDATE secondary_manifest_claims
+          |SET claimant_id = NULL
+          |  ,claimed_at = NULL
+          |WHERE claimant_id = ?
+          |  AND store_id = ?
+          |  AND dataset_system_id = ?""".stripMargin)) { stmt =>
+        stmt.setObject(1, job.claimantId)
+        stmt.setString(2, job.storeId)
+        stmt.setLong(3, job.datasetId.underlying)
+        stmt.executeUpdate()
+      }
     }
   }
 
