@@ -1,0 +1,18 @@
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
+
+    <changeSet author="robertm" id="20260218-claimant-id-index-in-split-secondary">
+        <sql>
+          create index secondary_manifest_claims_claimant_id on secondary_manifest_claims(claimant_id);
+        </sql>
+
+        <rollback>
+            <sql>
+              drop index secondary_manifest_claims_claimant_id;
+            </sql>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>
