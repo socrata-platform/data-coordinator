@@ -1,4 +1,4 @@
-@Library('socrata-pipeline-library@9.7.0')
+@Library('socrata-pipeline-library@9.9.1')
 
 import com.socrata.ReleaseMetadataService
 def rmsSupportedEnvironment = com.socrata.ReleaseMetadataService.SupportedEnvironment
@@ -234,15 +234,10 @@ pipeline {
       steps {
         script {
           lastStage = env.STAGE_NAME
-          env.ENVIRONMENT = (isHotfix) ? 'rc' : 'staging'
-          marathonDeploy(
-            serviceName: env.DEPLOY_PATTERN,
-            tag: env.BUILD_ID,
-            environment: env.ENVIRONMENT
-          )
-          // While working on migrating from marathon to ECS, we are keeping the tagged images up to date
-          // Once the migration is done, we will remove the marathonDeploy and leave in place this publish which triggers the ECS deployment
-          env.TARGET_DEPLOY_TAG = (env.ENVIRONMENT == 'rc') ? 'rc' : 'latest'
+          env.TARGET_DEPLOY_TAG = (isHotfix) ? 'rc' : 'latest'
+          // Deploy to ECS container
+          // Although this uses the publish method, it actually triggers the deployment of the ECS service
+          // There is a lambda that watches for when these specific tags point to a new image and triggers the service deployment
           dockerize.publish(
             sourceTag: env.DOCKER_TAG,
             targetTag: env.TARGET_DEPLOY_TAG,
