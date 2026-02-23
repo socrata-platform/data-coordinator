@@ -851,7 +851,7 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
           }
         case RowData(idx, truncate, mergeReplace, nonFatalRowErrors, updateOnly, bySystemId) =>
           val start = System.nanoTime()
-          val truncateCount = if(truncate) mutator.truncate() else 0
+          val exCopy = if(truncate) Some(mutator.truncate()._1) else None
           val mid = System.nanoTime()
           val reportWriter = processRowData(idx, commands.rawCommandStream, nonFatalRowErrors, updateOnly = updateOnly, bySystemId = bySystemId, mutator, mergeReplace)
           val end = System.nanoTime()
@@ -859,14 +859,18 @@ class Mutator[CT, CV](indexedTempFile: IndexedTempFile, common: MutatorCommon[CT
           val truncateDuration = (mid - start) / 1000000
           val upsertDuration = (end - mid) / 1000000
           val totalDuration = (end - start) / 1000000
-          log.info("Upsert completed: {} inserted, {} updated, {} deleted, {} truncated ({}ms truncation, {}ms upsert, {}ms total)",
+          log.info("Upsert completed: {} inserted, {} updated, {} deleted{} ({}ms truncation, {}ms upsert, {}ms total)",
                    reportWriter.insertedRows.asInstanceOf[AnyRef],
                    reportWriter.updatedRows.asInstanceOf[AnyRef],
                    reportWriter.deletedRows.asInstanceOf[AnyRef],
-                   truncateCount.asInstanceOf[AnyRef],
+                   if(truncate) ", truncated" else "",
                    truncateDuration.asInstanceOf[AnyRef],
                    upsertDuration.asInstanceOf[AnyRef],
                    totalDuration.asInstanceOf[AnyRef])
+
+          for(c <- exCopy) {
+            mutator.dropOldCopy(c)
+          }
 
           Seq(MutationScriptCommandResult.RowData(reportWriter.toJobRange))
         case SecondaryReindex(_) =>
