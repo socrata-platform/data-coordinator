@@ -79,8 +79,8 @@ trait SchemaLoaderProvider { this: TypeUniverse =>
   def schemaLoader(logger: Logger[CT, CV]): SchemaLoader[CT]
 }
 
-trait TruncatorProvider {
-  val truncator: Truncator
+trait TableDropperProvider {
+  val tableDropper: TableDropper
 }
 
 trait DatasetMapReaderProvider { this: TypeUniverse =>
