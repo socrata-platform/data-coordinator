@@ -94,7 +94,7 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
     with SecondaryStoresConfigProvider
     with PrevettedLoaderProvider
     with LoaderProvider
-    with TruncatorProvider
+    with TableDropperProvider
     with DatasetContentsCopierProvider
     with SchemaLoaderProvider
     with DatasetReaderProvider
@@ -176,8 +176,8 @@ class PostgresUniverse[ColumnType, ColumnValue](conn: Connection,
   lazy val secondaryMoveJobs: SecondaryMoveJobs =
     new SqlSecondaryMoveJobs(conn)
 
-  lazy val truncator =
-    new SqlTruncator(conn)
+  lazy val tableDropper =
+    new SqlTableDropper(conn)
 
   lazy val datasetMapReader: DatasetMapReader[CT] =
     new PostgresDatasetMapReader(conn, typeContext.typeNamespace, timingReport)
