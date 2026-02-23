@@ -14,12 +14,12 @@ import com.socrata.datacoordinator.truth.metadata.CopyInfo
 
 // Does this need to be *Postgres*, or is all postgres-specific stuff encapsulated in its paramters?
 // Actually does this need to be in the sql package at all now that Universe exists?
-class PostgresDatabaseMutator[CT, CV](universe: Managed[Universe[CT, CV] with LoggerProvider with SchemaLoaderProvider with LoaderProvider with TruncatorProvider with DatasetContentsCopierProvider with DatasetMapReaderProvider with DatasetMapWriterProvider with SecondaryManifestProvider])
+class PostgresDatabaseMutator[CT, CV](universe: Managed[Universe[CT, CV] with LoggerProvider with SchemaLoaderProvider with LoaderProvider with TableDropperProvider with DatasetContentsCopierProvider with DatasetMapReaderProvider with DatasetMapWriterProvider with SecondaryManifestProvider])
   extends LowLevelDatabaseMutator[CT, CV]
 {
   // type LoaderProvider = (CopyInfo, ColumnIdMap[ColumnInfo], RowPreparer[CV], IdProvider, Logger[CV], ColumnInfo => SqlColumnRep[CT, CV]) => Loader[CV]
 
-  private class S(val universe: Universe[CT, CV] with LoggerProvider with SchemaLoaderProvider with LoaderProvider with TruncatorProvider with DatasetContentsCopierProvider with DatasetMapReaderProvider with DatasetMapWriterProvider with SecondaryManifestProvider) extends MutationContext {
+  private class S(val universe: Universe[CT, CV] with LoggerProvider with SchemaLoaderProvider with LoaderProvider with TableDropperProvider with DatasetContentsCopierProvider with DatasetMapReaderProvider with DatasetMapWriterProvider with SecondaryManifestProvider) extends MutationContext {
     lazy val now = universe.transactionStart
 
     final def loadLatestVersionOfDataset(datasetId: DatasetId, lockTimeout: Duration): Option[DatasetCopyContext[CT]] = {
@@ -41,8 +41,27 @@ class PostgresDatabaseMutator[CT, CV](universe: Managed[Universe[CT, CV] with Lo
     def schemaLoader(logger: Logger[CT, CV]): SchemaLoader[CT] =
       universe.schemaLoader(logger)
 
-    def truncate(table: CopyInfo, logger: Logger[CT, CV]) =
-      universe.truncator.truncate(table, logger)
+    def truncate(table: CopyInfo, logger: Logger[CT, CV]) = {
+      val newCopyInfo = universe.datasetMapWriter.newTableModifier(table)
+      val columns = universe.datasetMapReader.schema(newCopyInfo)
+
+      logger.truncated()
+
+      val sl = schemaLoader(new NullLogger) // Null logger because we're not logically creating new columns
+      sl.create(newCopyInfo)
+      sl.addColumns(columns.values)
+      for(c <- columns.values) {
+        if(c.isSystemPrimaryKey) sl.makeSystemPrimaryKey(c)
+        if(c.isUserPrimaryKey) sl.makePrimaryKey(c)
+        if(c.isVersion) sl.makeVersion(c)
+      }
+
+      (table, newCopyInfo)
+    }
+
+    def dropTableOnly(table: CopyInfo): Unit = {
+      universe.tableDropper.scheduleForDropping(table.dataTableName)
+    }
 
     def datasetContentsCopier(logger: Logger[CT, CV]): DatasetContentsCopier[CT] =
       universe.datasetContentsCopier(logger)

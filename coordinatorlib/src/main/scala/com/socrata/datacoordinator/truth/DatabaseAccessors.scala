@@ -66,7 +66,8 @@ trait LowLevelDatabaseMutator[CT, CV] {
     def datasetContentsCopier(logger: Logger[CT, CV]): DatasetContentsCopier[CT]
     def withDataLoader[A](copyCtx: DatasetCopyContext[CT], logger: Logger[CT, CV], reportWriter: ReportWriter[CV],
                           replaceUpdatedRows: Boolean, updateOnly: Boolean)(f: Loader[CV] => A): (Long, A)
-    def truncate(table: CopyInfo, logger: Logger[CT, CV]): Int
+    def truncate(table: CopyInfo, logger: Logger[CT, CV]): (CopyInfo, CopyInfo)
+    def dropTableOnly(table: CopyInfo): Unit
 
     def finishDatasetTransaction(username: String, copyInfo: CopyInfo, updateLastUpdated: Boolean, dataShapeUpdated: Boolean): Unit
 
@@ -214,7 +215,8 @@ trait DatasetMutator[CT, CV] {
     def dropComputationStrategy(column: ColumnInfo[CT]): Unit
 
     def updateFieldName(column: ColumnInfo[CT], newName: ColumnName): Unit
-    def truncate(): Int
+    def truncate(): (CopyInfo, CopyInfo)
+    def dropOldCopy(copyInfo: CopyInfo)
 
     sealed trait RowDataUpdateJob {
       def jobNumber: Int
@@ -500,11 +502,17 @@ object DatasetMutator {
         }
       }
 
-      def truncate(): Int = {
+      def truncate(): (CopyInfo, CopyInfo) = {
         checkDoingRows()
-        val result = llCtx.truncate(copyInfo, logger)
+        val (oldCopyInfo, newCopyInfo) = llCtx.truncate(copyInfo, logger)
+        copyCtx.copyInfo = newCopyInfo
         dataShapeUpdated = true
-        result
+        (oldCopyInfo, newCopyInfo)
+      }
+
+      def dropOldCopy(copyInfo: CopyInfo) {
+        assert(copyCtx.copyInfo.isNewerTableOf(copyInfo), s"${copyCtx.copyInfo}\n${copyInfo}")
+        llCtx.dropTableOnly(copyInfo)
       }
 
       def upsert(inputGenerator: Iterator[RowDataUpdateJob], reportWriter: ReportWriter[CV],
