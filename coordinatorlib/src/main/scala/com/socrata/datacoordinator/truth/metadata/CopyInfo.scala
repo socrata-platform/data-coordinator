@@ -36,4 +36,15 @@ object UnanchoredCopyInfo extends ((CopyId, Long, LifecycleStage, Long, Long, Da
 case class CopyInfo(datasetInfo: DatasetInfo, systemId: CopyId, copyNumber: Long, lifecycleStage: LifecycleStage, dataVersion: Long, dataShapeVersion: Long, lastModified: DateTime, tableModifier: Option[Long])(implicit tag: com.socrata.datacoordinator.truth.metadata.`-impl`.Tag) extends CopyInfoLike {
   lazy val dataTableName = datasetInfo.tableBase + "_" + copyNumber + tableModifier.fold("")("_" + _)
   def unanchored: UnanchoredCopyInfo = UnanchoredCopyInfo(systemId, copyNumber,lifecycleStage, dataVersion, dataShapeVersion, lastModified)
+
+  def isNewerTableOf(that: CopyInfo): Boolean = {
+    this.datasetInfo.systemId == that.datasetInfo.systemId &&
+      this.systemId == that.systemId &&
+      this.copyNumber == that.copyNumber &&
+      ((this.tableModifier, that.tableModifier) match {
+        case (Some(_), None) => true
+        case (Some(a), Some(b)) => a > b
+        case _ => false
+      })
+  }
 }
