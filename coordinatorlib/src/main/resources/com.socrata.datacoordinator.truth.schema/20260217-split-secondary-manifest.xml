@@ -1,0 +1,43 @@
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
+
+    <changeSet author="robertm" id="20260217-split-secondary-manifest">
+        <sql>
+CREATE TABLE secondary_manifest_claims (
+  store_id          VARCHAR(64) NOT NULL,
+  dataset_system_id BIGINT NOT NULL,
+  claimant_id       UUID NULL,
+  claimed_at        TIMESTAMP WITH TIME ZONE NULL,
+  PRIMARY KEY (store_id, dataset_system_id),
+  FOREIGN KEY (store_id, dataset_system_id) REFERENCES secondary_manifest (store_id, dataset_system_id)
+);
+
+INSERT INTO secondary_manifest_claims (store_id, dataset_system_id, claimant_id, claimed_at)
+  SELECT store_id, dataset_system_id, claimant_id, claimed_at FROM secondary_manifest WHERE claimant_id IS NOT NULL;
+
+ALTER TABLE secondary_manifest DROP COLUMN claimed_at;
+        </sql>
+
+        <rollback>
+            <sql>
+ALTER TABLE secondary_manifest ADD COLUMN claimed_at TIMESTAMP WITH TIME ZONE NULL;
+
+UPDATE secondary_manifest
+  SET claimed_at = (
+    SELECT claimed_at
+    FROM secondary_manifest claims
+    WHERE
+      store_id = secondary_manifest.store_id
+      AND dataset_system_id = secondary_manifest.dataset_system_id
+      AND claimant_id = secondary_manifest.claimant_id
+    )
+  WHERE claimant_id IS NOT NULL;
+
+DROP TABLE secondary_manifest_claims;
+            </sql>
+        </rollback>
+    </changeSet>
+
+</databaseChangeLog>
