@@ -49,6 +49,10 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
   // splay the sleep time +/- 5s to prevent watchers from getting in lock step
   private val nextRuntimeSplay = (rand.nextInt(10000) - 5000).toLong
 
+  private var connectionErrorCount = 0
+
+  private val maxDBConnectionRetries = 5
+
   // allow for overriding for easy testing
   protected def manifest(u: Universe[CT, CV] with SecondaryManifestProvider with PlaybackToSecondaryProvider):
       SecondaryManifest = u.secondaryManifest
@@ -315,8 +319,21 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
           lastWrote = now
         }
 
+        connectionErrorCount = 0
         done = maybeSleep(secondaryConfigInfo.storeId, nextRunTime, finished)
       } catch {
+        case e: SQLException 
+          if e.getMessage != null 
+          && e.getMessage.contains("Connections could not be acquired from the underlying database!") =>
+            connectionErrorCount += 1
+            if (connectionErrorCount >= maxDBConnectionRetries) {
+              log.error("Failed to update claimedAt time for secondary sync jobs claimed by watcherId " +
+                claimantId.toString() + s" ${connectionErrorCount} times in a row, exiting.", e)
+              sys.exit(1)
+            } else {
+              log.warn("SQL exception while updating claimedAt time for secondary sync jobs claimed by watcherId " +
+                claimantId.toString() + s". This has happened ${connectionErrorCount} times in a row. Will retry up to ${maxDBConnectionRetries - connectionErrorCount} times.", e)
+            }
         case e: Exception =>
           log.error("Unexpected exception while updating claimedAt time for secondary sync jobs claimed by watcherId " +
                     claimantId.toString(), e)
