@@ -49,6 +49,9 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
   // splay the sleep time +/- 5s to prevent watchers from getting in lock step
   private val nextRuntimeSplay = (rand.nextInt(10000) - 5000).toLong
 
+  private val maxDBConnectionRetries = 5
+  private val psqlUnableToConnectErrorCode = "08001"
+
   // allow for overriding for easy testing
   protected def manifest(u: Universe[CT, CV] with SecondaryManifestProvider with PlaybackToSecondaryProvider):
       SecondaryManifest = u.secondaryManifest
@@ -292,6 +295,8 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
       secondaryConfigInfo.runIntervalSeconds)
 
     var done = maybeSleep(secondaryConfigInfo.storeId, nextRunTime, finished)
+    var connectionErrorCount = 0
+
     while(!done) {
       try {
         for {u <- universe} {
@@ -315,8 +320,20 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
           lastWrote = now
         }
 
+        connectionErrorCount = 0
         done = maybeSleep(secondaryConfigInfo.storeId, nextRunTime, finished)
       } catch {
+          case e: java.sql.SQLException if e.getSQLState == psqlUnableToConnectErrorCode =>
+            log.error(e.toString())
+            connectionErrorCount += 1
+            if (connectionErrorCount >= maxDBConnectionRetries) {
+              log.error("Failed to update claimedAt time for secondary sync jobs claimed by watcherId " +
+                claimantId.toString() + s" ${connectionErrorCount} times in a row.", e)
+              throw e
+            } else {
+              log.warn("SQL exception while updating claimedAt time for secondary sync jobs claimed by watcherId " +
+                claimantId.toString() + s". This has happened ${connectionErrorCount} times in a row. Will retry up to ${maxDBConnectionRetries - connectionErrorCount} more times.", e)
+            }
         case e: Exception =>
           log.error("Unexpected exception while updating claimedAt time for secondary sync jobs claimed by watcherId " +
                     claimantId.toString(), e)
