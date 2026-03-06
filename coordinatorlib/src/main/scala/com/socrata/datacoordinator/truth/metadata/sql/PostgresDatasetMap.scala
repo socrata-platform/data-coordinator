@@ -506,7 +506,7 @@ class PostgresDatasetMapReader[CT](val conn: Connection, tns: TypeNamespace[CT],
     }
     using(conn.prepareStatement(datasetInfoBySystemIdQuery)) { stmt =>
       stmt.setDatasetId(1, datasetId)
-      using(t("lookup-dataset", "dataset_id" -> datasetId)(stmt.executeQuery())) { rs =>
+      using(t.withWarnThreshold("lookup-dataset", 100, "dataset_id" -> datasetId)(stmt.executeQuery())) { rs =>
         if (rs.next()) {
           Some(DatasetInfo(rs.getDatasetId("system_id"), rs.getLong("next_counter_value"), rs.getLong("latest_data_version"), rs.getString("locale_name"), rs.getBytes("obfuscation_key"), rs.getDatasetResourceName("resource_name")))
         } else {
