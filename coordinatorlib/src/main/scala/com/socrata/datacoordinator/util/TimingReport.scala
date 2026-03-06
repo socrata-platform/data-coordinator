@@ -5,7 +5,10 @@ import com.socrata.thirdparty.metrics.Metrics
 import org.slf4j.{MDC, Logger}
 
 trait TimingReport {
-  def apply[T](name: String, kv: (String, Any)*)(f: => T): T
+  final def apply[T](name: String, kv: (String, Any)*)(f: => T): T =
+    withWarnThreshold(name, Long.MaxValue, kv: _*)(f)
+
+  def withWarnThreshold[T](name: String, ms: Long, kv: (String, Any)*)(f: => T): T
 
   def info[T](name: String, kv: (String, Any)*)(f: => T): T = apply(name, kv: _*)(f)
 
@@ -28,18 +31,30 @@ trait TimingReport {
 trait LogTimingReport extends TimingReport {
   val logger: Logger
 
-  protected def infoReport[T](name: String, kv: (String, Any)*)(f: => T): T = {
+  protected def infoReport[T](name: String, threshold: Long, kv: (String, Any)*)(f: => T): T = {
     time(f) { (elapsed: Long) =>
-      if(logger.isInfoEnabled) {
-        logger.info("{}: {}ms; {}", name, elapsed.toString, content(kv: _*))
+      if(elapsed > threshold) {
+        if(logger.isWarnEnabled) {
+          logger.warn("{}: {}ms; {}", name, elapsed.toString, content(kv: _*), new Exception)
+        }
+      } else {
+        if(logger.isInfoEnabled) {
+          logger.info("{}: {}ms; {}", name, elapsed.toString, content(kv: _*))
+        }
       }
     }
   }
 
-  protected def debugReport[T](name: String, kv: (String, Any)*)(f: => T): T = {
+  protected def debugReport[T](name: String, threshold: Long, kv: (String, Any)*)(f: => T): T = {
     time(f) { (elapsed: Long) =>
-      if(logger.isDebugEnabled) {
-        logger.debug("{}: {}ms; {}", name, elapsed.toString, content(kv: _*))
+      if(elapsed > threshold) {
+        if(logger.isWarnEnabled) {
+          logger.warn("{}: {}ms; {}", name, elapsed.toString, content(kv: _*), new Exception)
+        }
+      } else {
+        if(logger.isDebugEnabled) {
+          logger.debug("{}: {}ms; {}", name, elapsed.toString, content(kv: _*))
+        }
       }
     }
   }
@@ -61,10 +76,10 @@ trait StackedTimingReport extends TimingReport with TransferrableContextTimingRe
 
   def context: List[String] = contextLocal.get
 
-  abstract override def apply[T](name: String, kv: (String, Any)*)(f: => T): T = {
+  abstract override def withWarnThreshold[T](name: String, ms: Long, kv: (String, Any)*)(f: => T): T = {
     contextLocal.set(name :: context)
     try {
-      super.apply(context.reverse.mkString("/"), kv: _*)(f)
+      super.withWarnThreshold(context.reverse.mkString("/"), ms, kv: _*)(f)
     } finally {
       contextLocal.set(context.tail)
     }
@@ -82,10 +97,10 @@ trait StackedTimingReport extends TimingReport with TransferrableContextTimingRe
 }
 
 trait MetricsTimingReport extends TimingReport with Metrics {
-  abstract override def apply[T](name: String, kv: (String, Any)*)(f: => T): T = {
+  abstract override def withWarnThreshold[T](name: String, ms: Long, kv: (String, Any)*)(f: => T): T = {
     val timer = metrics.timer(name)
     timer.time {
-      super.apply(name, kv: _*)(f)
+      super.withWarnThreshold(name, ms, kv: _*)(f)
     }
   }
 }
@@ -93,15 +108,18 @@ trait MetricsTimingReport extends TimingReport with Metrics {
 class LoggedTimingReport(log: Logger) extends LogTimingReport {
   val logger = log
 
-  def apply[T](name: String, kv: (String, Any)*)(f: => T): T = infoReport(name, kv: _*)(f)
+  def withWarnThreshold[T](name: String, ms: Long, kv: (String, Any)*)(f: => T): T =
+    infoReport(name, ms, kv: _*)(f)
 }
 
 class DebugLoggedTimingReport(log: Logger) extends LogTimingReport {
   val logger = log
 
-  def apply[T](name: String, kv: (String, Any)*)(f: => T): T = debugReport(name, kv: _*)(f)
+  def withWarnThreshold[T](name: String, ms: Long, kv: (String, Any)*)(f: => T): T =
+    debugReport(name, ms, kv: _*)(f)
 
-  override def info[T](name: String, kv: (String, Any)*)(f: => T): T = infoReport(name, kv: _*)(f)
+  override def info[T](name: String, kv: (String, Any)*)(f: => T): T =
+    infoReport(name, Long.MaxValue, kv: _*)(f)
 }
 
 /**
@@ -114,7 +132,7 @@ trait TaggableTimingReport extends TimingReport with Metrics {
 
   private val Tag = "^tag:(.+)$".r
 
-  abstract override def apply[T](name: String, kv: (String, Any)*)(f: => T): T = {
+  abstract override def withWarnThreshold[T](name: String, ms: Long, kv: (String, Any)*)(f: => T): T = {
 
     val (regKv, tagKv) = kv.partition { case (tag, value) => Tag.findFirstIn(tag).isEmpty }
 
@@ -124,7 +142,7 @@ trait TaggableTimingReport extends TimingReport with Metrics {
     }
 
     try {
-      super.apply(name, regKv: _*)(f)
+      super.withWarnThreshold(name, ms, regKv: _*)(f)
     } finally {
       tagK.foreach(MDC.remove(_))
     }
@@ -132,7 +150,7 @@ trait TaggableTimingReport extends TimingReport with Metrics {
 }
 
 object NoopTimingReport extends TransferrableContextTimingReport {
-  def apply[T](name: String, kv: (String, Any)*)(f: => T): T = f
+  def withWarnThreshold[T](name: String, ms: Long, kv: (String, Any)*)(f: => T): T = f
 
   type Context = Unit
   def context = ()
