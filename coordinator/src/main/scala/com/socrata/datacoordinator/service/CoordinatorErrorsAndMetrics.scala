@@ -1,8 +1,8 @@
 package com.socrata.datacoordinator.service
 
 import java.io.UnsupportedEncodingException
-import javax.activation.{MimeTypeParseException, MimeType}
-import javax.servlet.http.HttpServletRequest
+import jakarta.activation.{MimeTypeParseException, MimeType}
+import jakarta.servlet.http.HttpServletRequest
 
 import com.rojoma.json.v3.ast._
 import com.rojoma.json.v3.codec.JsonEncode

@@ -3,7 +3,7 @@ package com.socrata.datacoordinator.resources
 import java.io.{BufferedOutputStream, BufferedWriter}
 import java.nio.charset.StandardCharsets._
 import java.security.MessageDigest
-import javax.servlet.http.HttpServletResponse
+import jakarta.servlet.http.HttpServletResponse
 
 import com.rojoma.json.v3.ast.{JArray, JNumber, JString, JValue}
 import com.rojoma.json.v3.codec.JsonEncode

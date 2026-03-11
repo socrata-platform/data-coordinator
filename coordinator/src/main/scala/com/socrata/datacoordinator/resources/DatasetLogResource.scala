@@ -1,6 +1,6 @@
 package com.socrata.datacoordinator.resources
 
-import javax.servlet.http.HttpServletResponse
+import jakarta.servlet.http.HttpServletResponse
 
 import com.rojoma.json.v3.ast.JArray
 import com.rojoma.json.v3.util.ArrayIteratorEncode

@@ -4,7 +4,7 @@ object Dependencies {
   object versions {
     val activemq        = "5.16.8"
     val c3po            = "0.9.5.4"
-    val clojure         = "1.5.1"
+    val clojure         = "1.12.4"
     val commonsCodec    = "1.8"
     val curator = "2.6.0"
     val eurybates       = "2.1.0"
@@ -27,7 +27,7 @@ object Dependencies {
     val snappyIq80      = "0.5"
     val snappyXerial    = "1.1.10.4"
     val socrataCuratorUtils = "1.2.0"
-    val socrataHttp     = "3.16.4"
+    val socrataHttp     = "3.16.5-jdk11"
     val socrataThirdPartyUtils = "5.0.0"
     val soqlBrita       = "1.4.1"
     val soqlReference   = "4.14.68"

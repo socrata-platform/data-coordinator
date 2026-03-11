@@ -4,7 +4,7 @@ import scala.annotation.tailrec
 import scala.concurrent.duration._
 
 import java.io.File
-import java.net.URL
+import java.net.{URI, URL}
 import java.sql.Connection
 import java.util.concurrent.Executors
 
@@ -155,7 +155,7 @@ object Main extends App {
       val sodaFountain = DataSourceFromConfig(serviceConfig.sodaFountain, rs)
 
       val archivalSecondaryClient = serviceConfig.archivalUrl.map { url =>
-        new ArchivalSecondaryClient(httpClient, new URL(url))
+        new ArchivalSecondaryClient(httpClient, new URI(url).toURL)
       }
       archivalSecondaryClient.foreach(_.check())
 

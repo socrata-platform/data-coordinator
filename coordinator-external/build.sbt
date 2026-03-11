@@ -10,8 +10,8 @@ libraryDependencies ++= Seq(
   socrataCuratorUtils,
   socrataThirdPartyUtils,
   commonsCodec,
-  TestDeps.scalaCheck  % "test,it",
-  TestDeps.slf4jSimple % "test,it",
-  TestDeps.h2          % "test,it"
+  TestDeps.scalaCheck  % "test",
+  TestDeps.slf4jSimple % "test",
+  TestDeps.h2          % "test"
 )
 disablePlugins(AssemblyPlugin)

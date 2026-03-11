@@ -28,10 +28,10 @@ libraryDependencies ++= Seq(
       trove4j,
       typesafeConfig,
 
-      TestDeps.h2 % "test,it",
-      TestDeps.scalaCheck % "test,it",
-      TestDeps.scalaTest % "test,it",
-      TestDeps.slf4jSimple % "test,it"
+      TestDeps.h2 % "test",
+      TestDeps.scalaCheck % "test",
+      TestDeps.scalaTest % "test",
+      TestDeps.slf4jSimple % "test"
 )
 
 Compile / sourceGenerators += Def.task {

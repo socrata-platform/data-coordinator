@@ -1,6 +1,8 @@
 package com.socrata.datacoordinator
 package truth.metadata
 
+import java.util.Base64
+
 import com.rojoma.json.v3.util.{JsonKey, AutomaticJsonCodecBuilder}
 import com.socrata.datacoordinator.id.{DatasetId, DatasetResourceName}
 import com.rojoma.json.v3.codec.{DecodeError, JsonDecode, JsonEncode}
@@ -29,13 +31,15 @@ case class UnanchoredDatasetInfo(@JsonKey("sid") systemId: DatasetId,
 object UnanchoredDatasetInfo extends ((DatasetId, Long, String, Array[Byte], DatasetResourceName) => UnanchoredDatasetInfo) {
   override def toString = "DatasetInfo"
   private implicit val byteCodec = new JsonDecode[Array[Byte]] with JsonEncode[Array[Byte]] {
-    def encode(x: Array[Byte]): JValue =
-      JString(new sun.misc.BASE64Encoder().encode(x))
+    def encode(x: Array[Byte]): JValue = {
+      // The old sun.misc encoder splits into 76-character chunks
+      JString(Base64.getMimeEncoder.encodeToString(x))
+    }
 
     def decode(x: JValue): JsonDecode.DecodeResult[Array[Byte]] = x match {
       case JString(s) =>
-        try { Right(new sun.misc.BASE64Decoder().decodeBuffer(s)) }
-        catch { case _: java.io.IOException => Left(DecodeError.InvalidValue(x)) }
+        try { Right(Base64.getMimeDecoder.decode(s)) }
+        catch { case _: IllegalArgumentException => Left(DecodeError.InvalidValue(x)) }
       case other =>
         Left(DecodeError.InvalidType(JString, other.jsonType))
     }
