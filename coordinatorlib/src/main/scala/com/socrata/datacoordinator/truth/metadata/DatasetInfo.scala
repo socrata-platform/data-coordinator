@@ -32,7 +32,9 @@ object UnanchoredDatasetInfo extends ((DatasetId, Long, String, Array[Byte], Dat
   override def toString = "DatasetInfo"
   private implicit val byteCodec = new JsonDecode[Array[Byte]] with JsonEncode[Array[Byte]] {
     def encode(x: Array[Byte]): JValue = {
-      // The old sun.misc encoder splits into 76-character chunks
+      // The old sun.misc encoder splits into 76-character chunks,
+      // which is why this is using the MIME encoder (which has the
+      // same behavior) instead of the normal one.
       JString(Base64.getMimeEncoder.encodeToString(x))
     }
 
