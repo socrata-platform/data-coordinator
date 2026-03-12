@@ -918,7 +918,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with ScalaCheckPropertyCh
           txn.delete(1, StringValue("q"), None, bySystemId = true)
           txn.finish()
         }
-        err.getMessage must be("com.socrata.datacoordinator.truth.loader.sql.StringValue cannot be cast to com.socrata.datacoordinator.truth.loader.sql.LongValue")
+        err.getMessage must startWith("class com.socrata.datacoordinator.truth.loader.sql.StringValue cannot be cast to class com.socrata.datacoordinator.truth.loader.sql.LongValue")
       }
     }
   }
@@ -989,7 +989,7 @@ class TestSqlLoader extends FunSuite with MustMatchers with ScalaCheckPropertyCh
           txn.delete(0, LongValue(7), None, bySystemId = false)
           txn.finish()
         }
-        err.getMessage must be("com.socrata.datacoordinator.truth.loader.sql.LongValue cannot be cast to com.socrata.datacoordinator.truth.loader.sql.StringValue")
+        err.getMessage must startWith("class com.socrata.datacoordinator.truth.loader.sql.LongValue cannot be cast to class com.socrata.datacoordinator.truth.loader.sql.StringValue")
       }
     }
   }

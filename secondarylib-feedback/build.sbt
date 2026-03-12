@@ -13,3 +13,5 @@ libraryDependencies ++= Seq(
   TestDeps.scalaMock % "test"
 )
 disablePlugins(AssemblyPlugin)
+
+Test/fork := true

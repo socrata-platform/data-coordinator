@@ -47,4 +47,6 @@ Compile / PB.targets := Seq(
   scalapb.gen() -> (Compile/sourceManaged).value / "protobuf"
 )
 
+Test/fork := true
+
 disablePlugins(AssemblyPlugin)

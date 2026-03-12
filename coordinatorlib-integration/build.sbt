@@ -12,3 +12,5 @@ libraryDependencies ++= Seq(
 publish / skip := true
 
 disablePlugins(AssemblyPlugin)
+
+Test/fork := true
