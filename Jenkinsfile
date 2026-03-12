@@ -67,7 +67,6 @@ pipeline {
           skip = true
           semVerTag.checkoutClosestTag()
           // Build & Publish
-          sbtbuild.setRunITTest(true)
           sbtbuild.setNoSubproject(true)
           sbtbuild.setScalaVersion(env.SCALA_VERSION)
           sbtbuild.setPublish(true)
@@ -120,7 +119,6 @@ pipeline {
       steps {
         script {
           lastStage = env.STAGE_NAME
-          sbtbuild.setRunITTest(true)
           sbtbuild.setNoSubproject(true)
           sbtbuild.setPublish(false)
           sbtbuild.setScalaVersion(env.SCALA_VERSION)
