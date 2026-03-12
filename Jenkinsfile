@@ -25,7 +25,7 @@ pipeline {
     timeout(time: 20, unit: 'MINUTES')
   }
   parameters {
-    string(name: 'AGENT', defaultValue: 'build-worker-pg13', description: 'Which build agent to use?')
+    string(name: 'AGENT', defaultValue: 'worker-java-multi-pg13', description: 'Which build agent to use?')
     string(name: 'BRANCH_SPECIFIER', defaultValue: 'origin/main', description: 'Use this branch for building the artifact.')
     booleanParam(name: 'RELEASE_BUILD', defaultValue: false, description: 'Are we building a release candidate?')
     booleanParam(name: 'RELEASE_DRY_RUN', defaultValue: false, description: 'To test out the release build.')
@@ -67,7 +67,6 @@ pipeline {
           skip = true
           semVerTag.checkoutClosestTag()
           // Build & Publish
-          sbtbuild.setRunITTest(true)
           sbtbuild.setNoSubproject(true)
           sbtbuild.setScalaVersion(env.SCALA_VERSION)
           sbtbuild.setPublish(true)
@@ -120,7 +119,6 @@ pipeline {
       steps {
         script {
           lastStage = env.STAGE_NAME
-          sbtbuild.setRunITTest(true)
           sbtbuild.setNoSubproject(true)
           sbtbuild.setPublish(false)
           sbtbuild.setScalaVersion(env.SCALA_VERSION)

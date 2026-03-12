@@ -10,7 +10,7 @@ import com.socrata.http.server.responses._
 import com.socrata.http.server.util.handlers.{LoggingOptions, NewLoggingHandler, ThreadRenamingHandler}
 import com.socrata.http.server.util.ErrorAdapter
 import com.socrata.http.server.util.RequestId.ReqIdHeader
-import com.socrata.thirdparty.metrics.{MetricsReporter, SocrataHttpSupport}
+import com.socrata.thirdparty.metrics.{Metrics, MetricsReporter}
 import java.util.concurrent.atomic.AtomicInteger
 
 import com.socrata.datacoordinator.service.ServiceUtil._
@@ -21,6 +21,7 @@ import Service._
 import com.socrata.datacoordinator.common.collocation.CollocationLock
 import com.socrata.datacoordinator.resources.collocation._
 import org.slf4j.LoggerFactory
+import io.dropwizard.metrics.jetty11.InstrumentedHandler
 
 /**
  * The main HTTP REST resource servicing class for the data coordinator.
@@ -290,9 +291,17 @@ class Service(serviceConfig: ServiceConfig,
                        NewLoggingHandler(logOptions)(errorHandlingHandler)),
                      SocrataServerJetty.defaultOptions.
                        withPort(port).
-                       withExtraHandlers(List(SocrataHttpSupport.getHandler(metricsOptions))).
+                       withExtraHandlers(
+                         List(
+                           { underlying =>
+                             val handler = new InstrumentedHandler(Metrics.metricsRegistry, metricsOptions.prefix)
+                             handler.setHandler(underlying)
+                             handler
+                           }
+                         )
+                       ).
                        withPoolOptions(SocrataServerJetty.Pool(serviceConfig.jettyThreadpool)).
-                       withBroker(broker))
+                      withBroker(broker))
       server.run()
     }
   }
