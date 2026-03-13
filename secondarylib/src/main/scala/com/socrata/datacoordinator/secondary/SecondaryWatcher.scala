@@ -432,7 +432,7 @@ class SecondaryWatcherClaimManager(dsInfo: DSInfo, claimantId: UUID, claimTimeou
     // concurrency.  We could potentially have a separate pool for the claim manager.
     using(dsInfo.dataSource.getConnection()) { conn =>
       using(conn.prepareStatement(
-              s"""UPDATE secondary_manifest
+              s"""UPDATE secondary_manifest_claims
                  |SET claimed_at = CURRENT_TIMESTAMP
                  |WHERE claimant_id = ? AND store_id = ? AND dataset_system_id = ?
                  |""".stripMargin)) { stmt =>
