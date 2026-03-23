@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+                   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                   xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog
+    http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-2.0.xsd">
+    <changeSet author="robertm" id="20260322-simple-secondary-manifest-poll-index">
+        <sql>
+            CREATE INDEX IF NOT EXISTS secondary_manifest_simple
+              ON secondary_manifest (store_id, went_out_of_sync_at)
+              WHERE latest_data_version > latest_secondary_data_version OR pending_drop;
+        </sql>
+        <rollback>
+            DROP INDEX secondary_manifest_simple;
+        </rollback>
+    </changeSet>
+</databaseChangeLog>
