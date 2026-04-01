@@ -324,15 +324,17 @@ class SecondaryWatcher[CT, CV](universe: => Managed[SecondaryWatcher.UniverseTyp
         done = maybeSleep(secondaryConfigInfo.storeId, nextRunTime, finished)
       } catch {
           case e: java.sql.SQLException if e.getSQLState == psqlUnableToConnectErrorCode =>
-            log.error(e.toString())
             connectionErrorCount += 1
             if (connectionErrorCount >= maxDBConnectionRetries) {
-              log.error("Failed to update claimedAt time for secondary sync jobs claimed by watcherId " +
-                claimantId.toString() + s" ${connectionErrorCount} times in a row.", e)
+              log.error("Failed to update claimedAt time for secondary sync jobs claimed by watcherId " + claimantId + connectionErrorCount + " times in a row.", e)
               throw e
             } else {
-              log.warn("SQL exception while updating claimedAt time for secondary sync jobs claimed by watcherId " +
-                claimantId.toString() + s". This has happened ${connectionErrorCount} times in a row. Will retry up to ${maxDBConnectionRetries - connectionErrorCount} more times.", e)
+              log.warn(
+                "SQL exception while updating claimedAt time for secondary sync jobs claimed by watcherId " + claimantId + 
+                ". This has happened " + connectionErrorCount + " times in a row. Will retry up to " + 
+                (maxDBConnectionRetries - connectionErrorCount) + " more times.",
+                e
+              )
             }
         case e: Exception =>
           log.error("Unexpected exception while updating claimedAt time for secondary sync jobs claimed by watcherId " +
