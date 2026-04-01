@@ -1,4 +1,4 @@
-FROM socrata/java8-jammy
+FROM socrata/java-jammy:25
 
 EXPOSE 6020
 EXPOSE 6021/udp

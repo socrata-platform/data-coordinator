@@ -1,6 +1,7 @@
 package com.socrata.datacoordinator.service
 
 import java.util.UUID
+import java.util.concurrent.atomic.AtomicBoolean
 
 import com.rojoma.json.v3.ast.{JString, JValue}
 import com.rojoma.simplearm.v2._
@@ -35,6 +36,7 @@ import com.socrata.datacoordinator.service.Main.log
 import com.socrata.datacoordinator.service.collocation.{MetricProvider, _}
 import com.socrata.http.client.HttpClientHttpClient
 import org.apache.curator.x.discovery.{ServiceInstanceBuilder, strategies}
+import org.apache.curator.framework.recipes.leader.{LeaderLatch, LeaderLatchListener}
 import org.apache.log4j.PropertyConfigurator
 import org.joda.time.DateTime
 
@@ -763,19 +765,22 @@ object Main extends DynamicPortMap {
         common.internalNameFromDatasetId)
 
       val finished = new CountDownLatch(1)
+      val leader = new AtomicBoolean(false)
       val tableDropper = new Thread() {
         setName("table dropper")
         override def run() {
           do {
-            try {
-              for(u <- common.universe) {
-                while(finished.getCount > 0 && u.tableCleanup.cleanupPendingDrops()) {
-                  u.commit()
+            if(leader.get) {
+              try {
+                for(u <- common.universe) {
+                  while(finished.getCount > 0 && u.tableCleanup.cleanupPendingDrops()) {
+                    u.commit()
+                  }
                 }
+              } catch {
+                case e: Exception =>
+                  log.error("Unexpected error while dropping tables", e)
               }
-            } catch {
-              case e: Exception =>
-                log.error("Unexpected error while dropping tables", e)
             }
           } while(!finished.await(30, TimeUnit.SECONDS))
         }
@@ -785,18 +790,20 @@ object Main extends DynamicPortMap {
         setName("logTableCleanup thread")
         override def run() {
           do {
-            try {
-              for (u <- common.universe) {
-                while (finished.getCount > 0 && u.logTableCleanup.cleanupOldVersions()) {
-                  u.commit()
-                  // a simple knob to allow us to slow the log table cleanup down without
-                  // requiring complicated things.
-                  finished.await(serviceConfig.logTableCleanupSleepTime.toMillis, TimeUnit.MILLISECONDS)
+            if(leader.get) {
+              try {
+                for (u <- common.universe) {
+                  while (finished.getCount > 0 && u.logTableCleanup.cleanupOldVersions()) {
+                    u.commit()
+                    // a simple knob to allow us to slow the log table cleanup down without
+                    // requiring complicated things.
+                    finished.await(serviceConfig.logTableCleanupSleepTime.toMillis, TimeUnit.MILLISECONDS)
+                  }
                 }
+              } catch {
+                case e: Exception =>
+                  log.error("Unexpected error while cleaning log tables", e)
               }
-            } catch {
-              case e: Exception =>
-                log.error("Unexpected error while cleaning log tables", e)
             }
           } while(!finished.await(30, TimeUnit.SECONDS))
         }
@@ -810,6 +817,18 @@ object Main extends DynamicPortMap {
         for {
           curator <- CuratorFromConfig(serviceConfig.curator)
           discovery <- DiscoveryFromConfig(classOf[AuxiliaryData], curator, serviceConfig.discovery)
+          leadership <- managed(new LeaderLatch(curator, s"/${serviceConfig.discovery.name}/${serviceConfig.instance}/leader"))
+            .and(_.addListener(new LeaderLatchListener {
+                                 override def isLeader() = {
+                                   log.info("I am now the leader")
+                                   leader.set(true)
+                                 }
+                                 override def notLeader() = {
+                                   log.info("I am no longer the leader")
+                                   leader.set(false)
+                                 }
+                               }))
+            .and(_.start())
           pong <- managed(new LivenessCheckResponder(serviceConfig.livenessCheck))
           provider <- managed(new ProviderCache(discovery, new strategies.RoundRobinStrategy, serviceConfig.discovery.name))
         } {

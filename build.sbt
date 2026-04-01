@@ -2,7 +2,7 @@ ThisBuild / organization := "com.socrata"
 
 ThisBuild / Test / testOptions += Tests.Argument(TestFrameworks.ScalaTest, "-oFD")
 
-ThisBuild / scalaVersion := "2.12.8"
+ThisBuild / scalaVersion := "2.12.21"
 
 ThisBuild / resolvers += "socrata maven" at "https://repo.socrata.com/artifactory/libs-release"
 
@@ -10,13 +10,12 @@ ThisBuild / scalacOptions ++= Seq("-deprecation", "-feature")
 
 ThisBuild / evictionErrorLevel := Level.Warn
 
-val coordinatorExternal = (project in file("coordinator-external")).
-  configs(IntegrationTest).
-  settings(Defaults.itSettings)
+val coordinatorExternal = (project in file("coordinator-external"))
 
-val coordinatorlib = (project in file("coordinatorlib")).
-  configs(IntegrationTest).
-  settings(Defaults.itSettings)
+val coordinatorlib = (project in file("coordinatorlib"))
+
+val coordinatorlibIntegration = (project in file("coordinatorlib-integration")).
+  dependsOn(coordinatorlib)
 
 val coordinator = (project in file("coordinator")).
   dependsOn(coordinatorlib, coordinatorExternal)

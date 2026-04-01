@@ -2,7 +2,7 @@ package com.socrata.datacoordinator.resources
 
 import java.io.{BufferedWriter, BufferedOutputStream}
 import java.nio.charset.StandardCharsets._
-import javax.servlet.http.HttpServletResponse
+import jakarta.servlet.http.HttpServletResponse
 
 import com.rojoma.json.v3.ast.{JString, JValue}
 import com.rojoma.json.v3.io.{CompactJsonWriter, JsonBadParse}

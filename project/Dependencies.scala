@@ -4,7 +4,7 @@ object Dependencies {
   object versions {
     val activemq        = "5.16.8"
     val c3po            = "0.9.5.4"
-    val clojure         = "1.5.1"
+    val clojure         = "1.12.4"
     val commonsCodec    = "1.8"
     val curator = "2.6.0"
     val eurybates       = "2.1.0"
@@ -14,7 +14,7 @@ object Dependencies {
     val jodaTime        = "2.1"
     val liquibaseCore   = "2.0.0"
     val liquibasePlugin = "1.9.5.0"
-    val metrics         = "4.1.2"
+    val metrics         = "4.2.38"
     val metricsScala    = "4.1.1"
     val opencsv         = "2.3"
     val postgresql      = "42.6.2"
@@ -23,11 +23,11 @@ object Dependencies {
     val scalaCheck      = "1.14.0"
     val scalaMock       = "3.6.0"
     val scalaTest       = "3.0.8"
-    val slf4j           = "1.7.5"
+    val slf4j           = "2.0.9"
     val snappyIq80      = "0.5"
     val snappyXerial    = "1.1.10.4"
     val socrataCuratorUtils = "1.2.0"
-    val socrataHttp     = "3.16.4"
+    val socrataHttp     = "3.16.5-jdk11"
     val socrataThirdPartyUtils = "5.0.0"
     val soqlBrita       = "1.4.1"
     val soqlReference   = "4.14.68"
@@ -53,7 +53,7 @@ object Dependencies {
   val liquibasePlugin = "org.liquibase" % "liquibase-plugin" % versions.liquibasePlugin
 
   val metricsScala = "nl.grons" %% "metrics4-scala" % versions.metricsScala
-  val metricsJetty9 = "io.dropwizard.metrics" % "metrics-jetty9" % versions.metrics
+  val metricsJetty9 = "io.dropwizard.metrics" % "metrics-jetty11" % versions.metrics
   val metricsGraphite = "io.dropwizard.metrics" % "metrics-graphite" % versions.metrics
   val metricsJmx = "io.dropwizard.metrics" % "metrics-jmx" % versions.metrics
 

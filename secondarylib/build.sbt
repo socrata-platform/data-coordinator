@@ -9,3 +9,5 @@ libraryDependencies ++= Seq(
   TestDeps.h2 % "test"
 )
 disablePlugins(AssemblyPlugin)
+
+Test/fork := true
