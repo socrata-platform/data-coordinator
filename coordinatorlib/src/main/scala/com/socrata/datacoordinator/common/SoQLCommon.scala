@@ -16,7 +16,7 @@ import com.socrata.soql.types._
 import com.socrata.soql.types.obfuscation.{CryptProvider, Quadifier}
 import java.io.{File, OutputStream, Reader}
 import java.security.SecureRandom
-import java.sql.Connection
+import java.sql.{Connection, SQLException}
 import java.util.concurrent.ExecutorService
 import javax.sql.DataSource
 
@@ -50,6 +50,10 @@ object SoQLSystemColumns { sc =>
   }
 }
 
+object SoQLCommon {
+  val log = org.slf4j.LoggerFactory.getLogger(classOf[SoQLCommon])
+}
+
 class SoQLCommon(dataSource: DataSource,
                  copyInProvider: (Connection, String, OutputStream => Unit) => Long,
                  executorService: ExecutorService,
@@ -64,6 +68,8 @@ class SoQLCommon(dataSource: DataSource,
                  //tableCleanupDelay: FiniteDuration,
                  cache: Cache)
 { common =>
+  import SoQLCommon._
+
   type CT = SoQLType
   type CV = SoQLValue
 
@@ -115,11 +121,31 @@ class SoQLCommon(dataSource: DataSource,
   def isSystemColumnId(name: UserColumnId): Boolean =
     SoQLSystemColumns.isSystemColumnId(name)
 
+  private class UnlockAll(conn: Connection) extends AutoCloseable {
+    override def close() {
+      try {
+        conn.setAutoCommit(true)
+        using(conn.prepareStatement("select pg_advisory_unlock_all()")) { stmt =>
+          stmt.execute()
+        }
+      } catch {
+        case e: SQLException =>
+          log.warn("Exception while doing the advisory unlock - this probably means the connection was lost", e)
+          throw e
+      }
+    }
+  }
+
   val universe: Managed[PostgresUniverse[CT, CV] with SchemaFinderProvider] = new Managed[PostgresUniverse[CT, CV] with SchemaFinderProvider] {
     def run[B](f: PostgresUniverse[CT, CV] with SchemaFinderProvider => B): B = {
-      val conn = dataSource.getConnection()
-      try {
+      using(new ResourceScope) { rs =>
+        val conn = rs.open(dataSource.getConnection());
         conn.setAutoCommit(false)
+        using(conn.prepareStatement("select pg_advisory_unlock_all()")) { stmt =>
+          stmt.execute()
+        }
+        conn.commit();
+        rs.open(new UnlockAll(conn))
         val u = new PostgresUniverse(conn, PostgresUniverseCommon) with SchemaFinderProvider {
           lazy val cache: Cache = common.cache
           lazy val schemaFinder = new SchemaFinder(common.typeContext.typeNamespace.userTypeForType, cache)
@@ -131,8 +157,6 @@ class SoQLCommon(dataSource: DataSource,
         } finally {
           u.rollback()
         }
-      } finally {
-        conn.close()
       }
     }
   }
