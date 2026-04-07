@@ -3,7 +3,7 @@ import sbt._
 object Dependencies {
   object versions {
     val activemq        = "5.16.8"
-    val c3po            = "0.9.5.4"
+    val c3po            = "0.12.0"
     val clojure         = "1.12.4"
     val commonsCodec    = "1.8"
     val curator = "2.6.0"
