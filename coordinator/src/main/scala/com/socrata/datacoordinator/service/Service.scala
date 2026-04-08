@@ -1,11 +1,13 @@
 package com.socrata.datacoordinator.service
 
+import io.opentelemetry.api.OpenTelemetry
 import com.rojoma.json.v3.ast._
 import com.rojoma.json.v3.codec.JsonEncode
 import com.rojoma.json.v3.io._
 import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.resources._
 import com.socrata.datacoordinator.truth.loader._
+import com.socrata.http.server.otel.OtelHandler
 import com.socrata.http.server.responses._
 import com.socrata.http.server.util.handlers.{LoggingOptions, NewLoggingHandler, ThreadRenamingHandler}
 import com.socrata.http.server.util.ErrorAdapter
@@ -28,6 +30,7 @@ import io.dropwizard.metrics.jetty11.InstrumentedHandler
  * It should probably be broken up into multiple classes per resource.
  */
 class Service(serviceConfig: ServiceConfig,
+              otel: OpenTelemetry,
               formatDatasetId: DatasetId => String,
               parseDatasetId: String => Option[DatasetId],
               notFoundDatasetResource: (Option[String], (=> HttpResponse) => HttpResponse) => NotFoundDatasetResource,
@@ -287,21 +290,26 @@ class Service(serviceConfig: ServiceConfig,
   def run(port: Int, broker: ServerBroker) {
     for { reporter <- MetricsReporter.managed(metricsOptions) } {
       val server = new SocrataServerJetty(
-                     ThreadRenamingHandler(
-                       NewLoggingHandler(logOptions)(errorHandlingHandler)),
-                     SocrataServerJetty.defaultOptions.
-                       withPort(port).
-                       withExtraHandlers(
-                         List(
-                           { underlying =>
-                             val handler = new InstrumentedHandler(Metrics.metricsRegistry, metricsOptions.prefix)
-                             handler.setHandler(underlying)
-                             handler
-                           }
-                         )
-                       ).
-                       withPoolOptions(SocrataServerJetty.Pool(serviceConfig.jettyThreadpool)).
-                      withBroker(broker))
+        OtelHandler(otel.getTracer("data-coordinator-" + serviceConfig.instance), otel.getPropagators) {
+          ThreadRenamingHandler {
+            NewLoggingHandler(logOptions) {
+              errorHandlingHandler
+            }
+          }
+        },
+        SocrataServerJetty.defaultOptions.
+          withPort(port).
+          withExtraHandlers(
+            List(
+              { underlying =>
+                val handler = new InstrumentedHandler(Metrics.metricsRegistry, metricsOptions.prefix)
+                handler.setHandler(underlying)
+                handler
+              }
+            )
+          ).
+          withPoolOptions(SocrataServerJetty.Pool(serviceConfig.jettyThreadpool)).
+          withBroker(broker))
       server.run()
     }
   }
@@ -311,6 +319,7 @@ object Service {
   val numThreads = new AtomicInteger
 
   def apply(serviceConfig: ServiceConfig,
+            otel: OpenTelemetry,
             formatDatasetId: DatasetId => String,
             parseDatasetId: String => Option[DatasetId],
             notFoundDatasetResource: (Option[String], (=> HttpResponse) => HttpResponse) => NotFoundDatasetResource,
@@ -334,6 +343,7 @@ object Service {
            )(collocationLock: CollocationLock, hostAndPort: HostAndPort): Service = {
     new Service(
       serviceConfig,
+      otel,
       formatDatasetId,
       parseDatasetId,
       notFoundDatasetResource,
