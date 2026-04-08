@@ -40,6 +40,15 @@ class ServiceConfig(val config: Config, root: String, hostPort: Int => Int) exte
   val mutationResourceTimeout = getDuration("mutation-resource-timeout")
   val jettyThreadpool = getRawConfig("jetty-threadpool") // TODO make that a ConfigClass
 
+  val opentelemetry = optionally(getRawConfig("opentelemetry")).map { _ =>
+    getConfig("opentelemetry", new OtelConfig(_, _))
+  }
+
   require(instance.matches("[a-zA-Z0-9._]+"),
           "Instance names must consist of only ASCII letters, numbers, periods, and underscores")
+}
+
+class OtelConfig(config: Config, root: String) extends ConfigClass(config, root) {
+  val enabled = optionally(getBoolean("enabled")).getOrElse(true)
+  val endpoint = getString("endpoint")
 }

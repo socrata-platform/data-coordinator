@@ -3,6 +3,18 @@ package com.socrata.datacoordinator.service
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
+import io.opentelemetry.api.OpenTelemetry
+import io.opentelemetry.sdk.OpenTelemetrySdk
+import io.opentelemetry.sdk.resources.{Resource => OtelResource}
+import io.opentelemetry.semconv.ServiceAttributes
+import io.opentelemetry.sdk.trace.SdkTracerProvider
+import io.opentelemetry.sdk.trace.export.BatchSpanProcessor
+import io.opentelemetry.exporter.otlp.http.trace.OtlpHttpSpanExporter
+import io.opentelemetry.api.trace.propagation.W3CTraceContextPropagator
+import io.opentelemetry.api.baggage.propagation.W3CBaggagePropagator
+import io.opentelemetry.contrib.awsxray.propagator.AwsXrayPropagator
+import io.opentelemetry.context.propagation.ContextPropagators
+import io.opentelemetry.context.propagation.TextMapPropagator
 import com.rojoma.json.v3.ast.{JString, JValue}
 import com.rojoma.simplearm.v2._
 import com.rojoma.simplearm.v2.conversions._
@@ -35,6 +47,7 @@ import com.socrata.datacoordinator.resources.collocation._
 import com.socrata.datacoordinator.service.Main.log
 import com.socrata.datacoordinator.service.collocation.{MetricProvider, _}
 import com.socrata.http.client.HttpClientHttpClient
+import com.socrata.http.client.otel.OtelHttpClient
 import org.apache.curator.x.discovery.{ServiceInstanceBuilder, strategies}
 import org.apache.curator.framework.recipes.leader.{LeaderLatch, LeaderLatchListener}
 import org.apache.log4j.PropertyConfigurator
@@ -586,11 +599,54 @@ object Main extends DynamicPortMap {
 
     implicit val executorShutdown = Resource.executorShutdownNoTimeout
 
-    for {
-      dsInfo <- DataSourceFromConfig(serviceConfig.dataSource)
-      executorService <- managed(Executors.newCachedThreadPool)
-      httpClient <- managed(new HttpClientHttpClient(executorService))
-    } {
+    using(new ResourceScope) { scope =>
+      val otel =
+        serviceConfig.opentelemetry match {
+          case Some(otelConfig) if otelConfig.enabled =>
+            val resource = OtelResource.getDefault.toBuilder
+              .put(ServiceAttributes.SERVICE_NAME, "data-coordinator-" + serviceConfig.instance)
+              .build()
+            scope.open(
+              OpenTelemetrySdk.builder()
+                .setTracerProvider(
+                  scope.open(
+                    SdkTracerProvider.builder()
+                      .setResource(resource)
+                      .addSpanProcessor(
+                        BatchSpanProcessor.builder(
+                          OtlpHttpSpanExporter.builder()
+                            .setEndpoint(otelConfig.endpoint)
+                            .build()
+                        )
+                        .build()
+                    )
+                    .build()
+                )
+              )
+              // .setMeterProvider(SdkMeterProviderConfig.create(resource))
+              // .setLoggerProvider(SdkLoggerProviderConfig.create(resource))
+              .setPropagators(
+                ContextPropagators.create(
+                  TextMapPropagator.composite(
+                    W3CTraceContextPropagator.getInstance(),
+                    W3CBaggagePropagator.getInstance(),
+                    AwsXrayPropagator.getInstance()
+                  )
+                )
+              )
+              .build()
+            )
+          case _ =>
+            OpenTelemetry.noop
+        }
+
+      val dsInfo = scope.open(DataSourceFromConfig.unmanaged(serviceConfig.dataSource))
+      val executorService = scope.open(Executors.newCachedThreadPool)
+      val httpClient = OtelHttpClient(
+        scope.open(new HttpClientHttpClient(executorService)),
+        otel.getPropagators
+      )
+
       val common =
         new SoQLCommon(
           dsInfo.dataSource,
@@ -851,6 +907,7 @@ object Main extends DynamicPortMap {
 
           val serv = Service(
             serviceConfig = serviceConfig,
+            otel = otel,
             formatDatasetId = common.internalNameFromDatasetId,
             parseDatasetId = common.datasetIdFromInternalName,
             notFoundDatasetResource = notFoundDatasetResource,

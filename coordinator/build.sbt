@@ -9,11 +9,17 @@ libraryDependencies ++= Seq(
   socrataThirdPartyUtils,
   jna,
   opencsv,
+  opentelemetryOtlp,
+  opentelemetrySdk,
+  opentelemetrySemConv,
+  opentelemetryIncubator,
+  opentelemetryXrayPropagator,
   clojure,
   metricsJetty9,
   metricsGraphite,
   socrataHttpClient,
   socrataHttpCuratorBroker,
+  socrataHttpServer,
 
   metricsJmx,
 

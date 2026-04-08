@@ -17,6 +17,9 @@ object Dependencies {
     val metrics         = "4.2.38"
     val metricsScala    = "4.1.1"
     val opencsv         = "2.3"
+    val opentelemetry   = "1.60.1"
+    val otelSemConv     = "1.40.0"
+    val otelXray        = "1.55.0-alpha"
     val postgresql      = "42.6.2"
     val rojomaJson      = "3.15.0"
     val rojomaSimpleArm = "2.3.2"
@@ -27,7 +30,7 @@ object Dependencies {
     val snappyIq80      = "0.5"
     val snappyXerial    = "1.1.10.4"
     val socrataCuratorUtils = "1.2.0"
-    val socrataHttp     = "3.16.5-jdk11"
+    val socrataHttp     = "3.17.0-jdk11"
     val socrataThirdPartyUtils = "5.0.0"
     val soqlBrita       = "1.4.1"
     val soqlReference   = "4.14.68"
@@ -59,6 +62,15 @@ object Dependencies {
 
   val opencsv = "net.sf.opencsv" % "opencsv" % "2.3"
 
+  val opentelemetryOtlp = "io.opentelemetry" % "opentelemetry-exporter-otlp" % versions.opentelemetry
+  val opentelemetrySdk = "io.opentelemetry" % "opentelemetry-sdk" % versions.opentelemetry
+  val opentelemetryMetrics = "io.opentelemetry" % "opentelemetry-metrics" % versions.opentelemetry
+  val opentelemetryTracing = "io.opentelemetry" % "opentelemetry-tracing" % versions.opentelemetry
+  val opentelemetryLogs = "io.opentelemetry" % "opentelemetry-logs" % versions.opentelemetry
+  val opentelemetryIncubator = "io.opentelemetry" % "opentelemetry-sdk-extension-incubator" % (versions.opentelemetry + "-alpha")
+  val opentelemetrySemConv = "io.opentelemetry.semconv" % "opentelemetry-semconv" % versions.otelSemConv
+  val opentelemetryXrayPropagator   = "io.opentelemetry.contrib" % "opentelemetry-aws-xray-propagator" % versions.otelXray
+
   val postgresql = "org.postgresql" % "postgresql" % versions.postgresql
 
   val rojomaJson      = "com.rojoma" %% "rojoma-json-v3" % versions.rojomaJson
@@ -75,7 +87,8 @@ object Dependencies {
 
   val socrataCuratorUtils = "com.socrata" %% "socrata-curator-utils" % versions.socrataCuratorUtils
   val socrataHttpCuratorBroker = "com.socrata"    %% "socrata-http-curator-broker" % versions.socrataHttp // brings in org.apache.curator
-  val socrataHttpClient = "com.socrata"    %% "socrata-http-client" % versions.socrataHttp
+  val socrataHttpClient = "com.socrata"    %% "socrata-http-client-otel" % versions.socrataHttp
+  val socrataHttpServer = "com.socrata"    %% "socrata-http-server-otel" % versions.socrataHttp
 
   val socrataThirdPartyUtils = "com.socrata" %% "socrata-thirdparty-utils" % versions.socrataThirdPartyUtils
 

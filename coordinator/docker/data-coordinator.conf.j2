@@ -50,4 +50,9 @@ com.socrata.coordinator.service {
     idle-timeout = 5 minutes
     queue-length = 5000
   }
+
+  opentelemetry {
+    enabled = {{ OTEL_ENABLED }}
+    endpoint = "{{ OTEL_ENDPOINT }}"
+  }
 }
