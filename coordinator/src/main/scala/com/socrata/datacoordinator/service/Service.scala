@@ -7,6 +7,7 @@ import com.rojoma.json.v3.io._
 import com.socrata.datacoordinator.id.DatasetId
 import com.socrata.datacoordinator.resources._
 import com.socrata.datacoordinator.truth.loader._
+import com.socrata.http.server.HttpRequest
 import com.socrata.http.server.otel.OtelHandler
 import com.socrata.http.server.responses._
 import com.socrata.http.server.util.handlers.{LoggingOptions, NewLoggingHandler, ThreadRenamingHandler}
@@ -287,10 +288,17 @@ class Service(serviceConfig: ServiceConfig,
 
   private val metricsOptions = serviceConfig.metrics
 
+  def otelRequestFilter(req: HttpRequest) = {
+    req.requestPath match {
+      case List("version") => false
+      case _ => true
+    }
+  }
+
   def run(port: Int, broker: ServerBroker) {
     for { reporter <- MetricsReporter.managed(metricsOptions) } {
       val server = new SocrataServerJetty(
-        OtelHandler(otel.getTracer("data-coordinator-" + serviceConfig.instance), otel.getPropagators) {
+        OtelHandler(otel.getTracer("data-coordinator-" + serviceConfig.instance), otel.getPropagators, record = otelRequestFilter) {
           ThreadRenamingHandler {
             NewLoggingHandler(logOptions) {
               errorHandlingHandler
