@@ -35,6 +35,30 @@ trait BasePostgresDatasetMapReader[CT] extends `-impl`.BaseDatasetMapReader[CT] 
 
   private def toDateTime(time: Timestamp): DateTime = new DateTime(time.getTime)
 
+  // we'll use the top 2 bits for four different types of locks, of
+  // which there are presently only two defined.  This _does_ mean
+  // dataset IDs are now 62-bit numbers instead of 64-bit numbers...
+  protected def datasetLockId(datasetId: DatasetId): Long =
+    datasetId.underlying // 00
+  protected def replicationLockId(datasetId: DatasetId): Long =
+    datasetId.underlying | (1L << 62) // 01
+  protected def lockTypeThreeId(datasetId: DatasetId): Long =
+    datasetId.underlying | (2L << 62) // 10
+  protected def lockTypeFourId(datasetId: DatasetId): Long =
+    datasetId.underlying | (3L << 62) // 11
+
+  def replicationLock(datasetInfo: DatasetInfo, shared: Boolean) {
+    for {
+      stmt <- managed(conn.prepareStatement("select pg_advisory_lock(?)"))
+        .and(_.setLong(1, replicationLockId(datasetInfo.systemId)))
+      rs <- managed(stmt.executeQuery())
+    } {
+      while(rs.next()) {
+        // nothing, we're just reading the rows
+      }
+    }
+  }
+
   // The time the current transaction was started.
   def currentTime(): DateTime = {
     using(conn.prepareStatement("SELECT CURRENT_TIMESTAMP")) { stmt=>
@@ -1400,10 +1424,13 @@ class PostgresDatasetMapWriter[CT](val conn: Connection, tns: TypeNamespace[CT],
   // Can't set parameters' values via prepared statement placeholders
   def setTimeout(timeoutMs: Int) =
     s"SET LOCAL statement_timeout TO $timeoutMs"
-  def datasetInfoBySystemIdQuery(semiExclusive: Boolean) =
-    "SELECT system_id, next_counter_value, latest_data_version, locale_name, obfuscation_key, resource_name FROM dataset_map WHERE system_id = ? FOR %s".format(
-      if(semiExclusive) "SHARE" else "UPDATE"
-    )
+  private def datasetLockBySystemIdQuery(semiExclusive: Boolean) =
+    if(semiExclusive) {
+      "select pg_advisory_lock_shared(?)"
+    } else {
+      "select pg_advisory_lock(?)"
+    }
+
   def resetTimeout = "SET LOCAL statement_timeout TO DEFAULT"
   def datasetInfo(datasetId: DatasetId, timeout: Duration, semiExclusive: Boolean): Option[DatasetInfo] = {
     // For now we assume that we're the only one setting the statement_timeout
@@ -1427,25 +1454,22 @@ class PostgresDatasetMapWriter[CT](val conn: Connection, tns: TypeNamespace[CT],
         log.trace("Setting statement timeout to {}ms", ms)
         execute(setTimeout(ms))
       }
-      val result =
-        using(conn.prepareStatement(datasetInfoBySystemIdQuery(semiExclusive))) { stmt =>
-          stmt.setDatasetId(1, datasetId)
-          try {
-            t("lookup-dataset-for-update", "dataset_id" -> datasetId)(stmt.execute())
-            getInfoResult(stmt)
-          } catch {
-            case e: PSQLException if isStatementTimeout(e) =>
-              log.trace("Get dataset _with_ waiting failed; abandoning")
-              conn.rollback(savepoint)
-              throw new DatasetIdInUseByWriterException(datasetId, e)
-            case e: PSQLException if isReadOnlyTransaction(e) =>
-              log.trace("Get dataset for update failed due to read-only txn; abandoning")
-              conn.rollback(savepoint)
-              throw new DatabaseInReadOnlyMode(e)
-          }
+      using(conn.prepareStatement(datasetLockBySystemIdQuery(semiExclusive))) { stmt =>
+        stmt.setLong(1, datasetLockId(datasetId))
+        try {
+          t("lock-dataset-for-update", "dataset_id" -> datasetId)(stmt.execute())
+        } catch {
+          case e: PSQLException if isStatementTimeout(e) =>
+            log.trace("Get dataset _with_ waiting failed; abandoning")
+            conn.rollback(savepoint)
+            throw new DatasetIdInUseByWriterException(datasetId, e)
+          case e: PSQLException if isReadOnlyTransaction(e) =>
+            log.trace("Get dataset for update failed due to read-only txn; abandoning")
+            conn.rollback(savepoint)
+            throw new DatabaseInReadOnlyMode(e)
         }
+      }
       if(timeout.isFinite) execute(resetTimeout)
-      result
     } finally {
       try {
         conn.releaseSavepoint(savepoint)
@@ -1463,16 +1487,15 @@ class PostgresDatasetMapWriter[CT](val conn: Connection, tns: TypeNamespace[CT],
           log.warn("Unexpected exception while releasing savepoint", e)
       }
     }
-  }
 
-  def replicationLock(datasetInfo: DatasetInfo) {
-    for {
-      stmt <- managed(conn.prepareStatement("select store_id from secondary_manifest where dataset_system_id = ? order by store_id for update"))
-        .and(_.setDatasetId(1, datasetInfo.systemId))
-      rs <- managed(stmt.executeQuery())
-    } {
-      while(rs.next()) {
-        // nothing, we're just reading the rows
+    using(conn.prepareStatement("SELECT system_id, next_counter_value, latest_data_version, locale_name, obfuscation_key, resource_name FROM dataset_map WHERE system_id = ?")) { stmt =>
+      stmt.setDatasetId(1, datasetId)
+      using(t("lookup-dataset-for-update", "dataset_id" -> datasetId)(stmt.executeQuery())) { rs =>
+        if(rs.next()) {
+          Some(DatasetInfo(rs.getDatasetId("system_id"), rs.getLong("next_counter_value"), rs.getLong("latest_data_version"), rs.getString("locale_name"), rs.getBytes("obfuscation_key"), rs.getDatasetResourceName("resource_name")))
+        } else {
+          None
+        }
       }
     }
   }
@@ -1483,15 +1506,6 @@ class PostgresDatasetMapWriter[CT](val conn: Connection, tns: TypeNamespace[CT],
       stmt.execute(s)
     }
   }
-
-  def getInfoResult(stmt: Statement) =
-    using(stmt.getResultSet) { rs =>
-      if(rs.next()) {
-        Some(DatasetInfo(rs.getDatasetId("system_id"), rs.getLong("next_counter_value"), rs.getLong("latest_data_version"), rs.getString("locale_name"), rs.getBytes("obfuscation_key"), rs.getDatasetResourceName("resource_name")))
-      } else {
-        None
-      }
-    }
 }
 
 object PostgresDatasetMapWriter {

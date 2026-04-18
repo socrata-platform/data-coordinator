@@ -5,6 +5,11 @@ import com.socrata.soql.environment.ColumnName
 import scala.concurrent.duration.Duration
 
 trait DatasetMapBase[CT] extends `-impl`.BaseDatasetMapReader[CT] {
+  /** Advisory: "I'm going to be mutating this dataset, inform the underlying database".
+    * This method exists to (hopefully) prevent deadlock errors by acquiring secondary_manifest
+    * locks early in a transaction, right after loading the dataset.
+    */
+  def replicationLock(datasetInfo: DatasetInfo, shared: Boolean): Unit
 }
 
 trait DatasetMapReader[CT] extends DatasetMapBase[CT] {
@@ -31,12 +36,6 @@ trait DatasetMapWriter[CT] extends DatasetMapBase[CT] with `-impl`.BaseDatasetMa
     *       actually non-finite.
     * @throws DatasetIdInUseByWriterException if some other writer has been used to look up this dataset. */
   def datasetInfo(datasetId: DatasetId, timeout: Duration, semiExclusive: Boolean = false): Option[DatasetInfo]
-
-  /** Advisory: "I'm going to be mutating this dataset, inform the underlying database".
-    * This method exists to (hopefully) prevent deadlock errors by acquiring secondary_manifest
-    * locks early in a transaction, right after loading the dataset.
-    */
-  def replicationLock(datasetInfo: DatasetInfo): Unit
 
   /** Creates a new dataset in the truthstore.
     * @note Does not actually create any tables; this just updates the bookkeeping.

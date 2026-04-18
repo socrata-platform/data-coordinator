@@ -264,7 +264,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
               }
           }
         }
-        updateSecondaryMap(dataVersion)
+        updateSecondaryMap(datasetInfo, dataVersion)
         dataVersion += 1
       }
     }
@@ -755,7 +755,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
       retrying[Unit]({
         mostRecentlyUpdatedCopyInfo.foreach { case mostRecent =>
             timingReport("resync-update-secondary-map", "dataset" -> datasetId) {
-              updateSecondaryMap(mostRecent.dataVersion)
+              updateSecondaryMap(mostRecent.datasetInfo, mostRecent.dataVersion)
             }
           }
       }, ignoreSerializationFailure)
@@ -829,7 +829,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
       }
     }
 
-    def updateSecondaryMap(newLastDataVersion: Long): Unit = {
+    def updateSecondaryMap(datasetInfo: metadata.DatasetInfo, newLastDataVersion: Long): Unit = {
       // We want to end the current transaction here. We don't want to be holding share locks on data-tables like log
       // tables while updating a row on the secondary_manifest. This is o avoid deadlocks when data-coordinator also has
       // locks out on the data-tables and is also updating the same row on the secondary_manifest.
@@ -837,6 +837,7 @@ class PlaybackToSecondary[CT, CV](u: PlaybackToSecondary.SuperUniverse[CT, CV],
       // The activity in the current transaction (before committing) should all
       // be _reads_ from metadata tables and the dataset's log table.
       if(!u.isAutoCommit) u.commit()
+      u.datasetMapReader.replicationLock(datasetInfo, shared = true)
       u.secondaryManifest.completedReplicationTo(secondary.storeId,
                                                  claimantId,
                                                  datasetId,
